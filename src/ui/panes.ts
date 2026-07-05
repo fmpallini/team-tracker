@@ -6,7 +6,7 @@ import { currentLoc, navigateHistory, openLoc } from '../core/nav'
 import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { toast } from './modal'
-import { notifyNavChanged } from './sidebar'
+import { notifyNavChanged, ADD_TEAM_REQUEST_EVENT } from './sidebar'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
 
@@ -364,6 +364,28 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     const container = bodyEls[idx]
     container.innerHTML = ''
     const lc = localeNow()
+    // Task 3: no teams yet — offer a CTA to create the first one, before the
+    // generic "no module open" empty branch below (which would otherwise
+    // show first and give the user no path forward).
+    if (store.doc.teams.length === 0) {
+      container.appendChild(
+        el(
+          'div',
+          { class: 'tt-pane-cta' },
+          el('p', {}, t(lc, 'empty_no_teams_title')),
+          el(
+            'button',
+            {
+              class: 'tt-btn tt-btn-primary',
+              type: 'button',
+              onclick: () => document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT)),
+            },
+            t(lc, 'empty_no_teams_btn')
+          )
+        )
+      )
+      return
+    }
     const loc = currentLoc(store.doc.nav.panes[idx])
     if (!loc) {
       container.appendChild(el('div', { class: 'tt-pane-empty' }, t(lc, 'pane_empty')))

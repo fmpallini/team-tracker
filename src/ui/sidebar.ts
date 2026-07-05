@@ -44,6 +44,15 @@ export function onNavChanged(cb: () => void): () => void {
   }
 }
 
+/**
+ * Task 3: the empty-pane CTA (panes.ts, rendered when `store.doc.teams` is
+ * empty) has no reach into sidebar internals like `openAddModal`, so it
+ * dispatches this document-level event instead — mirrors `NAV_CHANGED_EVENT`
+ * above. Exported so panes.ts can reference the same string without either
+ * module reaching into the other's implementation.
+ */
+export const ADD_TEAM_REQUEST_EVENT = 'tt-add-team-request'
+
 function emptyTeam(id: string, name: string, emoji: string): Team {
   return {
     id, name, emoji,
@@ -288,4 +297,5 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
   render()
   store.subscribe(render)
   document.addEventListener(NAV_CHANGED_EVENT, render)
+  document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 }

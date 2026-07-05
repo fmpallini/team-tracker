@@ -1,4 +1,4 @@
-import { mountSidebar, notifyNavChanged, onNavChanged } from '../src/ui/sidebar'
+import { mountSidebar, notifyNavChanged, onNavChanged, ADD_TEAM_REQUEST_EVENT } from '../src/ui/sidebar'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -225,6 +225,21 @@ test('drag and drop reorders the teams array', () => {
   target.dispatchEvent(dropEvt)
 
   expect(store.doc.teams.map((tm) => tm.name)).toEqual(['Beta', 'Gamma', 'Alpha'])
+})
+
+test('tt-add-team-request event opens the add-team modal (Task 3 empty-state CTA)', () => {
+  // Note: mountSidebar's document-level ADD_TEAM_REQUEST_EVENT listener (like
+  // NAV_CHANGED_EVENT) is never torn down between `setup()` calls within a
+  // test file, so earlier tests' stale listeners also fire here — hence
+  // asserting "at least one" modal opened rather than an exact count.
+  setup()
+  expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+
+  document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT))
+
+  expect(document.querySelectorAll('.tt-modal-overlay').length).toBeGreaterThanOrEqual(1)
+  const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
+  expect(nameInput).not.toBeNull()
 })
 
 test('onNavChanged returns an unsubscribe function (Task 25 re-review item #4c)', () => {

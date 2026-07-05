@@ -121,6 +121,16 @@ test('navigateFocusedHistory steps the currently focused pane and re-renders', (
   expect(store.doc.nav.panes[0].index).toBe(0)
 })
 
+test('shows first-team CTA when doc has no teams', () => {
+  setup() // doc.teams = [] by default (createEmptyDocument)
+  const cta = document.querySelector('.tt-pane-cta button')
+  expect(cta).not.toBeNull()
+  let fired = false
+  document.addEventListener('tt-add-team-request', () => { fired = true }, { once: true })
+  ;(cta as HTMLButtonElement).click()
+  expect(fired).toBe(true)
+})
+
 test('filterModuleItems matches substrings case- and accent-insensitively (palette filter)', () => {
   const items: ModuleItem[] = [
     { label: 'María', ref: { kind: 'actions' } },
