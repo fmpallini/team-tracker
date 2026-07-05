@@ -1,0 +1,216 @@
+// src/ui/search-ui.ts — global search: input mounted in the shell header,
+// results dropdown below it. Scoped to the active team by default; a
+// checkbox in the dropdown widens the scope to every team.
+import type { Shell } from './shell'
+import type { Store } from '../core/store'
+import type { PaneManager } from './panes'
+import { t, type Locale } from '../core/i18n'
+import { searchDocument, normalize, type SearchResult } from '../core/search'
+import { el } from './dom'
+import { hotkeyAllowed } from './hotkeys'
+
+const DEBOUNCE_MS = 150
+
+const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
+  daily: '📅',
+  person: '🧑',
+  stakeholders: '👥',
+  members: '👥',
+  actions: '✅',
+  milestones: '🚩',
+  risks: '⚠️',
+}
+
+/**
+ * Builds the highlighted snippet DOM. `snippet` and `normalize(snippet)` are
+ * index-aligned (see core/search.ts's `normalize` doc comment: it preserves
+ * character count for the accented Latin text this app handles), so term
+ * positions found in the normalized snippet slice directly into the original
+ * display text. Built entirely from text nodes and `<mark>` elements (no
+ * innerHTML) since snippet content comes from user-authored notes.
+ */
+function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms: string[]): void {
+  const normalized = normalize(snippet)
+  const ranges: [number, number][] = []
+  for (const term of terms) {
+    if (!term) continue
+    let from = 0
+    for (;;) {
+      const idx = normalized.indexOf(term, from)
+      if (idx < 0) break
+      ranges.push([idx, idx + term.length])
+      from = idx + term.length
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = []
+  for (const range of ranges) {
+    const last = merged[merged.length - 1]
+    if (last && range[0] <= last[1]) {
+      last[1] = Math.max(last[1], range[1])
+    } else {
+      merged.push(range)
+    }
+  }
+  let pos = 0
+  for (const [start, end] of merged) {
+    if (start > pos) container.appendChild(document.createTextNode(snippet.slice(pos, start)))
+    container.appendChild(el('mark', {}, snippet.slice(start, end)))
+    pos = end
+  }
+  if (pos < snippet.length) container.appendChild(document.createTextNode(snippet.slice(pos)))
+}
+
+export function mountSearch(shell: Shell, store: Store, pm: PaneManager, locale: Locale): void {
+  let allTeams = false
+  let results: SearchResult[] = []
+  let selected = 0
+  let open = false
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  const input = el('input', {
+    type: 'text',
+    class: 'tt-input tt-search-input',
+    placeholder: t(locale, 'search_placeholder'),
+  }) as HTMLInputElement
+
+  const checkbox = el('input', { type: 'checkbox' }) as HTMLInputElement
+  const checkboxLabel = el(
+    'label',
+    { class: 'tt-search-all-teams' },
+    checkbox,
+    ` ${t(locale, 'search_all_teams')}`
+  )
+  const listEl = el('div', { class: 'tt-search-list' })
+  const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
+  const wrap = el('div', { class: 'tt-search-wrap' }, input, dropdown)
+  shell.headerLeft.appendChild(wrap)
+
+  function currentTerms(): string[] {
+    return normalize(input.value.trim()).split(/\s+/).filter(Boolean)
+  }
+
+  function closeDropdown(): void {
+    open = false
+    dropdown.classList.remove('open')
+  }
+
+  function openDropdown(): void {
+    open = true
+    dropdown.classList.add('open')
+  }
+
+  function renderList(): void {
+    listEl.innerHTML = ''
+    const terms = currentTerms()
+    if (results.length === 0) {
+      listEl.appendChild(el('div', { class: 'tt-search-empty' }, t(locale, 'search_no_results')))
+      return
+    }
+    results.forEach((result, i) => {
+      const mainChildren: (Node | string)[] = [el('span', { class: 'tt-search-icon' }, KIND_ICON[result.moduleKind])]
+      if (allTeams) mainChildren.push(el('span', { class: 'tt-search-team' }, result.teamName))
+      mainChildren.push(el('span', { class: 'tt-search-title' }, result.title))
+      const main = el('div', { class: 'tt-search-row-main' }, ...mainChildren)
+      const snippetEl = el('div', { class: 'tt-search-snippet' })
+      appendHighlightedSnippet(snippetEl, result.snippet, terms)
+      const row = el(
+        'div',
+        {
+          class: 'tt-search-row' + (i === selected ? ' selected' : ''),
+          onclick: () => commit(result),
+          onmouseenter: () => {
+            selected = i
+            renderList()
+          },
+        },
+        main,
+        snippetEl
+      )
+      listEl.appendChild(row)
+    })
+  }
+
+  function runSearch(): void {
+    debounceTimer = null
+    const q = input.value
+    if (!q.trim()) {
+      results = []
+      closeDropdown()
+      return
+    }
+    const scope = allTeams ? null : store.doc.nav.activeTeamId
+    results = searchDocument(store.doc, q, scope)
+    selected = 0
+    renderList()
+    openDropdown()
+  }
+
+  function commit(result: SearchResult | undefined): void {
+    if (!result) return
+    pm.openInFocused(result.loc)
+    closeDropdown()
+  }
+
+  checkbox.addEventListener('change', () => {
+    allTeams = checkbox.checked
+    runSearch()
+  })
+
+  input.addEventListener('input', () => {
+    if (debounceTimer !== null) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(runSearch, DEBOUNCE_MS)
+  })
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (open) {
+        closeDropdown()
+        input.focus()
+      } else {
+        input.blur()
+      }
+      return
+    }
+    if (!open || results.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selected = (selected + 1) % results.length
+      renderList()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selected = (selected - 1 + results.length) % results.length
+      renderList()
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commit(results[selected])
+    }
+  })
+
+  // Focus shortcuts, attached once for the app's lifetime — mountSearch has
+  // no dispose (it lives as long as the document is open), so these must
+  // never be re-attached on open/close to avoid accumulating listeners.
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      input.focus()
+      input.select()
+      return
+    }
+    if (e.key === '/' && hotkeyAllowed(e)) {
+      e.preventDefault()
+      input.focus()
+    }
+  })
+
+  document.addEventListener('mousedown', (e) => {
+    if (!open) return
+    if (wrap.contains(e.target as Node)) return
+    closeDropdown()
+  })
+}
