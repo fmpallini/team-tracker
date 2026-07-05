@@ -156,10 +156,18 @@ export function showStartScreen(
   )
 
   const title = el('h1', { class: 'tt-start-title' }, t(locale, 'app_name'))
+  const tagline = el('p', { class: 'tt-start-tagline' }, t(locale, 'start_tagline'))
+  const advantages = el(
+    'ul',
+    { class: 'tt-start-advantages' },
+    el('li', {}, t(locale, 'start_adv_offline')),
+    el('li', {}, t(locale, 'start_adv_ownership')),
+    el('li', {}, t(locale, 'start_adv_crypto'))
+  )
   const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenBtn, openBtn, createBtn)
   reopenBtn.style.display = 'none'
 
-  const children: (Node | string | null)[] = [title, buttonsCol]
+  const children: (Node | string | null)[] = [title, tagline, advantages, buttonsCol]
   if (!supportsFsApi) {
     children.push(el('p', { class: 'tt-start-fallback-notice' }, t(locale, 'fallback_notice')))
   }

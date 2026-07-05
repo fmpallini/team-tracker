@@ -55,7 +55,7 @@ test('renders start screen with open/create buttons but no reopen when no lastHa
   showStartScreen('en-US', () => {})
   await flush()
   expect(document.querySelector('.tt-start-title')?.textContent).toBe('Team Tracker')
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reopen last…')
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
   expect(reopenBtn).toBeDefined()
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
 })
@@ -64,7 +64,7 @@ test('shows reopen button when idbGet resolves a handle', async () => {
   idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
   showStartScreen('en-US', () => {})
   await flush()
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reopen last…')
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('')
 })
 
@@ -79,7 +79,7 @@ test('open flow: wrong password loops until correct, then calls onOpen', async (
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
-  clickByText('Open file…')
+  clickByText('📂 Open file…')
   await flush()
 
   // first prompt: wrong password
@@ -113,7 +113,7 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('Open file…')
+  clickByText('📂 Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -134,7 +134,7 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('Create new…')
+  clickByText('✨ Create new…')
   await flush()
 
   const pw = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -164,4 +164,11 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
   )
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
   expect(fileInput).not.toBeNull()
+})
+
+test('renders the advantages pitch', () => {
+  showStartScreen('en-US', () => {})
+  const list = document.querySelectorAll('.tt-start-advantages li')
+  expect(list.length).toBe(3)
+  expect(document.querySelector('.tt-start-tagline')).not.toBeNull()
 })
