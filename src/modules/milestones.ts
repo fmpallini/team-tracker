@@ -365,7 +365,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
-      tm.milestones.push({ id: newId, date: todayIso(), title: '', done: false })
+      tm.milestones.push({ id: newId, date: todayIso(), title: '', done: false, followup: '' })
     })
   }
 

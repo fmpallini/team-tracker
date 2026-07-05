@@ -1,7 +1,7 @@
 import type { Doc } from './types'
 import { builtinTemplates } from './templates'
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export class SchemaTooNewError extends Error {}
 
@@ -17,7 +17,13 @@ export function createEmptyDocument(locale: 'pt-BR' | 'en-US'): Doc {
 }
 
 const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
-  // 1 → 2 entraria aqui como MIGRATIONS[1]
+  1: (d) => {
+    for (const team of (d.teams as Record<string, unknown>[]) ?? []) {
+      for (const r of (team.risks as Record<string, unknown>[]) ?? []) r.closed = r.closed ?? false
+      for (const a of (team.actionItems as Record<string, unknown>[]) ?? []) a.notes = a.notes ?? ''
+      for (const m of (team.milestones as Record<string, unknown>[]) ?? []) m.followup = m.followup ?? ''
+    }
+  },
 }
 
 export function migrate(raw: unknown): Doc {

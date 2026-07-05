@@ -271,7 +271,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
       const maxOrder = tm.actionItems.length === 0 ? -1 : Math.max(...tm.actionItems.map((i) => i.order))
-      tm.actionItems.push({ id: newId, text: '', done: false, dueDate: null, assignee: '', order: maxOrder + 1 })
+      tm.actionItems.push({ id: newId, text: '', done: false, dueDate: null, assignee: '', order: maxOrder + 1, notes: '' })
     })
   }
 

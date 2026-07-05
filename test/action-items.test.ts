@@ -22,7 +22,7 @@ function fakePM(): PaneManager {
 }
 
 function item(overrides: Partial<ActionItem>): ActionItem {
-  return { id: 'i1', text: 'Do thing', done: false, dueDate: null, assignee: '', order: 0, ...overrides }
+  return { id: 'i1', text: 'Do thing', done: false, dueDate: null, assignee: '', order: 0, notes: '', ...overrides }
 }
 
 function makeTeam(overrides: Partial<Team> = {}): Team {

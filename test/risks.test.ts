@@ -26,7 +26,7 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
 }
 
 function risk(overrides: Partial<Risk>): Risk {
-  return { id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: 0, ...overrides }
+  return { id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: 0, closed: false, ...overrides }
 }
 
 function makeTeam(overrides: Partial<Team> = {}): Team {

@@ -20,7 +20,7 @@ function fakePM(): PaneManager {
 }
 
 function milestone(overrides: Partial<Milestone>): Milestone {
-  return { id: 'm1', date: '2026-01-01', title: 'Kickoff', done: false, ...overrides }
+  return { id: 'm1', date: '2026-01-01', title: 'Kickoff', done: false, followup: '', ...overrides }
 }
 
 function makeTeam(overrides: Partial<Team> = {}): Team {

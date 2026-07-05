@@ -407,7 +407,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
       const maxOrder = tm.risks.length === 0 ? -1 : Math.max(...tm.risks.map((r) => r.order))
-      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: maxOrder + 1 })
+      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: maxOrder + 1, closed: false })
     })
   }
 

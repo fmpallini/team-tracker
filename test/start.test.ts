@@ -1,5 +1,5 @@
 import { showStartScreen } from '../src/ui/start'
-import { createEmptyDocument } from '../src/core/document'
+import { createEmptyDocument, SCHEMA_VERSION } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
 
@@ -151,7 +151,7 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
   expect(onOpen).toHaveBeenCalledTimes(1)
   const [openedSession, openedDoc, openedPw] = onOpen.mock.calls[0] as [FileSession, Doc, string]
   expect(openedSession).toBe(session)
-  expect(openedDoc.schemaVersion).toBe(1)
+  expect(openedDoc.schemaVersion).toBe(SCHEMA_VERSION)
   expect(openedPw).toBe('sekret')
 })
 

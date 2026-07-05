@@ -106,9 +106,9 @@ test('renders module icons per kind, in candidate order, and toggles teamName wi
     id: 'T1', name: 'Team One', emoji: '🚀',
     stakeholders: [{ id: 'p1', name: 'Widget Sam', role: '', parentId: null, order: 0, notes: 'widget bio' }],
     members: [],
-    actionItems: [{ id: 'a1', text: 'widget task', done: false, dueDate: null, assignee: '', order: 0 }],
-    milestones: [{ id: 'm1', date: '2026-07-01', title: 'widget launch', done: false }],
-    risks: [{ id: 'r1', title: 'widget risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0 }],
+    actionItems: [{ id: 'a1', text: 'widget task', done: false, dueDate: null, assignee: '', order: 0, notes: '' }],
+    milestones: [{ id: 'm1', date: '2026-07-01', title: 'widget launch', done: false, followup: '' }],
+    risks: [{ id: 'r1', title: 'widget risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
     dailyNotes: { '2026-07-01': 'widget note' },
   }
   const store = buildStore([team], 'T1')
