@@ -78,7 +78,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
       title: t(locale(), 'team_add_title'),
       onclick: () => openAddModal(),
     },
-    '+'
+    '➕'
   )
 
   shell.sidebar.innerHTML = ''

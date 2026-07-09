@@ -127,9 +127,9 @@ body { background: var(--bg); color: var(--fg); }
 .tt-panes-grid { display: grid; grid-template-columns: 1fr; height: 100%; min-height: 0; }
 .tt-pane {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
-  border: 2px solid transparent;
+  border: 2px solid var(--border);
 }
-.tt-panes-grid[data-split="true"] .tt-pane.focused { border-color: var(--accent); }
+.tt-pane.focused { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .tt-pane-divider { cursor: col-resize; background: var(--border); }
 .tt-pane-divider:hover { background: var(--accent); }
 .tt-pane-bar {
@@ -276,7 +276,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-editor-col .tt-editor { flex: 1; }
 
 /* Calendar */
-.tt-calendar { display: flex; flex-direction: column; gap: .35rem; }
+.tt-calendar {
+  display: flex; flex-direction: column; gap: .35rem; padding: .5rem;
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
+}
 .tt-calendar-header { display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
 .tt-calendar-month-label { font-weight: 600; font-size: .9rem; text-align: center; flex: 1; }
 .tt-calendar-nav-btn { min-width: 1.8rem; padding: .1rem .4rem; }
@@ -349,7 +352,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-action-list, .tt-action-done-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-action-empty { color: var(--muted); padding: .5rem; }
 .tt-action-row {
-  display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; cursor: grab;
+  display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px;
+  border: 1px solid var(--border); cursor: grab;
 }
 .tt-action-row:hover { background: rgba(37, 99, 235, .08); }
 .tt-action-row[draggable="false"] { cursor: default; }
@@ -381,7 +385,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-toolbar { flex: none; }
 .tt-milestone-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-milestone-empty { color: var(--muted); padding: .5rem; }
-.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; }
+.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; border: 1px solid var(--border); }
 .tt-milestone-row:hover { background: rgba(37, 99, 235, .08); }
 .tt-milestone-date-input { flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
@@ -416,7 +420,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
 .tt-risk-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-risk-empty { color: var(--muted); padding: .5rem; }
-.tt-risk-row { border-radius: 4px; cursor: grab; }
+.tt-risk-row { border-radius: 4px; border: 1px solid var(--border); cursor: grab; }
 .tt-risk-row:hover { background: rgba(37, 99, 235, .08); }
 .tt-risk-row[draggable="false"] { cursor: default; }
 .tt-risk-row.tt-risk-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }

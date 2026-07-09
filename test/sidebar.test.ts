@@ -111,7 +111,7 @@ test('selectTeam via updateNav + notifyNavChanged re-renders the highlight (hotk
 
 test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   const { store } = setup()
-  clickByText('+')
+  clickByText('➕')
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   const emojiInput = document.querySelector('input[name="tt-team-emoji"]') as HTMLInputElement
   nameInput.value = 'Gamma'
@@ -129,7 +129,7 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
 
 test('+ modal requires a name', () => {
   setup()
-  clickByText('+')
+  clickByText('➕')
   clickByText('OK')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
