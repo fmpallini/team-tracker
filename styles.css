@@ -198,6 +198,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-search-snippet mark { background: rgba(37, 99, 235, .3); color: inherit; border-radius: 2px; }
 .tt-search-empty { padding: .5rem .6rem; color: var(--muted); }
 
+/* Search-result navigation highlight (CSS Custom Highlight API — src/ui/search-highlight.ts) */
+::highlight(tt-search) { background-color: rgba(250, 204, 21, .55); }
+[data-theme="dark"] ::highlight(tt-search) { background-color: rgba(250, 204, 21, .35); color: #1a1a1a; }
+
 /* Editor */
 .tt-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tt-editor-toolbar {

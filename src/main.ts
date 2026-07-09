@@ -26,6 +26,7 @@ import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
+import { clearSearchHighlight } from './ui/search-highlight'
 
 // App controller state lives in this module-level closure only — never on
 // window/globals — so the in-memory password never leaves this scope.
@@ -396,6 +397,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   shell.onHelp(() => {
     showGlobalHelp(store.doc.prefs.locale)
   })
+  store.onMutate(() => clearSearchHighlight())
   onLocaleChanged(() => pm.renderAll())
 
   function selectTeam(id: string): void {

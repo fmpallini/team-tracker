@@ -316,7 +316,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
 
     const row = el(
       'div',
-      { class: 'tt-risk-row', draggable: sortMode === 'none' ? 'true' : 'false', 'data-risk-id': r.id },
+      { class: 'tt-risk-row', draggable: sortMode === 'none' ? 'true' : 'false', 'data-risk-id': r.id, 'data-item-id': r.id },
       titleInput, chanceSelect, impactSelect, exposureBadge, planSelect, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')

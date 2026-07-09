@@ -8,6 +8,7 @@ import { t, type Locale } from '../core/i18n'
 import { searchDocument, normalize, type SearchResult } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
+import { applySearchHighlight } from './search-highlight'
 
 const DEBOUNCE_MS = 150
 
@@ -148,8 +149,16 @@ export function mountSearch(shell: Shell, store: Store, pm: PaneManager, locale:
 
   function commit(result: SearchResult | undefined): void {
     if (!result) return
+    const terms = currentTerms()
     pm.openInFocused(result.loc)
     closeDropdown()
+    requestAnimationFrame(() => {
+      const paneEl = document.querySelectorAll('.tt-pane-body')[store.doc.nav.focusedPane] as HTMLElement | undefined
+      if (!paneEl) return
+      const ref = result.loc.ref
+      const anchor = 'itemId' in ref && ref.itemId ? paneEl.querySelector(`[data-item-id="${ref.itemId}"]`) : null
+      applySearchHighlight((anchor as HTMLElement) ?? paneEl, terms)
+    })
   }
 
   checkbox.addEventListener('change', () => {

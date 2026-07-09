@@ -7,6 +7,7 @@ import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { toast } from './modal'
 import { notifyNavChanged, ADD_TEAM_REQUEST_EVENT } from './sidebar'
+import { clearSearchHighlight } from './search-highlight'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
 
@@ -205,6 +206,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function openInPane(idx: 0 | 1, target: Loc): void {
+    clearSearchHighlight()
     const nav = store.doc.nav
     const other = currentLoc(nav.panes[otherPaneIdx(idx)])
     const result = openLoc(nav.panes[idx], target, other)

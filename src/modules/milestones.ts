@@ -408,7 +408,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
     const row = el(
       'div',
-      { class: 'tt-milestone-row', 'data-milestone-id': m.id },
+      { class: 'tt-milestone-row', 'data-milestone-id': m.id, 'data-item-id': m.id },
       dateInput, titleInput, doneCheckbox, expandBtn, deleteBtn
     )
     if (m.done) row.classList.add('tt-milestone-done-row')
