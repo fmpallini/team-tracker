@@ -72,13 +72,13 @@ function collectCandidates(team: Team, doc: Doc): Candidate[] {
     }
   }
   for (const item of team.actionItems) {
-    out.push({ raw: `${item.text}\n${item.assignee}`, title: item.text, ref: { kind: 'actions' } })
+    out.push({ raw: `${item.text}\n${item.assignee}\n${item.notes}`, title: item.text, ref: { kind: 'actions', itemId: item.id } })
   }
   for (const milestone of team.milestones) {
-    out.push({ raw: milestone.title, title: milestone.title, ref: { kind: 'milestones' } })
+    out.push({ raw: `${milestone.title}\n${milestone.followup}`, title: milestone.title, ref: { kind: 'milestones', itemId: milestone.id } })
   }
   for (const risk of team.risks) {
-    out.push({ raw: `${risk.title}\n${risk.followup}`, title: risk.title, ref: { kind: 'risks' } })
+    out.push({ raw: `${risk.title}\n${risk.followup}`, title: risk.title, ref: { kind: 'risks', itemId: risk.id } })
   }
   return out
 }

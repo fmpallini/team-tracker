@@ -36,7 +36,7 @@ export type ModuleRef =
   | { kind: 'daily'; date: string }
   | { kind: 'person'; personId: string; group: 'stakeholders' | 'members' }
   | { kind: 'stakeholders' } | { kind: 'members' }
-  | { kind: 'actions' } | { kind: 'milestones' } | { kind: 'risks' }
+  | { kind: 'actions'; itemId?: string } | { kind: 'milestones'; itemId?: string } | { kind: 'risks'; itemId?: string }
 export interface Loc { teamId: string; ref: ModuleRef }
 export interface PaneState { history: Loc[]; index: number } // current = history[index]; index -1 = vazio
 export interface NavState {
