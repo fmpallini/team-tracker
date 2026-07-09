@@ -1,5 +1,6 @@
-// src/ui/help.ts — editor help modal: shortcuts, markdown syntax, @refs,
-// /templates, and the `chrome --app=...` chromeless-window recipe.
+// src/ui/help.ts — editor help modal (shortcuts, markdown syntax, @refs,
+// /templates) and the global help modal (app-level shortcuts, plus the
+// `chrome --app=...` chromeless-window recipe).
 import type { Locale, MsgKey } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
@@ -25,6 +26,15 @@ const MD_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['1. texto', 'help_md_ol'],
 ]
 
+const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
+  ['Alt+1 … Alt+9', 'help_global_teams'],
+  ['Ctrl+K', 'help_global_palette'],
+  ['Ctrl+S', 'help_global_save'],
+  ['Ctrl+F ou /', 'help_global_search'],
+  ['Alt+← / Alt+→', 'help_global_history'],
+  ['F11 / ⛶', 'help_global_fullscreen'],
+]
+
 function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {
   const body = rows.map(([code, key]) =>
     el('tr', {}, el('td', { class: 'tt-help-code' }, code), el('td', {}, t(locale, key)))
@@ -43,15 +53,31 @@ export function showEditorHelp(locale: Locale): void {
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_refs_heading')),
     el('p', { class: 'tt-help-text' }, t(locale, 'help_refs_text')),
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_templates_heading')),
-    el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text')),
-    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_chrome_heading')),
-    el('p', { class: 'tt-help-text' }, t(locale, 'help_chrome_text')),
-    el('pre', { class: 'tt-help-code-block' }, 'chrome --app=file:///C:/path/to/app.html')
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text'))
   )
 
   let handle: { close: () => void }
   handle = showModal({
     title: t(locale, 'editor_help_title'),
+    body,
+    buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
+  })
+}
+
+export function showGlobalHelp(locale: Locale): void {
+  const body = el(
+    'div',
+    { class: 'tt-help-body' },
+    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_global_shortcuts_heading')),
+    table(locale, GLOBAL_ROWS),
+    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_appwindow_heading')),
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_appwindow_body')),
+    el('pre', { class: 'tt-help-code-block' }, 'chrome --app=file:///caminho/para/app.html')
+  )
+
+  let handle: { close: () => void }
+  handle = showModal({
+    title: t(locale, 'help_global_title'),
     body,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
   })

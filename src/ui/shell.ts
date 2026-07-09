@@ -25,6 +25,8 @@ export interface Shell {
   setTitle(fileName: string | null, dirty: boolean): void
   /** Registers the click handler for the header ⚙ button (Task 24: opens the preferences modal). */
   onSettings(cb: () => void): void
+  /** Registers the click handler for the header ❓ button (opens the global help modal). */
+  onHelp(cb: () => void): void
 }
 
 const SAVE_STATE_INFO: Record<SaveState, { icon: string; key: MsgKey }> = {
@@ -73,8 +75,14 @@ export function createShell(locale: Locale): Shell {
     { class: 'tt-btn tt-btn-settings', type: 'button', title: t(locale, 'settings'), onclick: () => settingsHandler?.() },
     '⚙'
   )
+  let helpHandler: (() => void) | null = null
+  const helpBtn = el(
+    'button',
+    { class: 'tt-btn tt-btn-help', type: 'button', title: t(locale, 'help_global_title'), onclick: () => helpHandler?.() },
+    '❓'
+  )
 
-  headerRight.append(saveIndicator, fullscreenBtn, settingsBtn)
+  headerRight.append(saveIndicator, fullscreenBtn, helpBtn, settingsBtn)
 
   const header = el('header', { class: 'tt-header' }, headerLeft, headerRight)
   const sidebar = el('aside', { class: 'tt-sidebar' })
@@ -132,7 +140,11 @@ export function createShell(locale: Locale): Shell {
     settingsHandler = cb
   }
 
+  function onHelp(cb: () => void): void {
+    helpHandler = cb
+  }
+
   setSaveState('saved')
 
-  return { root, headerLeft, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings }
+  return { root, headerLeft, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp }
 }

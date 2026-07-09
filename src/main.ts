@@ -25,6 +25,7 @@ import { toast } from './ui/modal'
 import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { showConflictModal } from './ui/conflict'
+import { showGlobalHelp } from './ui/help'
 
 // App controller state lives in this module-level closure only — never on
 // window/globals — so the in-memory password never leaves this scope.
@@ -391,6 +392,9 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   }
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)
+  })
+  shell.onHelp(() => {
+    showGlobalHelp(store.doc.prefs.locale)
   })
   onLocaleChanged(() => pm.renderAll())
 
