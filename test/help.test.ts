@@ -32,6 +32,18 @@ test('shell header has a ❓ help button that fires the registered onHelp callba
   expect(cb).toHaveBeenCalledOnce()
 })
 
+test('shell header shows the app name, before the search bar\'s mount point', () => {
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+
+  const nameEl = shell.headerLeft.querySelector('.tt-app-name')
+  expect(nameEl?.textContent).toBe('Team Tracker')
+  // headerLeft is where mountSearch() appends the search bar afterwards —
+  // the app name must already be there so it renders to the left of it.
+  expect(shell.headerLeft.firstElementChild).toBe(nameEl)
+})
+
 test('global help lists app-level shortcuts and the app-window recipe', () => {
   showGlobalHelp('en-US')
   const text = document.body.textContent!

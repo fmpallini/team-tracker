@@ -171,11 +171,24 @@ export function mountSearch(shell: Shell, store: Store, pm: PaneManager, locale:
     debounceTimer = setTimeout(runSearch, DEBOUNCE_MS)
   })
 
+  // Resuming focus on a query left over from before (e.g. after clicking
+  // away, or the results are simply stale after editing elsewhere) should
+  // refresh the matches immediately rather than showing a stale or closed
+  // dropdown. Escape's own re-focus below (closing the dropdown but keeping
+  // focus for a quick re-edit) is explicitly exempted via this flag —
+  // otherwise it would immediately reopen what Escape just closed.
+  let suppressFocusReopen = false
+  input.addEventListener('focus', () => {
+    if (suppressFocusReopen) { suppressFocusReopen = false; return }
+    if (input.value.trim() !== '') runSearch()
+  })
+
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       if (open) {
         closeDropdown()
+        suppressFocusReopen = true
         input.focus()
       } else {
         input.blur()

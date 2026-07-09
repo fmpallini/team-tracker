@@ -20,7 +20,8 @@ body { background: var(--bg); color: var(--fg); }
   gap: .5rem; padding: .5rem .75rem;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .5rem; }
+.tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
+.tt-app-name { font-weight: 700; font-size: 1.05rem; white-space: nowrap; flex: none; }
 
 .tt-body { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
 
@@ -183,7 +184,7 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Header search */
 .tt-search-wrap { position: relative; }
-.tt-search-input { width: 220px; }
+.tt-search-input { width: 360px; }
 .tt-search-dropdown {
   display: none; position: absolute; top: 100%; left: 0; margin-top: .25rem; z-index: 1200;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;

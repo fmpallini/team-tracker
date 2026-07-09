@@ -62,6 +62,10 @@ export function createShell(locale: Locale): Shell {
   const headerLeft = el('div', { class: 'tt-header-left' })
   const headerRight = el('div', { class: 'tt-header-right' })
 
+  // Appended first so it renders to the left of the search bar, which
+  // mountSearch() (src/ui/search-ui.ts) appends into headerLeft afterwards.
+  headerLeft.appendChild(el('span', { class: 'tt-app-name' }, t(locale, 'app_name')))
+
   const saveIndicator = el('span', { class: 'tt-save-indicator' })
 
   const fullscreenBtn = el(

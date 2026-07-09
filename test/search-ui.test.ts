@@ -199,6 +199,30 @@ test('arrow keys navigate results with wraparound in both directions; Enter open
   expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } }])
 })
 
+test('refocusing the search input with existing text re-runs the search and reopens the dropdown', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const { input } = mount(store, fakePM())
+
+  type(input, 'alpha')
+  vi.advanceTimersByTime(200)
+  expect(isOpen()).toBe(true)
+
+  key(input, 'Escape') // closes the dropdown but leaves the typed query
+  expect(isOpen()).toBe(false)
+
+  input.dispatchEvent(new FocusEvent('focus'))
+  expect(isOpen()).toBe(true)
+  expect(document.querySelectorAll('.tt-search-row')).toHaveLength(1)
+})
+
+test('refocusing an empty search input does not open the dropdown', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const { input } = mount(store, fakePM())
+
+  input.dispatchEvent(new FocusEvent('focus'))
+  expect(isOpen()).toBe(false)
+})
+
 test('Escape closes the dropdown and keeps focus on the input; a second Escape blurs it', () => {
   const store = buildStore([oneNoteTeam], 'T1')
   const { input } = mount(store, fakePM())
