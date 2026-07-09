@@ -420,6 +420,17 @@ describe('renderActionItems', () => {
     expect(container.children).toHaveLength(0)
   })
 
+  test('expand button uses the same ▸/▾ arrow glyph as risks (not a 📝 icon)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const btn = container.querySelector('.tt-action-expand-btn') as HTMLButtonElement
+    expect(btn.textContent).toBe('▸')
+    btn.click()
+    expect(container.querySelector('.tt-action-expand-btn')!.textContent).toBe('▾')
+  })
+
   test('Enter in the text field blurs it, committing via onchange', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', text: 'Old' })] })
     const { container, store, pm, loc } = setup(team)

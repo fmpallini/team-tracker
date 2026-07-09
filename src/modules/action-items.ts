@@ -254,7 +254,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-action-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'action_notes_toggle_title'), onclick: () => toggleExpand(item.id) },
-      '📝'
+      expandedId === item.id ? '▾' : '▸'
     )
 
     const deleteBtn = el(

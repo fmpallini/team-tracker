@@ -459,6 +459,17 @@ describe('renderMilestones', () => {
     expect(container.children).toHaveLength(0)
   })
 
+  test('expand button uses the same ▸/▾ arrow glyph as risks (not a 📝 icon)', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const btn = container.querySelector('.tt-milestone-expand-btn') as HTMLButtonElement
+    expect(btn.textContent).toBe('▸')
+    btn.click()
+    expect(container.querySelector('.tt-milestone-expand-btn')!.textContent).toBe('▾')
+  })
+
   test('Enter in the title field blurs it, committing via onchange', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Old' })] })
     const { container, store, pm, loc } = setup(team)

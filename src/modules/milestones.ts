@@ -407,7 +407,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
-      '📝'
+      expandedId === m.id ? '▾' : '▸'
     )
 
     const deleteBtn = el(

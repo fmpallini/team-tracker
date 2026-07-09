@@ -300,7 +300,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-calendar-day-today { box-shadow: inset 0 0 0 2px var(--accent); }
 .tt-calendar-day-has-note { background: rgba(37, 99, 235, .15); }
 .tt-calendar-day-selected { background: var(--accent); color: #fff; font-weight: 700; }
-[data-theme="dark"] .tt-calendar-day-selected { color: var(--bg); }
+[data-theme="dark"] .tt-calendar-day-selected {
+  color: var(--bg);
+  /* Dark theme's --accent is a light blue close in brightness to
+     surrounding UI chrome, so the selected cell can read as barely
+     distinguishable from a hovered/has-note cell — an outer ring in the
+     theme's foreground color makes "this is the selected day" unambiguous
+     regardless of how close accent/background luminance happen to land. */
+  box-shadow: 0 0 0 2px var(--fg);
+}
 .tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
 
 /* People tree module (stakeholders / members) — org-chart layout */
@@ -464,7 +472,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-prefs-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); }
 .tt-prefs-tab-btn { border: none; border-bottom: 2px solid transparent; border-radius: 0; }
 .tt-prefs-tab-btn.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
-.tt-prefs-content { display: flex; flex-direction: column; gap: 1rem; max-height: 55vh; overflow-y: auto; }
+/* Fixed (not max-) height: keeps the dialog a constant size across every
+   tab instead of shrinking to whichever tab has the least content, while
+   overflow-y still scrolls any tab whose content exceeds it. */
+.tt-prefs-content { display: flex; flex-direction: column; gap: 1rem; height: 55vh; overflow-y: auto; }
 .tt-prefs-field { display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-field-label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-radio-row { display: flex; flex-wrap: wrap; gap: .9rem; }
