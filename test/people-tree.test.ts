@@ -58,8 +58,8 @@ function clickByTitleOrText(root: ParentNode, text: string): void {
   btn.click()
 }
 
-function rows(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('.tt-people-row'))
+function boxes(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.tt-org-box'))
 }
 
 afterEach(() => {
@@ -178,19 +178,32 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
 
-    const labels = rows(container).map((r) => r.querySelector('.tt-people-label')!.textContent)
-    expect(labels).toEqual(['Ana', 'Carla', 'Bruno'])
+    const names = boxes(container).map((b) => b.querySelector('.tt-org-name')!.textContent)
+    expect(names).toEqual(['Ana', 'Carla', 'Bruno'])
 
-    // Carla is nested inside a's .tt-people-children wrapper.
-    const carlaRow = rows(container).find((r) => r.querySelector('.tt-people-label')!.textContent === 'Carla')!
-    expect(carlaRow.closest('.tt-people-children')).not.toBeNull()
+    // Carla is nested inside a's .tt-org-children wrapper.
+    const carlaBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Carla')!
+    expect(carlaBox.closest('.tt-org-children')).not.toBeNull()
   })
 
-  test('shows "name — role" when role is set', () => {
+  test('renders name and role on separate lines', () => {
     const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', role: 'PM', order: 0 })] })
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
-    expect(rows(container)[0]!.querySelector('.tt-people-label')!.textContent).toBe('Ana — PM')
+    const box = boxes(container)[0]!
+    expect(box.querySelector('.tt-org-name')!.textContent).toBe('Ana')
+    expect(box.querySelector('.tt-org-role')!.textContent).toBe('PM')
+  })
+
+  test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members', 1)
+
+    const box = boxes(container)[0]!
+    box.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+    expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'a', group: 'members' } } }])
   })
 
   test('shows a placeholder when the group is empty', () => {
@@ -304,8 +317,8 @@ describe('renderPeopleTree', () => {
     render(container, loc, store, pm, 'members')
 
     expect(() => store.update((d) => { d.teams[0]!.members[0]!.name = 'Ana 2' })).not.toThrow()
-    expect(rows(container)).toHaveLength(1)
-    expect(rows(container)[0]!.querySelector('.tt-people-label')!.textContent).toBe('Ana 2')
+    expect(boxes(container)).toHaveLength(1)
+    expect(boxes(container)[0]!.querySelector('.tt-org-name')!.textContent).toBe('Ana 2')
   })
 
   test('a defensive no-op when loc.ref.kind does not match the registered group', () => {

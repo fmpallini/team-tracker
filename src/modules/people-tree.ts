@@ -127,7 +127,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     let draggedId: string | null = null
 
     function clearDropClasses(): void {
-      treeEl.querySelectorAll('.tt-people-row').forEach((n) => {
+      treeEl.querySelectorAll('.tt-org-box').forEach((n) => {
         n.classList.remove('tt-people-drop-before', 'tt-people-drop-after', 'tt-people-drop-child')
       })
     }
@@ -218,8 +218,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       handle = showModal({ title: t(lc, 'person_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
     }
 
-    function renderRow(person: Person, depth: number): HTMLElement {
-      const label = person.role ? `${person.name} — ${person.role}` : person.name
+    function renderBox(person: Person): HTMLElement {
       const notesBtn = el(
         'button',
         {
@@ -245,16 +244,19 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       )
       const actions = el('div', { class: 'tt-people-actions' }, notesBtn, editBtn, addChildBtn, deleteBtn)
 
-      const row = el(
+      const box = el(
         'div',
-        {
-          class: 'tt-people-row', style: `padding-left: ${depth * 1.25}rem`, draggable: 'true', 'data-person-id': person.id,
-        },
-        el('span', { class: 'tt-people-label' }, label),
+        { class: 'tt-org-box', draggable: 'true', 'data-person-id': person.id },
+        el('div', { class: 'tt-org-name' }, person.name),
+        el('div', { class: 'tt-org-role' }, person.role),
         actions
       )
 
-      row.addEventListener('dragstart', (e) => {
+      box.addEventListener('dblclick', () => {
+        ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'person', personId: person.id, group } })
+      })
+
+      box.addEventListener('dragstart', (e) => {
         e.stopPropagation()
         draggedId = person.id
         const dt = (e as DragEvent).dataTransfer
@@ -263,27 +265,27 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           dt.effectAllowed = 'move'
         }
       })
-      row.addEventListener('dragover', (e) => {
+      box.addEventListener('dragover', (e) => {
         if (draggedId === null || draggedId === person.id) return
         if (isDescendant(people(), person.id, draggedId)) return // would create a cycle — leave default (disallow drop)
         e.preventDefault()
-        const rect = row.getBoundingClientRect()
+        const rect = box.getBoundingClientRect()
         const offsetY = (e as MouseEvent).clientY - rect.top
         const pos = computeDropPosition(offsetY, rect.height)
         clearDropClasses()
-        row.classList.add(`tt-people-drop-${pos}`)
+        box.classList.add(`tt-people-drop-${pos}`)
       })
-      row.addEventListener('dragleave', () => {
-        row.classList.remove('tt-people-drop-before', 'tt-people-drop-after', 'tt-people-drop-child')
+      box.addEventListener('dragleave', () => {
+        box.classList.remove('tt-people-drop-before', 'tt-people-drop-after', 'tt-people-drop-child')
       })
-      row.addEventListener('drop', (e) => {
+      box.addEventListener('drop', (e) => {
         e.preventDefault()
         clearDropClasses()
         const srcId = draggedId
         draggedId = null
         if (srcId === null || srcId === person.id) return
         if (isDescendant(people(), person.id, srcId)) return
-        const rect = row.getBoundingClientRect()
+        const rect = box.getBoundingClientRect()
         const offsetY = (e as MouseEvent).clientY - rect.top
         const pos = computeDropPosition(offsetY, rect.height)
         ctx.store.update((d) => {
@@ -292,25 +294,22 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           moveInTree(tm[group], srcId, person.id, pos)
         })
       })
-      row.addEventListener('dragend', () => {
+      box.addEventListener('dragend', () => {
         draggedId = null
         clearDropClasses()
       })
 
-      return row
+      return box
     }
 
-    function renderNode(person: Person, depth: number): HTMLElement {
+    function renderNode(person: Person): HTMLElement {
       const kids = childrenOf(people(), person.id)
-      const wrap = el('div', { class: 'tt-people-node' }, renderRow(person, depth))
-      if (kids.length > 0) {
-        const kidsWrap = el('div', { class: 'tt-people-children' }, ...kids.map((k) => renderNode(k, depth + 1)))
-        wrap.appendChild(kidsWrap)
-      }
-      return wrap
+      const box = renderBox(person)
+      const childrenEl = kids.length > 0 ? el('div', { class: 'tt-org-children' }, ...kids.map((k) => renderNode(k))) : null
+      return el('div', { class: 'tt-org-node' }, box, childrenEl)
     }
 
-    const treeEl = el('div', { class: 'tt-people-tree' })
+    const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
     function renderAll(): void {
       treeEl.innerHTML = ''
       const roots = childrenOf(people(), null)
@@ -318,7 +317,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         treeEl.appendChild(el('div', { class: 'tt-people-empty' }, t(lc, 'pane_empty')))
         return
       }
-      roots.forEach((r) => treeEl.appendChild(renderNode(r, 0)))
+      roots.forEach((r) => treeEl.appendChild(renderNode(r)))
     }
     renderAll()
 

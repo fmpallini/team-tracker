@@ -289,23 +289,53 @@ body { background: var(--bg); color: var(--fg); }
 .tt-calendar-day-selected { font-weight: 700; }
 .tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
 
-/* People tree module (stakeholders / members) */
+/* People tree module (stakeholders / members) — org-chart layout */
 .tt-people { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tt-people-toolbar { flex: none; padding: .5rem; border-bottom: 1px solid var(--border); }
-.tt-people-tree { flex: 1; overflow: auto; padding: .5rem; }
+.tt-people-tree { flex: 1; padding: 1rem; }
 .tt-people-empty { color: var(--muted); padding: .5rem; }
-.tt-people-row {
-  display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: 4px;
-  cursor: grab;
+
+.tt-org-root { display: flex; gap: 2rem; justify-content: center; overflow-x: auto; height: 100%; }
+.tt-org-node { display: flex; flex-direction: column; align-items: center; position: relative; }
+.tt-org-box {
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+  min-width: 120px; max-width: 180px; padding: .4rem .6rem; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, .15);
+  cursor: grab; position: relative; z-index: 1;
 }
-.tt-people-row:hover { background: rgba(37, 99, 235, .08); }
-.tt-people-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-org-box:hover { background: rgba(37, 99, 235, .08); }
+.tt-org-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tt-org-role { font-size: .85em; font-style: italic; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tt-org-box.tt-people-drop-before { box-shadow: inset 2px 0 0 0 var(--accent); }
+.tt-org-box.tt-people-drop-after { box-shadow: inset -2px 0 0 0 var(--accent); }
+.tt-org-box.tt-people-drop-child { background: rgba(37, 99, 235, .18); }
+
 .tt-people-actions { display: flex; gap: .1rem; flex: none; }
-.tt-people-actions button { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
-.tt-people-row:hover .tt-people-actions button, .tt-people-actions button:focus { opacity: 1; }
-.tt-people-row.tt-people-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
-.tt-people-row.tt-people-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
-.tt-people-row.tt-people-drop-child { background: rgba(37, 99, 235, .18); }
+.tt-people-actions button { opacity: 0; padding: .1rem .3rem; font-size: .8rem; border: none; background: transparent; }
+.tt-org-box:hover .tt-people-actions button, .tt-people-actions button:focus { opacity: 1; }
+
+/* Connector lines: the parent's children wrapper draws the trunk down to the
+   horizontal rail; each child draws its own stub up to the rail plus a half-
+   width rail segment that merges with its siblings (first/last child drop
+   the outward half so the rail doesn't overshoot the outermost children). */
+.tt-org-children { display: flex; gap: 1.5rem; justify-content: center; position: relative; padding-top: 1.5rem; }
+.tt-org-node > .tt-org-children::before {
+  content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 1.5rem;
+  border-left: 1px solid var(--border); transform: translateX(-50%);
+}
+.tt-org-children > .tt-org-node { padding-top: 1.5rem; }
+.tt-org-children > .tt-org-node::before {
+  content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 1.5rem;
+  border-left: 1px solid var(--border); transform: translateX(-50%);
+}
+.tt-org-children > .tt-org-node::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 0;
+  border-top: 1px solid var(--border);
+}
+.tt-org-children > .tt-org-node:first-child::after { left: 50%; }
+.tt-org-children > .tt-org-node:last-child::after { right: 50%; }
+.tt-org-children > .tt-org-node:only-child::after { display: none; }
+
 .tt-person-form { display: flex; flex-direction: column; gap: .75rem; }
 
 /* Action items module */
