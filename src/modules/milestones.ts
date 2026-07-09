@@ -14,10 +14,22 @@ import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
+import { createEditor, type Editor } from '../ui/editor'
+import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
+import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+
+function nowHHMM(): string {
+  const now = new Date()
+  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
+}
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /** Minimum horizontal distance (px) between two neighboring milestone dots. */
@@ -152,6 +164,65 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   }
 
   let focusMilestoneId: string | null = null
+  let expandedId: string | null = null
+
+  interface ExpandedBundle { id: string; editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  let expandedBundle: ExpandedBundle | null = null
+
+  function disposeExpandedBundle(): void {
+    if (!expandedBundle) return
+    expandedBundle.atHandle.dispose()
+    expandedBundle.tplHandle.dispose()
+    expandedBundle.editor.destroy()
+    expandedBundle = null
+  }
+
+  function toggleExpand(id: string): void {
+    expandedId = expandedId === id ? null : id
+    renderAll()
+  }
+
+  function getPeople(): AtPerson[] {
+    const tm = findTeam()
+    if (!tm) return []
+    return [
+      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
+      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
+    ]
+  }
+
+  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself as `expandedBundle` so the caller can dispose it later. */
+  function renderFollowupRow(m: Milestone): HTMLElement {
+    const editor: Editor = createEditor(
+      {
+        onChange() {
+          const md = editor.getMd()
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            const found = tm?.milestones.find((mm) => mm.id === m.id)
+            if (!found) return
+            found.followup = md.trim() === '' ? '' : md
+          })
+        },
+        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
+        onAtTrigger() {},
+        onSlashTrigger() {},
+      },
+      lc
+    )
+    editor.setMd(m.followup)
+
+    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const tplHandle = attachTemplatePicker(editor, {
+      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      locale: lc,
+    })
+
+    expandedBundle = { id: m.id, editor, atHandle, tplHandle }
+
+    return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id }, editor.root)
+  }
 
   function removeMilestone(id: string): void {
     ctx.store.update((d) => {
@@ -323,6 +394,12 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       },
     })
 
+    const expandBtn = el(
+      'button',
+      { class: 'tt-btn tt-milestone-expand-btn', type: 'button', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
+      '📝'
+    )
+
     const deleteBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-delete-btn', type: 'button', title: t(lc, 'milestone_delete_title'), onclick: () => requestDelete(m) },
@@ -332,7 +409,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const row = el(
       'div',
       { class: 'tt-milestone-row', 'data-milestone-id': m.id },
-      dateInput, titleInput, doneCheckbox, deleteBtn
+      dateInput, titleInput, doneCheckbox, expandBtn, deleteBtn
     )
     if (m.done) row.classList.add('tt-milestone-done-row')
     return row
@@ -346,7 +423,10 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     if (sorted.length === 0) {
       listEl.appendChild(el('div', { class: 'tt-milestone-empty' }, t(lc, 'milestone_empty')))
     } else {
-      sorted.forEach((m) => listEl.appendChild(renderRow(m)))
+      sorted.forEach((m) => {
+        listEl.appendChild(renderRow(m))
+        if (expandedId === m.id) listEl.appendChild(renderFollowupRow(m))
+      })
     }
     if (focusMilestoneId) {
       listEl.querySelector<HTMLInputElement>(`[data-milestone-id="${focusMilestoneId}"] .tt-milestone-title-input`)?.focus()
@@ -355,6 +435,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   }
 
   function renderAll(): void {
+    disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
     renderTimeline()
     renderList()
   }
@@ -377,17 +458,19 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn)
 
   /**
-   * True (and returns the focused element) only for the caret-sensitive
-   * input types this module owns (text/date) — mirrors
-   * src/modules/action-items.ts's `focusedCaretInput`. The done checkbox has
-   * no caret and its own 'change' handler needs the row to move immediately,
-   * so it is deliberately excluded.
+   * True (and returns the focused element) for the caret-sensitive elements
+   * this module owns: text/date inputs (mirrors src/modules/action-items.ts's
+   * `focusedCaretInput` — the done checkbox has no caret and its own 'change'
+   * handler needs the row to move immediately, so it is deliberately
+   * excluded) and, since a follow-up editor can be live-edited for a while
+   * before its debounced onChange commits, the expanded row's contenteditable
+   * `.editor` itself (mirrors src/modules/risks.ts's focusedCaretElement).
    */
-  function focusedCaretInput(): HTMLInputElement | null {
+  function focusedCaretInput(): HTMLElement | null {
     const active = document.activeElement
-    if (active instanceof HTMLInputElement && container.contains(active) && (active.type === 'text' || active.type === 'date')) {
-      return active
-    }
+    if (!(active instanceof HTMLElement) || !container.contains(active)) return null
+    if (active instanceof HTMLInputElement && (active.type === 'text' || active.type === 'date')) return active
+    if (active.classList.contains('editor') && active.isContentEditable) return active
     return null
   }
 
@@ -414,5 +497,6 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   disposers.set(container, () => {
     unsubscribe()
+    disposeExpandedBundle()
   })
 }

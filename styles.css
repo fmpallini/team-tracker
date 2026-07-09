@@ -380,9 +380,13 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row:hover { background: rgba(37, 99, 235, .08); }
 .tt-milestone-date-input { flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
-.tt-milestone-delete-btn { opacity: 0; flex: none; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
+.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: 0; flex: none; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
+.tt-milestone-row:hover .tt-milestone-expand-btn, .tt-milestone-expand-btn:focus,
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
+.tt-milestone-followup-row { padding: 0 0 .5rem .4rem; }
+.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
+.tt-milestone-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
 
 /* Risks module */
 .tt-risks { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }

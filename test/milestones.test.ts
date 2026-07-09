@@ -59,7 +59,24 @@ function clickByTitleOrText(root: ParentNode, text: string): void {
   btn.click()
 }
 
+function setBlockText(editor: HTMLElement, text: string): void {
+  editor.innerHTML = `<div>${text}</div>`
+  const textNode = editor.firstChild!.firstChild as Text | null
+  const range = document.createRange()
+  if (textNode) range.setStart(textNode, textNode.textContent!.length)
+  else range.setStart(editor.firstChild!, 0)
+  range.collapse(true)
+  const sel = window.getSelection()!
+  sel.removeAllRanges()
+  sel.addRange(range)
+}
+
+function fireInput(editor: HTMLElement): void {
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 afterEach(() => {
+  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 
@@ -390,6 +407,48 @@ describe('renderMilestones', () => {
 
     expect(() => store.update((d) => { d.teams[0]!.milestones[0]!.title = 'A2' })).not.toThrow()
     expect(rows(container)).toHaveLength(1)
+  })
+
+  describe('follow-up editor', () => {
+    test('expand button reveals a follow-up editor that persists to milestone.followup', () => {
+      vi.useFakeTimers()
+      const team = makeTeam({ milestones: [milestone({ id: 'a', followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.editor')).toBeNull()
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      const editorEl = container.querySelector('.tt-milestone-followup-row .editor') as HTMLElement
+      expect(editorEl).not.toBeNull()
+      setBlockText(editorEl, 'segue o baile')
+      fireInput(editorEl)
+      vi.advanceTimersByTime(400)
+
+      expect(store.doc.teams[0]!.milestones[0]!.followup).toContain('segue o baile')
+    })
+
+    test('expanding pre-loads the editor with the milestone\'s existing follow-up', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', followup: '## Plan' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+      const editorEl = container.querySelector('.editor') as HTMLElement
+      expect(editorEl.querySelector('h2')?.textContent).toBe('Plan')
+    })
+
+    test('collapsing a row disposes its editor', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', followup: 'x' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const toggle = () => container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!
+      toggle().click()
+      expect(container.querySelector('.editor')).not.toBeNull()
+      toggle().click()
+      expect(container.querySelector('.editor')).toBeNull()
+    })
   })
 
   test('a defensive no-op when loc.ref.kind is not "milestones"', () => {
