@@ -30,6 +30,16 @@ export function attachTemplatePicker(editor: Editor, opts: {
   let anchorRange: Range | null = null
   let items: Template[] = []
   let selected = 0
+  // Captured once at open() time (mirrors src/ui/atref.ts's `lastLoc`) rather
+  // than re-derived from window.getSelection() at commit time: real browsers
+  // can clear/move the selection on a click at an external, non-input
+  // element (engine-dependent focus/blur handling around contenteditable),
+  // even with the row's mousedown preventDefault() — which made clicking a
+  // template silently no-op (commit() bailed on a null blockAndCaret()).
+  // Since no typing happens between open() and commit() (any further input
+  // closes the picker via onTypingInput), the block/caret captured at open
+  // time is still exactly where commit() needs to insert.
+  let triggerCtx: BlockCtx | null = null
 
   // --- caret/block helpers (mirrors src/ui/editor.ts's private helpers;
   // duplicated rather than exported from there to keep this module fully
@@ -156,7 +166,7 @@ export function attachTemplatePicker(editor: Editor, opts: {
 
   function commit(tpl: Template | undefined): void {
     if (!tpl) { close(); return }
-    const ctx = blockAndCaret()
+    const ctx = triggerCtx
     // Close (and detach the typing listeners) before mutating the document:
     // the inserted template's own text may start a fresh line, and if
     // onTypingInput were still attached the synthetic 'input' event dispatched
@@ -225,6 +235,7 @@ export function attachTemplatePicker(editor: Editor, opts: {
     overlay = null
     listEl = null
     anchorRange = null
+    triggerCtx = null
     editorEl!.removeEventListener('input', onTypingInput)
     editorEl!.removeEventListener('keydown', onKeydown, true)
     document.removeEventListener('mousedown', onDocMousedown, true)
@@ -233,6 +244,7 @@ export function attachTemplatePicker(editor: Editor, opts: {
   function open(range: Range): void {
     close()
     anchorRange = range
+    triggerCtx = blockAndCaret()
     items = opts.getTemplates()
     selected = 0
     listEl = el('div', { class: 'tt-atref-list' })

@@ -181,6 +181,27 @@ describe('attachTemplatePicker', () => {
     expect(editorEl.textContent).toBe('/x')
   })
 
+  test('clicking a list item still inserts even if window.getSelection() is cleared before the click (real-browser focus loss on an external click)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+
+    // Real browsers can clear/move window.getSelection() on a click at an
+    // external, non-input element — even when the row's own mousedown
+    // handler calls preventDefault() — due to engine-dependent blur/
+    // selection-collapse behavior around contenteditable focus. jsdom
+    // doesn't model this quirk via ordinary event dispatch, so it's
+    // simulated directly here to exercise the same commit() path a real
+    // browser would take.
+    window.getSelection()!.removeAllRanges()
+
+    const first = document.querySelector('.tt-atref-item') as HTMLElement
+    first.click()
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(editor!.getMd()).toContain('Decision')
+  })
+
   test('no templates for the current scope shows an empty-state row instead of a blank list', () => {
     const { editorEl } = setup([])
     setBlockText(editorEl, '/')
