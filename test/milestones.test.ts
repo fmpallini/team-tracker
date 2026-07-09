@@ -458,4 +458,28 @@ describe('renderMilestones', () => {
     render(container, wrongLoc, store, pm)
     expect(container.children).toHaveLength(0)
   })
+
+  test('Enter in the title field blurs it, committing via onchange', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Old' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const titleInput = container.querySelector('.tt-milestone-title-input') as HTMLInputElement
+    titleInput.focus()
+    expect(document.activeElement).toBe(titleInput)
+    titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(document.activeElement).not.toBe(titleInput)
+  })
+
+  test('Tab navigation skips the row\'s icon buttons, moving cleanly between data fields', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const row = container.querySelector('.tt-milestone-row')!
+    expect(row.querySelector('.tt-milestone-date-input')!.getAttribute('tabindex')).toBeNull()
+    expect(row.querySelector('.tt-milestone-title-input')!.getAttribute('tabindex')).toBeNull()
+    expect((row.querySelector('.tt-milestone-expand-btn') as HTMLElement).tabIndex).toBe(-1)
+    expect((row.querySelector('.tt-milestone-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
 })

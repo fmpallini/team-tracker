@@ -481,4 +481,29 @@ describe('renderRisks', () => {
     render(container, wrongLoc, store, pm)
     expect(container.children).toHaveLength(0)
   })
+
+  test('Enter in the title field blurs it, committing via onchange', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'Old' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const titleInput = container.querySelector('.tt-risk-title-input') as HTMLInputElement
+    titleInput.focus()
+    expect(document.activeElement).toBe(titleInput)
+    titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(document.activeElement).not.toBe(titleInput)
+  })
+
+  test('Tab navigation skips the row\'s icon buttons, moving cleanly between data fields', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const row = container.querySelector('.tt-risk-row')!
+    expect(row.querySelector('.tt-risk-title-input')!.getAttribute('tabindex')).toBeNull()
+    expect(row.querySelector('.tt-risk-chance-select')!.getAttribute('tabindex')).toBeNull()
+    expect((row.querySelector('.tt-risk-expand-btn') as HTMLElement).tabIndex).toBe(-1)
+    expect((row.querySelector('.tt-risk-close-btn') as HTMLElement).tabIndex).toBe(-1)
+    expect((row.querySelector('.tt-risk-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
 })

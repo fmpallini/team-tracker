@@ -15,6 +15,11 @@ import { el } from '../ui/dom'
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
 
+/** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
+function blurOnEnter(e: Event): void {
+  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
+}
+
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
 }
@@ -207,6 +212,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
     const textInput = el('input', {
       type: 'text', class: 'tt-action-text tt-input', placeholder: t(lc, 'action_text_placeholder'), value: item.text,
+      onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
         ctx.store.update((d) => {
@@ -218,6 +224,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
     const dueInput = el('input', {
       type: 'date', class: 'tt-action-due tt-input', value: item.dueDate ?? '',
+      onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
         ctx.store.update((d) => {
@@ -230,6 +237,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const assigneeInput = el('input', {
       type: 'text', class: 'tt-action-assignee tt-input', list: datalistId,
       placeholder: t(lc, 'action_assignee_placeholder'), value: item.assignee,
+      onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
         ctx.store.update((d) => {
@@ -239,15 +247,19 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       },
     })
 
+    // tabindex="-1" on the row's small icon actions: Tab should move cleanly
+    // between the row's data fields (checkbox/text/date/assignee) like a
+    // spreadsheet, not stop on every hover-revealed icon button in between —
+    // these stay reachable by click/hover, just excluded from the Tab order.
     const expandBtn = el(
       'button',
-      { class: 'tt-btn tt-action-expand-btn', type: 'button', title: t(lc, 'action_notes_toggle_title'), onclick: () => toggleExpand(item.id) },
+      { class: 'tt-btn tt-action-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'action_notes_toggle_title'), onclick: () => toggleExpand(item.id) },
       '📝'
     )
 
     const deleteBtn = el(
       'button',
-      { class: 'tt-btn tt-action-delete-btn', type: 'button', title: t(lc, 'action_delete_title'), onclick: () => requestDelete(item) },
+      { class: 'tt-btn tt-action-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'action_delete_title'), onclick: () => requestDelete(item) },
       '🗑'
     )
 

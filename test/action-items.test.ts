@@ -419,4 +419,30 @@ describe('renderActionItems', () => {
     render(container, wrongLoc, store, pm)
     expect(container.children).toHaveLength(0)
   })
+
+  test('Enter in the text field blurs it, committing via onchange', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'Old' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const textInput = container.querySelector('.tt-action-text') as HTMLInputElement
+    textInput.focus()
+    expect(document.activeElement).toBe(textInput)
+    textInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(document.activeElement).not.toBe(textInput)
+  })
+
+  test('Tab navigation skips the row\'s icon buttons, moving cleanly between data fields', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const row = container.querySelector('.tt-action-row')!
+    expect(row.querySelector('.tt-action-done')!.getAttribute('tabindex')).toBeNull()
+    expect(row.querySelector('.tt-action-text')!.getAttribute('tabindex')).toBeNull()
+    expect(row.querySelector('.tt-action-due')!.getAttribute('tabindex')).toBeNull()
+    expect(row.querySelector('.tt-action-assignee')!.getAttribute('tabindex')).toBeNull()
+    expect((row.querySelector('.tt-action-expand-btn') as HTMLElement).tabIndex).toBe(-1)
+    expect((row.querySelector('.tt-action-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
 })

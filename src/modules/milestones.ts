@@ -22,6 +22,11 @@ import { el } from '../ui/dom'
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
 
+/** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
+function blurOnEnter(e: Event): void {
+  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
+}
+
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
 }
@@ -362,6 +367,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   function renderRow(m: Milestone): HTMLElement {
     const dateInput = el('input', {
       type: 'date', class: 'tt-milestone-date-input tt-input', value: m.date,
+      onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
         if (value === '') return // type=date: browsers don't normally allow clearing to '', guard anyway
@@ -374,6 +380,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-milestone-title-input tt-input', placeholder: t(lc, 'milestone_title_placeholder'), value: m.title,
+      onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
         ctx.store.update((d) => {
@@ -394,15 +401,18 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       },
     })
 
+    // tabindex="-1": Tab should move cleanly between the row's data fields
+    // (date/title/done) like a spreadsheet, not stop on every hover-revealed
+    // icon button in between — still reachable by click/hover.
     const expandBtn = el(
       'button',
-      { class: 'tt-btn tt-milestone-expand-btn', type: 'button', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
+      { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
       '📝'
     )
 
     const deleteBtn = el(
       'button',
-      { class: 'tt-btn tt-milestone-delete-btn', type: 'button', title: t(lc, 'milestone_delete_title'), onclick: () => requestDelete(m) },
+      { class: 'tt-btn tt-milestone-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_delete_title'), onclick: () => requestDelete(m) },
       '🗑'
     )
 

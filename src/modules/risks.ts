@@ -22,6 +22,11 @@ import { el } from '../ui/dom'
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
 
+/** Enter confirms a row's text field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
+function blurOnEnter(e: Event): void {
+  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
+}
+
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
 }
@@ -252,6 +257,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-risk-title-input tt-input', placeholder: t(lc, 'risk_title_placeholder'), value: r.title,
+      onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
         ctx.store.update((d) => {
@@ -295,22 +301,25 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       }
     )
 
+    // tabindex="-1": Tab should move cleanly between the row's data fields
+    // (title/chance/impact/plan) like a spreadsheet, not stop on every
+    // hover-revealed icon button in between — still reachable by click/hover.
     const expanded = expandedId === r.id
     const expandBtn = el(
       'button',
-      { class: 'tt-btn tt-risk-expand-btn', type: 'button', title: t(lc, 'risk_followup_toggle_title'), onclick: () => toggleExpand(r.id) },
+      { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => toggleExpand(r.id) },
       expanded ? '▾' : '▸'
     )
 
     const closeBtn = el(
       'button',
-      { class: 'tt-btn tt-risk-close-btn', type: 'button', title: t(lc, 'risk_close_title'), onclick: () => setClosed(r.id, true) },
+      { class: 'tt-btn tt-risk-close-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_close_title'), onclick: () => setClosed(r.id, true) },
       '✔️'
     )
 
     const deleteBtn = el(
       'button',
-      { class: 'tt-btn tt-risk-delete-btn', type: 'button', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
+      { class: 'tt-btn tt-risk-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
       '🗑'
     )
 

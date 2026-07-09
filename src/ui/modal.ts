@@ -31,7 +31,16 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') close()
+    if (e.key === 'Escape') { close(); return }
+    // Enter in a text field submits the modal via its primary action —
+    // mirrors native <form> submit-on-Enter so every showModal() caller
+    // (team/person add-edit, etc.) gets it for free instead of each needing
+    // its own keydown wiring (promptPassword already has its own, richer
+    // version of this for its two-field confirm flow).
+    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+      const primary = opts.buttons.find((b) => b.primary)
+      primary?.onClick()
+    }
   }
 
   const buttonEls: HTMLButtonElement[] = opts.buttons.map((b) => {

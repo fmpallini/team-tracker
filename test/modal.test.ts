@@ -28,6 +28,28 @@ test('showModal renders title, body and buttons; close removes overlay', () => {
   expect(overlays().length).toBe(0)
 })
 
+test('Enter in a text input inside the modal triggers the primary button', () => {
+  const input = el('input', { type: 'text' }) as HTMLInputElement
+  document.body.appendChild(el('div', {})) // unrelated node, sanity noise
+  let clicked = false
+  showModal({
+    title: 'T',
+    body: el('div', {}, input),
+    buttons: [
+      { label: 'Cancel', onClick: () => {} },
+      { label: 'OK', primary: true, onClick: () => { clicked = true } },
+    ],
+  })
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  expect(clicked).toBe(true)
+})
+
+test('Enter does not trigger the primary button when there is none', () => {
+  const input = el('input', { type: 'text' }) as HTMLInputElement
+  showModal({ title: 'T', body: el('div', {}, input), buttons: [{ label: 'Cancel', onClick: () => {} }] })
+  expect(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))).not.toThrow()
+})
+
 test('showModal closes on Escape', () => {
   showModal({ title: 'T', body: el('div'), buttons: [] })
   expect(overlays().length).toBe(1)
