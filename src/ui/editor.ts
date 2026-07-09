@@ -278,6 +278,50 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.dispatchEvent(new CustomEvent(SLASH_TRIGGER_EVENT, { detail: range, bubbles: true }))
   }
 
+  /** Copies the editor's current content to the clipboard as rich (formatted) content — selects the whole editor, lets the browser's native copy write both text/html and text/plain flavors, then clears the selection so it doesn't visually linger. */
+  function copyFormatted(): void {
+    const range = document.createRange()
+    range.selectNodeContents(editorEl)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+    document.execCommand('copy', false, undefined)
+    sel?.removeAllRanges()
+  }
+
+  /** Fallback for browsers/contexts (e.g. file:// with no Clipboard API) where navigator.clipboard is unavailable — the classic hidden-textarea + execCommand('copy') technique. */
+  function copyViaTextarea(text: string): void {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy', false, undefined)
+    document.body.removeChild(ta)
+  }
+
+  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show). */
+  function copyPlain(): void {
+    const text = editorEl.textContent ?? ''
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
+    } else {
+      copyViaTextarea(text)
+    }
+  }
+
+  /** Opens a print-only window with a clone of the editor content and triggers the browser's print dialog. Content is inserted via appendChild(cloneNode), never through document.write, since editor content — while fully trusted (see onPaste: paste is forced to plain text, and all rich formatting goes through execCommand) — has no reason to ever pass through an HTML-string sink. */
+  function printContent(): void {
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<!doctype html><html><head><title>Team Tracker</title></head><body></body></html>')
+    w.document.close()
+    w.document.body.appendChild(editorEl.cloneNode(true))
+    w.focus()
+    w.print()
+  }
+
   // --- event handlers --------------------------------------------------------
 
   function onInput(): void {
@@ -363,6 +407,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => exec('formatBlock', '<p>')),
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => exec('removeFormat')),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
+    toolbarButton('🗐', t(locale, 'editor_copy_formatted_title'), () => copyFormatted()),
+    toolbarButton('📃', t(locale, 'editor_copy_plain_title'), () => copyPlain()),
+    toolbarButton('🖨️', t(locale, 'editor_print_title'), () => printContent()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )

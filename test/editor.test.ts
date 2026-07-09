@@ -178,6 +178,75 @@ describe('toolbar', () => {
     expect(buttons.find((b) => b.title === t('en-US', 'editor_clear_format_title'))).not.toBeUndefined()
     editor.destroy()
   })
+
+  function toolbarButton(editor: Editor, title: string): HTMLButtonElement {
+    return Array.from(editor.root.querySelectorAll('button')).find((b) => b.title === title) as HTMLButtonElement
+  }
+
+  test('copy-formatted button selects the editor content and copies it', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('**bold** text')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    toolbarButton(editor, t('en-US', 'editor_copy_formatted_title')).click()
+
+    expect(execSpy).toHaveBeenCalledWith('copy', false, undefined)
+    const sel = window.getSelection()!
+    expect(sel.rangeCount).toBe(0) // selection cleared after copying, so it doesn't visually linger
+    editor.destroy()
+  })
+
+  test('copy-plain button copies textContent via the Clipboard API when available', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('**bold** text')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    toolbarButton(editor, t('en-US', 'editor_copy_plain_title')).click()
+
+    expect(writeText).toHaveBeenCalledWith('bold text')
+    editor.destroy()
+    Reflect.deleteProperty(navigator, 'clipboard')
+  })
+
+  test('copy-plain button falls back to a hidden textarea + execCommand when the Clipboard API is unavailable', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('plain content')
+    Reflect.deleteProperty(navigator, 'clipboard')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    toolbarButton(editor, t('en-US', 'editor_copy_plain_title')).click()
+
+    expect(execSpy).toHaveBeenCalledWith('copy', false, undefined)
+    editor.destroy()
+  })
+
+  test('print button opens a print window and appends a clone of the editor content via DOM APIs (not document.write with content)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('printable note')
+
+    const printSpy = vi.fn()
+    const bodyAppend = vi.fn()
+    const fakeWin = {
+      document: { write: vi.fn(), close: vi.fn(), body: { appendChild: bodyAppend } },
+      focus: vi.fn(),
+      print: printSpy,
+    } as unknown as Window
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin)
+
+    toolbarButton(editor, t('en-US', 'editor_print_title')).click()
+
+    expect(openSpy).toHaveBeenCalled()
+    expect(bodyAppend).toHaveBeenCalledOnce()
+    const appended = bodyAppend.mock.calls[0]![0] as HTMLElement
+    expect(appended.textContent).toContain('printable note')
+    expect(printSpy).toHaveBeenCalled()
+    editor.destroy()
+  })
 })
 
 describe('block-prefix auto-format on typing', () => {
