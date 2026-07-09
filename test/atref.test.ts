@@ -51,6 +51,25 @@ describe('filterAtItems', () => {
     expect(filterAtItems(people, '99/99/9999', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
     expect(filterAtItems(people, '02/07', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
   })
+
+  function isoShift(days: number): string {
+    const d = new Date(); d.setDate(d.getDate() + days)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  test('offers relative days in pt-BR', () => {
+    expect(filterAtItems([], 'hoje', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(0) })
+    expect(filterAtItems([], 'ont', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(-1) })
+    expect(filterAtItems([], 'amanh', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(1) })
+  })
+
+  test('offers relative days in en-US', () => {
+    expect(filterAtItems([], 'tomo', 'en-US')).toContainEqual({ kind: 'day', date: isoShift(1) })
+  })
+
+  test('does not offer relative days on empty input', () => {
+    expect(filterAtItems([], '', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
+  })
 })
 
 describe('attachAtAutocomplete', () => {

@@ -17,10 +17,22 @@ export type AtItem =
   | { kind: 'person'; id: string; name: string }
   | { kind: 'day'; date: string }
 
+const RELATIVE_DAYS: Record<Locale, [string, number][]> = {
+  'pt-BR': [['hoje', 0], ['ontem', -1], ['amanhã', 1]],
+  'en-US': [['today', 0], ['yesterday', -1], ['tomorrow', 1]],
+}
+
+function isoWithOffset(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 /**
  * Pure, unit-testable filter: substring match (accent/case-insensitive, via
- * core/search's normalize) on people names, plus a "go to day" item appended
- * when `typed` parses as a *complete* date in the locale's format.
+ * core/search's normalize) on people names, plus relative-day words
+ * (hoje/ontem/amanhã, today/yesterday/tomorrow) and a "go to day" item
+ * appended when `typed` parses as a *complete* date in the locale's format.
  */
 export function filterAtItems(people: AtPerson[], typed: string, locale: Locale): AtItem[] {
   const trimmed = typed.trim()
@@ -28,6 +40,11 @@ export function filterAtItems(people: AtPerson[], typed: string, locale: Locale)
   const items: AtItem[] = people
     .filter((p) => normalize(p.name).includes(q))
     .map((p): AtItem => ({ kind: 'person', id: p.id, name: p.name }))
+  if (trimmed !== '') {
+    for (const [word, offset] of RELATIVE_DAYS[locale]) {
+      if (normalize(word).startsWith(q)) items.push({ kind: 'day', date: isoWithOffset(offset) })
+    }
+  }
   const iso = parseLocaleDate(trimmed, locale)
   if (iso) items.push({ kind: 'day', date: iso })
   return items
