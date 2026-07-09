@@ -225,10 +225,39 @@ test('clicking a result opens it via pm.openInFocused and closes the dropdown', 
   vi.advanceTimersByTime(200)
 
   const row = document.querySelector('.tt-search-row') as HTMLElement
-  row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
   expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } }])
   expect(isOpen()).toBe(false)
+})
+
+test('mouse selection then click commits the result (hover must not rebuild the row out from under the click)', () => {
+  const team: Team = {
+    id: 'T1', name: 'Team One', emoji: '🚀',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-01': 'alpha note one', '2026-07-02': 'alpha note two' },
+  }
+  const store = buildStore([team], 'T1')
+  const pm = fakePM()
+  const { input } = mount(store, pm)
+
+  type(input, 'alpha')
+  vi.advanceTimersByTime(200)
+
+  const rows = document.querySelectorAll('.tt-search-row')
+  expect(rows).toHaveLength(2)
+  const targetRow = rows[1] as HTMLElement
+
+  targetRow.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+  // The same element must still be in the document — a rebuild-on-hover
+  // would replace it, and the subsequent mousedown/click below would then
+  // land on nothing (or the wrong row).
+  expect(targetRow.isConnected).toBe(true)
+
+  targetRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+  targetRow.click()
+
+  expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } }])
 })
 
 test('does not accumulate document-level listeners across repeated open/close cycles', () => {

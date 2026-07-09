@@ -118,10 +118,10 @@ export function mountSearch(shell: Shell, store: Store, pm: PaneManager, locale:
         'div',
         {
           class: 'tt-search-row' + (i === selected ? ' selected' : ''),
-          onclick: () => commit(result),
+          onmousedown: (e: Event) => { e.preventDefault(); commit(result) },
           onmouseenter: () => {
             selected = i
-            renderList()
+            listEl.querySelectorAll('.tt-search-row').forEach((n, j) => n.classList.toggle('selected', j === selected))
           },
         },
         main,
