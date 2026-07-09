@@ -125,7 +125,21 @@ export function attachTemplatePicker(editor: Editor, opts: {
     // always do) — guard so tests can exercise the rest of the dropdown
     // lifecycle without a layout-capable DOM.
     if (typeof anchorRange.getBoundingClientRect !== 'function') return
-    const rect = anchorRange.getBoundingClientRect()
+    let rect = anchorRange.getBoundingClientRect()
+    // A Range positioned at an element-child-index boundary rather than a
+    // text-node offset (e.g. the 📋 toolbar button's fallback range in
+    // editor.ts's openTemplatePicker, built via selectNodeContents+collapse
+    // on a block with no live text selection) can report a degenerate
+    // all-zero rect in real browsers instead of the actual caret position —
+    // without this fallback the popup lands at the viewport's (0,0) instead
+    // of near the cursor. Fall back to the trigger block's own element rect.
+    if (rect.width === 0 && rect.height === 0 && rect.top === 0 && rect.left === 0) {
+      const container = anchorRange.startContainer
+      const blockEl = container instanceof Element ? container : container.parentElement
+      if (blockEl && typeof blockEl.getBoundingClientRect === 'function') {
+        rect = blockEl.getBoundingClientRect()
+      }
+    }
     overlay.style.left = `${rect.left}px`
     overlay.style.top = `${rect.bottom}px`
   }

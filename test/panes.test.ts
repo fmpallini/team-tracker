@@ -168,14 +168,29 @@ test('navigateFocusedHistory steps the currently focused pane and re-renders', (
   expect(store.doc.nav.panes[0].index).toBe(0)
 })
 
-test('shows first-team CTA when doc has no teams', () => {
+test('shows first-team CTA when doc has no teams, with no pane shell (bars/split) visible', () => {
   setup() // doc.teams = [] by default (createEmptyDocument)
+  const grid = document.querySelector('.tt-panes-grid') as HTMLElement
+  expect(grid.style.display).toBe('none')
   const cta = document.querySelector('.tt-pane-cta button')
   expect(cta).not.toBeNull()
+  expect(cta!.closest('.tt-pane-body')).toBeNull()
   let fired = false
   document.addEventListener('tt-add-team-request', () => { fired = true }, { once: true })
   ;(cta as HTMLButtonElement).click()
   expect(fired).toBe(true)
+})
+
+test('creating the first team hides the CTA and shows the pane shell', () => {
+  const { store, pm } = setup()
+  store.update((d) => {
+    d.teams.push({ id: 'T1', name: 'T1', emoji: '🚀', stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {} })
+  })
+  pm.renderAll()
+  const grid = document.querySelector('.tt-panes-grid') as HTMLElement
+  expect(grid.style.display).not.toBe('none')
+  const noTeams = document.querySelector('.tt-no-teams') as HTMLElement
+  expect(noTeams.style.display).toBe('none')
 })
 
 test('filterModuleItems matches substrings case- and accent-insensitively (palette filter)', () => {

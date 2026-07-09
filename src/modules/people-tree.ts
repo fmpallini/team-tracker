@@ -246,7 +246,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
       const box = el(
         'div',
-        { class: 'tt-org-box', draggable: 'true', 'data-person-id': person.id },
+        { class: 'tt-org-box', draggable: 'true', 'data-person-id': person.id, title: t(lc, 'person_box_hint') },
         el('div', { class: 'tt-org-name' }, person.name),
         el('div', { class: 'tt-org-role' }, person.role),
         actions

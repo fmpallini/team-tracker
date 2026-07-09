@@ -37,6 +37,7 @@ describe('attachTemplatePicker', () => {
     editor?.destroy()
     editor = null
     document.body.innerHTML = ''
+    delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect
   })
 
   function setup(templates: Template[] = TEMPLATES, locale: Locale = 'en-US'): { editorEl: HTMLElement } {
@@ -200,6 +201,27 @@ describe('attachTemplatePicker', () => {
 
     expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
     expect(editor!.getMd()).toContain('Decision')
+  })
+
+  test('falls back to the trigger block\'s own rect when the Range has no precise caret rect (real-browser element-boundary Range quirk)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '/')
+
+    // jsdom doesn't implement Range.getBoundingClientRect at all; stub it to
+    // simulate the real-browser scenario this guards against — a Range
+    // positioned at an element-child-index boundary (e.g. the 📋 toolbar
+    // button's fallback range on a block with no live text selection)
+    // returns a degenerate all-zero rect instead of the real caret position,
+    // which without a fallback puts the popup at the viewport's (0,0).
+    Range.prototype.getBoundingClientRect = vi.fn().mockReturnValue({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 })
+    const blockRect = { left: 42, top: 100, right: 200, bottom: 130, width: 158, height: 30 }
+    editorEl.firstElementChild!.getBoundingClientRect = vi.fn().mockReturnValue(blockRect)
+
+    fireInput(editorEl)
+
+    const overlay = document.querySelector('.tt-atref-dropdown') as HTMLElement
+    expect(overlay.style.left).toBe('42px')
+    expect(overlay.style.top).toBe('130px')
   })
 
   test('no templates for the current scope shows an empty-state row instead of a blank list', () => {

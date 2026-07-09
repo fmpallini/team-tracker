@@ -178,8 +178,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function applyBlockFormat(type: BlockPrefixMatch['type']): void {
     editorEl.focus()
-    if (type === 'ul') document.execCommand('insertUnorderedList')
-    else if (type === 'ol') document.execCommand('insertOrderedList')
+    if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
+    else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
     else document.execCommand('formatBlock', false, `<${type}>`)
   }
 
@@ -209,6 +209,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (blockMatch) {
         const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
         range.deleteContents()
+        // insertUnorderedList/insertOrderedList are notoriously unreliable
+        // in real browsers when invoked against a selection that wasn't
+        // explicitly (re-)set via the Selection API right beforehand —
+        // deleteContents() mutates the DOM through the Range object
+        // directly, which isn't guaranteed to leave window.getSelection()
+        // itself "settled" at the resulting collapsed position in every
+        // engine. formatBlock (used for headings) tolerates this far
+        // better, which is why only list auto-format broke in practice.
+        const sel = window.getSelection()
+        if (sel) { sel.removeAllRanges(); sel.addRange(range) }
         applyBlockFormat(blockMatch.type)
         return
       }

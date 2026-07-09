@@ -195,6 +195,14 @@ describe('renderPeopleTree', () => {
     expect(box.querySelector('.tt-org-role')!.textContent).toBe('PM')
   })
 
+  test('box has a hover hint telling the user to double-click to open notes', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    const box = boxes(container)[0]!
+    expect(box.title).toBe('Double-click to open person notes')
+  })
+
   test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
     const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
     const { container, store, pm, loc } = setup(team, 'members')

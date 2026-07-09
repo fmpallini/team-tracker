@@ -223,13 +223,13 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
           return
         }
         const emoji = emojiInput.value.trim() || '🙂'
+        const newTeamId = crypto.randomUUID()
         store.update((d) => {
-          const team = emptyTeam(crypto.randomUUID(), name, emoji)
-          d.teams.push(team)
-          if (d.nav.activeTeamId === null) d.nav.activeTeamId = team.id
+          d.teams.push(emptyTeam(newTeamId, name, emoji))
         })
         picker.dispose()
         handle.close()
+        actions.selectTeam(newTeamId)
       },
     }
     handle = showModal({ title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn] })

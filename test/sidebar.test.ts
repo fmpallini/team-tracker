@@ -135,6 +135,22 @@ test('+ modal requires a name', () => {
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
 })
 
+test('adding a team while another already exists still auto-selects the new team', () => {
+  const { store, selectTeam } = setup()
+  addTeam(store, 'Alpha')
+  store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+  clickByText('➕')
+  const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
+  nameInput.value = 'Beta'
+  nameInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+
+  const newTeam = store.doc.teams.find((t) => t.name === 'Beta')!
+  expect(selectTeam).toHaveBeenCalledWith(newTeam.id)
+  expect(store.doc.nav.activeTeamId).toBe(newTeam.id)
+})
+
 test('pencil icon opens edit modal to rename/re-emoji a team', () => {
   const { store } = setup()
   addTeam(store, 'Alpha', '🅰️')

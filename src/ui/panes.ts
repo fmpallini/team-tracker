@@ -165,8 +165,25 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   })
 
   const gridEl = el('div', { class: 'tt-panes-grid' }, paneEls[0], dividerEl, paneEls[1])
+
+  // No teams yet: the pane shell (bars, borders, split divider) has nothing
+  // meaningful to show and just adds visual noise around the CTA — hidden in
+  // layout() in favor of this single, screen-centered call to action. Text
+  // nodes are re-synced (not rebuilt) in layout() so a locale change picks
+  // up the new strings without needing its own wiring here.
+  const noTeamsTitleEl = el('p', {})
+  const noTeamsBtn = el(
+    'button',
+    {
+      class: 'tt-btn tt-btn-primary',
+      type: 'button',
+      onclick: () => document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT)),
+    }
+  )
+  const noTeamsEl = el('div', { class: 'tt-no-teams' }, el('div', { class: 'tt-pane-cta' }, noTeamsTitleEl, noTeamsBtn))
+
   shell.panesRoot.innerHTML = ''
-  shell.panesRoot.appendChild(gridEl)
+  shell.panesRoot.append(gridEl, noTeamsEl)
 
   // Closes any open module dropdown when clicking outside of it.
   document.addEventListener('click', (e) => {
@@ -192,6 +209,14 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
 
   function layout(): void {
     const nav = store.doc.nav
+    const lc = localeNow()
+    const hasTeams = store.doc.teams.length > 0
+    gridEl.style.display = hasTeams ? '' : 'none'
+    noTeamsEl.style.display = hasTeams ? 'none' : ''
+    if (!hasTeams) {
+      noTeamsTitleEl.textContent = t(lc, 'empty_no_teams_title')
+      noTeamsBtn.textContent = t(lc, 'empty_no_teams_btn')
+    }
     gridEl.dataset.split = String(nav.split)
     paneEls[1].style.display = nav.split ? '' : 'none'
     dividerEl.style.display = nav.split ? '' : 'none'
@@ -377,28 +402,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     const container = bodyEls[idx]
     container.innerHTML = ''
     const lc = localeNow()
-    // Task 3: no teams yet — offer a CTA to create the first one, before the
-    // generic "no module open" empty branch below (which would otherwise
-    // show first and give the user no path forward).
-    if (store.doc.teams.length === 0) {
-      container.appendChild(
-        el(
-          'div',
-          { class: 'tt-pane-cta' },
-          el('p', {}, t(lc, 'empty_no_teams_title')),
-          el(
-            'button',
-            {
-              class: 'tt-btn tt-btn-primary',
-              type: 'button',
-              onclick: () => document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT)),
-            },
-            t(lc, 'empty_no_teams_btn')
-          )
-        )
-      )
-      return
-    }
     const loc = currentLoc(store.doc.nav.panes[idx])
     if (!loc) {
       container.appendChild(el('div', { class: 'tt-pane-empty' }, t(lc, 'pane_empty')))

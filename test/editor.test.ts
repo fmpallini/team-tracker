@@ -180,6 +180,58 @@ describe('toolbar', () => {
   })
 })
 
+describe('block-prefix auto-format on typing', () => {
+  function setBlockText(editorEl: HTMLElement, text: string): void {
+    editorEl.innerHTML = `<div>${text}</div>`
+    const textNode = editorEl.firstChild!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('typing "# " auto-converts the block to h1 (control case)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '# ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    editor.destroy()
+  })
+
+  test('typing "- " auto-converts the block to an unordered list', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '- ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(execSpy).toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    editor.destroy()
+  })
+
+  test('typing "1. " auto-converts the block to an ordered list', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '1. ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(execSpy).toHaveBeenCalledWith('insertOrderedList', false, undefined)
+    editor.destroy()
+  })
+})
+
 describe('inline auto-format guards', () => {
   test('skips auto-format when the matched span contains an embedded element (e.g. ref chip)', () => {
     const hooks = makeHooks()
