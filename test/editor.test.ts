@@ -1,5 +1,6 @@
 import { createEditor, detectInlinePattern, detectBlockPrefix, type Editor, type EditorHooks } from '../src/ui/editor'
 import type { RefInfo } from '../src/core/markdown'
+import { t } from '../src/core/i18n'
 
 function makeHooks(): EditorHooks & { changes: number; refs: RefInfo['target'][]; atRanges: Range[]; slashRanges: Range[] } {
   return {
@@ -166,6 +167,15 @@ describe('toolbar', () => {
     const helpBtn = Array.from(editor.root.querySelectorAll('button')).find((b) => b.textContent === '?')!
     helpBtn.click()
     expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    editor.destroy()
+  })
+
+  test('has paragraph and clear-formatting buttons', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const buttons = Array.from(editor.root.querySelectorAll('button'))
+    expect(buttons.find((b) => b.title === t('en-US', 'editor_paragraph_title'))).not.toBeUndefined()
+    expect(buttons.find((b) => b.title === t('en-US', 'editor_clear_format_title'))).not.toBeUndefined()
     editor.destroy()
   })
 })

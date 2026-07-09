@@ -350,6 +350,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => exec('formatBlock', '<h1>')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => exec('formatBlock', '<h2>')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => exec('formatBlock', '<h3>')),
+    toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => exec('formatBlock', '<p>')),
+    toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => exec('removeFormat')),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
