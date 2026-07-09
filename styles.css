@@ -284,9 +284,10 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-calendar-day:hover { background: rgba(37, 99, 235, .1); }
 .tt-calendar-day-blank { cursor: default; visibility: hidden; }
-.tt-calendar-day-today { outline: 2px solid var(--accent); outline-offset: -2px; }
-.tt-calendar-day-has-note { background: rgba(37, 99, 235, .2); }
-.tt-calendar-day-selected { font-weight: 700; }
+.tt-calendar-day-today { box-shadow: inset 0 0 0 2px var(--accent); }
+.tt-calendar-day-has-note { background: rgba(37, 99, 235, .15); }
+.tt-calendar-day-selected { background: var(--accent); color: #fff; font-weight: 700; }
+[data-theme="dark"] .tt-calendar-day-selected { color: var(--bg); }
 .tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
 
 /* People tree module (stakeholders / members) — org-chart layout */
