@@ -314,6 +314,22 @@ describe('renderRisks', () => {
     expect(store.doc.teams[0]!.risks).toHaveLength(1)
   })
 
+  test('close button moves risk to the closed section; reopen brings it back', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-risk-close-btn') as HTMLButtonElement).click()
+    expect(store.doc.teams[0]!.risks[0]!.closed).toBe(true)
+    expect(container.querySelectorAll('.tt-risk-list .tt-risk-row')).toHaveLength(0)
+    expect(container.querySelectorAll('.tt-risks-closed .tt-risk-row')).toHaveLength(1)
+
+    ;(container.querySelector('.tt-risk-reopen-btn') as HTMLButtonElement).click()
+    expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
+    expect(container.querySelectorAll('.tt-risk-list .tt-risk-row')).toHaveLength(1)
+    expect(container.querySelectorAll('.tt-risks-closed .tt-risk-row')).toHaveLength(0)
+  })
+
   test('clicking the "Exposição" header cycles display order (unsorted -> desc -> asc -> unsorted) without touching stored .order', () => {
     const team = makeTeam({
       risks: [

@@ -173,6 +173,13 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     handle = showModal({ title: t(lc, 'risk_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
+  function setClosed(id: string, closed: boolean): void {
+    ctx.store.update((d) => {
+      const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
+      if (found) found.closed = closed
+    })
+  }
+
   function requestDelete(r: Risk): void {
     if (r.title.trim() === '') {
       removeRisk(r.id) // empty titles carry no meaningful content to lose — delete silently
@@ -295,6 +302,12 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       expanded ? '▾' : '▸'
     )
 
+    const closeBtn = el(
+      'button',
+      { class: 'tt-btn tt-risk-close-btn', type: 'button', title: t(lc, 'risk_close_title'), onclick: () => setClosed(r.id, true) },
+      '✔️'
+    )
+
     const deleteBtn = el(
       'button',
       { class: 'tt-btn tt-risk-delete-btn', type: 'button', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
@@ -304,7 +317,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     const row = el(
       'div',
       { class: 'tt-risk-row', draggable: sortMode === 'none' ? 'true' : 'false', 'data-risk-id': r.id },
-      titleInput, chanceSelect, impactSelect, exposureBadge, planSelect, expandBtn, deleteBtn
+      titleInput, chanceSelect, impactSelect, exposureBadge, planSelect, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
 
@@ -352,7 +365,25 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     return row
   }
 
+  /** Condensed row for the collapsible closed-risks section: title, computed exposure and a reopen button — the full editable controls (chance/impact/plan/follow-up) aren't relevant once a risk is closed. */
+  function renderClosedRow(r: Risk): HTMLElement {
+    const exposure = computeExposure(r.chance, r.impact)
+    const reopenBtn = el(
+      'button',
+      { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
+      '♻️'
+    )
+    return el(
+      'div',
+      { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id },
+      el('span', { class: 'tt-risk-title-text' }, r.title),
+      el('span', { class: 'tt-risk-exposure-badge' }, String(exposure)),
+      reopenBtn
+    )
+  }
+
   const listEl = el('div', { class: 'tt-risk-list' })
+  const closedEl = el('details', { class: 'tt-risks-closed' })
 
   const sortIndicatorEl = el('span', { class: 'tt-risk-sort-indicator' })
   const exposureHeaderBtn = el(
@@ -383,16 +414,23 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   function renderAll(): void {
     disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
     listEl.innerHTML = ''
-    const list = sortRisksForDisplay(risks(), sortMode)
-    if (list.length === 0) {
+    const all = risks()
+    const open = sortRisksForDisplay(all.filter((r) => !r.closed), sortMode)
+    const closed = all.filter((r) => r.closed).sort((a, b) => a.order - b.order)
+    if (open.length === 0) {
       listEl.appendChild(el('div', { class: 'tt-risk-empty' }, t(lc, 'risk_empty')))
     } else {
-      for (const r of list) {
+      for (const r of open) {
         listEl.appendChild(renderRow(r))
         if (expandedId === r.id) listEl.appendChild(renderFollowupRow(r))
       }
     }
     updateSortIndicator()
+
+    closedEl.innerHTML = ''
+    closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) })))
+    closed.forEach((r) => closedEl.appendChild(renderClosedRow(r)))
+    closedEl.classList.toggle('tt-risks-closed-empty', closed.length === 0)
 
     if (focusRiskId) {
       listEl.querySelector<HTMLInputElement>(`[data-risk-id="${focusRiskId}"] .tt-risk-title-input`)?.focus()
@@ -454,7 +492,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     renderAll()
   })
 
-  container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl))
+  container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
 
   disposers.set(container, () => {
