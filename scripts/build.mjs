@@ -22,7 +22,7 @@ const page = (js) => tpl.replace('/*__CSS__*/', () => css).replace('/*__JS__*/',
 const withPwaHead = (html) =>
   html.replace(
     '</head>',
-    '<link rel="manifest" href="manifest.json">\n<meta name="theme-color" content="#2563eb">\n</head>'
+    '<link rel="manifest" href="manifest.json">\n<meta name="theme-color" content="#3b5a6b">\n</head>'
   )
 
 mkdirSync('dist/pwa', { recursive: true })
