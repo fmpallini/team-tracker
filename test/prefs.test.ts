@@ -391,6 +391,17 @@ test('about tab shows app name, versions, and file info from appCtl', () => {
   expect(text).toContain('team-tracker.tmv')
 })
 
+test('about tab has a GitHub source link', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('About')
+
+  const link = document.querySelector('.tt-about-github') as HTMLAnchorElement
+  expect(link).not.toBeNull()
+  expect(link.href).toBe('https://github.com/fmpallini/team-tracker')
+  expect(link.target).toBe('_blank')
+})
+
 test('about tab reflects a mismatched file schema version from appCtl', () => {
   const { store, shell, appCtl } = setup()
   appCtl.fileSchemaVersion = 0

@@ -472,7 +472,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       { class: 'tt-help-table' },
       el('tbody', {}, ...rows.map(([label, value]) => el('tr', {}, el('td', {}, label), el('td', {}, value))))
     )
-    container.append(el('h3', { class: 'tt-help-heading' }, t(locale, 'app_name')), table)
+    const githubLink = el(
+      'a',
+      { class: 'tt-about-github', href: 'https://github.com/fmpallini/team-tracker', target: '_blank', rel: 'noopener' },
+      t(locale, 'about_github_link')
+    )
+    container.append(el('h3', { class: 'tt-help-heading' }, t(locale, 'app_name')), table, githubLink)
   }
 
   // --- Tab strip / dispatch ----------------------------------------------
