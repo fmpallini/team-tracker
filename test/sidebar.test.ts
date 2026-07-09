@@ -69,6 +69,18 @@ test('renders teams in array order with number, emoji and name', () => {
   expect(rows[1]!.querySelector('.tt-team-num')?.textContent).toBe('2')
 })
 
+test('first 9 teams get Alt+N hotkey badge, 10th does not', () => {
+  const { store } = setup()
+  for (let i = 1; i <= 10; i++) addTeam(store, `Team ${i}`)
+
+  const rows = items()
+  const badges = document.querySelectorAll('.tt-team-hotkey')
+  expect(badges).toHaveLength(9)
+  expect(badges[0]!.textContent).toBe('Alt+1')
+  expect(badges[1]!.textContent).toBe('Alt+2')
+  expect(rows[9]!.querySelector('.tt-team-hotkey')).toBeNull()
+})
+
 test('active team is highlighted based on nav.activeTeamId', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')

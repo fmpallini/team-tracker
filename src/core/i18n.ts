@@ -236,6 +236,7 @@ const pt = {
   emoji_cat_nature: 'Natureza',
   emoji_cat_objects: 'Objetos',
   emoji_os_hint: 'Dica: Win+. (Windows) ou Cmd+Ctrl+Espaço (macOS) abre o seletor do sistema em qualquer campo',
+  team_alt_hint: 'Atalho: Alt+número',
 } as const
 
 export type MsgKey = keyof typeof pt
@@ -475,6 +476,7 @@ const en: Record<MsgKey, string> = {
   emoji_cat_nature: 'Nature',
   emoji_cat_objects: 'Objects',
   emoji_os_hint: 'Tip: Win+. (Windows) or Cmd+Ctrl+Space (macOS) opens the system picker in any field',
+  team_alt_hint: 'Shortcut: Alt+number',
 }
 
 const dicts: Record<Locale, Record<MsgKey, string>> = {

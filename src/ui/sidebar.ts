@@ -135,10 +135,12 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
         class: 'tt-team-item' + (isActive ? ' active' : ''),
         draggable: 'true',
         'data-index': String(index),
+        ...(index < 9 ? { title: t(locale(), 'team_alt_hint') } : {}),
       })
       const numEl = el('span', { class: 'tt-team-num' }, String(index + 1))
       const emojiEl = el('span', { class: 'tt-team-emoji' }, team.emoji)
       const nameEl = el('span', { class: 'tt-team-name' }, team.name)
+      const hotkeyEl = index < 9 ? el('span', { class: 'tt-team-hotkey' }, `Alt+${index + 1}`) : null
       const editBtn = el(
         'button',
         {
@@ -152,7 +154,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
         },
         '✎'
       )
-      item.append(numEl, emojiEl, nameEl, editBtn)
+      item.append(numEl, emojiEl, nameEl, ...(hotkeyEl ? [hotkeyEl] : []), editBtn)
 
       item.addEventListener('click', () => {
         actions.selectTeam(team.id)

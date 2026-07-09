@@ -115,6 +115,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
 .tt-team-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-team-hotkey { color: var(--muted); font-size: .7rem; text-align: right; flex: none; }
 .tt-team-edit-btn { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-team-add-btn { width: calc(100% - 1rem); margin: .5rem; }
