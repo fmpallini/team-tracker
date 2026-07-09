@@ -4,6 +4,8 @@ import { createEmptyDocument } from '../src/core/document'
 import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso } from '../src/core/i18n'
+import { currentLoc } from '../src/core/nav'
+import { renderDailyNotes } from '../src/modules/daily-notes'
 import type { Loc } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
@@ -68,6 +70,31 @@ test('teamHasHistory reflects whether any pane history contains the team', () =>
   expect(teamHasHistory(store, 'T1')).toBe(false)
   openTeamDefaultLayout(pm, store, 'T1')
   expect(teamHasHistory(store, 'T1')).toBe(true)
+})
+
+test('daily-notes calendar click in each split pane sets that pane\'s own day, independently of the other pane', () => {
+  const { store, pm } = setup()
+  pm.registerModule('daily', renderDailyNotes)
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  store.updateNav((d) => { d.nav.split = true })
+
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } })
+
+  function clickDay(paneIdx: 0 | 1, day: string): void {
+    const btn = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(`[data-pane-idx="${paneIdx}"] .tt-calendar-day:not(.tt-calendar-day-blank)`)
+    ).find((b) => b.firstChild?.textContent === day)
+    if (!btn) throw new Error(`day "${day}" not found in pane ${paneIdx}`)
+    btn.click()
+  }
+
+  clickDay(0, '15')
+  clickDay(1, '20')
+
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual({ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-15' } })
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual({ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-20' } })
 })
 
 test('openInPane resolves conflicts by focusing the other pane and shows a toast', () => {
