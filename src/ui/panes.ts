@@ -117,6 +117,17 @@ export function navigateFocusedHistory(pm: PaneManager, store: Store, dir: -1 | 
   }
 }
 
+export function teamHasHistory(store: Store, teamId: string): boolean {
+  return store.doc.nav.panes.some((p) => p.history.some((loc) => loc.teamId === teamId))
+}
+
+/** Task 5.6: first-ever open of a team lands in a split view — daily today on the left, members on the right — instead of the last-used single-pane layout. */
+export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: string): void {
+  store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0 })
+  pm.openInPane(1, { teamId, ref: { kind: 'members' } })
+  pm.openInPane(0, { teamId, ref: { kind: 'daily', date: todayIso() } })
+}
+
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]

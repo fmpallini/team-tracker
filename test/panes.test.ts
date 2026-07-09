@@ -1,8 +1,9 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
+import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
@@ -48,6 +49,25 @@ function paneBtn(idx: 0 | 1, cls: string): HTMLButtonElement {
 
 afterEach(() => {
   document.body.innerHTML = ''
+})
+
+test('first open of a team lands in split: daily today left, members right', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  openTeamDefaultLayout(pm, store, 'T1')
+  expect(store.doc.nav.split).toBe(true)
+  const left = store.doc.nav.panes[0].history.at(-1)!
+  const right = store.doc.nav.panes[1].history.at(-1)!
+  expect(left.ref).toEqual({ kind: 'daily', date: todayIso() })
+  expect(right.ref).toEqual({ kind: 'members' })
+})
+
+test('teamHasHistory reflects whether any pane history contains the team', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  expect(teamHasHistory(store, 'T1')).toBe(false)
+  openTeamDefaultLayout(pm, store, 'T1')
+  expect(teamHasHistory(store, 'T1')).toBe(true)
 })
 
 test('openInPane resolves conflicts by focusing the other pane and shows a toast', () => {

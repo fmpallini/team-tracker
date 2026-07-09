@@ -8,7 +8,7 @@ import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar, notifyNavChanged, onNavChanged } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
-import { createPaneManager, navigateFocusedHistory, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager } from './ui/panes'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
 import { t, todayIso } from './core/i18n'
@@ -399,7 +399,11 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       d.nav.activeTeamId = id
     })
     notifyNavChanged()
-    pm.openInFocused({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
+    if (!teamHasHistory(store, id)) {
+      openTeamDefaultLayout(pm, store, id)
+    } else {
+      pm.openInFocused({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
+    }
   }
 
   mountSidebar(shell, store, { selectTeam })
