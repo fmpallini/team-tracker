@@ -7,10 +7,22 @@ import type { ActionItem, Loc, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
+import { createEditor, type Editor } from '../ui/editor'
+import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
+import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+
+function nowHHMM(): string {
+  const now = new Date()
+  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
+}
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -84,6 +96,65 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   let draggedId: string | null = null
   let showDone = false
   let focusItemId: string | null = null
+  let expandedId: string | null = null
+
+  interface ExpandedBundle { id: string; editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  let expandedBundle: ExpandedBundle | null = null
+
+  function disposeExpandedBundle(): void {
+    if (!expandedBundle) return
+    expandedBundle.atHandle.dispose()
+    expandedBundle.tplHandle.dispose()
+    expandedBundle.editor.destroy()
+    expandedBundle = null
+  }
+
+  function toggleExpand(id: string): void {
+    expandedId = expandedId === id ? null : id
+    renderAll()
+  }
+
+  function getPeople(): AtPerson[] {
+    const tm = findTeam()
+    if (!tm) return []
+    return [
+      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
+      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
+    ]
+  }
+
+  /** Full rich editor for an item's free-form notes, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself as `expandedBundle` so the caller can dispose it later. */
+  function renderNotesRow(item: ActionItem): HTMLElement {
+    const editor: Editor = createEditor(
+      {
+        onChange() {
+          const md = editor.getMd()
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            const found = tm?.actionItems.find((i) => i.id === item.id)
+            if (!found) return
+            found.notes = md.trim() === '' ? '' : md
+          })
+        },
+        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
+        onAtTrigger() {},
+        onSlashTrigger() {},
+      },
+      lc
+    )
+    editor.setMd(item.notes)
+
+    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const tplHandle = attachTemplatePicker(editor, {
+      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      locale: lc,
+    })
+
+    expandedBundle = { id: item.id, editor, atHandle, tplHandle }
+
+    return el('div', { class: 'tt-action-notes-row', 'data-item-notes-id': item.id }, editor.root)
+  }
 
   function clearDropClasses(): void {
     listEl.querySelectorAll('.tt-action-row').forEach((n) => {
@@ -168,6 +239,12 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       },
     })
 
+    const expandBtn = el(
+      'button',
+      { class: 'tt-btn tt-action-expand-btn', type: 'button', title: t(lc, 'action_notes_toggle_title'), onclick: () => toggleExpand(item.id) },
+      '📝'
+    )
+
     const deleteBtn = el(
       'button',
       { class: 'tt-btn tt-action-delete-btn', type: 'button', title: t(lc, 'action_delete_title'), onclick: () => requestDelete(item) },
@@ -177,7 +254,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const row = el(
       'div',
       { class: 'tt-action-row', draggable: item.done ? 'false' : 'true', 'data-item-id': item.id },
-      doneCheckbox, textInput, dueInput, assigneeInput, deleteBtn
+      doneCheckbox, textInput, dueInput, assigneeInput, expandBtn, deleteBtn
     )
     if (item.done) row.classList.add('tt-action-done-row')
     if (isOverdue(item, todayIso())) row.classList.add('overdue')
@@ -240,6 +317,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   function renderAll(): void {
+    disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
     updateDatalist()
     const open = openItems(items())
     const done = doneItems(items())
@@ -248,14 +326,20 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     if (open.length === 0 && done.length === 0) {
       listEl.appendChild(el('div', { class: 'tt-action-empty' }, t(lc, 'action_empty')))
     } else {
-      open.forEach((it) => listEl.appendChild(renderRow(it)))
+      open.forEach((it) => {
+        listEl.appendChild(renderRow(it))
+        if (expandedId === it.id) listEl.appendChild(renderNotesRow(it))
+      })
     }
 
     doneToggleBtn.textContent = t(lc, showDone ? 'action_hide_done' : 'action_show_done', { count: String(done.length) })
     doneToggleBtn.style.display = done.length === 0 ? 'none' : ''
     doneListEl.style.display = showDone ? '' : 'none'
     doneListEl.innerHTML = ''
-    done.forEach((it) => doneListEl.appendChild(renderRow(it)))
+    done.forEach((it) => {
+      doneListEl.appendChild(renderRow(it))
+      if (expandedId === it.id) doneListEl.appendChild(renderNotesRow(it))
+    })
 
     if (focusItemId) {
       listEl.querySelector<HTMLInputElement>(`[data-item-id="${focusItemId}"] .tt-action-text`)?.focus()
@@ -283,16 +367,19 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const toolbar = el('div', { class: 'tt-action-toolbar' }, addBtn)
 
   /**
-   * True (and returns the focused element) only for the caret-sensitive
-   * input types this module owns (text/date) — not the checkbox, which has
-   * no caret and whose own 'change' handler needs its rebuild (moving the
-   * row into/out of the done group) to happen immediately.
+   * True (and returns the focused element) for the caret-sensitive elements
+   * this module owns: text/date inputs (not the checkbox, which has no caret
+   * and whose own 'change' handler needs its rebuild — moving the row
+   * into/out of the done group — to happen immediately) and, since a notes
+   * editor can be live-edited for a while before its debounced onChange
+   * commits, the expanded row's contenteditable `.editor` itself (mirrors
+   * src/modules/risks.ts's identically-shaped focusedCaretElement).
    */
-  function focusedCaretInput(): HTMLInputElement | null {
+  function focusedCaretInput(): HTMLElement | null {
     const active = document.activeElement
-    if (active instanceof HTMLInputElement && container.contains(active) && (active.type === 'text' || active.type === 'date')) {
-      return active
-    }
+    if (!(active instanceof HTMLElement) || !container.contains(active)) return null
+    if (active instanceof HTMLInputElement && (active.type === 'text' || active.type === 'date')) return active
+    if (active.classList.contains('editor') && active.isContentEditable) return active
     return null
   }
 
@@ -319,5 +406,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   disposers.set(container, () => {
     unsubscribe()
+    disposeExpandedBundle()
   })
 }

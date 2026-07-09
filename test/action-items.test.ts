@@ -62,7 +62,24 @@ function clickByTitleOrText(root: ParentNode, text: string): void {
   btn.click()
 }
 
+function setBlockText(editor: HTMLElement, text: string): void {
+  editor.innerHTML = `<div>${text}</div>`
+  const textNode = editor.firstChild!.firstChild as Text | null
+  const range = document.createRange()
+  if (textNode) range.setStart(textNode, textNode.textContent!.length)
+  else range.setStart(editor.firstChild!, 0)
+  range.collapse(true)
+  const sel = window.getSelection()!
+  sel.removeAllRanges()
+  sel.addRange(range)
+}
+
+function fireInput(editor: HTMLElement): void {
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 afterEach(() => {
+  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 
@@ -351,6 +368,48 @@ describe('renderActionItems', () => {
 
     expect(() => store.update((d) => { d.teams[0]!.actionItems[0]!.text = 'A2' })).not.toThrow()
     expect(rows(container)).toHaveLength(1)
+  })
+
+  describe('notes editor', () => {
+    test('expand button reveals a notes editor that persists to item.notes', () => {
+      vi.useFakeTimers()
+      const team = makeTeam({ actionItems: [item({ id: 'a', notes: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.editor')).toBeNull()
+      container.querySelector<HTMLButtonElement>('.tt-action-expand-btn')!.click()
+
+      const editorEl = container.querySelector('.tt-action-notes-row .editor') as HTMLElement
+      expect(editorEl).not.toBeNull()
+      setBlockText(editorEl, 'nota livre')
+      fireInput(editorEl)
+      vi.advanceTimersByTime(400)
+
+      expect(store.doc.teams[0]!.actionItems[0]!.notes).toContain('nota livre')
+    })
+
+    test('expanding pre-loads the editor with the item\'s existing notes', () => {
+      const team = makeTeam({ actionItems: [item({ id: 'a', notes: '## Context' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      container.querySelector<HTMLButtonElement>('.tt-action-expand-btn')!.click()
+      const editorEl = container.querySelector('.editor') as HTMLElement
+      expect(editorEl.querySelector('h2')?.textContent).toBe('Context')
+    })
+
+    test('collapsing a row disposes its editor', () => {
+      const team = makeTeam({ actionItems: [item({ id: 'a', notes: 'x' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const toggle = () => container.querySelector<HTMLButtonElement>('.tt-action-expand-btn')!
+      toggle().click()
+      expect(container.querySelector('.editor')).not.toBeNull()
+      toggle().click()
+      expect(container.querySelector('.editor')).toBeNull()
+    })
   })
 
   test('a defensive no-op when loc.ref.kind is not "actions"', () => {
