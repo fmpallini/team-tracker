@@ -5,6 +5,7 @@ import type { Team } from '../core/types'
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
+import { attachEmojiPicker } from './emoji-picker'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -206,9 +207,10 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
       el('label', { class: 'tt-field' }, t(locale(), 'team_emoji_label'), emojiInput),
       errorEl
     )
+    const picker = attachEmojiPicker(emojiInput, locale())
 
     let handle: ModalHandle
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
     const okBtn: ModalButton = {
       label: t(locale(), 'ok'),
       primary: true,
@@ -224,6 +226,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
           d.teams.push(team)
           if (d.nav.activeTeamId === null) d.nav.activeTeamId = team.id
         })
+        picker.dispose()
         handle.close()
       },
     }
@@ -244,12 +247,14 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
       el('label', { class: 'tt-field' }, t(locale(), 'team_emoji_label'), emojiInput),
       errorEl
     )
+    const picker = attachEmojiPicker(emojiInput, locale())
 
     let handle: ModalHandle
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
       onClick: () => {
+        picker.dispose()
         handle.close()
         openDeleteConfirm(team)
       },
@@ -271,6 +276,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
             target.emoji = emoji
           }
         })
+        picker.dispose()
         handle.close()
       },
     }

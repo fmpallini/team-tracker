@@ -231,6 +231,11 @@ const pt = {
   readonly_banner_text: 'Somente leitura — arquivo aberto em outra aba',
   readonly_takeover_btn: 'Assumir controle',
   readonly_blocked_toast: 'Somente leitura — não é possível editar',
+  emoji_cat_people: 'Pessoas',
+  emoji_cat_teams: 'Times',
+  emoji_cat_nature: 'Natureza',
+  emoji_cat_objects: 'Objetos',
+  emoji_os_hint: 'Dica: Win+. (Windows) ou Cmd+Ctrl+Espaço (macOS) abre o seletor do sistema em qualquer campo',
 } as const
 
 export type MsgKey = keyof typeof pt
@@ -465,6 +470,11 @@ const en: Record<MsgKey, string> = {
   readonly_banner_text: 'Read-only — file open in another tab',
   readonly_takeover_btn: 'Take control',
   readonly_blocked_toast: 'Read-only — editing is disabled',
+  emoji_cat_people: 'People',
+  emoji_cat_teams: 'Teams',
+  emoji_cat_nature: 'Nature',
+  emoji_cat_objects: 'Objects',
+  emoji_os_hint: 'Tip: Win+. (Windows) or Cmd+Ctrl+Space (macOS) opens the system picker in any field',
 }
 
 const dicts: Record<Locale, Record<MsgKey, string>> = {
