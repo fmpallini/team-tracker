@@ -536,7 +536,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-person-notes .tt-editor { flex: 1; }
 
 /* Preferences modal */
-.tt-prefs-dialog { display: flex; flex-direction: column; gap: 1rem; min-width: 420px; max-width: 60vw; }
+/* Fixed (not min/max-) width: .tt-modal-dialog itself only had min/max-width,
+   so it shrink-to-fit its content — switching to a tab with a different
+   natural content width (e.g. General's radio pills vs Templates' rows)
+   visibly resized the whole window. :has() scopes this to just the prefs
+   modal without touching every other showModal() caller. Widened past the
+   generic modal's 480px cap to comfortably fit Templates' widest row. */
+.tt-modal-dialog:has(.tt-prefs-dialog) { width: min(640px, 90vw); max-width: min(640px, 90vw); }
+.tt-prefs-dialog { display: flex; flex-direction: column; gap: 1rem; }
 .tt-prefs-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); }
 .tt-prefs-tab-btn { border: none; border-bottom: 2px solid transparent; border-radius: 0; }
 .tt-prefs-tab-btn.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }

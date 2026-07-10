@@ -62,7 +62,13 @@ function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms
   if (pos < snippet.length) container.appendChild(document.createTextNode(snippet.slice(pos)))
 }
 
-export function mountSearch(shell: Shell, store: Store, pm: PaneManager, locale: Locale): void {
+export function mountSearch(
+  shell: Shell,
+  store: Store,
+  pm: PaneManager,
+  locale: Locale,
+  switchTeam: (teamId: string) => void
+): void {
   let allTeams = false
   let results: SearchResult[] = []
   let selected = 0
@@ -150,6 +156,16 @@ export function mountSearch(shell: Shell, store: Store, pm: PaneManager, locale:
   function commit(result: SearchResult | undefined): void {
     if (!result) return
     const terms = currentTerms()
+    // A result from a team other than the one currently browsed must switch
+    // teams first — this app only ever shows one team at a time, and
+    // switching teams restores *both* panes' last-used modules for it (see
+    // main.ts's selectTeam), not just whichever pane happens to be focused.
+    // Opening the searched Loc below then lands on the specific result
+    // within that already-consistent team switch, rather than leaving one
+    // pane on the old team's content while the other jumps to the new one.
+    if (result.loc.teamId !== store.doc.nav.activeTeamId) {
+      switchTeam(result.loc.teamId)
+    }
     pm.openInFocused(result.loc)
     closeDropdown()
     requestAnimationFrame(() => {

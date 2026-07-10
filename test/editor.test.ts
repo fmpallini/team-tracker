@@ -406,4 +406,10 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('# hello')).toBeNull()
     expect(detectBlockPrefix('hello')).toBeNull()
   })
+  test('matches when the trailing space is a non-breaking space (\\u00A0) — real Chrome inserts nbsp instead of a regular space for whitespace at the edge of a text node, which is exactly the position typing "- " at the start of an empty line lands in', () => {
+    const nbsp = ' '
+    expect(detectBlockPrefix('-' + nbsp)).toEqual({ type: 'ul', prefixLen: 2 })
+    expect(detectBlockPrefix('1.' + nbsp)).toEqual({ type: 'ol', prefixLen: 3 })
+    expect(detectBlockPrefix('#' + nbsp)).toEqual({ type: 'h1', prefixLen: 2 })
+  })
 })

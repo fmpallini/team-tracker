@@ -299,6 +299,32 @@ test('print button opens a print window with a header (team/module) and a clone 
   expect(printSpy).toHaveBeenCalled()
 })
 
+test('printing always hides the daily-notes calendar column — it\'s a navigation aid, not printable content', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-10' } })
+
+  const printSpy = vi.fn()
+  const headAppend = vi.fn()
+  const fakeDoc = {
+    write: vi.fn(),
+    close: vi.fn(),
+    head: { appendChild: headAppend },
+    body: { append: vi.fn() },
+    createElement: (tag: string) => document.createElement(tag),
+  }
+  const fakeWin = { document: fakeDoc, focus: vi.fn(), print: printSpy } as unknown as Window
+  vi.spyOn(window, 'open').mockReturnValue(fakeWin)
+
+  paneBtn(0, 'tt-pane-print-btn').click()
+
+  const styleEls = headAppend.mock.calls.map((c) => c[0] as HTMLStyleElement).filter((n) => n.tagName === 'STYLE')
+  const printOverrideStyle = styleEls.find((s) => s.textContent?.includes('tt-daily-calendar-col'))
+  expect(printOverrideStyle).toBeDefined()
+  expect(printOverrideStyle!.textContent).toMatch(/\.tt-print-content \.tt-daily-calendar-col\s*\{\s*display:\s*none/)
+})
+
 test('openTeamDefaultLayout records split=true in nav.teamSplit for that team', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

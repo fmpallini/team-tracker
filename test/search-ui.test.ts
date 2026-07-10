@@ -39,11 +39,15 @@ function fakePM(): PaneManager & { calls: Loc[] } {
   }
 }
 
-function mount(store: Store, pm: PaneManager): { shell: Shell; input: HTMLInputElement } {
+function mount(
+  store: Store,
+  pm: PaneManager,
+  switchTeam: (teamId: string) => void = () => {}
+): { shell: Shell; input: HTMLInputElement } {
   stubMatchMedia()
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  mountSearch(shell, store, pm, 'en-US')
+  mountSearch(shell, store, pm, 'en-US', switchTeam)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
   return { shell, input }
 }
@@ -255,6 +259,54 @@ test('clicking a result opens it via pm.openInFocused and closes the dropdown', 
   expect(isOpen()).toBe(false)
 })
 
+test('clicking an all-teams result from a different team switches the active team (both panes\' modules restored) before opening the specific result', () => {
+  const teamA: Team = {
+    id: 'T1', name: 'Team A', emoji: '🅰️',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: {},
+  }
+  const teamB: Team = {
+    id: 'T2', name: 'Team B', emoji: '🅱️',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-02': 'alpha note in team B' },
+  }
+  const store = buildStore([teamA, teamB], 'T1') // browsing team A right now
+  const pm = fakePM()
+  const switchTeam = vi.fn()
+  const { input } = mount(store, pm, switchTeam)
+
+  const checkbox = document.querySelector('.tt-search-all-teams input') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+
+  type(input, 'alpha')
+  vi.advanceTimersByTime(200)
+
+  const row = document.querySelector('.tt-search-row') as HTMLElement
+  row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+
+  // Team switch (which restores both panes' last-used modules for team B —
+  // see main.ts's selectTeam) must happen before the specific searched Loc
+  // is opened in the focused pane, not instead of it.
+  expect(switchTeam).toHaveBeenCalledWith('T2')
+  expect(pm.calls).toEqual([{ teamId: 'T2', ref: { kind: 'daily', date: '2026-07-02' } }])
+})
+
+test('clicking an all-teams result from the already-active team does not call switchTeam', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const pm = fakePM()
+  const switchTeam = vi.fn()
+  const { input } = mount(store, pm, switchTeam)
+
+  type(input, 'alpha')
+  vi.advanceTimersByTime(200)
+  const row = document.querySelector('.tt-search-row') as HTMLElement
+  row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+
+  expect(switchTeam).not.toHaveBeenCalled()
+  expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } }])
+})
+
 test('mouse selection then click commits the result (hover must not rebuild the row out from under the click)', () => {
   const team: Team = {
     id: 'T1', name: 'Team One', emoji: '🚀',
@@ -291,7 +343,7 @@ test('does not accumulate document-level listeners across repeated open/close cy
   document.body.appendChild(shell.root)
 
   const addSpy = vi.spyOn(document, 'addEventListener')
-  mountSearch(shell, store, fakePM(), 'en-US')
+  mountSearch(shell, store, fakePM(), 'en-US', () => {})
   const countAfterMount = addSpy.mock.calls.length
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
 

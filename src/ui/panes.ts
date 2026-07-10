@@ -98,6 +98,10 @@ const PRINT_CSS = `
   .tt-print-header { font-size: .7rem; color: #666; margin-bottom: .75rem; padding-bottom: .35rem; border-bottom: 1px solid #999; }
   .tt-print-content { border: 1px solid #999; border-radius: 3px; padding: 1rem; }
   .tt-print-content button, .tt-print-content .tt-btn { display: none !important; }
+  /* Daily notes' calendar picker is a navigation aid, not content — always
+     hidden on the printed page (whether or not it was expanded/collapsed on
+     screen), so the note itself gets the full page width. */
+  .tt-print-content .tt-daily-calendar-col { display: none !important; }
   .tt-print-content input, .tt-print-content select, .tt-print-content textarea {
     border: none !important; background: none !important; color: #000 !important;
     padding: 0 !important; pointer-events: none; appearance: none; -webkit-appearance: none;

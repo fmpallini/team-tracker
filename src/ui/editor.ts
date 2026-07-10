@@ -80,14 +80,22 @@ export interface BlockPrefixMatch {
   prefixLen: number
 }
 
-/** Detects a markdown block-prefix (`# `, `- `, `1. `, ...) that makes up the ENTIRE current block text. */
+/**
+ * Detects a markdown block-prefix (`# `, `- `, `1. `, ...) that makes up the
+ * ENTIRE current block text. The trailing space is matched as `[  ]`,
+ * not a literal space: real Chrome substitutes a non-breaking space for
+ * whitespace at the edge of a text node (to stop HTML's normal whitespace
+ * collapsing from eating it) — exactly the position a space lands in right
+ * after typing "- "/"1. " at the start of an empty line, so the literal-space
+ * regex never actually matched real typed input.
+ */
 export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
-  let m = /^(#{1,3}) $/.exec(text)
+  let m = /^(#{1,3})[  ]$/.exec(text)
   if (m) return { type: (`h${m[1]!.length}` as 'h1' | 'h2' | 'h3'), prefixLen: m[0]!.length }
 
-  if (/^- $/.test(text)) return { type: 'ul', prefixLen: 2 }
+  if (/^-[  ]$/.test(text)) return { type: 'ul', prefixLen: 2 }
 
-  m = /^\d+\. $/.exec(text)
+  m = /^\d+\.[  ]$/.exec(text)
   if (m) return { type: 'ol', prefixLen: m[0]!.length }
 
   return null
