@@ -2,7 +2,7 @@
 export interface Prefs {
   theme: 'light' | 'dark' | 'system'
   locale: 'pt-BR' | 'en-US'
-  font: 'system' | 'serif' | 'mono'
+  font: 'system' | 'serif' | 'mono' | 'classic' | 'rounded'
   fontSize: 'S' | 'M' | 'L'
   autoSaveMin: number
 }

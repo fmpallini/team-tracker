@@ -143,12 +143,22 @@ export function attachAtAutocomplete(editor: Editor, opts: {
           class: 'tt-atref-item' + (i === selected ? ' selected' : ''),
           onmousedown: (e: Event) => e.preventDefault(),
           onclick: () => commit(item),
-          onmouseenter: () => { selected = i; renderList() },
+          // See template-picker.ts's identical fix: rebuilding the row on
+          // hover (via renderList()) made real Chrome re-fire mouseenter on
+          // the replacement node under a stationary pointer, looping
+          // forever and leaving mousedown/mouseup on two different elements
+          // — so no click event ever fired.
+          onmouseenter: () => { selected = i; updateSelectedClass() },
         },
         label
       )
       listEl!.appendChild(row)
     })
+  }
+
+  function updateSelectedClass(): void {
+    if (!listEl) return
+    Array.from(listEl.children).forEach((child, i) => child.classList.toggle('selected', i === selected))
   }
 
   function positionOverlay(): void {

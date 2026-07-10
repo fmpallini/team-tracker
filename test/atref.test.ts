@@ -129,6 +129,21 @@ describe('attachAtAutocomplete', () => {
     expect(dropdown!.querySelectorAll('.tt-atref-item')).toHaveLength(2)
   })
 
+  test('hovering a row does not replace its DOM node (real-browser click requires mousedown/mouseup on the same element)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+
+    const rowsBefore = Array.from(document.querySelectorAll('.tt-atref-item'))
+    rowsBefore[1]!.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }))
+    const rowsAfter = Array.from(document.querySelectorAll('.tt-atref-item'))
+
+    expect(rowsAfter[0]).toBe(rowsBefore[0])
+    expect(rowsAfter[1]).toBe(rowsBefore[1])
+    expect(rowsAfter[1]!.classList.contains('selected')).toBe(true)
+    expect(rowsAfter[0]!.classList.contains('selected')).toBe(false)
+  })
+
   test('typing after @ filters the list; Enter inserts the chip and removes the typed text', () => {
     const { editorEl, picks } = setup()
     setBlockText(editorEl, '@')

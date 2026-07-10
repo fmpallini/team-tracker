@@ -111,12 +111,25 @@ export function attachTemplatePicker(editor: Editor, opts: {
           class: 'tt-atref-item' + (i === selected ? ' selected' : ''),
           onmousedown: (e: Event) => e.preventDefault(),
           onclick: () => commit(tpl),
-          onmouseenter: () => { selected = i; renderList() },
+          // Updates the highlight in place rather than calling renderList()
+          // (which used to rebuild every row from scratch here): replacing
+          // the DOM node under a *stationary* pointer makes real Chrome
+          // re-fire mouseenter on the new node, which rebuilt again, forever
+          // — and since the resulting mousedown/mouseup landed on two
+          // different (rebuilt) elements, the browser never synthesized a
+          // click event at all (click requires both on the same element).
+          // That's why clicking a template appeared to do nothing.
+          onmouseenter: () => { selected = i; updateSelectedClass() },
         },
         tpl.name
       )
       listEl!.appendChild(row)
     })
+  }
+
+  function updateSelectedClass(): void {
+    if (!listEl) return
+    Array.from(listEl.children).forEach((child, i) => child.classList.toggle('selected', i === selected))
   }
 
   function positionOverlay(): void {

@@ -5,7 +5,7 @@
 // it keeps a single overlay/Escape-handler alive for the whole session.
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
-import type { Template } from '../core/types'
+import type { Prefs, Template } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { showModal, toast, type ModalButton, type ModalHandle } from './modal'
@@ -69,10 +69,15 @@ const LOCALE_OPTIONS: readonly { value: Locale; key: MsgKey }[] = [
   { value: 'en-US', key: 'prefs_locale_en' },
 ]
 
-const FONT_OPTIONS: readonly { value: 'system' | 'serif' | 'mono'; key: MsgKey }[] = [
-  { value: 'system', key: 'prefs_font_system' },
-  { value: 'serif', key: 'prefs_font_serif' },
-  { value: 'mono', key: 'prefs_font_mono' },
+// `preview` is the same font stack the option applies to the whole app (see
+// styles.css's html[data-font=...] rules) — rendering each label in its own
+// stack lets the option show itself instead of describing itself.
+const FONT_OPTIONS: readonly { value: Prefs['font']; key: MsgKey; preview: string }[] = [
+  { value: 'system', key: 'prefs_font_system', preview: 'Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif' },
+  { value: 'serif', key: 'prefs_font_serif', preview: 'Georgia, "Times New Roman", serif' },
+  { value: 'mono', key: 'prefs_font_mono', preview: 'Consolas, "Cascadia Mono", monospace' },
+  { value: 'classic', key: 'prefs_font_classic', preview: 'Constantia, Cambria, "Times New Roman", serif' },
+  { value: 'rounded', key: 'prefs_font_rounded', preview: 'Candara, Corbel, sans-serif' },
 ]
 
 const SIZE_OPTIONS: readonly { value: 'S' | 'M' | 'L'; key: MsgKey }[] = [
@@ -99,7 +104,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   function radioField(
     name: string,
     labelKey: MsgKey,
-    options: readonly { value: string; key: MsgKey }[],
+    options: readonly { value: string; key: MsgKey; preview?: string }[],
     current: string,
     onChange: (value: string) => void
   ): HTMLElement {
@@ -114,7 +119,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           checked: opt.value === current,
           onchange: () => onChange(opt.value),
         })
-        return el('label', { class: 'tt-prefs-radio' }, input, t(locale, opt.key))
+        const text = opt.preview
+          ? el('span', { class: 'tt-prefs-radio-preview', style: `font-family:${opt.preview}` }, t(locale, opt.key))
+          : t(locale, opt.key)
+        return el('label', { class: 'tt-prefs-radio' }, input, text)
       })
     )
     return el('div', { class: 'tt-prefs-field' }, el('div', { class: 'tt-prefs-field-label' }, t(locale, labelKey)), row)
@@ -146,7 +154,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const fontField = radioField('tt-prefs-font', 'prefs_font_label', FONT_OPTIONS, prefs.font, (value) => {
       store.update((d) => {
-        d.prefs.font = value as 'system' | 'serif' | 'mono'
+        d.prefs.font = value as Prefs['font']
       })
       shell.applyPrefs(store.doc.prefs)
     })
@@ -533,6 +541,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     title: t(locale, 'prefs_title'),
     body: dialogBody,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
+    // Prefs apply live via store.update on every interaction (theme, locale,
+    // font, autosave, templates), so nothing "commits" on close — but closing
+    // is also the one moment nothing else guarantees a save happens next.
+    // Reuses the same nav-changed → save hook main.ts wires up for module
+    // navigation (see sidebar.ts's deleteTeam for the same pattern).
+    onClose: () => notifyNavChanged(),
   })
 
   renderActiveTab()

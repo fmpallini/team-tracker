@@ -108,6 +108,26 @@ describe('attachTemplatePicker', () => {
     expect(labels).toEqual(['Decision', 'Weekly status'])
   })
 
+  test('hovering a row does not replace its DOM node (real-browser click requires mousedown/mouseup on the same element)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+
+    const rowsBefore = Array.from(document.querySelectorAll('.tt-atref-item'))
+    rowsBefore[1]!.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }))
+    const rowsAfter = Array.from(document.querySelectorAll('.tt-atref-item'))
+
+    // Same node identity, not a rebuilt replacement — only the selected class
+    // should move. Real Chrome re-fires mouseenter when the element under a
+    // stationary pointer is replaced via DOM mutation, which previously made
+    // hovering rebuild the whole list in a loop and made mousedown/mouseup
+    // land on two different (rebuilt) nodes, so no click ever fired.
+    expect(rowsAfter[0]).toBe(rowsBefore[0])
+    expect(rowsAfter[1]).toBe(rowsBefore[1])
+    expect(rowsAfter[1]!.classList.contains('selected')).toBe(true)
+    expect(rowsAfter[0]!.classList.contains('selected')).toBe(false)
+  })
+
   test('Enter removes the "/" and inserts the resolved, parsed template; caret lands at the end', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '/')

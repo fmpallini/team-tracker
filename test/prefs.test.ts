@@ -1,4 +1,5 @@
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
+import { onNavChanged } from '../src/ui/sidebar'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -107,6 +108,21 @@ test('font and size radios update store.prefs and call shell.applyPrefs', () => 
   expect(store.doc.prefs.fontSize).toBe('L')
 
   expect(applySpy).toHaveBeenCalledTimes(2)
+})
+
+test('font field offers 5 options (including classic/rounded) and each label previews its own font stack', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  expect(radio('tt-prefs-font', 'classic')).not.toBeNull()
+  expect(radio('tt-prefs-font', 'rounded')).not.toBeNull()
+
+  radio('tt-prefs-font', 'classic').click()
+  expect(store.doc.prefs.font).toBe('classic')
+
+  const serifLabel = radio('tt-prefs-font', 'serif').closest('label')
+  const preview = serifLabel?.querySelector('.tt-prefs-radio-preview') as HTMLElement
+  expect(preview.style.fontFamily).toContain('Georgia')
 })
 
 test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
@@ -427,6 +443,40 @@ test('about tab reflects a mismatched file schema version from appCtl', () => {
 
   const rows = Array.from(document.querySelectorAll('.tt-prefs-content td')).map((td) => td.textContent)
   expect(rows).toContain('0')
+})
+
+test('closing the prefs modal (OK) fires onNavChanged so main.ts\'s save-on-nav-change hook saves the edited prefs immediately', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  radio('tt-prefs-theme', 'dark').click()
+  expect(store.dirty).toBe(true)
+
+  let navChangedCount = 0
+  const off = onNavChanged(() => navChangedCount++)
+  clickByText('OK')
+
+  expect(navChangedCount).toBe(1)
+  off()
+})
+
+test('closing the prefs modal via Escape also fires onNavChanged', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  radio('tt-prefs-theme', 'dark').click()
+  expect(store.dirty).toBe(true)
+
+  // Other tests in this file open the prefs modal via openPrefs() and never
+  // close it, leaking document-level Escape listeners across tests within
+  // the same file (same pre-existing pattern noted in sidebar.test.ts's
+  // ADD_TEAM_REQUEST_EVENT comment) — so dispatching a real Escape here also
+  // re-triggers those stale listeners' own onClose. Assert "at least one"
+  // rather than an exact count.
+  let navChangedCount = 0
+  const off = onNavChanged(() => navChangedCount++)
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+
+  expect(navChangedCount).toBeGreaterThanOrEqual(1)
+  off()
 })
 
 test('builtinTemplates helper used by restore-defaults produces 5 named templates (sanity)', () => {

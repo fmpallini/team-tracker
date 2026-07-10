@@ -174,6 +174,57 @@ describe('renderDailyNotes', () => {
     expect(document.querySelectorAll('.tt-atref-dropdown')).toHaveLength(1)
   })
 
+  test('clicking a template row in the full daily-notes module inserts it into the note', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+
+    render(container, loc, store, pm)
+    setBlockText(editorEl(container), '/')
+    fireInput(editorEl(container))
+
+    const items = document.querySelectorAll('.tt-atref-item')
+    expect(items.length).toBe(3) // Meeting, Decision, Weekly status (daily/any scope) out of the 5 builtins
+    ;(items[0] as HTMLElement).click()
+    vi.advanceTimersByTime(500)
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(team.dailyNotes[loc.ref.kind === 'daily' ? loc.ref.date : '']).toBeTruthy()
+  })
+
+  test('clicking a template row on a note that already has content inserts after it', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    team.dailyNotes[loc.ref.kind === 'daily' ? loc.ref.date : ''] = 'existing note text'
+
+    render(container, loc, store, pm)
+    const ed = editorEl(container)
+    // Append "/" on a NEW line after the existing content (mirrors a user
+    // clicking at the end of an existing note and typing "/" to insert a
+    // template below it, rather than on a fresh empty note).
+    ed.innerHTML += '<div>/</div>'
+    const newDiv = ed.lastElementChild as HTMLElement
+    const textNode = newDiv.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 1)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    fireInput(ed)
+
+    const items = document.querySelectorAll('.tt-atref-item')
+    expect(items.length).toBe(3)
+    ;(items[0] as HTMLElement).click()
+    vi.advanceTimersByTime(500)
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    const saved = team.dailyNotes[loc.ref.kind === 'daily' ? loc.ref.date : '']
+    expect(saved).toContain('existing note text')
+    expect(saved).toContain('Meeting')
+  })
+
   test('double render unsubscribes the previous store listener (calendar rebuild count does not grow)', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)

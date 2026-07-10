@@ -12,6 +12,8 @@ export interface ModalOptions {
   title: string
   body: HTMLElement
   buttons: ModalButton[]
+  /** Fires exactly once, however the dialog closes (a button's onClick calling handle.close(), or Escape) — e.g. openPrefs uses this to trigger a save on the way out instead of waiting for the next nav change or autosave tick. */
+  onClose?: () => void
 }
 
 export interface ModalHandle {
@@ -25,9 +27,13 @@ interface RenderedDialog extends ModalHandle {
 function renderDialog(opts: ModalOptions): RenderedDialog {
   const overlay = el('div', { class: 'tt-modal-overlay' })
 
+  let closed = false
   function close(): void {
+    if (closed) return
+    closed = true
     overlay.remove()
     document.removeEventListener('keydown', onKeydown)
+    opts.onClose?.()
   }
 
   function onKeydown(e: KeyboardEvent): void {
