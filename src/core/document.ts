@@ -1,7 +1,7 @@
 import type { Doc } from './types'
 import { builtinTemplates } from './templates'
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export class SchemaTooNewError extends Error {}
 
@@ -11,7 +11,7 @@ export function createEmptyDocument(locale: 'pt-BR' | 'en-US'): Doc {
     prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 5 },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
-      panes: [{ history: [], index: -1 }, { history: [], index: -1 }] },
+      panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} },
     teams: [],
   }
 }
@@ -23,6 +23,10 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
       for (const a of (team.actionItems as Record<string, unknown>[]) ?? []) a.notes = a.notes ?? ''
       for (const m of (team.milestones as Record<string, unknown>[]) ?? []) m.followup = m.followup ?? ''
     }
+  },
+  2: (d) => {
+    const nav = d.nav as Record<string, unknown> | undefined
+    if (nav && typeof nav.teamSplit !== 'object') nav.teamSplit = {}
   },
 }
 

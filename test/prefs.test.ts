@@ -312,11 +312,28 @@ test('security tab: mismatched new passwords shows inline error', () => {
   const next = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
   const confirm = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
   current.value = 'oldpw'
-  next.value = 'abc'
-  confirm.value = 'def'
+  next.value = 'abcd'
+  confirm.value = 'defg'
   clickByText('Change password')
 
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Passwords do not match')
+  expect(changePassword).not.toHaveBeenCalled()
+})
+
+test('security tab: new password shorter than 4 characters shows inline error', () => {
+  const { store, shell, appCtl, changePassword } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+
+  const current = document.querySelector('input[name="tt-prefs-current-password"]') as HTMLInputElement
+  const next = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  current.value = 'oldpw'
+  next.value = 'abc'
+  confirm.value = 'abc'
+  clickByText('Change password')
+
+  expect(document.querySelector('.tt-field-error')?.textContent).toBe('Password must be at least 4 characters')
   expect(changePassword).not.toHaveBeenCalled()
 })
 

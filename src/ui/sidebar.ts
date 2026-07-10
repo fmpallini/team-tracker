@@ -1,14 +1,25 @@
 // src/ui/sidebar.ts
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
-import type { Team } from '../core/types'
-import { t, type Locale } from '../core/i18n'
+import type { Loc, Team } from '../core/types'
+import { lastLocForTeam } from '../core/nav'
+import { t, todayIso, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
 
 export interface SidebarActions {
   selectTeam(id: string): void
+  /**
+   * Re-renders the pane view (main.ts wires this to `pm.renderAll()`).
+   * Deleting a team can invalidate what's currently shown — the last team
+   * gone means the "no teams" CTA should replace the pane grid entirely —
+   * but `store.update()` alone never re-renders panes (that would blow away
+   * an in-progress edit's caret on every keystroke elsewhere in the app);
+   * `deleteTeam` calls this explicitly right after its nav fixup so the
+   * visible pane view actually reflects the new team list.
+   */
+  renderPanes(): void
 }
 
 /**
@@ -107,24 +118,49 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
       const idx = d.teams.findIndex((tm) => tm.id === teamId)
       if (idx === -1) return
       d.teams.splice(idx, 1)
+      delete d.nav.teamSplit[teamId]
+      // "Next" team: whichever team now sits at the deleted one's old index
+      // (i.e. its former next sibling), or the previous one if it was last,
+      // or null if the team list is now empty.
+      const nextTeamId = d.teams[idx]?.id ?? d.teams[idx - 1]?.id ?? null
       if (d.nav.activeTeamId === teamId) {
-        d.nav.activeTeamId = d.teams[0]?.id ?? null
+        d.nav.activeTeamId = nextTeamId
+        if (nextTeamId) d.nav.split = d.nav.teamSplit[nextTeamId] ?? false
       }
       for (const pane of d.nav.panes) {
         const current = pane.index >= 0 ? pane.history[pane.index] : undefined
         pane.history = pane.history.filter((loc) => loc.teamId !== teamId)
-        if (!current || current.teamId === teamId) {
-          // Current entry belonged to the deleted team (or there was none):
-          // fall back to the last remaining entry, or -1 when empty.
-          pane.index = pane.history.length - 1
-        } else {
+        if (current && current.teamId !== teamId) {
           // Current entry survives the filter (same object reference), but
           // entries deleted from earlier in the history may have shifted
           // its position — re-locate it instead of reusing the old index.
           pane.index = pane.history.indexOf(current)
+          continue
+        }
+        // This pane was showing the deleted team (or had nothing open):
+        // land it on the newly active team's own most recent Loc in *this*
+        // pane's history — i.e. the module it last had open for that team —
+        // falling back to today's daily notes if this pane never had that
+        // team open before.
+        if (!nextTeamId) {
+          pane.index = pane.history.length - 1 // no teams left; history is empty
+          continue
+        }
+        const lastForNext = lastLocForTeam(pane, nextTeamId)
+        if (lastForNext) {
+          pane.index = pane.history.indexOf(lastForNext)
+        } else {
+          const fallback: Loc = { teamId: nextTeamId, ref: { kind: 'daily', date: todayIso() } }
+          pane.history.push(fallback)
+          pane.index = pane.history.length - 1
         }
       }
     })
+    actions.renderPanes()
+    // Deleting a team is destructive and doesn't wait for the auto-save
+    // timer or a later nav change — reuse the nav-changed event's existing
+    // save hook (main.ts's onNavChanged listener) to persist it right away.
+    notifyNavChanged()
   }
 
   function render(): void {
@@ -222,7 +258,11 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
           errorEl.textContent = t(locale(), 'team_name_required')
           return
         }
-        const emoji = emojiInput.value.trim() || '🙂'
+        const emoji = emojiInput.value.trim()
+        if (!emoji) {
+          errorEl.textContent = t(locale(), 'team_emoji_required')
+          return
+        }
         const newTeamId = crypto.randomUUID()
         store.update((d) => {
           d.teams.push(emptyTeam(newTeamId, name, emoji))

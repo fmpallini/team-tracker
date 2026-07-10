@@ -1,6 +1,6 @@
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; margin: 0; }
-body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; overflow: hidden; }
+body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; overflow: hidden; }
 #app { height: 100%; display: flex; flex-direction: column; }
 
 /* Theme custom properties — "Field Ledger": warm paper, ink, brass stamps.
@@ -17,7 +17,7 @@ body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh
 }
 /* Display face (brand, headings, team/person names) stays serif regardless
    of the body font preference below — brand identity, not body copy. */
-:root { --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+:root { --font-display: "Sitka Text", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
 /* Data face (dates, exposure numbers, hotkeys, code) — a monospace "logged
    entry" read, distinct from the display serif and the default body sans. */
 :root { --font-data: "SFMono-Regular", Consolas, "Cascadia Mono", monospace; }
@@ -36,7 +36,18 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
 .tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
-.tt-app-name { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; white-space: nowrap; flex: none; }
+/* Fixed to (sidebar width − header's own left padding − the gap before the
+   search bar) so the search bar's left edge lines up with the sidebar/first
+   module boundary below it, regardless of font-size preference (both the
+   padding and the gap are in rem, so this tracks the root font-size live). */
+.tt-app-name {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; line-height: 1; white-space: nowrap;
+  display: inline-flex; align-items: center;
+  width: calc(220px - 1.5rem); flex: none;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
+  padding: .4rem .55rem; cursor: pointer;
+}
+.tt-app-name:hover, .tt-app-name:focus-visible { border-color: var(--accent); color: var(--accent); }
 
 .tt-body { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
 
@@ -391,7 +402,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Action items module */
 .tt-actions { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
 .tt-action-toolbar { flex: none; }
-.tt-action-list, .tt-action-done-list { display: flex; flex-direction: column; gap: .2rem; }
+.tt-action-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-action-empty { color: var(--muted); padding: .5rem; }
 .tt-action-row {
   display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px;
@@ -410,7 +421,13 @@ body { background: var(--bg); color: var(--fg); }
 .tt-action-row.overdue .tt-action-text { color: var(--danger); }
 .tt-action-row.overdue .tt-action-due { font-weight: 700; color: var(--danger); }
 .tt-action-row.tt-action-done-row .tt-action-text { text-decoration: line-through; color: var(--muted); }
-.tt-action-done-toggle { align-self: flex-start; }
+/* Completed-items disclosure — same treatment as risks' closed-risks
+   section (src/modules/risks.ts's .tt-risks-closed): a native <details>
+   instead of a manual show/hide toggle button, muted and dimmed. */
+.tt-actions-done { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
+.tt-actions-done summary { cursor: pointer; padding: .2rem .4rem; }
+.tt-actions-done.tt-actions-done-empty { display: none; }
+.tt-actions-done .tt-action-row { opacity: .75; }
 .tt-action-notes-row { padding: 0 0 .5rem .4rem; }
 .tt-action-notes-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
 .tt-action-notes-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
@@ -451,15 +468,27 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-title, .tt-risk-title-input { flex: 1; min-width: 0; }
 .tt-risk-header-chance, .tt-risk-chance-select,
 .tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 3.5rem; }
-.tt-risk-header-exposure, .tt-risk-exposure-badge { flex: none; width: 4.5rem; text-align: center; }
+.tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
-.tt-risk-header-followup { flex: none; width: 1.8rem; }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 1.8rem; padding: .1rem .35rem; }
 .tt-risk-header-exposure {
   display: flex; align-items: center; justify-content: center; gap: .1rem;
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
 }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
+/* Monospace "tag" read for the editable data selects — bordered, muted,
+   brightening to the accent on hover/focus — echoing the Field Ledger
+   mockup's plain bordered tags rather than each browser's native <select>
+   chrome. */
+.tt-risk-chance-select, .tt-risk-impact-select, .tt-risk-plan-select {
+  font-family: var(--font-data); font-size: .78rem; color: var(--muted);
+  background: transparent; border: 1px solid var(--border); border-radius: 2px;
+  padding: .2rem .3rem; cursor: pointer;
+}
+.tt-risk-chance-select:hover, .tt-risk-impact-select:hover, .tt-risk-plan-select:hover,
+.tt-risk-chance-select:focus, .tt-risk-impact-select:focus, .tt-risk-plan-select:focus {
+  border-color: var(--accent); color: var(--fg);
+}
 .tt-risk-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-risk-empty { color: var(--muted); padding: .5rem; }
 .tt-risk-row { border-radius: 4px; border: 1px solid var(--border); cursor: grab; }
@@ -467,17 +496,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-row[draggable="false"] { cursor: default; }
 .tt-risk-row.tt-risk-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-risk-row.tt-risk-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
-/* "Stamp" treatment — the signature Field Ledger element: exposure reads
-   as a hand-stamped mark (paper-colored halo ring, slight rotation,
-   monospace numeral, squared-off corners) rather than a smooth UI pill.
-   Width is inherited from the shared column rule above (unchanged) so it
-   still lines up with the "Exposição/Exposure" header column. */
+.tt-risk-exposure-cell { display: flex; align-items: center; justify-content: center; }
+/* "Stamp" treatment — the signature Field Ledger element: exposure reads as
+   a hand-stamped mark, not a UI pill — a hollow ink-colored circle (color
+   drives both border and text via currentColor) with a monospace numeral
+   and a slight rotation, echoing the original mockup's .fl-stamp. */
 .tt-risk-exposure-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  height: 1.7rem; color: #fff; border-radius: 10px;
-  font-family: var(--font-data); font-weight: 700; font-size: .82rem;
-  box-shadow: 0 0 0 2px var(--bg);
-  transform: rotate(-2deg);
+  width: 1.9rem; height: 1.9rem; border-radius: 50%; border: 2px solid currentColor;
+  font-family: var(--font-data); font-weight: 700; font-size: .8rem;
+  box-shadow: 0 0 0 1px currentColor inset;
+  transform: rotate(-4deg);
 }
 .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: 0; border: none; background: transparent; font-size: .85rem; }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
@@ -493,7 +522,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risks-closed.tt-risks-closed-empty { display: none; }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-risks-closed .tt-risk-exposure-badge { flex: none; background: var(--border); color: inherit; }
+.tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); box-shadow: none; transform: none; }
 .tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: .85rem; }
 
 /* Person notes module */

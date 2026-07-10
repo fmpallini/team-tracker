@@ -2,6 +2,7 @@ import { mountSidebar, notifyNavChanged, onNavChanged, ADD_TEAM_REQUEST_EVENT } 
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
@@ -19,7 +20,7 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
-function setup(): { shell: Shell; store: Store; selectTeam: ReturnType<typeof vi.fn> } {
+function setup(): { shell: Shell; store: Store; selectTeam: ReturnType<typeof vi.fn>; renderPanes: ReturnType<typeof vi.fn> } {
   document.body.innerHTML = ''
   stubMatchMedia()
   const doc = createEmptyDocument('en-US')
@@ -29,8 +30,9 @@ function setup(): { shell: Shell; store: Store; selectTeam: ReturnType<typeof vi
   const selectTeam = vi.fn((id: string) => {
     store.updateNav((d) => { d.nav.activeTeamId = id })
   })
-  mountSidebar(shell, store, { selectTeam })
-  return { shell, store, selectTeam }
+  const renderPanes = vi.fn()
+  mountSidebar(shell, store, { selectTeam, renderPanes })
+  return { shell, store, selectTeam, renderPanes }
 }
 
 function addTeam(store: Store, name: string, emoji = '🚀'): void {
@@ -135,6 +137,19 @@ test('+ modal requires a name', () => {
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
 })
 
+test('+ modal requires an emoji — leaving it blank must not silently persist a default 🙂', () => {
+  const { store } = setup()
+  clickByText('➕')
+  const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
+  nameInput.value = 'Gamma'
+  nameInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+
+  expect(document.querySelector('.tt-field-error')?.textContent).toBe('Emoji is required')
+  expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
+  expect(store.doc.teams).toHaveLength(0)
+})
+
 test('adding a team while another already exists still auto-selects the new team', () => {
   const { store, selectTeam } = setup()
   addTeam(store, 'Alpha')
@@ -144,6 +159,9 @@ test('adding a team while another already exists still auto-selects the new team
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   nameInput.value = 'Beta'
   nameInput.dispatchEvent(new Event('input'))
+  const emojiInput = document.querySelector('input[name="tt-team-emoji"]') as HTMLInputElement
+  emojiInput.value = '🅱️'
+  emojiInput.dispatchEvent(new Event('input'))
   clickByText('OK')
 
   const newTeam = store.doc.teams.find((t) => t.name === 'Beta')!
@@ -164,6 +182,34 @@ test('pencil icon opens edit modal to rename/re-emoji a team', () => {
   clickByText('OK')
 
   expect(store.doc.teams[0]!.name).toBe('Alpha Renamed')
+})
+
+test('deleting a team re-renders the pane view — a stale module display would otherwise survive the last team being removed', () => {
+  const { store, renderPanes } = setup()
+  addTeam(store, 'Alpha')
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement
+  editBtn.click()
+  clickByText('Delete')
+  clickByText('Delete')
+
+  expect(store.doc.teams).toEqual([])
+  expect(renderPanes).toHaveBeenCalledOnce()
+})
+
+test('deleting a team fires onNavChanged — main.ts hooks this to save the now-dirty doc immediately, not just on the next auto-save tick', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  let navChangedCount = 0
+  const off = onNavChanged(() => navChangedCount++)
+
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement
+  editBtn.click()
+  clickByText('Delete')
+  clickByText('Delete')
+
+  expect(store.dirty).toBe(true)
+  expect(navChangedCount).toBe(1)
+  off()
 })
 
 test('delete with confirmation removes team, reassigns activeTeamId, and prunes pane history', () => {
@@ -189,7 +235,79 @@ test('delete with confirmation removes team, reassigns activeTeamId, and prunes 
   expect(store.doc.teams.map((tm) => tm.id)).toEqual(['Beta'])
   expect(store.doc.nav.activeTeamId).toBe('Beta')
   expect(store.doc.nav.panes[0]).toEqual({ history: [locB], index: 0 })
-  expect(store.doc.nav.panes[1]).toEqual({ history: [], index: -1 })
+  // Pane 1 only ever had the deleted team (Alpha) open and never had Beta
+  // open in *this* pane before, so it falls back to Beta's daily notes
+  // (today) rather than being left empty.
+  expect(store.doc.nav.panes[1]).toEqual({
+    history: [{ teamId: 'Beta', ref: { kind: 'daily', date: todayIso() } }],
+    index: 0,
+  })
+})
+
+test('deleting a team removes its nav.teamSplit entry and restores the next team\'s remembered split state', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  store.update((d) => {
+    d.nav.activeTeamId = 'Alpha'
+    d.nav.split = true
+    d.nav.teamSplit = { Alpha: true, Beta: false }
+  })
+
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement // Alpha
+  editBtn.click()
+  clickByText('Delete')
+  clickByText('Delete')
+
+  expect(store.doc.nav.teamSplit).toEqual({ Beta: false })
+  expect(store.doc.nav.split).toBe(false) // restored from Beta's remembered (false), not left at Alpha's (true)
+})
+
+test('delete team restores the newly active team\'s own last-used module in a pane that had it open before', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  const locA: Loc = { teamId: 'Alpha', ref: { kind: 'actions' } }
+  const locBRisks: Loc = { teamId: 'Beta', ref: { kind: 'risks' } }
+  store.update((d) => {
+    d.nav.activeTeamId = 'Alpha'
+    d.nav.panes = [
+      { history: [locBRisks, locA], index: 1 }, // this pane visited Beta's risks before landing on Alpha
+      { history: [], index: -1 },
+    ]
+  })
+
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement // Alpha
+  editBtn.click()
+  clickByText('Delete')
+  clickByText('Delete')
+
+  expect(store.doc.nav.activeTeamId).toBe('Beta')
+  // Restores Beta's risks module — what this pane last showed for Beta —
+  // instead of resetting to daily notes.
+  expect(store.doc.nav.panes[0]).toEqual({ history: [locBRisks], index: 0 })
+})
+
+test('deleting the last remaining team clears activeTeamId and leaves panes empty', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  const locA: Loc = { teamId: 'Alpha', ref: { kind: 'actions' } }
+  store.update((d) => {
+    d.nav.activeTeamId = 'Alpha'
+    d.nav.panes = [
+      { history: [locA], index: 0 },
+      { history: [], index: -1 },
+    ]
+  })
+
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement
+  editBtn.click()
+  clickByText('Delete')
+  clickByText('Delete')
+
+  expect(store.doc.teams).toEqual([])
+  expect(store.doc.nav.activeTeamId).toBeNull()
+  expect(store.doc.nav.panes[0]).toEqual({ history: [], index: -1 })
 })
 
 test('delete team whose Locs precede the current entry preserves the current Loc', () => {

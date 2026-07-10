@@ -287,7 +287,11 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       { class: `tt-risk-exposure-badge tt-risk-exposure-${exposureLevel(exposure)}` },
       String(exposure)
     )
-    exposureBadge.style.backgroundColor = exposureColor(exposure)
+    exposureBadge.style.color = exposureColor(exposure)
+    // The badge's own width stays intrinsic (small circle) — this wrapping
+    // cell is what carries the 4.5rem column width shared with the header,
+    // so the stamp can be a true circle without losing header alignment.
+    const exposureCell = el('span', { class: 'tt-risk-exposure-cell' }, exposureBadge)
 
     const planSelect = buildSelect(
       'tt-risk-plan-select',
@@ -326,7 +330,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     const row = el(
       'div',
       { class: 'tt-risk-row', draggable: sortMode === 'none' ? 'true' : 'false', 'data-risk-id': r.id, 'data-item-id': r.id },
-      titleInput, chanceSelect, impactSelect, exposureBadge, planSelect, expandBtn, closeBtn, deleteBtn
+      titleInput, chanceSelect, impactSelect, exposureCell, planSelect, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
 
@@ -411,7 +415,13 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     el('span', { class: 'tt-risk-header-impact' }, t(lc, 'risk_col_impact')),
     exposureHeaderBtn,
     el('span', { class: 'tt-risk-header-plan' }, t(lc, 'risk_col_plan')),
-    el('span', { class: 'tt-risk-header-followup' }, t(lc, 'risk_col_followup')),
+    // Three blank spacers matching the row's three hover-revealed icon
+    // buttons (expand/close/delete) 1:1 — a text label here ("Follow-up")
+    // was both cramped and, since it only ever matched one of the three
+    // buttons, the reason the header and row columns drifted out of
+    // alignment (2 header slots vs. 3 row buttons).
+    el('span', { class: 'tt-risk-header-spacer' }),
+    el('span', { class: 'tt-risk-header-spacer' }),
     el('span', { class: 'tt-risk-header-spacer' })
   )
 

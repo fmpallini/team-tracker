@@ -27,6 +27,10 @@ export interface Shell {
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
   onHelp(cb: () => void): void
+  /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+K). */
+  onAppNameClick(cb: () => void): void
+  /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Shift+L). */
+  onCloseFile(cb: () => void): void
 }
 
 const SAVE_STATE_INFO: Record<SaveState, { icon: string; key: MsgKey }> = {
@@ -64,7 +68,13 @@ export function createShell(locale: Locale): Shell {
 
   // Appended first so it renders to the left of the search bar, which
   // mountSearch() (src/ui/search-ui.ts) appends into headerLeft afterwards.
-  headerLeft.appendChild(el('span', { class: 'tt-app-name' }, t(locale, 'app_name')))
+  let appNameHandler: (() => void) | null = null
+  const appNameBtn = el(
+    'button',
+    { class: 'tt-app-name', type: 'button', title: t(locale, 'app_name_button_title'), onclick: () => appNameHandler?.() },
+    t(locale, 'app_name')
+  )
+  headerLeft.appendChild(appNameBtn)
 
   const saveIndicator = el('span', { class: 'tt-save-indicator' })
 
@@ -72,6 +82,12 @@ export function createShell(locale: Locale): Shell {
     'button',
     { class: 'tt-btn tt-btn-fullscreen', type: 'button', title: t(locale, 'fullscreen'), onclick: () => toggleFullscreen() },
     '⛶'
+  )
+  let closeFileHandler: (() => void) | null = null
+  const closeFileBtn = el(
+    'button',
+    { class: 'tt-btn tt-btn-close-file', type: 'button', title: t(locale, 'close_file_title'), onclick: () => closeFileHandler?.() },
+    '🔒'
   )
   let settingsHandler: (() => void) | null = null
   const settingsBtn = el(
@@ -86,7 +102,7 @@ export function createShell(locale: Locale): Shell {
     '❓'
   )
 
-  headerRight.append(saveIndicator, fullscreenBtn, helpBtn, settingsBtn)
+  headerRight.append(saveIndicator, fullscreenBtn, helpBtn, closeFileBtn, settingsBtn)
 
   const header = el('header', { class: 'tt-header' }, headerLeft, headerRight)
   const sidebar = el('aside', { class: 'tt-sidebar' })
@@ -148,7 +164,15 @@ export function createShell(locale: Locale): Shell {
     helpHandler = cb
   }
 
+  function onAppNameClick(cb: () => void): void {
+    appNameHandler = cb
+  }
+
+  function onCloseFile(cb: () => void): void {
+    closeFileHandler = cb
+  }
+
   setSaveState('saved')
 
-  return { root, headerLeft, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp }
+  return { root, headerLeft, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, onCloseFile }
 }

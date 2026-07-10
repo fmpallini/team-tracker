@@ -82,6 +82,25 @@ test('promptPassword resolves null on Cancel', async () => {
   await expect(promise).resolves.toBeNull()
 })
 
+test('promptPassword confirm mode rejects a password shorter than 4 characters', async () => {
+  const promise = promptPassword('en-US', { confirm: true, title: 'Create' })
+  const [pw, confirm] = document.querySelectorAll('input') as unknown as HTMLInputElement[]
+  pw!.value = 'abc'
+  pw!.dispatchEvent(new Event('input'))
+  confirm!.value = 'abc'
+  confirm!.dispatchEvent(new Event('input'))
+  const ok = document.querySelectorAll('.tt-modal-buttons button')[1] as HTMLButtonElement
+  ok.click()
+  expect(document.querySelector('.tt-field-error')?.textContent).toBe('Password must be at least 4 characters')
+
+  pw!.value = 'abcd'
+  pw!.dispatchEvent(new Event('input'))
+  confirm!.value = 'abcd'
+  confirm!.dispatchEvent(new Event('input'))
+  ok.click()
+  await expect(promise).resolves.toBe('abcd')
+})
+
 test('promptPassword resolves null on Escape', async () => {
   const promise = promptPassword('en-US', { title: 'Open' })
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -91,19 +110,19 @@ test('promptPassword resolves null on Escape', async () => {
 test('promptPassword confirm mismatch shows inline error and does not resolve', async () => {
   const promise = promptPassword('en-US', { confirm: true, title: 'Create' })
   const [pw, confirm] = document.querySelectorAll('input') as unknown as HTMLInputElement[]
-  pw!.value = 'abc'
+  pw!.value = 'abcd'
   pw!.dispatchEvent(new Event('input'))
-  confirm!.value = 'def'
+  confirm!.value = 'defg'
   confirm!.dispatchEvent(new Event('input'))
   const ok = document.querySelectorAll('.tt-modal-buttons button')[1] as HTMLButtonElement
   expect(ok.disabled).toBe(false)
   ok.click()
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Passwords do not match')
 
-  confirm!.value = 'abc'
+  confirm!.value = 'abcd'
   confirm!.dispatchEvent(new Event('input'))
   ok.click()
-  await expect(promise).resolves.toBe('abc')
+  await expect(promise).resolves.toBe('abcd')
 })
 
 test('toast renders message and is removed on click', () => {

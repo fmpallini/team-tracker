@@ -6,7 +6,7 @@ test('createEmptyDocument shape', () => {
   expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 5 })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
-    panes: [{ history: [], index: -1 }, { history: [], index: -1 }] })
+    panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} })
 })
 
 test('migrate accepts current version untouched', () => {
@@ -32,15 +32,25 @@ describe('v1 → v2 migration', () => {
     }]
     return d
   }
-  it('bumps to v2 and fills defaults', () => {
+  it('bumps to the current version and fills v2 defaults', () => {
     const doc = migrate(v1Doc())
-    expect(doc.schemaVersion).toBe(2)
-    expect(SCHEMA_VERSION).toBe(2)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.teams[0]!.risks[0]!.closed).toBe(false)
     expect(doc.teams[0]!.actionItems[0]!.notes).toBe('')
     expect(doc.teams[0]!.milestones[0]!.followup).toBe('')
   })
-  it('createEmptyDocument emits v2', () => {
-    expect(createEmptyDocument('pt-BR').schemaVersion).toBe(2)
+})
+
+describe('v2 → v3 migration', () => {
+  it('fills nav.teamSplit when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 2
+    delete d.nav.teamSplit
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.nav.teamSplit).toEqual({})
+  })
+  it('createEmptyDocument emits the current schema version', () => {
+    expect(createEmptyDocument('pt-BR').schemaVersion).toBe(SCHEMA_VERSION)
   })
 })

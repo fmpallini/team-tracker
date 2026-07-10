@@ -397,9 +397,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.innerHTML = ''
     const readOnly = appCtl.isReadOnly()
 
-    const currentInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', disabled: readOnly })
-    const newInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password', disabled: readOnly })
-    const confirmInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password-confirm', disabled: readOnly })
+    const currentInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
+    const newInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password', autocomplete: 'new-password', minlength: 4, disabled: readOnly })
+    const confirmInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password-confirm', autocomplete: 'new-password', minlength: 4, disabled: readOnly })
     const errorEl = el('div', { class: 'tt-field-error' })
     // Task 25 re-review item #2 (UX bonus): static at render time — this tab
     // is rebuilt from scratch every time it's selected (see `renderActiveTab`
@@ -419,6 +419,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       }
       if (current !== appCtl.currentPassword()) {
         errorEl.textContent = t(locale, 'prefs_security_wrong_current')
+        return
+      }
+      if (next.length < 4) {
+        errorEl.textContent = t(locale, 'password_too_short')
         return
       }
       if (next !== confirm) {

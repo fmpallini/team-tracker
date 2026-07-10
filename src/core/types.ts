@@ -42,6 +42,8 @@ export interface PaneState { history: Loc[]; index: number } // current = histor
 export interface NavState {
   activeTeamId: string | null; split: boolean
   panes: [PaneState, PaneState]; focusedPane: 0 | 1
+  /** Remembers, per team, whether its last session used split view — restored on switching back to that team. */
+  teamSplit: Record<string, boolean>
 }
 export interface Doc {
   schemaVersion: number; prefs: Prefs; templates: Template[]

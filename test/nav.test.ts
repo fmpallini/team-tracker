@@ -1,4 +1,4 @@
-import { locsConflict, openLoc, navigateHistory, currentLoc } from '../src/core/nav'
+import { locsConflict, openLoc, navigateHistory, currentLoc, lastLocForTeam } from '../src/core/nav'
 import type { Loc, PaneState } from '../src/core/types'
 
 const daily = (team: string, date: string): Loc => ({ teamId: team, ref: { kind: 'daily', date } })
@@ -43,4 +43,21 @@ test('navigateHistory skips conflicting entries', () => {
 test('navigateHistory returns null when nothing valid', () => {
   const p = pane(daily('t1', '2026-07-02'))
   expect(navigateHistory(p, -1, null)).toBeNull()
+})
+
+describe('lastLocForTeam', () => {
+  test('finds the most recent Loc belonging to the given team', () => {
+    const p = pane(actions('t1'), daily('t2', '2026-07-01'), person('t1', 'p1'), daily('t2', '2026-07-02'))
+    expect(lastLocForTeam(p, 't1')).toEqual(person('t1', 'p1'))
+    expect(lastLocForTeam(p, 't2')).toEqual(daily('t2', '2026-07-02'))
+  })
+
+  test('returns null when the pane never held that team', () => {
+    const p = pane(actions('t1'))
+    expect(lastLocForTeam(p, 't3')).toBeNull()
+  })
+
+  test('returns null for an empty pane', () => {
+    expect(lastLocForTeam(pane(), 't1')).toBeNull()
+  })
 })

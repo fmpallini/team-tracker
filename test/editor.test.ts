@@ -183,7 +183,7 @@ describe('toolbar', () => {
     return Array.from(editor.root.querySelectorAll('button')).find((b) => b.title === title) as HTMLButtonElement
   }
 
-  test('copy-formatted button selects the editor content and copies it', () => {
+  test('copy-formatted button falls back to selection + execCommand when the async Clipboard API is unavailable (e.g. jsdom, older browsers)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('**bold** text')
@@ -195,6 +195,44 @@ describe('toolbar', () => {
     const sel = window.getSelection()!
     expect(sel.rangeCount).toBe(0) // selection cleared after copying, so it doesn't visually linger
     editor.destroy()
+  })
+
+  test('copy-formatted button writes plain HTML via the async Clipboard API when available, with no background styling anywhere in it', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('**bold** text')
+
+    const write = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { write } })
+    class FakeClipboardItem {
+      constructor(public items: Record<string, Blob>) {}
+    }
+    ;(globalThis as { ClipboardItem?: unknown }).ClipboardItem = FakeClipboardItem
+    // jsdom's bundled Blob has no .text() to read content back out of — spy
+    // on the Blob constructor instead to capture the raw string it was built
+    // from, which is all this test needs to verify.
+    const blobParts: string[] = []
+    const RealBlob = Blob
+    class SpyBlob extends RealBlob {
+      constructor(parts: BlobPart[], opts?: BlobPropertyBag) {
+        super(parts, opts)
+        blobParts.push(String(parts[0]))
+      }
+    }
+    vi.stubGlobal('Blob', SpyBlob)
+
+    toolbarButton(editor, t('en-US', 'editor_copy_formatted_title')).click()
+    await Promise.resolve() // let the write() promise settle
+
+    expect(write).toHaveBeenCalledOnce()
+    const html = blobParts[0]!
+    expect(html).toContain('<strong>bold</strong>')
+    expect(html).not.toMatch(/background/i)
+
+    editor.destroy()
+    Reflect.deleteProperty(navigator, 'clipboard')
+    Reflect.deleteProperty(globalThis as object, 'ClipboardItem')
+    vi.unstubAllGlobals()
   })
 
   test('copy-plain button copies textContent via the Clipboard API when available', () => {
@@ -224,29 +262,6 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
-  test('print button opens a print window and appends a clone of the editor content via DOM APIs (not document.write with content)', () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    editor.setMd('printable note')
-
-    const printSpy = vi.fn()
-    const bodyAppend = vi.fn()
-    const fakeWin = {
-      document: { write: vi.fn(), close: vi.fn(), body: { appendChild: bodyAppend } },
-      focus: vi.fn(),
-      print: printSpy,
-    } as unknown as Window
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin)
-
-    toolbarButton(editor, t('en-US', 'editor_print_title')).click()
-
-    expect(openSpy).toHaveBeenCalled()
-    expect(bodyAppend).toHaveBeenCalledOnce()
-    const appended = bodyAppend.mock.calls[0]![0] as HTMLElement
-    expect(appended.textContent).toContain('printable note')
-    expect(printSpy).toHaveBeenCalled()
-    editor.destroy()
-  })
 })
 
 describe('block-prefix auto-format on typing', () => {
@@ -274,29 +289,37 @@ describe('block-prefix auto-format on typing', () => {
     editor.destroy()
   })
 
-  test('typing "- " auto-converts the block to an unordered list', () => {
+  test('typing "- " auto-converts the block to an unordered list (built directly, not via the unreliable execCommand path)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
-    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
 
     setBlockText(editorEl, '- ')
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    expect(execSpy).toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    const ul = editorEl.querySelector('ul')
+    expect(ul).not.toBeNull()
+    expect(ul!.parentElement).toBe(editorEl)
+    expect(ul!.querySelectorAll('li')).toHaveLength(1)
+    const sel = window.getSelection()!
+    expect(sel.rangeCount).toBe(1)
+    expect(sel.getRangeAt(0).collapsed).toBe(true)
+    expect(ul!.querySelector('li')!.contains(sel.anchorNode)).toBe(true)
     editor.destroy()
   })
 
-  test('typing "1. " auto-converts the block to an ordered list', () => {
+  test('typing "1. " auto-converts the block to an ordered list (built directly, not via the unreliable execCommand path)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
-    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
 
     setBlockText(editorEl, '1. ')
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    expect(execSpy).toHaveBeenCalledWith('insertOrderedList', false, undefined)
+    const ol = editorEl.querySelector('ol')
+    expect(ol).not.toBeNull()
+    expect(ol!.parentElement).toBe(editorEl)
+    expect(ol!.querySelectorAll('li')).toHaveLength(1)
     editor.destroy()
   })
 })

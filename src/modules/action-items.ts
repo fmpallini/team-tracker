@@ -99,7 +99,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   let draggedId: string | null = null
-  let showDone = false
   let focusItemId: string | null = null
   let expandedId: string | null = null
 
@@ -312,11 +311,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   const listEl = el('div', { class: 'tt-action-list' })
-  const doneToggleBtn = el('button', {
-    class: 'tt-btn tt-action-done-toggle', type: 'button',
-    onclick: () => { showDone = !showDone; renderAll() },
-  })
-  const doneListEl = el('div', { class: 'tt-action-done-list' })
+  const doneDetailsEl = el('details', { class: 'tt-actions-done' })
   const datalistEl = el('datalist', { id: datalistId })
 
   function updateDatalist(): void {
@@ -344,14 +339,13 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       })
     }
 
-    doneToggleBtn.textContent = t(lc, showDone ? 'action_hide_done' : 'action_show_done', { count: String(done.length) })
-    doneToggleBtn.style.display = done.length === 0 ? 'none' : ''
-    doneListEl.style.display = showDone ? '' : 'none'
-    doneListEl.innerHTML = ''
+    doneDetailsEl.innerHTML = ''
+    doneDetailsEl.appendChild(el('summary', {}, t(lc, 'action_done_heading', { count: String(done.length) })))
     done.forEach((it) => {
-      doneListEl.appendChild(renderRow(it))
-      if (expandedId === it.id) doneListEl.appendChild(renderNotesRow(it))
+      doneDetailsEl.appendChild(renderRow(it))
+      if (expandedId === it.id) doneDetailsEl.appendChild(renderNotesRow(it))
     })
+    doneDetailsEl.classList.toggle('tt-actions-done-empty', done.length === 0)
 
     if (focusItemId) {
       listEl.querySelector<HTMLInputElement>(`[data-item-id="${focusItemId}"] .tt-action-text`)?.focus()
@@ -414,7 +408,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     renderAll()
   })
 
-  container.appendChild(el('div', { class: 'tt-actions' }, toolbar, listEl, doneToggleBtn, doneListEl, datalistEl))
+  container.appendChild(el('div', { class: 'tt-actions' }, toolbar, listEl, doneDetailsEl, datalistEl))
 
   disposers.set(container, () => {
     unsubscribe()

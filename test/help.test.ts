@@ -44,6 +44,34 @@ test('shell header shows the app name, before the search bar\'s mount point', ()
   expect(shell.headerLeft.firstElementChild).toBe(nameEl)
 })
 
+test('the app name is a clickable button that fires the registered onAppNameClick callback', () => {
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const cb = vi.fn()
+  shell.onAppNameClick(cb)
+
+  const btn = shell.headerLeft.querySelector('.tt-app-name') as HTMLButtonElement
+  expect(btn.tagName).toBe('BUTTON')
+  btn.click()
+
+  expect(cb).toHaveBeenCalledOnce()
+})
+
+test('shell header has a 🔒 close-file button that fires the registered onCloseFile callback', () => {
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const cb = vi.fn()
+  shell.onCloseFile(cb)
+
+  const btn = Array.from(shell.root.querySelectorAll('button')).find((b) => b.textContent === '🔒')!
+  expect(btn).not.toBeUndefined()
+  btn.click()
+
+  expect(cb).toHaveBeenCalledOnce()
+})
+
 test('global help lists app-level shortcuts and the app-window recipe', () => {
   showGlobalHelp('en-US')
   const text = document.body.textContent!

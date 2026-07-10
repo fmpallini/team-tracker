@@ -68,6 +68,41 @@ function blockToMd(node: HTMLElement): string {
   return segments.map(seg => seg.map(inlineMd).join('')).join('\n')
 }
 
+function inlineText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+  if (!(node instanceof HTMLElement)) return ''
+  if (node.tagName.toLowerCase() === 'br') return ''
+  return Array.from(node.childNodes).map(inlineText).join('')
+}
+
+// Same <br>-segment-splitting shape as blockToMd, but renders visual text
+// (no markdown syntax markers) — used for "copy without formatting".
+function blockToText(node: HTMLElement): string {
+  const segments: Node[][] = [[]]
+  node.childNodes.forEach(child => {
+    if (child instanceof HTMLElement && child.tagName.toLowerCase() === 'br') segments.push([])
+    else segments[segments.length - 1]!.push(child)
+  })
+  if (segments.length > 1 && segments[segments.length - 1]!.length === 0) segments.pop()
+  return segments.map(seg => seg.map(inlineText).join('')).join('\n')
+}
+
+/** Renders the editor's rendered text with block/list-item/<br> boundaries preserved as '\n' — unlike Element.textContent, which flattens all block structure. Used for "copy without formatting" so paragraphs and list items don't run together on one line. */
+export function htmlToPlainText(root: HTMLElement): string {
+  const out: string[] = []
+  const walk = (node: Node) => {
+    if (!(node instanceof HTMLElement)) {
+      const t = node.textContent; if (t) out.push(t); return
+    }
+    const tag = node.tagName.toLowerCase()
+    if (tag === 'ul' || tag === 'ol') node.querySelectorAll<HTMLElement>(':scope > li').forEach(li => out.push(blockToText(li)))
+    else if (/^h[1-3]$/.test(tag) || tag === 'div' || tag === 'p') out.push(blockToText(node))
+    else out.push(inlineText(node))
+  }
+  root.childNodes.forEach(walk)
+  return out.join('\n')
+}
+
 export function htmlToMd(root: HTMLElement): string {
   const out: string[] = []
   const walk = (node: Node) => {

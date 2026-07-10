@@ -187,60 +187,75 @@ export function attachTemplatePicker(editor: Editor, opts: {
     // below would immediately close over a stale context.
     close()
     if (!ctx) return
+    // Between open() and commit() the host module can rebuild this row out
+    // from under the picker (e.g. a store update from the *other* split pane
+    // arriving while this editor sits unfocused) — ctx.block would then be a
+    // detached node from the discarded DOM. Silently drop the insert instead
+    // of operating on (or infinite-looping the LI ancestor-walk over) a
+    // subtree that's no longer part of the live editor.
+    if (!editorEl!.contains(ctx.block)) return
 
-    const html = mdToHtml(resolveTemplate(tpl.body, opts.getCtx()))
-    const container = document.createElement('div')
-    container.innerHTML = html
-    const nodes = Array.from(container.childNodes)
-    if (nodes.length === 0) return
-    const lastNode = nodes[nodes.length - 1]!
+    try {
+      const html = mdToHtml(resolveTemplate(tpl.body, opts.getCtx()))
+      const container = document.createElement('div')
+      container.innerHTML = html
+      const nodes = Array.from(container.childNodes)
+      if (nodes.length === 0) return
+      const lastNode = nodes[nodes.length - 1]!
 
-    if (ctx.block.tagName === 'LI') {
-      // The trigger landed inside a list item — a bare "/" bullet (keyboard
-      // trigger) or a bullet caret via the 📋 button. Template blocks can
-      // never nest validly inside a <ul>/<ol>: htmlToMd only reads a list's
-      // direct <li> children (see src/core/markdown.ts's htmlToMd), so
-      // anything else appended inside the list is silently dropped on the
-      // next markdown round-trip. They always land as siblings of the
-      // *enclosing top-level list* (walking up past any nested lists to the
-      // one whose parent is the editor root), never of the <li> itself.
-      const li = ctx.block
-      let listNode = li.parentElement as HTMLElement
-      while (listNode.parentElement !== editorEl) {
-        listNode = listNode.parentElement as HTMLElement
-      }
-      const isBlankLi = ctx.text === '' || ctx.text === '/'
-      if (isBlankLi) {
-        // Mirrors the non-LI branch below discarding the "/"-only block
-        // wholesale: clear the trigger text, then drop the now-empty <li>
-        // (or the whole list, if it was the only item) once the template's
-        // blocks are safely inserted after the list.
-        li.textContent = ''
-        listNode.after(...nodes)
-        if (listNode.querySelectorAll(':scope > li').length === 1) listNode.remove()
-        else li.remove()
+      if (ctx.block.tagName === 'LI') {
+        // The trigger landed inside a list item — a bare "/" bullet (keyboard
+        // trigger) or a bullet caret via the 📋 button. Template blocks can
+        // never nest validly inside a <ul>/<ol>: htmlToMd only reads a list's
+        // direct <li> children (see src/core/markdown.ts's htmlToMd), so
+        // anything else appended inside the list is silently dropped on the
+        // next markdown round-trip. They always land as siblings of the
+        // *enclosing top-level list* (walking up past any nested lists to the
+        // one whose parent is the editor root), never of the <li> itself.
+        const li = ctx.block
+        let listNode = li.parentElement as HTMLElement | null
+        while (listNode && listNode.parentElement !== editorEl) {
+          listNode = listNode.parentElement
+        }
+        if (!listNode) return // malformed/detached nesting — nothing safe to anchor on
+        const isBlankLi = ctx.text === '' || ctx.text === '/'
+        if (isBlankLi) {
+          // Mirrors the non-LI branch below discarding the "/"-only block
+          // wholesale: clear the trigger text, then drop the now-empty <li>
+          // (or the whole list, if it was the only item) once the template's
+          // blocks are safely inserted after the list.
+          li.textContent = ''
+          listNode.after(...nodes)
+          if (listNode.querySelectorAll(':scope > li').length === 1) listNode.remove()
+          else li.remove()
+        } else {
+          // Caret mid-bullet (📋 button on a non-empty list item): leave the
+          // <li> and its content untouched, same as the non-empty-line case
+          // below.
+          listNode.after(...nodes)
+        }
       } else {
-        // Caret mid-bullet (📋 button on a non-empty list item): leave the
-        // <li> and its content untouched, same as the non-empty-line case
-        // below.
-        listNode.after(...nodes)
+        // The trigger line is either the literal "/" the user typed (keyboard
+        // trigger) or an empty line (toolbar button on a blank line): both get
+        // replaced wholesale by the template's blocks, so headings/lists land as
+        // direct children of the editor root — same shape htmlToMd expects from
+        // a freshly loaded document (see Editor.setMd) — instead of nesting them
+        // inside the trigger line's now-empty <div>, which htmlToMd cannot walk.
+        // A toolbar click on a *non-empty* line instead inserts the template
+        // right after that line, leaving its content untouched.
+        const isBlankTriggerLine = ctx.block.parentElement === editorEl && (ctx.text === '' || ctx.text === '/')
+        if (isBlankTriggerLine) ctx.block.replaceWith(...nodes)
+        else ctx.block.after(...nodes)
       }
-    } else {
-      // The trigger line is either the literal "/" the user typed (keyboard
-      // trigger) or an empty line (toolbar button on a blank line): both get
-      // replaced wholesale by the template's blocks, so headings/lists land as
-      // direct children of the editor root — same shape htmlToMd expects from
-      // a freshly loaded document (see Editor.setMd) — instead of nesting them
-      // inside the trigger line's now-empty <div>, which htmlToMd cannot walk.
-      // A toolbar click on a *non-empty* line instead inserts the template
-      // right after that line, leaving its content untouched.
-      const isBlankTriggerLine = ctx.block.parentElement === editorEl && (ctx.text === '' || ctx.text === '/')
-      if (isBlankTriggerLine) ctx.block.replaceWith(...nodes)
-      else ctx.block.after(...nodes)
-    }
 
-    setCaretAfter(lastNode)
-    editorEl!.dispatchEvent(new Event('input', { bubbles: true }))
+      setCaretAfter(lastNode)
+      editorEl!.dispatchEvent(new Event('input', { bubbles: true }))
+    } catch (e) {
+      // A template insert failing should never look like nothing happened —
+      // surface it instead of leaving the user staring at an unresponsive
+      // dropdown-that-closed-with-no-visible-effect.
+      console.error('template insert failed', e)
+    }
   }
 
   function close(): void {

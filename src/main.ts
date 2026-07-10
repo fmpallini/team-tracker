@@ -1,9 +1,10 @@
 declare global { const __APP_VERSION__: string; const __PWA__: boolean }
 
 import type { Locale } from './core/i18n'
-import type { Doc } from './core/types'
+import type { Doc, Loc } from './core/types'
 import type { FileSession } from './core/fs'
 import { createStore, type Store } from './core/store'
+import { lastLocForTeam } from './core/nav'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar, notifyNavChanged, onNavChanged } from './ui/sidebar'
@@ -73,10 +74,10 @@ type TakeoverMessage = { type: 'takeover' }
  * `navigator.locks.request()` (queued since its own first attempt) is then
  * granted, and it exits read-only.
  */
-function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl: SaveController): void {
+function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl: SaveController): () => void {
   const supportsLocks = typeof navigator !== 'undefined' && !!navigator.locks
   const supportsBroadcast = typeof BroadcastChannel !== 'undefined'
-  if (!supportsLocks && !supportsBroadcast) return
+  if (!supportsLocks && !supportsBroadcast) return () => {}
 
   const channelName = 'tmv:' + session.name
   const bc = supportsBroadcast ? new BroadcastChannel(channelName) : null
@@ -169,6 +170,15 @@ function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl:
   }
 
   requestLock(false)
+
+  // Lets a "close file" action give up write access cleanly — without this,
+  // the lock's holding Promise (see requestLock's callback above) never
+  // resolves on its own, and reopening the same filename in this same tab
+  // would queue forever behind a lock this very tab still holds.
+  return function releaseTabLock(): void {
+    releaseLock?.()
+    bc?.close()
+  }
 }
 
 function onDocumentOpened(session: FileSession, doc: Doc, password: string): void {
@@ -215,7 +225,15 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   pm.registerModule('actions', renderActionItems)
   pm.registerModule('milestones', renderMilestones)
   pm.registerModule('risks', renderRisks)
+  // createPaneManager() renders once at construction time (for the initial
+  // layout/CTA), before any registerModule() call above has run — a pane
+  // whose saved nav state (e.g. reopening a file) already points at a real
+  // module would render "Módulo em construção…" from that first pass and
+  // never get another renderAll() to correct it. Re-render now that every
+  // module is registered.
+  pm.renderAll()
   const palette = createPalette(store, pm)
+  shell.onAppNameClick(() => palette.open())
   mountSearch(shell, store, pm, doc.prefs.locale)
   app = { store, session, password, shell, pm, dispose }
 
@@ -327,7 +345,8 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   window.addEventListener('beforeunload', onBeforeUnload)
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
-  setupTabLock(session, store, shell, saveCtl)
+  const releaseTabLock = setupTabLock(session, store, shell, saveCtl)
+  disposers.push(releaseTabLock)
 
   // Task 24: preferences modal wiring. `changePassword` re-encrypts the
   // current in-memory document under the new password and persists it via
@@ -400,19 +419,59 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   store.onMutate(() => clearSearchHighlight())
   onLocaleChanged(() => pm.renderAll())
 
+  // Saves (if dirty) and fully tears this document down, releasing the
+  // cross-tab write lock, then returns to the start screen — the 🔒 header
+  // button and Ctrl+Shift+L. `closing` guards against a double-invocation
+  // (e.g. a fast repeat keypress) tearing the same document down twice.
+  let closing = false
+  function closeFile(): void {
+    if (closing || store.readOnly) return
+    closing = true
+    ;(async () => {
+      if (store.dirty) await saveCtl.saveNow({ explicit: true })
+      await saveCtl.flush()
+      dispose()
+      app = null
+      showStartScreen(store.doc.prefs.locale, onDocumentOpened)
+    })().catch((e) => {
+      console.error(e)
+      closing = false
+    })
+  }
+  shell.onCloseFile(closeFile)
+
+  // Switching teams restores that team's own last session: whether it was
+  // last viewed split or single, and — per pane — whichever module it was
+  // last showing for this team (from that pane's own history), not a blanket
+  // reset to today's daily notes. A team with no recorded session yet (first
+  // visit) still gets the default split layout (daily + members).
   function selectTeam(id: string): void {
+    if (!teamHasHistory(store, id)) {
+      store.updateNav((d) => {
+        d.nav.activeTeamId = id
+      })
+      notifyNavChanged()
+      openTeamDefaultLayout(pm, store, id)
+      return
+    }
+
+    const rememberedSplit = store.doc.nav.teamSplit[id] ?? false
     store.updateNav((d) => {
       d.nav.activeTeamId = id
+      d.nav.split = rememberedSplit
     })
     notifyNavChanged()
-    if (!teamHasHistory(store, id)) {
-      openTeamDefaultLayout(pm, store, id)
-    } else {
-      pm.openInFocused({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
+
+    const todayLoc = (): Loc => ({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
+    const pane0Last = lastLocForTeam(store.doc.nav.panes[0], id)
+    pm.openInPane(0, pane0Last ?? todayLoc())
+    if (rememberedSplit) {
+      const pane1Last = lastLocForTeam(store.doc.nav.panes[1], id)
+      pm.openInPane(1, pane1Last ?? { teamId: id, ref: { kind: 'members' } })
     }
   }
 
-  mountSidebar(shell, store, { selectTeam })
+  mountSidebar(shell, store, { selectTeam, renderPanes: () => pm.renderAll() })
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -426,6 +485,15 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
       palette.open()
+      return
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+      // Plain Ctrl+L is reserved by browser chrome (focus address bar) in
+      // most tabs, outside the page's reach — Ctrl+Shift+L isn't a common
+      // browser/OS binding, so this actually fires reliably.
+      if (!comboHotkeyAllowed(e)) return
+      e.preventDefault()
+      closeFile()
       return
     }
     if (!e.altKey) return

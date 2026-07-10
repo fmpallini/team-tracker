@@ -99,9 +99,15 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
       resolve(value)
     }
 
-    const pwInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-password' })
+    const pwInput = el('input', {
+      type: 'password',
+      class: 'tt-input',
+      name: 'tt-password',
+      autocomplete: opts.confirm ? 'new-password' : 'current-password',
+      minlength: 4,
+    })
     const confirmInput = opts.confirm
-      ? el('input', { type: 'password', class: 'tt-input', name: 'tt-password-confirm' })
+      ? el('input', { type: 'password', class: 'tt-input', name: 'tt-password-confirm', autocomplete: 'new-password', minlength: 4 })
       : null
     const errorEl = el('div', { class: 'tt-field-error' })
 
@@ -132,6 +138,10 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
 
     function trySubmit(): void {
       if (okEl.disabled) return
+      if (confirmInput && pwInput.value.length < 4) {
+        errorEl.textContent = t(locale, 'password_too_short')
+        return
+      }
       if (confirmInput && confirmInput.value !== pwInput.value) {
         errorEl.textContent = t(locale, 'password_mismatch')
         return

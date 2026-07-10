@@ -27,6 +27,15 @@ export function currentLoc(p: PaneState): Loc | null {
   return p.history[p.index] ?? null
 }
 
+/** The most recent Loc this pane held for `teamId` — i.e. "what this pane last showed for this team" — or null if this pane never had that team open. Used to restore a team's per-pane last-used module on switching back to it. */
+export function lastLocForTeam(pane: PaneState, teamId: string): Loc | null {
+  for (let i = pane.history.length - 1; i >= 0; i--) {
+    const loc = pane.history[i]
+    if (loc && loc.teamId === teamId) return loc
+  }
+  return null
+}
+
 export type OpenResult = { type: 'opened'; pane: PaneState } | { type: 'focusOther' }
 
 export function openLoc(pane: PaneState, target: Loc, otherCurrent: Loc | null): OpenResult {

@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
-import { mdToHtml, htmlToMd, parseRef, type RefInfo } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, type RefInfo } from '../core/markdown'
 import { showEditorHelp } from './help'
 
 export interface Editor {
@@ -183,6 +183,30 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     else document.execCommand('formatBlock', false, `<${type}>`)
   }
 
+  /**
+   * Replaces an emptied-out top-level block with a one-item `<ul>`/`<ol>`,
+   * built directly rather than via document.execCommand('insertUnorderedList'
+   * /'insertOrderedList'). Unlike formatBlock (used for headings, which
+   * tolerates this fine), the list insertUnorderedList/insertOrderedList
+   * commands are notoriously unreliable across real browser engines when run
+   * against a *collapsed selection in an empty block* — exactly the state
+   * left right after typing "- " or "1. " and stripping the prefix — and can
+   * silently no-op instead of creating the list.
+   */
+  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol'): void {
+    editorEl.focus()
+    const li = document.createElement('li')
+    li.appendChild(document.createElement('br'))
+    const list = document.createElement(type)
+    list.appendChild(li)
+    block.replaceWith(list)
+    const r = document.createRange()
+    r.selectNodeContents(li)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
   function replaceInlineMatch(block: HTMLElement, match: InlineMatch): void {
     const range = rangeForTextOffsets(block, match.start, match.end)
     // If the matched span crosses an element boundary (e.g. a ref chip or
@@ -207,16 +231,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (caretOffset === text.length) {
       const blockMatch = detectBlockPrefix(text)
       if (blockMatch) {
+        if ((blockMatch.type === 'ul' || blockMatch.type === 'ol') && block.parentElement === editorEl) {
+          convertBlockToList(block, blockMatch.type)
+          return
+        }
         const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
         range.deleteContents()
-        // insertUnorderedList/insertOrderedList are notoriously unreliable
-        // in real browsers when invoked against a selection that wasn't
-        // explicitly (re-)set via the Selection API right beforehand —
-        // deleteContents() mutates the DOM through the Range object
-        // directly, which isn't guaranteed to leave window.getSelection()
-        // itself "settled" at the resulting collapsed position in every
-        // engine. formatBlock (used for headings) tolerates this far
-        // better, which is why only list auto-format broke in practice.
         const sel = window.getSelection()
         if (sel) { sel.removeAllRanges(); sel.addRange(range) }
         applyBlockFormat(blockMatch.type)
@@ -278,15 +298,51 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.dispatchEvent(new CustomEvent(SLASH_TRIGGER_EVENT, { detail: range, bubbles: true }))
   }
 
-  /** Copies the editor's current content to the clipboard as rich (formatted) content — selects the whole editor, lets the browser's native copy write both text/html and text/plain flavors, then clears the selection so it doesn't visually linger. */
+  /**
+   * Copies the editor's current content to the clipboard as rich (formatted)
+   * content. Writes a raw `text/html` string we build ourselves via the
+   * async Clipboard API rather than selecting DOM + execCommand('copy') —
+   * the browser's own copy serializer computes an "effective" background for
+   * the copied fragment by walking up through transparent ancestors to the
+   * first opaque paint it finds, which lands on `<body>`'s `background:
+   * var(--bg)` even when the immediate wrapper is explicitly transparent.
+   * Writing the HTML string directly sidesteps that ambient-style capture
+   * entirely — nothing here ever specifies a background.
+   */
   function copyFormatted(): void {
+    const html = editorEl.innerHTML
+    const text = htmlToPlainText(editorEl)
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      navigator.clipboard
+        .write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+          }),
+        ])
+        .catch(() => copyFormattedViaSelection())
+      return
+    }
+    copyFormattedViaSelection()
+  }
+
+  /** Fallback for browsers/contexts without the async Clipboard API's write() (or where it's denied at runtime) — selects a detached, background-free clone of the editor's *children* (not editorEl itself, whose `.editor` class carries the ruled-paper background texture) and uses the classic execCommand('copy'). */
+  function copyFormattedViaSelection(): void {
+    const wrapper = document.createElement('div')
+    wrapper.style.position = 'fixed'
+    wrapper.style.left = '-9999px'
+    wrapper.style.top = '0'
+    wrapper.style.background = '#fff'
+    editorEl.childNodes.forEach((child) => wrapper.appendChild(child.cloneNode(true)))
+    document.body.appendChild(wrapper)
     const range = document.createRange()
-    range.selectNodeContents(editorEl)
+    range.selectNodeContents(wrapper)
     const sel = window.getSelection()
     sel?.removeAllRanges()
     sel?.addRange(range)
     document.execCommand('copy', false, undefined)
     sel?.removeAllRanges()
+    document.body.removeChild(wrapper)
   }
 
   /** Fallback for browsers/contexts (e.g. file:// with no Clipboard API) where navigator.clipboard is unavailable — the classic hidden-textarea + execCommand('copy') technique. */
@@ -301,25 +357,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     document.body.removeChild(ta)
   }
 
-  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show). */
+  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved). */
   function copyPlain(): void {
-    const text = editorEl.textContent ?? ''
+    const text = htmlToPlainText(editorEl)
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
     } else {
       copyViaTextarea(text)
     }
-  }
-
-  /** Opens a print-only window with a clone of the editor content and triggers the browser's print dialog. Content is inserted via appendChild(cloneNode), never through document.write, since editor content — while fully trusted (see onPaste: paste is forced to plain text, and all rich formatting goes through execCommand) — has no reason to ever pass through an HTML-string sink. */
-  function printContent(): void {
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.write('<!doctype html><html><head><title>Team Tracker</title></head><body></body></html>')
-    w.document.close()
-    w.document.body.appendChild(editorEl.cloneNode(true))
-    w.focus()
-    w.print()
   }
 
   // --- event handlers --------------------------------------------------------
@@ -409,7 +454,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('🗐', t(locale, 'editor_copy_formatted_title'), () => copyFormatted()),
     toolbarButton('📃', t(locale, 'editor_copy_plain_title'), () => copyPlain()),
-    toolbarButton('🖨️', t(locale, 'editor_print_title'), () => printContent()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )

@@ -2,7 +2,7 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
-import { currentLoc, navigateHistory, openLoc } from '../core/nav'
+import { currentLoc, locsConflict, navigateHistory, openLoc } from '../core/nav'
 import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { toast } from './modal'
@@ -85,6 +85,25 @@ function titleFor(store: Store, loc: Loc, locale: Locale): string {
 const SPLIT_MIN_PCT = 20
 const SPLIT_MAX_PCT = 80
 
+/**
+ * Print-window overrides layered on top of a clone of the app's own <style>
+ * tag (see printPane below) — the app stylesheet alone gets us real borders/
+ * colors for whatever module is on screen (table-like rows, badges, etc.),
+ * this trims it down to something printable: white page, interactive chrome
+ * (buttons, dropdown carets, input/select borders) stripped since a printed
+ * page can't be clicked, current values kept as plain text.
+ */
+const PRINT_CSS = `
+  body { background: #fff; color: #000; padding: 1rem; }
+  .tt-print-header { font-size: .7rem; color: #666; margin-bottom: .75rem; padding-bottom: .35rem; border-bottom: 1px solid #999; }
+  .tt-print-content { border: 1px solid #999; border-radius: 3px; padding: 1rem; }
+  .tt-print-content button, .tt-print-content .tt-btn { display: none !important; }
+  .tt-print-content input, .tt-print-content select, .tt-print-content textarea {
+    border: none !important; background: none !important; color: #000 !important;
+    padding: 0 !important; pointer-events: none; appearance: none; -webkit-appearance: none;
+  }
+`
+
 function otherPaneIdx(idx: 0 | 1): 0 | 1 {
   return idx === 0 ? 1 : 0
 }
@@ -124,7 +143,7 @@ export function teamHasHistory(store: Store, teamId: string): boolean {
 
 /** Task 5.6: first-ever open of a team lands in a split view — daily today on the left, members on the right — instead of the last-used single-pane layout. */
 export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: string): void {
-  store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0 })
+  store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0; d.nav.teamSplit[teamId] = true })
   pm.openInPane(1, { teamId, ref: { kind: 'members' } })
   pm.openInPane(0, { teamId, ref: { kind: 'daily', date: todayIso() } })
 }
@@ -154,7 +173,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       const rect = gridEl.getBoundingClientRect()
       const raw = rect.width > 0 ? ((ev.clientX - rect.left) / rect.width) * 100 : splitPct
       splitPct = Math.min(SPLIT_MAX_PCT, Math.max(SPLIT_MIN_PCT, raw))
-      gridEl.style.gridTemplateColumns = `${splitPct}% 6px ${100 - splitPct}%`
+      gridEl.style.gridTemplateColumns = `${splitPct}fr 6px ${100 - splitPct}fr`
     }
     function onUp(): void {
       document.removeEventListener('mousemove', onMove)
@@ -220,7 +239,14 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     gridEl.dataset.split = String(nav.split)
     paneEls[1].style.display = nav.split ? '' : 'none'
     dividerEl.style.display = nav.split ? '' : 'none'
-    gridEl.style.gridTemplateColumns = nav.split ? `${splitPct}% 6px ${100 - splitPct}%` : '1fr'
+    // fr, not %: the two flexible columns plus the fixed 6px divider must
+    // share exactly 100% of the grid's width. Percent columns don't account
+    // for a sibling fixed-width column at all — splitPct% + 6px + (100 -
+    // splitPct)% always summed to 100% *plus* 6px, overflowing the container
+    // by the divider's width and forcing a horizontal scrollbar. fr columns
+    // share whatever space is left *after* fixed-width columns are
+    // subtracted, so the total is always exactly 100%.
+    gridEl.style.gridTemplateColumns = nav.split ? `${splitPct}fr 6px ${100 - splitPct}fr` : '1fr'
     paneEls[0].classList.toggle('focused', nav.focusedPane === 0)
     paneEls[1].classList.toggle('focused', nav.focusedPane === 1)
   }
@@ -233,16 +259,37 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   function openInPane(idx: 0 | 1, target: Loc): void {
     clearSearchHighlight()
     const nav = store.doc.nav
-    const other = currentLoc(nav.panes[otherPaneIdx(idx)])
+    const otherIdx = otherPaneIdx(idx)
+    // The "same module open in both panes" conflict only makes sense while
+    // both panes are actually visible. Unsplit, the other pane is hidden but
+    // still holds a stashed current Loc — without this, opening a module
+    // here that happens to match that stashed Loc would silently refuse
+    // (focusOther) and hand focus to a pane the user can't even see.
+    const other = nav.split ? currentLoc(nav.panes[otherIdx]) : null
     const result = openLoc(nav.panes[idx], target, other)
     if (result.type === 'focusOther') {
       store.updateNav((d) => {
-        d.nav.focusedPane = otherPaneIdx(idx)
+        d.nav.focusedPane = otherIdx
       })
       notifyNavChanged()
       toast(t(localeNow(), 'toast_focus_other'))
       renderAll()
       return
+    }
+    // Pane 1 (not "whichever pane isn't idx") is the one CSS actually hides
+    // while unsplit — layout() never hides pane 0. So only a write that just
+    // landed on the *visible* pane (idx 0) can leave the hidden pane 1
+    // showing a stale duplicate; a write into pane 1 itself doesn't touch
+    // what's on screen and needs no cleanup.
+    if (!nav.split && idx === 0) {
+      const hiddenPane = nav.panes[1]
+      const hiddenCur = currentLoc(hiddenPane)
+      if (hiddenCur && locsConflict(target, hiddenCur)) {
+        const stepped = navigateHistory(hiddenPane, -1, null)
+        store.updateNav((d) => {
+          d.nav.panes[1] = stepped ?? { history: hiddenPane.history, index: -1 }
+        })
+      }
     }
     store.updateNav((d) => {
       d.nav.panes[idx] = result.pane
@@ -259,6 +306,14 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   function toggleSplit(): void {
     store.updateNav((d) => {
       d.nav.split = !d.nav.split
+      // Un-splitting hides pane 1 (layout() never hides pane 0) — leaving
+      // focus stuck there would silently misdirect every focused-pane action
+      // (Ctrl+K palette picks, Alt+arrow history, team hotkeys) at a pane the
+      // user can no longer see.
+      if (!d.nav.split) d.nav.focusedPane = 0
+      // Remembers this choice per team so switching back to it later (see
+      // main.ts's selectTeam) restores split/single view as last left it.
+      if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split
     })
     notifyNavChanged()
     renderAll()
@@ -331,6 +386,37 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     return el('div', { class: 'tt-pane-menu' }, dailyBtn, personGroup, ...fixedBtns)
   }
 
+  /** Opens a print-only window with a clone of the pane's current module content — whatever it is (note editor, risks table, people tree, ...) — plus a clone of the app's own stylesheet (see PRINT_CSS) and a small discreet header identifying the team/module/detail being printed. Content is inserted via appendChild(cloneNode), never through document.write, matching src/ui/editor.ts's prior print implementation this replaces. */
+  function printPane(idx: 0 | 1): void {
+    const lc = localeNow()
+    const cur = currentLoc(store.doc.nav.panes[idx])
+    if (!cur) return
+    const team = store.doc.teams.find((tm) => tm.id === cur.teamId)
+
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<!doctype html><html><head><title>Team Tracker</title></head><body></body></html>')
+    w.document.close()
+
+    const appStyle = document.querySelector('style')
+    if (appStyle) w.document.head.appendChild(appStyle.cloneNode(true))
+    const printStyle = w.document.createElement('style')
+    printStyle.textContent = PRINT_CSS
+    w.document.head.appendChild(printStyle)
+
+    const header = w.document.createElement('div')
+    header.className = 'tt-print-header'
+    header.textContent = [t(lc, 'app_name'), team?.name, titleFor(store, cur, lc)].filter(Boolean).join(' · ')
+
+    const content = w.document.createElement('div')
+    content.className = 'tt-print-content'
+    content.appendChild(bodyEls[idx].cloneNode(true))
+
+    w.document.body.append(header, content)
+    w.focus()
+    w.print()
+  }
+
   function renderBar(idx: 0 | 1): void {
     const barEl = barEls[idx]
     barEl.innerHTML = ''
@@ -378,6 +464,17 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       },
       '▾'
     )
+    const printBtn = el(
+      'button',
+      {
+        class: 'tt-btn tt-pane-print-btn',
+        type: 'button',
+        title: t(lc, 'pane_print_title'),
+        disabled: cur === null,
+        onclick: () => printPane(idx),
+      },
+      '🖨️'
+    )
     const splitBtn = el(
       'button',
       {
@@ -390,7 +487,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     )
 
     const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, titleEl)
-    const right = el('div', { class: 'tt-pane-bar-right' }, modulesBtn, splitBtn)
+    const right = el('div', { class: 'tt-pane-bar-right' }, modulesBtn, printBtn, splitBtn)
     barEl.append(left, right)
 
     if (menuOpen[idx] && teamId !== null) {

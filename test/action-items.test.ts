@@ -172,16 +172,13 @@ describe('renderActionItems', () => {
     const openTexts = Array.from(container.querySelectorAll<HTMLInputElement>('.tt-action-list .tt-action-text')).map((i) => i.value)
     expect(openTexts).toEqual(['A', 'B'])
 
-    const doneList = container.querySelector('.tt-action-done-list') as HTMLElement
-    expect(doneList.style.display).toBe('none')
-    expect(doneList.querySelectorAll('.tt-action-row')).toHaveLength(1)
+    const doneDetails = container.querySelector('.tt-actions-done') as HTMLDetailsElement
+    expect(doneDetails.open).toBe(false)
+    expect(doneDetails.querySelectorAll('.tt-action-row')).toHaveLength(1)
+    expect(doneDetails.querySelector('summary')!.textContent).toBe('Completed items (1)')
 
-    const toggle = container.querySelector('.tt-action-done-toggle') as HTMLButtonElement
-    expect(toggle.textContent).toBe('Show completed (1)')
-
-    toggle.click()
-    expect(doneList.style.display).not.toBe('none')
-    expect(container.querySelector('.tt-action-done-toggle')!.textContent).toBe('Hide completed (1)')
+    doneDetails.open = true
+    expect(doneDetails.open).toBe(true)
   })
 
   test('shows a placeholder when there are no items at all', () => {
@@ -201,7 +198,7 @@ describe('renderActionItems', () => {
     checkbox.dispatchEvent(new Event('change'))
 
     expect(store.doc.teams[0]!.actionItems[0]!.done).toBe(true)
-    expect(container.querySelector('.tt-action-done-list')!.querySelectorAll('.tt-action-row')).toHaveLength(1)
+    expect(container.querySelector('.tt-actions-done')!.querySelectorAll('.tt-action-row')).toHaveLength(1)
     expect(container.querySelector('.tt-action-list .tt-action-row')).toBeNull()
   })
 
@@ -243,7 +240,7 @@ describe('renderActionItems', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0, dueDate: '2000-01-01', done: true })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    const doneRow = container.querySelector('.tt-action-done-list .tt-action-row')!
+    const doneRow = container.querySelector('.tt-actions-done .tt-action-row')!
     expect(doneRow.classList.contains('overdue')).toBe(false)
   })
 

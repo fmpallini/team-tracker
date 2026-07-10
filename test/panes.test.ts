@@ -97,10 +97,11 @@ test('daily-notes calendar click in each split pane sets that pane\'s own day, i
   expect(currentLoc(store.doc.nav.panes[1])).toEqual({ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-20' } })
 })
 
-test('openInPane resolves conflicts by focusing the other pane and shows a toast', () => {
+test('openInPane resolves conflicts by focusing the other pane and shows a toast (split only — see unsplit tests below)', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit() // the same-module-in-both-panes conflict only applies while both panes are visible
   const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
   const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
 
@@ -113,6 +114,57 @@ test('openInPane resolves conflicts by focusing the other pane and shows a toast
   expect(store.doc.nav.focusedPane).toBe(0)
   expect(store.doc.nav.panes[1]).toEqual({ history: [locB], index: 0 }) // untouched
   expect(document.querySelector('.tt-toast')).not.toBeNull()
+})
+
+test('unsplit: opening a module in pane 0 succeeds even if pane 1 (hidden) has that exact module stashed as current', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit()
+  pm.openInPane(1, locB) // stash something in pane 1 while it's still visible
+  pm.toggleSplit() // back to unsplit — pane 1 is now hidden but still holds locB
+
+  // Previously this would silently refuse (focusOther) and hand focus to the
+  // now-invisible pane 1 — the bug was that the conflict check ran at all
+  // while pane 1 is hidden.
+  pm.openInPane(0, locB)
+
+  expect(document.querySelector('.tt-toast')).toBeNull()
+  expect(store.doc.nav.focusedPane).toBe(0)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+})
+
+test('unsplit: opening a module in pane 0 that matches pane 1\'s stashed current Loc steps pane 1 back to avoid a duplicate on re-split', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit()
+  pm.openInPane(1, locA)
+  pm.openInPane(1, locB) // pane 1 history: [locA, locB], current = locB
+  pm.toggleSplit() // unsplit; pane 1 hidden, still "current" = locB
+
+  pm.openInPane(0, locB) // now pane 0 also shows locB
+
+  // Pane 1 stepped back to its own previous entry (locA) instead of keeping
+  // locB, so a later re-split doesn't show the same module in both panes.
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(locA)
+})
+
+test('toggleSplit resets focusedPane to 0 when un-splitting, so it never points at the now-hidden pane 1', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit()
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'actions' } })
+  expect(store.doc.nav.focusedPane).toBe(1)
+
+  pm.toggleSplit() // back to unsplit
+  expect(store.doc.nav.focusedPane).toBe(0)
 })
 
 test('pane back/forward buttons are disabled exactly when navigateHistory would return null', () => {
@@ -203,4 +255,75 @@ test('filterModuleItems matches substrings case- and accent-insensitively (palet
   expect(filterModuleItems(items, 'STAKE').map((i) => i.label)).toEqual(['Stakeholders'])
   expect(filterModuleItems(items, '')).toEqual(items)
   expect(filterModuleItems(items, 'zzz')).toEqual([])
+})
+
+test('print button is disabled when the pane is empty and enabled once a module is open', () => {
+  const { store, pm } = setup()
+  expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(true)
+
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(false)
+})
+
+test('print button opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  const printSpy = vi.fn()
+  const headAppend = vi.fn()
+  const bodyAppend = vi.fn()
+  const fakeDoc = {
+    write: vi.fn(),
+    close: vi.fn(),
+    head: { appendChild: headAppend },
+    body: { append: bodyAppend },
+    createElement: (tag: string) => document.createElement(tag),
+  }
+  const fakeWin = { document: fakeDoc, focus: vi.fn(), print: printSpy } as unknown as Window
+  const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin)
+
+  paneBtn(0, 'tt-pane-print-btn').click()
+
+  expect(openSpy).toHaveBeenCalled()
+  expect(headAppend).toHaveBeenCalled() // app stylesheet clone + print override style
+  expect(bodyAppend).toHaveBeenCalledOnce()
+  const [header, content] = bodyAppend.mock.calls[0]! as HTMLElement[]
+  expect(header!.className).toBe('tt-print-header')
+  expect(header!.textContent).toContain('T1')
+  expect(content!.className).toBe('tt-print-content')
+  expect(printSpy).toHaveBeenCalled()
+})
+
+test('openTeamDefaultLayout records split=true in nav.teamSplit for that team', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  openTeamDefaultLayout(pm, store, 'T1')
+  expect(store.doc.nav.teamSplit['T1']).toBe(true)
+})
+
+test('toggleSplit records the current split state under the active team', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  expect(store.doc.nav.split).toBe(false)
+
+  pm.toggleSplit()
+  expect(store.doc.nav.split).toBe(true)
+  expect(store.doc.nav.teamSplit['T1']).toBe(true)
+
+  pm.toggleSplit()
+  expect(store.doc.nav.split).toBe(false)
+  expect(store.doc.nav.teamSplit['T1']).toBe(false)
+})
+
+test('toggleSplit does not record anything when no team is active', () => {
+  const { store, pm } = setup()
+  expect(store.doc.nav.activeTeamId).toBeNull()
+  pm.toggleSplit()
+  expect(store.doc.nav.teamSplit).toEqual({})
 })
