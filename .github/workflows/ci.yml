@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - 'feature/**'
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  check:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  # Only runs for PRs targeting main — dev -> main is where releases are cut,
+  # so this is the heavier gate: full build, on both OSes, with output
+  # sanity checks. Feature -> dev and plain dev pushes only need `check`.
+  release-gate:
+    name: Release gate (build)
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    needs: check
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Verify dist outputs
+        shell: bash
+        run: |
+          test -f dist/app.html
+          test -f dist/pwa/index.html
+          test -f dist/pwa/sw.js
+          test -f dist/pwa/manifest.json
