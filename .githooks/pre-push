@@ -6,6 +6,13 @@ gate_ok()   { echo -e "${GREEN}[ OK ]${NC}  $1"; }
 gate_fail() { echo -e "${RED}[ FAIL ]${NC} $1 — $2"; exit 1; }
 gate_warn() { echo -e "${YELLOW}[ WARN ]${NC} $1"; }
 gate_run()  { echo -e "\n${BLUE}[ RUNNING ]${NC} $1..."; }
+pass_and_exit() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${GREEN} $1${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+}
 
 BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
 
@@ -95,11 +102,7 @@ fi
 if [ "$BRANCH" != "dev" ]; then
   echo ""
   echo -e "${BLUE}AI gates: skipped — only run for pushes to dev (current branch: $BRANCH)${NC}"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${GREEN} All gates passed. Pushing...${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  exit 0
+  pass_and_exit "All gates passed. Pushing..."
 fi
 
 # AI gates run by default on dev pushes. Set SKIP_AI=1 to bypass (offline, in
@@ -117,20 +120,12 @@ echo -e "${BLUE}AI gates: ${AI_STATE}${NC}"
 
 if [ "${SKIP_AI:-0}" != "0" ]; then
   gate_warn "AI gates skipped (SKIP_AI=$SKIP_AI)"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${GREEN} All deterministic gates passed. Pushing...${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  exit 0
+  pass_and_exit "All deterministic gates passed. Pushing..."
 fi
 
 if ! command -v claude &>/dev/null; then
   gate_warn "AI gates skipped — 'claude' CLI not found"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${GREEN} All deterministic gates passed. Pushing...${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  exit 0
+  pass_and_exit "All deterministic gates passed. Pushing..."
 fi
 
 # Diff against origin/dev — the commits this push is actually about to land
@@ -142,37 +137,40 @@ fi
 
 if [ -z "$DIFF" ]; then
   gate_warn "No diff to analyse for AI gates"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${GREEN} All gates passed. Pushing...${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  exit 0
+  pass_and_exit "All gates passed. Pushing..."
 fi
+
+# Wall-clock cap per `claude` invocation — SKIP_AI exists precisely so a slow
+# or hung CLI call never blocks `git push` with no way out but Ctrl-C.
+AI_GATE_TIMEOUT="${AI_GATE_TIMEOUT:-300}"
 
 run_ai_gate() {
   local name="$1"
   local prompt="$2"
   gate_run "AI: $name"
 
-  TMPFILE=$(mktemp)
+  TMPFILE=$(mktemp) || { gate_warn "AI: $name — mktemp failed, skipping"; return; }
   printf '%s\n\n---DIFF START---\n%s\n---DIFF END---' "$prompt" "$DIFF" > "$TMPFILE"
 
-  OUTPUT=$(claude --print < "$TMPFILE" 2>&1) || true
+  OUTPUT=$(timeout "$AI_GATE_TIMEOUT" claude --print < "$TMPFILE" 2>&1) || true
   rm -f "$TMPFILE"
 
-  if echo "$OUTPUT" | grep -qi "SEVERITY: HIGH"; then
+  # Anchored to line start, matching what the prompt actually asks the model
+  # to emit — an unanchored match lets restated instructions or prose like
+  # "not a SEVERITY: HIGH issue" false-trigger the block/fix path below.
+  if echo "$OUTPUT" | grep -qE "^SEVERITY: HIGH"; then
     echo -e "${RED}[ HIGH ]${NC} $name found high-severity issues:"
     echo "$OUTPUT"
     echo ""
     echo "Launching Claude to apply fixes interactively..."
-    FIXTMP=$(mktemp)
+    FIXTMP=$(mktemp) || { gate_fail "AI: $name" "mktemp failed — fix the HIGH findings above manually, then push again"; }
     printf 'You are a code quality assistant in a git pre-push hook. Fix ALL HIGH severity issues by editing the files directly.\n\nIssues found by %s scan:\n%s\n\n---DIFF---\n%s' "$name" "$OUTPUT" "$DIFF" > "$FIXTMP"
-    claude < "$FIXTMP" || true
+    timeout "$AI_GATE_TIMEOUT" claude < "$FIXTMP" || true
     rm -f "$FIXTMP"
     echo ""
     echo -e "${RED}Push aborted.${NC} Review Claude's changes, commit them, then push again."
     exit 1
-  elif echo "$OUTPUT" | grep -qiE "SEVERITY: (MEDIUM|LOW)"; then
+  elif echo "$OUTPUT" | grep -qE "^SEVERITY: (MEDIUM|LOW)"; then
     gate_warn "AI: $name — non-blocking findings:"
     echo "$OUTPUT"
   else
@@ -189,7 +187,4 @@ run_ai_gate "Security" \
 run_ai_gate "Bug Hunt" \
   "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${GREEN} All gates passed. Pushing...${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+pass_and_exit "All gates passed. Pushing..."
