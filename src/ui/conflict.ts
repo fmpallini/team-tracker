@@ -22,11 +22,9 @@ export interface ConflictModalOptions {
  */
 export function showConflictModal(opts: ConflictModalOptions): void {
   const { locale } = opts
-  let handle: ModalHandle
 
   function confirmReload(): void {
     const body = el('p', { class: 'tt-modal-message' }, t(locale, 'conflict_reload_confirm'))
-    let inner: ModalHandle
     const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
     const confirmBtn: ModalButton = {
       label: t(locale, 'conflict_reload_btn'),
@@ -37,7 +35,7 @@ export function showConflictModal(opts: ConflictModalOptions): void {
         Promise.resolve(opts.onReload()).catch((e) => console.error(e))
       },
     }
-    inner = showModal({ title: t(locale, 'conflict_title'), body, buttons: [cancelBtn, confirmBtn] })
+    const inner: ModalHandle = showModal({ title: t(locale, 'conflict_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   function overwrite(): void {
@@ -48,5 +46,5 @@ export function showConflictModal(opts: ConflictModalOptions): void {
   const body = el('p', { class: 'tt-modal-message' }, t(locale, 'conflict_message'))
   const reloadBtn: ModalButton = { label: t(locale, 'conflict_reload_btn'), onClick: () => confirmReload() }
   const overwriteBtn: ModalButton = { label: t(locale, 'conflict_overwrite_btn'), primary: true, onClick: () => overwrite() }
-  handle = showModal({ title: t(locale, 'conflict_title'), body, buttons: [reloadBtn, overwriteBtn] })
+  const handle: ModalHandle = showModal({ title: t(locale, 'conflict_title'), body, buttons: [reloadBtn, overwriteBtn] })
 }

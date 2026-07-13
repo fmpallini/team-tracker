@@ -175,7 +175,9 @@ export function showStartScreen(
 
   container.append(root, fileInput)
 
-  idbGet('lastHandle').then((handle) => {
-    if (handle !== undefined) reopenBtn.style.display = ''
-  })
+  idbGet('lastHandle')
+    .then((handle) => {
+      if (handle !== undefined) reopenBtn.style.display = ''
+    })
+    .catch((e: unknown) => console.error(e))
 }

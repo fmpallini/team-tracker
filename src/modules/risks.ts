@@ -165,7 +165,6 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
 
   function openDeleteConfirm(r: Risk): void {
     const body = el('p', { class: 'tt-modal-message' }, t(lc, 'risk_delete_confirm', { title: r.title }))
-    let handle: ModalHandle
     const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
       label: t(lc, 'risk_delete_btn'),
@@ -175,7 +174,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
         handle.close()
       },
     }
-    handle = showModal({ title: t(lc, 'risk_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+    const handle: ModalHandle = showModal({ title: t(lc, 'risk_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   function setClosed(id: string, closed: boolean): void {

@@ -17,7 +17,7 @@ export interface ModalOptions {
 }
 
 export interface ModalHandle {
-  close(): void
+  close: () => void
 }
 
 interface RenderedDialog extends ModalHandle {
@@ -85,8 +85,7 @@ export function showModal(opts: ModalOptions): ModalHandle {
 
 export function showErrorModal(locale: Locale, message: string): ModalHandle {
   const body = el('p', { class: 'tt-modal-message' }, message)
-  let handle: ModalHandle
-  handle = showModal({
+  const handle: ModalHandle = showModal({
     title: t(locale, 'err_title'),
     body,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],

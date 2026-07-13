@@ -57,8 +57,7 @@ export function showEditorHelp(locale: Locale): void {
     el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text'))
   )
 
-  let handle: { close: () => void }
-  handle = showModal({
+  const handle: { close: () => void } = showModal({
     title: t(locale, 'editor_help_title'),
     body,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
@@ -76,8 +75,7 @@ export function showGlobalHelp(locale: Locale): void {
     el('pre', { class: 'tt-help-code-block' }, 'chrome --app=file:///caminho/para/app.html')
   )
 
-  let handle: { close: () => void }
-  handle = showModal({
+  const handle: { close: () => void } = showModal({
     title: t(locale, 'help_global_title'),
     body,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],

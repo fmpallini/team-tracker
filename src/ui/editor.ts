@@ -80,6 +80,7 @@ export interface BlockPrefixMatch {
   prefixLen: number
 }
 
+/* eslint-disable no-irregular-whitespace -- the character classes below intentionally contain a literal U+00A0 non-breaking space alongside the regular space; see the doc comment for why. */
 /**
  * Detects a markdown block-prefix (`# `, `- `, `1. `, ...) that makes up the
  * ENTIRE current block text. The trailing space is matched as `[  ]`,
@@ -100,6 +101,7 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
 
   return null
 }
+/* eslint-enable no-irregular-whitespace */
 
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: 'true' })

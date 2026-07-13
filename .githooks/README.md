@@ -13,6 +13,7 @@ git config core.hooksPath .githooks
 
 | Gate | Blocks push? | Notes |
 |------|-------------|-------|
+| Lint (`eslint src test`) | Yes | flat config, type-checked rules — see `eslint.config.mjs` |
 | TypeCheck (`tsc --noEmit`) | Yes | |
 | Tests (`vitest run`) | Yes | |
 | Security audit (`npm audit`) | Yes (high/critical only) | moderate = advisory |
@@ -21,9 +22,15 @@ git config core.hooksPath .githooks
 | AI: Security review | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
 | AI: Bug hunt | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
 
+`eslint.config.mjs`'s highest-value rules are `@typescript-eslint/no-floating-promises`
+and `no-misused-promises` — the save/lock/dispose code in `save-controller.ts` and
+`main.ts` is full of fire-and-forget async, exactly the bug class an unhandled
+rejection slips through. `no-unnecessary-type-assertion` is turned off project-wide
+(cosmetic, not a bug signal); a few test-only rules (`require-await`, `no-base-to-string`)
+are relaxed for mocks/stubs that intentionally don't need the rigor.
+
 Deliberately not ported from other projects' hooks:
 
-- **Lint** — no ESLint config in this repo yet; add it here once one exists.
 - **E2E** — no browser-driven end-to-end suite; `test/` is jsdom-only unit/integration tests.
 - **New-file coverage check** — `CLAUDE.md` says every `src` module gets a matching
   `test/*.test.ts`, but it's not 1:1 today (`dom.ts`, `idb.ts`, `palette.ts`,

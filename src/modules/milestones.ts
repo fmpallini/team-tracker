@@ -239,7 +239,6 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   function openDeleteConfirm(m: Milestone): void {
     const body = el('p', { class: 'tt-modal-message' }, t(lc, 'milestone_delete_confirm', { title: m.title }))
-    let handle: ModalHandle
     const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
       label: t(lc, 'milestone_delete_btn'),
@@ -249,7 +248,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
         handle.close()
       },
     }
-    handle = showModal({ title: t(lc, 'milestone_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+    const handle: ModalHandle = showModal({ title: t(lc, 'milestone_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   function requestDelete(m: Milestone): void {

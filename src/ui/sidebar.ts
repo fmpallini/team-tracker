@@ -247,7 +247,6 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
     )
     const picker = attachEmojiPicker(emojiInput, locale())
 
-    let handle: ModalHandle
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
     const okBtn: ModalButton = {
       label: t(locale(), 'ok'),
@@ -272,7 +271,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
         actions.selectTeam(newTeamId)
       },
     }
-    handle = showModal({ title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn] })
+    const handle: ModalHandle = showModal({ title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn] })
     nameInput.focus()
   }
 
@@ -291,7 +290,6 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
     )
     const picker = attachEmojiPicker(emojiInput, locale())
 
-    let handle: ModalHandle
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
@@ -322,14 +320,13 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
         handle.close()
       },
     }
-    handle = showModal({ title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn] })
+    const handle: ModalHandle = showModal({ title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn] })
     nameInput.focus()
   }
 
   function openDeleteConfirm(team: Team): void {
     const message = t(locale(), 'team_delete_confirm', { name: team.name })
     const body = el('p', { class: 'tt-modal-message' }, message)
-    let handle: ModalHandle
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
@@ -339,7 +336,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
         handle.close()
       },
     }
-    handle = showModal({ title: t(locale(), 'team_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+    const handle: ModalHandle = showModal({ title: t(locale(), 'team_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   render()

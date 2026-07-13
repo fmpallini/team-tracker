@@ -23,7 +23,15 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # ─── PHASE 1: DETERMINISTIC GATES ────────────────────────────────────────────
 
-# 1. TypeCheck
+# 1. Lint
+gate_run "Lint"
+if npx eslint src test 2>&1; then
+  gate_ok "Lint"
+else
+  gate_fail "Lint" "fix lint errors above then push again"
+fi
+
+# 2. TypeCheck
 gate_run "TypeCheck"
 if npx tsc --noEmit 2>&1; then
   gate_ok "TypeCheck"
@@ -31,7 +39,7 @@ else
   gate_fail "TypeCheck" "fix type errors above then push again"
 fi
 
-# 2. Tests
+# 3. Tests
 gate_run "Tests"
 if npx vitest run 2>&1; then
   gate_ok "Tests"
@@ -39,7 +47,7 @@ else
   gate_fail "Tests" "fix failing tests then push again"
 fi
 
-# 3. Security audit
+# 4. Security audit
 gate_run "Security audit"
 AUDIT_OUT=$(npm audit --json 2>/dev/null || true)
 HIGH_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
@@ -66,7 +74,7 @@ else
   gate_ok "Security audit"
 fi
 
-# 4. Outdated packages (advisory only, non-blocking)
+# 5. Outdated packages (advisory only, non-blocking)
 gate_run "Outdated packages"
 OUTDATED=$(npm outdated --json 2>/dev/null || true)
 if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ]; then

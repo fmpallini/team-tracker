@@ -3,7 +3,7 @@
 // as a drag-and-droppable hierarchy (parentId/order), mirroring the
 // disposal/store.subscribe discipline established by src/modules/daily-notes.ts.
 import type { Loc, Person, Team } from '../core/types'
-import { t, type Locale } from '../core/i18n'
+import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { el } from '../ui/dom'
@@ -145,7 +145,6 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         el('label', { class: 'tt-field' }, t(lc, 'person_role_label'), roleInput),
         errorEl
       )
-      let handle: ModalHandle
       const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
       const okBtn: ModalButton = {
         label: t(lc, 'ok'),
@@ -160,7 +159,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           handle.close()
         },
       }
-      handle = showModal({ title: opts.title, body, buttons: [cancelBtn, okBtn] })
+      const handle: ModalHandle = showModal({ title: opts.title, body, buttons: [cancelBtn, okBtn] })
       nameInput.focus()
     }
 
@@ -201,7 +200,6 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     function openDeleteConfirm(person: Person): void {
       const message = t(lc, 'person_delete_confirm', { name: person.name })
       const body = el('p', { class: 'tt-modal-message' }, message)
-      let handle: ModalHandle
       const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
       const confirmBtn: ModalButton = {
         label: t(lc, 'person_delete_btn'),
@@ -215,7 +213,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           handle.close()
         },
       }
-      handle = showModal({ title: t(lc, 'person_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+      const handle: ModalHandle = showModal({ title: t(lc, 'person_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
     }
 
     function renderBox(person: Person): HTMLElement {

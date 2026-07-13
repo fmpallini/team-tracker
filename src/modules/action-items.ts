@@ -176,7 +176,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   function openDeleteConfirm(item: ActionItem): void {
     const body = el('p', { class: 'tt-modal-message' }, t(lc, 'action_delete_confirm', { text: item.text }))
-    let handle: ModalHandle
     const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
       label: t(lc, 'action_delete_btn'),
@@ -186,7 +185,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         handle.close()
       },
     }
-    handle = showModal({ title: t(lc, 'action_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+    const handle: ModalHandle = showModal({ title: t(lc, 'action_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   function requestDelete(item: ActionItem): void {

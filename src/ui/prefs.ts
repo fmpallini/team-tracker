@@ -99,7 +99,6 @@ function scopeLabel(locale: Locale, scope: Template['scope']): string {
 
 export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: PrefsAppCtl): void {
   let activeTab: TabId = 'general'
-  let handle: ModalHandle
 
   function radioField(
     name: string,
@@ -237,7 +236,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     function openDeleteConfirm(tpl: Template): void {
       const body = el('p', { class: 'tt-modal-message' }, t(locale, 'prefs_templates_delete_confirm', { name: tpl.name }))
-      let inner: ModalHandle
       const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
       const confirmBtn: ModalButton = {
         label: t(locale, 'prefs_templates_delete_btn'),
@@ -247,7 +245,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           inner.close()
         },
       }
-      inner = showModal({ title: t(locale, 'prefs_templates_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+      const inner: ModalHandle = showModal({ title: t(locale, 'prefs_templates_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
     }
 
     function openEditModal(tpl: Template | null): void {
@@ -272,7 +270,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         el('div', { class: 'tt-prefs-template-hint' }, t(locale, 'prefs_templates_placeholders_hint'))
       )
 
-      let inner: ModalHandle
       const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
       const saveBtn: ModalButton = {
         label: t(locale, 'ok'),
@@ -302,7 +299,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           refreshList()
         },
       }
-      inner = showModal({
+      const inner: ModalHandle = showModal({
         title: t(locale, tpl ? 'prefs_templates_edit_title' : 'prefs_templates_add_title'),
         body,
         buttons: [cancelBtn, saveBtn],
@@ -537,7 +534,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
   const dialogBody = el('div', { class: 'tt-prefs-dialog' }, tabStrip, contentEl)
 
-  handle = showModal({
+  const handle: ModalHandle = showModal({
     title: t(locale, 'prefs_title'),
     body: dialogBody,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],

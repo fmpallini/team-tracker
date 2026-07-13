@@ -12,7 +12,7 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME)
     }
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(req.error ?? new Error('IndexedDB open request failed'))
   })
 }
 
@@ -24,7 +24,7 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
       const store = tx.objectStore(STORE_NAME)
       const req = fn(store)
       req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
+      req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'))
     })
   } finally {
     db.close()
