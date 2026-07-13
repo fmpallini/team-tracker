@@ -44,6 +44,7 @@ jobs:
           subject-path: |
             staging/team-tracker-${{ steps.assets.outputs.version }}.html
             staging/team-tracker-pwa-${{ steps.assets.outputs.version }}.zip
+            dist/pwa/**
 
       - name: Create draft release
         env:
@@ -57,12 +58,20 @@ jobs:
             --generate-notes \
             --title "${{ github.ref_name }}"
 
-  # Publishes the same PWA build to GitHub Pages on every tagged release —
-  # separate job (not a step in build-and-release) so its own `pages`/
-  # `id-token` permissions and `github-pages` environment stay scoped away
-  # from the release-asset job above. Rebuilds from scratch rather than
-  # sharing dist/pwa via artifact upload/download — the build is a few
-  # seconds of esbuild, cheaper than the cross-job artifact plumbing.
+      # deploy-pages deploys this exact build (not a rebuild) so the live
+      # Pages site is provably the same bytes just attested above, not a
+      # separately-built copy that merely shares the same source.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pwa-build
+          path: dist/pwa
+
+  # Publishes the same attested PWA build to GitHub Pages on every tagged
+  # release — separate job so its own `pages`/`id-token` permissions and
+  # `github-pages` environment stay scoped away from the release-asset job
+  # above. Deploys the artifact build-and-release already built and attested,
+  # rather than rebuilding, so there's an unbroken chain from "attested" to
+  # "what's actually served."
   deploy-pages:
     name: Deploy PWA to GitHub Pages
     needs: build-and-release
@@ -74,13 +83,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+          name: pwa-build
+          path: dist/pwa
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
