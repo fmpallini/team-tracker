@@ -17,9 +17,9 @@ git config core.hooksPath .githooks
 | Tests (`vitest run`) | Yes | |
 | Security audit (`npm audit`) | Yes (high/critical only) | moderate = advisory |
 | Outdated packages | No | advisory only |
-| AI: Simplify | Yes (HIGH only) | dev pushes only, requires `claude` CLI |
-| AI: Security review | Yes (HIGH only) | dev pushes only, requires `claude` CLI |
-| AI: Bug hunt | Yes (HIGH only) | dev pushes only, requires `claude` CLI |
+| AI: Simplify | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
+| AI: Security review | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
+| AI: Bug hunt | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
 
 Deliberately not ported from other projects' hooks:
 
@@ -36,16 +36,17 @@ commits with no PR in front of them, so it's the one spot an AI second look
 at the diff earns its keep. Pushes to any other branch skip this phase
 entirely; `main` only ever changes via a reviewed PR anyway.
 
-They run by default on every `dev` push. Bypass them when offline or in a
-hurry:
+They're opt-in, off by default — every push skips them unless you ask for
+them:
 
 ```bash
-SKIP_AI=1 git push
+ENABLE_AI=1 git push
 ```
 
-The prefix must be on `git push` itself — `SKIP_AI=1 git commit && git push` only
-sets it for the commit, so the push still runs the AI gates. They're also skipped
-automatically if the `claude` CLI isn't installed.
+The prefix must be on `git push` itself — `ENABLE_AI=1 git commit && git push` only
+sets it for the commit, so the push wouldn't run the AI gates anyway. They're
+also skipped automatically if the `claude` CLI isn't installed, even with
+`ENABLE_AI=1`.
 
 When an AI gate finds a HIGH-severity issue, it blocks the push and launches
 `claude` interactively with instructions to fix it; review the changes,

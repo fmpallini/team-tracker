@@ -105,21 +105,18 @@ if [ "$BRANCH" != "dev" ]; then
   pass_and_exit "All gates passed. Pushing..."
 fi
 
-# AI gates run by default on dev pushes. Set SKIP_AI=1 to bypass (offline, in
-# a hurry, or no 'claude' CLI). Report the resolved state so it's never
-# ambiguous why they ran or not.
-if [ -z "${SKIP_AI:-}" ]; then
-  AI_STATE="unset -> enabled (default)"
-elif [ "$SKIP_AI" = "0" ]; then
-  AI_STATE="SKIP_AI=0 -> enabled"
+# AI gates are opt-in, off by default — set ENABLE_AI=1 to run them. Report
+# the resolved state so it's never ambiguous why they ran or not.
+if [ "${ENABLE_AI:-0}" = "1" ]; then
+  AI_STATE="ENABLE_AI=1 -> enabled"
 else
-  AI_STATE="SKIP_AI=$SKIP_AI -> skipped"
+  AI_STATE="unset/0 -> disabled (default)"
 fi
 echo ""
 echo -e "${BLUE}AI gates: ${AI_STATE}${NC}"
 
-if [ "${SKIP_AI:-0}" != "0" ]; then
-  gate_warn "AI gates skipped (SKIP_AI=$SKIP_AI)"
+if [ "${ENABLE_AI:-0}" != "1" ]; then
+  gate_warn "AI gates skipped (set ENABLE_AI=1 to run them)"
   pass_and_exit "All deterministic gates passed. Pushing..."
 fi
 
