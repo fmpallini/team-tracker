@@ -110,9 +110,15 @@ chrome --app=file:///C:/path/to/dist/app.html
 ## Deploying the PWA (`dist/pwa/`)
 
 The PWA build needs to be served over http(s) (service workers refuse to
-register under `file://`). The simplest free option is GitHub Pages:
+register under `file://`).
 
-**Option A — `gh-pages` branch:**
+**Automatic, via GitHub Pages:** pushing a `v*` tag (see [Releases](#releases)
+below) builds `dist/pwa/` and deploys it to GitHub Pages as part of the same
+workflow — nothing to run by hand. Repo Settings → Pages is configured with
+source "GitHub Actions"; the live URL is under Settings → Pages once the
+first deploy has run.
+
+**Manual, for a fork or a one-off deploy without tagging a release:**
 
 ```
 npm run build
@@ -123,20 +129,17 @@ npx gh-pages -d dist/pwa
 directory to a branch.) Then in the repo's Settings → Pages, set the source
 to the `gh-pages` branch, root.
 
-**Option B — `/docs` folder on `main`:**
-
-```
-npm run build
-rm -rf docs
-cp -r dist/pwa docs
-git add docs && git commit -m "chore: publish pwa build to docs/"
-git push
-```
-
-Then in Settings → Pages, set the source to `main` branch, `/docs` folder.
-
 Either way, once published, visiting the Pages URL in Chrome/Edge shows an
 install prompt; installing opens Team Tracker in its own standalone window.
+
+## Releases
+
+Pushing a tag matching `v*` (e.g. `v1.2.0`) triggers `.github/workflows/release.yml`:
+typecheck, test, and build run, then `dist/app.html` and a zip of `dist/pwa/`
+(plus a checksum file) are attached to a **draft** GitHub Release with
+generated notes — review and publish it manually. The same workflow deploys
+`dist/pwa/` to GitHub Pages in a separate job, gated on the build/test/release
+job succeeding first.
 
 ## Data file
 

@@ -56,3 +56,35 @@ jobs:
             --draft \
             --generate-notes \
             --title "${{ github.ref_name }}"
+
+  # Publishes the same PWA build to GitHub Pages on every tagged release —
+  # separate job (not a step in build-and-release) so its own `pages`/
+  # `id-token` permissions and `github-pages` environment stay scoped away
+  # from the release-asset job above. Rebuilds from scratch rather than
+  # sharing dist/pwa via artifact upload/download — the build is a few
+  # seconds of esbuild, cheaper than the cross-job artifact plumbing.
+  deploy-pages:
+    name: Deploy PWA to GitHub Pages
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/pwa
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
