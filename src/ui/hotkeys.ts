@@ -38,6 +38,6 @@ export function hotkeyAllowed(e: KeyboardEvent): boolean {
  * contenteditable — the palette needs to be reachable while typing notes in
  * the WYSIWYG editor. Only a modal dialog being open blocks it.
  */
-export function comboHotkeyAllowed(e: KeyboardEvent): boolean {
+export function comboHotkeyAllowed(_e: KeyboardEvent): boolean {
   return !blockedByModal()
 }

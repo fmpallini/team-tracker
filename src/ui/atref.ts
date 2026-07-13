@@ -219,7 +219,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     range.deleteContents()
 
     const label = item.kind === 'person' ? item.name : formatDate(item.date, opts.locale)
-    const safeLabel = label.replace(/[\[\]()]/g, '')
+    const safeLabel = label.replace(/[[\]()]/g, '')
     const chip = document.createElement('a')
     chip.className = 'ref'
     chip.setAttribute('contenteditable', 'false')

@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and publish draft release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Assemble release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p staging
+          cp dist/app.html "staging/team-tracker-${VERSION}.html"
+          (cd dist/pwa && zip -r "../../staging/team-tracker-pwa-${VERSION}.zip" .)
+          (cd staging && sha256sum * > checksums.txt)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            staging/team-tracker-${{ steps.assets.outputs.version }}.html
+            staging/team-tracker-pwa-${{ steps.assets.outputs.version }}.zip
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            staging/team-tracker-${{ steps.assets.outputs.version }}.html \
+            staging/team-tracker-pwa-${{ steps.assets.outputs.version }}.zip \
+            staging/checksums.txt \
+            --draft \
+            --generate-notes \
+            --title "${{ github.ref_name }}"

@@ -237,7 +237,7 @@ test('"Save as..." toast action picks a new file via pickCreate, adopts the sess
 
   await ctl.saveNow()
   const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
-  await opts.action?.onClick()
+  opts.action?.onClick()
   // onClick fires an async saveAs()/saveNow() chain without the test awaiting
   // it directly — flush microtasks/timers until it settles.
   await new Promise((r) => setTimeout(r, 0))

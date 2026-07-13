@@ -106,7 +106,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
    */
   async function saveAs(): Promise<void> {
     if (!supportsFsApi) return
-    let newSession: FileSession | null = null
+    let newSession: FileSession | null
     try {
       newSession = await pickCreate(deps.session.name)
     } catch (e) {

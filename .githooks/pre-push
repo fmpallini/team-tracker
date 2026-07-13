@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+gate_ok()   { echo -e "${GREEN}[ OK ]${NC}  $1"; }
+gate_fail() { echo -e "${RED}[ FAIL ]${NC} $1 — $2"; exit 1; }
+gate_warn() { echo -e "${YELLOW}[ WARN ]${NC} $1"; }
+gate_run()  { echo -e "\n${BLUE}[ RUNNING ]${NC} $1..."; }
+pass_and_exit() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${GREEN} $1${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+}
+
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " Pre-push quality gate"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ─── PHASE 1: DETERMINISTIC GATES ────────────────────────────────────────────
+
+# 1. Lint
+gate_run "Lint"
+if npx eslint src test 2>&1; then
+  gate_ok "Lint"
+else
+  gate_fail "Lint" "fix lint errors above then push again"
+fi
+
+# 2. TypeCheck
+gate_run "TypeCheck"
+if npx tsc --noEmit 2>&1; then
+  gate_ok "TypeCheck"
+else
+  gate_fail "TypeCheck" "fix type errors above then push again"
+fi
+
+# 3. Tests
+gate_run "Tests"
+if npx vitest run 2>&1; then
+  gate_ok "Tests"
+else
+  gate_fail "Tests" "fix failing tests then push again"
+fi
+
+# 4. Security audit
+gate_run "Security audit"
+AUDIT_OUT=$(npm audit --json 2>/dev/null || true)
+HIGH_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
+  let r=''; process.stdin.on('data',d=>r+=d);
+  process.stdin.on('end',()=>{
+    try{const d=JSON.parse(r); const s=d.metadata&&d.metadata.vulnerabilities||{}; console.log((s.high||0)+(s.critical||0));}
+    catch{console.log(0);}
+  });
+" 2>/dev/null || echo 0)
+MOD_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
+  let r=''; process.stdin.on('data',d=>r+=d);
+  process.stdin.on('end',()=>{
+    try{const d=JSON.parse(r); const s=d.metadata&&d.metadata.vulnerabilities||{}; console.log(s.moderate||0);}
+    catch{console.log(0);}
+  });
+" 2>/dev/null || echo 0)
+if [ "$HIGH_COUNT" -gt 0 ] 2>/dev/null; then
+  npm audit --audit-level=high 2>&1 || true
+  gate_fail "Security audit" "high/critical vulnerabilities found — run: npm audit fix"
+elif [ "$MOD_COUNT" -gt 0 ] 2>/dev/null; then
+  gate_warn "Security audit — $MOD_COUNT moderate vulnerabilities (run: npm audit for details)"
+  gate_ok "Security audit (moderate — advisory only)"
+else
+  gate_ok "Security audit"
+fi
+
+# 5. Outdated packages (advisory only, non-blocking)
+gate_run "Outdated packages"
+OUTDATED=$(npm outdated --json 2>/dev/null || true)
+if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ]; then
+  gate_warn "Outdated packages (safe minor/patch updates available):"
+  printf '%s' "$OUTDATED" | node -e "
+    let raw = '';
+    process.stdin.on('data', d => raw += d);
+    process.stdin.on('end', () => {
+      try {
+        const data = JSON.parse(raw);
+        for (const [pkg, info] of Object.entries(data)) {
+          const cur = (info.current || '').split('.')[0];
+          const want = (info.wanted || '').split('.')[0];
+          if (cur && want && cur === want && info.current !== info.wanted) {
+            process.stdout.write('  ' + pkg.padEnd(20) + info.current + ' -> ' + info.wanted + '\n');
+          }
+        }
+      } catch {}
+    });
+  " 2>/dev/null || true
+  echo "  Run: npm update"
+else
+  gate_ok "Outdated packages"
+fi
+
+# ─── PHASE 2: AI GATES ───────────────────────────────────────────────────────
+# Only for pushes to dev — that's the branch that now takes direct commits
+# with no PR in front of it, so it's the one spot an AI second-opinion on the
+# diff earns its keep before code goes to the shared remote. Pushes to any
+# other branch (main only ever gets updated via a reviewed PR, never a raw
+# push) skip this phase entirely.
+
+if [ "$BRANCH" != "dev" ]; then
+  echo ""
+  echo -e "${BLUE}AI gates: skipped — only run for pushes to dev (current branch: $BRANCH)${NC}"
+  pass_and_exit "All gates passed. Pushing..."
+fi
+
+# AI gates are opt-in, off by default — set ENABLE_AI=1 to run them. Report
+# the resolved state so it's never ambiguous why they ran or not.
+if [ "${ENABLE_AI:-0}" = "1" ]; then
+  AI_STATE="ENABLE_AI=1 -> enabled"
+else
+  AI_STATE="unset/0 -> disabled (default)"
+fi
+echo ""
+echo -e "${BLUE}AI gates: ${AI_STATE}${NC}"
+
+if [ "${ENABLE_AI:-0}" != "1" ]; then
+  gate_warn "AI gates skipped (set ENABLE_AI=1 to run them)"
+  pass_and_exit "All deterministic gates passed. Pushing..."
+fi
+
+if ! command -v claude &>/dev/null; then
+  gate_warn "AI gates skipped — 'claude' CLI not found"
+  pass_and_exit "All deterministic gates passed. Pushing..."
+fi
+
+# Diff against origin/dev — the commits this push is actually about to land
+# on the shared branch, not the whole history of dev.
+DIFF=""
+if git rev-parse "origin/dev" &>/dev/null; then
+  DIFF=$(git diff "origin/dev..HEAD" 2>/dev/null || true)
+fi
+
+if [ -z "$DIFF" ]; then
+  gate_warn "No diff to analyse for AI gates"
+  pass_and_exit "All gates passed. Pushing..."
+fi
+
+# Wall-clock cap per `claude` invocation — SKIP_AI exists precisely so a slow
+# or hung CLI call never blocks `git push` with no way out but Ctrl-C.
+AI_GATE_TIMEOUT="${AI_GATE_TIMEOUT:-300}"
+
+run_ai_gate() {
+  local name="$1"
+  local prompt="$2"
+  gate_run "AI: $name"
+
+  TMPFILE=$(mktemp) || { gate_warn "AI: $name — mktemp failed, skipping"; return; }
+  printf '%s\n\n---DIFF START---\n%s\n---DIFF END---' "$prompt" "$DIFF" > "$TMPFILE"
+
+  OUTPUT=$(timeout "$AI_GATE_TIMEOUT" claude --print < "$TMPFILE" 2>&1) || true
+  rm -f "$TMPFILE"
+
+  # Anchored to line start, matching what the prompt actually asks the model
+  # to emit — an unanchored match lets restated instructions or prose like
+  # "not a SEVERITY: HIGH issue" false-trigger the block/fix path below.
+  if echo "$OUTPUT" | grep -qE "^SEVERITY: HIGH"; then
+    echo -e "${RED}[ HIGH ]${NC} $name found high-severity issues:"
+    echo "$OUTPUT"
+    echo ""
+    echo "Launching Claude to apply fixes interactively..."
+    FIXTMP=$(mktemp) || { gate_fail "AI: $name" "mktemp failed — fix the HIGH findings above manually, then push again"; }
+    printf 'You are a code quality assistant in a git pre-push hook. Fix ALL HIGH severity issues by editing the files directly.\n\nIssues found by %s scan:\n%s\n\n---DIFF---\n%s' "$name" "$OUTPUT" "$DIFF" > "$FIXTMP"
+    timeout "$AI_GATE_TIMEOUT" claude < "$FIXTMP" || true
+    rm -f "$FIXTMP"
+    echo ""
+    echo -e "${RED}Push aborted.${NC} Review Claude's changes, commit them, then push again."
+    exit 1
+  elif echo "$OUTPUT" | grep -qE "^SEVERITY: (MEDIUM|LOW)"; then
+    gate_warn "AI: $name — non-blocking findings:"
+    echo "$OUTPUT"
+  else
+    gate_ok "AI: $name"
+  fi
+}
+
+run_ai_gate "Simplify" \
+  "Review this git diff for dead code, duplicated logic, oversized functions, and unnecessary abstractions. This is Team Tracker, a zero-runtime-dependency single-file web app — flag anything that adds complexity or indirection beyond what the change actually needs. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+
+run_ai_gate "Security" \
+  "Review this git diff for security issues: injection vulnerabilities, exposed secrets, broken auth, OWASP Top 10 violations. Pay particular attention to anything touching src/core/crypto.ts, src/core/store.ts, or src/core/fs.ts — this app's entire value proposition is that a password never leaves the browser and the .tmv file format is sound; a mistake there is the worst-case outcome for this project. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+
+run_ai_gate "Bug Hunt" \
+  "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+
+pass_and_exit "All gates passed. Pushing..."

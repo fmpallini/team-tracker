@@ -522,7 +522,7 @@ showStartScreen(detectBrowserLocale(), onDocumentOpened)
 // single-file `dist/app.html` variant) and the jsdom test environment both
 // have no `sw.js` alongside them, so this branch must never run there.
 if (__PWA__ && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('sw.js')
+  navigator.serviceWorker.register('sw.js').catch((e: unknown) => console.error(e))
 }
 
 export {}

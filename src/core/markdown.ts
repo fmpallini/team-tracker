@@ -42,7 +42,7 @@ function inlineMd(node: Node): string {
   const tag = node.tagName.toLowerCase()
   if (tag === 'a' && node.dataset.ref) {
     const label = (node.textContent ?? '').replace(/^@/, '')
-    const safeLabel = label.replace(/[\[\]()]/g, '')
+    const safeLabel = label.replace(/[[\]()]/g, '')
     return `@[${safeLabel}](${node.dataset.ref})`
   }
   switch (tag) {
