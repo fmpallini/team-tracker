@@ -7,10 +7,14 @@ gate_fail() { echo -e "${RED}[ FAIL ]${NC} $1 — $2"; exit 1; }
 gate_warn() { echo -e "${YELLOW}[ WARN ]${NC} $1"; }
 gate_run()  { echo -e "\n${BLUE}[ RUNNING ]${NC} $1..."; }
 
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Pre-push quality gate"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ─── PHASE 1: DETERMINISTIC GATES ────────────────────────────────────────────
 
 # 1. TypeCheck
 gate_run "TypeCheck"
@@ -80,6 +84,110 @@ if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ]; then
 else
   gate_ok "Outdated packages"
 fi
+
+# ─── PHASE 2: AI GATES ───────────────────────────────────────────────────────
+# Only for pushes to dev — that's the branch that now takes direct commits
+# with no PR in front of it, so it's the one spot an AI second-opinion on the
+# diff earns its keep before code goes to the shared remote. Pushes to any
+# other branch (main only ever gets updated via a reviewed PR, never a raw
+# push) skip this phase entirely.
+
+if [ "$BRANCH" != "dev" ]; then
+  echo ""
+  echo -e "${BLUE}AI gates: skipped — only run for pushes to dev (current branch: $BRANCH)${NC}"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${GREEN} All gates passed. Pushing...${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+fi
+
+# AI gates run by default on dev pushes. Set SKIP_AI=1 to bypass (offline, in
+# a hurry, or no 'claude' CLI). Report the resolved state so it's never
+# ambiguous why they ran or not.
+if [ -z "${SKIP_AI:-}" ]; then
+  AI_STATE="unset -> enabled (default)"
+elif [ "$SKIP_AI" = "0" ]; then
+  AI_STATE="SKIP_AI=0 -> enabled"
+else
+  AI_STATE="SKIP_AI=$SKIP_AI -> skipped"
+fi
+echo ""
+echo -e "${BLUE}AI gates: ${AI_STATE}${NC}"
+
+if [ "${SKIP_AI:-0}" != "0" ]; then
+  gate_warn "AI gates skipped (SKIP_AI=$SKIP_AI)"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${GREEN} All deterministic gates passed. Pushing...${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+fi
+
+if ! command -v claude &>/dev/null; then
+  gate_warn "AI gates skipped — 'claude' CLI not found"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${GREEN} All deterministic gates passed. Pushing...${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+fi
+
+# Diff against origin/dev — the commits this push is actually about to land
+# on the shared branch, not the whole history of dev.
+DIFF=""
+if git rev-parse "origin/dev" &>/dev/null; then
+  DIFF=$(git diff "origin/dev..HEAD" 2>/dev/null || true)
+fi
+
+if [ -z "$DIFF" ]; then
+  gate_warn "No diff to analyse for AI gates"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${GREEN} All gates passed. Pushing...${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+fi
+
+run_ai_gate() {
+  local name="$1"
+  local prompt="$2"
+  gate_run "AI: $name"
+
+  TMPFILE=$(mktemp)
+  printf '%s\n\n---DIFF START---\n%s\n---DIFF END---' "$prompt" "$DIFF" > "$TMPFILE"
+
+  OUTPUT=$(claude --print < "$TMPFILE" 2>&1) || true
+  rm -f "$TMPFILE"
+
+  if echo "$OUTPUT" | grep -qi "SEVERITY: HIGH"; then
+    echo -e "${RED}[ HIGH ]${NC} $name found high-severity issues:"
+    echo "$OUTPUT"
+    echo ""
+    echo "Launching Claude to apply fixes interactively..."
+    FIXTMP=$(mktemp)
+    printf 'You are a code quality assistant in a git pre-push hook. Fix ALL HIGH severity issues by editing the files directly.\n\nIssues found by %s scan:\n%s\n\n---DIFF---\n%s' "$name" "$OUTPUT" "$DIFF" > "$FIXTMP"
+    claude < "$FIXTMP" || true
+    rm -f "$FIXTMP"
+    echo ""
+    echo -e "${RED}Push aborted.${NC} Review Claude's changes, commit them, then push again."
+    exit 1
+  elif echo "$OUTPUT" | grep -qiE "SEVERITY: (MEDIUM|LOW)"; then
+    gate_warn "AI: $name — non-blocking findings:"
+    echo "$OUTPUT"
+  else
+    gate_ok "AI: $name"
+  fi
+}
+
+run_ai_gate "Simplify" \
+  "Review this git diff for dead code, duplicated logic, oversized functions, and unnecessary abstractions. This is Team Tracker, a zero-runtime-dependency single-file web app — flag anything that adds complexity or indirection beyond what the change actually needs. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+
+run_ai_gate "Security" \
+  "Review this git diff for security issues: injection vulnerabilities, exposed secrets, broken auth, OWASP Top 10 violations. Pay particular attention to anything touching src/core/crypto.ts, src/core/store.ts, or src/core/fs.ts — this app's entire value proposition is that a password never leaves the browser and the .tmv file format is sound; a mistake there is the worst-case outcome for this project. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+
+run_ai_gate "Bug Hunt" \
+  "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
