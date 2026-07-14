@@ -9,6 +9,11 @@ import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { showModal, type ModalHandle } from './modal'
 
+/**
+ * Test seam only — production callers (main.ts, start.ts) never pass it and
+ * always get the build-time defines. It exists because a single jsdom process
+ * can't swap esbuild defines per test, so tests inject both variants here.
+ */
 export interface PromoOpts {
   pwa?: boolean
   pagesUrl?: string
@@ -26,6 +31,8 @@ const DISMISS_KEY = 'tt-promo-dismissed'
 let deferredPrompt: BeforeInstallPromptEvent | null = null
 let installed = false
 
+// Test-only export like PromoOpts: unreferenced from main.ts, so esbuild
+// tree-shakes it out of both shipped bundles.
 export function resetPromoStateForTests(): void {
   deferredPrompt = null
   installed = false
@@ -108,6 +115,13 @@ function hiddenEverywhere(pwa: boolean, pagesUrl: string): boolean {
   return installed || isStandalone() || (!pwa && !pagesUrl)
 }
 
+// Shared by the card's action button and the header button: install flow in
+// the PWA build, open-hosted in the local build.
+function promoAction(locale: Locale, pwa: boolean, pagesUrl: string): void {
+  if (pwa) triggerInstall(locale)
+  else openHosted(pagesUrl)
+}
+
 export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | null {
   const { pwa, pagesUrl } = resolve(opts)
   if (hiddenEverywhere(pwa, pagesUrl) || isDismissed()) return null
@@ -117,7 +131,7 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
     {
       class: 'tt-btn tt-btn-primary tt-promo-action',
       type: 'button',
-      onclick: () => (pwa ? triggerInstall(locale) : openHosted(pagesUrl)),
+      onclick: () => promoAction(locale, pwa, pagesUrl),
     },
     t(locale, pwa ? 'promo_action_install' : 'promo_action_open_hosted')
   )
@@ -161,7 +175,7 @@ export function promoHeaderButton(locale: Locale, opts?: PromoOpts): HTMLElement
       class: 'tt-btn tt-btn-promo',
       type: 'button',
       title: t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title'),
-      onclick: () => (pwa ? triggerInstall(locale) : openHosted(pagesUrl)),
+      onclick: () => promoAction(locale, pwa, pagesUrl),
     },
     pwa ? '⬇' : '🌐'
   )
