@@ -4,6 +4,11 @@ A zero-runtime-dependency, single-file web app for tracking teams: people and
 hierarchy, daily/per-person notes, action items, milestones (with a calendar
 view), and risks.
 
+![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshot.png)
+
+**[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
+your browser, nothing to install.
+
 ## Why
 
 Most team-tracking tools require an account, a server, and your data leaving
