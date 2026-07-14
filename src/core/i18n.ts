@@ -32,7 +32,7 @@ const pt = {
   promo_card_title_install: 'Instale como aplicativo',
   promo_card_title_hosted: 'Experimente a versão instalável',
   promo_adv_app: '🖥️ Janela própria e ícone na barra de tarefas — funciona offline',
-  promo_adv_updates: '🔄 Atualizações automáticas',
+  promo_adv_updates: '🔄 Sempre atualizado — novas versões instalam automaticamente a cada release',
   promo_adv_drive: '☁️ Backup automático do arquivo do time no Google Drive (em breve)',
   promo_hosted_note:
     'Seu arquivo .tmv continua funcionando lá — nada é enviado: é o mesmo app, entregue via https em vez de file://.',
@@ -315,7 +315,7 @@ const en: Record<MsgKey, string> = {
   promo_card_title_install: 'Install as an app',
   promo_card_title_hosted: 'Try the installable version',
   promo_adv_app: '🖥️ Own window and taskbar icon — works offline',
-  promo_adv_updates: '🔄 Automatic updates',
+  promo_adv_updates: '🔄 Always up to date — new versions install automatically on every release',
   promo_adv_drive: '☁️ Automatic Google Drive backup of your team file (coming soon)',
   promo_hosted_note:
     'Your .tmv file keeps working there — nothing is uploaded: same app, delivered over https instead of file://.',

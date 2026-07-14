@@ -97,11 +97,14 @@ This produces:
 - `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and `icon.svg`,
   meant to be served over http(s) so it can be installed as a PWA.
 
-## Using `dist/app.html` (file://)
+## Using the local file (`app.html`)
 
-Just double-click `dist/app.html`, or open it from your browser's file
-picker. No install, no server, no network access required — the whole app
-(HTML, CSS, JS) is inlined into that one file.
+Download `app.html` from the
+[latest release](https://github.com/fmpallini/team-tracker/releases/latest) —
+that single file is everything you need (or build it yourself as above, where
+it lands in `dist/app.html`). Just double-click it, or open it from your
+browser's file picker. No install, no server, no network access required —
+the whole app (HTML, CSS, JS) is inlined into that one file.
 
 To open it in its own app-like window (no address bar/tabs) instead of a
 regular browser tab, launch Chrome with the `--app` flag:
@@ -112,39 +115,17 @@ chrome --app=file:///C:/path/to/dist/app.html
 
 (On macOS/Linux, drop the drive letter: `--app=file:///path/to/dist/app.html`.)
 
-## Deploying the PWA (`dist/pwa/`)
+## Installable version (PWA)
 
-The PWA build needs to be served over http(s) (service workers refuse to
-register under `file://`).
+The same app — always the same version as the `app.html` release asset — is
+published at **<https://fmpallini.github.io/team-tracker/>**. Unlike the local
+file, it can be installed as a local app (Chrome/Edge show an install prompt;
+it opens in its own standalone window) and:
 
-**Automatic, via GitHub Pages:** pushing a `v*` tag (see [Releases](#releases)
-below) builds `dist/pwa/` and deploys it to GitHub Pages as part of the same
-workflow — nothing to run by hand. Repo Settings → Pages is configured with
-source "GitHub Actions"; the live URL is under Settings → Pages once the
-first deploy has run.
-
-**Manual, for a fork or a one-off deploy without tagging a release:**
-
-```
-npm run build
-npx gh-pages -d dist/pwa
-```
-
-(First run: `npm install -D gh-pages`, or use any tool that pushes a
-directory to a branch.) Then in the repo's Settings → Pages, set the source
-to the `gh-pages` branch, root.
-
-Either way, once published, visiting the Pages URL in Chrome/Edge shows an
-install prompt; installing opens Team Tracker in its own standalone window.
-
-## Releases
-
-Pushing a tag matching `v*` (e.g. `v1.2.0`) triggers `.github/workflows/release.yml`:
-typecheck, test, and build run, then `dist/app.html` and a zip of `dist/pwa/`
-(plus a checksum file) are attached to a **draft** GitHub Release with
-generated notes — review and publish it manually. The same workflow deploys
-`dist/pwa/` to GitHub Pages in a separate job, gated on the build/test/release
-job succeeding first.
+- **updates automatically** whenever a new version is released;
+- **will support automatic Google Drive backup of your team file** (planned) —
+  the Google Drive API can't be used from a page opened via `file://`, so this
+  will only be available in the hosted/installed version.
 
 ## Data file
 

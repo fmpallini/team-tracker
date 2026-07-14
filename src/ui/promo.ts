@@ -142,9 +142,9 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
     el(
       'ul',
       { class: 'tt-promo-advantages' },
-      el('li', {}, t(locale, 'promo_adv_app')),
       el('li', {}, t(locale, 'promo_adv_updates')),
-      el('li', {}, t(locale, 'promo_adv_drive'))
+      el('li', {}, t(locale, 'promo_adv_drive')),
+      el('li', {}, t(locale, 'promo_adv_app'))
     ),
     pwa ? null : el('p', { class: 'tt-promo-note' }, t(locale, 'promo_hosted_note')),
     action
