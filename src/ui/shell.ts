@@ -29,7 +29,7 @@ export interface Shell {
   onHelp(cb: () => void): void
   /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+K). */
   onAppNameClick(cb: () => void): void
-  /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Shift+L). */
+  /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Alt+L). */
   onCloseFile(cb: () => void): void
 }
 

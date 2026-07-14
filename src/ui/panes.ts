@@ -106,6 +106,15 @@ const PRINT_CSS = `
     border: none !important; background: none !important; color: #000 !important;
     padding: 0 !important; pointer-events: none; appearance: none; -webkit-appearance: none;
   }
+  /* A printed page can't scroll: the module's scroll containers must flow to
+     their full height/width or Chrome paints frozen scrollbars in the A4
+     preview and clips the rest (seen on the milestones pane, whose timeline
+     SVG carries a fixed pixel width computed from the on-screen pane). The
+     SVG has a viewBox, so max-width scales it proportionally into the page. */
+  .tt-print-content .tt-milestones { height: auto !important; overflow: visible !important; }
+  .tt-print-content .tt-milestone-timeline { overflow: visible !important; }
+  .tt-print-content .tt-milestone-svg { max-width: 100%; height: auto; }
+  .tt-print-content .editor { max-height: none !important; overflow: visible !important; }
 `
 
 function otherPaneIdx(idx: 0 | 1): 0 | 1 {

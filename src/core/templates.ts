@@ -42,7 +42,7 @@ const SEEDS: TemplateSeed[] = [
     },
   },
   {
-    name: { 'pt-BR': 'Decisão (mini-ADR)', 'en-US': 'Decision (mini-ADR)' },
+    name: { 'pt-BR': 'Decisão', 'en-US': 'Decision' },
     scope: 'any',
     body: {
       'pt-BR': '## Decisão — {data}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Consequências / follow-up:** ',

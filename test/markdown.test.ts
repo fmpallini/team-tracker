@@ -49,6 +49,19 @@ test('nested ambiguous asterisks stay stable', () => {
   expect(roundTrip('**a*b*c** e *i* fim')).toBe('**a*b*c** e *i* fim')
 })
 
+test('a block-trailing space after inline formatting renders as &nbsp; (a plain trailing space is CSS-collapsed, so Chrome lands the caret inside the <strong> and typing sticks to bold — the template "**Label:** " lines)', () => {
+  expect(mdToHtml('**Contexto:** ')).toBe('<div><strong>Contexto:</strong>&nbsp;</div>')
+  expect(mdToHtml('- **b** ')).toBe('<ul><li><strong>b</strong>&nbsp;</li></ul>')
+  // and it still round-trips back to a regular trailing space
+  expect(roundTrip('**Contexto:** ')).toBe('**Contexto:** ')
+})
+
+test('non-breaking spaces coming back from the editor normalize to regular spaces in markdown', () => {
+  const div = document.createElement('div')
+  div.innerHTML = '<div><strong>X:</strong>&nbsp;done</div>'
+  expect(htmlToMd(div)).toBe('**X:** done')
+})
+
 test('ref chip with problematic chars in label sanitizes on md export', () => {
   const div = document.createElement('div')
   // Create a chip with a label containing chars that would break the regex if unsanitized
