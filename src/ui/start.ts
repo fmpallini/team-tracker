@@ -2,6 +2,7 @@
 import { t, type Locale } from '../core/i18n'
 import type { Doc } from '../core/types'
 import { el } from './dom'
+import { promoStartCard } from './promo'
 import {
   supportsFsApi,
   pickOpen,
@@ -171,6 +172,7 @@ export function showStartScreen(
   if (!supportsFsApi) {
     children.push(el('p', { class: 'tt-start-fallback-notice' }, t(locale, 'fallback_notice')))
   }
+  children.push(promoStartCard(locale))
   const root = el('div', { class: 'tt-start-screen' }, ...children)
 
   container.append(root, fileInput)
