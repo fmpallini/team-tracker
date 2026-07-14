@@ -146,8 +146,20 @@ if [ -z "$DIFF" ]; then
 fi
 
 # Wall-clock cap per `claude` invocation — SKIP_AI exists precisely so a slow
-# or hung CLI call never blocks `git push` with no way out but Ctrl-C.
-AI_GATE_TIMEOUT="${AI_GATE_TIMEOUT:-300}"
+# or hung CLI call never blocks `git push` with no way out but Ctrl-C. 600s
+# because the prompts below tell the model to read repo files to verify its
+# findings before reporting, which adds tool-use turns beyond a one-shot read
+# of the diff.
+AI_GATE_TIMEOUT="${AI_GATE_TIMEOUT:-600}"
+
+# Shared review discipline appended to every AI gate prompt. Two goals:
+# (a) verification — the diff alone lacks call-site context, so the model is
+# told to read the actual files before reporting; (b) severity calibration —
+# a HIGH finding blocks the push and launches an interactive fix session, so
+# a hallucinated HIGH is the most expensive false positive this hook can
+# produce. The exact 'SEVERITY:' line format is load-bearing: the anchored
+# grep in run_ai_gate parses it.
+AI_REVIEW_RULES="You may read repository files to verify your findings — the diff alone lacks call-site context. Before reporting any finding, confirm it against the full current file (and the call sites of any changed function), not just the diff hunk; discard anything the surrounding code already handles. Report only findings you would stake a merge decision on; when unsure, downgrade severity. SEVERITY: HIGH means concretely broken or exploitable and worth blocking a push over — never style preferences, hardening advice, or theoretical concerns. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' followed by file:line and a short description. If no issues found, output only: No issues found."
 
 run_ai_gate() {
   local name="$1"
@@ -184,12 +196,12 @@ run_ai_gate() {
 }
 
 run_ai_gate "Simplify" \
-  "Review this git diff for dead code, duplicated logic, oversized functions, and unnecessary abstractions. This is Team Tracker, a zero-runtime-dependency single-file web app — flag anything that adds complexity or indirection beyond what the change actually needs. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+  "Review this git diff for dead code, duplicated logic, oversized functions, and unnecessary abstractions. This is Team Tracker, a zero-runtime-dependency single-file web app — flag anything that adds complexity or indirection beyond what the change actually needs. Before flagging duplication or a missing abstraction, check whether the repo already has a helper for it and whether the duplication is real (same behavior, not merely similar shape). Do not flag: code whose shape is mandated by an existing pattern in the same directory, or test-only seams documented as such. $AI_REVIEW_RULES"
 
 run_ai_gate "Security" \
-  "Review this git diff for security issues: injection vulnerabilities, exposed secrets, broken auth, OWASP Top 10 violations. Pay particular attention to anything touching src/core/crypto.ts, src/core/store.ts, or src/core/fs.ts — this app's entire value proposition is that a password never leaves the browser and the .tmv file format is sound; a mistake there is the worst-case outcome for this project. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+  "Review this git diff for security issues: injection vulnerabilities, exposed secrets, broken auth or crypto misuse, unsafe DOM sinks (innerHTML/insertAdjacentHTML with untrusted input), OWASP Top 10 violations. Pay particular attention to anything touching src/core/crypto.ts, src/core/store.ts, or src/core/fs.ts — this app's entire value proposition is that a password never leaves the browser and the .tmv file format is sound; a mistake there is the worst-case outcome for this project. Do not report: theoretical denial-of-service, missing rate limiting, memory-safety concerns in browser JavaScript, or generic hardening recommendations without a concrete exploit path — HIGH requires an attacker-reachable path you can describe. $AI_REVIEW_RULES"
 
 run_ai_gate "Bug Hunt" \
-  "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' then a short description. If no issues found, output only: No issues found."
+  "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections, and lifecycle leaks (listeners, timers, or subscriptions that survive a dispose/teardown path). If the diff changes a function's signature or behavior contract, check its call sites for callers the change breaks. $AI_REVIEW_RULES"
 
 pass_and_exit "All gates passed. Pushing..."
