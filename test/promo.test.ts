@@ -29,7 +29,7 @@ describe('local variant (hosted invite)', () => {
     expect(card).not.toBeNull()
     expect(card!.classList.contains('tt-promo-card')).toBe(true)
     expect(card!.textContent).toContain('Try the installable version')
-    expect(card!.textContent).toContain('coming soon')
+    expect(card!.textContent).toContain('install automatically')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     card!.querySelector<HTMLButtonElement>('.tt-promo-action')!.click()
     expect(open).toHaveBeenCalledWith(URL, '_blank', 'noopener')

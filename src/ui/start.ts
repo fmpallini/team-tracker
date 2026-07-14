@@ -165,10 +165,21 @@ export function showStartScreen(
     el('li', {}, t(locale, 'start_adv_ownership')),
     el('li', {}, t(locale, 'start_adv_crypto'))
   )
+  const backupTip = el(
+    'p',
+    { class: 'tt-start-backup-tip' },
+    t(locale, 'start_backup_tip_prefix'),
+    el(
+      'a',
+      { href: 'https://workspace.google.com/products/drive/#download', target: '_blank', rel: 'noopener noreferrer' },
+      t(locale, 'start_backup_tip_link')
+    ),
+    t(locale, 'start_backup_tip_suffix')
+  )
   const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenBtn, openBtn, createBtn)
   reopenBtn.style.display = 'none'
 
-  const children: (Node | string | null)[] = [title, tagline, advantages, buttonsCol]
+  const children: (Node | string | null)[] = [title, tagline, advantages, backupTip, buttonsCol]
   if (!supportsFsApi) {
     children.push(el('p', { class: 'tt-start-fallback-notice' }, t(locale, 'fallback_notice')))
   }

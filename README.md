@@ -20,6 +20,8 @@ your machine. Team Tracker doesn't:
   storing it for you.
 - 🔒 **End-to-end encryption (AES-256)** — even if that file sits in a cloud
   backup, it's only ever decrypted on your device, with your password.
+- 🪶 **Tiny** — the entire app is a single HTML file under 170 KB
+  (as of v1.2), smaller than most web pages' hero image.
 
 There's no server and no backend. Everything lives in one password-encrypted
 `.tmv` file that you open, edit, and save yourself, either straight off disk
@@ -100,9 +102,10 @@ This produces:
 ## Using the local file (`app.html`)
 
 Download `app.html` from the
-[latest release](https://github.com/fmpallini/team-tracker/releases/latest) —
-that single file is everything you need (or build it yourself as above, where
-it lands in `dist/app.html`). Just double-click it, or open it from your
+[latest release](https://github.com/fmpallini/team-tracker/releases/latest):
+on the release page, expand the **Assets** arrow at the bottom of the release
+notes and click `app.html` there — that single file is everything you need
+(or build it yourself as above, where it lands in `dist/app.html`). Just double-click it, or open it from your
 browser's file picker. No install, no server, no network access required —
 the whole app (HTML, CSS, JS) is inlined into that one file.
 
@@ -120,12 +123,9 @@ chrome --app=file:///C:/path/to/dist/app.html
 The same app — always the same version as the `app.html` release asset — is
 published at **<https://fmpallini.github.io/team-tracker/>**. Unlike the local
 file, it can be installed as a local app (Chrome/Edge show an install prompt;
-it opens in its own standalone window) and:
-
-- **updates automatically** whenever a new version is released;
-- **will support automatic Google Drive backup of your team file** (planned) —
-  the Google Drive API can't be used from a page opened via `file://`, so this
-  will only be available in the hosted/installed version.
+it opens in its own standalone window), and it **updates automatically**
+whenever a new version is released — no re-downloading a release asset by
+hand.
 
 ## Data file
 
@@ -134,7 +134,25 @@ single encrypted `.tmv` file (password-based encryption) that you create,
 open, and save through the app's own file dialogs (or the download-fallback
 path in browsers without File System Access API support). **You own the
 file and are responsible for backing it up** — losing the file, or forgetting
-its password, means the data is unrecoverable.
+its password, means the data is unrecoverable. See the next section for the
+recommended way to keep it backed up.
+
+## Backing up your team file
+
+Team Tracker has no backup service of its own — and doesn't need one. Keep
+your `.tmv` file in a folder synced by any cloud client, such as
+[Google Drive for desktop](https://workspace.google.com/products/drive/#download),
+OneDrive, or Dropbox, and every save is backed up automatically. This works
+the same with the local `app.html` and the installed PWA:
+
+- **Privacy is preserved** — the file is encrypted (AES-256, key derived from
+  your password) before it ever touches disk, so the cloud provider — or
+  anyone else with access to the cloud account — only ever sees ciphertext.
+- **Available anywhere** — download the file from the provider's web UI
+  (e.g. drive.google.com) on any machine and open it with the app.
+- **Version history for free** — most providers keep previous versions of a
+  synced file for a while (Google Drive keeps them for ~30 days), so you can
+  also recover an earlier state by downloading an older version of the file.
 
 ## Development
 

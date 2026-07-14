@@ -173,6 +173,17 @@ test('renders the advantages pitch', () => {
   expect(document.querySelector('.tt-start-tagline')).not.toBeNull()
 })
 
+test('renders the cloud-backup tip with the Drive for desktop download link', () => {
+  showStartScreen('en-US', () => {})
+  const tip = document.querySelector('.tt-start-backup-tip')
+  expect(tip).not.toBeNull()
+  expect(tip!.textContent).toContain('synced by a cloud client')
+  const link = tip!.querySelector('a')!
+  expect(link.getAttribute('href')).toBe('https://workspace.google.com/products/drive/#download')
+  expect(link.getAttribute('target')).toBe('_blank')
+  expect(link.getAttribute('rel')).toContain('noopener')
+})
+
 describe('promo card', () => {
   it('start screen shows the hosted-invite promo card (test build: __PWA__ false, pages URL set)', () => {
     localStorage.removeItem('tt-promo-dismissed')

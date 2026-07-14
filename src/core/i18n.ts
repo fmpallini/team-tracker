@@ -26,6 +26,10 @@ const pt = {
   start_adv_ownership: '🗄️ Um único arquivo .tmv que você guarda onde quiser',
   start_adv_crypto:
     '🔒 Criptografia de ponta a ponta (AES-256): mesmo em backup na nuvem, o arquivo só é descriptografado no seu dispositivo, com sua senha',
+  start_backup_tip_prefix: '💡 Dica: guarde seu arquivo .tmv em uma pasta sincronizada por um cliente de nuvem (',
+  start_backup_tip_link: 'Google Drive para desktop',
+  start_backup_tip_suffix:
+    ', OneDrive, Dropbox) — backup automático na nuvem, e o arquivo continua criptografado: ninguém além de você consegue lê-lo.',
   start_open_ellipsis: '📂 Abrir arquivo…',
   start_create_ellipsis: '✨ Criar novo…',
   start_reopen_ellipsis: '⏪ Reabrir último…',
@@ -33,7 +37,6 @@ const pt = {
   promo_card_title_hosted: 'Experimente a versão instalável',
   promo_adv_app: '🖥️ Janela própria e ícone na barra de tarefas — funciona offline',
   promo_adv_updates: '🔄 Sempre atualizado — novas versões instalam automaticamente a cada release',
-  promo_adv_drive: '☁️ Backup automático do arquivo do time no Google Drive (em breve)',
   promo_hosted_note:
     'Seu arquivo .tmv continua funcionando lá — nada é enviado: é o mesmo app, entregue via https em vez de file://.',
   promo_action_install: 'Instalar',
@@ -309,6 +312,10 @@ const en: Record<MsgKey, string> = {
   start_adv_ownership: '🗄️ A single .tmv file you keep wherever you want',
   start_adv_crypto:
     '🔒 End-to-end encryption (AES-256): even in a cloud backup, the file is only ever decrypted on your device, with your password',
+  start_backup_tip_prefix: '💡 Tip: keep your .tmv file in a folder synced by a cloud client (',
+  start_backup_tip_link: 'Google Drive for desktop',
+  start_backup_tip_suffix:
+    ', OneDrive, Dropbox) — automatic cloud backup, and the file stays encrypted: no one but you can read it.',
   start_open_ellipsis: '📂 Open file…',
   start_create_ellipsis: '✨ Create new…',
   start_reopen_ellipsis: '⏪ Reopen last…',
@@ -316,7 +323,6 @@ const en: Record<MsgKey, string> = {
   promo_card_title_hosted: 'Try the installable version',
   promo_adv_app: '🖥️ Own window and taskbar icon — works offline',
   promo_adv_updates: '🔄 Always up to date — new versions install automatically on every release',
-  promo_adv_drive: '☁️ Automatic Google Drive backup of your team file (coming soon)',
   promo_hosted_note:
     'Your .tmv file keeps working there — nothing is uploaded: same app, delivered over https instead of file://.',
   promo_action_install: 'Install',
