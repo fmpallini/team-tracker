@@ -1,4 +1,4 @@
-declare global { const __APP_VERSION__: string; const __PWA__: boolean }
+declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string }
 
 import type { Locale } from './core/i18n'
 import type { Doc, Loc } from './core/types'
@@ -28,6 +28,12 @@ import { createSaveController, type SaveController } from './core/save-controlle
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
+import { initInstallCapture, promoHeaderButton } from './ui/promo'
+
+// beforeinstallprompt fires before the UI mounts — capture must be
+// registered at startup or the native install prompt is lost (see
+// src/ui/promo.ts). PWA build only; the file:// build has nothing to install.
+if (__PWA__) initInstallCapture()
 
 // App controller state lives in this module-level closure only — never on
 // window/globals — so the in-memory password never leaves this scope.
@@ -184,6 +190,8 @@ function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl:
 function onDocumentOpened(session: FileSession, doc: Doc, password: string): void {
   const shell = createShell(doc.prefs.locale)
   shell.applyPrefs(doc.prefs)
+  const promoBtn = promoHeaderButton(doc.prefs.locale)
+  if (promoBtn) shell.headerRight.prepend(promoBtn)
   shell.setTitle(session.name, false)
   // Task 25 re-review item #4b: fallback mode (no FS handle) never
   // auto-saves — the user has to notice "Unsaved" and press Ctrl+S. Set once

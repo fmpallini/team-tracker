@@ -1,0 +1,15 @@
+# Normalize line endings in the repository; let git decide checkout style
+# per platform for most files.
+* text=auto
+
+# Shell scripts must stay LF — a CRLF shebang line breaks bash outright,
+# and this hook has to run via git-bash on Windows just as reliably as on
+# macOS/Linux.
+*.sh text eol=lf
+.githooks/pre-push text eol=lf
+
+# Binary assets — never touch these.
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary

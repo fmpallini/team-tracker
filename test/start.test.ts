@@ -172,3 +172,13 @@ test('renders the advantages pitch', () => {
   expect(list.length).toBe(3)
   expect(document.querySelector('.tt-start-tagline')).not.toBeNull()
 })
+
+describe('promo card', () => {
+  it('start screen shows the hosted-invite promo card (test build: __PWA__ false, pages URL set)', () => {
+    localStorage.removeItem('tt-promo-dismissed')
+    showStartScreen('en-US', vi.fn())
+    const card = document.querySelector('.tt-promo-card')
+    expect(card).not.toBeNull()
+    expect(card!.textContent).toContain('Try the installable version')
+  })
+})

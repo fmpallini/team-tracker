@@ -7,7 +7,11 @@ async function bundle(pwa) {
   const r = await build({
     entryPoints: ['src/main.ts'],
     bundle: true, format: 'iife', write: false, minify: true,
-    define: { __APP_VERSION__: JSON.stringify(pkg.version), __PWA__: String(pwa) },
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __PWA__: String(pwa),
+      __PAGES_URL__: JSON.stringify(pkg.homepage ?? ''),
+    },
   })
   return r.outputFiles[0].text
 }
