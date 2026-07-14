@@ -19,12 +19,52 @@ import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
 
+/**
+ * Mobile browsers get a blocking notice instead of the start screen: they
+ * lack the File System Access API (every save would degrade to a fresh
+ * download) and the UI is keyboard/large-screen-only by design. Detection is
+ * best-effort UA sniffing — `userAgentData.mobile` where available, plus the
+ * iPadOS 13+ case where Safari masquerades as macOS but exposes multi-touch.
+ * Exported for tests (jsdom's default UA is desktop-like).
+ */
+export function isMobileDevice(nav: Navigator = navigator): boolean {
+  const uaData = (nav as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData
+  if (uaData?.mobile === true) return true
+  const ua = nav.userAgent
+  if (/Android|iPhone|iPod|iPad|IEMobile|Opera Mini|Mobile Safari/i.test(ua)) return true
+  return /Macintosh/i.test(ua) && nav.maxTouchPoints > 1
+}
+
+function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
+  container.appendChild(
+    el(
+      'div',
+      { class: 'tt-start-screen' },
+      el('h1', { class: 'tt-start-title' }, t(locale, 'app_name')),
+      el('h2', { class: 'tt-mobile-block-title' }, '📵 ' + t(locale, 'mobile_block_title')),
+      el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_intro')),
+      el(
+        'ul',
+        { class: 'tt-start-advantages' },
+        el('li', {}, t(locale, 'mobile_block_reason_fs')),
+        el('li', {}, t(locale, 'mobile_block_reason_ux'))
+      ),
+      el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_hint'))
+    )
+  )
+}
+
 export function showStartScreen(
   locale: Locale,
   onOpen: (session: FileSession, doc: Doc, password: string) => void
 ): void {
   const container = document.getElementById('app') ?? document.body
   container.innerHTML = ''
+
+  if (isMobileDevice()) {
+    showMobileBlockScreen(container, locale)
+    return
+  }
 
   function reportUnexpected(e: unknown): void {
     console.error(e)
@@ -165,15 +205,17 @@ export function showStartScreen(
     el('li', {}, t(locale, 'start_adv_ownership')),
     el('li', {}, t(locale, 'start_adv_crypto'))
   )
+  const cloudLink = (href: string, label: string): HTMLAnchorElement =>
+    el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label)
   const backupTip = el(
     'p',
     { class: 'tt-start-backup-tip' },
     t(locale, 'start_backup_tip_prefix'),
-    el(
-      'a',
-      { href: 'https://workspace.google.com/products/drive/#download', target: '_blank', rel: 'noopener noreferrer' },
-      t(locale, 'start_backup_tip_link')
-    ),
+    cloudLink('https://workspace.google.com/products/drive/#download', t(locale, 'start_backup_tip_link_drive')),
+    ', ',
+    cloudLink('https://www.microsoft.com/microsoft-365/onedrive/download', t(locale, 'start_backup_tip_link_onedrive')),
+    ', ',
+    cloudLink('https://www.dropbox.com/install', t(locale, 'start_backup_tip_link_dropbox')),
     t(locale, 'start_backup_tip_suffix')
   )
   const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenBtn, openBtn, createBtn)

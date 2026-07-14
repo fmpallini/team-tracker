@@ -84,6 +84,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-start-advantages { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .5rem; max-width: 36em; font-size: .9rem; color: var(--muted); line-height: 1.6; }
 .tt-start-advantages li { text-align: left; }
 .tt-start-backup-tip { max-width: 36em; font-size: .85rem; color: var(--muted); line-height: 1.6; text-align: left; }
+.tt-mobile-block-title { font-size: 1.25rem; font-weight: 600; }
 .tt-start-backup-tip a { color: inherit; text-decoration: underline; }
 .tt-start-buttons { display: flex; flex-direction: column; gap: .75rem; min-width: 220px; }
 .tt-start-btn { padding: .6rem 1rem; font-size: 1rem; }
@@ -356,8 +357,18 @@ body { background: var(--bg); color: var(--fg); }
 .tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
 
 /* People tree module (stakeholders / members) — org-chart layout */
-.tt-people { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.tt-people { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
 .tt-people-toolbar { flex: none; padding: .5rem; border-bottom: 1px solid var(--border); }
+/* Absolute overlay (over the toolbar), NOT in normal flow: revealing it on
+   dragstart must not reflow the tree — Chrome cancels an HTML5 drag whose
+   source element moves during dragstart, which made dragging look dead. */
+.tt-people-root-drop {
+  display: none; position: absolute; top: .3rem; left: .3rem; right: .3rem; z-index: 5;
+  padding: .5rem .75rem; border: 2px dashed var(--accent); border-radius: 8px;
+  color: var(--fg); background: var(--bg); font-size: .85rem; text-align: center;
+}
+.tt-people-root-drop.active { display: block; }
+.tt-people-root-drop.drag-over { color: var(--accent); background: rgba(var(--accent-rgb), .12); }
 .tt-people-tree { flex: 1; padding: 1rem; }
 .tt-people-empty { color: var(--muted); padding: .5rem; }
 
@@ -602,7 +613,7 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid var(--border); border-radius: 999px; padding: .05rem .5rem;
 }
 .tt-prefs-template-actions { display: flex; gap: .1rem; flex: none; }
-.tt-prefs-template-actions button { padding: .1rem .35rem; font-size: .8rem; }
+.tt-prefs-template-actions button { padding: .15rem .45rem; font-size: 1rem; }
 .tt-prefs-template-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-prefs-template-textarea {
   font-family: var(--font-data); font-size: .9rem; resize: vertical; min-height: 10rem;

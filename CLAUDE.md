@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Team Tracker — a zero-runtime-dependency, single-file web app for tracking teams (people/hierarchy, daily and per-person notes, action items, milestones, risks). No server, no backend: all state lives in one password-encrypted `.tmv` file the user opens and saves themselves. The original design spec and implementation plan live in `docs/superpowers/`.
 
+Desktop-only by design: the layout is a fixed desktop shell (sidebar + split panes), the UX is keyboard-driven (Ctrl+S/Ctrl+K/Alt+…), and mobile browsers lack the File System Access API the save flow depends on. Mobile devices get a blocking notice instead of the start screen — do not invest in responsive/mobile layouts.
+
 ## Commands
 
 ```
@@ -14,6 +16,7 @@ npm test            # vitest run (jsdom environment)
 npx vitest run test/store.test.ts   # single test file
 npm run test:watch  # vitest watch mode
 npm run typecheck   # tsc --noEmit (strict)
+npm run lint        # eslint src test
 ```
 
 Zero runtime dependencies is a hard constraint — `esbuild`, `typescript`, `vitest`, `jsdom` are dev-only. Do not add runtime deps.

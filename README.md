@@ -22,6 +22,11 @@ your machine. Team Tracker doesn't:
   backup, it's only ever decrypted on your device, with your password.
 - 🪶 **Tiny** — the entire app is a single HTML file under 170 KB
   (as of v1.2), smaller than most web pages' hero image.
+- 🖥️ **Desktop-only by design** — built for keyboard and large screens
+  (shortcuts, split view, dense panes). Phones and tablets show a notice
+  instead of the app: mobile browsers lack the File System Access API the
+  open/save flow depends on, so there is no good way to work with your
+  `.tmv` file there.
 
 There's no server and no backend. Everything lives in one password-encrypted
 `.tmv` file that you open, edit, and save yourself, either straight off disk

@@ -27,9 +27,18 @@ const pt = {
   start_adv_crypto:
     '🔒 Criptografia de ponta a ponta (AES-256): mesmo em backup na nuvem, o arquivo só é descriptografado no seu dispositivo, com sua senha',
   start_backup_tip_prefix: '💡 Dica: guarde seu arquivo .tmv em uma pasta sincronizada por um cliente de nuvem (',
-  start_backup_tip_link: 'Google Drive para desktop',
+  start_backup_tip_link_drive: 'Google Drive para desktop',
+  start_backup_tip_link_onedrive: 'OneDrive',
+  start_backup_tip_link_dropbox: 'Dropbox',
   start_backup_tip_suffix:
-    ', OneDrive, Dropbox) — backup automático na nuvem, e o arquivo continua criptografado: ninguém além de você consegue lê-lo.',
+    ') — backup automático na nuvem, e o arquivo continua criptografado: ninguém além de você consegue lê-lo.',
+  mobile_block_title: 'Feito para desktop',
+  mobile_block_intro: 'O Team Tracker não funciona bem em celulares e tablets:',
+  mobile_block_reason_fs:
+    '📁 Navegadores móveis não têm a File System Access API — o app não conseguiria abrir e salvar seu arquivo .tmv diretamente (cada salvamento viraria um novo download)',
+  mobile_block_reason_ux:
+    '⌨️ A interface é feita para teclado e telas grandes — atalhos (Ctrl+S, Ctrl+K), visão dividida e painéis densos',
+  mobile_block_hint: 'Abra em um computador (Windows, macOS ou Linux) para usar o app.',
   start_open_ellipsis: '📂 Abrir arquivo…',
   start_create_ellipsis: '✨ Criar novo…',
   start_reopen_ellipsis: '⏪ Reabrir último…',
@@ -181,6 +190,7 @@ const pt = {
   milestone_followup_toggle_title: 'Expandir/ocultar follow-up',
   about_github_link: 'Código-fonte no GitHub ↗',
   person_box_hint: 'Duplo clique para abrir as notas da pessoa',
+  person_root_drop_hint: '⬆️ Solte aqui para mover ao nível principal',
   editor_copy_formatted_title: 'Copiar formatado',
   editor_copy_plain_title: 'Copiar sem formatação',
   pane_print_title: 'Imprimir este módulo',
@@ -313,9 +323,18 @@ const en: Record<MsgKey, string> = {
   start_adv_crypto:
     '🔒 End-to-end encryption (AES-256): even in a cloud backup, the file is only ever decrypted on your device, with your password',
   start_backup_tip_prefix: '💡 Tip: keep your .tmv file in a folder synced by a cloud client (',
-  start_backup_tip_link: 'Google Drive for desktop',
+  start_backup_tip_link_drive: 'Google Drive for desktop',
+  start_backup_tip_link_onedrive: 'OneDrive',
+  start_backup_tip_link_dropbox: 'Dropbox',
   start_backup_tip_suffix:
-    ', OneDrive, Dropbox) — automatic cloud backup, and the file stays encrypted: no one but you can read it.',
+    ') — automatic cloud backup, and the file stays encrypted: no one but you can read it.',
+  mobile_block_title: 'Built for desktop',
+  mobile_block_intro: "Team Tracker doesn't work well on phones and tablets:",
+  mobile_block_reason_fs:
+    "📁 Mobile browsers lack the File System Access API — the app couldn't open and save your .tmv file directly (every save would become a new download)",
+  mobile_block_reason_ux:
+    '⌨️ The interface is built for keyboard and large screens — shortcuts (Ctrl+S, Ctrl+K), split view, dense panes',
+  mobile_block_hint: 'Open it on a desktop computer (Windows, macOS or Linux) to use the app.',
   start_open_ellipsis: '📂 Open file…',
   start_create_ellipsis: '✨ Create new…',
   start_reopen_ellipsis: '⏪ Reopen last…',
@@ -466,6 +485,7 @@ const en: Record<MsgKey, string> = {
   milestone_followup_toggle_title: 'Expand/collapse follow-up',
   about_github_link: 'Source code on GitHub ↗',
   person_box_hint: 'Double-click to open person notes',
+  person_root_drop_hint: '⬆️ Drop here to move to the top level',
   editor_copy_formatted_title: 'Copy formatted',
   editor_copy_plain_title: 'Copy plain text',
   pane_print_title: 'Print this module',

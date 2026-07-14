@@ -1,4 +1,4 @@
-import { showStartScreen } from '../src/ui/start'
+import { showStartScreen, isMobileDevice } from '../src/ui/start'
 import { createEmptyDocument, SCHEMA_VERSION } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
@@ -173,15 +173,59 @@ test('renders the advantages pitch', () => {
   expect(document.querySelector('.tt-start-tagline')).not.toBeNull()
 })
 
-test('renders the cloud-backup tip with the Drive for desktop download link', () => {
+describe('mobile block', () => {
+  function fakeNav(ua: string, maxTouchPoints = 0, uaDataMobile?: boolean): Navigator {
+    return {
+      userAgent: ua,
+      maxTouchPoints,
+      ...(uaDataMobile === undefined ? {} : { userAgentData: { mobile: uaDataMobile } }),
+    } as unknown as Navigator
+  }
+
+  it('isMobileDevice detects phones/tablets, not desktops', () => {
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile Safari/537.36'))).toBe(true)
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'))).toBe(true)
+    // iPadOS 13+ masquerading as macOS, but with multi-touch
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5))).toBe(true)
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (Anything)', 0, true))).toBe(true)
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'))).toBe(false)
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 0))).toBe(false)
+    expect(isMobileDevice(fakeNav('Mozilla/5.0 (X11; Linux x86_64)'))).toBe(false)
+  })
+
+  it('replaces the start screen with a blocking notice on mobile', () => {
+    const uaSpy = vi
+      .spyOn(window.navigator, 'userAgent', 'get')
+      .mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)')
+    try {
+      const onOpen = vi.fn()
+      showStartScreen('en-US', onOpen)
+      expect(document.querySelector('.tt-mobile-block-title')?.textContent).toContain('Built for desktop')
+      expect(document.body.textContent).toContain('File System Access API')
+      // no open/create buttons — the app is not usable from here
+      expect(document.querySelectorAll('.tt-start-btn').length).toBe(0)
+      expect(onOpen).not.toHaveBeenCalled()
+    } finally {
+      uaSpy.mockRestore()
+    }
+  })
+})
+
+test('renders the cloud-backup tip with the desktop-client download links', () => {
   showStartScreen('en-US', () => {})
   const tip = document.querySelector('.tt-start-backup-tip')
   expect(tip).not.toBeNull()
   expect(tip!.textContent).toContain('synced by a cloud client')
-  const link = tip!.querySelector('a')!
-  expect(link.getAttribute('href')).toBe('https://workspace.google.com/products/drive/#download')
-  expect(link.getAttribute('target')).toBe('_blank')
-  expect(link.getAttribute('rel')).toContain('noopener')
+  const links = Array.from(tip!.querySelectorAll('a'))
+  expect(links.map((a) => a.getAttribute('href'))).toEqual([
+    'https://workspace.google.com/products/drive/#download',
+    'https://www.microsoft.com/microsoft-365/onedrive/download',
+    'https://www.dropbox.com/install',
+  ])
+  for (const link of links) {
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+  }
 })
 
 describe('promo card', () => {
