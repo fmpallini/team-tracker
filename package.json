@@ -1,6 +1,7 @@
 {
   "name": "team-tracker",
   "version": "1.2.0",
+  "homepage": "https://fmpallini.github.io/team-tracker/",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
