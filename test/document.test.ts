@@ -3,7 +3,7 @@ import { createEmptyDocument, migrate, SCHEMA_VERSION, SchemaTooNewError } from 
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
   expect(d.schemaVersion).toBe(SCHEMA_VERSION)
-  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 5 })
+  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10 })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
     panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} })
