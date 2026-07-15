@@ -89,7 +89,7 @@ export function sortRisksForDisplay(risks: Risk[], sort: ExposureSort): Risk[] {
 /**
  * Moves `draggedId` to become a sibling (before/after `targetId`) within
  * `risks`, renumbering `order` across the whole array so it stays a dense
- * 0..n-1 sequence — mirrors src/modules/action-items.ts's `moveActionItem`,
+ * 0..n-1 sequence — mirrors src/modules/action-items.ts's `moveCard`,
  * flattened for `Risk`. Mutates the Risk objects in place so it can run
  * directly inside a `store.update` callback. No-ops when dragging an item
  * onto itself or when either id isn't present.

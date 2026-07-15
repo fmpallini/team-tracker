@@ -317,6 +317,11 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       e.preventDefault()
       e.stopPropagation()
       clearDropClasses()
+      // Hide eagerly (mirrors src/modules/people-tree.ts's rootDropEl drop
+      // handler): the store update below triggers a full renderAll(), which
+      // can detach this drag source before its own `dragend` — the usual
+      // hider — ever fires, leaving the trash zone stuck visible.
+      trashEl.classList.remove('active', 'drag-over')
       const srcId = draggedId
       draggedId = null
       if (srcId === null) return
@@ -406,6 +411,9 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     })
     bodyEl.addEventListener('drop', (e) => {
       e.preventDefault()
+      // Hide eagerly — see the identical comment on the card-level drop
+      // handler above.
+      trashEl.classList.remove('active', 'drag-over')
       const srcId = draggedId
       draggedId = null
       if (srcId === null) return

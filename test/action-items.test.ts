@@ -403,6 +403,21 @@ describe('renderActionItems — drag and drop', () => {
     expect(itemsByStatus(store.doc.teams[0]!.actionItems, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
   })
 
+  test('a successful drop hides the floating trash zone immediately, without waiting for dragend (the store rebuild can detach the drag source before dragend fires in a real browser)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'todo' }), item({ id: 'w', status: 'wip', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardA = cards(container)[0]!
+    const wipBody = container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-col-body')!
+    const trash = container.querySelector('.tt-kanban-trash')!
+    cardA.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    expect(trash.classList.contains('active')).toBe(true)
+    wipBody.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    // No dragend dispatched here on purpose.
+    expect(trash.classList.contains('active')).toBe(false)
+  })
+
   test('dropping a card directly onto another card moves it into that card\'s zone (jsdom has no real layout, so it always lands "after")', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', status: 'todo' }), item({ id: 'd', status: 'done', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
