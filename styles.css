@@ -16,10 +16,12 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
 :root, [data-theme=light] {
   --bg:#eee7d6; --fg:#23241d; --muted:#5c5744; --accent:#3b5a6b; --accent-rgb:59,90,107;
   --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#4a6b45;
+  --card-slate:#3b5a6b; --card-brass:#9c6b2e; --card-sage:#4a6b45; --card-rust:#a1402c; --card-plum:#6b4a7a; --card-ledger:#5c5744;
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
+  --card-slate:#8fb6c4; --card-brass:#c99a4e; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a89a78;
 }
 /* Display face (brand, headings, team/person names) stays serif regardless
    of the body font preference below — brand identity, not body copy. */
@@ -77,6 +79,9 @@ body { background: var(--bg); color: var(--fg); }
 
 .tt-btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .tt-btn-primary:hover { color: #fff; opacity: .9; }
+.tt-btn-left { margin-right: auto; }
+.tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+.tt-btn-danger:hover { opacity: .8; }
 .tt-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-btn:disabled:hover { border-color: var(--border); color: var(--fg); }
 
@@ -429,38 +434,66 @@ body { background: var(--bg); color: var(--fg); }
 
 .tt-person-form { display: flex; flex-direction: column; gap: .75rem; }
 
-/* Action items module */
-.tt-actions { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
-.tt-action-toolbar { flex: none; }
-.tt-action-list { display: flex; flex-direction: column; gap: .2rem; }
-.tt-action-empty { color: var(--muted); padding: .5rem; }
-.tt-action-row {
-  display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px;
-  border: 1px solid var(--border); cursor: grab;
+/* Action items module — kanban board (To Do / WIP / Done+Cancelled) */
+.tt-kanban { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; padding: .5rem; }
+.tt-kanban-board { display: grid; grid-template-columns: 1fr 1fr 1.15fr; gap: .75rem; flex: 1; min-height: 0; }
+.tt-kanban-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tt-kanban-col-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; padding: .3rem .4rem .6rem; border-bottom: 2px solid var(--border); margin-bottom: .5rem; flex: none; }
+.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
+.tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
+.tt-kanban-col-body { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; flex: 1; min-height: 40px; padding-bottom: .5rem; }
+.tt-kanban-empty { color: var(--muted); padding: .5rem; font-size: .85rem; }
+.tt-kanban-zone-label { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 .3rem; flex: none; }
+.tt-kanban-zone-trash { border: none; background: transparent; opacity: .6; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
+.tt-kanban-zone-trash:hover { opacity: 1; }
+.tt-kanban-divider { border-top: 1px dashed var(--border); margin: .5rem 0 .4rem; flex: none; }
+
+.tt-kanban-card {
+  position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: .5rem .55rem .45rem; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); cursor: grab;
+  border-left: 5px solid var(--card-ledger);
 }
-.tt-action-row:hover { background: rgba(var(--accent-rgb), .08); }
-.tt-action-row[draggable="false"] { cursor: default; }
-.tt-action-text { flex: 1; min-width: 0; }
-.tt-action-due { font-family: var(--font-data); flex: none; width: 9.5rem; }
-.tt-action-assignee { flex: none; width: 9rem; }
-.tt-action-expand-btn, .tt-action-delete-btn { opacity: 0; flex: none; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
-.tt-action-row:hover .tt-action-expand-btn, .tt-action-expand-btn:focus,
-.tt-action-row:hover .tt-action-delete-btn, .tt-action-delete-btn:focus { opacity: 1; }
-.tt-action-row.tt-action-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
-.tt-action-row.tt-action-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
-.tt-action-row.overdue .tt-action-text { color: var(--danger); }
-.tt-action-row.overdue .tt-action-due { font-weight: 700; color: var(--danger); }
-.tt-action-row.tt-action-done-row .tt-action-text { text-decoration: line-through; color: var(--muted); }
-/* Completed-items disclosure — same treatment as risks' closed-risks
-   section (src/modules/risks.ts's .tt-risks-closed): a native <details>
-   instead of a manual show/hide toggle button, muted and dimmed. */
-.tt-actions-done { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
-.tt-actions-done summary { cursor: pointer; padding: .2rem .4rem; }
-.tt-actions-done.tt-actions-done-empty { display: none; }
-.tt-actions-done .tt-action-row { opacity: .75; }
-.tt-action-notes-row { padding: 0 0 .5rem .4rem; }
-.tt-action-notes-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
-.tt-action-notes-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
+.tt-kanban-card.color-slate { border-left-color: var(--card-slate); }
+.tt-kanban-card.color-brass { border-left-color: var(--card-brass); }
+.tt-kanban-card.color-sage { border-left-color: var(--card-sage); }
+.tt-kanban-card.color-rust { border-left-color: var(--card-rust); }
+.tt-kanban-card.color-plum { border-left-color: var(--card-plum); }
+.tt-kanban-card.color-ledger { border-left-color: var(--card-ledger); }
+.tt-kanban-card-title { font-family: var(--font-display); font-weight: 600; font-size: 1rem; line-height: 1.25; margin-bottom: .3rem; padding-right: 1.3rem; }
+.tt-kanban-card-meta { display: flex; gap: .6rem; font-size: .72rem; color: var(--muted); font-family: var(--font-data); }
+.tt-kanban-card-due.overdue { color: var(--danger); font-weight: 700; }
+.tt-kanban-card.status-cancelled { opacity: .65; }
+.tt-kanban-card.status-cancelled .tt-kanban-card-title { text-decoration: line-through; }
+.tt-kanban-edit-btn { position: absolute; top: .3rem; right: .35rem; opacity: 0; border: none; background: transparent; font-size: .78rem; padding: .05rem .25rem; cursor: pointer; }
+.tt-kanban-card:hover .tt-kanban-edit-btn, .tt-kanban-edit-btn:focus { opacity: 1; }
+.tt-kanban-card.tt-kanban-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
+.tt-kanban-card.tt-kanban-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
+
+/* Floating trash drop zone — absolute overlay, hidden until a drag starts
+   (same rationale as .tt-people-root-drop: revealing it must not reflow the
+   board mid-dragstart, or Chrome cancels the drag). */
+.tt-kanban-trash {
+  display: none; position: absolute; bottom: .6rem; left: 50%; transform: translateX(-50%); z-index: 5;
+  padding: .5rem 1rem; border: 2px dashed var(--danger); border-radius: 8px; color: var(--danger);
+  background: var(--bg); font-size: .85rem; text-align: center;
+}
+.tt-kanban-trash.active { display: block; }
+.tt-kanban-trash.drag-over { background: rgba(var(--accent-rgb), .12); }
+
+.tt-kanban-form { display: flex; flex-direction: column; gap: .65rem; }
+.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
+.tt-kanban-form .editor { min-height: 120px; max-height: 280px; overflow-y: auto; }
+.tt-kanban-form-row { display: flex; gap: .6rem; }
+.tt-kanban-form-row .tt-field { flex: 1; }
+.tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
+.tt-kanban-color-chip { width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0; }
+.tt-kanban-color-chip.color-slate { background: var(--card-slate); }
+.tt-kanban-color-chip.color-brass { background: var(--card-brass); }
+.tt-kanban-color-chip.color-sage { background: var(--card-sage); }
+.tt-kanban-color-chip.color-rust { background: var(--card-rust); }
+.tt-kanban-color-chip.color-plum { background: var(--card-plum); }
+.tt-kanban-color-chip.color-ledger { background: var(--card-ledger); }
+.tt-kanban-color-chip.selected { border-color: var(--fg); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
