@@ -7,7 +7,7 @@ import { createStore, type Store } from './core/store'
 import { lastLocForTeam } from './core/nav'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
-import { mountSidebar, notifyNavChanged, onNavChanged } from './ui/sidebar'
+import { mountSidebar, notifyNavChanged } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
 import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager } from './ui/panes'
 import { createPalette } from './ui/palette'
@@ -46,7 +46,7 @@ interface AppController {
   /**
    * Task 25 re-review item #4c: tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
-   * beforeunload, nav) plus the save controller's own interval/mutation-guard
+   * beforeunload) plus the save controller's own interval/mutation-guard
    * teardown. Nothing calls this today — the app has a single-document
    * lifecycle for its whole lifetime — but future callers (hot-reload, a
    * "close file" action, tests that open more than one document) now have a
@@ -326,14 +326,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       saveCtl.scheduleFrom(store.doc.prefs)
     }
   })
-
-  // Save on every module/day/team navigation (best-effort, fire-and-forget —
-  // saveNow() never throws).
-  disposers.push(
-    onNavChanged(() => {
-      if (store.dirty) void saveCtl.saveNow()
-    })
-  )
 
   const onVisibilityChange = (): void => {
     if (document.visibilityState === 'hidden' && store.dirty) void saveCtl.saveNow()
