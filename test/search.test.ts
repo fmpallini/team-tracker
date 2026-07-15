@@ -10,7 +10,7 @@ function fixture() {
   const t1 = team('t1', 'Alpha'), t2 = team('t2', 'Beta')
   t1.dailyNotes['2026-07-01'] = '# Reunião\nDiscussão sobre **orçamento** anual'
   t1.members.push({ id: 'p1', name: 'Ana', role: 'Dev', parentId: null, order: 0, notes: 'Promoção pendente' })
-  t1.actionItems.push({ id: 'a1', text: 'Fechar contrato', done: false, dueDate: null, assignee: 'Ana', order: 0, notes: 'contrato assinado' })
+  t1.actionItems.push({ id: 'a1', summary: 'Fechar contrato', status: 'todo', color: 'ledger', dueDate: null, assignee: 'Ana', order: 0, notes: 'contrato assinado' })
   t1.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Entrega beta', done: false, followup: 'Cronograma atrasou muito' })
   t2.risks.push({ id: 'r1', title: 'Atraso fornecedor', chance: 2, impact: 3, plan: 'mitigate', followup: 'orcamento extra aprovado', order: 0, closed: false })
   d.teams.push(t1, t2)
