@@ -11,9 +11,11 @@ export interface Person {
   parentId: string | null; order: number; notes: string
 }
 export interface ActionItem {
-  id: string; text: string; done: boolean
-  dueDate: string | null; assignee: string; order: number
-  notes: string
+  id: string; summary: string; notes: string
+  status: 'todo' | 'wip' | 'done' | 'cancelled'
+  dueDate: string | null; assignee: string
+  color: 'slate' | 'brass' | 'sage' | 'rust' | 'plum' | 'ledger'
+  order: number
 }
 export interface Milestone { id: string; date: string; title: string; done: boolean; followup: string }
 export type RiskPlan = 'mitigate' | 'transfer' | 'eliminate' | 'accept'
