@@ -9,6 +9,18 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+test('a danger button gets the tt-btn-danger class', () => {
+  showModal({ title: 'T', body: el('div', {}), buttons: [{ label: 'Delete', danger: true, onClick: () => {} }] })
+  const btn = document.querySelector('.tt-modal-buttons button') as HTMLButtonElement
+  expect(btn.classList.contains('tt-btn-danger')).toBe(true)
+})
+
+test('a left button gets the tt-btn-left class', () => {
+  showModal({ title: 'T', body: el('div', {}), buttons: [{ label: 'Delete', left: true, onClick: () => {} }] })
+  const btn = document.querySelector('.tt-modal-buttons button') as HTMLButtonElement
+  expect(btn.classList.contains('tt-btn-left')).toBe(true)
+})
+
 test('showModal renders title, body and buttons; close removes overlay', () => {
   const body = el('p', {}, 'hello')
   let clicked = false

@@ -1,11 +1,4 @@
-import {
-  renderActionItems,
-  openItems,
-  doneItems,
-  isOverdue,
-  computeFlatDropPosition,
-  moveActionItem,
-} from '../src/modules/action-items'
+import { renderActionItems, itemsByStatus, isOverdue, computeDropPosition, moveCard } from '../src/modules/action-items'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
@@ -22,7 +15,7 @@ function fakePM(): PaneManager {
 }
 
 function item(overrides: Partial<ActionItem>): ActionItem {
-  return { id: 'i1', text: 'Do thing', done: false, dueDate: null, assignee: '', order: 0, notes: '', ...overrides }
+  return { id: 'i1', summary: 'Do thing', status: 'todo', dueDate: null, assignee: '', order: 0, notes: '', color: 'ledger', ...overrides }
 }
 
 function makeTeam(overrides: Partial<Team> = {}): Team {
@@ -52,405 +45,389 @@ function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager,
   renderActionItems(container, loc, ctx)
 }
 
-function rows(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('.tt-action-row'))
-}
-
 function clickByTitleOrText(root: ParentNode, text: string): void {
   const btn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === text || b.title === text)
   if (!btn) throw new Error(`button "${text}" not found`)
   btn.click()
 }
 
-function setBlockText(editor: HTMLElement, text: string): void {
-  editor.innerHTML = `<div>${text}</div>`
-  const textNode = editor.firstChild!.firstChild as Text | null
-  const range = document.createRange()
-  if (textNode) range.setStart(textNode, textNode.textContent!.length)
-  else range.setStart(editor.firstChild!, 0)
-  range.collapse(true)
-  const sel = window.getSelection()!
-  sel.removeAllRanges()
-  sel.addRange(range)
-}
-
-function fireInput(editor: HTMLElement): void {
-  editor.dispatchEvent(new Event('input', { bubbles: true }))
+function cards(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card'))
 }
 
 afterEach(() => {
-  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 
 describe('pure helpers', () => {
-  test('openItems returns not-done items sorted by order', () => {
-    const items = [item({ id: 'b', order: 1 }), item({ id: 'a', order: 0 }), item({ id: 'c', order: 2, done: true })]
-    expect(openItems(items).map((i) => i.id)).toEqual(['a', 'b'])
-  })
-
-  test('doneItems returns done items sorted by order', () => {
-    const items = [item({ id: 'b', order: 1, done: true }), item({ id: 'a', order: 0, done: true }), item({ id: 'c', order: 2 })]
-    expect(doneItems(items).map((i) => i.id)).toEqual(['a', 'b'])
+  test('itemsByStatus filters and sorts by order', () => {
+    const items = [item({ id: 'b', order: 1 }), item({ id: 'a', order: 0 }), item({ id: 'c', order: 2, status: 'done' })]
+    expect(itemsByStatus(items, 'todo').map((i) => i.id)).toEqual(['a', 'b'])
+    expect(itemsByStatus(items, 'done').map((i) => i.id)).toEqual(['c'])
   })
 
   describe('isOverdue', () => {
-    test('true when dueDate is in the past and the item is not done', () => {
-      expect(isOverdue({ dueDate: '2000-01-01', done: false }, '2026-07-04')).toBe(true)
+    test('true when dueDate is in the past and the item is todo/wip', () => {
+      expect(isOverdue({ dueDate: '2000-01-01', status: 'todo' }, '2026-07-15')).toBe(true)
+      expect(isOverdue({ dueDate: '2000-01-01', status: 'wip' }, '2026-07-15')).toBe(true)
     })
-    test('false when done, even if the due date is in the past', () => {
-      expect(isOverdue({ dueDate: '2000-01-01', done: true }, '2026-07-04')).toBe(false)
+    test('false when done or cancelled, even if the due date is in the past', () => {
+      expect(isOverdue({ dueDate: '2000-01-01', status: 'done' }, '2026-07-15')).toBe(false)
+      expect(isOverdue({ dueDate: '2000-01-01', status: 'cancelled' }, '2026-07-15')).toBe(false)
     })
     test('false when there is no due date', () => {
-      expect(isOverdue({ dueDate: null, done: false }, '2026-07-04')).toBe(false)
+      expect(isOverdue({ dueDate: null, status: 'todo' }, '2026-07-15')).toBe(false)
     })
     test('false when the due date is today or in the future', () => {
-      expect(isOverdue({ dueDate: '2026-07-04', done: false }, '2026-07-04')).toBe(false)
-      expect(isOverdue({ dueDate: '2999-01-01', done: false }, '2026-07-04')).toBe(false)
+      expect(isOverdue({ dueDate: '2026-07-15', status: 'todo' }, '2026-07-15')).toBe(false)
+      expect(isOverdue({ dueDate: '2999-01-01', status: 'todo' }, '2026-07-15')).toBe(false)
     })
   })
 
-  describe('computeFlatDropPosition', () => {
+  describe('computeDropPosition', () => {
     test('top half is before, bottom half is after', () => {
-      expect(computeFlatDropPosition(0, 100)).toBe('before')
-      expect(computeFlatDropPosition(49, 100)).toBe('before')
-      expect(computeFlatDropPosition(50, 100)).toBe('after')
-      expect(computeFlatDropPosition(100, 100)).toBe('after')
+      expect(computeDropPosition(0, 100)).toBe('before')
+      expect(computeDropPosition(49, 100)).toBe('before')
+      expect(computeDropPosition(50, 100)).toBe('after')
+      expect(computeDropPosition(100, 100)).toBe('after')
     })
-    test('degenerates to after for a zero/negative height row', () => {
-      expect(computeFlatDropPosition(0, 0)).toBe('after')
-      expect(computeFlatDropPosition(5, -1)).toBe('after')
+    test('degenerates to after for a zero/negative height card', () => {
+      expect(computeDropPosition(0, 0)).toBe('after')
+      expect(computeDropPosition(5, -1)).toBe('after')
     })
   })
 
-  describe('moveActionItem', () => {
-    test('moves an item before another, renumbering densely', () => {
+  describe('moveCard', () => {
+    test('reorders within the same status group, renumbering densely', () => {
       const items = [item({ id: 'a', order: 0 }), item({ id: 'b', order: 1 }), item({ id: 'c', order: 2 })]
-      moveActionItem(items, 'c', 'a', 'before')
-      expect(openItems(items).map((i) => i.id)).toEqual(['c', 'a', 'b'])
-      expect(openItems(items).map((i) => i.order)).toEqual([0, 1, 2])
+      moveCard(items, 'c', 'todo', 'a', 'before')
+      expect(itemsByStatus(items, 'todo').map((i) => i.id)).toEqual(['c', 'a', 'b'])
+      expect(itemsByStatus(items, 'todo').map((i) => i.order)).toEqual([0, 1, 2])
     })
 
-    test('moves an item after another', () => {
-      const items = [item({ id: 'a', order: 0 }), item({ id: 'b', order: 1 }), item({ id: 'c', order: 2 })]
-      moveActionItem(items, 'a', 'b', 'after')
-      expect(openItems(items).map((i) => i.id)).toEqual(['b', 'a', 'c'])
+    test("moves to a different status, appending at the target group's end when targetId is null", () => {
+      const items = [item({ id: 'a', status: 'todo', order: 0 }), item({ id: 'w', status: 'wip', order: 0 })]
+      moveCard(items, 'a', 'wip', null, 'after')
+      expect(items.find((i) => i.id === 'a')!.status).toBe('wip')
+      expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
+      expect(itemsByStatus(items, 'todo')).toHaveLength(0)
     })
 
-    test('no-op when dragging an item onto itself', () => {
+    test('moving to a different status closes the order gap in the old group', () => {
+      const items = [item({ id: 'a', status: 'todo', order: 0 }), item({ id: 'b', status: 'todo', order: 1 }), item({ id: 'c', status: 'todo', order: 2 })]
+      moveCard(items, 'b', 'done', null, 'after')
+      expect(itemsByStatus(items, 'todo').map((i) => i.order)).toEqual([0, 1])
+    })
+
+    test('no-op when dropped onto itself in the same status', () => {
       const items = [item({ id: 'a', order: 0 }), item({ id: 'b', order: 1 })]
-      moveActionItem(items, 'a', 'a', 'before')
+      moveCard(items, 'a', 'todo', 'a', 'before')
       expect(items.map((i) => i.order)).toEqual([0, 1])
-    })
-
-    test('no-op when the target id does not exist', () => {
-      const items = [item({ id: 'a', order: 0 })]
-      moveActionItem(items, 'a', 'ghost', 'before')
-      expect(items[0]!.order).toBe(0)
     })
 
     test('no-op when the dragged id does not exist', () => {
       const items = [item({ id: 'a', order: 0 })]
-      moveActionItem(items, 'ghost', 'a', 'before')
+      moveCard(items, 'ghost', 'todo', 'a', 'before')
       expect(items[0]!.order).toBe(0)
+    })
+
+    test('appends at the end when the target id is not found in the destination group', () => {
+      const items = [item({ id: 'a', status: 'todo', order: 0 }), item({ id: 'w', status: 'wip', order: 0 })]
+      moveCard(items, 'a', 'wip', 'ghost', 'before')
+      expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
     })
   })
 })
 
-describe('renderActionItems', () => {
-  test('renders open items sorted by order; done items are grouped, collapsed by default, with a count', () => {
+describe('renderActionItems — board', () => {
+  test('renders cards into their status column, sorted by order', () => {
     const team = makeTeam({
       actionItems: [
-        item({ id: 'b', text: 'B', order: 1 }),
-        item({ id: 'a', text: 'A', order: 0 }),
-        item({ id: 'd', text: 'D done', order: 0, done: true }),
+        item({ id: 'b', summary: 'B', order: 1, status: 'todo' }),
+        item({ id: 'a', summary: 'A', order: 0, status: 'todo' }),
+        item({ id: 'w', summary: 'W', order: 0, status: 'wip' }),
       ],
     })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const openTexts = Array.from(container.querySelectorAll<HTMLInputElement>('.tt-action-list .tt-action-text')).map((i) => i.value)
-    expect(openTexts).toEqual(['A', 'B'])
-
-    const doneDetails = container.querySelector('.tt-actions-done') as HTMLDetailsElement
-    expect(doneDetails.open).toBe(false)
-    expect(doneDetails.querySelectorAll('.tt-action-row')).toHaveLength(1)
-    expect(doneDetails.querySelector('summary')!.textContent).toBe('Completed items (1)')
-
-    doneDetails.open = true
-    expect(doneDetails.open).toBe(true)
+    const todoCol = container.querySelectorAll('.tt-kanban-col')[0]!
+    const titles = Array.from(todoCol.querySelectorAll('.tt-kanban-card-title')).map((n) => n.textContent)
+    expect(titles).toEqual(['A', 'B'])
+    expect(container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-card-title')!.textContent).toBe('W')
   })
 
-  test('shows a placeholder when there are no items at all', () => {
+  test('shows an empty placeholder per column with no cards', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    expect(container.querySelector('.tt-action-empty')?.textContent).toBe('No items')
+    expect(container.querySelectorAll('.tt-kanban-empty')).toHaveLength(4) // todo, wip, done, cancelled
   })
 
-  test('the done checkbox persists to the store and moves the row into the done group', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    const checkbox = container.querySelector('.tt-action-done') as HTMLInputElement
-    checkbox.checked = true
-    checkbox.dispatchEvent(new Event('change'))
-
-    expect(store.doc.teams[0]!.actionItems[0]!.done).toBe(true)
-    expect(container.querySelector('.tt-actions-done')!.querySelectorAll('.tt-action-row')).toHaveLength(1)
-    expect(container.querySelector('.tt-action-list .tt-action-row')).toBeNull()
-  })
-
-  test('editing the text input persists on change', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    const textInput = container.querySelector('.tt-action-text') as HTMLInputElement
-    textInput.value = 'Updated text'
-    textInput.dispatchEvent(new Event('change'))
-
-    expect(store.doc.teams[0]!.actionItems[0]!.text).toBe('Updated text')
-  })
-
-  test('setting and clearing the due date persists an ISO string or null', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    const dueInput = container.querySelector('.tt-action-due') as HTMLInputElement
-    dueInput.value = '2026-01-01'
-    dueInput.dispatchEvent(new Event('change'))
-    expect(store.doc.teams[0]!.actionItems[0]!.dueDate).toBe('2026-01-01')
-
-    dueInput.value = ''
-    dueInput.dispatchEvent(new Event('change'))
-    expect(store.doc.teams[0]!.actionItems[0]!.dueDate).toBeNull()
-  })
-
-  test('an open item with a past due date gets the overdue class', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0, dueDate: '2000-01-01' })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-    expect(rows(container)[0]!.classList.contains('overdue')).toBe(true)
-  })
-
-  test('a done item with a past due date is not overdue', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0, dueDate: '2000-01-01', done: true })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-    const doneRow = container.querySelector('.tt-actions-done .tt-action-row')!
-    expect(doneRow.classList.contains('overdue')).toBe(false)
-  })
-
-  test('an open item with a future due date is not overdue', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0, dueDate: '2999-01-01' })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-    expect(rows(container)[0]!.classList.contains('overdue')).toBe(false)
-  })
-
-  test('"+ Item" appends an empty item with order = max+1 and focuses its text input', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 }), item({ id: 'b', order: 3 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, '+ Item')
-
-    const allItems = store.doc.teams[0]!.actionItems
-    expect(allItems).toHaveLength(3)
-    const added = allItems[2]!
-    expect(added.order).toBe(4)
-    expect(added.text).toBe('')
-    expect(added.done).toBe(false)
-    expect(added.dueDate).toBeNull()
-
-    const focused = document.activeElement as HTMLInputElement
-    expect(focused.classList.contains('tt-action-text')).toBe(true)
-    expect(focused.closest('.tt-action-row')?.getAttribute('data-item-id')).toBe(added.id)
-  })
-
-  test('"+ Item" on an empty list starts order at 0', () => {
-    const team = makeTeam()
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Item')
-    expect(store.doc.teams[0]!.actionItems[0]!.order).toBe(0)
-  })
-
-  test('deleting an item with empty text removes it immediately with no confirmation', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: '', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, 'Delete item')
-
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
-    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
-  })
-
-  test('deleting an item with non-empty text requires confirmation', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'Important', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, 'Delete item')
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
-
-    clickByTitleOrText(document.body, 'Delete')
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
-  })
-
-  test('canceling the delete confirmation keeps the item', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'Important', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, 'Delete item')
-    clickByTitleOrText(document.body, 'Cancel')
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
-  })
-
-  test("the assignee input's datalist lists stakeholders and members by name", () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    const assigneeInput = container.querySelector('.tt-action-assignee') as HTMLInputElement
-    const datalist = document.getElementById(assigneeInput.getAttribute('list')!)!
-    const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
-    expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
-  })
-
-  test('assignee accepts free text not present in the datalist (e.g. an external vendor)', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    const assigneeInput = container.querySelector('.tt-action-assignee') as HTMLInputElement
-    assigneeInput.value = 'Fornecedor X'
-    assigneeInput.dispatchEvent(new Event('change'))
-    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('Fornecedor X')
-  })
-
-  test('preserves an in-progress text edit (skips rebuild, defers to blur) when the store changes elsewhere while focused', () => {
+  test('done/cancelled zone headers show a count', () => {
     const team = makeTeam({
-      actionItems: [item({ id: 'a', text: 'A', order: 0 }), item({ id: 'b', text: 'B', order: 1 })],
+      actionItems: [item({ id: 'd1', status: 'done' }), item({ id: 'd2', status: 'done' }), item({ id: 'c1', status: 'cancelled' })],
     })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-
-    const textInputs = (): HTMLInputElement[] => Array.from(container.querySelectorAll<HTMLInputElement>('.tt-action-text'))
-    const aInput = textInputs().find((i) => i.value === 'A')!
-    aInput.focus()
-
-    store.update((d) => { d.teams[0]!.actionItems[1]!.text = 'B changed' })
-
-    expect(document.activeElement).toBe(aInput)
-    expect(textInputs().find((i) => i.value === 'B changed')).toBeUndefined()
-
-    aInput.dispatchEvent(new Event('blur'))
-    expect(textInputs().find((i) => i.value === 'B changed')).not.toBeUndefined()
+    const labels = container.querySelectorAll('.tt-kanban-zone-label')
+    expect(labels[0]!.textContent).toContain('Done (2)')
+    expect(labels[1]!.textContent).toContain('Cancelled (1)')
   })
 
-  test('double render into the same container disposes the previous store subscription (no duplicate rebuilds/leaks)', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'A', order: 0 })] })
+  test('cancelled cards render with the cancelled status class', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'c1', status: 'cancelled' })] })
     const { container, store, pm, loc } = setup(team)
-
     render(container, loc, store, pm)
-    container.innerHTML = ''
-    render(container, loc, store, pm)
-
-    expect(() => store.update((d) => { d.teams[0]!.actionItems[0]!.text = 'A2' })).not.toThrow()
-    expect(rows(container)).toHaveLength(1)
+    expect(cards(container)[0]!.classList.contains('status-cancelled')).toBe(true)
   })
 
-  describe('notes editor', () => {
-    test('expand button reveals a notes editor that persists to item.notes', () => {
-      vi.useFakeTimers()
-      const team = makeTeam({ actionItems: [item({ id: 'a', notes: '' })] })
-      const { container, store, pm, loc } = setup(team)
-      render(container, loc, store, pm)
+  test('an overdue todo card gets the overdue class on its due badge', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', dueDate: '2000-01-01', status: 'todo' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-kanban-card-due')!.classList.contains('overdue')).toBe(true)
+  })
 
-      expect(container.querySelector('.editor')).toBeNull()
-      container.querySelector<HTMLButtonElement>('.tt-action-expand-btn')!.click()
+  test('a done card with a past due date is not overdue', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', dueDate: '2000-01-01', status: 'done' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-kanban-card-due')!.classList.contains('overdue')).toBe(false)
+  })
 
-      const editorEl = container.querySelector('.tt-action-notes-row .editor') as HTMLElement
-      expect(editorEl).not.toBeNull()
-      setBlockText(editorEl, 'nota livre')
-      fireInput(editorEl)
-      vi.advanceTimersByTime(400)
-
-      expect(store.doc.teams[0]!.actionItems[0]!.notes).toContain('nota livre')
-    })
-
-    test('expanding pre-loads the editor with the item\'s existing notes', () => {
-      const team = makeTeam({ actionItems: [item({ id: 'a', notes: '## Context' })] })
-      const { container, store, pm, loc } = setup(team)
-      render(container, loc, store, pm)
-
-      container.querySelector<HTMLButtonElement>('.tt-action-expand-btn')!.click()
-      const editorEl = container.querySelector('.editor') as HTMLElement
-      expect(editorEl.querySelector('h2')?.textContent).toBe('Context')
-    })
-
-    test('collapsing a row disposes its editor', () => {
-      const team = makeTeam({ actionItems: [item({ id: 'a', notes: 'x' })] })
-      const { container, store, pm, loc } = setup(team)
-      render(container, loc, store, pm)
-
-      const toggle = () => container.querySelector<HTMLButtonElement>('.tt-action-expand-btn')!
-      toggle().click()
-      expect(container.querySelector('.editor')).not.toBeNull()
-      toggle().click()
-      expect(container.querySelector('.editor')).toBeNull()
-    })
+  test('card carries data-item-id for search/@ref navigation', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'zz' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(cards(container)[0]!.getAttribute('data-item-id')).toBe('zz')
   })
 
   test('a defensive no-op when loc.ref.kind is not "actions"', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm } = setup(team)
     const wrongLoc: Loc = { teamId: 'T1', ref: { kind: 'members' } }
     render(container, wrongLoc, store, pm)
     expect(container.children).toHaveLength(0)
   })
 
-  test('expand button uses the same ▸/▾ arrow glyph as risks (not a 📝 icon)', () => {
+  test('double render into the same container disposes the previous store subscription', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    container.innerHTML = ''
+    render(container, loc, store, pm)
+    expect(() => store.update((d) => { d.teams[0]!.actionItems[0]!.summary = 'A2' })).not.toThrow()
+    expect(cards(container)).toHaveLength(1)
+  })
+
+  test("the assignee input's datalist lists stakeholders and members by name", () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
+    const assigneeInput = document.querySelector('.tt-kanban-form-row input[type="text"]') as HTMLInputElement
+    const datalist = document.getElementById(assigneeInput.getAttribute('list')!)!
+    const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
+    expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
+  })
+})
+
+describe('renderActionItems — edit modal', () => {
+  test('"+ Card" in To Do creates a card in the todo column with the entered fields', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    summaryInput.value = 'New task'
+    const dueInput = document.querySelector('.tt-kanban-form input[type="date"]') as HTMLInputElement
+    dueInput.value = '2026-08-01'
+    ;(document.querySelectorAll('.tt-kanban-color-chip')[2] as HTMLButtonElement).click() // 3rd = sage
+
+    clickByTitleOrText(document.body, 'Save')
+
+    const created = store.doc.teams[0]!.actionItems[0]!
+    expect(created.summary).toBe('New task')
+    expect(created.status).toBe('todo')
+    expect(created.dueDate).toBe('2026-08-01')
+    expect(created.color).toBe('sage')
+  })
+
+  test('"+ Card" in WIP creates a card in the wip column', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const wipAddBtn = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent === '+ Card')[1]!
+    wipAddBtn.click()
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    summaryInput.value = 'WIP task'
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(store.doc.teams[0]!.actionItems[0]!.status).toBe('wip')
+  })
+
+  test('leaving summary blank shows a validation error and does not save', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(document.body, 'Save')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-field-error')!.textContent).toBe('Summary is required')
+  })
+
+  test('editing an existing card via dblclick pre-fills fields and Save persists changes', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Old', dueDate: '2026-01-01', assignee: 'Bruno', color: 'rust' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    expect(summaryInput.value).toBe('Old')
+    summaryInput.value = 'New'
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('New')
+  })
+
+  test('the pencil icon opens the same edit modal as dblclick', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Old' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, 'Double-click or use ✎ to edit')
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+  })
+
+  test('the edit modal\'s Delete button closes it and opens the confirm-delete flow', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+
+    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
+
+    clickByTitleOrText(document.body, 'Delete')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+  })
+
+  test('canceling the delete confirmation keeps the card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    clickByTitleOrText(document.body, 'Delete')
+    clickByTitleOrText(document.body, 'Cancel')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+  })
+
+  test('deleting a card whose summary is blank removes it immediately with no confirmation', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    clickByTitleOrText(document.body, 'Delete')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+})
+
+describe('renderActionItems — zone clear-all', () => {
+  test('zone trash clears all cards in that zone after confirmation', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'd1', status: 'done' }), item({ id: 'd2', status: 'done' }), item({ id: 'c1', status: 'cancelled' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete all 2 cards in this area?')
+    clickByTitleOrText(document.body, 'Delete all')
+
+    expect(store.doc.teams[0]!.actionItems.filter((i) => i.status === 'done')).toHaveLength(0)
+    expect(store.doc.teams[0]!.actionItems.filter((i) => i.status === 'cancelled')).toHaveLength(1)
+  })
+
+  test('zone trash is a no-op on an empty zone (no modal opens)', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, 'Clear cards')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('canceling clear-zone keeps the cards', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'd1', status: 'done' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, 'Clear cards')
+    clickByTitleOrText(document.body, 'Cancel')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+  })
+})
+
+describe('renderActionItems — drag and drop', () => {
+  test('dragstart on a card shows the floating trash zone; dragend hides it', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const btn = container.querySelector('.tt-action-expand-btn') as HTMLButtonElement
-    expect(btn.textContent).toBe('▸')
-    btn.click()
-    expect(container.querySelector('.tt-action-expand-btn')!.textContent).toBe('▾')
+    const card = cards(container)[0]!
+    const trash = container.querySelector('.tt-kanban-trash')!
+    expect(trash.classList.contains('active')).toBe(false)
+    card.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    expect(trash.classList.contains('active')).toBe(true)
+    card.dispatchEvent(new Event('dragend', { bubbles: true }))
+    expect(trash.classList.contains('active')).toBe(false)
   })
 
-  test('Enter in the text field blurs it, committing via onchange', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', text: 'Old' })] })
+  test('dropping a card on the WIP column body moves it to wip, appended at the end', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'todo' }), item({ id: 'w', status: 'wip', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const textInput = container.querySelector('.tt-action-text') as HTMLInputElement
-    textInput.focus()
-    expect(document.activeElement).toBe(textInput)
-    textInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    expect(document.activeElement).not.toBe(textInput)
+    const cardA = cards(container)[0]!
+    const wipBody = container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-col-body')!
+    cardA.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    wipBody.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+
+    const updated = store.doc.teams[0]!.actionItems.find((i) => i.id === 'a')!
+    expect(updated.status).toBe('wip')
+    expect(itemsByStatus(store.doc.teams[0]!.actionItems, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
   })
 
-  test('Tab navigation skips the row\'s icon buttons, moving cleanly between data fields', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+  test('dropping a card directly onto another card moves it into that card\'s zone (jsdom has no real layout, so it always lands "after")', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'todo' }), item({ id: 'd', status: 'done', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const row = container.querySelector('.tt-action-row')!
-    expect(row.querySelector('.tt-action-done')!.getAttribute('tabindex')).toBeNull()
-    expect(row.querySelector('.tt-action-text')!.getAttribute('tabindex')).toBeNull()
-    expect(row.querySelector('.tt-action-due')!.getAttribute('tabindex')).toBeNull()
-    expect(row.querySelector('.tt-action-assignee')!.getAttribute('tabindex')).toBeNull()
-    expect((row.querySelector('.tt-action-expand-btn') as HTMLElement).tabIndex).toBe(-1)
-    expect((row.querySelector('.tt-action-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+    const cardA = cards(container).find((c) => c.getAttribute('data-item-id') === 'a')!
+    const cardD = cards(container).find((c) => c.getAttribute('data-item-id') === 'd')!
+    cardA.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    cardD.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+
+    expect(store.doc.teams[0]!.actionItems.find((i) => i.id === 'a')!.status).toBe('done')
+  })
+
+  test('dropping a card on the floating trash zone opens the delete-confirm modal', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const card = cards(container)[0]!
+    const trash = container.querySelector('.tt-kanban-trash')!
+    card.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    trash.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
+    clickByTitleOrText(document.body, 'Delete')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
   })
 })

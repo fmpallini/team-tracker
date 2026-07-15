@@ -1,10 +1,12 @@
-// src/modules/action-items.ts — Task 20: action items module. A flat,
-// orderable list of ActionItem per team (no parent/child nesting, unlike
-// src/modules/people-tree.ts), so it reuses that module's disposal /
-// store.subscribe discipline but trims the drag-and-drop helpers down to a
-// simpler flat before/after variant (no 'child' drop position).
+// src/modules/action-items.ts — kanban board (To Do / WIP / Done+Cancelled)
+// for a team's action items. Cards are edited exclusively through a modal
+// (openEditModal below); the board itself has no live inputs, so a full
+// rebuild on every store change (like src/modules/people-tree.ts's
+// renderAll) is simplest and correct — unlike the old flat-list version,
+// there's no in-progress inline edit whose caret needs preserving across a
+// foreign store update.
 import type { ActionItem, Loc, Team } from '../core/types'
-import { t, todayIso } from '../core/i18n'
+import { t, todayIso, formatDate } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
@@ -15,15 +17,15 @@ import { el } from '../ui/dom'
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
 
-/** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
-function blurOnEnter(e: Event): void {
-  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
+const COLORS: ActionItem['color'][] = ['slate', 'brass', 'sage', 'rust', 'plum', 'ledger']
+const COLOR_KEYS: Record<ActionItem['color'], 'kanban_color_slate' | 'kanban_color_brass' | 'kanban_color_sage' | 'kanban_color_rust' | 'kanban_color_plum' | 'kanban_color_ledger'> = {
+  slate: 'kanban_color_slate', brass: 'kanban_color_brass', sage: 'kanban_color_sage',
+  rust: 'kanban_color_rust', plum: 'kanban_color_plum', ledger: 'kanban_color_ledger',
 }
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
 }
-
 function nowHHMM(): string {
   const now = new Date()
   return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
@@ -31,53 +33,46 @@ function nowHHMM(): string {
 
 // --- pure, unit-testable helpers -------------------------------------------
 
-/** Open (not done) items, sorted by `order`. */
-export function openItems(items: ActionItem[]): ActionItem[] {
-  return items.filter((i) => !i.done).sort((a, b) => a.order - b.order)
+/** Items in `status`, sorted by `order`. */
+export function itemsByStatus(items: ActionItem[], status: ActionItem['status']): ActionItem[] {
+  return items.filter((i) => i.status === status).sort((a, b) => a.order - b.order)
 }
 
-/** Done items, sorted by `order`. */
-export function doneItems(items: ActionItem[]): ActionItem[] {
-  return items.filter((i) => i.done).sort((a, b) => a.order - b.order)
+/** True when the item has a due date strictly before `today` and is still active (not done/cancelled). */
+export function isOverdue(item: Pick<ActionItem, 'dueDate' | 'status'>, today: string): boolean {
+  return item.dueDate !== null && item.dueDate < today && item.status !== 'done' && item.status !== 'cancelled'
 }
 
-/** True when the item has a due date strictly before `today` and is not done. */
-export function isOverdue(item: Pick<ActionItem, 'dueDate' | 'done'>, today: string): boolean {
-  return item.dueDate !== null && item.dueDate < today && !item.done
-}
-
-/**
- * Maps a drop's vertical offset within the target row to before/after —
- * the flat-list equivalent of src/modules/people-tree.ts's
- * `computeDropPosition`, minus the 'child' outcome (action items have no
- * hierarchy, so there's nothing to nest under). Degrades to 'after' for a
- * non-positive `height` (rows not yet laid out, e.g. in a test without real
- * layout) rather than dividing by zero.
- */
-export function computeFlatDropPosition(offsetY: number, height: number): 'before' | 'after' {
+/** Maps a drop's vertical offset within the target card to before/after. Degenerates to 'after' for a non-positive `height` (cards not yet laid out, e.g. in a test without real layout) rather than dividing by zero. */
+export function computeDropPosition(offsetY: number, height: number): 'before' | 'after' {
   if (height <= 0) return 'after'
   return offsetY < height / 2 ? 'before' : 'after'
 }
 
 /**
- * Moves `draggedId` to become a sibling (before/after `targetId`) within
- * `items`, renumbering `order` across the whole array so it stays a dense
- * 0..n-1 sequence. Mutates the ActionItem objects in place (the array itself
- * is not replaced) so it can run directly inside a `store.update` callback —
- * mirrors `moveInTree` from src/modules/people-tree.ts, flattened. No-ops
- * when dragging an item onto itself or when either id isn't present.
+ * Moves `draggedId` to `status`, positioned before/after `targetId` within
+ * that status group (or appended at the end when `targetId` is null or not
+ * found in the group — e.g. dropped on empty column space). Renumbers
+ * `order` densely within both the destination group and, if the status
+ * changed, the now-shrunk source group. Mutates `items` in place so it can
+ * run directly inside a `store.update` callback. No-op when `draggedId`
+ * doesn't exist, or when it's dropped onto itself without a status change.
  */
-export function moveActionItem(items: ActionItem[], draggedId: string, targetId: string, position: 'before' | 'after'): void {
-  if (draggedId === targetId) return
-  const sorted = [...items].sort((a, b) => a.order - b.order)
-  const draggedIdx = sorted.findIndex((i) => i.id === draggedId)
-  if (draggedIdx === -1) return
-  const dragged = sorted.splice(draggedIdx, 1)[0]!
-  const targetIdx = sorted.findIndex((i) => i.id === targetId)
-  if (targetIdx === -1) return
-  const insertAt = position === 'before' ? targetIdx : targetIdx + 1
-  sorted.splice(insertAt, 0, dragged)
-  sorted.forEach((it, i) => { it.order = i })
+export function moveCard(items: ActionItem[], draggedId: string, status: ActionItem['status'], targetId: string | null, position: 'before' | 'after'): void {
+  const dragged = items.find((i) => i.id === draggedId)
+  if (!dragged) return
+  if (dragged.status === status && draggedId === targetId) return
+  const oldStatus = dragged.status
+  dragged.status = status
+  const destGroup = items.filter((i) => i.status === status && i.id !== draggedId).sort((a, b) => a.order - b.order)
+  const targetIdx = targetId === null ? -1 : destGroup.findIndex((i) => i.id === targetId)
+  const insertAt = targetIdx === -1 ? destGroup.length : (position === 'before' ? targetIdx : targetIdx + 1)
+  destGroup.splice(insertAt, 0, dragged)
+  destGroup.forEach((i, idx) => { i.order = idx })
+  if (oldStatus !== status) {
+    const oldGroup = items.filter((i) => i.status === oldStatus).sort((a, b) => a.order - b.order)
+    oldGroup.forEach((i, idx) => { i.order = idx })
+  }
 }
 
 // --- renderer ---------------------------------------------------------------
@@ -89,7 +84,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   if (loc.ref.kind !== 'actions') return // registered only for 'actions'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
-  const datalistId = `tt-action-people-${Math.random().toString(36).slice(2)}`
+  const datalistId = `tt-kanban-people-${Math.random().toString(36).slice(2)}`
 
   function findTeam(): Team | undefined {
     return ctx.store.doc.teams.find((tm) => tm.id === teamId)
@@ -99,23 +94,11 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   let draggedId: string | null = null
-  let focusItemId: string | null = null
-  let expandedId: string | null = null
 
-  interface ExpandedBundle { id: string; editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
-  let expandedBundle: ExpandedBundle | null = null
-
-  function disposeExpandedBundle(): void {
-    if (!expandedBundle) return
-    expandedBundle.atHandle.dispose()
-    expandedBundle.tplHandle.dispose()
-    expandedBundle.editor.destroy()
-    expandedBundle = null
-  }
-
-  function toggleExpand(id: string): void {
-    expandedId = expandedId === id ? null : id
-    renderAll()
+  function clearDropClasses(): void {
+    boardEl.querySelectorAll('.tt-kanban-card').forEach((n) => {
+      n.classList.remove('tt-kanban-drop-before', 'tt-kanban-drop-after')
+    })
   }
 
   function getPeople(): AtPerson[] {
@@ -127,45 +110,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     ]
   }
 
-  /** Full rich editor for an item's free-form notes, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself as `expandedBundle` so the caller can dispose it later. */
-  function renderNotesRow(item: ActionItem): HTMLElement {
-    const editor: Editor = createEditor(
-      {
-        onChange() {
-          const md = editor.getMd()
-          ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
-            const found = tm?.actionItems.find((i) => i.id === item.id)
-            if (!found) return
-            found.notes = md.trim() === '' ? '' : md
-          })
-        },
-        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-        onAtTrigger() {},
-        onSlashTrigger() {},
-      },
-      lc
-    )
-    editor.setMd(item.notes)
-
-    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
-    const tplHandle = attachTemplatePicker(editor, {
-      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
-      locale: lc,
-    })
-
-    expandedBundle = { id: item.id, editor, atHandle, tplHandle }
-
-    return el('div', { class: 'tt-action-notes-row', 'data-item-notes-id': item.id }, editor.root)
-  }
-
-  function clearDropClasses(): void {
-    listEl.querySelectorAll('.tt-action-row').forEach((n) => {
-      n.classList.remove('tt-action-drop-before', 'tt-action-drop-after')
-    })
-  }
-
   function removeItem(id: string): void {
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
@@ -175,143 +119,307 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   function openDeleteConfirm(item: ActionItem): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'action_delete_confirm', { text: item.text }))
+    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_confirm', { summary: item.summary }))
     const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
-      label: t(lc, 'action_delete_btn'),
-      primary: true,
+      label: t(lc, 'kanban_delete_btn'),
+      danger: true,
       onClick: () => {
         removeItem(item.id)
         handle.close()
       },
     }
-    const handle: ModalHandle = showModal({ title: t(lc, 'action_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
+    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   function requestDelete(item: ActionItem): void {
-    if (item.text.trim() === '') {
-      removeItem(item.id) // empty items carry no meaningful content to lose — delete silently
+    if (item.summary.trim() === '') {
+      removeItem(item.id) // empty cards carry no meaningful content to lose — delete silently
       return
     }
     openDeleteConfirm(item)
   }
 
-  function renderRow(item: ActionItem): HTMLElement {
-    const doneCheckbox = el('input', {
-      type: 'checkbox', class: 'tt-action-done', title: t(lc, 'action_done_title'), checked: item.done,
-      onchange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked
-        ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.actionItems.find((i) => i.id === item.id)
-          if (found) found.done = checked
-        })
-      },
-    })
-
-    const textInput = el('input', {
-      type: 'text', class: 'tt-action-text tt-input', placeholder: t(lc, 'action_text_placeholder'), value: item.text,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.actionItems.find((i) => i.id === item.id)
-          if (found) found.text = value
-        })
-      },
-    })
-
-    const dueInput = el('input', {
-      type: 'date', class: 'tt-action-due tt-input', value: item.dueDate ?? '',
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.actionItems.find((i) => i.id === item.id)
-          if (found) found.dueDate = value === '' ? null : value
-        })
-      },
-    })
-
-    const assigneeInput = el('input', {
-      type: 'text', class: 'tt-action-assignee tt-input', list: datalistId,
-      placeholder: t(lc, 'action_assignee_placeholder'), value: item.assignee,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.actionItems.find((i) => i.id === item.id)
-          if (found) found.assignee = value
-        })
-      },
-    })
-
-    // tabindex="-1" on the row's small icon actions: Tab should move cleanly
-    // between the row's data fields (checkbox/text/date/assignee) like a
-    // spreadsheet, not stop on every hover-revealed icon button in between —
-    // these stay reachable by click/hover, just excluded from the Tab order.
-    const expandBtn = el(
-      'button',
-      { class: 'tt-btn tt-action-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'action_notes_toggle_title'), onclick: () => toggleExpand(item.id) },
-      expandedId === item.id ? '▾' : '▸'
-    )
-
-    const deleteBtn = el(
-      'button',
-      { class: 'tt-btn tt-action-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'action_delete_title'), onclick: () => requestDelete(item) },
-      '🗑'
-    )
-
-    const row = el(
-      'div',
-      { class: 'tt-action-row', draggable: item.done ? 'false' : 'true', 'data-item-id': item.id },
-      doneCheckbox, textInput, dueInput, assigneeInput, expandBtn, deleteBtn
-    )
-    if (item.done) row.classList.add('tt-action-done-row')
-    if (isOverdue(item, todayIso())) row.classList.add('overdue')
-
-    if (!item.done) {
-      row.addEventListener('dragstart', (e) => {
-        draggedId = item.id
-        const dt = (e as DragEvent).dataTransfer
-        if (dt) { dt.setData('text/plain', item.id); dt.effectAllowed = 'move' }
-      })
-      row.addEventListener('dragover', (e) => {
-        if (draggedId === null || draggedId === item.id) return
-        e.preventDefault()
-        const rect = row.getBoundingClientRect()
-        const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
-        clearDropClasses()
-        row.classList.add(`tt-action-drop-${pos}`)
-      })
-      row.addEventListener('dragleave', () => {
-        row.classList.remove('tt-action-drop-before', 'tt-action-drop-after')
-      })
-      row.addEventListener('drop', (e) => {
-        e.preventDefault()
-        clearDropClasses()
-        const srcId = draggedId
-        draggedId = null
-        if (srcId === null || srcId === item.id) return
-        const rect = row.getBoundingClientRect()
-        const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+  function clearZone(status: ActionItem['status']): void {
+    const count = itemsByStatus(items(), status).length
+    if (count === 0) return
+    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_clear_zone_confirm', { count: String(count) }))
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const confirmBtn: ModalButton = {
+      label: t(lc, 'kanban_clear_zone_btn'),
+      danger: true,
+      onClick: () => {
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
-          moveActionItem(tm.actionItems, srcId, item.id, pos)
+          tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
         })
-      })
-      row.addEventListener('dragend', () => {
-        draggedId = null
-        clearDropClasses()
-      })
+        handle.close()
+      },
     }
-
-    return row
+    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_clear_zone_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
-  const listEl = el('div', { class: 'tt-action-list' })
-  const doneDetailsEl = el('details', { class: 'tt-actions-done' })
+  interface ModalBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  let openBundle: ModalBundle | null = null
+
+  /** Full CRUD modal: `existing === null` creates a new card in `defaultStatus`; otherwise edits/deletes `existing`. Mirrors src/modules/people-tree.ts's openPersonModal shape, plus a rich-text notes editor (created on open, destroyed on close) wired exactly like the old inline renderNotesRow (@ref autocomplete + '/' template picker). */
+  function openEditModal(existing: ActionItem | null, defaultStatus: 'todo' | 'wip' = 'todo'): void {
+    const summaryInput = el('input', { type: 'text', class: 'tt-input', value: existing?.summary ?? '' }) as HTMLInputElement
+    const dueInput = el('input', { type: 'date', class: 'tt-input', value: existing?.dueDate ?? '' }) as HTMLInputElement
+    const assigneeInput = el('input', { type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '' }) as HTMLInputElement
+    let selectedColor: ActionItem['color'] = existing?.color ?? 'ledger'
+    const errorEl = el('div', { class: 'tt-field-error' })
+
+    const editor: Editor = createEditor(
+      { onChange() {}, onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId), onAtTrigger() {}, onSlashTrigger() {} },
+      lc
+    )
+    editor.setMd(existing?.notes ?? '')
+    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const tplHandle = attachTemplatePicker(editor, {
+      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      locale: lc,
+    })
+    openBundle = { editor, atHandle, tplHandle }
+
+    const colorRow = el('div', { class: 'tt-kanban-color-row' })
+    function paintSelectedColor(): void {
+      colorRow.querySelectorAll('.tt-kanban-color-chip').forEach((chip) => {
+        chip.classList.toggle('selected', chip.getAttribute('data-color') === selectedColor)
+      })
+    }
+    for (const c of COLORS) {
+      colorRow.appendChild(
+        el('button', {
+          type: 'button', class: `tt-kanban-color-chip color-${c}`, 'data-color': c, title: t(lc, COLOR_KEYS[c]),
+          onclick: () => { selectedColor = c; paintSelectedColor() },
+        })
+      )
+    }
+    paintSelectedColor()
+
+    const body = el(
+      'div',
+      { class: 'tt-kanban-form' },
+      el('label', { class: 'tt-field' }, t(lc, 'kanban_summary_label'), summaryInput),
+      el('div', { class: 'tt-field' }, t(lc, 'kanban_notes_label'), editor.root),
+      el(
+        'div',
+        { class: 'tt-kanban-form-row' },
+        el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), dueInput),
+        el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeInput)
+      ),
+      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow),
+      errorEl
+    )
+
+    function closeModal(): void {
+      handle.close()
+    }
+
+    function save(): void {
+      const summary = summaryInput.value.trim()
+      if (summary === '') {
+        errorEl.textContent = t(lc, 'kanban_summary_required')
+        return
+      }
+      const dueDate = dueInput.value === '' ? null : dueInput.value
+      const assignee = assigneeInput.value
+      const notes = editor.getMd()
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        if (existing === null) {
+          const group = itemsByStatus(tm.actionItems, defaultStatus)
+          tm.actionItems.push({
+            id: crypto.randomUUID(), summary, notes, status: defaultStatus,
+            dueDate, assignee, color: selectedColor, order: group.length,
+          })
+        } else {
+          const found = tm.actionItems.find((i) => i.id === existing.id)
+          if (!found) return
+          found.summary = summary
+          found.notes = notes
+          found.dueDate = dueDate
+          found.assignee = assignee
+          found.color = selectedColor
+        }
+      })
+      closeModal()
+    }
+
+    const buttons: ModalButton[] = []
+    if (existing !== null) {
+      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { closeModal(); requestDelete(existing) } })
+    }
+    buttons.push({ label: t(lc, 'cancel'), onClick: () => closeModal() })
+    buttons.push({ label: t(lc, 'kanban_save_btn'), primary: true, onClick: () => save() })
+
+    const handle: ModalHandle = showModal({
+      title: t(lc, existing === null ? 'kanban_add_title' : 'kanban_edit_title'),
+      body,
+      buttons,
+      onClose: () => {
+        openBundle?.atHandle.dispose()
+        openBundle?.tplHandle.dispose()
+        openBundle?.editor.destroy()
+        openBundle = null
+      },
+    })
+    summaryInput.focus()
+  }
+
+  function emptyEl(): HTMLElement {
+    return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
+  }
+
+  function renderCard(item: ActionItem): HTMLElement {
+    const editBtn = el(
+      'button',
+      { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
+      '✎'
+    )
+    const titleEl = el('div', { class: 'tt-kanban-card-title' }, item.summary)
+    const metaChildren: (Node | string)[] = []
+    if (item.dueDate) {
+      metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, todayIso()) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
+    }
+    if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
+    const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
+
+    const card = el(
+      'div',
+      { class: `tt-kanban-card color-${item.color} status-${item.status}`, draggable: 'true', 'data-item-id': item.id },
+      editBtn, titleEl, metaEl
+    )
+    card.addEventListener('dblclick', () => openEditModal(item))
+
+    card.addEventListener('dragstart', (e) => {
+      draggedId = item.id
+      trashEl.classList.add('active')
+      const dt = (e as DragEvent).dataTransfer
+      if (dt) { dt.setData('text/plain', item.id); dt.effectAllowed = 'move' }
+    })
+    card.addEventListener('dragover', (e) => {
+      if (draggedId === null || draggedId === item.id) return
+      e.preventDefault()
+      const rect = card.getBoundingClientRect()
+      const pos = computeDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+      clearDropClasses()
+      card.classList.add(`tt-kanban-drop-${pos}`)
+    })
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('tt-kanban-drop-before', 'tt-kanban-drop-after')
+    })
+    card.addEventListener('drop', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      clearDropClasses()
+      const srcId = draggedId
+      draggedId = null
+      if (srcId === null) return
+      const rect = card.getBoundingClientRect()
+      const pos = computeDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        moveCard(tm.actionItems, srcId, item.status, item.id, pos)
+      })
+    })
+    card.addEventListener('dragend', () => {
+      draggedId = null
+      clearDropClasses()
+      trashEl.classList.remove('active', 'drag-over')
+    })
+
+    return card
+  }
+
+  const todoBodyEl = el('div', { class: 'tt-kanban-col-body' })
+  const wipBodyEl = el('div', { class: 'tt-kanban-col-body' })
+  const doneBodyEl = el('div', { class: 'tt-kanban-col-body' })
+  const cancelledBodyEl = el('div', { class: 'tt-kanban-col-body' })
+  const doneCountEl = el('span', {})
+  const cancelledCountEl = el('span', {})
+
+  const todoColEl = el(
+    'div', { class: 'tt-kanban-col' },
+    el('div', { class: 'tt-kanban-col-head' },
+      el('span', {}, t(lc, 'kanban_col_todo')),
+      el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'todo') }, t(lc, 'kanban_add_card'))
+    ),
+    todoBodyEl
+  )
+  const wipColEl = el(
+    'div', { class: 'tt-kanban-col' },
+    el('div', { class: 'tt-kanban-col-head' },
+      el('span', {}, t(lc, 'kanban_col_wip')),
+      el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'wip') }, t(lc, 'kanban_add_card'))
+    ),
+    wipBodyEl
+  )
+  const doneCancelColEl = el(
+    'div', { class: 'tt-kanban-col' },
+    el('div', { class: 'tt-kanban-col-head' }, el('span', {}, t(lc, 'kanban_col_done_cancelled'))),
+    el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
+      el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
+    doneBodyEl,
+    el('div', { class: 'tt-kanban-divider' }),
+    el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
+      el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, '🗑')),
+    cancelledBodyEl
+  )
+
+  const boardEl = el('div', { class: 'tt-kanban-board' }, todoColEl, wipColEl, doneCancelColEl)
   const datalistEl = el('datalist', { id: datalistId })
+
+  // Drop target for deleting a card by dragging it off the board — shown
+  // only while dragging (see dragstart above), same rationale as
+  // src/modules/people-tree.ts's rootDropEl: revealing it must not reflow
+  // the board mid-dragstart, or Chrome cancels the drag.
+  const trashEl = el('div', { class: 'tt-kanban-trash' }, '🗑 ', t(lc, 'kanban_trash_hint'))
+  trashEl.addEventListener('dragover', (e) => {
+    if (draggedId === null) return
+    e.preventDefault()
+    trashEl.classList.add('drag-over')
+  })
+  trashEl.addEventListener('dragleave', () => {
+    trashEl.classList.remove('drag-over')
+  })
+  trashEl.addEventListener('drop', (e) => {
+    e.preventDefault()
+    trashEl.classList.remove('active', 'drag-over')
+    const srcId = draggedId
+    draggedId = null
+    if (srcId === null) return
+    const found = items().find((i) => i.id === srcId)
+    if (found) requestDelete(found)
+  })
+
+  /** Catches a drop onto empty column space (below the last card, or an empty column) — the case moveCard's `targetId === null` append handles. Card-level drop handlers already stopPropagation() so this never double-fires for a drop that landed on a specific card. */
+  function wireColumnDrop(bodyEl: HTMLElement, status: ActionItem['status']): void {
+    bodyEl.addEventListener('dragover', (e) => {
+      if (draggedId === null) return
+      e.preventDefault()
+    })
+    bodyEl.addEventListener('drop', (e) => {
+      e.preventDefault()
+      const srcId = draggedId
+      draggedId = null
+      if (srcId === null) return
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        moveCard(tm.actionItems, srcId, status, null, 'after')
+      })
+    })
+  }
+  wireColumnDrop(todoBodyEl, 'todo')
+  wireColumnDrop(wipBodyEl, 'wip')
+  wireColumnDrop(doneBodyEl, 'done')
+  wireColumnDrop(cancelledBodyEl, 'cancelled')
 
   function updateDatalist(): void {
     datalistEl.innerHTML = ''
@@ -323,94 +431,44 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   function renderAll(): void {
-    disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
     updateDatalist()
-    const open = openItems(items())
-    const done = doneItems(items())
+    const todo = itemsByStatus(items(), 'todo')
+    const wip = itemsByStatus(items(), 'wip')
+    const done = itemsByStatus(items(), 'done')
+    const cancelled = itemsByStatus(items(), 'cancelled')
 
-    listEl.innerHTML = ''
-    if (open.length === 0 && done.length === 0) {
-      listEl.appendChild(el('div', { class: 'tt-action-empty' }, t(lc, 'action_empty')))
-    } else {
-      open.forEach((it) => {
-        listEl.appendChild(renderRow(it))
-        if (expandedId === it.id) listEl.appendChild(renderNotesRow(it))
-      })
-    }
+    todoBodyEl.innerHTML = ''
+    if (todo.length === 0) todoBodyEl.appendChild(emptyEl())
+    else todo.forEach((it) => todoBodyEl.appendChild(renderCard(it)))
 
-    doneDetailsEl.innerHTML = ''
-    doneDetailsEl.appendChild(el('summary', {}, t(lc, 'action_done_heading', { count: String(done.length) })))
-    done.forEach((it) => {
-      doneDetailsEl.appendChild(renderRow(it))
-      if (expandedId === it.id) doneDetailsEl.appendChild(renderNotesRow(it))
-    })
-    doneDetailsEl.classList.toggle('tt-actions-done-empty', done.length === 0)
+    wipBodyEl.innerHTML = ''
+    if (wip.length === 0) wipBodyEl.appendChild(emptyEl())
+    else wip.forEach((it) => wipBodyEl.appendChild(renderCard(it)))
 
-    if (focusItemId) {
-      listEl.querySelector<HTMLInputElement>(`[data-item-id="${focusItemId}"] .tt-action-text`)?.focus()
-      focusItemId = null
-    }
+    doneBodyEl.innerHTML = ''
+    if (done.length === 0) doneBodyEl.appendChild(emptyEl())
+    else done.forEach((it) => doneBodyEl.appendChild(renderCard(it)))
+
+    cancelledBodyEl.innerHTML = ''
+    if (cancelled.length === 0) cancelledBodyEl.appendChild(emptyEl())
+    else cancelled.forEach((it) => cancelledBodyEl.appendChild(renderCard(it)))
+
+    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(done.length) })
+    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(cancelled.length) })
   }
   renderAll()
 
-  function addItem(): void {
-    const newId = crypto.randomUUID()
-    focusItemId = newId
-    ctx.store.update((d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
-      const maxOrder = tm.actionItems.length === 0 ? -1 : Math.max(...tm.actionItems.map((i) => i.order))
-      tm.actionItems.push({ id: newId, text: '', done: false, dueDate: null, assignee: '', order: maxOrder + 1, notes: '' })
-    })
-  }
-
-  const addBtn = el(
-    'button',
-    { class: 'tt-btn tt-action-add-btn', type: 'button', onclick: () => addItem() },
-    t(lc, 'action_add_btn')
-  )
-  const toolbar = el('div', { class: 'tt-action-toolbar' }, addBtn)
-
-  /**
-   * True (and returns the focused element) for the caret-sensitive elements
-   * this module owns: text/date inputs (not the checkbox, which has no caret
-   * and whose own 'change' handler needs its rebuild — moving the row
-   * into/out of the done group — to happen immediately) and, since a notes
-   * editor can be live-edited for a while before its debounced onChange
-   * commits, the expanded row's contenteditable `.editor` itself (mirrors
-   * src/modules/risks.ts's identically-shaped focusedCaretElement).
-   */
-  function focusedCaretInput(): HTMLElement | null {
-    const active = document.activeElement
-    if (!(active instanceof HTMLElement) || !container.contains(active)) return null
-    if (active instanceof HTMLInputElement && (active.type === 'text' || active.type === 'date')) return active
-    if (active.classList.contains('editor') && active.isContentEditable) return active
-    return null
-  }
-
-  // A full rebuild is the simplest correct way to keep row order/grouping/
-  // overdue-status in sync with the store, but it would blow away an
-  // in-progress edit's caret if some *other* change (a different row's
-  // checkbox, an edit from the other split pane, etc.) fires while a
-  // text/date input here is focused — text/date inputs only commit to the
-  // store on 'change' (i.e. on their own blur), so at the moment such a
-  // foreign update arrives the field's edit is still live and uncommitted.
-  // Rather than diffing rows, we just skip that one rebuild and defer it to
-  // the field's next blur — nothing is lost, since blur is exactly when this
-  // field's own edit (if any) commits and would have triggered a rebuild anyway.
   const unsubscribe = ctx.store.subscribe(() => {
-    const active = focusedCaretInput()
-    if (active) {
-      active.addEventListener('blur', () => renderAll(), { once: true })
-      return
-    }
     renderAll()
   })
 
-  container.appendChild(el('div', { class: 'tt-actions' }, toolbar, listEl, doneDetailsEl, datalistEl))
+  container.appendChild(el('div', { class: 'tt-kanban' }, boardEl, trashEl, datalistEl))
 
   disposers.set(container, () => {
     unsubscribe()
-    disposeExpandedBundle()
+    openBundle?.atHandle.dispose()
+    openBundle?.tplHandle.dispose()
+    openBundle?.editor.destroy()
+    openBundle = null
   })
 }
