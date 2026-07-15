@@ -1,6 +1,7 @@
 {
   "name": "Team Tracker",
   "short_name": "Team Tracker",
+  "version": "__APP_VERSION__",
   "display": "standalone",
   "start_url": "./",
   "scope": "./",

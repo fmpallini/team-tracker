@@ -197,6 +197,19 @@ export function showStartScreen(
   )
 
   const title = el('h1', { class: 'tt-start-title' }, t(locale, 'app_name'))
+  const versionTag = el(
+    'p',
+    { class: 'tt-start-version' },
+    el(
+      'a',
+      {
+        href: 'https://github.com/fmpallini/team-tracker/releases',
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      },
+      `v${__APP_VERSION__}`
+    )
+  )
   const tagline = el('p', { class: 'tt-start-tagline' }, t(locale, 'start_tagline'))
   const advantages = el(
     'ul',
@@ -221,7 +234,7 @@ export function showStartScreen(
   const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenBtn, openBtn, createBtn)
   reopenBtn.style.display = 'none'
 
-  const children: (Node | string | null)[] = [title, tagline, advantages, backupTip, buttonsCol]
+  const children: (Node | string | null)[] = [title, versionTag, tagline, advantages, backupTip, buttonsCol]
   if (!supportsFsApi) {
     children.push(el('p', { class: 'tt-start-fallback-notice' }, t(locale, 'fallback_notice')))
   }

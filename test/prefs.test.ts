@@ -445,7 +445,7 @@ test('about tab reflects a mismatched file schema version from appCtl', () => {
   expect(rows).toContain('0')
 })
 
-test('closing the prefs modal (OK) fires onNavChanged so main.ts\'s save-on-nav-change hook saves the edited prefs immediately', () => {
+test('closing the prefs modal (OK) fires onNavChanged (sidebar re-render hook)', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   radio('tt-prefs-theme', 'dark').click()

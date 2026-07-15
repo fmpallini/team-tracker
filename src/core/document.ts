@@ -8,7 +8,7 @@ export class SchemaTooNewError extends Error {}
 export function createEmptyDocument(locale: 'pt-BR' | 'en-US'): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 5 },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10 },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} },
