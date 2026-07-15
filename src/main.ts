@@ -242,7 +242,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   pm.renderAll()
   const palette = createPalette(store, pm)
   shell.onAppNameClick(() => palette.open())
-  mountSearch(shell, store, pm, doc.prefs.locale, selectTeam)
+  mountSearch(shell, store, pm, selectTeam)
   app = { store, session, password, shell, pm, dispose }
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of

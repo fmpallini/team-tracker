@@ -9,6 +9,7 @@ import { searchDocument, normalize, type SearchResult } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
 import { applySearchHighlight } from './search-highlight'
+import { onLocaleChanged } from './prefs'
 
 const DEBOUNCE_MS = 150
 
@@ -66,7 +67,6 @@ export function mountSearch(
   shell: Shell,
   store: Store,
   pm: PaneManager,
-  locale: Locale,
   switchTeam: (teamId: string) => void
 ): void {
   let allTeams = false
@@ -75,19 +75,29 @@ export function mountSearch(
   let open = false
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
+  function localeNow(): Locale {
+    return store.doc.prefs.locale
+  }
+
   const input = el('input', {
     type: 'text',
     class: 'tt-input tt-search-input',
-    placeholder: t(locale, 'search_placeholder'),
+    placeholder: t(localeNow(), 'search_placeholder'),
   }) as HTMLInputElement
 
   const checkbox = el('input', { type: 'checkbox' }) as HTMLInputElement
-  const checkboxLabel = el(
-    'label',
-    { class: 'tt-search-all-teams' },
-    checkbox,
-    ` ${t(locale, 'search_all_teams')}`
-  )
+  const checkboxLabelText = el('span', {}, t(localeNow(), 'search_all_teams'))
+  const checkboxLabel = el('label', { class: 'tt-search-all-teams' }, checkbox, ' ', checkboxLabelText)
+
+  // Header-adjacent text captured at mount time would otherwise stay stale
+  // after a locale switch (see prefs.ts's LOCALE_CHANGED_EVENT comment) —
+  // refresh it live instead of waiting for the next remount.
+  onLocaleChanged(() => {
+    const lc = localeNow()
+    input.placeholder = t(lc, 'search_placeholder')
+    checkboxLabelText.textContent = t(lc, 'search_all_teams')
+    if (open) renderList()
+  })
   const listEl = el('div', { class: 'tt-search-list' })
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
   const wrap = el('div', { class: 'tt-search-wrap' }, input, dropdown)
@@ -111,7 +121,7 @@ export function mountSearch(
     listEl.innerHTML = ''
     const terms = currentTerms()
     if (results.length === 0) {
-      listEl.appendChild(el('div', { class: 'tt-search-empty' }, t(locale, 'search_no_results')))
+      listEl.appendChild(el('div', { class: 'tt-search-empty' }, t(localeNow(), 'search_no_results')))
       return
     }
     results.forEach((result, i) => {

@@ -322,8 +322,14 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       // Un-splitting hides pane 1 (layout() never hides pane 0) — leaving
       // focus stuck there would silently misdirect every focused-pane action
       // (Ctrl+K palette picks, Alt+arrow history, team hotkeys) at a pane the
-      // user can no longer see.
-      if (!d.nav.split) d.nav.focusedPane = 0
+      // user can no longer see. If pane 1 was the focused (visible-to-the-
+      // user) pane, pull its content into pane 0 first so closing split
+      // keeps what the user was looking at instead of reverting to pane 0's
+      // stale content.
+      if (!d.nav.split) {
+        if (d.nav.focusedPane === 1) d.nav.panes[0] = d.nav.panes[1]
+        d.nav.focusedPane = 0
+      }
       // Remembers this choice per team so switching back to it later (see
       // main.ts's selectTeam) restores split/single view as last left it.
       if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split

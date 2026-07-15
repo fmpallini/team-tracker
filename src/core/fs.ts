@@ -23,7 +23,12 @@ async function readHandle(handle: FileSystemFileHandle): Promise<{ bytes: Uint8A
 export async function pickOpen(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   try {
     const [handle] = await window.showOpenFilePicker({
-      types: [{ description: 'Team Tracker', accept: { 'application/octet-stream': ['.tmv'] } }],
+      // Chromium expands a registered MIME type like application/octet-stream
+      // into every OS-associated extension for that type, so the picker's
+      // filter ends up listing far more than .tmv. An unregistered app-
+      // specific MIME type has no OS associations to merge in, keeping the
+      // filter to just the extension below.
+      types: [{ description: 'Team Tracker', accept: { 'application/vnd.teamtracker.tmv': ['.tmv'] } }],
     })
     if (!handle) return null
     const { bytes, lastModified } = await readHandle(handle)
@@ -40,7 +45,12 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
   try {
     const handle = await window.showSaveFilePicker({
       suggestedName,
-      types: [{ description: 'Team Tracker', accept: { 'application/octet-stream': ['.tmv'] } }],
+      // Chromium expands a registered MIME type like application/octet-stream
+      // into every OS-associated extension for that type, so the picker's
+      // filter ends up listing far more than .tmv. An unregistered app-
+      // specific MIME type has no OS associations to merge in, keeping the
+      // filter to just the extension below.
+      types: [{ description: 'Team Tracker', accept: { 'application/vnd.teamtracker.tmv': ['.tmv'] } }],
     })
     const { lastModified } = await readHandle(handle)
     const session: FileSession = { handle, name: handle.name, lastModified }

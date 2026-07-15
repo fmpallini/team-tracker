@@ -144,11 +144,21 @@ export function createShell(locale: Locale): Shell {
   }
 
   function applyPrefs(prefs: Prefs): void {
+    const localeChanged = prefs.locale !== currentLocale
     currentLocale = prefs.locale
     currentTheme = prefs.theme
     applyTheme(prefs.theme)
     document.documentElement.dataset.font = prefs.font
     document.documentElement.dataset.size = prefs.fontSize
+    if (localeChanged) {
+      appNameBtn.title = t(currentLocale, 'app_name_button_title')
+      appNameBtn.textContent = t(currentLocale, 'app_name')
+      fullscreenBtn.title = t(currentLocale, 'fullscreen')
+      closeFileBtn.title = t(currentLocale, 'close_file_title')
+      settingsBtn.title = t(currentLocale, 'settings')
+      helpBtn.title = t(currentLocale, 'help_global_title')
+      setSaveState(currentState)
+    }
   }
 
   function setTitle(fileName: string | null, dirty: boolean): void {
