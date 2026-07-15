@@ -242,7 +242,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   pm.renderAll()
   const palette = createPalette(store, pm)
   shell.onAppNameClick(() => palette.open())
-  mountSearch(shell, store, pm, doc.prefs.locale, selectTeam)
+  mountSearch(shell, store, pm, selectTeam)
   app = { store, session, password, shell, pm, dispose }
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
@@ -429,7 +429,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
 
   // Saves (if dirty) and fully tears this document down, releasing the
   // cross-tab write lock, then returns to the start screen — the 🔒 header
-  // button and Ctrl+Shift+L. `closing` guards against a double-invocation
+  // button and Ctrl+Alt+L. `closing` guards against a double-invocation
   // (e.g. a fast repeat keypress) tearing the same document down twice.
   let closing = false
   function closeFile(): void {
@@ -495,10 +495,11 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       palette.open()
       return
     }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+    if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
       // Plain Ctrl+L is reserved by browser chrome (focus address bar) in
-      // most tabs, outside the page's reach — Ctrl+Shift+L isn't a common
-      // browser/OS binding, so this actually fires reliably.
+      // most tabs, outside the page's reach, and Ctrl+Shift+L is a common
+      // password-manager autofill binding (e.g. Bitwarden) — Ctrl+Alt+L is
+      // free of both, so this actually fires reliably.
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
       closeFile()

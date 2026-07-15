@@ -47,7 +47,7 @@ function mount(
   stubMatchMedia()
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  mountSearch(shell, store, pm, 'en-US', switchTeam)
+  mountSearch(shell, store, pm, switchTeam)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
   return { shell, input }
 }
@@ -110,7 +110,7 @@ test('renders module icons per kind, in candidate order, and toggles teamName wi
     id: 'T1', name: 'Team One', emoji: '🚀',
     stakeholders: [{ id: 'p1', name: 'Widget Sam', role: '', parentId: null, order: 0, notes: 'widget bio' }],
     members: [],
-    actionItems: [{ id: 'a1', text: 'widget task', done: false, dueDate: null, assignee: '', order: 0, notes: '' }],
+    actionItems: [{ id: 'a1', summary: 'widget task', status: 'todo', color: 'ledger', dueDate: null, assignee: '', order: 0, notes: '' }],
     milestones: [{ id: 'm1', date: '2026-07-01', title: 'widget launch', done: false, followup: '' }],
     risks: [{ id: 'r1', title: 'widget risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
     dailyNotes: { '2026-07-01': 'widget note' },
@@ -343,7 +343,7 @@ test('does not accumulate document-level listeners across repeated open/close cy
   document.body.appendChild(shell.root)
 
   const addSpy = vi.spyOn(document, 'addEventListener')
-  mountSearch(shell, store, fakePM(), 'en-US', () => {})
+  mountSearch(shell, store, fakePM(), () => {})
   const countAfterMount = addSpy.mock.calls.length
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
 

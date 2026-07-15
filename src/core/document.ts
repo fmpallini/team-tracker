@@ -1,7 +1,7 @@
 import type { Doc } from './types'
 import { builtinTemplates } from './templates'
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 export class SchemaTooNewError extends Error {}
 
@@ -27,6 +27,29 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   2: (d) => {
     const nav = d.nav as Record<string, unknown> | undefined
     if (nav && typeof nav.teamSplit !== 'object') nav.teamSplit = {}
+  },
+  3: (d) => {
+    for (const team of (d.teams as Record<string, unknown>[]) ?? []) {
+      const items = (team.actionItems as Record<string, unknown>[]) ?? []
+      for (const a of items) {
+        a.summary = a.text ?? ''
+        delete a.text
+        a.status = a.done ? 'done' : 'todo'
+        delete a.done
+        a.color = a.color ?? 'ledger'
+      }
+      const byStatus = new Map<string, Record<string, unknown>[]>()
+      for (const a of items) {
+        const key = a.status as string
+        const arr = byStatus.get(key) ?? []
+        arr.push(a)
+        byStatus.set(key, arr)
+      }
+      for (const arr of byStatus.values()) {
+        arr.sort((x, y) => (x.order as number) - (y.order as number))
+        arr.forEach((a, i) => { a.order = i })
+      }
+    }
   },
 }
 

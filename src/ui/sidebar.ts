@@ -236,7 +236,10 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
 
   function openAddModal(): void {
     const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
-    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji', maxlength: '4' })
+    // No maxlength: it counts UTF-16 code units, which both lets two simple
+    // emojis through and blocks single ZWJ emojis — attachEmojiPicker
+    // enforces "exactly one grapheme" on input instead.
+    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
     const errorEl = el('div', { class: 'tt-field-error' })
     const body = el(
       'div',
@@ -278,7 +281,10 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
   function openEditModal(team: Team): void {
     const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
     nameInput.value = team.name
-    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji', maxlength: '4' })
+    // No maxlength: it counts UTF-16 code units, which both lets two simple
+    // emojis through and blocks single ZWJ emojis — attachEmojiPicker
+    // enforces "exactly one grapheme" on input instead.
+    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
     emojiInput.value = team.emoji
     const errorEl = el('div', { class: 'tt-field-error' })
     const body = el(

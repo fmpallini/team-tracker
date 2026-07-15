@@ -4,6 +4,7 @@ import {
   isDescendant,
   computeDropPosition,
   moveInTree,
+  moveToRoot,
   deletePerson,
 } from '../src/modules/people-tree'
 import { createStore, type Store } from '../src/core/store'
@@ -103,6 +104,30 @@ describe('pure helpers', () => {
   test('computeDropPosition: degenerates to child for a zero/negative height row', () => {
     expect(computeDropPosition(0, 0)).toBe('child')
     expect(computeDropPosition(5, -1)).toBe('child')
+  })
+
+  test('moveToRoot: promotes a nested person to the end of the root list, renumbering both groups', () => {
+    const people = [
+      person({ id: 'a', parentId: null, order: 0 }),
+      person({ id: 'b', parentId: null, order: 1 }),
+      person({ id: 'c', parentId: 'a', order: 0 }),
+      person({ id: 'd', parentId: 'a', order: 1 }),
+    ]
+    moveToRoot(people, 'c')
+    expect(childrenOf(people, null).map((p) => p.id)).toEqual(['a', 'b', 'c'])
+    expect(childrenOf(people, 'a').map((p) => p.id)).toEqual(['d'])
+    expect(childrenOf(people, 'a').map((p) => p.order)).toEqual([0])
+  })
+
+  test('moveToRoot: no-ops for a person already at the root and for unknown ids', () => {
+    const people = [
+      person({ id: 'a', parentId: null, order: 0 }),
+      person({ id: 'b', parentId: null, order: 1 }),
+    ]
+    moveToRoot(people, 'a')
+    expect(childrenOf(people, null).map((p) => p.id)).toEqual(['a', 'b'])
+    moveToRoot(people, 'nope')
+    expect(childrenOf(people, null).map((p) => p.id)).toEqual(['a', 'b'])
   })
 
   test('moveInTree: reparents as a child and appends at the end, renumbering both groups', () => {
@@ -335,5 +360,49 @@ describe('renderPeopleTree', () => {
     const wrongLoc: Loc = { teamId: 'T1', ref: { kind: 'members' } }
     render(container, wrongLoc, store, pm, 'stakeholders')
     expect(container.children).toHaveLength(0)
+  })
+
+  describe('root drop zone', () => {
+    function nestedTeam(): Team {
+      return makeTeam({
+        members: [
+          person({ id: 'a', name: 'Ana', parentId: null, order: 0 }),
+          person({ id: 'c', name: 'Carla', parentId: 'a', order: 0 }),
+        ],
+      })
+    }
+
+    test('appears when dragging a nested person and promotes them to the top level on drop', () => {
+      const { container, store, pm, loc } = setup(nestedTeam(), 'members')
+      render(container, loc, store, pm, 'members')
+
+      const zone = container.querySelector<HTMLElement>('.tt-people-root-drop')!
+      expect(zone).not.toBeNull()
+      expect(zone.classList.contains('active')).toBe(false)
+
+      const carlaBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Carla')!
+      carlaBox.dispatchEvent(new Event('dragstart', { bubbles: true }))
+      expect(zone.classList.contains('active')).toBe(true)
+
+      const over = new Event('dragover', { bubbles: true, cancelable: true })
+      zone.dispatchEvent(over)
+      expect(over.defaultPrevented).toBe(true)
+
+      zone.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+      const members = store.doc.teams[0]!.members
+      expect(members.find((p) => p.id === 'c')!.parentId).toBeNull()
+      expect(childrenOf(members, null).map((p) => p.id)).toEqual(['a', 'c'])
+      expect(zone.classList.contains('active')).toBe(false)
+    })
+
+    test('does not appear when dragging a person already at the top level', () => {
+      const { container, store, pm, loc } = setup(nestedTeam(), 'members')
+      render(container, loc, store, pm, 'members')
+
+      const zone = container.querySelector<HTMLElement>('.tt-people-root-drop')!
+      const anaBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ana')!
+      anaBox.dispatchEvent(new Event('dragstart', { bubbles: true }))
+      expect(zone.classList.contains('active')).toBe(false)
+    })
   })
 })

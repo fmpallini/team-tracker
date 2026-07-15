@@ -85,6 +85,24 @@ export function moveInTree(people: Person[], draggedId: string, targetId: string
 }
 
 /**
+ * Promotes `draggedId` to the root level (parentId null), appended after the
+ * existing roots, renumbering both affected sibling groups. No-op when the
+ * person is already a root or the id is unknown. Mutates the Person objects
+ * in place — the same `store.update`-friendly contract as `moveInTree`.
+ */
+export function moveToRoot(people: Person[], draggedId: string): void {
+  const dragged = people.find((p) => p.id === draggedId)
+  if (!dragged || dragged.parentId === null) return
+  const oldParentId = dragged.parentId
+  const roots = people.filter((p) => p.parentId === null).sort((a, b) => a.order - b.order)
+  roots.push(dragged)
+  dragged.parentId = null
+  roots.forEach((p, i) => { p.order = i })
+  const oldSiblings = people.filter((p) => p.parentId === oldParentId).sort((a, b) => a.order - b.order)
+  oldSiblings.forEach((p, i) => { p.order = i })
+}
+
+/**
  * Removes `id` from `people`, promoting its direct children to its own
  * `parentId`. Design choice: the promoted children are spliced into the
  * former sibling group *at the deleted node's original slot* (preserving
@@ -257,6 +275,9 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       box.addEventListener('dragstart', (e) => {
         e.stopPropagation()
         draggedId = person.id
+        // The root drop zone only helps someone nested — a root person has
+        // nowhere higher to go, so don't flash an inert target at them.
+        if (person.parentId !== null) rootDropEl.classList.add('active')
         const dt = (e as DragEvent).dataTransfer
         if (dt) {
           dt.setData('text/plain', person.id)
@@ -295,6 +316,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       box.addEventListener('dragend', () => {
         draggedId = null
         clearDropClasses()
+        rootDropEl.classList.remove('active', 'drag-over')
       })
 
       return box
@@ -306,6 +328,37 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       const childrenEl = kids.length > 0 ? el('div', { class: 'tt-org-children' }, ...kids.map((k) => renderNode(k))) : null
       return el('div', { class: 'tt-org-node' }, box, childrenEl)
     }
+
+    // Drop target for promoting a person to the root level. Lives outside
+    // `treeEl` so the full rebuild in `renderAll()` never recreates it
+    // mid-drag; shown only while dragging a nested person (see `dragstart`).
+    // Styled as an absolute overlay (styles.css): revealing it while
+    // dragstart is being processed must not reflow the tree, because Chrome
+    // cancels a drag whose source element moves during dragstart — an
+    // in-flow zone here silently killed dragging altogether.
+    const rootDropEl = el('div', { class: 'tt-people-root-drop' }, t(lc, 'person_root_drop_hint'))
+    rootDropEl.addEventListener('dragover', (e) => {
+      if (draggedId === null) return
+      e.preventDefault()
+      rootDropEl.classList.add('drag-over')
+    })
+    rootDropEl.addEventListener('dragleave', () => {
+      rootDropEl.classList.remove('drag-over')
+    })
+    rootDropEl.addEventListener('drop', (e) => {
+      e.preventDefault()
+      // Hide eagerly: the store update rebuilds the tree, which can detach
+      // the drag source before its `dragend` (the usual hider) ever fires.
+      rootDropEl.classList.remove('active', 'drag-over')
+      const srcId = draggedId
+      draggedId = null
+      if (srcId === null) return
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        moveToRoot(tm[group], srcId)
+      })
+    })
 
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
     function renderAll(): void {
@@ -333,7 +386,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       renderAll()
     })
 
-    container.appendChild(el('div', { class: 'tt-people' }, toolbar, treeEl))
+    container.appendChild(el('div', { class: 'tt-people' }, toolbar, rootDropEl, treeEl))
 
     disposers.set(container, () => {
       unsubscribe()

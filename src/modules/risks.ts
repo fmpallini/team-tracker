@@ -16,7 +16,7 @@ import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
-import { computeFlatDropPosition } from './action-items'
+import { computeDropPosition } from './action-items'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -89,7 +89,7 @@ export function sortRisksForDisplay(risks: Risk[], sort: ExposureSort): Risk[] {
 /**
  * Moves `draggedId` to become a sibling (before/after `targetId`) within
  * `risks`, renumbering `order` across the whole array so it stays a dense
- * 0..n-1 sequence — mirrors src/modules/action-items.ts's `moveActionItem`,
+ * 0..n-1 sequence — mirrors src/modules/action-items.ts's `moveCard`,
  * flattened for `Risk`. Mutates the Risk objects in place so it can run
  * directly inside a `store.update` callback. No-ops when dragging an item
  * onto itself or when either id isn't present.
@@ -347,7 +347,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
         if (draggedId === null || draggedId === r.id) return
         e.preventDefault()
         const rect = row.getBoundingClientRect()
-        const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+        const pos = computeDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
         clearDropClasses()
         row.classList.add(`tt-risk-drop-${pos}`)
       })
@@ -361,7 +361,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
         draggedId = null
         if (srcId === null || srcId === r.id) return
         const rect = row.getBoundingClientRect()
-        const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+        const pos = computeDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return

@@ -33,6 +33,28 @@ export interface EmojiPickerHandle {
   dispose(): void
 }
 
+/**
+ * A team emoji is exactly one grapheme cluster, which `maxlength` cannot
+ * express: it counts UTF-16 code units, so two simple emojis (2 units each)
+ * fit inside `maxlength="4"` while a single ZWJ emoji like 🧑‍💻 (5 units)
+ * gets blocked. The field keeps the LAST grapheme because the edit modal
+ * prefills the current emoji — an OS-picker (Win+. / Cmd+Ctrl+Space)
+ * insertion appends at the caret, and the newest choice must win.
+ */
+function lastGrapheme(value: string): string {
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    let last = ''
+    for (const s of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)) {
+      last = s.segment
+    }
+    return last
+  }
+  // No Segmenter: fall back to code points — splits ZWJ sequences, but still
+  // guarantees "one emoji" for the common non-ZWJ case.
+  const points = Array.from(value)
+  return points[points.length - 1] ?? ''
+}
+
 export function attachEmojiPicker(input: HTMLInputElement, locale: Locale): EmojiPickerHandle {
   let popup: HTMLElement | null = null
   let activeCat = 0
@@ -124,12 +146,19 @@ export function attachEmojiPicker(input: HTMLInputElement, locale: Locale): Emoj
     document.removeEventListener('keydown', onKeydown, true)
   }
 
+  function onInput(): void {
+    const single = lastGrapheme(input.value.trim())
+    if (input.value !== single) input.value = single
+  }
+
   input.addEventListener('focus', onFocus)
+  input.addEventListener('input', onInput)
 
   return {
     dispose(): void {
       close()
       input.removeEventListener('focus', onFocus)
+      input.removeEventListener('input', onInput)
     },
   }
 }

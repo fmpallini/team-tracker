@@ -22,4 +22,24 @@ describe('emoji picker', () => {
     expect(document.querySelector('.tt-emoji-popup')).toBeNull()
     handle.dispose()
   })
+  it('keeps only the last emoji when the OS picker appends a second one', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const handle = attachEmojiPicker(input, 'en-US')
+    // edit modal case: field already holds the old emoji, OS picker (Win+.)
+    // appends the new one at the caret — the newest grapheme must win
+    input.value = '😀😎'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(input.value).toBe('😎')
+    handle.dispose()
+  })
+  it('does not mangle a single multi-code-unit ZWJ emoji', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const handle = attachEmojiPicker(input, 'en-US')
+    input.value = '🧑‍💻' // 5 UTF-16 code units, one grapheme
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(input.value).toBe('🧑‍💻')
+    handle.dispose()
+  })
 })

@@ -5,6 +5,10 @@ import { el } from './dom'
 export interface ModalButton {
   label: string
   primary?: boolean
+  /** Renders with the outlined, --danger-colored style — e.g. a Delete action alongside Cancel/Save. */
+  danger?: boolean
+  /** Pushes this button to the start of the row (`margin-right: auto`) so it visually separates from the rest — e.g. keeping a Delete action apart from Cancel/Save. */
+  left?: boolean
   onClick: () => void
 }
 
@@ -50,10 +54,14 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   }
 
   const buttonEls: HTMLButtonElement[] = opts.buttons.map((b) => {
+    const classes = ['tt-btn']
+    if (b.primary) classes.push('tt-btn-primary')
+    if (b.danger) classes.push('tt-btn-danger')
+    if (b.left) classes.push('tt-btn-left')
     const btn = el(
       'button',
       {
-        class: b.primary ? 'tt-btn tt-btn-primary' : 'tt-btn',
+        class: classes.join(' '),
         type: 'button',
         onclick: () => b.onClick(),
       },

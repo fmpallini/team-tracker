@@ -12,6 +12,14 @@ function inline(s: string): string {
   return out
 }
 
+// A plain space at the very end of a block is CSS-collapsed to zero width,
+// so after a line like "**Label:** " Chrome resolves an end-of-line click to
+// a caret INSIDE the <strong> and typing sticks to bold (every template line
+// shaped "**Label:** " hit this). A trailing &nbsp; keeps a real, visible
+// caret slot after the formatting; htmlToMd normalizes it back to a regular
+// space so documents never accumulate U+00A0.
+const blockInline = (s: string) => inline(s).replace(/ $/, '&nbsp;')
+
 export function mdToHtml(md: string): string {
   const lines = md.split('\n'); const out: string[] = []
   let list: 'ul' | 'ol' | null = null
@@ -20,10 +28,10 @@ export function mdToHtml(md: string): string {
     const h = /^(#{1,3}) (.*)$/.exec(line)
     const ul = /^- (.*)$/.exec(line)
     const ol = /^(\d+)\. (.*)$/.exec(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${inline(h[2]!)}</h${h[1]!.length}>`) }
-    else if (ul) { if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' } out.push(`<li>${inline(ul[1]!)}</li>`) }
-    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' } out.push(`<li value="${ol[1]}">${inline(ol[2]!)}</li>`) }
-    else { closeList(); out.push(`<div>${line ? inline(line) : '<br>'}</div>`) }
+    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(h[2]!)}</h${h[1]!.length}>`) }
+    else if (ul) { if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' } out.push(`<li>${blockInline(ul[1]!)}</li>`) }
+    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' } out.push(`<li value="${ol[1]}">${blockInline(ol[2]!)}</li>`) }
+    else { closeList(); out.push(`<div>${line ? blockInline(line) : '<br>'}</div>`) }
   }
   closeList(); return out.join('')
 }
@@ -36,7 +44,9 @@ export function parseRef(href: string): RefInfo['target'] | null {
 }
 
 function inlineMd(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+  // U+00A0 → ' ': undo mdToHtml's caret-slot &nbsp; (and the nbsp Chrome
+  // itself inserts while editing) so markdown only ever stores plain spaces.
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/\u00a0/g, ' ')
   if (!(node instanceof HTMLElement)) return ''
   const kids = () => Array.from(node.childNodes).map(inlineMd).join('')
   const tag = node.tagName.toLowerCase()
@@ -69,7 +79,7 @@ function blockToMd(node: HTMLElement): string {
 }
 
 function inlineText(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/\u00a0/g, ' ')
   if (!(node instanceof HTMLElement)) return ''
   if (node.tagName.toLowerCase() === 'br') return ''
   return Array.from(node.childNodes).map(inlineText).join('')

@@ -54,3 +54,46 @@ describe('v2 → v3 migration', () => {
     expect(createEmptyDocument('pt-BR').schemaVersion).toBe(SCHEMA_VERSION)
   })
 })
+
+describe('v3 → v4 migration (action items kanban)', () => {
+  function v3Doc() {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 3
+    d.teams = [{
+      id: 't1', name: 'T', emoji: '🙂', dailyNotes: {},
+      stakeholders: [], members: [],
+      actionItems: [
+        { id: 'a1', text: 'Open one', done: false, dueDate: null, assignee: '', order: 5, notes: '' },
+        { id: 'a2', text: 'Open two', done: false, dueDate: null, assignee: '', order: 2, notes: '' },
+        { id: 'a3', text: 'Done one', done: true, dueDate: null, assignee: '', order: 9, notes: '' },
+      ],
+      milestones: [], risks: [],
+    }]
+    return d
+  }
+  it('bumps to the current version', () => {
+    const doc = migrate(v3Doc())
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+  })
+  it('renames text to summary and maps done to status', () => {
+    const doc = migrate(v3Doc())
+    const items = doc.teams[0]!.actionItems
+    expect(items.find((i) => i.id === 'a1')).toMatchObject({ summary: 'Open one', status: 'todo' })
+    expect(items.find((i) => i.id === 'a3')).toMatchObject({ summary: 'Done one', status: 'done' })
+    expect((items.find((i) => i.id === 'a1') as any).text).toBeUndefined()
+    expect((items.find((i) => i.id === 'a1') as any).done).toBeUndefined()
+  })
+  it('defaults color to ledger', () => {
+    const doc = migrate(v3Doc())
+    expect(doc.teams[0]!.actionItems.every((i) => i.color === 'ledger')).toBe(true)
+  })
+  it('renumbers order densely within each status group, not globally', () => {
+    const doc = migrate(v3Doc())
+    const items = doc.teams[0]!.actionItems
+    const todo = items.filter((i) => i.status === 'todo').sort((a, b) => a.order - b.order)
+    expect(todo.map((i) => i.id)).toEqual(['a2', 'a1']) // a2 had order 2, a1 had order 5
+    expect(todo.map((i) => i.order)).toEqual([0, 1])
+    const done = items.filter((i) => i.status === 'done')
+    expect(done.map((i) => i.order)).toEqual([0])
+  })
+})
