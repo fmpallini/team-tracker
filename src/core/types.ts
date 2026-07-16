@@ -1,10 +1,12 @@
 // src/core/types.ts — completo, copiar literalmente
+export type PaletteId = 'ledger' | 'signal' | 'blueprint' | 'muster' | 'forest' | 'desert' | 'cosmic' | 'synthwave'
 export interface Prefs {
   theme: 'light' | 'dark' | 'system'
   locale: 'pt-BR' | 'en-US'
   font: 'system' | 'serif' | 'mono' | 'classic' | 'rounded'
   fontSize: 'S' | 'M' | 'L'
   autoSaveMin: number
+  palette: PaletteId
 }
 export interface Person {
   id: string; name: string; role: string

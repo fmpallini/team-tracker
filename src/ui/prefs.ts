@@ -64,6 +64,20 @@ const THEME_OPTIONS: readonly { value: 'light' | 'dark' | 'system'; key: MsgKey 
   { value: 'system', key: 'prefs_theme_system' },
 ]
 
+// `swatch` previews each palette with its own accent color (see
+// styles.css's [data-palette=...] blocks) — same "show, don't describe"
+// idea as FONT_OPTIONS's per-option font stack below.
+const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; swatch: string }[] = [
+  { value: 'ledger', key: 'prefs_palette_ledger', swatch: '#3b5a6b' },
+  { value: 'signal', key: 'prefs_palette_signal', swatch: '#0058a3' },
+  { value: 'blueprint', key: 'prefs_palette_blueprint', swatch: '#0a6890' },
+  { value: 'muster', key: 'prefs_palette_muster', swatch: '#8f4b10' },
+  { value: 'forest', key: 'prefs_palette_forest', swatch: '#8f5814' },
+  { value: 'desert', key: 'prefs_palette_desert', swatch: '#14706c' },
+  { value: 'cosmic', key: 'prefs_palette_cosmic', swatch: '#5b4bc4' },
+  { value: 'synthwave', key: 'prefs_palette_synthwave', swatch: '#22d3ee' },
+]
+
 const LOCALE_OPTIONS: readonly { value: Locale; key: MsgKey }[] = [
   { value: 'pt-BR', key: 'prefs_locale_pt' },
   { value: 'en-US', key: 'prefs_locale_en' },
@@ -103,7 +117,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   function radioField(
     name: string,
     labelKey: MsgKey,
-    options: readonly { value: string; key: MsgKey; preview?: string }[],
+    options: readonly { value: string; key: MsgKey; preview?: string; swatch?: string }[],
     current: string,
     onChange: (value: string) => void
   ): HTMLElement {
@@ -121,7 +135,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         const text = opt.preview
           ? el('span', { class: 'tt-prefs-radio-preview', style: `font-family:${opt.preview}` }, t(locale, opt.key))
           : t(locale, opt.key)
-        return el('label', { class: 'tt-prefs-radio' }, input, text)
+        const swatch = opt.swatch ? el('span', { class: 'tt-prefs-radio-swatch', style: `background:${opt.swatch}` }) : null
+        return el('label', { class: 'tt-prefs-radio' }, input, swatch, text)
       })
     )
     return el('div', { class: 'tt-prefs-field' }, el('div', { class: 'tt-prefs-field-label' }, t(locale, labelKey)), row)
@@ -135,6 +150,13 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const themeField = radioField('tt-prefs-theme', 'prefs_theme_label', THEME_OPTIONS, prefs.theme, (value) => {
       store.update((d) => {
         d.prefs.theme = value as 'light' | 'dark' | 'system'
+      })
+      shell.applyPrefs(store.doc.prefs)
+    })
+
+    const paletteField = radioField('tt-prefs-palette', 'prefs_palette_label', PALETTE_OPTIONS, prefs.palette, (value) => {
+      store.update((d) => {
+        d.prefs.palette = value as Prefs['palette']
       })
       shell.applyPrefs(store.doc.prefs)
     })
@@ -186,7 +208,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput)
     )
 
-    container.append(themeField, localeField, fontField, sizeField, autoSaveField)
+    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------

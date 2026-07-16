@@ -23,6 +23,84 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
   --card-slate:#8fb6c4; --card-brass:#c99a4e; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a89a78;
 }
+
+/* Palette specimens (prefs "Color palette" picker). Each is a full
+   light/dark pair scoped under [data-palette=X], which — being two
+   attribute selectors — outranks the bare [data-theme=light/dark] rules
+   above without touching them; "ledger" (the default) simply never gets
+   its own block and falls through to those. See docs/superpowers's theme
+   proposal artifact for the design rationale (contrast ratios, material
+   grounding) behind each one. */
+[data-palette=signal][data-theme=light] {
+  --bg:#f7f7f5; --fg:#101012; --muted:#45464a; --accent:#0058a3; --accent-rgb:0,88,163;
+  --panel:#ffffff; --border:#c9c9c4; --brass:#8f4b10; --danger:#a84a12; --ok:#00805c;
+  --card-slate:#2f7fc4; --card-brass:#b57900; --card-sage:#00805c; --card-rust:#a84a12; --card-plum:#a14f7f; --card-ledger:#5c6570;
+}
+[data-palette=signal][data-theme=dark] {
+  --bg:#0b0b0d; --fg:#f2f2f0; --muted:#a8a8a4; --accent:#5ab4f0; --accent-rgb:90,180,240;
+  --panel:#17171a; --border:#3a3a3d; --brass:#e0973b; --danger:#e0763d; --ok:#3ecf9e;
+  --card-slate:#5ab4f0; --card-brass:#e0973b; --card-sage:#3ecf9e; --card-rust:#e0763d; --card-plum:#d98fc0; --card-ledger:#9aa4b0;
+}
+[data-palette=blueprint][data-theme=light] {
+  --bg:#eef4f9; --fg:#10263c; --muted:#4c6a86; --accent:#0a6890; --accent-rgb:10,104,144;
+  --panel:#f7fbfd; --border:#c3d9e8; --brass:#a15c1f; --danger:#b5460a; --ok:#2f7a5c;
+  --card-slate:#0a6890; --card-brass:#a15c1f; --card-sage:#2f7a5c; --card-rust:#b5460a; --card-plum:#6b4a8a; --card-ledger:#4c6a86;
+}
+[data-palette=blueprint][data-theme=dark] {
+  --bg:#14283f; --fg:#eaf3fb; --muted:#8fb0c9; --accent:#4fc3f7; --accent-rgb:79,195,247;
+  --panel:#1b3552; --border:#2f5578; --brass:#e2a35c; --danger:#e2794a; --ok:#6bc79a;
+  --card-slate:#4fc3f7; --card-brass:#e2a35c; --card-sage:#6bc79a; --card-rust:#e2794a; --card-plum:#b58fd6; --card-ledger:#8fb0c9;
+}
+[data-palette=muster][data-theme=light] {
+  --bg:#e9ebe6; --fg:#24271f; --muted:#5b5f52; --accent:#8f4b10; --accent-rgb:143,75,16;
+  --panel:#f2f3ee; --border:#c7cabb; --brass:#8a7412; --danger:#a83f2e; --ok:#3f7a4f;
+  --card-slate:#4a6a85; --card-brass:#8a7412; --card-sage:#3f7a4f; --card-rust:#a83f2e; --card-plum:#6b4a7a; --card-ledger:#5b5f52;
+}
+[data-palette=muster][data-theme=dark] {
+  --bg:#232323; --fg:#f0ede3; --muted:#9a9488; --accent:#e0973b; --accent-rgb:224,151,59;
+  --panel:#2a2a28; --border:#454540; --brass:#d4b23e; --danger:#d1584a; --ok:#7fae6e;
+  --card-slate:#7fa8c9; --card-brass:#d4b23e; --card-sage:#7fae6e; --card-rust:#d1584a; --card-plum:#b98fcb; --card-ledger:#9a9488;
+}
+[data-palette=forest][data-theme=light] {
+  --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#8f5814; --accent-rgb:143,88,20;
+  --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3f7a5c;
+  --card-slate:#3f6b6b; --card-brass:#b8862e; --card-sage:#3f7a5c; --card-rust:#a8422e; --card-plum:#6b4a7a; --card-ledger:#5c6b52;
+}
+[data-palette=forest][data-theme=dark] {
+  --bg:#16211a; --fg:#e6ecda; --muted:#8fa082; --accent:#d99a4a; --accent-rgb:217,154,74;
+  --panel:#1e2c22; --border:#34452f; --brass:#e0b458; --danger:#d97a5e; --ok:#6fae8a;
+  --card-slate:#6fa3a3; --card-brass:#e0b458; --card-sage:#6fae8a; --card-rust:#d97a5e; --card-plum:#b98fcb; --card-ledger:#8fa082;
+}
+[data-palette=desert][data-theme=light] {
+  --bg:#f3e6d2; --fg:#3a2415; --muted:#8a6b4a; --accent:#14706c; --accent-rgb:20,112,108;
+  --panel:#f8efe0; --border:#ddc3a0; --brass:#a8622e; --danger:#b5432a; --ok:#4c6934;
+  --card-slate:#14706c; --card-brass:#a8622e; --card-sage:#4c6934; --card-rust:#b5432a; --card-plum:#8a3f6b; --card-ledger:#8a6b4a;
+}
+[data-palette=desert][data-theme=dark] {
+  --bg:#241a12; --fg:#f0e2ca; --muted:#b89a78; --accent:#4fc9c2; --accent-rgb:79,201,194;
+  --panel:#2e2119; --border:#4a3826; --brass:#d99a5c; --danger:#e2795a; --ok:#8fb56a;
+  --card-slate:#4fc9c2; --card-brass:#d99a5c; --card-sage:#8fb56a; --card-rust:#e2795a; --card-plum:#c97fae; --card-ledger:#b89a78;
+}
+[data-palette=cosmic][data-theme=light] {
+  --bg:#eceef2; --fg:#14141c; --muted:#55566a; --accent:#5b4bc4; --accent-rgb:91,75,196;
+  --panel:#f5f6f9; --border:#cfd1dc; --brass:#b8791e; --danger:#c23f6b; --ok:#1f7a68;
+  --card-slate:#3a4fb0; --card-brass:#b8791e; --card-sage:#1f7a68; --card-rust:#c23f6b; --card-plum:#9d4bc4; --card-ledger:#55566a;
+}
+[data-palette=cosmic][data-theme=dark] {
+  --bg:#0c0c16; --fg:#e8e6f2; --muted:#8f8fa8; --accent:#9d7cf0; --accent-rgb:157,124,240;
+  --panel:#161624; --border:#2e2e42; --brass:#f0b458; --danger:#f0678f; --ok:#4fd9c4;
+  --card-slate:#7c94f0; --card-brass:#f0b458; --card-sage:#4fd9c4; --card-rust:#f0678f; --card-plum:#c98fe8; --card-ledger:#8f8fa8;
+}
+[data-palette=synthwave][data-theme=light] {
+  --bg:#f4f1f7; --fg:#1c1128; --muted:#6b5c85; --accent:#0a6478; --accent-rgb:10,100,120;
+  --panel:#faf8fc; --border:#ddd3ea; --brass:#c81c68; --danger:#b8391f; --ok:#137048;
+  --card-slate:#0a6478; --card-brass:#c81c68; --card-sage:#137048; --card-rust:#b8391f; --card-plum:#6b3fa0; --card-ledger:#6b5c85;
+}
+[data-palette=synthwave][data-theme=dark] {
+  --bg:#180a24; --fg:#f2e9ff; --muted:#a48fc4; --accent:#22d3ee; --accent-rgb:34,211,238;
+  --panel:#23103a; --border:#3d1f5c; --brass:#ff3fa4; --danger:#ff5757; --ok:#39ffb0;
+  --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff5757; --card-plum:#b06bff; --card-ledger:#a48fc4;
+}
 /* Display face (brand, headings, team/person names) stays serif regardless
    of the body font preference below — brand identity, not body copy. */
 :root { --font-display: "Sitka Text", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
@@ -650,6 +728,7 @@ select option { background: var(--bg); color: var(--fg); }
 }
 .tt-prefs-radio input[type="radio"]:checked::before { transform: scale(1); }
 .tt-prefs-radio input[type="radio"]:checked { border-color: var(--accent); }
+.tt-prefs-radio-swatch { width: .85rem; height: .85rem; border-radius: 50%; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .tt-prefs-autosave-input { width: 5rem; }
 .tt-prefs-template-toolbar { display: flex; gap: .5rem; }
 .tt-prefs-template-list { display: flex; flex-direction: column; gap: .25rem; }

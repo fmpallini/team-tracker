@@ -3,7 +3,7 @@ import { createEmptyDocument, migrate, SCHEMA_VERSION, SchemaTooNewError } from 
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
   expect(d.schemaVersion).toBe(SCHEMA_VERSION)
-  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10 })
+  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger' })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
     panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} })
@@ -95,5 +95,16 @@ describe('v3 → v4 migration (action items kanban)', () => {
     expect(todo.map((i) => i.order)).toEqual([0, 1])
     const done = items.filter((i) => i.status === 'done')
     expect(done.map((i) => i.order)).toEqual([0])
+  })
+})
+
+describe('v4 → v5 migration (palette default)', () => {
+  it('defaults palette to ledger when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 4
+    delete d.prefs.palette
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.prefs.palette).toBe('ledger')
   })
 })
