@@ -20,7 +20,7 @@ import { renderActionItems } from './modules/action-items'
 import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
-import { encryptDocument, decryptDocument } from './core/crypto'
+import { encryptDocument, decryptDocument, resetSessionKey } from './core/crypto'
 import { writeFile, forceWrite, readCurrent, downloadFallback } from './core/fs'
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
@@ -334,10 +334,17 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
 
   // A confirmed-reliable save can't be awaited here — browsers don't allow
-  // async work to block unload — so this just leans on Chrome's native
-  // "leave site?" prompt as the safety net for dirty state.
+  // async work to block unload — so this leans on Chrome's native "leave
+  // site?" prompt as the safety net for dirty state. But `saveNow()` is
+  // still started here (fire-and-forget), not left to `visibilitychange`
+  // alone: `visibilitychange` → 'hidden' only fires *after* the user
+  // answers this dialog, whereas kicking the save off right here overlaps
+  // it with however long the dialog stays open — real time the encrypt
+  // (600k-iteration PBKDF2 on every save, see crypto.ts) needs to finish
+  // before the page can be torn down.
   const onBeforeUnload = (e: BeforeUnloadEvent): void => {
     if (store.dirty) {
+      void saveCtl.saveNow()
       e.preventDefault()
       e.returnValue = ''
     }
@@ -432,6 +439,11 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       await saveCtl.flush()
       dispose()
       app = null
+      // crypto.ts's session key cache is keyed by password alone, with no
+      // notion of *which* document it belongs to — must not survive past
+      // this document's lifetime, or opening/creating a different file
+      // under the same password would silently inherit this one's salt.
+      resetSessionKey()
       showStartScreen(store.doc.prefs.locale, onDocumentOpened)
     })().catch((e) => {
       console.error(e)

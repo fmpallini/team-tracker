@@ -48,6 +48,115 @@ It also means the entire attack surface for supply-chain compromise is
 whatever ships in the two build outputs, which you can read end to end — there
 is no `node_modules` tree running in the user's browser.
 
+## Using the local file (`app.html`)
+
+Download `app.html` from the
+[latest release](https://github.com/fmpallini/team-tracker/releases/latest):
+on the release page, expand the **Assets** arrow at the bottom of the release
+notes and click `app.html` there — that single file is everything you need
+(or build it yourself, see [Build](#build), where it lands in `dist/app.html`).
+Just double-click it, or open it from your browser's file picker. No install,
+no server, no network access required — the whole app (HTML, CSS, JS) is
+inlined into that one file.
+
+To open it in its own app-like window (no address bar/tabs) instead of a
+regular browser tab, launch Chrome with the `--app` flag:
+
+```
+chrome --app=file:///C:/path/to/dist/app.html
+```
+
+(On macOS/Linux, drop the drive letter: `--app=file:///path/to/dist/app.html`.)
+
+## Installable version (PWA)
+
+The same app — always the same version as the `app.html` release asset — is
+published at **<https://fmpallini.github.io/team-tracker/>**. Unlike the local
+file, it can be installed as a local app (Chrome/Edge show an install prompt;
+it opens in its own standalone window), and it **updates automatically**
+whenever a new version is released — no re-downloading a release asset by
+hand.
+
+## Verifying a release
+
+Every tagged release publishes `checksums.txt` alongside its assets, plus a
+[GitHub build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
+for `app.html` and the PWA zip — cryptographic proof (Sigstore-backed, not
+just a checksum) that a given file was built by this repo's own `Release`
+GitHub Actions workflow from that exact tagged commit, not hand-assembled or
+modified after the fact. You can verify this yourself instead of taking it on
+faith:
+
+```
+# 1. Download the assets for the tag you want to verify (example: v1.3.0)
+gh release download v1.3.0 -R fmpallini/team-tracker -p "*"
+
+# 2. Confirm the files match the published checksums
+sha256sum -c checksums.txt
+
+# 3. Verify the build-provenance attestation for each asset — requires the
+#    GitHub CLI (gh). Confirms the file's hash was attested by the
+#    "Attest build provenance" step in this repo's release.yml, tying it to
+#    a specific workflow run and source commit.
+gh attestation verify team-tracker-1.3.0.html -R fmpallini/team-tracker
+gh attestation verify team-tracker-pwa-1.3.0.zip -R fmpallini/team-tracker
+```
+
+A successful verify exits with status `0` (silently, in most shells); a
+tampered or unrelated file fails with a `404` — there's no matching
+attestation for that file's hash. To see exactly which commit the file was
+built from, add `--format json` (requires [`jq`](https://jqlang.org/)):
+
+```
+gh attestation verify team-tracker-1.3.0.html -R fmpallini/team-tracker --format json \
+  | jq -r '.[0].verificationResult.statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit'
+```
+
+Compare that SHA against the tag's commit on the
+[commits page](https://github.com/fmpallini/team-tracker/commits/main) to
+confirm they match.
+
+This also covers the live GitHub Pages site: `release.yml`'s `deploy-pages`
+job deploys the exact same `dist/pwa` build that was just attested — not a
+separate rebuild — so verifying the PWA zip's attestation is equivalent to
+verifying what's live. To confirm the live site is byte-identical to the
+attested asset yourself:
+
+```
+unzip -o team-tracker-pwa-1.3.0.zip -d attested-pwa
+for f in index.html sw.js manifest.json; do
+  diff <(curl -s "https://fmpallini.github.io/team-tracker/$f") "attested-pwa/$f" \
+    && echo "$f: matches live Pages site"
+done
+```
+
+## Data file
+
+Team Tracker never uploads or syncs your data anywhere. All state lives in a
+single encrypted `.tmv` file (password-based encryption) that you create,
+open, and save through the app's own file dialogs (or the download-fallback
+path in browsers without File System Access API support). **You own the
+file and are responsible for backing it up** — losing the file, or forgetting
+its password, means the data is unrecoverable. See the next section for the
+recommended way to keep it backed up.
+
+## Backing up your team file
+
+Team Tracker has no backup service of its own — and doesn't need one. Keep
+your `.tmv` file in a folder synced by any cloud client, such as
+[Google Drive for desktop](https://workspace.google.com/products/drive/#download),
+OneDrive, or Dropbox, and every save is backed up automatically. This works
+the same with the local `app.html` and the installed PWA:
+
+- **Privacy is preserved** — the file is encrypted (AES-256, key derived from
+  your password) before it ever touches disk, so the cloud provider — or
+  anyone else with access to the cloud account — only ever sees ciphertext.
+- **Available anywhere** — download the file from the provider's web UI
+  (e.g. drive.google.com) on any machine and open it with the app.
+- **Version history for free** — most providers keep previous versions of a
+  synced file for a while (Google Drive keeps them for ~30 days), so you can
+  also recover an earlier state by downloading an older version of the file.
+
 ## Architecture
 
 - **`src/core/`** — headless logic, no DOM construction. Document shape and
@@ -103,61 +212,6 @@ This produces:
   references. Copy it anywhere and open it directly.
 - `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and `icon.svg`,
   meant to be served over http(s) so it can be installed as a PWA.
-
-## Using the local file (`app.html`)
-
-Download `app.html` from the
-[latest release](https://github.com/fmpallini/team-tracker/releases/latest):
-on the release page, expand the **Assets** arrow at the bottom of the release
-notes and click `app.html` there — that single file is everything you need
-(or build it yourself as above, where it lands in `dist/app.html`). Just double-click it, or open it from your
-browser's file picker. No install, no server, no network access required —
-the whole app (HTML, CSS, JS) is inlined into that one file.
-
-To open it in its own app-like window (no address bar/tabs) instead of a
-regular browser tab, launch Chrome with the `--app` flag:
-
-```
-chrome --app=file:///C:/path/to/dist/app.html
-```
-
-(On macOS/Linux, drop the drive letter: `--app=file:///path/to/dist/app.html`.)
-
-## Installable version (PWA)
-
-The same app — always the same version as the `app.html` release asset — is
-published at **<https://fmpallini.github.io/team-tracker/>**. Unlike the local
-file, it can be installed as a local app (Chrome/Edge show an install prompt;
-it opens in its own standalone window), and it **updates automatically**
-whenever a new version is released — no re-downloading a release asset by
-hand.
-
-## Data file
-
-Team Tracker never uploads or syncs your data anywhere. All state lives in a
-single encrypted `.tmv` file (password-based encryption) that you create,
-open, and save through the app's own file dialogs (or the download-fallback
-path in browsers without File System Access API support). **You own the
-file and are responsible for backing it up** — losing the file, or forgetting
-its password, means the data is unrecoverable. See the next section for the
-recommended way to keep it backed up.
-
-## Backing up your team file
-
-Team Tracker has no backup service of its own — and doesn't need one. Keep
-your `.tmv` file in a folder synced by any cloud client, such as
-[Google Drive for desktop](https://workspace.google.com/products/drive/#download),
-OneDrive, or Dropbox, and every save is backed up automatically. This works
-the same with the local `app.html` and the installed PWA:
-
-- **Privacy is preserved** — the file is encrypted (AES-256, key derived from
-  your password) before it ever touches disk, so the cloud provider — or
-  anyone else with access to the cloud account — only ever sees ciphertext.
-- **Available anywhere** — download the file from the provider's web UI
-  (e.g. drive.google.com) on any machine and open it with the app.
-- **Version history for free** — most providers keep previous versions of a
-  synced file for a while (Google Drive keeps them for ~30 days), so you can
-  also recover an earlier state by downloading an older version of the file.
 
 ## Development
 
