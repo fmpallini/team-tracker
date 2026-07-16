@@ -132,6 +132,59 @@ it opens in its own standalone window), and it **updates automatically**
 whenever a new version is released — no re-downloading a release asset by
 hand.
 
+## Verifying a release
+
+Every tagged release publishes `checksums.txt` alongside its assets, plus a
+[GitHub build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
+for `app.html` and the PWA zip — cryptographic proof (Sigstore-backed, not
+just a checksum) that a given file was built by this repo's own `Release`
+GitHub Actions workflow from that exact tagged commit, not hand-assembled or
+modified after the fact. You can verify this yourself instead of taking it on
+faith:
+
+```
+# 1. Download the assets for the tag you want to verify (example: v1.3.0)
+gh release download v1.3.0 -R fmpallini/team-tracker -p "*"
+
+# 2. Confirm the files match the published checksums
+sha256sum -c checksums.txt
+
+# 3. Verify the build-provenance attestation for each asset — requires the
+#    GitHub CLI (gh). Confirms the file's hash was attested by the
+#    "Attest build provenance" step in this repo's release.yml, tying it to
+#    a specific workflow run and source commit.
+gh attestation verify team-tracker-1.3.0.html -R fmpallini/team-tracker
+gh attestation verify team-tracker-pwa-1.3.0.zip -R fmpallini/team-tracker
+```
+
+A successful verify exits with status `0` (silently, in most shells); a
+tampered or unrelated file fails with a `404` — there's no matching
+attestation for that file's hash. To see exactly which commit the file was
+built from, add `--format json` (requires [`jq`](https://jqlang.org/)):
+
+```
+gh attestation verify team-tracker-1.3.0.html -R fmpallini/team-tracker --format json \
+  | jq -r '.[0].verificationResult.statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit'
+```
+
+Compare that SHA against the tag's commit on the
+[commits page](https://github.com/fmpallini/team-tracker/commits/main) to
+confirm they match.
+
+This also covers the live GitHub Pages site: `release.yml`'s `deploy-pages`
+job deploys the exact same `dist/pwa` build that was just attested — not a
+separate rebuild — so verifying the PWA zip's attestation is equivalent to
+verifying what's live. To confirm the live site is byte-identical to the
+attested asset yourself:
+
+```
+unzip -o team-tracker-pwa-1.3.0.zip -d attested-pwa
+for f in index.html sw.js manifest.json; do
+  diff <(curl -s "https://fmpallini.github.io/team-tracker/$f") "attested-pwa/$f" \
+    && echo "$f: matches live Pages site"
+done
+```
+
 ## Data file
 
 Team Tracker never uploads or syncs your data anywhere. All state lives in a
