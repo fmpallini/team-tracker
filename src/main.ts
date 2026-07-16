@@ -334,10 +334,17 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
 
   // A confirmed-reliable save can't be awaited here — browsers don't allow
-  // async work to block unload — so this just leans on Chrome's native
-  // "leave site?" prompt as the safety net for dirty state.
+  // async work to block unload — so this leans on Chrome's native "leave
+  // site?" prompt as the safety net for dirty state. But `saveNow()` is
+  // still started here (fire-and-forget), not left to `visibilitychange`
+  // alone: `visibilitychange` → 'hidden' only fires *after* the user
+  // answers this dialog, whereas kicking the save off right here overlaps
+  // it with however long the dialog stays open — real time the encrypt
+  // (600k-iteration PBKDF2 on every save, see crypto.ts) needs to finish
+  // before the page can be torn down.
   const onBeforeUnload = (e: BeforeUnloadEvent): void => {
     if (store.dirty) {
+      void saveCtl.saveNow()
       e.preventDefault()
       e.returnValue = ''
     }
