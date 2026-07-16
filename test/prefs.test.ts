@@ -125,6 +125,26 @@ test('font field offers 5 options (including classic/rounded) and each label pre
   expect(preview.style.fontFamily).toContain('Georgia')
 })
 
+test('palette field defaults to ledger, offers 8 swatched options, and updates store.prefs + shell on change', () => {
+  const { store, shell, appCtl } = setup()
+  const applySpy = vi.spyOn(shell, 'applyPrefs')
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  expect(radio('tt-prefs-palette', 'ledger').checked).toBe(true)
+  for (const value of ['signal', 'blueprint', 'muster', 'forest', 'desert', 'cosmic', 'synthwave']) {
+    expect(radio('tt-prefs-palette', value)).not.toBeNull()
+  }
+
+  const signalLabel = radio('tt-prefs-palette', 'signal').closest('label')
+  const swatch = signalLabel?.querySelector('.tt-prefs-radio-swatch') as HTMLElement
+  expect(swatch.style.background).not.toBe('')
+
+  radio('tt-prefs-palette', 'cosmic').click()
+  expect(store.doc.prefs.palette).toBe('cosmic')
+  expect(applySpy).toHaveBeenCalledWith(store.doc.prefs)
+  expect(document.documentElement.dataset.palette).toBe('cosmic')
+})
+
 test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)

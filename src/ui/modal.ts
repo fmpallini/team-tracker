@@ -125,8 +125,8 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
     const errorEl = el('div', { class: 'tt-field-error' })
 
     const body = el(
-      'div',
-      { class: 'tt-password-form' },
+      'form',
+      { class: 'tt-password-form', onsubmit: (e: Event) => e.preventDefault() },
       el('label', { class: 'tt-field' }, t(locale, 'password'), pwInput),
       confirmInput ? el('label', { class: 'tt-field' }, t(locale, 'password_confirm'), confirmInput) : null,
       errorEl

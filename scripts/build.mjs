@@ -1,4 +1,4 @@
-import { build } from 'esbuild'
+import { build, transform } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
@@ -6,7 +6,7 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
 async function bundle(pwa) {
   const r = await build({
     entryPoints: ['src/main.ts'],
-    bundle: true, format: 'iife', write: false, minify: true,
+    bundle: true, format: 'iife', write: false, minify: true, charset: 'utf8',
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __PWA__: String(pwa),
@@ -16,7 +16,7 @@ async function bundle(pwa) {
   return r.outputFiles[0].text
 }
 
-const css = readFileSync('styles.css', 'utf8')
+const css = (await transform(readFileSync('styles.css', 'utf8'), { loader: 'css', minify: true })).code
 const tpl = readFileSync('index.html', 'utf8')
 const page = (js) => tpl.replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => js)
 
@@ -36,6 +36,9 @@ writeFileSync('dist/pwa/index.html', withPwaHead(page(await bundle(true))))
 const manifest = readFileSync('pwa/manifest.json', 'utf8').replaceAll('__APP_VERSION__', pkg.version)
 writeFileSync('dist/pwa/manifest.json', manifest)
 copyFileSync('pwa/icon.svg', 'dist/pwa/icon.svg')
+copyFileSync('pwa/icon-maskable.svg', 'dist/pwa/icon-maskable.svg')
+copyFileSync('pwa/icon-192.png', 'dist/pwa/icon-192.png')
+copyFileSync('pwa/icon-512.png', 'dist/pwa/icon-512.png')
 const sw = readFileSync('pwa/sw.js', 'utf8').replaceAll('__APP_VERSION__', pkg.version)
 writeFileSync('dist/pwa/sw.js', sw)
 

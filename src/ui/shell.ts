@@ -148,6 +148,7 @@ export function createShell(locale: Locale): Shell {
     currentLocale = prefs.locale
     currentTheme = prefs.theme
     applyTheme(prefs.theme)
+    document.documentElement.dataset.palette = prefs.palette
     document.documentElement.dataset.font = prefs.font
     document.documentElement.dataset.size = prefs.fontSize
     if (localeChanged) {
