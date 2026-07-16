@@ -1,4 +1,4 @@
-import { build } from 'esbuild'
+import { build, transform } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
@@ -6,7 +6,7 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
 async function bundle(pwa) {
   const r = await build({
     entryPoints: ['src/main.ts'],
-    bundle: true, format: 'iife', write: false, minify: true,
+    bundle: true, format: 'iife', write: false, minify: true, charset: 'utf8',
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __PWA__: String(pwa),
@@ -16,7 +16,7 @@ async function bundle(pwa) {
   return r.outputFiles[0].text
 }
 
-const css = readFileSync('styles.css', 'utf8')
+const css = (await transform(readFileSync('styles.css', 'utf8'), { loader: 'css', minify: true })).code
 const tpl = readFileSync('index.html', 'utf8')
 const page = (js) => tpl.replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => js)
 
