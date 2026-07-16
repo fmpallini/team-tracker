@@ -3,7 +3,14 @@
 // real app version at build time, so each release gets a fresh cache name
 // and old caches are dropped on activate.
 const CACHE = 'tt-v__APP_VERSION__'
-const SHELL = ['./', './manifest.json', './icon.svg']
+const SHELL = [
+  './',
+  './manifest.json',
+  './icon.svg',
+  './icon-maskable.svg',
+  './icon-192.png',
+  './icon-512.png',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
