@@ -46,6 +46,21 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return true
 }
 
+/**
+ * Must be called when a document is closed (main.ts's `closeFile()`) — the
+ * cache is keyed by password alone, with no notion of *which* document it
+ * belongs to. Without this, closing file A and then creating a brand-new
+ * file B under the same password would silently reuse file A's salt+key for
+ * B: `encryptDocument` has no salt of its own to force a cache miss (unlike
+ * `decryptDocument`, which always passes the target file's own stored salt).
+ * Two unrelated files ending up with an identical salt in their headers
+ * leaks that they share a password — exactly what the per-file random salt
+ * exists to prevent — even though IV reuse itself stays safe either way.
+ */
+export function resetSessionKey(): void {
+  sessionKey = null
+}
+
 export async function encryptDocument(doc: Doc, password: string): Promise<Uint8Array> {
   const ivKcv = crypto.getRandomValues(new Uint8Array(12))
   const ivData = crypto.getRandomValues(new Uint8Array(12))

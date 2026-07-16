@@ -1,4 +1,4 @@
-import { encryptDocument, decryptDocument, WrongPasswordError, CorruptFileError } from '../src/core/crypto'
+import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError } from '../src/core/crypto'
 import { createEmptyDocument } from '../src/core/document'
 
 test('round-trip', async () => {
@@ -50,4 +50,31 @@ test('decrypting with the same password+salt just used to encrypt reuses the cac
   expect(await decryptDocument(bytes, 'round-trip-cache')).toEqual(doc)
   expect(spy).not.toHaveBeenCalled()
   spy.mockRestore()
+}, 20000)
+
+test('resetSessionKey forces a fresh salt for a new document under the same password (closeFile -> create new)', async () => {
+  const doc = createEmptyDocument('pt-BR')
+  const bytesA = await encryptDocument(doc, 'shared-pw')
+  const saltA = bytesA.slice(5, 21)
+
+  resetSessionKey()
+
+  const bytesB = await encryptDocument(doc, 'shared-pw')
+  const saltB = bytesB.slice(5, 21)
+  expect(saltB).not.toEqual(saltA)
+}, 20000)
+
+test('without resetSessionKey, a new document under the same password would wrongly inherit the old salt', async () => {
+  const doc = createEmptyDocument('pt-BR')
+  const bytesA = await encryptDocument(doc, 'no-reset-pw')
+  const saltA = bytesA.slice(5, 21)
+
+  // No resetSessionKey() call here — demonstrates the bug resetSessionKey
+  // exists to prevent: without it, two unrelated documents under the same
+  // password would silently share a salt (and thus a key).
+  const bytesB = await encryptDocument(doc, 'no-reset-pw')
+  const saltB = bytesB.slice(5, 21)
+  expect(saltB).toEqual(saltA)
+
+  resetSessionKey() // don't leak this test's cache into whichever runs next
 }, 20000)

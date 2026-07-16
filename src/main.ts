@@ -20,7 +20,7 @@ import { renderActionItems } from './modules/action-items'
 import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
-import { encryptDocument, decryptDocument } from './core/crypto'
+import { encryptDocument, decryptDocument, resetSessionKey } from './core/crypto'
 import { writeFile, forceWrite, readCurrent, downloadFallback } from './core/fs'
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
@@ -439,6 +439,11 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       await saveCtl.flush()
       dispose()
       app = null
+      // crypto.ts's session key cache is keyed by password alone, with no
+      // notion of *which* document it belongs to — must not survive past
+      // this document's lifetime, or opening/creating a different file
+      // under the same password would silently inherit this one's salt.
+      resetSessionKey()
       showStartScreen(store.doc.prefs.locale, onDocumentOpened)
     })().catch((e) => {
       console.error(e)
