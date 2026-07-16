@@ -48,71 +48,16 @@ It also means the entire attack surface for supply-chain compromise is
 whatever ships in the two build outputs, which you can read end to end — there
 is no `node_modules` tree running in the user's browser.
 
-## Architecture
-
-- **`src/core/`** — headless logic, no DOM construction. Document shape and
-  schema migrations (`document.ts`, `types.ts`), the `.tmv` encryption format
-  (`crypto.ts`), the mutable document store (`store.ts`), the File System
-  Access API wrapper (`fs.ts`), and save orchestration (`save-controller.ts`).
-- **`src/modules/`** — one file per feature pane: daily notes, people trees
-  (stakeholders/members), person notes, action items, milestones, risks. Each
-  module exports a single render function with the signature
-  `(container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void` and is wired up
-  in `src/main.ts` via `pm.registerModule(kind, renderFn)`.
-- **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane
-  history), command palette, search, modals, preferences. `ui/dom.ts`'s `el()`
-  helper is the one DOM-building primitive used everywhere — no templating
-  engine, no virtual DOM.
-- **`src/main.ts`** — wires everything together: start screen →
-  `onDocumentOpened` builds the shell/store/panes/save-controller, registers
-  hotkeys, and sets up cross-tab single-writer locking so only one tab can
-  write to a given file at a time.
-
-### Adding a new module/pane
-
-Because every pane is just a render function registered by string key, adding
-a new tracked entity (say, a "decisions log") is mostly additive:
-
-1. Add its shape to `Doc` in `src/core/types.ts`, bump `SCHEMA_VERSION` in
-   `src/core/document.ts`, and add a migration step for existing files.
-2. Add a `ModuleRef` variant and a case in `src/core/nav.ts` for its location
-   type.
-3. Write `src/modules/<name>.ts` exporting a render function matching
-   `ModuleRenderer`.
-4. Register it in `src/main.ts` with `pm.registerModule('<kind>', renderFn)`,
-   and add it to the fixed module list in `src/ui/panes.ts` so it shows up in
-   the pane switcher and command palette.
-5. Add `pt-BR`/`en-US` strings for it in `src/core/i18n.ts` — every
-   user-visible string goes through `t(locale, key)`.
-6. Add `test/<name>.test.ts` alongside it.
-
-No other module needs to know the new one exists — the pane manager, sidebar,
-palette, and search all work off the registered module list and the `Loc`
-union.
-
-## Build
-
-```
-npm install
-npm run build
-```
-
-This produces:
-
-- `dist/app.html` — a single self-contained HTML file with no external
-  references. Copy it anywhere and open it directly.
-- `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and `icon.svg`,
-  meant to be served over http(s) so it can be installed as a PWA.
-
 ## Using the local file (`app.html`)
 
 Download `app.html` from the
 [latest release](https://github.com/fmpallini/team-tracker/releases/latest):
 on the release page, expand the **Assets** arrow at the bottom of the release
 notes and click `app.html` there — that single file is everything you need
-(or build it yourself as above, where it lands in `dist/app.html`). Just double-click it, or open it from your
-browser's file picker. No install, no server, no network access required —
-the whole app (HTML, CSS, JS) is inlined into that one file.
+(or build it yourself, see [Build](#build), where it lands in `dist/app.html`).
+Just double-click it, or open it from your browser's file picker. No install,
+no server, no network access required — the whole app (HTML, CSS, JS) is
+inlined into that one file.
 
 To open it in its own app-like window (no address bar/tabs) instead of a
 regular browser tab, launch Chrome with the `--app` flag:
@@ -211,6 +156,62 @@ the same with the local `app.html` and the installed PWA:
 - **Version history for free** — most providers keep previous versions of a
   synced file for a while (Google Drive keeps them for ~30 days), so you can
   also recover an earlier state by downloading an older version of the file.
+
+## Architecture
+
+- **`src/core/`** — headless logic, no DOM construction. Document shape and
+  schema migrations (`document.ts`, `types.ts`), the `.tmv` encryption format
+  (`crypto.ts`), the mutable document store (`store.ts`), the File System
+  Access API wrapper (`fs.ts`), and save orchestration (`save-controller.ts`).
+- **`src/modules/`** — one file per feature pane: daily notes, people trees
+  (stakeholders/members), person notes, action items, milestones, risks. Each
+  module exports a single render function with the signature
+  `(container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void` and is wired up
+  in `src/main.ts` via `pm.registerModule(kind, renderFn)`.
+- **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane
+  history), command palette, search, modals, preferences. `ui/dom.ts`'s `el()`
+  helper is the one DOM-building primitive used everywhere — no templating
+  engine, no virtual DOM.
+- **`src/main.ts`** — wires everything together: start screen →
+  `onDocumentOpened` builds the shell/store/panes/save-controller, registers
+  hotkeys, and sets up cross-tab single-writer locking so only one tab can
+  write to a given file at a time.
+
+### Adding a new module/pane
+
+Because every pane is just a render function registered by string key, adding
+a new tracked entity (say, a "decisions log") is mostly additive:
+
+1. Add its shape to `Doc` in `src/core/types.ts`, bump `SCHEMA_VERSION` in
+   `src/core/document.ts`, and add a migration step for existing files.
+2. Add a `ModuleRef` variant and a case in `src/core/nav.ts` for its location
+   type.
+3. Write `src/modules/<name>.ts` exporting a render function matching
+   `ModuleRenderer`.
+4. Register it in `src/main.ts` with `pm.registerModule('<kind>', renderFn)`,
+   and add it to the fixed module list in `src/ui/panes.ts` so it shows up in
+   the pane switcher and command palette.
+5. Add `pt-BR`/`en-US` strings for it in `src/core/i18n.ts` — every
+   user-visible string goes through `t(locale, key)`.
+6. Add `test/<name>.test.ts` alongside it.
+
+No other module needs to know the new one exists — the pane manager, sidebar,
+palette, and search all work off the registered module list and the `Loc`
+union.
+
+## Build
+
+```
+npm install
+npm run build
+```
+
+This produces:
+
+- `dist/app.html` — a single self-contained HTML file with no external
+  references. Copy it anywhere and open it directly.
+- `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and `icon.svg`,
+  meant to be served over http(s) so it can be installed as a PWA.
 
 ## Development
 
