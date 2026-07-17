@@ -8,10 +8,12 @@ import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
-import { showModal, toast, type ModalButton, type ModalHandle } from './modal'
+import { showModal, showErrorModal, toast, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates } from '../core/templates'
-import { SCHEMA_VERSION } from '../core/document'
+import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { notifyNavChanged } from './sidebar'
+import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
+import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 
 export interface PrefsAppCtl {
   changePassword(newPw: string): Promise<void>
@@ -49,12 +51,13 @@ export function onLocaleChanged(cb: () => void): void {
   document.addEventListener(LOCALE_CHANGED_EVENT, cb)
 }
 
-type TabId = 'general' | 'templates' | 'security' | 'about'
+type TabId = 'general' | 'templates' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
   { id: 'templates', key: 'prefs_tab_templates' },
   { id: 'security', key: 'prefs_tab_security' },
+  { id: 'data', key: 'prefs_tab_data' },
   { id: 'about', key: 'prefs_tab_about' },
 ]
 
@@ -489,6 +492,174 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     )
   }
 
+  // --- Tab 4: Dados (export/import) ---------------------------------------
+  function renderData(container: HTMLElement): void {
+    container.innerHTML = ''
+
+    function teamCountsLine(team: ExportedTeam): string {
+      return t(locale, 'data_import_summary', {
+        stakeholders: String(team.stakeholders.length),
+        members: String(team.members.length),
+        actionItems: String(team.actionItems.length),
+        milestones: String(team.milestones.length),
+        risks: String(team.risks.length),
+      })
+    }
+
+    // --- Export ---
+    const exportChecks = new Map<string, HTMLInputElement>()
+    const exportListEl = el('div', { class: 'tt-data-team-list' })
+    if (store.doc.teams.length === 0) {
+      exportListEl.appendChild(el('div', { class: 'tt-data-empty' }, t(locale, 'data_export_empty')))
+    } else {
+      for (const team of store.doc.teams) {
+        const cb = el('input', { type: 'checkbox' })
+        exportChecks.set(team.id, cb)
+        exportListEl.appendChild(
+          el(
+            'label',
+            { class: 'tt-data-team-row' },
+            cb,
+            el('span', { class: 'tt-data-team-emoji' }, team.emoji),
+            el('span', { class: 'tt-data-team-name' }, team.name)
+          )
+        )
+      }
+    }
+
+    async function doExport(): Promise<void> {
+      const selected = store.doc.teams.filter((tm) => exportChecks.get(tm.id)?.checked)
+      if (selected.length === 0) return
+      const file = buildExport(selected)
+      const bytes = new TextEncoder().encode(JSON.stringify(file, null, 2))
+      const name = `team-tracker-export-${new Date().toISOString().slice(0, 10)}.json`
+      if (supportsFsApi) {
+        const saved = await pickSaveJson(name, bytes)
+        if (!saved) return
+      } else {
+        downloadFallback(name, bytes)
+      }
+      toast(t(locale, 'data_export_success_toast'))
+    }
+
+    const exportBtn = el(
+      'button',
+      { class: 'tt-btn tt-btn-primary', type: 'button', disabled: store.doc.teams.length === 0, onclick: () => { doExport().catch((e: unknown) => console.error(e)) } },
+      t(locale, 'data_export_btn')
+    )
+
+    const exportSection = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_export_heading')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'data_export_hint')),
+      exportListEl,
+      exportBtn
+    )
+
+    // --- Import ---
+    let importFile: { teams: ExportedTeam[] } | null = null
+    const importChecks: HTMLInputElement[] = []
+    const importListEl = el('div', { class: 'tt-data-team-list' })
+    const importActionsEl = el('div', { class: 'tt-data-import-actions' })
+
+    function renderImportChecklist(): void {
+      importListEl.innerHTML = ''
+      importChecks.length = 0
+      importActionsEl.innerHTML = ''
+      if (!importFile) return
+      for (const team of importFile.teams) {
+        const cb = el('input', { type: 'checkbox', checked: true })
+        importChecks.push(cb)
+        importListEl.appendChild(
+          el(
+            'label',
+            { class: 'tt-data-team-row' },
+            cb,
+            el('span', { class: 'tt-data-team-emoji' }, team.emoji),
+            el(
+              'span',
+              { class: 'tt-data-team-info' },
+              el('span', { class: 'tt-data-team-name' }, team.name),
+              el('span', { class: 'tt-data-team-summary' }, teamCountsLine(team))
+            )
+          )
+        )
+      }
+      importActionsEl.appendChild(
+        el('button', { class: 'tt-btn tt-btn-primary', type: 'button', onclick: () => doImport() }, t(locale, 'data_import_btn'))
+      )
+    }
+
+    function doImport(): void {
+      if (!importFile) return
+      const selected = importFile.teams.filter((_, i) => importChecks[i]?.checked)
+      const newTeams = remapForImport(selected)
+      store.update((d) => {
+        d.teams.push(...newTeams)
+      })
+      importFile = null
+      renderImportChecklist()
+      notifyNavChanged()
+      toast(t(locale, 'data_import_success_toast'))
+    }
+
+    const fileInput = el('input', {
+      type: 'file',
+      accept: '.json',
+      class: 'tt-hidden-input',
+      onchange: () => {
+        const file = fileInput.files?.[0]
+        if (!file) return
+        handleFilePicked(file)
+          .catch((e: unknown) => console.error(e))
+          .finally(() => {
+            fileInput.value = ''
+          })
+      },
+    })
+
+    async function handleFilePicked(file: File): Promise<void> {
+      const buf = await file.arrayBuffer()
+      let parsed
+      try {
+        parsed = parseImportFile(new Uint8Array(buf))
+      } catch (e) {
+        if (e instanceof InvalidExportFileError) {
+          showErrorModal(locale, t(locale, 'err_export_invalid_file'))
+          return
+        }
+        if (e instanceof ExportTooNewError) {
+          showErrorModal(locale, t(locale, 'err_export_too_new'))
+          return
+        }
+        throw e
+      }
+      const teams = parsed.schemaVersion < SCHEMA_VERSION ? migrateTeams(parsed.teams, parsed.schemaVersion) : parsed.teams
+      importFile = { teams }
+      renderImportChecklist()
+    }
+
+    const pickBtn = el(
+      'button',
+      { class: 'tt-btn', type: 'button', onclick: () => fileInput.click() },
+      t(locale, 'data_import_pick_btn')
+    )
+
+    const importSection = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_import_heading')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'data_import_hint')),
+      pickBtn,
+      fileInput,
+      importListEl,
+      importActionsEl
+    )
+
+    container.append(exportSection, importSection)
+  }
+
   // --- Tab 4: Sobre ----------------------------------------------------
   function renderAbout(container: HTMLElement): void {
     container.innerHTML = ''
@@ -526,6 +697,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         return
       case 'security':
         renderSecurity(contentEl)
+        return
+      case 'data':
+        renderData(contentEl)
         return
       case 'about':
         renderAbout(contentEl)

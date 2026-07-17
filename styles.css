@@ -752,6 +752,22 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-prefs-security-form { display: flex; flex-direction: column; gap: .75rem; align-items: flex-start; }
 .tt-prefs-security-form .tt-field { width: 100%; }
 
+/* Data tab (team export/import) */
+.tt-data-hint { font-size: .8rem; color: var(--muted); margin: 0; }
+.tt-data-empty { color: var(--muted); padding: .5rem; }
+.tt-data-team-list { display: flex; flex-direction: column; gap: .25rem; }
+.tt-data-team-row {
+  display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: 4px;
+  border: 1px solid var(--border); cursor: pointer;
+}
+.tt-data-team-row:hover { background: rgba(var(--accent-rgb), .08); }
+.tt-data-team-row:has(input:checked) { border-color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.tt-data-team-emoji { flex: none; }
+.tt-data-team-info { display: flex; flex-direction: column; gap: .1rem; flex: 1; min-width: 0; }
+.tt-data-team-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-data-team-summary { font-family: var(--font-data); font-size: .75rem; color: var(--muted); }
+.tt-data-import-actions { display: flex; justify-content: flex-end; }
+
 /* Editor help modal */
 .tt-help-body { display: flex; flex-direction: column; gap: .4rem; max-height: 60vh; overflow-y: auto; }
 .tt-help-heading { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin-top: .5rem; }

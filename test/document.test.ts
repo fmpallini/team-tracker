@@ -1,4 +1,4 @@
-import { createEmptyDocument, migrate, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
+import { createEmptyDocument, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
 
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
@@ -106,5 +106,39 @@ describe('v4 → v5 migration (palette default)', () => {
     const doc = migrate(d)
     expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.prefs.palette).toBe('ledger')
+  })
+})
+
+describe('migrateTeams (team export/import)', () => {
+  it('applies v1 defaults (risk.closed, actionItem.notes, milestone.followup) to a bare v1-shaped team', () => {
+    const teams = [{
+      id: 't1', name: 'T', emoji: '🙂', dailyNotes: {},
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', text: 'x', done: false, dueDate: null, assignee: '', order: 0 }],
+      milestones: [{ id: 'm1', date: '2026-07-01', title: 'M', done: false }],
+      risks: [{ id: 'r1', title: 'R', chance: 1, impact: 1, plan: 'mitigate', order: 0 }],
+    }] as any
+    const migrated = migrateTeams<any>(teams, 1)
+    expect(migrated[0]!.risks[0]!.closed).toBe(false)
+    expect(migrated[0]!.milestones[0]!.followup).toBe('')
+    // v1's actionItems still use text/done — the v3 step (below) is what renames them
+    expect((migrated[0]!.actionItems[0]! as unknown as { notes: string }).notes).toBe('')
+  })
+
+  it('reshapes v3 actionItems (text/done -> summary/status/color) when importing an older export', () => {
+    const teams = [{
+      id: 't1', name: 'T', emoji: '🙂', dailyNotes: {},
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', text: 'Open one', done: false, dueDate: null, assignee: '', order: 0, notes: '' }],
+      milestones: [], risks: [],
+    }] as any
+    const migrated = migrateTeams<any>(teams, 3)
+    expect(migrated[0]!.actionItems[0]).toMatchObject({ summary: 'Open one', status: 'todo', color: 'ledger' })
+    expect(migrated[0]!.actionItems[0]!.text).toBeUndefined()
+  })
+
+  it('is a no-op when fromVersion already equals the current schema version', () => {
+    const teams = createEmptyDocument('en-US').teams
+    expect(migrateTeams(teams, SCHEMA_VERSION)).toEqual(teams)
   })
 })

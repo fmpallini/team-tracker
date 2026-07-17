@@ -66,3 +66,24 @@ export function migrate(raw: unknown): Doc {
   }
   return d as unknown as Doc
 }
+
+/**
+ * Reused by the team export/import feature (src/core/team-export.ts) to
+ * bring an imported file's teams up to the current shape before their IDs
+ * get remapped. Feeds `migrate()` a shim doc missing `nav`/`prefs` — every
+ * `MIGRATIONS` step already guards on those keys' presence (see steps 2 and
+ * 4 above) before touching them, so the doc-scoped steps safely no-op here
+ * while the team-scoped ones (1, 3) still apply. Same table, same
+ * guarantees `.tmv` opening already has — no separate migration ladder.
+ *
+ * Generic over `T` rather than fixed to `Team`: an export file's teams are
+ * narrower than a full `Team` (no `id`/`dailyNotes` — see team-export.ts's
+ * `ExportedTeam`), and the migrations here only ever mutate the nested
+ * actionItems/milestones/risks arrays, never those two fields — so the
+ * input shape passes through unchanged except for what the migrations
+ * actually touch.
+ */
+export function migrateTeams<T>(teams: T[], fromVersion: number): T[] {
+  const result = migrate({ schemaVersion: fromVersion, teams }) as unknown as { teams: T[] }
+  return result.teams
+}
