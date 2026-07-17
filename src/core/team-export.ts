@@ -5,7 +5,7 @@
 // full — their free-text fields (notes/followup) are intrinsic to the item,
 // not personal journaling. See docs/superpowers/specs/2026-07-16-team-
 // export-import-design.md for the full rationale.
-import type { ActionItem, Milestone, Risk, Team } from './types'
+import type { ActionItem, Milestone, Person, Risk, Team } from './types'
 import { SCHEMA_VERSION } from './document'
 
 export class InvalidExportFileError extends Error {}
@@ -36,7 +36,7 @@ export interface TeamExportFile {
   teams: ExportedTeam[]
 }
 
-function stripPerson(p: { id: string; name: string; role: string; parentId: string | null; order: number }): ExportedPerson {
+function stripPerson(p: Person): ExportedPerson {
   return { id: p.id, name: p.name, role: p.role, parentId: p.parentId, order: p.order }
 }
 

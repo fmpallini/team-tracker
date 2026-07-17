@@ -506,6 +506,21 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       })
     }
 
+    // Shared row shape for both checklists below — the import row additionally
+    // carries a counts-summary line the export row has no use for (its teams
+    // are already fully known, not something just parsed from a file).
+    function teamRow(cb: HTMLInputElement, emoji: string, name: string, summary?: string): HTMLElement {
+      const nameEl = summary
+        ? el(
+            'span',
+            { class: 'tt-data-team-info' },
+            el('span', { class: 'tt-data-team-name' }, name),
+            el('span', { class: 'tt-data-team-summary' }, summary)
+          )
+        : el('span', { class: 'tt-data-team-name' }, name)
+      return el('label', { class: 'tt-data-team-row' }, cb, el('span', { class: 'tt-data-team-emoji' }, emoji), nameEl)
+    }
+
     // --- Export ---
     const exportChecks = new Map<string, HTMLInputElement>()
     const exportListEl = el('div', { class: 'tt-data-team-list' })
@@ -515,15 +530,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       for (const team of store.doc.teams) {
         const cb = el('input', { type: 'checkbox' })
         exportChecks.set(team.id, cb)
-        exportListEl.appendChild(
-          el(
-            'label',
-            { class: 'tt-data-team-row' },
-            cb,
-            el('span', { class: 'tt-data-team-emoji' }, team.emoji),
-            el('span', { class: 'tt-data-team-name' }, team.name)
-          )
-        )
+        exportListEl.appendChild(teamRow(cb, team.emoji, team.name))
       }
     }
 
@@ -558,7 +565,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     )
 
     // --- Import ---
-    let importFile: { teams: ExportedTeam[] } | null = null
+    let importTeams: ExportedTeam[] | null = null
     const importChecks: HTMLInputElement[] = []
     const importListEl = el('div', { class: 'tt-data-team-list' })
     const importActionsEl = el('div', { class: 'tt-data-import-actions' })
@@ -567,24 +574,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       importListEl.innerHTML = ''
       importChecks.length = 0
       importActionsEl.innerHTML = ''
-      if (!importFile) return
-      for (const team of importFile.teams) {
+      if (!importTeams) return
+      for (const team of importTeams) {
         const cb = el('input', { type: 'checkbox', checked: true })
         importChecks.push(cb)
-        importListEl.appendChild(
-          el(
-            'label',
-            { class: 'tt-data-team-row' },
-            cb,
-            el('span', { class: 'tt-data-team-emoji' }, team.emoji),
-            el(
-              'span',
-              { class: 'tt-data-team-info' },
-              el('span', { class: 'tt-data-team-name' }, team.name),
-              el('span', { class: 'tt-data-team-summary' }, teamCountsLine(team))
-            )
-          )
-        )
+        importListEl.appendChild(teamRow(cb, team.emoji, team.name, teamCountsLine(team)))
       }
       importActionsEl.appendChild(
         el('button', { class: 'tt-btn tt-btn-primary', type: 'button', onclick: () => doImport() }, t(locale, 'data_import_btn'))
@@ -592,13 +586,13 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     }
 
     function doImport(): void {
-      if (!importFile) return
-      const selected = importFile.teams.filter((_, i) => importChecks[i]?.checked)
+      if (!importTeams) return
+      const selected = importTeams.filter((_, i) => importChecks[i]?.checked)
       const newTeams = remapForImport(selected)
       store.update((d) => {
         d.teams.push(...newTeams)
       })
-      importFile = null
+      importTeams = null
       renderImportChecklist()
       notifyNavChanged()
       toast(t(locale, 'data_import_success_toast'))
@@ -635,8 +629,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         }
         throw e
       }
-      const teams = parsed.schemaVersion < SCHEMA_VERSION ? migrateTeams(parsed.teams, parsed.schemaVersion) : parsed.teams
-      importFile = { teams }
+      importTeams = parsed.schemaVersion < SCHEMA_VERSION ? migrateTeams(parsed.teams, parsed.schemaVersion) : parsed.teams
       renderImportChecklist()
     }
 
@@ -660,7 +653,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.append(exportSection, importSection)
   }
 
-  // --- Tab 4: Sobre ----------------------------------------------------
+  // --- Tab 5: Sobre ----------------------------------------------------
   function renderAbout(container: HTMLElement): void {
     container.innerHTML = ''
     const rows: readonly (readonly [string, string])[] = [
