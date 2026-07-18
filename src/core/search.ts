@@ -59,6 +59,33 @@ function makeSnippet(stripped: string, normalized: string, terms: string[]): str
   return out
 }
 
+export const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
+  daily: '📅', person: '🧑', stakeholders: '👥', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
+}
+
+export interface AtPerson { id: string; name: string; group: 'stakeholders' | 'members' }
+export interface RefCandidate { id: string; title: string }
+export interface TeamRefCandidates {
+  people: AtPerson[]
+  actionItems: RefCandidate[]
+  milestones: RefCandidate[]
+  risks: RefCandidate[]
+}
+
+/** Id+title extraction for the @ mention picker and the Ctrl+K palette — a lighter sibling of collectCandidates below, which also needs full note bodies for full-text search. */
+export function teamRefCandidates(team: Team | undefined): TeamRefCandidates {
+  if (!team) return { people: [], actionItems: [], milestones: [], risks: [] }
+  return {
+    people: [
+      ...team.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
+      ...team.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
+    ],
+    actionItems: team.actionItems.map((i): RefCandidate => ({ id: i.id, title: i.summary })),
+    milestones: team.milestones.map((m): RefCandidate => ({ id: m.id, title: m.title })),
+    risks: team.risks.map((r): RefCandidate => ({ id: r.id, title: r.title })),
+  }
+}
+
 interface Candidate { raw: string; title: string; ref: ModuleRef }
 
 function collectCandidates(team: Team, doc: Doc): Candidate[] {
