@@ -373,6 +373,64 @@ describe('renderActionItems — zone clear-all', () => {
   })
 })
 
+describe('renderActionItems — edit tags modal', () => {
+  // Finds the text input in the edit-tags row whose swatch carries `color-${color}`
+  // — avoids the `:has()` CSS selector, whose jsdom/nwsapi support is version-
+  // dependent, in favor of a plain DOM walk.
+  function tagRowInput(color: string): HTMLInputElement {
+    const row = Array.from(document.querySelectorAll('.tt-edit-tags-row')).find((r) => r.querySelector(`.color-${color}`))
+    if (!row) throw new Error(`no edit-tags row for color "${color}"`)
+    return row.querySelector('input') as HTMLInputElement
+  }
+
+  test('"Edit tags" opens a modal with one row per color, pre-filled from actionTagNames', () => {
+    const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Edit tags')
+    expect(document.querySelectorAll('.tt-edit-tags-row')).toHaveLength(6)
+    expect(tagRowInput('rust').value).toBe('Blocked')
+    expect(tagRowInput('slate').value).toBe('')
+  })
+
+  test('saving writes trimmed, non-empty names into actionTagNames', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Edit tags')
+    tagRowInput('rust').value = '  Blocked  '
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
+  })
+
+  test('clearing a name back to empty removes that key instead of storing an empty string', () => {
+    const team = makeTeam({ actionTagNames: { rust: 'Blocked', plum: 'Urgent' } })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Edit tags')
+    tagRowInput('rust').value = ''
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(store.doc.teams[0]!.actionTagNames).toEqual({ plum: 'Urgent' })
+  })
+
+  test('canceling leaves actionTagNames untouched', () => {
+    const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Edit tags')
+    tagRowInput('rust').value = 'Something else'
+    clickByTitleOrText(document.body, 'Cancel')
+
+    expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
+  })
+})
+
 describe('renderActionItems — drag and drop', () => {
   test('dragstart on a card shows the floating trash zone; dragend hides it', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })

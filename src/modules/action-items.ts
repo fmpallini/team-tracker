@@ -271,6 +271,39 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     summaryInput.focus()
   }
 
+  function openEditTagsModal(): void {
+    const tm = findTeam()
+    if (!tm) return
+    const inputs = new Map<ActionItem['color'], HTMLInputElement>()
+    const rows = COLORS.map((c) => {
+      const input = el('input', { type: 'text', class: 'tt-input', value: tm.actionTagNames?.[c] ?? '' }) as HTMLInputElement
+      inputs.set(c, input)
+      const swatch = el('span', { class: `tt-kanban-tag-chip-swatch color-${c}` })
+      return el('div', { class: 'tt-edit-tags-row' }, swatch, el('span', { class: 'tt-edit-tags-row-label' }, t(lc, COLOR_KEYS[c])), input)
+    })
+    const body = el('div', { class: 'tt-edit-tags-form' }, ...rows)
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const saveBtn: ModalButton = {
+      label: t(lc, 'kanban_save_btn'),
+      primary: true,
+      onClick: () => {
+        ctx.store.update((d) => {
+          const target = d.teams.find((t2) => t2.id === teamId)
+          if (!target) return
+          const nextTags: Partial<Record<ActionItem['color'], string>> = { ...target.actionTagNames }
+          for (const c of COLORS) {
+            const value = inputs.get(c)!.value.trim()
+            if (value === '') delete nextTags[c]
+            else nextTags[c] = value
+          }
+          target.actionTagNames = nextTags
+        })
+        handle.close()
+      },
+    }
+    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_edit_tags_title'), body, buttons: [cancelBtn, saveBtn] })
+  }
+
   function emptyEl(): HTMLElement {
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
@@ -470,7 +503,14 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     renderAll()
   })
 
-  container.appendChild(el('div', { class: 'tt-kanban' }, boardEl, trashEl, datalistEl))
+  const editTagsBtn = el(
+    'button',
+    { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
+    t(lc, 'kanban_edit_tags_btn')
+  )
+  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, editTagsBtn)
+
+  container.appendChild(el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl))
 
   disposers.set(container, () => {
     unsubscribe()

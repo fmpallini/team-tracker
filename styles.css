@@ -591,6 +591,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-color-chip.color-plum { background: var(--card-plum); }
 .tt-kanban-color-chip.color-ledger { background: var(--card-ledger); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
+.tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.tt-kanban-edit-tags-btn { margin-left: auto; }
+.tt-kanban-tag-chip-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.tt-kanban-tag-chip-swatch.color-slate { background: var(--card-slate); }
+.tt-kanban-tag-chip-swatch.color-brass { background: var(--card-brass); }
+.tt-kanban-tag-chip-swatch.color-sage { background: var(--card-sage); }
+.tt-kanban-tag-chip-swatch.color-rust { background: var(--card-rust); }
+.tt-kanban-tag-chip-swatch.color-plum { background: var(--card-plum); }
+.tt-kanban-tag-chip-swatch.color-ledger { background: var(--card-ledger); }
+.tt-edit-tags-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
+.tt-edit-tags-row-label { width: 80px; flex: none; color: var(--muted); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
