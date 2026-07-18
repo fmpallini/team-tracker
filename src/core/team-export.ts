@@ -27,6 +27,7 @@ export interface ExportedTeam {
   actionItems: ActionItem[]
   milestones: Milestone[]
   risks: Risk[]
+  actionTagNames: Partial<Record<ActionItem['color'], string>>
 }
 
 export interface TeamExportFile {
@@ -53,6 +54,7 @@ export function buildExport(teams: Team[]): TeamExportFile {
       actionItems: t.actionItems,
       milestones: t.milestones,
       risks: t.risks,
+      actionTagNames: t.actionTagNames ?? {},
     })),
   }
 }
@@ -110,5 +112,6 @@ export function remapForImport(teams: ExportedTeam[]): Team[] {
     milestones: t.milestones.map((m) => ({ ...m, id: crypto.randomUUID() })),
     risks: t.risks.map((r) => ({ ...r, id: crypto.randomUUID() })),
     dailyNotes: {},
+    actionTagNames: t.actionTagNames ?? {},
   }))
 }

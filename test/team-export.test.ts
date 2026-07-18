@@ -118,3 +118,25 @@ describe('remapForImport', () => {
     expect(imported!.stakeholders[0]!.notes).toBe('')
   })
 })
+
+describe('actionTagNames pass-through', () => {
+  it('buildExport carries actionTagNames through unchanged', () => {
+    const team = { ...sampleTeam(), actionTagNames: { rust: 'Blocked' } }
+    const file = buildExport([team])
+    expect(file.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
+  })
+
+  it('remapForImport carries actionTagNames through without remapping (keyed by color, not id)', () => {
+    const team = { ...sampleTeam(), actionTagNames: { plum: 'Urgent' } }
+    const file = buildExport([team])
+    const [imported] = remapForImport(file.teams)
+    expect(imported!.actionTagNames).toEqual({ plum: 'Urgent' })
+  })
+
+  it('a team with no actionTagNames exports and imports with an empty object', () => {
+    const file = buildExport([sampleTeam()])
+    expect(file.teams[0]!.actionTagNames).toEqual({})
+    const [imported] = remapForImport(file.teams)
+    expect(imported!.actionTagNames).toEqual({})
+  })
+})
