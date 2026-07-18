@@ -602,6 +602,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-tag-chip-swatch.color-ledger { background: var(--card-ledger); }
 .tt-edit-tags-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
 .tt-edit-tags-row-label { width: 80px; flex: none; color: var(--muted); }
+.tt-kanban-tag-chips { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.tt-kanban-tag-chip { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--border); border-radius: 999px; padding: .1rem .55rem; background: var(--panel); cursor: pointer; font-size: .8rem; color: var(--fg); }
+.tt-kanban-tag-chip.selected { border-color: var(--fg); font-weight: 700; }
+.tt-kanban-card-tag { font-size: .7rem; color: var(--muted); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }

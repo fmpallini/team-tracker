@@ -95,6 +95,33 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   let draggedId: string | null = null
 
+  let activeTagFilter: ActionItem['color'] | null = null
+
+  function tagLabel(color: ActionItem['color']): string {
+    return findTeam()?.actionTagNames?.[color] ?? t(lc, COLOR_KEYS[color])
+  }
+
+  const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
+  function renderTagChips(): void {
+    tagChipsEl.innerHTML = ''
+    for (const c of COLORS) {
+      const chip = el(
+        'button',
+        {
+          type: 'button',
+          class: 'tt-kanban-tag-chip' + (activeTagFilter === c ? ' selected' : ''),
+          onclick: () => {
+            activeTagFilter = activeTagFilter === c ? null : c
+            renderAll()
+          },
+        },
+        el('span', { class: `tt-kanban-tag-chip-swatch color-${c}` }),
+        ` ${tagLabel(c)}`
+      )
+      tagChipsEl.appendChild(chip)
+    }
+  }
+
   function clearDropClasses(): void {
     boardEl.querySelectorAll('.tt-kanban-card').forEach((n) => {
       n.classList.remove('tt-kanban-drop-before', 'tt-kanban-drop-after')
@@ -320,6 +347,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, todayIso()) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
     }
     if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
+    metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, tagLabel(item.color)))
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
 
     const card = el(
@@ -473,10 +501,14 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   function renderAll(): void {
     updateDatalist()
-    const todo = itemsByStatus(items(), 'todo')
-    const wip = itemsByStatus(items(), 'wip')
-    const done = itemsByStatus(items(), 'done')
-    const cancelled = itemsByStatus(items(), 'cancelled')
+    renderTagChips()
+    const filterFn = (i: ActionItem) => activeTagFilter === null || i.color === activeTagFilter
+    const allDone = itemsByStatus(items(), 'done')
+    const allCancelled = itemsByStatus(items(), 'cancelled')
+    const todo = itemsByStatus(items(), 'todo').filter(filterFn)
+    const wip = itemsByStatus(items(), 'wip').filter(filterFn)
+    const done = allDone.filter(filterFn)
+    const cancelled = allCancelled.filter(filterFn)
 
     todoBodyEl.innerHTML = ''
     if (todo.length === 0) todoBodyEl.appendChild(emptyEl())
@@ -494,8 +526,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     if (cancelled.length === 0) cancelledBodyEl.appendChild(emptyEl())
     else cancelled.forEach((it) => cancelledBodyEl.appendChild(renderCard(it)))
 
-    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(done.length) })
-    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(cancelled.length) })
+    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(allDone.length) })
+    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(allCancelled.length) })
   }
   renderAll()
 
@@ -508,7 +540,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
     t(lc, 'kanban_edit_tags_btn')
   )
-  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, editTagsBtn)
+  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, tagChipsEl, editTagsBtn)
 
   container.appendChild(el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl))
 

@@ -431,6 +431,75 @@ describe('renderActionItems — edit tags modal', () => {
   })
 })
 
+describe('renderActionItems — tag display and filter', () => {
+  test('a card shows its custom tag name when set, or the color name as fallback', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [item({ id: 'a', color: 'rust' }), item({ id: 'b', color: 'slate' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const tags = Array.from(container.querySelectorAll('.tt-kanban-card-tag')).map((n) => n.textContent)
+    expect(tags).toEqual(expect.arrayContaining(['Blocked', 'Slate']))
+  })
+
+  test('renders one filter chip per color, labeled with the custom name or fallback', () => {
+    const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const chips = Array.from(container.querySelectorAll('.tt-kanban-tag-chip')).map((n) => n.textContent?.trim())
+    expect(chips).toEqual(expect.arrayContaining(['Blocked', 'Slate', 'Brass', 'Sage', 'Plum', 'Ledger']))
+  })
+
+  test('clicking a chip filters cards to that color across all columns; clicking again clears it', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'rust-1', color: 'rust', status: 'todo' }),
+        item({ id: 'slate-1', color: 'slate', status: 'todo' }),
+        item({ id: 'rust-2', color: 'rust', status: 'done' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    // renderTagChips() rebuilds .tt-kanban-tag-chip nodes from scratch on
+    // every renderAll() (i.e. after every click), so a chip reference held
+    // across a click goes stale (detached node, frozen class list from
+    // before the click) — re-query by text instead of reusing one handle.
+    function findRustChip(): HTMLButtonElement {
+      return Array.from(container.querySelectorAll('.tt-kanban-tag-chip')).find((c) => c.textContent?.includes('Rust'))! as HTMLButtonElement
+    }
+
+    findRustChip().click()
+
+    expect(cards(container).map((c) => c.getAttribute('data-item-id')).sort()).toEqual(['rust-1', 'rust-2'])
+    expect(findRustChip().classList.contains('selected')).toBe(true)
+
+    findRustChip().click()
+    expect(cards(container)).toHaveLength(3)
+    expect(findRustChip().classList.contains('selected')).toBe(false)
+  })
+
+  test('the Done/Cancelled zone-label counts stay unfiltered while a tag filter is active', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'd1', color: 'rust', status: 'done' }),
+        item({ id: 'd2', color: 'slate', status: 'done' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rustChip = Array.from(container.querySelectorAll('.tt-kanban-tag-chip')).find((c) => c.textContent?.includes('Rust'))!
+    ;(rustChip as HTMLButtonElement).click()
+
+    expect(container.querySelector('.tt-kanban-zone-label')!.textContent).toContain('Done (2)')
+    expect(cards(container)).toHaveLength(1) // only the rust card is drawn
+  })
+})
+
 describe('renderActionItems — drag and drop', () => {
   test('dragstart on a card shows the floating trash zone; dragend hides it', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
