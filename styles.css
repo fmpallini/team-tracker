@@ -382,6 +382,11 @@ body { background: var(--bg); color: var(--fg); }
   color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: 4px;
   padding: 0 .25em; cursor: pointer; text-decoration: none;
 }
+.editor a.ref[data-ref^="person:"]::before { content: "🧑 "; }
+.editor a.ref[data-ref^="day:"]::before { content: "📅 "; }
+.editor a.ref[data-ref^="action:"]::before { content: "✅ "; }
+.editor a.ref[data-ref^="milestone:"]::before { content: "🚩 "; }
+.editor a.ref[data-ref^="risk:"]::before { content: "⚠️ "; }
 
 /* @ reference autocomplete */
 .tt-atref-dropdown {
@@ -391,6 +396,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-atref-item { padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .9rem; }
 .tt-atref-item.selected, .tt-atref-item:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 .tt-templates-empty { color: var(--muted); cursor: default; }
 .tt-templates-empty:hover { background: none; }
 

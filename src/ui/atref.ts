@@ -3,12 +3,11 @@
 // app-level ref-click navigation handler every module renderer (Tasks 18/19)
 // wires into EditorHooks.onRefClick.
 import { AT_TRIGGER_EVENT, type Editor } from './editor'
-import type { RefInfo } from '../core/markdown'
-import { t, formatDate, parseLocaleDate, type Locale } from '../core/i18n'
+import type { RefInfo, LabelResolver } from '../core/markdown'
+import { t, formatDate, parseLocaleDate, type Locale, type MsgKey } from '../core/i18n'
 import { normalize, type TeamRefCandidates } from '../core/search'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
-import { toast } from './modal'
 import { el } from './dom'
 
 export type { AtPerson } from '../core/search'
@@ -155,10 +154,23 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 
   // --- dropdown rendering ---------------------------------------------------
 
+  const GROUP_HEADER_KEY: Record<AtItem['kind'], MsgKey> = {
+    person: 'atref_group_people',
+    day: 'atref_group_dates',
+    action: 'module_actions',
+    milestone: 'module_milestones',
+    risk: 'module_risks',
+  }
+
   function renderList(): void {
     if (!listEl) return
     listEl.innerHTML = ''
+    let lastKind: AtItem['kind'] | null = null
     items.forEach((item, i) => {
+      if (item.kind !== lastKind) {
+        listEl!.appendChild(el('div', { class: 'tt-atref-group-header' }, t(opts.locale, GROUP_HEADER_KEY[item.kind])))
+        lastKind = item.kind
+      }
       const label = item.kind === 'person'
         ? item.name
         : item.kind === 'day'
@@ -183,9 +195,11 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     })
   }
 
+  /** Only .tt-atref-item rows are selectable — group headers are interspersed in the DOM but not in `items`/`selected`, so this must query past them rather than index into listEl.children directly. */
   function updateSelectedClass(): void {
     if (!listEl) return
-    Array.from(listEl.children).forEach((child, i) => child.classList.toggle('selected', i === selected))
+    const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-atref-item'))
+    rows.forEach((row, i) => row.classList.toggle('selected', i === selected))
   }
 
   function positionOverlay(): void {
@@ -254,6 +268,11 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     const chip = document.createElement('a')
     chip.className = 'ref'
     chip.setAttribute('contenteditable', 'false')
+    // Chip *text content* stays exactly `@${safeLabel}` — the per-kind icon
+    // is CSS-only (styles.css, keyed off this same data-ref prefix), never
+    // baked into textContent. inlineMd (core/markdown.ts) derives the
+    // persisted markdown label straight from textContent, so an icon inside
+    // it would round-trip into storage as part of the label forever.
     chip.dataset.ref = item.kind === 'person' ? `person:${item.id}` : item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
     chip.textContent = `@${safeLabel}`
     range.insertNode(chip)
@@ -343,16 +362,65 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
       return
     }
 
+    if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
+      const moduleKind = target.kind === 'action' ? 'actions' : target.kind === 'milestone' ? 'milestones' : 'risks'
+      pm.openInPane(paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } })
+      // Best-effort scroll to the specific card, mirroring search-ui.ts's
+      // commit() — no toast if the item was deleted (decision 7: with
+      // auto-unlink-on-delete this is a defensive fallback for edge cases
+      // outside the app's own control, e.g. a hand-edited .tmv or an import
+      // merge, not the common path).
+      requestAnimationFrame(() => {
+        const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
+        paneEl?.querySelector(`[data-item-id="${target.id}"]`)?.scrollIntoView({ block: 'center' })
+      })
+      return
+    }
+
     const team = store.doc.teams.find((tm) => tm.id === teamId)
     const group = team?.stakeholders.some((p) => p.id === target.id)
       ? 'stakeholders'
       : team?.members.some((p) => p.id === target.id)
         ? 'members'
         : null
-    if (!group) {
-      toast(t(locale, 'toast_person_not_found'))
-      return
-    }
+    // No toast on a dangling person ref either — same reasoning as above,
+    // and consistent with the other 3 kinds instead of the other way around.
+    if (!group) return
     pm.openInPane(paneIdx, { teamId, ref: { kind: 'person', personId: target.id, group } })
+  }
+}
+
+/**
+ * Live label resolution for core/markdown.ts's mdToHtml: given a ref target,
+ * returns the item's *current* name/title (so a chip shows the up-to-date
+ * label even if the item was renamed after the mention was typed), or null
+ * if resolveLabel has nothing to offer (day is always resolvable; the other
+ * 4 fall back to null only if the id genuinely isn't found, which per
+ * decision 7 shouldn't normally happen once auto-unlink-on-delete is wired
+ * up in Task 7).
+ */
+export function makeRefLabelResolver(store: Store, teamId: string): LabelResolver {
+  return (target) => {
+    if (target.kind === 'day') return formatDate(target.date, store.doc.prefs.locale)
+    const team = store.doc.teams.find((tm) => tm.id === teamId)
+    if (!team) return null
+    switch (target.kind) {
+      case 'person': {
+        const p = team.stakeholders.find((pp) => pp.id === target.id) ?? team.members.find((pp) => pp.id === target.id)
+        return p ? p.name : null
+      }
+      case 'action': {
+        const a = team.actionItems.find((i) => i.id === target.id)
+        return a ? a.summary : null
+      }
+      case 'milestone': {
+        const m = team.milestones.find((i) => i.id === target.id)
+        return m ? m.title : null
+      }
+      case 'risk': {
+        const r = team.risks.find((i) => i.id === target.id)
+        return r ? r.title : null
+      }
+    }
   }
 }

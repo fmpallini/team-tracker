@@ -1,10 +1,10 @@
 import { createEditor, type Editor, type EditorHooks } from '../src/ui/editor'
-import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, type AtItem, type AtPerson } from '../src/ui/atref'
+import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, type AtItem, type AtPerson } from '../src/ui/atref'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager } from '../src/ui/panes'
 import type { Loc } from '../src/core/types'
-import type { Locale } from '../src/core/i18n'
+import { formatDate, type Locale } from '../src/core/i18n'
 
 function makeHooks(): EditorHooks {
   return {
@@ -160,14 +160,15 @@ describe('attachAtAutocomplete', () => {
     editorEl.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
   }
 
-  test('typing @ opens the dropdown listing all people', () => {
+  test('typing @ opens the dropdown listing all people plus the 3 relative-day suggestions, under group headers', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '@')
     fireInput(editorEl)
 
     const dropdown = document.querySelector('.tt-atref-dropdown')
     expect(dropdown).not.toBeNull()
-    expect(dropdown!.querySelectorAll('.tt-atref-item')).toHaveLength(2)
+    expect(dropdown!.querySelectorAll('.tt-atref-item')).toHaveLength(5) // 2 people + 3 relative days
+    expect(dropdown!.querySelectorAll('.tt-atref-group-header')).toHaveLength(2) // People, Dates
   })
 
   test('hovering a row does not replace its DOM node (real-browser click requires mousedown/mouseup on the same element)', () => {
@@ -333,7 +334,7 @@ describe('makeRefClickHandler', () => {
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } } }])
   })
 
-  test('person not found -> shows a toast and does not navigate', () => {
+  test('person not found -> silently does not navigate (no toast — matches the other 3 kinds\' dangling-ref behavior)', () => {
     const store = setupStore()
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
@@ -341,7 +342,7 @@ describe('makeRefClickHandler', () => {
     handler({ kind: 'person', id: 'missing' })
 
     expect(pm.calls).toEqual([])
-    expect(document.querySelector('.tt-toast')).not.toBeNull()
+    expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
   test('day -> openInPane with the daily note Loc for the team parameter', () => {
@@ -400,5 +401,101 @@ describe('makeRefClickHandler', () => {
 
     // Should resolve against team A, finding alice-t1 in stakeholders
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'alice-t1', group: 'stakeholders' } } }])
+  })
+
+  function setupStoreWithItems(): Store {
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({
+      id: 'T1', name: 'Team 1', emoji: '🚀',
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [{ id: 'm1', date: '2026-08-01', title: 'Ship v2', done: false, followup: '' }],
+      risks: [{ id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
+      dailyNotes: {},
+    })
+    doc.nav.activeTeamId = 'T1'
+    return createStore(doc)
+  }
+
+  test('action -> openInPane on the actions board with the item id', () => {
+    const store = setupStoreWithItems()
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'action', id: 'a1' })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } } }])
+  })
+
+  test('milestone -> openInPane on the milestones board with the item id', () => {
+    const store = setupStoreWithItems()
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'milestone', id: 'm1' })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'milestones', itemId: 'm1' } } }])
+  })
+
+  test('risk -> openInPane on the risks board with the item id', () => {
+    const store = setupStoreWithItems()
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'risk', id: 'r1' })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'risks', itemId: 'r1' } } }])
+  })
+
+  test('action/milestone/risk not found -> still opens the board, no throw', () => {
+    const store = setupStoreWithItems()
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    expect(() => handler({ kind: 'action', id: 'missing' })).not.toThrow()
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'missing' } } }])
+  })
+})
+
+describe('makeRefLabelResolver', () => {
+  function setupStore(): Store {
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({
+      id: 'T1', name: 'Team 1', emoji: '🚀',
+      stakeholders: [{ id: 's1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
+      members: [],
+      actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [{ id: 'm1', date: '2026-08-01', title: 'Ship v2', done: false, followup: '' }],
+      risks: [{ id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
+      dailyNotes: {},
+    })
+    doc.nav.activeTeamId = 'T1'
+    return createStore(doc)
+  }
+
+  test('resolves the current name/title for each kind', () => {
+    const resolve = makeRefLabelResolver(setupStore(), 'T1')
+    expect(resolve({ kind: 'person', id: 's1' })).toBe('Carla')
+    expect(resolve({ kind: 'action', id: 'a1' })).toBe('Fix bug')
+    expect(resolve({ kind: 'milestone', id: 'm1' })).toBe('Ship v2')
+    expect(resolve({ kind: 'risk', id: 'r1' })).toBe('Vendor delay')
+  })
+
+  test('resolves day to the formatted date in the store\'s current locale', () => {
+    const resolve = makeRefLabelResolver(setupStore(), 'T1')
+    expect(resolve({ kind: 'day', date: '2026-07-02' })).toBe(formatDate('2026-07-02', 'pt-BR'))
+  })
+
+  test('returns null for an id that no longer exists', () => {
+    const resolve = makeRefLabelResolver(setupStore(), 'T1')
+    expect(resolve({ kind: 'action', id: 'missing' })).toBeNull()
+  })
+
+  test('renaming an item changes what the resolver returns on the next call (live, not cached)', () => {
+    const store = setupStore()
+    const resolve = makeRefLabelResolver(store, 'T1')
+    expect(resolve({ kind: 'action', id: 'a1' })).toBe('Fix bug')
+    store.update((d) => { d.teams[0]!.actionItems[0]!.summary = 'Fix login bug' })
+    expect(resolve({ kind: 'action', id: 'a1' })).toBe('Fix login bug')
   })
 })
