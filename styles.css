@@ -251,6 +251,22 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-add-btn { width: calc(100% - 1rem); margin: .5rem; }
 .tt-team-item.drag-over-top { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-team-item.drag-over-bottom { box-shadow: inset 0 -2px 0 0 var(--accent); }
+
+.tt-due-btn { position: relative; margin: 0 .6rem .5rem; width: calc(100% - 1.2rem); display: flex; align-items: center; justify-content: center; gap: .4rem; }
+.tt-due-btn.tt-due-empty { display: none; }
+.tt-due-badge { font-family: var(--font-data); font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; background: var(--muted); color: var(--bg); }
+.tt-due-btn.has-overdue .tt-due-badge { background: var(--danger); color: #fff; }
+.tt-due-btn.has-due-soon .tt-due-badge { background: var(--brass); color: #fff; }
+.tt-team-due-badge { font-family: var(--font-data); font-size: .65rem; font-weight: 700; border-radius: 999px; padding: 0 .4rem; background: var(--danger); color: #fff; flex: none; }
+
+.tt-due-list { display: flex; flex-direction: column; gap: .15rem; max-height: 60vh; overflow-y: auto; }
+.tt-due-section-heading { font-weight: 700; margin-top: .6rem; color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+.tt-due-section-heading:first-child { margin-top: 0; }
+.tt-due-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .4rem; border-radius: 6px; cursor: pointer; }
+.tt-due-row:hover { background: rgba(var(--accent-rgb), .1); }
+.tt-due-row-title { flex: 1; }
+.tt-due-row-team { color: var(--muted); font-size: .85rem; }
+.tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; }
 .tt-team-form { display: flex; flex-direction: column; gap: .75rem; }
 
 /* Panes */
