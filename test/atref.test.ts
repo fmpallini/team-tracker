@@ -15,6 +15,10 @@ function makeHooks(): EditorHooks {
   }
 }
 
+function candidates(overrides: Partial<Parameters<typeof filterAtItems>[0]> = {}): Parameters<typeof filterAtItems>[0] {
+  return { people: [], actionItems: [], milestones: [], risks: [], ...overrides }
+}
+
 describe('filterAtItems', () => {
   const people: AtPerson[] = [
     { id: 'p1', name: 'Ana', group: 'members' },
@@ -23,33 +27,33 @@ describe('filterAtItems', () => {
   ]
 
   test('substring match is accent- and case-insensitive', () => {
-    expect(filterAtItems(people, 'mar', 'pt-BR').map((i) => (i.kind === 'person' ? i.name : ''))).toEqual(['María'])
-    expect(filterAtItems(people, 'AN', 'pt-BR').map((i) => (i.kind === 'person' ? i.name : ''))).toEqual(['Ana'])
+    const items = filterAtItems(candidates({ people }), 'mar', 'pt-BR')
+    expect(items.filter((i) => i.kind === 'person').map((i) => (i as { name: string }).name)).toEqual(['María'])
   })
 
-  test('empty typed text returns all people and no day item', () => {
-    const items = filterAtItems(people, '', 'pt-BR')
-    expect(items).toHaveLength(3)
-    expect(items.every((i) => i.kind === 'person')).toBe(true)
+  test('empty typed text returns all people plus all three relative days', () => {
+    const items = filterAtItems(candidates({ people }), '', 'pt-BR')
+    expect(items.filter((i) => i.kind === 'person')).toHaveLength(3)
+    expect(items.filter((i) => i.kind === 'day')).toHaveLength(3) // @today discoverability: bare '@' shows hoje/ontem/amanhã
   })
 
   test('no substring match yields an empty person list', () => {
-    expect(filterAtItems(people, 'zzz', 'pt-BR')).toEqual([])
+    expect(filterAtItems(candidates({ people }), 'zzz', 'pt-BR').filter((i) => i.kind === 'person')).toEqual([])
   })
 
   test('a complete pt-BR date (dd/mm/yyyy) appends a day item', () => {
-    const items = filterAtItems(people, '02/07/2026', 'pt-BR')
+    const items = filterAtItems(candidates(), '02/07/2026', 'pt-BR')
     expect(items).toContainEqual({ kind: 'day', date: '2026-07-02' })
   })
 
   test('a complete en-US date (mm/dd/yyyy) appends a day item', () => {
-    const items = filterAtItems(people, '07/02/2026', 'en-US')
+    const items = filterAtItems(candidates(), '07/02/2026', 'en-US')
     expect(items).toContainEqual({ kind: 'day', date: '2026-07-02' })
   })
 
   test('invalid or incomplete date text does not append a day item', () => {
-    expect(filterAtItems(people, '99/99/9999', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
-    expect(filterAtItems(people, '02/07', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
+    expect(filterAtItems(candidates(), '99/99/9999', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
+    expect(filterAtItems(candidates(), '02/07', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
   })
 
   function isoShift(days: number): string {
@@ -58,17 +62,50 @@ describe('filterAtItems', () => {
   }
 
   test('offers relative days in pt-BR', () => {
-    expect(filterAtItems([], 'hoje', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(0) })
-    expect(filterAtItems([], 'ont', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(-1) })
-    expect(filterAtItems([], 'amanh', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(1) })
+    expect(filterAtItems(candidates(), 'hoje', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(0) })
+    expect(filterAtItems(candidates(), 'ont', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(-1) })
+    expect(filterAtItems(candidates(), 'amanh', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(1) })
   })
 
   test('offers relative days in en-US', () => {
-    expect(filterAtItems([], 'tomo', 'en-US')).toContainEqual({ kind: 'day', date: isoShift(1) })
+    expect(filterAtItems(candidates(), 'tomo', 'en-US')).toContainEqual({ kind: 'day', date: isoShift(1) })
   })
 
-  test('does not offer relative days on empty input', () => {
-    expect(filterAtItems([], '', 'pt-BR').some((i) => i.kind === 'day')).toBe(false)
+  test('offers all three relative days on empty input (bare @ discoverability)', () => {
+    const days = filterAtItems(candidates(), '', 'pt-BR').filter((i) => i.kind === 'day')
+    expect(days).toEqual([
+      { kind: 'day', date: isoShift(0) },
+      { kind: 'day', date: isoShift(-1) },
+      { kind: 'day', date: isoShift(1) },
+    ])
+  })
+
+  test('groups results by type in a fixed order: people, dates, actions, milestones, risks', () => {
+    const items = filterAtItems({
+      people: [{ id: 'p1', name: 'Eva', group: 'members' }],
+      actionItems: [{ id: 'a1', title: 'Fix regression' }],
+      milestones: [{ id: 'm1', title: 'Release v2' }],
+      risks: [{ id: 'r1', title: 'Vendor delay' }],
+    }, 'e', 'pt-BR') // 'e' matches Eva and all three items; unlike 'a' (which also
+    // startsWith-matches pt-BR's "amanhã" -> normalized "amanha"), no relative-day
+    // word (hoje/ontem/amanhã) starts with 'e', so no 'day' item leaks into the group order.
+    expect(items.map((i) => i.kind)).toEqual(['person', 'action', 'milestone', 'risk'])
+  })
+
+  test('caps each group at 5 results', () => {
+    const actionItems = Array.from({ length: 8 }, (_, i) => ({ id: `a${i}`, title: `Item ${i}` }))
+    const items = filterAtItems(candidates({ actionItems }), '', 'pt-BR')
+    expect(items.filter((i) => i.kind === 'action')).toHaveLength(5)
+  })
+
+  test('substring match on action item/milestone/risk titles', () => {
+    const items = filterAtItems({
+      people: [],
+      actionItems: [{ id: 'a1', title: 'Fix login bug' }, { id: 'a2', title: 'Ship release' }],
+      milestones: [{ id: 'm1', title: 'Beta launch' }],
+      risks: [{ id: 'r1', title: 'Vendor delay' }],
+    }, 'bug', 'pt-BR')
+    expect(items).toEqual([{ kind: 'action', id: 'a1', title: 'Fix login bug' }])
   })
 })
 
@@ -91,7 +128,11 @@ describe('attachAtAutocomplete', () => {
     const picks: AtItem[] = []
     editor = createEditor(makeHooks(), locale)
     document.body.appendChild(editor.root)
-    attachAtAutocomplete(editor, { getPeople: () => people, locale, onPick: (item) => picks.push(item) })
+    attachAtAutocomplete(editor, {
+      getRefCandidates: () => ({ people, actionItems: [], milestones: [], risks: [] }),
+      locale,
+      onPick: (item) => picks.push(item),
+    })
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
     return { editorEl, picks }
   }
