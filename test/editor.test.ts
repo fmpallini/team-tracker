@@ -462,9 +462,31 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('hello')).toBeNull()
   })
   test('matches when the trailing space is a non-breaking space (\\u00A0) — real Chrome inserts nbsp instead of a regular space for whitespace at the edge of a text node, which is exactly the position typing "- " at the start of an empty line lands in', () => {
-    const nbsp = ' '
+    const nbsp = ' '
     expect(detectBlockPrefix('-' + nbsp)).toEqual({ type: 'ul', prefixLen: 2 })
     expect(detectBlockPrefix('1.' + nbsp)).toEqual({ type: 'ol', prefixLen: 3 })
     expect(detectBlockPrefix('#' + nbsp)).toEqual({ type: 'h1', prefixLen: 2 })
+  })
+})
+
+describe('resolveRefLabel hook', () => {
+  test('setMd uses hooks.resolveRefLabel to show the live label when provided', () => {
+    const hooks = makeHooks()
+    const editorWithResolver = createEditor(
+      { ...hooks, resolveRefLabel: (target) => (target.kind === 'action' ? 'Live Title' : null) },
+      'pt-BR'
+    )
+    editorWithResolver.setMd('see @[Stale Title](action:a1)')
+    const chip = editorWithResolver.root.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.textContent).toBe('@Live Title')
+    editorWithResolver.destroy()
+  })
+
+  test('setMd falls back to the stored label when resolveRefLabel is not provided', () => {
+    const editor = createEditor(makeHooks(), 'pt-BR')
+    editor.setMd('see @[Stale Title](action:a1)')
+    const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.textContent).toBe('@Stale Title')
+    editor.destroy()
   })
 })

@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, type RefInfo } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 
 export interface Editor {
@@ -20,6 +20,8 @@ export interface EditorHooks {
   onRefClick(target: RefInfo['target']): void
   onAtTrigger(anchor: Range): void
   onSlashTrigger(anchor: Range): void
+  /** Optional: resolves a ref chip's *current* label from live team data instead of trusting the frozen text baked into stored markdown. Omitted by callers (e.g. template-picker.ts's preview) that have no team-scoped data to resolve against. */
+  resolveRefLabel?: LabelResolver
 }
 
 /**
@@ -523,7 +525,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       clearTimeout(changeTimer)
       changeTimer = null
     }
-    editorEl.innerHTML = mdToHtml(md)
+    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel)
   }
 
   function focus(): void {
