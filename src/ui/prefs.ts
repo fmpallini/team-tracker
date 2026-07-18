@@ -211,7 +211,28 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput)
     )
 
-    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField)
+    const dueSoonInput = el('input', {
+      type: 'number',
+      class: 'tt-input tt-prefs-due-soon-input',
+      min: '1',
+      max: '30',
+      value: String(prefs.dueSoonDays),
+      onchange: (e: Event) => {
+        const raw = Number((e.target as HTMLInputElement).value)
+        const clamped = Math.min(30, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.dueSoonDays))
+        ;(e.target as HTMLInputElement).value = String(clamped)
+        store.update((d) => {
+          d.prefs.dueSoonDays = clamped
+        })
+      },
+    })
+    const dueSoonField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_due_soon_days_label'), dueSoonInput)
+    )
+
+    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------

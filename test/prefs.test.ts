@@ -171,6 +171,25 @@ test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
   expect(store.doc.prefs.autoSaveMin).toBe(1)
 })
 
+test('due-soon-days number input clamps to 1..30 and updates store.prefs', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const input = document.querySelector('.tt-prefs-due-soon-input') as HTMLInputElement
+  input.value = '5'
+  input.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dueSoonDays).toBe(5)
+
+  input.value = '999'
+  input.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dueSoonDays).toBe(30)
+  expect(input.value).toBe('30')
+
+  input.value = '0'
+  input.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dueSoonDays).toBe(1)
+})
+
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')
