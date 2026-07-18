@@ -7,10 +7,11 @@
 // foreign store update.
 import type { ActionItem, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
+import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
+import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { el } from '../ui/dom'
 
@@ -149,15 +150,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     })
   }
 
-  function getPeople(): AtPerson[] {
-    const tm = findTeam()
-    if (!tm) return []
-    return [
-      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ]
-  }
-
   function removeItem(id: string): void {
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
@@ -220,11 +212,17 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const errorEl = el('div', { class: 'tt-field-error' })
 
     const editor: Editor = createEditor(
-      { onChange() {}, onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId), onAtTrigger() {}, onSlashTrigger() {} },
+      {
+        onChange() {},
+        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
+        onAtTrigger() {},
+        onSlashTrigger() {},
+        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+      },
       lc
     )
     editor.setMd(existing?.notes ?? '')
-    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
       getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
