@@ -1,9 +1,11 @@
 // src/ui/sidebar.ts
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
+import type { PaneManager } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam } from '../core/nav'
-import { t, todayIso, type Locale } from '../core/i18n'
+import { t, todayIso, formatDate, type Locale } from '../core/i18n'
+import { collectDueItems, type DueBuckets, type DueItem } from '../core/due'
 import { el } from './dom'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
@@ -73,7 +75,7 @@ function emptyTeam(id: string, name: string, emoji: string): Team {
   }
 }
 
-export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions): void {
+export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): void {
   let dragSrcIndex: number | null = null
 
   function locale(): Locale {
@@ -92,8 +94,77 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
     '➕'
   )
 
+  const dueBadgeEl = el('span', { class: 'tt-due-badge' })
+  const dueBtn = el(
+    'button',
+    { class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'), onclick: () => openDueModal() },
+    '⏰', dueBadgeEl
+  )
+
+  function diffDays(later: string, earlier: string): number {
+    const [ly, lm, ld] = later.split('-').map(Number) as [number, number, number]
+    const [ey, em, ed] = earlier.split('-').map(Number) as [number, number, number]
+    const a = Date.UTC(ly, lm - 1, ld)
+    const b = Date.UTC(ey, em - 1, ed)
+    return Math.round((a - b) / 86400000)
+  }
+
+  function relLabel(dateIso: string): string {
+    const today = todayIso()
+    if (dateIso < today) return t(locale(), 'due_overdue_by', { days: String(diffDays(today, dateIso)) })
+    return t(locale(), 'due_in_days', { days: String(diffDays(dateIso, today)) })
+  }
+
+  function renderDueRow(item: DueItem, handleRef: { current: ModalHandle | null }): HTMLElement {
+    const icon = item.kind === 'action' ? '✅' : '🚩'
+    return el(
+      'div',
+      {
+        class: 'tt-due-row',
+        onclick: () => {
+          handleRef.current?.close()
+          if (item.loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(item.loc.teamId)
+          pm.openInFocused(item.loc)
+        },
+      },
+      el('span', { class: 'tt-due-row-icon' }, icon),
+      el('span', { class: 'tt-due-row-title' }, item.title),
+      el('span', { class: 'tt-due-row-team' }, item.teamName),
+      el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale())} · ${relLabel(item.date)}`)
+    )
+  }
+
+  function openDueModal(): void {
+    const buckets = collectDueItems(store.doc, todayIso())
+    const handleRef: { current: ModalHandle | null } = { current: null }
+    const sections: HTMLElement[] = []
+    if (buckets.overdue.length + buckets.dueSoon.length === 0) {
+      sections.push(el('p', { class: 'tt-modal-message' }, t(locale(), 'due_empty')))
+    } else {
+      if (buckets.overdue.length > 0) {
+        sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_overdue')))
+        sections.push(...buckets.overdue.map((it) => renderDueRow(it, handleRef)))
+      }
+      if (buckets.dueSoon.length > 0) {
+        sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_due_soon')))
+        sections.push(...buckets.dueSoon.map((it) => renderDueRow(it, handleRef)))
+      }
+    }
+    const body = el('div', { class: 'tt-due-list' }, ...sections)
+    const closeBtn: ModalButton = { label: t(locale(), 'ok'), primary: true, onClick: () => handleRef.current?.close() }
+    handleRef.current = showModal({ title: t(locale(), 'due_panel_title'), body, buttons: [closeBtn] })
+  }
+
+  function renderDueBadge(buckets: DueBuckets): void {
+    const total = buckets.overdue.length + buckets.dueSoon.length
+    dueBadgeEl.textContent = total > 0 ? String(total) : ''
+    dueBtn.classList.toggle('tt-due-empty', total === 0)
+    dueBtn.classList.toggle('has-overdue', buckets.overdue.length > 0)
+    dueBtn.classList.toggle('has-due-soon', buckets.overdue.length === 0 && buckets.dueSoon.length > 0)
+  }
+
   shell.sidebar.innerHTML = ''
-  shell.sidebar.append(listEl, addBtn)
+  shell.sidebar.append(dueBtn, listEl, addBtn)
 
   function clearDragOverClasses(): void {
     listEl.querySelectorAll('.tt-team-item').forEach((n) => {
@@ -165,6 +236,12 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
 
   function render(): void {
     listEl.innerHTML = ''
+    const buckets = collectDueItems(store.doc, todayIso())
+    renderDueBadge(buckets)
+    const teamDueCounts = new Map<string, number>()
+    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
+      teamDueCounts.set(it.loc.teamId, (teamDueCounts.get(it.loc.teamId) ?? 0) + 1)
+    }
     store.doc.teams.forEach((team, index) => {
       const isActive = store.doc.nav.activeTeamId === team.id
       const item = el('div', {
@@ -176,7 +253,8 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
       const numEl = el('span', { class: 'tt-team-num' }, String(index + 1))
       const emojiEl = el('span', { class: 'tt-team-emoji' }, team.emoji)
       const nameEl = el('span', { class: 'tt-team-name' }, team.name)
-      const hotkeyEl = index < 9 ? el('span', { class: 'tt-team-hotkey' }, `Alt+${index + 1}`) : null
+      const dueCount = teamDueCounts.get(team.id) ?? 0
+      const teamDueBadgeEl = dueCount > 0 ? el('span', { class: 'tt-team-due-badge' }, String(dueCount)) : null
       const editBtn = el(
         'button',
         {
@@ -190,7 +268,7 @@ export function mountSidebar(shell: Shell, store: Store, actions: SidebarActions
         },
         '✎'
       )
-      item.append(numEl, emojiEl, nameEl, ...(hotkeyEl ? [hotkeyEl] : []), editBtn)
+      item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
 
       item.addEventListener('click', () => {
         actions.selectTeam(team.id)

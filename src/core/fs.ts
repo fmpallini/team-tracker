@@ -105,6 +105,29 @@ export async function readCurrent(session: FileSession): Promise<Uint8Array> {
   return bytes
 }
 
+/**
+ * One-shot save for the team export/import feature — unlike `pickCreate`,
+ * there's no ongoing `FileSession` to hand back (the export file is written
+ * once and never reopened by this app), so this skips the handle-tracking
+ * machinery entirely. Returns false on user cancel (caller should just do
+ * nothing, not fall back to `downloadFallback` — that would defeat Cancel).
+ */
+export async function pickSaveJson(suggestedName: string, bytes: Uint8Array): Promise<boolean> {
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+    })
+    const writable = await handle.createWritable()
+    await writable.write(bytes as BufferSource)
+    await writable.close()
+    return true
+  } catch (e) {
+    if (isAbortError(e)) return false
+    throw e
+  }
+}
+
 export function downloadFallback(name: string, bytes: Uint8Array): void {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart]))
   const a = document.createElement('a')

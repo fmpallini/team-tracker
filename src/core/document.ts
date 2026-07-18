@@ -1,14 +1,14 @@
 import type { Doc } from './types'
 import { builtinTemplates } from './templates'
 
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 export class SchemaTooNewError extends Error {}
 
 export function createEmptyDocument(locale: 'pt-BR' | 'en-US'): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger' },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 3 },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} },
@@ -55,6 +55,10 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
     const prefs = d.prefs as Record<string, unknown> | undefined
     if (prefs) prefs.palette = prefs.palette ?? 'ledger'
   },
+  5: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs) prefs.dueSoonDays = prefs.dueSoonDays ?? 3
+  },
 }
 
 export function migrate(raw: unknown): Doc {
@@ -65,4 +69,25 @@ export function migrate(raw: unknown): Doc {
     MIGRATIONS[v]?.(d); d.schemaVersion = v + 1
   }
   return d as unknown as Doc
+}
+
+/**
+ * Reused by the team export/import feature (src/core/team-export.ts) to
+ * bring an imported file's teams up to the current shape before their IDs
+ * get remapped. Feeds `migrate()` a shim doc missing `nav`/`prefs` — every
+ * `MIGRATIONS` step already guards on those keys' presence (see steps 2 and
+ * 4 above) before touching them, so the doc-scoped steps safely no-op here
+ * while the team-scoped ones (1, 3) still apply. Same table, same
+ * guarantees `.tmv` opening already has — no separate migration ladder.
+ *
+ * Generic over `T` rather than fixed to `Team`: an export file's teams are
+ * narrower than a full `Team` (no `id`/`dailyNotes` — see team-export.ts's
+ * `ExportedTeam`), and the migrations here only ever mutate the nested
+ * actionItems/milestones/risks arrays, never those two fields — so the
+ * input shape passes through unchanged except for what the migrations
+ * actually touch.
+ */
+export function migrateTeams<T>(teams: T[], fromVersion: number): T[] {
+  const result = migrate({ schemaVersion: fromVersion, teams }) as unknown as { teams: T[] }
+  return result.teams
 }

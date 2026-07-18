@@ -4,6 +4,17 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
+import type { PaneManager } from '../src/ui/panes'
+
+function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: Loc) => void>> } {
+  return {
+    openInPane: () => {},
+    openInFocused: vi.fn<(loc: Loc) => void>(),
+    toggleSplit: () => {},
+    renderAll: () => {},
+    registerModule: () => {},
+  }
+}
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
 // OS theme preference.
@@ -20,19 +31,20 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
-function setup(): { shell: Shell; store: Store; selectTeam: ReturnType<typeof vi.fn>; renderPanes: ReturnType<typeof vi.fn> } {
+function setup(): { shell: Shell; store: Store; pm: ReturnType<typeof fakePM>; selectTeam: ReturnType<typeof vi.fn>; renderPanes: ReturnType<typeof vi.fn> } {
   document.body.innerHTML = ''
   stubMatchMedia()
   const doc = createEmptyDocument('en-US')
   const store = createStore(doc)
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
+  const pm = fakePM()
   const selectTeam = vi.fn((id: string) => {
     store.updateNav((d) => { d.nav.activeTeamId = id })
   })
   const renderPanes = vi.fn()
-  mountSidebar(shell, store, { selectTeam, renderPanes })
-  return { shell, store, selectTeam, renderPanes }
+  mountSidebar(shell, store, pm, { selectTeam, renderPanes })
+  return { shell, store, pm, selectTeam, renderPanes }
 }
 
 function addTeam(store: Store, name: string, emoji = '🚀'): void {
@@ -71,16 +83,15 @@ test('renders teams in array order with number, emoji and name', () => {
   expect(rows[1]!.querySelector('.tt-team-num')?.textContent).toBe('2')
 })
 
-test('first 9 teams get Alt+N hotkey badge, 10th does not', () => {
+test('no visible Alt+N badge on any team row; first 9 still get the hover tooltip, 10th does not', () => {
   const { store } = setup()
   for (let i = 1; i <= 10; i++) addTeam(store, `Team ${i}`)
 
   const rows = items()
-  const badges = document.querySelectorAll('.tt-team-hotkey')
-  expect(badges).toHaveLength(9)
-  expect(badges[0]!.textContent).toBe('Alt+1')
-  expect(badges[1]!.textContent).toBe('Alt+2')
-  expect(rows[9]!.querySelector('.tt-team-hotkey')).toBeNull()
+  expect(document.querySelectorAll('.tt-team-hotkey')).toHaveLength(0)
+  expect(rows[0]!.title).toBe('Shortcut: Alt+number')
+  expect(rows[8]!.title).toBe('Shortcut: Alt+number')
+  expect(rows[9]!.title).toBe('')
 })
 
 test('active team is highlighted based on nav.activeTeamId', () => {
@@ -411,4 +422,80 @@ test('dropping a team back onto its own slot is a no-op (no dirty flag)', () => 
 
   expect(store.doc.teams.map((tm) => tm.name)).toEqual(['Alpha', 'Beta'])
   expect(store.dirty).toBe(false)
+})
+
+function addActionItem(store: Store, teamId: string, overrides: Partial<{ id: string; dueDate: string | null; status: 'todo' | 'wip' | 'done' | 'cancelled' }>): void {
+  store.update((d) => {
+    const team = d.teams.find((tm) => tm.id === teamId)!
+    team.actionItems.push({
+      id: overrides.id ?? 'a1', summary: 'Task', status: overrides.status ?? 'todo',
+      dueDate: overrides.dueDate ?? null, assignee: '', order: team.actionItems.length, notes: '', color: 'ledger',
+    })
+  })
+}
+
+describe('due badge', () => {
+  test('hidden when there are no due items', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    expect(document.querySelector('.tt-due-btn.tt-due-empty')).not.toBeNull()
+  })
+
+  test('shows the total overdue+due-soon count and the overdue color when any item is overdue', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    const btn = document.querySelector('.tt-due-btn')!
+    expect(btn.classList.contains('tt-due-empty')).toBe(false)
+    expect(btn.classList.contains('has-overdue')).toBe(true)
+    expect(btn.querySelector('.tt-due-badge')!.textContent).toBe('1')
+  })
+
+  test('per-team badge appears next to a team row only when that team has due items', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    const rows = items()
+    expect(rows[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+    expect(rows[1]!.querySelector('.tt-team-due-badge')).toBeNull()
+  })
+})
+
+describe('due list modal', () => {
+  test('clicking the due button with no due items shows the empty state', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Nothing overdue or due soon.')
+  })
+
+  test('lists overdue and due-soon items in separate sections, and clicking a row navigates to it', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'overdue-1', dueDate: '2000-01-01' })
+    addActionItem(store, 'Alpha', { id: 'soon-1', dueDate: todayIso() })
+
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    const headings = Array.from(document.querySelectorAll('.tt-due-section-heading')).map((n) => n.textContent)
+    expect(headings).toEqual(['Overdue', 'Due soon'])
+
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.click()
+    expect(pm.openInFocused).toHaveBeenCalledWith({ teamId: 'Alpha', ref: { kind: 'actions', itemId: 'overdue-1' } })
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull() // closed after navigating
+  })
+
+  test('clicking a row for a non-active team switches team first', () => {
+    const { store, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.click()
+    expect(selectTeam).toHaveBeenCalledWith('Beta')
+  })
 })

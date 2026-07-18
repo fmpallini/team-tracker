@@ -7,6 +7,7 @@ export interface Prefs {
   fontSize: 'S' | 'M' | 'L'
   autoSaveMin: number
   palette: PaletteId
+  dueSoonDays: number
 }
 export interface Person {
   id: string; name: string; role: string
@@ -31,6 +32,7 @@ export interface Team {
   stakeholders: Person[]; members: Person[]
   actionItems: ActionItem[]; milestones: Milestone[]; risks: Risk[]
   dailyNotes: Record<string, string>
+  actionTagNames?: Partial<Record<ActionItem['color'], string>>
 }
 export interface Template {
   id: string; name: string

@@ -245,12 +245,27 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
 .tt-team-name { font-family: var(--font-display); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-team-hotkey { font-family: var(--font-data); color: var(--muted); font-size: .7rem; text-align: right; flex: none; }
 .tt-team-edit-btn { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-team-add-btn { width: calc(100% - 1rem); margin: .5rem; }
 .tt-team-item.drag-over-top { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-team-item.drag-over-bottom { box-shadow: inset 0 -2px 0 0 var(--accent); }
+
+.tt-due-btn { position: relative; margin: 0 .6rem .5rem; width: calc(100% - 1.2rem); display: flex; align-items: center; justify-content: center; gap: .4rem; }
+.tt-due-btn.tt-due-empty { display: none; }
+.tt-due-badge { font-family: var(--font-data); font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; background: var(--muted); color: var(--bg); }
+.tt-due-btn.has-overdue .tt-due-badge { background: var(--danger); color: #fff; }
+.tt-due-btn.has-due-soon .tt-due-badge { background: var(--brass); color: #fff; }
+.tt-team-due-badge { font-family: var(--font-data); font-size: .65rem; font-weight: 700; border-radius: 999px; padding: 0 .4rem; background: var(--danger); color: #fff; flex: none; }
+
+.tt-due-list { display: flex; flex-direction: column; gap: .15rem; max-height: 60vh; overflow-y: auto; }
+.tt-due-section-heading { font-weight: 700; margin-top: .6rem; color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+.tt-due-section-heading:first-child { margin-top: 0; }
+.tt-due-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .4rem; border-radius: 6px; cursor: pointer; }
+.tt-due-row:hover { background: rgba(var(--accent-rgb), .1); }
+.tt-due-row-title { flex: 1; }
+.tt-due-row-team { color: var(--muted); font-size: .85rem; }
+.tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; }
 .tt-team-form { display: flex; flex-direction: column; gap: .75rem; }
 
 /* Panes */
@@ -522,7 +537,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-col-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; padding: .3rem .4rem .6rem; border-bottom: 2px solid var(--border); margin-bottom: .5rem; flex: none; }
 .tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
+.tt-kanban-col-body-wrap { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tt-kanban-col-body { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; flex: 1; min-height: 40px; padding-bottom: .5rem; }
+/* Drop-zone highlight — mirrors .tt-people-root-drop's dashed-overlay
+   treatment. Lives in the wrap (sibling of the body, not a child of it) so
+   renderAll()'s `body.innerHTML = ''` never destroys it mid-drag. */
+.tt-kanban-dropzone {
+  display: none; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: 8px;
+}
+.tt-kanban-dropzone.active { display: block; }
+.tt-kanban-dropzone.drag-over { background: rgba(var(--accent-rgb), .12); }
 .tt-kanban-empty { color: var(--muted); padding: .5rem; font-size: .85rem; }
 .tt-kanban-zone-label { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 .3rem; flex: none; }
 .tt-kanban-zone-trash { border: none; background: transparent; opacity: .6; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
@@ -566,8 +591,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-form .editor { min-height: 120px; max-height: 280px; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
+.tt-kanban-color-field-row { display: flex; align-items: center; gap: .5rem; }
+.tt-kanban-color-names-btn { flex: none; padding: .2rem .4rem; font-size: .85rem; }
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
-.tt-kanban-color-chip { width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0; }
+.tt-kanban-color-chip {
+  min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
+  font-size: .72rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
 .tt-kanban-color-chip.color-slate { background: var(--card-slate); }
 .tt-kanban-color-chip.color-brass { background: var(--card-brass); }
 .tt-kanban-color-chip.color-sage { background: var(--card-sage); }
@@ -575,6 +606,21 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-color-chip.color-plum { background: var(--card-plum); }
 .tt-kanban-color-chip.color-ledger { background: var(--card-ledger); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
+.tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.tt-kanban-edit-tags-btn { margin-left: auto; }
+.tt-kanban-tag-chip-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.tt-kanban-tag-chip-swatch.color-slate { background: var(--card-slate); }
+.tt-kanban-tag-chip-swatch.color-brass { background: var(--card-brass); }
+.tt-kanban-tag-chip-swatch.color-sage { background: var(--card-sage); }
+.tt-kanban-tag-chip-swatch.color-rust { background: var(--card-rust); }
+.tt-kanban-tag-chip-swatch.color-plum { background: var(--card-plum); }
+.tt-kanban-tag-chip-swatch.color-ledger { background: var(--card-ledger); }
+.tt-edit-tags-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
+.tt-edit-tags-row-label { width: 80px; flex: none; color: var(--muted); }
+.tt-kanban-tag-chips { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.tt-kanban-tag-chip { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--border); border-radius: 999px; padding: .1rem .55rem; background: var(--panel); cursor: pointer; font-size: .8rem; color: var(--fg); }
+.tt-kanban-tag-chip.selected { border-color: var(--fg); font-weight: 700; }
+.tt-kanban-card-tag { font-size: .7rem; color: var(--muted); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
@@ -751,6 +797,22 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-prefs-template-hint { font-size: .8rem; color: var(--muted); }
 .tt-prefs-security-form { display: flex; flex-direction: column; gap: .75rem; align-items: flex-start; }
 .tt-prefs-security-form .tt-field { width: 100%; }
+
+/* Data tab (team export/import) */
+.tt-data-hint { font-size: .8rem; color: var(--muted); margin: 0; }
+.tt-data-empty { color: var(--muted); padding: .5rem; }
+.tt-data-team-list { display: flex; flex-direction: column; gap: .25rem; }
+.tt-data-team-row {
+  display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: 4px;
+  border: 1px solid var(--border); cursor: pointer;
+}
+.tt-data-team-row:hover { background: rgba(var(--accent-rgb), .08); }
+.tt-data-team-row:has(input:checked) { border-color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.tt-data-team-emoji { flex: none; }
+.tt-data-team-info { display: flex; flex-direction: column; gap: .1rem; flex: 1; min-width: 0; }
+.tt-data-team-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-data-team-summary { font-family: var(--font-data); font-size: .75rem; color: var(--muted); }
+.tt-data-import-actions { display: flex; justify-content: flex-end; }
 
 /* Editor help modal */
 .tt-help-body { display: flex; flex-direction: column; gap: .4rem; max-height: 60vh; overflow-y: auto; }

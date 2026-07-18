@@ -483,7 +483,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     }
   }
 
-  mountSidebar(shell, store, { selectTeam, renderPanes: () => pm.renderAll() })
+  mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {

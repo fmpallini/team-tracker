@@ -5,7 +5,14 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { builtinTemplates } from '../src/core/templates'
 import { SCHEMA_VERSION } from '../src/core/document'
-import type { Template } from '../src/core/types'
+import { buildExport } from '../src/core/team-export'
+import { downloadFallback } from '../src/core/fs'
+import type { Template, Team } from '../src/core/types'
+
+vi.mock('../src/core/fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/fs')>()
+  return { ...actual, downloadFallback: vi.fn() }
+})
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
 function stubMatchMedia(): void {
@@ -80,7 +87,7 @@ test('renders 4 tabs, defaulting to Geral/General', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['General', 'Templates', 'Security', 'About'])
+  expect(tabs).toEqual(['General', 'Templates', 'Security', 'Data', 'About'])
   expect(document.querySelector('.tt-prefs-tab-btn.active')?.textContent).toBe('General')
   expect(document.querySelector('input[name="tt-prefs-theme"][value="system"]')).not.toBeNull()
 })
@@ -164,6 +171,25 @@ test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
   expect(store.doc.prefs.autoSaveMin).toBe(1)
 })
 
+test('due-soon-days number input clamps to 1..30 and updates store.prefs', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const input = document.querySelector('.tt-prefs-due-soon-input') as HTMLInputElement
+  input.value = '5'
+  input.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dueSoonDays).toBe(5)
+
+  input.value = '999'
+  input.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dueSoonDays).toBe(30)
+  expect(input.value).toBe('30')
+
+  input.value = '0'
+  input.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dueSoonDays).toBe(1)
+})
+
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')
@@ -180,7 +206,7 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   // tab labels should now read in Portuguese.
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['Geral', 'Templates', 'Segurança', 'Sobre'])
+  expect(tabs).toEqual(['Geral', 'Templates', 'Segurança', 'Dados', 'Sobre'])
 })
 
 test('templates tab lists the 5 builtins with scope badges', () => {
@@ -502,4 +528,111 @@ test('closing the prefs modal via Escape also fires onNavChanged', () => {
 test('builtinTemplates helper used by restore-defaults produces 5 named templates (sanity)', () => {
   const names = builtinTemplates('en-US').map((tp: Template) => tp.name)
   expect(new Set(names).size).toBe(5)
+})
+
+function sampleTeam(): Team {
+  return {
+    id: 't1', name: 'Engineering', emoji: '🚀',
+    dailyNotes: { '2026-07-16': 'private daily note' },
+    stakeholders: [{ id: 'p1', name: 'Priya', role: 'Sponsor', parentId: null, order: 0, notes: 'private note' }],
+    members: [{ id: 'p2', name: 'Marcus', role: 'Manager', parentId: null, order: 0, notes: '' }],
+    actionItems: [{ id: 'a1', summary: 'Access review', notes: 'audit detail', status: 'todo', dueDate: null, assignee: 'Marcus', color: 'slate', order: 0 }],
+    milestones: [{ id: 'm1', date: '2026-08-01', title: 'Launch', done: false, followup: 'ship checklist' }],
+    risks: [{ id: 'r1', title: 'Vendor lock-in', chance: 2, impact: 3, plan: 'mitigate', followup: 'quarterly review', order: 0, closed: false }],
+  }
+}
+
+describe('Data tab (export/import)', () => {
+  function exportCheckboxes(): HTMLInputElement[] {
+    return Array.from(document.querySelectorAll('.tt-data-team-list input[type="checkbox"]'))
+  }
+
+  test('renders an export checklist row per team and both privacy hints', () => {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => { d.teams.push(sampleTeam()) })
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+
+    expect(document.querySelector('.tt-data-team-name')?.textContent).toBe('Engineering')
+    const hints = Array.from(document.querySelectorAll('.tt-data-hint')).map((n) => n.textContent)
+    expect(hints).toEqual([
+      'Personal notes and daily notes are never included.',
+      'Personal notes and daily notes are never included.',
+    ])
+  })
+
+  test('export writes a JSON file via downloadFallback, stripped of dailyNotes and person.notes', async () => {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => { d.teams.push(sampleTeam()) })
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+
+    exportCheckboxes()[0]!.click()
+    clickByText('Export selected')
+    await Promise.resolve().then(() => {}) // flush the async doExport()
+
+    expect(downloadFallback).toHaveBeenCalledTimes(1)
+    const [name, bytes] = (downloadFallback as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Uint8Array]
+    expect(name).toMatch(/^team-tracker-export-\d{4}-\d{2}-\d{2}\.json$/)
+    const file = JSON.parse(new TextDecoder().decode(bytes))
+    expect(file.kind).toBe('team-tracker-teams-export')
+    const team = file.teams[0]
+    expect(team.dailyNotes).toBeUndefined()
+    expect(team.stakeholders[0].notes).toBeUndefined()
+    expect(team.actionItems[0].notes).toBe('audit detail') // item free-text stays (decision 2)
+  })
+
+  test('import: valid file shows a checklist with per-team counts, Import appends with fresh ids and "(imported)" suffix', async () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+
+    const exportFile = buildExport([sampleTeam()])
+    const jsonFile = new File([JSON.stringify(exportFile)], 'export.json', { type: 'application/json' })
+    const fileInput = document.querySelector('input[type="file"][accept=".json"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { value: [jsonFile], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+    await new Promise((r) => setTimeout(r, 0)) // flush handleFilePicked's await file.arrayBuffer()
+
+    expect(document.querySelector('.tt-data-team-summary')?.textContent)
+      .toBe('1 stakeholders · 1 members · 1 action items · 1 milestones · 1 risks')
+
+    clickByText('Import selected')
+
+    expect(store.doc.teams).toHaveLength(1)
+    const imported = store.doc.teams[0]!
+    expect(imported.name).toBe('Engineering (imported)')
+    expect(imported.id).not.toBe('t1')
+    expect(imported.dailyNotes).toEqual({})
+    expect(imported.stakeholders[0]!.notes).toBe('')
+  })
+
+  test('import: invalid JSON shows an error modal instead of a checklist', async () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+
+    const jsonFile = new File(['not json'], 'export.json', { type: 'application/json' })
+    const fileInput = document.querySelector('input[type="file"][accept=".json"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { value: [jsonFile], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Invalid file — not a Team Tracker teams export')
+  })
+
+  test('import: a schemaVersion newer than this app shows a different error modal', async () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+
+    const future = { kind: 'team-tracker-teams-export', schemaVersion: SCHEMA_VERSION + 1, exportedAt: '', teams: [] }
+    const jsonFile = new File([JSON.stringify(future)], 'export.json', { type: 'application/json' })
+    const fileInput = document.querySelector('input[type="file"][accept=".json"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { value: [jsonFile], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('This file was exported by a newer version of Team Tracker')
+  })
 })
