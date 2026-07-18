@@ -38,6 +38,33 @@ export function resetPromoStateForTests(): void {
   installed = false
 }
 
+function hidePromoUi(): void {
+  installed = true
+  deferredPrompt = null
+  document.querySelectorAll('.tt-promo-card, .tt-btn-promo').forEach((n) => n.remove())
+}
+
+/**
+ * Chromium-only, self-installed-PWA detection via the manifest's
+ * `related_applications` "webapp" entry (pwa/manifest.json) — catches the
+ * case appinstalled/isStandalone miss: the app was installed in a past
+ * session, and the user is now viewing the hosted page in a plain browser
+ * tab rather than the installed app window. Feature-detected: unsupported
+ * browsers (Firefox, Safari, and Chromium without the flag) just no-op and
+ * fall back to the existing appinstalled/isStandalone checks.
+ */
+async function checkRelatedAppsInstalled(): Promise<void> {
+  const gira = navigator.getInstalledRelatedApps
+  if (typeof gira !== 'function') return
+  try {
+    const apps = await gira()
+    if (apps.length > 0) hidePromoUi()
+  } catch {
+    // Denied/unsupported at runtime despite the feature check — leave the
+    // existing appinstalled/isStandalone detection as the fallback.
+  }
+}
+
 /**
  * Must run as early as possible in main.ts (PWA build only):
  * `beforeinstallprompt` fires before the UI mounts, and a listener added
@@ -48,11 +75,8 @@ export function initInstallCapture(): void {
     e.preventDefault()
     deferredPrompt = e as BeforeInstallPromptEvent
   })
-  window.addEventListener('appinstalled', () => {
-    installed = true
-    deferredPrompt = null
-    document.querySelectorAll('.tt-promo-card, .tt-btn-promo').forEach((n) => n.remove())
-  })
+  window.addEventListener('appinstalled', hidePromoUi)
+  void checkRelatedAppsInstalled()
 }
 
 function isStandalone(): boolean {

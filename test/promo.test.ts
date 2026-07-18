@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   initInstallCapture,
   promoStartCard,
@@ -99,6 +99,44 @@ describe('PWA variant (install offer)', () => {
     expect(document.querySelector('.tt-btn-promo')).toBeNull()
     expect(promoStartCard(LOCALE, { pwa: true })).toBeNull()
     expect(promoHeaderButton(LOCALE, { pwa: true })).toBeNull()
+  })
+
+  describe('getInstalledRelatedApps (already installed, viewed in a plain tab)', () => {
+    afterEach(() => {
+      delete (navigator as unknown as { getInstalledRelatedApps?: unknown }).getInstalledRelatedApps
+    })
+
+    it('a non-empty result removes live promo UI and blocks new renders', async () => {
+      const gira = vi.fn().mockResolvedValue([{ platform: 'webapp', url: 'https://example.test/manifest.json' }])
+      ;(navigator as unknown as { getInstalledRelatedApps: typeof gira }).getInstalledRelatedApps = gira
+      const card = promoStartCard(LOCALE, { pwa: true })!
+      const btn = promoHeaderButton(LOCALE, { pwa: true })!
+      document.body.append(card, btn)
+
+      initInstallCapture()
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('.tt-promo-card')).toBeNull()
+        expect(document.querySelector('.tt-btn-promo')).toBeNull()
+      })
+      expect(promoStartCard(LOCALE, { pwa: true })).toBeNull()
+      expect(promoHeaderButton(LOCALE, { pwa: true })).toBeNull()
+    })
+
+    it('an empty result leaves the promo UI in place', async () => {
+      const gira = vi.fn().mockResolvedValue([])
+      ;(navigator as unknown as { getInstalledRelatedApps: typeof gira }).getInstalledRelatedApps = gira
+
+      initInstallCapture()
+      await vi.waitFor(() => expect(gira).toHaveBeenCalledTimes(1))
+
+      expect(promoStartCard(LOCALE, { pwa: true })).not.toBeNull()
+    })
+
+    it('does nothing when the API is unsupported (no getInstalledRelatedApps on navigator)', () => {
+      expect(() => initInstallCapture()).not.toThrow()
+      expect(promoStartCard(LOCALE, { pwa: true })).not.toBeNull()
+    })
   })
 })
 
