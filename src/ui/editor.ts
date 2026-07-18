@@ -258,6 +258,46 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (inlineMatch) replaceInlineMatch(block, inlineMatch)
   }
 
+  /**
+   * contenteditable's native "select all + delete" (Ctrl+A, Backspace) can
+   * leave editorEl with no wrapping block at all — unlike setMd(), which
+   * (via core/markdown.ts's mdToHtml) always leaves at least one <div>,
+   * even for an empty string. currentBlockAndOffset()'s block-walk needs a
+   * real block ancestor of the caret to compute a text offset from; with
+   * none, it silently returns null, so handleAutoFormat()/checkTriggers()
+   * (bold/italic auto-format, @ and / triggers) all no-op on whatever gets
+   * typed right into that bare state — until the user creates a block some
+   * other way, e.g. pressing Enter. Re-wrap any content already typed
+   * directly into editorEl (a bare text node from this same keystroke, a
+   * stray <br>, ...) into a real block before those checks run, restoring
+   * the invariant setMd() normally guarantees. Explicitly re-homes the
+   * caret afterwards rather than trusting the moved Range/Selection to
+   * still track it across the reparent.
+   */
+  function ensureBlock(): void {
+    if (editorEl.children.length > 0) return
+    const sel = window.getSelection()
+    const liveRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    const caretNode = liveRange?.startContainer ?? null
+    const caretOffset = liveRange?.startOffset ?? 0
+
+    const div = document.createElement('div')
+    while (editorEl.firstChild) div.appendChild(editorEl.firstChild)
+    if (div.childNodes.length === 0) div.appendChild(document.createElement('br'))
+    editorEl.appendChild(div)
+
+    // Re-home the caret explicitly rather than relying on the moved Range
+    // to still track it — restores the exact same node/offset, just now
+    // reachable through `div`.
+    if (sel && caretNode && div.contains(caretNode)) {
+      const r = document.createRange()
+      r.setStart(caretNode, caretOffset)
+      r.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(r)
+    }
+  }
+
   function checkTriggers(): void {
     const ctx = currentBlockAndOffset()
     if (!ctx) return
@@ -380,6 +420,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // --- event handlers --------------------------------------------------------
 
   function onInput(): void {
+    ensureBlock()
     handleAutoFormat()
     checkTriggers()
     scheduleChange()

@@ -111,6 +111,61 @@ describe('@ trigger', () => {
     expect(hooks.atRanges.length).toBe(1)
     editor.destroy()
   })
+
+  // Regression: contenteditable's native "select all + delete" can leave
+  // editorEl with zero element children — no wrapping <div>/<p> at all,
+  // unlike a freshly loaded note (setMd always leaves at least one block,
+  // even for an empty string — see core/markdown.ts's mdToHtml). Typing "@"
+  // right into that bare state lands the character as a direct text-node
+  // child of editorEl, which the block-walk in currentBlockAndOffset()
+  // can't resolve to a block, so the trigger silently didn't fire — until
+  // the user pressed Enter first, which creates a real block as a side effect.
+  test('typing @ into an editor emptied by select-all+delete (no wrapping block left) still fires onAtTrigger', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '' // simulates the post-"select all + Backspace" state
+    editorEl.appendChild(document.createTextNode('@')) // simulates the browser's default action for the keystroke
+    const textNode = editorEl.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, 1)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(hooks.atRanges.length).toBe(1)
+    editor.destroy()
+  })
+})
+
+describe('/ trigger', () => {
+  // Same root cause as the @ regression above, for the slash-template trigger.
+  test('typing / into an editor emptied by select-all+delete (no wrapping block left) still fires onSlashTrigger', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = ''
+    editorEl.appendChild(document.createTextNode('/'))
+    const textNode = editorEl.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, 1)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(hooks.slashRanges.length).toBe(1)
+    editor.destroy()
+  })
 })
 
 describe('keyboard shortcuts', () => {

@@ -245,7 +245,12 @@ describe('renderActionItems — edit modal', () => {
     summaryInput.value = 'New task'
     const dueInput = document.querySelector('.tt-kanban-form input[type="date"]') as HTMLInputElement
     dueInput.value = '2026-08-01'
-    ;(document.querySelectorAll('.tt-kanban-color-chip')[2] as HTMLButtonElement).click() // 3rd = sage
+    // Scoped to the modal form: the toolbar's filter chips now share the
+    // .tt-kanban-color-chip class (same square swatch pattern), so an
+    // unscoped query would also match those. Selected by color class, not
+    // position, so the chip display order (COLORS in action-items.ts) is
+    // free to change without breaking this.
+    ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-sage') as HTMLButtonElement).click()
 
     clickByTitleOrText(document.body, 'Save')
 
@@ -373,25 +378,60 @@ describe('renderActionItems — zone clear-all', () => {
   })
 })
 
-describe('renderActionItems — edit tags modal', () => {
-  // Finds the text input in the edit-tags row whose swatch carries `color-${color}`
-  // — avoids the `:has()` CSS selector, whose jsdom/nwsapi support is version-
-  // dependent, in favor of a plain DOM walk.
-  function tagRowInput(color: string): HTMLInputElement {
-    const row = Array.from(document.querySelectorAll('.tt-edit-tags-row')).find((r) => r.querySelector(`.color-${color}`))
-    if (!row) throw new Error(`no edit-tags row for color "${color}"`)
+describe('renderActionItems — edit tags modal (toolbar)', () => {
+  // Finds the naming row whose swatch carries `color-${color}`.
+  function nameRowInput(color: string): HTMLInputElement {
+    const row = Array.from(document.querySelectorAll('.tt-kanban-color-name-row')).find((r) => r.querySelector(`.color-${color}`))
+    if (!row) throw new Error(`no color-name row for color "${color}"`)
     return row.querySelector('input') as HTMLInputElement
   }
+  function openTagsModal(container: HTMLElement): void {
+    clickByTitleOrText(container, 'Edit tags')
+  }
 
-  test('"Edit tags" opens a modal with one row per color, pre-filled from actionTagNames', () => {
+  test('the toolbar has an "Edit tags" button, right-aligned as the last element (no card-modal entry point anymore)', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const toolbar = container.querySelector('.tt-kanban-toolbar')!
+    const btn = toolbar.querySelector('.tt-kanban-edit-tags-btn')!
+    expect(btn.textContent).toBe('Edit tags')
+    expect(toolbar.lastElementChild).toBe(btn) // right-aligned via margin-left: auto
+  })
+
+  test('a card\'s color picker no longer offers a way to edit tag names', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    expect(document.querySelector('.tt-kanban-color-names-btn')).toBeNull()
+  })
+
+  test('opens a modal with one row per color, square swatches and no generic-name text — pre-filled from actionTagNames', () => {
     const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, 'Edit tags')
-    expect(document.querySelectorAll('.tt-edit-tags-row')).toHaveLength(6)
-    expect(tagRowInput('rust').value).toBe('Blocked')
-    expect(tagRowInput('slate').value).toBe('')
+    openTagsModal(container)
+    expect(document.querySelectorAll('.tt-kanban-color-name-row')).toHaveLength(6)
+    const rustSwatch = document.querySelector('.tt-kanban-color-name-row .color-rust')!
+    expect(rustSwatch.textContent?.trim()).toBe('')
+    expect(nameRowInput('rust').value).toBe('Blocked')
+    expect(nameRowInput('slate').value).toBe('')
+  })
+
+  test('rust/brass/slate suggest a starter name as the placeholder; the rest fall back to the plain color name', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    openTagsModal(container)
+    expect(nameRowInput('rust').placeholder).toBe('Urgent')
+    expect(nameRowInput('brass').placeholder).toBe('Blocked')
+    expect(nameRowInput('slate').placeholder).toBe('In Review')
+    expect(nameRowInput('sage').placeholder).toBe('Sage')
   })
 
   test('saving writes trimmed, non-empty names into actionTagNames', () => {
@@ -399,8 +439,8 @@ describe('renderActionItems — edit tags modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, 'Edit tags')
-    tagRowInput('rust').value = '  Blocked  '
+    openTagsModal(container)
+    nameRowInput('rust').value = '  Blocked  '
     clickByTitleOrText(document.body, 'Save')
 
     expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
@@ -411,8 +451,8 @@ describe('renderActionItems — edit tags modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, 'Edit tags')
-    tagRowInput('rust').value = ''
+    openTagsModal(container)
+    nameRowInput('rust').value = ''
     clickByTitleOrText(document.body, 'Save')
 
     expect(store.doc.teams[0]!.actionTagNames).toEqual({ plum: 'Urgent' })
@@ -423,8 +463,8 @@ describe('renderActionItems — edit tags modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, 'Edit tags')
-    tagRowInput('rust').value = 'Something else'
+    openTagsModal(container)
+    nameRowInput('rust').value = 'Something else'
     clickByTitleOrText(document.body, 'Cancel')
 
     expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
@@ -432,14 +472,25 @@ describe('renderActionItems — edit tags modal', () => {
 })
 
 describe('renderActionItems — tag display and filter', () => {
-  // Finds the chip/badge whose swatch (or the element itself) carries
-  // `color-${color}` — avoids relying on visible text, which is now blank
-  // for colors without a custom name.
+  // Finds the chip/badge carrying `color-${color}` — avoids relying on
+  // visible text, which is now blank for colors without a custom name.
   function chipByColor(container: ParentNode, selector: string, color: string): HTMLElement {
-    const found = Array.from(container.querySelectorAll<HTMLElement>(selector)).find((c) => c.querySelector(`.color-${color}`))
+    const found = Array.from(container.querySelectorAll<HTMLElement>(selector)).find((c) => c.classList.contains(`color-${color}`))
     if (!found) throw new Error(`no "${selector}" for color "${color}"`)
     return found
   }
+
+  test('a "Filter:" label sits to the left of the tag chips', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const toolbar = container.querySelector('.tt-kanban-toolbar')!
+    const label = toolbar.querySelector('.tt-kanban-filter-label')!
+    expect(label.textContent).toBe('Filter:')
+    // Precedes the chips row in DOM order — reads left-to-right in the toolbar.
+    expect(label.compareDocumentPosition(toolbar.querySelector('.tt-kanban-tag-chips')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 
   test('a card shows a tag badge only when its color has a custom name; unnamed colors get no badge', () => {
     const team = makeTeam({
@@ -462,9 +513,43 @@ describe('renderActionItems — tag display and filter', () => {
 
     const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
     const slateChip = chipByColor(container, '.tt-kanban-tag-chip', 'slate')
+    expect(rustChip.classList.contains('tt-kanban-color-chip')).toBe(true) // same square swatch pattern as the modal's color picker
     expect(rustChip.textContent?.trim()).toBe('Blocked')
     expect(slateChip.textContent?.trim()).toBe('')
-    expect(slateChip.getAttribute('aria-label')).toBe('Slate')
+    expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
+  })
+
+  test('creating a card whose color differs from the active filter clears the filter, so the new card is guaranteed visible', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'old', color: 'slate' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    chipByColor(container, '.tt-kanban-tag-chip', 'slate').click() // filter to slate
+    expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['old'])
+
+    clickByTitleOrText(container, '+ Card')
+    ;(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement).value = 'New task'
+    ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-rust') as HTMLButtonElement).click()
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(cards(container)).toHaveLength(2)
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(false)
+  })
+
+  test('creating a card whose color matches the active filter leaves the filter in place', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'old', color: 'slate' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    chipByColor(container, '.tt-kanban-tag-chip', 'slate').click() // filter to slate
+
+    clickByTitleOrText(container, '+ Card')
+    ;(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement).value = 'New slate task'
+    ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-slate') as HTMLButtonElement).click()
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(cards(container)).toHaveLength(2) // both slate cards still shown
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(true)
   })
 
   test('clicking a chip filters cards to that color across all columns; clicking again clears it', () => {
@@ -521,64 +606,13 @@ describe('renderActionItems — color chip labels in the edit modal', () => {
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card')
-    const chips = Array.from(document.querySelectorAll('.tt-kanban-color-chip'))
+    const chips = Array.from(document.querySelectorAll('.tt-kanban-form .tt-kanban-color-chip'))
     const rustChip = chips.find((c) => c.classList.contains('color-rust'))!
     const slateChip = chips.find((c) => c.classList.contains('color-slate'))!
 
     expect(rustChip.textContent?.trim()).toBe('Blocked')
     expect(slateChip.textContent?.trim()).toBe('')
-    expect(slateChip.getAttribute('aria-label')).toBe('Slate')
-  })
-
-  test('a button beside the color chips opens Edit tags; saving refreshes the chip in place without closing the card modal', () => {
-    const team = makeTeam()
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, '+ Card')
-    const openNamesBtn = document.querySelector('.tt-kanban-color-names-btn') as HTMLButtonElement
-    expect(openNamesBtn).not.toBeNull()
-    openNamesBtn.click()
-
-    const rows = Array.from(document.querySelectorAll('.tt-edit-tags-row'))
-    expect(rows).toHaveLength(6) // opened from the card modal, not the toolbar — still the full color list
-    const rustRow = rows.find((r) => r.querySelector('.color-rust'))!
-    ;(rustRow.querySelector('input') as HTMLInputElement).value = 'Blocked'
-
-    const tagsDialog = document.querySelector('.tt-edit-tags-form')!.closest('.tt-modal-dialog')!
-    const saveBtn = Array.from(tagsDialog.querySelectorAll('button')).find((b) => b.textContent === 'Save')! as HTMLButtonElement
-    saveBtn.click()
-
-    expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
-    expect(document.querySelectorAll('.tt-edit-tags-form')).toHaveLength(0) // tags modal closed
-    expect(document.querySelector('.tt-kanban-form')).not.toBeNull() // card modal still open
-
-    const rustChip = Array.from(document.querySelectorAll('.tt-kanban-color-chip')).find((c) => c.classList.contains('color-rust'))!
-    expect(rustChip.textContent?.trim()).toBe('Blocked')
-  })
-
-  test('picking a color survives refreshing the chips after an Edit tags save', () => {
-    const team = makeTeam()
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, '+ Card')
-    const rustChipBefore = Array.from(document.querySelectorAll('.tt-kanban-color-chip')).find((c) => c.classList.contains('color-rust'))! as HTMLButtonElement
-    rustChipBefore.click()
-    expect(rustChipBefore.classList.contains('selected')).toBe(true)
-
-    ;(document.querySelector('.tt-kanban-color-names-btn') as HTMLButtonElement).click()
-    const tagsDialog = document.querySelector('.tt-edit-tags-form')!.closest('.tt-modal-dialog')!
-    const saveBtn = Array.from(tagsDialog.querySelectorAll('button')).find((b) => b.textContent === 'Save')! as HTMLButtonElement
-    saveBtn.click()
-
-    const rustChipAfter = Array.from(document.querySelectorAll('.tt-kanban-color-chip')).find((c) => c.classList.contains('color-rust'))!
-    expect(rustChipAfter.classList.contains('selected')).toBe(true)
-
-    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
-    summaryInput.value = 'Task'
-    clickByTitleOrText(document.body, 'Save')
-    expect(store.doc.teams[0]!.actionItems[0]!.color).toBe('rust')
+    expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
   })
 })
 
@@ -694,5 +728,34 @@ describe('renderActionItems — drag and drop', () => {
     expect(wipZone.classList.contains('drag-over')).toBe(false)
     expect(wipZone.classList.contains('active')).toBe(false)
     expect(todoZone.classList.contains('active')).toBe(false)
+  })
+
+  test('dragstart marks the module as dragging (CSS shrinks the column drop-zones to clear space for the full-width trash bar); dragend/drop clear it', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const root = container.querySelector('.tt-kanban')!
+    const card = cards(container)[0]!
+    expect(root.classList.contains('dragging')).toBe(false)
+
+    card.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    expect(root.classList.contains('dragging')).toBe(true)
+
+    card.dispatchEvent(new Event('dragend', { bubbles: true }))
+    expect(root.classList.contains('dragging')).toBe(false)
+  })
+
+  test('dropping a card (not just dragend) also clears the dragging class', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'todo' }), item({ id: 'w', status: 'wip', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const root = container.querySelector('.tt-kanban')!
+    const wipBody = container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-col-body')!
+    cards(container)[0]!.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    wipBody.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+
+    expect(root.classList.contains('dragging')).toBe(false)
   })
 })
