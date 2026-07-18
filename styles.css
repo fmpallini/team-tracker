@@ -245,7 +245,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
 .tt-team-name { font-family: var(--font-display); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-team-hotkey { font-family: var(--font-data); color: var(--muted); font-size: .7rem; text-align: right; flex: none; }
 .tt-team-edit-btn { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-team-add-btn { width: calc(100% - 1rem); margin: .5rem; }
@@ -538,7 +537,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-col-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; padding: .3rem .4rem .6rem; border-bottom: 2px solid var(--border); margin-bottom: .5rem; flex: none; }
 .tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
+.tt-kanban-col-body-wrap { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tt-kanban-col-body { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; flex: 1; min-height: 40px; padding-bottom: .5rem; }
+/* Drop-zone highlight — mirrors .tt-people-root-drop's dashed-overlay
+   treatment. Lives in the wrap (sibling of the body, not a child of it) so
+   renderAll()'s `body.innerHTML = ''` never destroys it mid-drag. */
+.tt-kanban-dropzone {
+  display: none; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: 8px;
+}
+.tt-kanban-dropzone.active { display: block; }
+.tt-kanban-dropzone.drag-over { background: rgba(var(--accent-rgb), .12); }
 .tt-kanban-empty { color: var(--muted); padding: .5rem; font-size: .85rem; }
 .tt-kanban-zone-label { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 .3rem; flex: none; }
 .tt-kanban-zone-trash { border: none; background: transparent; opacity: .6; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
@@ -582,8 +591,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-form .editor { min-height: 120px; max-height: 280px; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
+.tt-kanban-color-field-row { display: flex; align-items: center; gap: .5rem; }
+.tt-kanban-color-names-btn { flex: none; padding: .2rem .4rem; font-size: .85rem; }
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
-.tt-kanban-color-chip { width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0; }
+.tt-kanban-color-chip {
+  min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
+  font-size: .72rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
 .tt-kanban-color-chip.color-slate { background: var(--card-slate); }
 .tt-kanban-color-chip.color-brass { background: var(--card-brass); }
 .tt-kanban-color-chip.color-sage { background: var(--card-sage); }

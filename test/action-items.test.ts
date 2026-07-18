@@ -432,7 +432,16 @@ describe('renderActionItems — edit tags modal', () => {
 })
 
 describe('renderActionItems — tag display and filter', () => {
-  test('a card shows its custom tag name when set, or the color name as fallback', () => {
+  // Finds the chip/badge whose swatch (or the element itself) carries
+  // `color-${color}` — avoids relying on visible text, which is now blank
+  // for colors without a custom name.
+  function chipByColor(container: ParentNode, selector: string, color: string): HTMLElement {
+    const found = Array.from(container.querySelectorAll<HTMLElement>(selector)).find((c) => c.querySelector(`.color-${color}`))
+    if (!found) throw new Error(`no "${selector}" for color "${color}"`)
+    return found
+  }
+
+  test('a card shows a tag badge only when its color has a custom name; unnamed colors get no badge', () => {
     const team = makeTeam({
       actionTagNames: { rust: 'Blocked' },
       actionItems: [item({ id: 'a', color: 'rust' }), item({ id: 'b', color: 'slate' })],
@@ -440,17 +449,22 @@ describe('renderActionItems — tag display and filter', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const tags = Array.from(container.querySelectorAll('.tt-kanban-card-tag')).map((n) => n.textContent)
-    expect(tags).toEqual(expect.arrayContaining(['Blocked', 'Slate']))
+    const cardA = cards(container).find((c) => c.getAttribute('data-item-id') === 'a')!
+    const cardB = cards(container).find((c) => c.getAttribute('data-item-id') === 'b')!
+    expect(cardA.querySelector('.tt-kanban-card-tag')?.textContent).toBe('Blocked')
+    expect(cardB.querySelector('.tt-kanban-card-tag')).toBeNull()
   })
 
-  test('renders one filter chip per color, labeled with the custom name or fallback', () => {
+  test('renders one filter chip per color; only custom-named colors show visible text, unnamed ones stay blank with an aria-label', () => {
     const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const chips = Array.from(container.querySelectorAll('.tt-kanban-tag-chip')).map((n) => n.textContent?.trim())
-    expect(chips).toEqual(expect.arrayContaining(['Blocked', 'Slate', 'Brass', 'Sage', 'Plum', 'Ledger']))
+    const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
+    const slateChip = chipByColor(container, '.tt-kanban-tag-chip', 'slate')
+    expect(rustChip.textContent?.trim()).toBe('Blocked')
+    expect(slateChip.textContent?.trim()).toBe('')
+    expect(slateChip.getAttribute('aria-label')).toBe('Slate')
   })
 
   test('clicking a chip filters cards to that color across all columns; clicking again clears it', () => {
@@ -467,9 +481,9 @@ describe('renderActionItems — tag display and filter', () => {
     // renderTagChips() rebuilds .tt-kanban-tag-chip nodes from scratch on
     // every renderAll() (i.e. after every click), so a chip reference held
     // across a click goes stale (detached node, frozen class list from
-    // before the click) — re-query by text instead of reusing one handle.
+    // before the click) — re-query by color each time instead of reusing one handle.
     function findRustChip(): HTMLButtonElement {
-      return Array.from(container.querySelectorAll('.tt-kanban-tag-chip')).find((c) => c.textContent?.includes('Rust'))! as HTMLButtonElement
+      return chipByColor(container, '.tt-kanban-tag-chip', 'rust') as HTMLButtonElement
     }
 
     findRustChip().click()
@@ -492,11 +506,79 @@ describe('renderActionItems — tag display and filter', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const rustChip = Array.from(container.querySelectorAll('.tt-kanban-tag-chip')).find((c) => c.textContent?.includes('Rust'))!
-    ;(rustChip as HTMLButtonElement).click()
+    const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust') as HTMLButtonElement
+    rustChip.click()
 
     expect(container.querySelector('.tt-kanban-zone-label')!.textContent).toContain('Done (2)')
     expect(cards(container)).toHaveLength(1) // only the rust card is drawn
+  })
+})
+
+describe('renderActionItems — color chip labels in the edit modal', () => {
+  test('color chips show their custom tag name once assigned, and stay blank (with an aria-label) otherwise', () => {
+    const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const chips = Array.from(document.querySelectorAll('.tt-kanban-color-chip'))
+    const rustChip = chips.find((c) => c.classList.contains('color-rust'))!
+    const slateChip = chips.find((c) => c.classList.contains('color-slate'))!
+
+    expect(rustChip.textContent?.trim()).toBe('Blocked')
+    expect(slateChip.textContent?.trim()).toBe('')
+    expect(slateChip.getAttribute('aria-label')).toBe('Slate')
+  })
+
+  test('a button beside the color chips opens Edit tags; saving refreshes the chip in place without closing the card modal', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const openNamesBtn = document.querySelector('.tt-kanban-color-names-btn') as HTMLButtonElement
+    expect(openNamesBtn).not.toBeNull()
+    openNamesBtn.click()
+
+    const rows = Array.from(document.querySelectorAll('.tt-edit-tags-row'))
+    expect(rows).toHaveLength(6) // opened from the card modal, not the toolbar — still the full color list
+    const rustRow = rows.find((r) => r.querySelector('.color-rust'))!
+    ;(rustRow.querySelector('input') as HTMLInputElement).value = 'Blocked'
+
+    const tagsDialog = document.querySelector('.tt-edit-tags-form')!.closest('.tt-modal-dialog')!
+    const saveBtn = Array.from(tagsDialog.querySelectorAll('button')).find((b) => b.textContent === 'Save')! as HTMLButtonElement
+    saveBtn.click()
+
+    expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
+    expect(document.querySelectorAll('.tt-edit-tags-form')).toHaveLength(0) // tags modal closed
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull() // card modal still open
+
+    const rustChip = Array.from(document.querySelectorAll('.tt-kanban-color-chip')).find((c) => c.classList.contains('color-rust'))!
+    expect(rustChip.textContent?.trim()).toBe('Blocked')
+  })
+
+  test('picking a color survives refreshing the chips after an Edit tags save', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const rustChipBefore = Array.from(document.querySelectorAll('.tt-kanban-color-chip')).find((c) => c.classList.contains('color-rust'))! as HTMLButtonElement
+    rustChipBefore.click()
+    expect(rustChipBefore.classList.contains('selected')).toBe(true)
+
+    ;(document.querySelector('.tt-kanban-color-names-btn') as HTMLButtonElement).click()
+    const tagsDialog = document.querySelector('.tt-edit-tags-form')!.closest('.tt-modal-dialog')!
+    const saveBtn = Array.from(tagsDialog.querySelectorAll('button')).find((b) => b.textContent === 'Save')! as HTMLButtonElement
+    saveBtn.click()
+
+    const rustChipAfter = Array.from(document.querySelectorAll('.tt-kanban-color-chip')).find((c) => c.classList.contains('color-rust'))!
+    expect(rustChipAfter.classList.contains('selected')).toBe(true)
+
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    summaryInput.value = 'Task'
+    clickByTitleOrText(document.body, 'Save')
+    expect(store.doc.teams[0]!.actionItems[0]!.color).toBe('rust')
   })
 })
 
@@ -571,5 +653,46 @@ describe('renderActionItems — drag and drop', () => {
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
     clickByTitleOrText(document.body, 'Delete')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+  })
+
+  test('dragstart on a card reveals a dashed highlight on all 4 drop zones (todo/wip/done/cancelled); dragend hides them', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const zones = Array.from(container.querySelectorAll('.tt-kanban-dropzone'))
+    expect(zones).toHaveLength(4)
+    expect(zones.every((z) => !z.classList.contains('active'))).toBe(true)
+
+    const card = cards(container)[0]!
+    card.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    expect(zones.every((z) => z.classList.contains('active'))).toBe(true)
+
+    card.dispatchEvent(new Event('dragend', { bubbles: true }))
+    expect(zones.every((z) => z.classList.contains('active'))).toBe(false)
+  })
+
+  test('dragover on a column body highlights only that zone; dropping clears every zone\'s highlight', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'todo' }), item({ id: 'w', status: 'wip', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const todoCol = container.querySelectorAll('.tt-kanban-col')[0]!
+    const wipCol = container.querySelectorAll('.tt-kanban-col')[1]!
+    const wipBody = wipCol.querySelector('.tt-kanban-col-body')!
+    // The zone overlay lives beside the body (inside the shared wrap), not
+    // inside it — see the comment on .tt-kanban-col-body-wrap in styles.css.
+    const todoZone = todoCol.querySelector('.tt-kanban-dropzone')!
+    const wipZone = wipCol.querySelector('.tt-kanban-dropzone')!
+
+    cards(container)[0]!.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    wipBody.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }))
+    expect(wipZone.classList.contains('drag-over')).toBe(true)
+    expect(todoZone.classList.contains('drag-over')).toBe(false)
+
+    wipBody.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    expect(wipZone.classList.contains('drag-over')).toBe(false)
+    expect(wipZone.classList.contains('active')).toBe(false)
+    expect(todoZone.classList.contains('active')).toBe(false)
   })
 })

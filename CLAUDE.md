@@ -46,6 +46,7 @@ Tests define `__PWA__: false` in `vitest.config.ts`, so the service-worker branc
 
 - `main` is the release branch — PR-required, full gate (lint/typecheck/test + build on ubuntu+windows, CodeQL). `dev` takes direct commits — no feature branch required, light gate via `.githooks/pre-push` + CI. One-time setup per machine: `git config core.hooksPath .githooks` (see `.githooks/README.md` for the full gate list, including opt-in AI review gates via `ENABLE_AI=1`, dev-only).
 - `dev → main` PRs are merged with a **merge commit** (`gh pr merge --merge`), never squash. A merge commit's parents include `dev`'s actual tip, so `dev` is immediately an ancestor of `main` again — no separate "sync dev back" step needed, and `dev`'s ahead-count never drifts. (Squash was the original convention here and was abandoned: it mints a brand-new commit hash on `main` untethered from `dev`'s commits, so `dev` accumulates a permanently-growing "ahead" count that no amount of merging `main` back into `dev` can resolve — git compares commit ancestry, not diff content. If `main`/`dev` ever visibly diverge again — GitHub showing `dev` N commits ahead with 0 behind — suspect a squash-merged PR and check `git rev-list --count origin/main..origin/dev`.)
+- No worktrees. All dev work happens directly on `dev` in this single checkout — don't create git worktrees or feature branches for tasks here, even when a skill suggests it.
 
 ## Conventions
 

@@ -97,26 +97,29 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   let activeTagFilter: ActionItem['color'] | null = null
 
-  function tagLabel(color: ActionItem['color']): string {
-    return findTeam()?.actionTagNames?.[color] ?? t(lc, COLOR_KEYS[color])
+  /** The team's custom name for `color`, or `null` if none has been assigned yet (see openEditTagsModal). Unnamed colors render as a bare swatch — no generic fallback text. */
+  function customTagName(color: ActionItem['color']): string | null {
+    return findTeam()?.actionTagNames?.[color] ?? null
   }
 
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
   function renderTagChips(): void {
     tagChipsEl.innerHTML = ''
     for (const c of COLORS) {
+      const custom = customTagName(c)
       const chip = el(
         'button',
         {
           type: 'button',
           class: 'tt-kanban-tag-chip' + (activeTagFilter === c ? ' selected' : ''),
+          'aria-label': custom ?? t(lc, COLOR_KEYS[c]),
           onclick: () => {
             activeTagFilter = activeTagFilter === c ? null : c
             renderAll()
           },
         },
         el('span', { class: `tt-kanban-tag-chip-swatch color-${c}` }),
-        ` ${tagLabel(c)}`
+        custom ? ` ${custom}` : null
       )
       tagChipsEl.appendChild(chip)
     }
@@ -217,15 +220,31 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         chip.classList.toggle('selected', chip.getAttribute('data-color') === selectedColor)
       })
     }
-    for (const c of COLORS) {
-      colorRow.appendChild(
-        el('button', {
-          type: 'button', class: `tt-kanban-color-chip color-${c}`, 'data-color': c, title: t(lc, COLOR_KEYS[c]),
-          onclick: () => { selectedColor = c; paintSelectedColor() },
-        })
-      )
+    function renderColorChips(): void {
+      colorRow.innerHTML = ''
+      for (const c of COLORS) {
+        const custom = customTagName(c)
+        colorRow.appendChild(
+          el('button', {
+            type: 'button', class: `tt-kanban-color-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? t(lc, COLOR_KEYS[c]),
+            onclick: () => { selectedColor = c; paintSelectedColor() },
+          }, custom)
+        )
+      }
+      paintSelectedColor()
     }
-    paintSelectedColor()
+    renderColorChips()
+    // Lets someone name a color right from the card they're tagging, instead
+    // of backing out to the toolbar's "Edit tags" button. Opens as a nested
+    // modal (same stacking as e.g. src/ui/prefs.ts's template delete-confirm)
+    // on top of this one; renderColorChips() re-reads actionTagNames and
+    // repaints in place once it closes, since a background store.update()
+    // doesn't touch this modal's detached DOM the way renderAll() does.
+    const editColorNamesBtn = el(
+      'button',
+      { type: 'button', class: 'tt-btn tt-kanban-color-names-btn', title: t(lc, 'kanban_edit_tags_btn'), onclick: () => openEditTagsModal(renderColorChips) },
+      '✎'
+    )
 
     const body = el(
       'div',
@@ -238,7 +257,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), dueInput),
         el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeInput)
       ),
-      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow),
+      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), el('div', { class: 'tt-kanban-color-field-row' }, colorRow, editColorNamesBtn)),
       errorEl
     )
 
@@ -298,7 +317,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     summaryInput.focus()
   }
 
-  function openEditTagsModal(): void {
+  /** `onSaved` lets a caller with its own detached modal content (see openEditModal's editColorNamesBtn) repaint after a save — a background store.update() alone won't reach DOM outside the subscribe()-driven renderAll(). */
+  function openEditTagsModal(onSaved?: () => void): void {
     const tm = findTeam()
     if (!tm) return
     const inputs = new Map<ActionItem['color'], HTMLInputElement>()
@@ -326,6 +346,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           target.actionTagNames = nextTags
         })
         handle.close()
+        onSaved?.()
       },
     }
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_edit_tags_title'), body, buttons: [cancelBtn, saveBtn] })
@@ -347,7 +368,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, todayIso()) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
     }
     if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
-    metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, tagLabel(item.color)))
+    const customName = customTagName(item.color)
+    if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
 
     const card = el(
@@ -360,6 +382,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     card.addEventListener('dragstart', (e) => {
       draggedId = item.id
       trashEl.classList.add('active')
+      showDropZones()
       const dt = (e as DragEvent).dataTransfer
       if (dt) { dt.setData('text/plain', item.id); dt.effectAllowed = 'move' }
     })
@@ -383,6 +406,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       // can detach this drag source before its own `dragend` — the usual
       // hider — ever fires, leaving the trash zone stuck visible.
       trashEl.classList.remove('active', 'drag-over')
+      hideDropZones()
       const srcId = draggedId
       draggedId = null
       if (srcId === null) return
@@ -398,6 +422,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       draggedId = null
       clearDropClasses()
       trashEl.classList.remove('active', 'drag-over')
+      hideDropZones()
     })
 
     return card
@@ -410,13 +435,35 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const doneCountEl = el('span', {})
   const cancelledCountEl = el('span', {})
 
+  // Drop-zone highlight overlays — one per status body, mirroring
+  // src/modules/people-tree.ts's rootDropEl. Each lives in its own
+  // `tt-kanban-col-body-wrap` (position: relative), a sibling of the body
+  // rather than a child of it, because renderAll() wipes each body's
+  // innerHTML on every store change; a child here would be destroyed along
+  // with the cards. Absolutely positioned so toggling it never reflows the
+  // body's flex-laid-out cards (see wireColumnDrop / renderCard dragstart).
+  function bodyWrap(bodyEl: HTMLElement, zoneEl: HTMLElement): HTMLElement {
+    return el('div', { class: 'tt-kanban-col-body-wrap' }, bodyEl, zoneEl)
+  }
+  const todoZoneEl = el('div', { class: 'tt-kanban-dropzone' })
+  const wipZoneEl = el('div', { class: 'tt-kanban-dropzone' })
+  const doneZoneEl = el('div', { class: 'tt-kanban-dropzone' })
+  const cancelledZoneEl = el('div', { class: 'tt-kanban-dropzone' })
+  const dropZones = [todoZoneEl, wipZoneEl, doneZoneEl, cancelledZoneEl]
+  function showDropZones(): void {
+    dropZones.forEach((z) => z.classList.add('active'))
+  }
+  function hideDropZones(): void {
+    dropZones.forEach((z) => z.classList.remove('active', 'drag-over'))
+  }
+
   const todoColEl = el(
     'div', { class: 'tt-kanban-col' },
     el('div', { class: 'tt-kanban-col-head' },
       el('span', {}, t(lc, 'kanban_col_todo')),
       el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'todo') }, t(lc, 'kanban_add_card'))
     ),
-    todoBodyEl
+    bodyWrap(todoBodyEl, todoZoneEl)
   )
   const wipColEl = el(
     'div', { class: 'tt-kanban-col' },
@@ -424,18 +471,18 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       el('span', {}, t(lc, 'kanban_col_wip')),
       el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'wip') }, t(lc, 'kanban_add_card'))
     ),
-    wipBodyEl
+    bodyWrap(wipBodyEl, wipZoneEl)
   )
   const doneCancelColEl = el(
     'div', { class: 'tt-kanban-col' },
     el('div', { class: 'tt-kanban-col-head' }, el('span', {}, t(lc, 'kanban_col_done_cancelled'))),
     el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
       el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
-    doneBodyEl,
+    bodyWrap(doneBodyEl, doneZoneEl),
     el('div', { class: 'tt-kanban-divider' }),
     el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
       el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, '🗑')),
-    cancelledBodyEl
+    bodyWrap(cancelledBodyEl, cancelledZoneEl)
   )
 
   const boardEl = el('div', { class: 'tt-kanban-board' }, todoColEl, wipColEl, doneCancelColEl)
@@ -457,6 +504,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   trashEl.addEventListener('drop', (e) => {
     e.preventDefault()
     trashEl.classList.remove('active', 'drag-over')
+    hideDropZones()
     const srcId = draggedId
     draggedId = null
     if (srcId === null) return
@@ -465,16 +513,27 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   })
 
   /** Catches a drop onto empty column space (below the last card, or an empty column) — the case moveCard's `targetId === null` append handles. Card-level drop handlers already stopPropagation() so this never double-fires for a drop that landed on a specific card. */
-  function wireColumnDrop(bodyEl: HTMLElement, status: ActionItem['status']): void {
+  function wireColumnDrop(bodyEl: HTMLElement, status: ActionItem['status'], zoneEl: HTMLElement): void {
     bodyEl.addEventListener('dragover', (e) => {
       if (draggedId === null) return
       e.preventDefault()
+      zoneEl.classList.add('drag-over')
+    })
+    // A dragover on a child card bubbles here too (cards don't stopPropagation
+    // on dragover), so a dragleave fired while moving between child cards
+    // would otherwise flicker the highlight off and back on — ignore it
+    // unless the pointer actually left the body's subtree.
+    bodyEl.addEventListener('dragleave', (e) => {
+      const related = (e as DragEvent).relatedTarget as Node | null
+      if (related && bodyEl.contains(related)) return
+      zoneEl.classList.remove('drag-over')
     })
     bodyEl.addEventListener('drop', (e) => {
       e.preventDefault()
       // Hide eagerly — see the identical comment on the card-level drop
       // handler above.
       trashEl.classList.remove('active', 'drag-over')
+      hideDropZones()
       const srcId = draggedId
       draggedId = null
       if (srcId === null) return
@@ -485,10 +544,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       })
     })
   }
-  wireColumnDrop(todoBodyEl, 'todo')
-  wireColumnDrop(wipBodyEl, 'wip')
-  wireColumnDrop(doneBodyEl, 'done')
-  wireColumnDrop(cancelledBodyEl, 'cancelled')
+  wireColumnDrop(todoBodyEl, 'todo', todoZoneEl)
+  wireColumnDrop(wipBodyEl, 'wip', wipZoneEl)
+  wireColumnDrop(doneBodyEl, 'done', doneZoneEl)
+  wireColumnDrop(cancelledBodyEl, 'cancelled', cancelledZoneEl)
 
   function updateDatalist(): void {
     datalistEl.innerHTML = ''

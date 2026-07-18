@@ -253,7 +253,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const numEl = el('span', { class: 'tt-team-num' }, String(index + 1))
       const emojiEl = el('span', { class: 'tt-team-emoji' }, team.emoji)
       const nameEl = el('span', { class: 'tt-team-name' }, team.name)
-      const hotkeyEl = index < 9 ? el('span', { class: 'tt-team-hotkey' }, `Alt+${index + 1}`) : null
       const dueCount = teamDueCounts.get(team.id) ?? 0
       const teamDueBadgeEl = dueCount > 0 ? el('span', { class: 'tt-team-due-badge' }, String(dueCount)) : null
       const editBtn = el(
@@ -269,7 +268,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         },
         '✎'
       )
-      item.append(numEl, emojiEl, nameEl, ...(hotkeyEl ? [hotkeyEl] : []), ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
+      item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
 
       item.addEventListener('click', () => {
         actions.selectTeam(team.id)
