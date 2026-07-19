@@ -11,6 +11,7 @@ import { resolveTemplate, type TemplateCtx } from '../core/templates'
 import type { Template } from '../core/types'
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 
 export interface TemplatePickerHandle {
   /** Closes any open dropdown and removes all document/element listeners this instance attached. Idempotent. */
@@ -97,6 +98,8 @@ export function attachTemplatePicker(editor: Editor, opts: {
 
   // --- dropdown rendering ---------------------------------------------------
 
+  // Hover/arrow selection repaints in place via paintSelection — see
+  // src/ui/select-list.ts for the rebuild-on-hover Chrome loop this avoids.
   function renderList(): void {
     if (!listEl) return
     listEl.innerHTML = ''
@@ -107,29 +110,16 @@ export function attachTemplatePicker(editor: Editor, opts: {
     items.forEach((tpl, i) => {
       const row = el(
         'div',
-        {
-          class: 'tt-atref-item' + (i === selected ? ' selected' : ''),
-          onmousedown: (e: Event) => e.preventDefault(),
-          onclick: () => commit(tpl),
-          // Updates the highlight in place rather than calling renderList()
-          // (which used to rebuild every row from scratch here): replacing
-          // the DOM node under a *stationary* pointer makes real Chrome
-          // re-fire mouseenter on the new node, which rebuilt again, forever
-          // — and since the resulting mousedown/mouseup landed on two
-          // different (rebuilt) elements, the browser never synthesized a
-          // click event at all (click requires both on the same element).
-          // That's why clicking a template appeared to do nothing.
-          onmouseenter: () => { selected = i; updateSelectedClass() },
-        },
+        selectableRowProps({
+          class: 'tt-atref-item',
+          selected: i === selected,
+          onCommit: () => commit(tpl),
+          onHover: () => { selected = i; paintSelection(listEl, '.tt-atref-item', selected) },
+        }),
         tpl.name
       )
       listEl!.appendChild(row)
     })
-  }
-
-  function updateSelectedClass(): void {
-    if (!listEl) return
-    Array.from(listEl.children).forEach((child, i) => child.classList.toggle('selected', i === selected))
   }
 
   function positionOverlay(): void {
@@ -173,16 +163,10 @@ export function attachTemplatePicker(editor: Editor, opts: {
 
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') { e.preventDefault(); close(); return }
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      selected = items.length ? Math.min(selected + 1, items.length - 1) : 0
-      renderList()
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      selected = Math.max(selected - 1, 0)
-      renderList()
+      selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)
+      paintSelection(listEl, '.tt-atref-item', selected)
       return
     }
     if (e.key === 'Enter') {

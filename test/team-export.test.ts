@@ -85,7 +85,7 @@ describe('parseImportFile', () => {
 describe('remapForImport', () => {
   it('gives every team/person/item a fresh id, distinct from the source', () => {
     const file = buildExport([sampleTeam()])
-    const [imported] = remapForImport(file.teams)
+    const [imported] = remapForImport(file.teams, 'en-US')
     expect(imported!.id).not.toBe('t1')
     const allNewPersonIds = [...imported!.stakeholders, ...imported!.members].map((p) => p.id)
     expect(allNewPersonIds).not.toContain('p1')
@@ -99,7 +99,7 @@ describe('remapForImport', () => {
 
   it('rebuilds parentId chains against the new ids, not the old ones', () => {
     const file = buildExport([sampleTeam()])
-    const [imported] = remapForImport(file.teams)
+    const [imported] = remapForImport(file.teams, 'en-US')
     const manager = imported!.members.find((p) => p.name === 'Marcus')!
     const report = imported!.members.find((p) => p.name === 'Dana')!
     expect(report.parentId).toBe(manager.id)
@@ -107,13 +107,13 @@ describe('remapForImport', () => {
 
   it('appends " (imported)" to the name unconditionally', () => {
     const file = buildExport([sampleTeam()])
-    const [imported] = remapForImport(file.teams)
+    const [imported] = remapForImport(file.teams, 'en-US')
     expect(imported!.name).toBe('Engineering (imported)')
   })
 
   it('leaves dailyNotes empty and person notes empty on the reconstructed Team', () => {
     const file = buildExport([sampleTeam()])
-    const [imported] = remapForImport(file.teams)
+    const [imported] = remapForImport(file.teams, 'en-US')
     expect(imported!.dailyNotes).toEqual({})
     expect(imported!.stakeholders[0]!.notes).toBe('')
   })
@@ -129,14 +129,14 @@ describe('actionTagNames pass-through', () => {
   it('remapForImport carries actionTagNames through without remapping (keyed by color, not id)', () => {
     const team = { ...sampleTeam(), actionTagNames: { plum: 'Urgent' } }
     const file = buildExport([team])
-    const [imported] = remapForImport(file.teams)
+    const [imported] = remapForImport(file.teams, 'en-US')
     expect(imported!.actionTagNames).toEqual({ plum: 'Urgent' })
   })
 
   it('a team with no actionTagNames exports and imports with an empty object', () => {
     const file = buildExport([sampleTeam()])
     expect(file.teams[0]!.actionTagNames).toEqual({})
-    const [imported] = remapForImport(file.teams)
+    const [imported] = remapForImport(file.teams, 'en-US')
     expect(imported!.actionTagNames).toEqual({})
   })
 })

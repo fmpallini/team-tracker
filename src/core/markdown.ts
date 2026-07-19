@@ -1,8 +1,11 @@
+import { REF_KINDS, refPattern, type IdRefKind } from './refs'
+
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 export type LabelResolver = (target: RefInfo['target']) => string | null
 
-const REF_PATTERN = /@\[([^\]]+)\]\((person:[^)\s]+|day:\d{4}-\d{2}-\d{2}|action:[^)\s]+|milestone:[^)\s]+|risk:[^)\s]+)\)/g
+const REF_PATTERN = refPattern()
+const DAY_TARGET = new RegExp(`^${REF_KINDS.day.targetPattern}$`)
 
 function inline(s: string, resolveLabel?: LabelResolver): string {
   let out = esc(s)
@@ -54,12 +57,13 @@ export interface RefInfo {
     | { kind: 'risk'; id: string }
 }
 export function parseRef(href: string): RefInfo['target'] | null {
-  if (href.startsWith('person:')) return { kind: 'person', id: href.slice(7) }
-  if (href.startsWith('action:')) return { kind: 'action', id: href.slice(7) }
-  if (href.startsWith('milestone:')) return { kind: 'milestone', id: href.slice(10) }
-  if (href.startsWith('risk:')) return { kind: 'risk', id: href.slice(5) }
-  const m = /^day:(\d{4}-\d{2}-\d{2})$/.exec(href)
-  return m ? { kind: 'day', date: m[1]! } : null
+  const sep = href.indexOf(':')
+  if (sep < 0) return null
+  const kind = href.slice(0, sep)
+  if (!(kind in REF_KINDS)) return null
+  const target = href.slice(sep + 1)
+  if (kind === 'day') return DAY_TARGET.test(target) ? { kind: 'day', date: target } : null
+  return { kind: kind as IdRefKind, id: target }
 }
 
 function inlineMd(node: Node): string {

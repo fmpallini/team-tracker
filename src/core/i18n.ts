@@ -1,4 +1,6 @@
 // src/core/i18n.ts
+import { pad2 } from './date'
+
 export type Locale = 'pt-BR' | 'en-US'
 
 const pt = {
@@ -316,16 +318,15 @@ const pt = {
   data_export_heading: 'Exportar times',
   data_export_hint: 'Notas pessoais e diárias nunca são incluídas.',
   data_export_empty: 'Nenhum time neste arquivo para exportar.',
-  data_export_select_label: 'Times para exportar',
   data_export_btn: 'Exportar selecionados',
   data_export_success_toast: 'Times exportados',
   data_import_heading: 'Importar times',
   data_import_hint: 'Notas pessoais e diárias nunca são incluídas.',
   data_import_pick_btn: 'Escolher arquivo…',
-  data_import_select_label: 'Times para importar',
   data_import_summary: '{stakeholders} stakeholders · {members} membros · {actionItems} ações · {milestones} marcos · {risks} riscos',
   data_import_btn: 'Importar selecionados',
   data_import_success_toast: 'Times importados',
+  team_imported_suffix: '(importado)',
   err_export_invalid_file: 'Arquivo inválido — não é um export de times do Team Tracker',
   err_export_too_new: 'Este arquivo foi exportado por uma versão mais nova do Team Tracker',
   save_error_toast: 'Falha ao salvar — os dados seguem em memória',
@@ -672,16 +673,15 @@ const en: Record<MsgKey, string> = {
   data_export_heading: 'Export teams',
   data_export_hint: 'Personal notes and daily notes are never included.',
   data_export_empty: 'No teams in this file to export.',
-  data_export_select_label: 'Teams to export',
   data_export_btn: 'Export selected',
   data_export_success_toast: 'Teams exported',
   data_import_heading: 'Import teams',
   data_import_hint: 'Personal notes and daily notes are never included.',
   data_import_pick_btn: 'Choose file…',
-  data_import_select_label: 'Teams to import',
   data_import_summary: '{stakeholders} stakeholders · {members} members · {actionItems} action items · {milestones} milestones · {risks} risks',
   data_import_btn: 'Import selected',
   data_import_success_toast: 'Teams imported',
+  team_imported_suffix: '(imported)',
   err_export_invalid_file: 'Invalid file — not a Team Tracker teams export',
   err_export_too_new: 'This file was exported by a newer version of Team Tracker',
   save_error_toast: 'Failed to save — your data is still safe in memory',
@@ -725,10 +725,6 @@ export function t(locale: Locale, key: MsgKey, params?: Record<string, string>):
     }
   }
   return msg
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
 }
 
 export function formatDate(iso: string, locale: Locale): string {

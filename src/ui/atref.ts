@@ -4,13 +4,14 @@
 // wires into EditorHooks.onRefClick.
 import { AT_TRIGGER_EVENT, type Editor } from './editor'
 import type { RefInfo, LabelResolver } from '../core/markdown'
-import { t, formatDate, parseLocaleDate, type Locale, type MsgKey } from '../core/i18n'
-import { normalize, KIND_ICON, type TeamRefCandidates } from '../core/search'
+import { t, todayIso, formatDate, parseLocaleDate, type Locale } from '../core/i18n'
+import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from '../core/search'
+import { REF_KINDS } from '../core/refs'
+import { addDaysIso } from '../core/date'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { el } from './dom'
-
-export type { AtPerson } from '../core/search'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -25,12 +26,6 @@ export type AtItem =
 const RELATIVE_DAYS: Record<Locale, [string, number][]> = {
   'pt-BR': [['hoje', 0], ['ontem', -1], ['amanhã', 1]],
   'en-US': [['today', 0], ['yesterday', -1], ['tomorrow', 1]],
-}
-
-function isoWithOffset(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const GROUP_CAP = 5
@@ -49,14 +44,17 @@ export function filterAtItems(candidates: TeamRefCandidates, typed: string, loca
   const trimmed = typed.trim()
   const q = normalize(trimmed)
 
-  const people: AtItem[] = candidates.people
-    .filter((p) => normalize(p.name).includes(q))
-    .slice(0, GROUP_CAP)
-    .map((p): AtItem => ({ kind: 'person', id: p.id, name: p.name }))
+  const matches = (list: RefCandidate[]): RefCandidate[] =>
+    list.filter((c) => normalize(c.title).includes(q)).slice(0, GROUP_CAP)
+  const pickItems = (kind: 'action' | 'milestone' | 'risk', list: RefCandidate[]): AtItem[] =>
+    matches(list).map((c): AtItem => ({ kind, id: c.id, title: c.title }))
+
+  const people: AtItem[] = matches(candidates.people).map((p): AtItem => ({ kind: 'person', id: p.id, name: p.title }))
 
   const days: AtItem[] = []
+  const today = todayIso()
   for (const [word, offset] of RELATIVE_DAYS[locale]) {
-    if (normalize(word).startsWith(q)) days.push({ kind: 'day', date: isoWithOffset(offset), relativeWord: word })
+    if (normalize(word).startsWith(q)) days.push({ kind: 'day', date: addDaysIso(today, offset), relativeWord: word })
   }
   const iso = parseLocaleDate(trimmed, locale)
   if (iso) days.push({ kind: 'day', date: iso })
@@ -64,24 +62,15 @@ export function filterAtItems(candidates: TeamRefCandidates, typed: string, loca
   // selectable day item using today+2 — its label (a plain "go to day"
   // result showing a dd/mm/yyyy-shaped date) doubles as a worked example of
   // the exact-date format users can type directly, without any new copy.
-  if (trimmed === '') days.push({ kind: 'day', date: isoWithOffset(2) })
+  if (trimmed === '') days.push({ kind: 'day', date: addDaysIso(today, 2) })
 
-  const actions: AtItem[] = candidates.actionItems
-    .filter((c) => normalize(c.title).includes(q))
-    .slice(0, GROUP_CAP)
-    .map((c): AtItem => ({ kind: 'action', id: c.id, title: c.title }))
-
-  const milestones: AtItem[] = candidates.milestones
-    .filter((c) => normalize(c.title).includes(q))
-    .slice(0, GROUP_CAP)
-    .map((c): AtItem => ({ kind: 'milestone', id: c.id, title: c.title }))
-
-  const risks: AtItem[] = candidates.risks
-    .filter((c) => normalize(c.title).includes(q))
-    .slice(0, GROUP_CAP)
-    .map((c): AtItem => ({ kind: 'risk', id: c.id, title: c.title }))
-
-  return [...people, ...days, ...actions, ...milestones, ...risks]
+  return [
+    ...people,
+    ...days,
+    ...pickItems('action', candidates.actionItems),
+    ...pickItems('milestone', candidates.milestones),
+    ...pickItems('risk', candidates.risks),
+  ]
 }
 
 interface AtLoc { block: HTMLElement; atOffset: number; caretOffset: number; typed: string }
@@ -105,6 +94,11 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   let items: AtItem[] = []
   let selected = 0
   let lastLoc: AtLoc | null = null
+  // Captured once per dropdown session (open() → close()): while the
+  // dropdown is up the editor holds focus, so the team's candidate set
+  // can't change under it — no need to rebuild every id/title array on
+  // each keystroke.
+  let candidates: TeamRefCandidates | null = null
 
   // --- caret/block helpers (mirrors src/ui/editor.ts's private helpers;
   // duplicated rather than exported from there to keep this module fully
@@ -164,29 +158,16 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 
   // --- dropdown rendering ---------------------------------------------------
 
-  const GROUP_HEADER_KEY: Record<AtItem['kind'], MsgKey> = {
-    person: 'atref_group_people',
-    day: 'atref_group_dates',
-    action: 'module_actions',
-    milestone: 'module_milestones',
-    risk: 'module_risks',
-  }
-  const GROUP_ICON: Record<AtItem['kind'], string> = {
-    person: KIND_ICON.person,
-    day: KIND_ICON.daily,
-    action: KIND_ICON.actions,
-    milestone: KIND_ICON.milestones,
-    risk: KIND_ICON.risks,
-  }
-
   function renderList(): void {
     if (!listEl) return
     listEl.innerHTML = ''
     let lastKind: AtItem['kind'] | null = null
     items.forEach((item, i) => {
       if (item.kind !== lastKind) {
+        // Header icon/label both derive from the REF_KINDS registry (core/refs.ts).
+        const spec = REF_KINDS[item.kind]
         listEl!.appendChild(
-          el('div', { class: 'tt-atref-group-header' }, `${GROUP_ICON[item.kind]} ${t(opts.locale, GROUP_HEADER_KEY[item.kind])}`)
+          el('div', { class: 'tt-atref-group-header' }, `${KIND_ICON[spec.moduleKind]} ${t(opts.locale, spec.headerKey)}`)
         )
         lastKind = item.kind
       }
@@ -197,30 +178,22 @@ export function attachAtAutocomplete(editor: Editor, opts: {
             ? `@${item.relativeWord} · ${formatDate(item.date, opts.locale)}`
             : t(opts.locale, 'atref_goto_day', { date: formatDate(item.date, opts.locale) })
           : item.title
+      // Hover/arrow selection repaints in place via paintSelection — see
+      // src/ui/select-list.ts for the rebuild-on-hover Chrome loop this
+      // avoids. The '.tt-atref-item' selector matters here: group headers
+      // are interspersed in the DOM but not in `items`/`selected`.
       const row = el(
         'div',
-        {
-          class: 'tt-atref-item' + (i === selected ? ' selected' : ''),
-          onmousedown: (e: Event) => e.preventDefault(),
-          onclick: () => commit(item),
-          // See template-picker.ts's identical fix: rebuilding the row on
-          // hover (via renderList()) made real Chrome re-fire mouseenter on
-          // the replacement node under a stationary pointer, looping
-          // forever and leaving mousedown/mouseup on two different elements
-          // — so no click event ever fired.
-          onmouseenter: () => { selected = i; updateSelectedClass() },
-        },
+        selectableRowProps({
+          class: 'tt-atref-item',
+          selected: i === selected,
+          onCommit: () => commit(item),
+          onHover: () => { selected = i; paintSelection(listEl, '.tt-atref-item', selected) },
+        }),
         label
       )
       listEl!.appendChild(row)
     })
-  }
-
-  /** Only .tt-atref-item rows are selectable — group headers are interspersed in the DOM but not in `items`/`selected`, so this must query past them rather than index into listEl.children directly. */
-  function updateSelectedClass(): void {
-    if (!listEl) return
-    const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-atref-item'))
-    rows.forEach((row, i) => row.classList.toggle('selected', i === selected))
   }
 
   function positionOverlay(): void {
@@ -238,7 +211,8 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     const loc = locateAt()
     if (!loc) { close(); return }
     lastLoc = loc
-    items = filterAtItems(opts.getRefCandidates(), loc.typed, opts.locale)
+    candidates ??= opts.getRefCandidates()
+    items = filterAtItems(candidates, loc.typed, opts.locale)
     selected = items.length === 0 ? 0 : Math.min(selected, items.length - 1)
     renderList()
   }
@@ -256,16 +230,10 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 
   function onTypingKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') { e.preventDefault(); close(); return }
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      selected = items.length ? Math.min(selected + 1, items.length - 1) : 0
-      renderList()
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      selected = Math.max(selected - 1, 0)
-      renderList()
+      selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)
+      paintSelection(listEl, '.tt-atref-item', selected)
       return
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
@@ -294,7 +262,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     // baked into textContent. inlineMd (core/markdown.ts) derives the
     // persisted markdown label straight from textContent, so an icon inside
     // it would round-trip into storage as part of the label forever.
-    chip.dataset.ref = item.kind === 'person' ? `person:${item.id}` : item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
+    chip.dataset.ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
     chip.textContent = `@${safeLabel}`
     range.insertNode(chip)
     // A trailing space after the chip lets the user keep typing immediately
@@ -328,6 +296,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     listEl = null
     anchorRange = null
     lastLoc = null
+    candidates = null
     editorEl!.removeEventListener('input', onTypingInput)
     editorEl!.removeEventListener('keydown', onTypingKeydown, true)
     document.removeEventListener('mousedown', onDocMousedown, true)
@@ -384,7 +353,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
     }
 
     if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
-      const moduleKind = target.kind === 'action' ? 'actions' : target.kind === 'milestone' ? 'milestones' : 'risks'
+      const moduleKind = REF_KINDS[target.kind].moduleKind
       pm.openInPane(paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } })
       // Best-effort scroll to the specific card, mirroring search-ui.ts's
       // commit() — no toast if the item was deleted (decision 7: with

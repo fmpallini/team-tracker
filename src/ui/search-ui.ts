@@ -9,6 +9,7 @@ import { searchDocument, normalize, KIND_ICON, type SearchResult } from '../core
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
 import { applySearchHighlight } from './search-highlight'
+import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
 
 const DEBOUNCE_MS = 150
@@ -53,12 +54,13 @@ function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms
   if (pos < snippet.length) container.appendChild(document.createTextNode(snippet.slice(pos)))
 }
 
+/** Returns a dispose function that removes the document-level listeners and the header DOM — registered with main.ts's per-document disposers so a close-file → reopen cycle doesn't accumulate listeners (each pinning its closed document's store and DOM). */
 export function mountSearch(
   shell: Shell,
   store: Store,
   pm: PaneManager,
   switchTeam: (teamId: string) => void
-): void {
+): () => void {
   let allTeams = false
   let results: SearchResult[] = []
   let selected = 0
@@ -82,7 +84,7 @@ export function mountSearch(
   // Header-adjacent text captured at mount time would otherwise stay stale
   // after a locale switch (see prefs.ts's LOCALE_CHANGED_EVENT comment) —
   // refresh it live instead of waiting for the next remount.
-  onLocaleChanged(() => {
+  const unsubscribeLocale = onLocaleChanged(() => {
     const lc = localeNow()
     input.placeholder = t(lc, 'search_placeholder')
     checkboxLabelText.textContent = t(lc, 'search_all_teams')
@@ -128,7 +130,7 @@ export function mountSearch(
           onmousedown: (e: Event) => { e.preventDefault(); commit(result) },
           onmouseenter: () => {
             selected = i
-            listEl.querySelectorAll('.tt-search-row').forEach((n, j) => n.classList.toggle('selected', j === selected))
+            paintSelection(listEl, '.tt-search-row', selected)
           },
         },
         main,
@@ -212,16 +214,11 @@ export function mountSearch(
       return
     }
     if (!open || results.length === 0) return
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      selected = (selected + 1) % results.length
-      renderList()
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      selected = (selected - 1 + results.length) % results.length
-      renderList()
+      // Wraparound (unlike the clamped dropdowns) — kept from the original behavior.
+      selected = (selected + (e.key === 'ArrowDown' ? 1 : results.length - 1)) % results.length
+      paintSelection(listEl, '.tt-search-row', selected)
       return
     }
     if (e.key === 'Enter') {
@@ -230,10 +227,7 @@ export function mountSearch(
     }
   })
 
-  // Focus shortcuts, attached once for the app's lifetime — mountSearch has
-  // no dispose (it lives as long as the document is open), so these must
-  // never be re-attached on open/close to avoid accumulating listeners.
-  document.addEventListener('keydown', (e) => {
+  const onDocKeydown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault()
       input.focus()
@@ -244,11 +238,21 @@ export function mountSearch(
       e.preventDefault()
       input.focus()
     }
-  })
+  }
+  document.addEventListener('keydown', onDocKeydown)
 
-  document.addEventListener('mousedown', (e) => {
+  const onDocMousedown = (e: MouseEvent): void => {
     if (!open) return
     if (wrap.contains(e.target as Node)) return
     closeDropdown()
-  })
+  }
+  document.addEventListener('mousedown', onDocMousedown)
+
+  return function disposeSearch(): void {
+    if (debounceTimer !== null) clearTimeout(debounceTimer)
+    unsubscribeLocale()
+    document.removeEventListener('keydown', onDocKeydown)
+    document.removeEventListener('mousedown', onDocMousedown)
+    wrap.remove()
+  }
 }

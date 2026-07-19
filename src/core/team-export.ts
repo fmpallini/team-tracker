@@ -7,6 +7,7 @@
 // export-import-design.md for the full rationale.
 import type { ActionItem, Milestone, Person, Risk, Team } from './types'
 import { SCHEMA_VERSION } from './document'
+import { t, type Locale } from './i18n'
 
 export class InvalidExportFileError extends Error {}
 export class ExportTooNewError extends Error {}
@@ -101,17 +102,17 @@ function remapPersonList(people: ExportedPerson[]): Team['stakeholders'] {
  * of whether a same-named team already exists, so there's no collision-
  * detection logic to get wrong.
  */
-export function remapForImport(teams: ExportedTeam[]): Team[] {
-  return teams.map((t) => ({
+export function remapForImport(teams: ExportedTeam[], locale: Locale): Team[] {
+  return teams.map((src) => ({
     id: crypto.randomUUID(),
-    name: `${t.name} (imported)`,
-    emoji: t.emoji,
-    stakeholders: remapPersonList(t.stakeholders),
-    members: remapPersonList(t.members),
-    actionItems: t.actionItems.map((a) => ({ ...a, id: crypto.randomUUID() })),
-    milestones: t.milestones.map((m) => ({ ...m, id: crypto.randomUUID() })),
-    risks: t.risks.map((r) => ({ ...r, id: crypto.randomUUID() })),
+    name: `${src.name} ${t(locale, 'team_imported_suffix')}`,
+    emoji: src.emoji,
+    stakeholders: remapPersonList(src.stakeholders),
+    members: remapPersonList(src.members),
+    actionItems: src.actionItems.map((a) => ({ ...a, id: crypto.randomUUID() })),
+    milestones: src.milestones.map((m) => ({ ...m, id: crypto.randomUUID() })),
+    risks: src.risks.map((r) => ({ ...r, id: crypto.randomUUID() })),
     dailyNotes: {},
-    actionTagNames: t.actionTagNames ?? {},
+    actionTagNames: src.actionTagNames ?? {},
   }))
 }

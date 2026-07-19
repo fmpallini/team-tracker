@@ -206,3 +206,9 @@ export function promoHeaderButton(locale: Locale, opts?: PromoOpts): HTMLElement
     pwa ? '⬇' : '🌐'
   )
 }
+
+/** Re-stamps the header button's locale-sensitive tooltip — called from main.ts's onLocaleChanged wiring so the title doesn't stay stale after a locale switch. */
+export function refreshPromoHeaderButton(btn: HTMLElement, locale: Locale, opts?: PromoOpts): void {
+  const { pwa } = resolve(opts)
+  btn.title = t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title')
+}

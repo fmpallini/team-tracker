@@ -1,5 +1,6 @@
 import { createEditor, type Editor, type EditorHooks } from '../src/ui/editor'
-import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, type AtItem, type AtPerson } from '../src/ui/atref'
+import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, type AtItem } from '../src/ui/atref'
+import type { RefCandidate } from '../src/core/search'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager } from '../src/ui/panes'
@@ -20,10 +21,10 @@ function candidates(overrides: Partial<Parameters<typeof filterAtItems>[0]> = {}
 }
 
 describe('filterAtItems', () => {
-  const people: AtPerson[] = [
-    { id: 'p1', name: 'Ana', group: 'members' },
-    { id: 'p2', name: 'María', group: 'stakeholders' },
-    { id: 'p3', name: 'Bruno', group: 'members' },
+  const people: RefCandidate[] = [
+    { id: 'p1', title: 'Ana' },
+    { id: 'p2', title: 'María' },
+    { id: 'p3', title: 'Bruno' },
   ]
 
   test('substring match is accent- and case-insensitive', () => {
@@ -83,7 +84,7 @@ describe('filterAtItems', () => {
 
   test('groups results by type in a fixed order: people, dates, actions, milestones, risks', () => {
     const items = filterAtItems({
-      people: [{ id: 'p1', name: 'Eva', group: 'members' }],
+      people: [{ id: 'p1', title: 'Eva' }],
       actionItems: [{ id: 'a1', title: 'Fix regression' }],
       milestones: [{ id: 'm1', title: 'Release v2' }],
       risks: [{ id: 'r1', title: 'Vendor delay' }],
@@ -121,9 +122,9 @@ describe('attachAtAutocomplete', () => {
 
   function setup(
     locale: Locale = 'pt-BR',
-    people: AtPerson[] = [
-      { id: 'ana-id', name: 'Ana', group: 'members' },
-      { id: 'bruno-id', name: 'Bruno', group: 'members' },
+    people: RefCandidate[] = [
+      { id: 'ana-id', title: 'Ana' },
+      { id: 'bruno-id', title: 'Bruno' },
     ]
   ): { editorEl: HTMLElement; picks: AtItem[] } {
     const picks: AtItem[] = []
@@ -308,7 +309,7 @@ describe('attachAtAutocomplete', () => {
 
   test('person name with brackets and parens is sanitized in chip textContent', () => {
     const { editorEl, picks } = setup('pt-BR', [
-      { id: 'ana-id', name: 'Ana [Sales] (RH)', group: 'members' },
+      { id: 'ana-id', title: 'Ana [Sales] (RH)' },
     ])
     setBlockText(editorEl, '@')
     fireInput(editorEl)

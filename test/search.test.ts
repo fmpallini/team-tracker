@@ -60,7 +60,7 @@ test('teamRefCandidates extracts id+title for people/action items/milestones/ris
   const d = fixture()
   const t1 = d.teams.find((tm) => tm.id === 't1')!
   const candidates = teamRefCandidates(t1)
-  expect(candidates.people).toEqual([{ id: 'p1', name: 'Ana', group: 'members' }])
+  expect(candidates.people).toEqual([{ id: 'p1', title: 'Ana' }])
   expect(candidates.actionItems).toEqual([{ id: 'a1', title: 'Fechar contrato' }])
   expect(candidates.milestones).toEqual([{ id: 'm1', title: 'Entrega beta' }])
   expect(candidates.risks).toEqual([]) // r1 lives on t2, not t1

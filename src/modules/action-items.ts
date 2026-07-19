@@ -6,9 +6,12 @@
 // there's no in-progress inline edit whose caret needs preserving across a
 // foreign store update.
 import type { ActionItem, Loc, Team } from '../core/types'
-import { t, todayIso, formatDate } from '../core/i18n'
+import { t, todayIso, formatDate, type MsgKey } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
+import { isOverdue } from '../core/due'
+import { nowHHMM } from '../core/date'
+import { SUGGESTED_TAG_NAME_KEYS } from '../core/document'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
@@ -20,30 +23,13 @@ import { el } from '../ui/dom'
 const disposers = new WeakMap<HTMLElement, () => void>()
 
 // Display order: red, yellow, blue (the three with a suggested default name
-// — see SUGGESTED_TAG_NAME_KEYS and src/ui/sidebar.ts's emptyTeam), then the
-// rest.
+// — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
+// the rest.
 const COLORS: ActionItem['color'][] = ['rust', 'brass', 'slate', 'sage', 'plum', 'ledger']
 const COLOR_KEYS: Record<ActionItem['color'], 'kanban_color_slate' | 'kanban_color_brass' | 'kanban_color_sage' | 'kanban_color_rust' | 'kanban_color_plum' | 'kanban_color_ledger'> = {
   slate: 'kanban_color_slate', brass: 'kanban_color_brass', sage: 'kanban_color_sage',
   rust: 'kanban_color_rust', plum: 'kanban_color_plum', ledger: 'kanban_color_ledger',
 }
-// Fallback hint only — shown as a placeholder/aria-label for a color that
-// isn't named yet. New teams are seeded with these same three names for
-// real (src/ui/sidebar.ts's emptyTeam); this is what's left for a team that
-// cleared one, or predates that seeding. The other three colors stay
-// unopinionated (plain color name).
-const SUGGESTED_TAG_NAME_KEYS: Partial<Record<ActionItem['color'], 'kanban_suggest_urgent' | 'kanban_suggest_blocked' | 'kanban_suggest_in_review'>> = {
-  rust: 'kanban_suggest_urgent', brass: 'kanban_suggest_blocked', slate: 'kanban_suggest_in_review',
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-function nowHHMM(): string {
-  const now = new Date()
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
-}
-
 // --- pure, unit-testable helpers -------------------------------------------
 
 /** Items in `status`, sorted by `order`. */
@@ -51,13 +37,12 @@ export function itemsByStatus(items: ActionItem[], status: ActionItem['status'])
   return items.filter((i) => i.status === status).sort((a, b) => a.order - b.order)
 }
 
-/** True when the item has a due date strictly before `today` and is still active (not done/cancelled). */
-export function isOverdue(item: Pick<ActionItem, 'dueDate' | 'status'>, today: string): boolean {
-  return item.dueDate !== null && item.dueDate < today && item.status !== 'done' && item.status !== 'cancelled'
-}
+// The overdue rule lives in core/due.ts (shared with the sidebar due badge);
+// re-exported here so board code and tests keep one import site.
+export { isOverdue }
 
-/** Maps a drop's vertical offset within the target card to before/after. Degenerates to 'after' for a non-positive `height` (cards not yet laid out, e.g. in a test without real layout) rather than dividing by zero. */
-export function computeDropPosition(offsetY: number, height: number): 'before' | 'after' {
+/** Maps a drop's vertical offset within the target card to before/after. Degenerates to 'after' for a non-positive `height` (cards not yet laid out, e.g. in a test without real layout) rather than dividing by zero. "Flat" to distinguish it from people-tree.ts's tree-aware computeDropPosition, which adds a 'child' band. */
+export function computeFlatDropPosition(offsetY: number, height: number): 'before' | 'after' {
   if (height <= 0) return 'after'
   return offsetY < height / 2 ? 'before' : 'after'
 }
@@ -122,10 +107,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
-  function renderTagChips(): void {
+  function renderTagChips(tagNames: Partial<Record<ActionItem['color'], string>>): void {
     tagChipsEl.innerHTML = ''
     for (const c of COLORS) {
-      const custom = customTagName(c)
+      const custom = tagNames[c] ?? null
       const chip = el(
         'button',
         {
@@ -206,6 +191,15 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   interface ModalBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
   let openBundle: ModalBundle | null = null
+
+  /** Single teardown for the edit modal's editor bundle — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
+  function disposeOpenBundle(): void {
+    if (!openBundle) return
+    openBundle.atHandle.dispose()
+    openBundle.tplHandle.dispose()
+    openBundle.editor.destroy()
+    openBundle = null
+  }
 
   /** Full CRUD modal: `existing === null` creates a new card in `defaultStatus`; otherwise edits/deletes `existing`. Mirrors src/modules/people-tree.ts's openPersonModal shape, plus a rich-text notes editor (created on open, destroyed on close) wired exactly like the old inline renderNotesRow (@ref autocomplete + '/' template picker). */
   function openEditModal(existing: ActionItem | null, defaultStatus: 'todo' | 'wip' = 'todo'): void {
@@ -324,12 +318,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       title: t(lc, existing === null ? 'kanban_add_title' : 'kanban_edit_title'),
       body,
       buttons,
-      onClose: () => {
-        openBundle?.atHandle.dispose()
-        openBundle?.tplHandle.dispose()
-        openBundle?.editor.destroy()
-        openBundle = null
-      },
+      onClose: () => disposeOpenBundle(),
     })
     summaryInput.focus()
   }
@@ -373,7 +362,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
 
-  function renderCard(item: ActionItem): HTMLElement {
+  function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItem['color'], string>>): HTMLElement {
     const editBtn = el(
       'button',
       { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
@@ -382,10 +371,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const titleEl = el('div', { class: 'tt-kanban-card-title' }, item.summary)
     const metaChildren: (Node | string)[] = []
     if (item.dueDate) {
-      metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, todayIso()) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
+      metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, today) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
     }
     if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
-    const customName = customTagName(item.color)
+    const customName = tagNames[item.color] ?? null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
 
@@ -407,7 +396,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       if (draggedId === null || draggedId === item.id) return
       e.preventDefault()
       const rect = card.getBoundingClientRect()
-      const pos = computeDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+      const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
       clearDropClasses()
       card.classList.add(`tt-kanban-drop-${pos}`)
     })
@@ -428,7 +417,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       draggedId = null
       if (srcId === null) return
       const rect = card.getBoundingClientRect()
-      const pos = computeDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
+      const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
       ctx.store.update((d) => {
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
@@ -445,10 +434,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     return card
   }
 
-  const todoBodyEl = el('div', { class: 'tt-kanban-col-body' })
-  const wipBodyEl = el('div', { class: 'tt-kanban-col-body' })
-  const doneBodyEl = el('div', { class: 'tt-kanban-col-body' })
-  const cancelledBodyEl = el('div', { class: 'tt-kanban-col-body' })
+  const STATUSES = ['todo', 'wip', 'done', 'cancelled'] as const
   const doneCountEl = el('span', {})
   const cancelledCountEl = el('span', {})
 
@@ -462,53 +448,50 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   function bodyWrap(bodyEl: HTMLElement, zoneEl: HTMLElement): HTMLElement {
     return el('div', { class: 'tt-kanban-col-body-wrap' }, bodyEl, zoneEl)
   }
-  const todoZoneEl = el('div', { class: 'tt-kanban-dropzone' })
-  const wipZoneEl = el('div', { class: 'tt-kanban-dropzone' })
-  const doneZoneEl = el('div', { class: 'tt-kanban-dropzone' })
-  const cancelledZoneEl = el('div', { class: 'tt-kanban-dropzone' })
-  const dropZones = [todoZoneEl, wipZoneEl, doneZoneEl, cancelledZoneEl]
+  const colParts = (): { bodyEl: HTMLElement; zoneEl: HTMLElement } => ({
+    bodyEl: el('div', { class: 'tt-kanban-col-body' }),
+    zoneEl: el('div', { class: 'tt-kanban-dropzone' }),
+  })
+  const cols: Record<ActionItem['status'], { bodyEl: HTMLElement; zoneEl: HTMLElement }> = {
+    todo: colParts(), wip: colParts(), done: colParts(), cancelled: colParts(),
+  }
   function showDropZones(): void {
-    dropZones.forEach((z) => z.classList.add('active'))
+    STATUSES.forEach((s) => cols[s].zoneEl.classList.add('active'))
     // Lets the CSS shrink each column drop-zone's bottom edge, clearing
     // space for the full-width trash bar (see .tt-kanban-trash) so the two
-    // never overlap. Also out-of-flow (see the drop-zone comment below), so
+    // never overlap. Also out-of-flow (see the drop-zone comment above), so
     // this doesn't reflow anything mid-dragstart either.
     kanbanRootEl.classList.add('dragging')
   }
   function hideDropZones(): void {
-    dropZones.forEach((z) => z.classList.remove('active', 'drag-over'))
+    STATUSES.forEach((s) => cols[s].zoneEl.classList.remove('active', 'drag-over'))
     kanbanRootEl.classList.remove('dragging')
   }
 
-  const todoColEl = el(
-    'div', { class: 'tt-kanban-col' },
-    el('div', { class: 'tt-kanban-col-head' },
-      el('span', {}, t(lc, 'kanban_col_todo')),
-      el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'todo') }, t(lc, 'kanban_add_card'))
-    ),
-    bodyWrap(todoBodyEl, todoZoneEl)
-  )
-  const wipColEl = el(
-    'div', { class: 'tt-kanban-col' },
-    el('div', { class: 'tt-kanban-col-head' },
-      el('span', {}, t(lc, 'kanban_col_wip')),
-      el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'wip') }, t(lc, 'kanban_add_card'))
-    ),
-    bodyWrap(wipBodyEl, wipZoneEl)
-  )
+  /** The two columns cards can be added to directly — identical apart from status and heading. */
+  function addableCol(status: 'todo' | 'wip', headingKey: MsgKey): HTMLElement {
+    return el(
+      'div', { class: 'tt-kanban-col' },
+      el('div', { class: 'tt-kanban-col-head' },
+        el('span', {}, t(lc, headingKey)),
+        el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, status) }, t(lc, 'kanban_add_card'))
+      ),
+      bodyWrap(cols[status].bodyEl, cols[status].zoneEl)
+    )
+  }
   const doneCancelColEl = el(
     'div', { class: 'tt-kanban-col' },
     el('div', { class: 'tt-kanban-col-head' }, el('span', {}, t(lc, 'kanban_col_done_cancelled'))),
     el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
       el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
-    bodyWrap(doneBodyEl, doneZoneEl),
+    bodyWrap(cols.done.bodyEl, cols.done.zoneEl),
     el('div', { class: 'tt-kanban-divider' }),
     el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
       el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, '🗑')),
-    bodyWrap(cancelledBodyEl, cancelledZoneEl)
+    bodyWrap(cols.cancelled.bodyEl, cols.cancelled.zoneEl)
   )
 
-  const boardEl = el('div', { class: 'tt-kanban-board' }, todoColEl, wipColEl, doneCancelColEl)
+  const boardEl = el('div', { class: 'tt-kanban-board' }, addableCol('todo', 'kanban_col_todo'), addableCol('wip', 'kanban_col_wip'), doneCancelColEl)
   const datalistEl = el('datalist', { id: datalistId })
 
   // Drop target for deleting a card by dragging it off the board — shown
@@ -567,49 +550,38 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       })
     })
   }
-  wireColumnDrop(todoBodyEl, 'todo', todoZoneEl)
-  wireColumnDrop(wipBodyEl, 'wip', wipZoneEl)
-  wireColumnDrop(doneBodyEl, 'done', doneZoneEl)
-  wireColumnDrop(cancelledBodyEl, 'cancelled', cancelledZoneEl)
+  STATUSES.forEach((s) => wireColumnDrop(cols[s].bodyEl, s, cols[s].zoneEl))
 
-  function updateDatalist(): void {
+  function updateDatalist(tm: Team | undefined): void {
     datalistEl.innerHTML = ''
-    const tm = findTeam()
     const names = tm ? [...tm.stakeholders, ...tm.members].map((p) => p.name) : []
     for (const name of Array.from(new Set(names))) {
       datalistEl.appendChild(el('option', { value: name }))
     }
   }
 
+  // Runs on every store change (the subscribe below) — the team lookup,
+  // today's date, and the tag-name map are computed once here and threaded
+  // through, and the items are bucketed in a single pass, instead of a
+  // findTeam()/todayIso() per column and per card.
   function renderAll(): void {
-    updateDatalist()
-    renderTagChips()
-    const filterFn = (i: ActionItem) => activeTagFilter === null || i.color === activeTagFilter
-    const allDone = itemsByStatus(items(), 'done')
-    const allCancelled = itemsByStatus(items(), 'cancelled')
-    const todo = itemsByStatus(items(), 'todo').filter(filterFn)
-    const wip = itemsByStatus(items(), 'wip').filter(filterFn)
-    const done = allDone.filter(filterFn)
-    const cancelled = allCancelled.filter(filterFn)
-
-    todoBodyEl.innerHTML = ''
-    if (todo.length === 0) todoBodyEl.appendChild(emptyEl())
-    else todo.forEach((it) => todoBodyEl.appendChild(renderCard(it)))
-
-    wipBodyEl.innerHTML = ''
-    if (wip.length === 0) wipBodyEl.appendChild(emptyEl())
-    else wip.forEach((it) => wipBodyEl.appendChild(renderCard(it)))
-
-    doneBodyEl.innerHTML = ''
-    if (done.length === 0) doneBodyEl.appendChild(emptyEl())
-    else done.forEach((it) => doneBodyEl.appendChild(renderCard(it)))
-
-    cancelledBodyEl.innerHTML = ''
-    if (cancelled.length === 0) cancelledBodyEl.appendChild(emptyEl())
-    else cancelled.forEach((it) => cancelledBodyEl.appendChild(renderCard(it)))
-
-    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(allDone.length) })
-    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(allCancelled.length) })
+    const tm = findTeam()
+    const today = todayIso()
+    const tagNames = tm?.actionTagNames ?? {}
+    updateDatalist(tm)
+    renderTagChips(tagNames)
+    const byStatus: Record<ActionItem['status'], ActionItem[]> = { todo: [], wip: [], done: [], cancelled: [] }
+    for (const it of tm?.actionItems ?? []) byStatus[it.status].push(it)
+    for (const s of STATUSES) {
+      const group = byStatus[s].sort((a, b) => a.order - b.order)
+      const visible = activeTagFilter === null ? group : group.filter((i) => i.color === activeTagFilter)
+      const bodyEl = cols[s].bodyEl
+      bodyEl.innerHTML = ''
+      if (visible.length === 0) bodyEl.appendChild(emptyEl())
+      else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames)))
+    }
+    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(byStatus.done.length) })
+    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(byStatus.cancelled.length) })
   }
   renderAll()
 
@@ -630,9 +602,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   disposers.set(container, () => {
     unsubscribe()
-    openBundle?.atHandle.dispose()
-    openBundle?.tplHandle.dispose()
-    openBundle?.editor.destroy()
-    openBundle = null
+    disposeOpenBundle()
   })
 }

@@ -1,11 +1,12 @@
-import type { Doc } from './types'
+import type { ActionItem, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
+import { t, type Locale, type MsgKey } from './i18n'
 
 export const SCHEMA_VERSION = 6
 
 export class SchemaTooNewError extends Error {}
 
-export function createEmptyDocument(locale: 'pt-BR' | 'en-US'): Doc {
+export function createEmptyDocument(locale: Locale): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
     prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 3 },
@@ -13,6 +14,30 @@ export function createEmptyDocument(locale: 'pt-BR' | 'en-US'): Doc {
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} },
     teams: [],
+  }
+}
+
+/**
+ * The three action-item colors (red/yellow/blue) that carry a suggested tag
+ * name. Single source for both consumers: `createEmptyTeam` below seeds new
+ * teams with these names as real, editable data, and the kanban
+ * (src/modules/action-items.ts) shows the same names as placeholder
+ * fallbacks for teams that cleared one or predate the seeding.
+ */
+export const SUGGESTED_TAG_NAME_KEYS: Partial<Record<ActionItem['color'], MsgKey>> = {
+  rust: 'kanban_suggest_urgent', brass: 'kanban_suggest_blocked', slate: 'kanban_suggest_in_review',
+}
+
+export function createEmptyTeam(id: string, name: string, emoji: string, locale: Locale): Team {
+  const actionTagNames: Partial<Record<ActionItem['color'], string>> = {}
+  for (const [color, key] of Object.entries(SUGGESTED_TAG_NAME_KEYS) as [ActionItem['color'], MsgKey][]) {
+    actionTagNames[color] = t(locale, key)
+  }
+  return {
+    id, name, emoji,
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: {},
+    actionTagNames,
   }
 }
 

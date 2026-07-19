@@ -45,11 +45,7 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
   try {
     const handle = await window.showSaveFilePicker({
       suggestedName,
-      // Chromium expands a registered MIME type like application/octet-stream
-      // into every OS-associated extension for that type, so the picker's
-      // filter ends up listing far more than .tmv. An unregistered app-
-      // specific MIME type has no OS associations to merge in, keeping the
-      // filter to just the extension below.
+      // Unregistered MIME type keeps the filter to .tmv — see pickOpen above.
       types: [{ description: 'Team Tracker', accept: { 'application/vnd.teamtracker.tmv': ['.tmv'] } }],
     })
     const { lastModified } = await readHandle(handle)

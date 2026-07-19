@@ -10,18 +10,10 @@ import type { ModuleCtx } from '../ui/panes'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
 import { attachTemplatePicker } from '../ui/template-picker'
+import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
 
 const disposers = new WeakMap<HTMLElement, () => void>()
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
-function nowHHMM(): string {
-  const now = new Date()
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
-}
 
 function personLabel(p: Person): string {
   return p.role ? `${p.name} — ${p.role}` : p.name

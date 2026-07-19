@@ -1,4 +1,4 @@
-import { renderActionItems, itemsByStatus, isOverdue, computeDropPosition, moveCard } from '../src/modules/action-items'
+import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard } from '../src/modules/action-items'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
@@ -84,16 +84,16 @@ describe('pure helpers', () => {
     })
   })
 
-  describe('computeDropPosition', () => {
+  describe('computeFlatDropPosition', () => {
     test('top half is before, bottom half is after', () => {
-      expect(computeDropPosition(0, 100)).toBe('before')
-      expect(computeDropPosition(49, 100)).toBe('before')
-      expect(computeDropPosition(50, 100)).toBe('after')
-      expect(computeDropPosition(100, 100)).toBe('after')
+      expect(computeFlatDropPosition(0, 100)).toBe('before')
+      expect(computeFlatDropPosition(49, 100)).toBe('before')
+      expect(computeFlatDropPosition(50, 100)).toBe('after')
+      expect(computeFlatDropPosition(100, 100)).toBe('after')
     })
     test('degenerates to after for a zero/negative height card', () => {
-      expect(computeDropPosition(0, 0)).toBe('after')
-      expect(computeDropPosition(5, -1)).toBe('after')
+      expect(computeFlatDropPosition(0, 0)).toBe('after')
+      expect(computeFlatDropPosition(5, -1)).toBe('after')
     })
   })
 
