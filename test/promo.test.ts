@@ -106,8 +106,20 @@ describe('PWA variant (install offer)', () => {
       delete (navigator as unknown as { getInstalledRelatedApps?: unknown }).getInstalledRelatedApps
     })
 
+    // Real browsers throw "Illegal invocation" if a WebIDL Navigator method is
+    // torn off its receiver and called bare (e.g. `const f = navigator.foo; f()`).
+    // A plain vi.fn() doesn't enforce that, so it can't catch promo.ts calling
+    // the API without `navigator` as the receiver — this mock mimics the
+    // native receiver check so the test fails the way production actually did.
+    function receiverCheckedGira<T>(result: T): () => Promise<T> {
+      return function (this: unknown) {
+        if (this !== navigator) return Promise.reject(new TypeError('Illegal invocation'))
+        return Promise.resolve(result)
+      }
+    }
+
     it('a non-empty result removes live promo UI and blocks new renders', async () => {
-      const gira = vi.fn().mockResolvedValue([{ platform: 'webapp', url: 'https://example.test/manifest.json' }])
+      const gira = vi.fn(receiverCheckedGira([{ platform: 'webapp', url: 'https://example.test/manifest.json' }]))
       ;(navigator as unknown as { getInstalledRelatedApps: typeof gira }).getInstalledRelatedApps = gira
       const card = promoStartCard(LOCALE, { pwa: true })!
       const btn = promoHeaderButton(LOCALE, { pwa: true })!
