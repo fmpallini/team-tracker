@@ -374,7 +374,14 @@ test('buildModuleItems includes one entry per action item/milestone/risk, after 
   expect(actionItemIdx).toBeGreaterThan(actionsBoardIdx)
 })
 
-test('buildModuleItems with no team omits all per-item entries (only the daily-notes entry remains)', () => {
+test('buildModuleItems with no team includes the daily-notes entry and all 5 whole-board entries, but no per-item entries', () => {
   const items = buildModuleItems(null, 'en-US')
-  expect(items).toEqual([{ label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } }])
+  expect(items).toEqual([
+    { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
+    { label: 'Stakeholders', ref: { kind: 'stakeholders' } },
+    { label: 'Members', ref: { kind: 'members' } },
+    { label: 'Action items', ref: { kind: 'actions' } },
+    { label: 'Milestones', ref: { kind: 'milestones' } },
+    { label: 'Risks', ref: { kind: 'risks' } },
+  ])
 })

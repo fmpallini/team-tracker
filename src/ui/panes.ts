@@ -50,16 +50,15 @@ export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[
       }
     }
   }
-  if (team) {
-    for (const { kind, key } of FIXED_MODULE_KEYS) {
-      items.push({ label: t(locale, key), ref: { kind } })
-      if (kind === 'actions') {
-        for (const it of teamRefCandidates(team).actionItems) items.push({ label: `${KIND_ICON.actions} ${it.title}`, ref: { kind: 'actions', itemId: it.id } })
-      } else if (kind === 'milestones') {
-        for (const m of teamRefCandidates(team).milestones) items.push({ label: `${KIND_ICON.milestones} ${m.title}`, ref: { kind: 'milestones', itemId: m.id } })
-      } else if (kind === 'risks') {
-        for (const r of teamRefCandidates(team).risks) items.push({ label: `${KIND_ICON.risks} ${r.title}`, ref: { kind: 'risks', itemId: r.id } })
-      }
+  for (const { kind, key } of FIXED_MODULE_KEYS) {
+    items.push({ label: t(locale, key), ref: { kind } })
+    if (!team) continue
+    if (kind === 'actions') {
+      for (const it of teamRefCandidates(team).actionItems) items.push({ label: `${KIND_ICON.actions} ${it.title}`, ref: { kind: 'actions', itemId: it.id } })
+    } else if (kind === 'milestones') {
+      for (const m of teamRefCandidates(team).milestones) items.push({ label: `${KIND_ICON.milestones} ${m.title}`, ref: { kind: 'milestones', itemId: m.id } })
+    } else if (kind === 'risks') {
+      for (const r of teamRefCandidates(team).risks) items.push({ label: `${KIND_ICON.risks} ${r.title}`, ref: { kind: 'risks', itemId: r.id } })
     }
   }
   return items
