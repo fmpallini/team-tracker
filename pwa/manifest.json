@@ -12,7 +12,7 @@
   "theme_color": "#3b5a6b",
   "launch_handler": { "client_mode": "focus-existing" },
   "related_applications": [
-    { "platform": "webapp", "id": "/" }
+    { "platform": "webapp", "url": "./manifest.json", "id": "__APP_ORIGIN__" }
   ],
   "icons": [
     {
