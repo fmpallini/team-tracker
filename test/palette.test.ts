@@ -33,7 +33,13 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-test('clicking a row (not just Enter) commits it and closes the palette', () => {
+test('clicking a row commits it and closes the palette', () => {
+  // Confirms the row's onclick wiring is correct (commit() fires, overlay
+  // closes) — NOT a regression test for the mouseenter/rebuild race below.
+  // jsdom dispatches the 'click' event directly here rather than synthesizing
+  // it from mousedown+mouseup the way a real browser would, so this test
+  // would pass unchanged even against the pre-fix code; the node-identity
+  // test below is what actually proves the fix.
   const { palette } = setup()
   palette.open()
 
@@ -41,8 +47,6 @@ test('clicking a row (not just Enter) commits it and closes the palette', () => 
   expect(rows.length).toBeGreaterThan(0)
   const carlaRow = Array.from(rows).find((r) => r.textContent === 'Carla')!
 
-  carlaRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-  carlaRow.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }))
   carlaRow.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
   expect(document.querySelector('.tt-palette-overlay')).toBeNull()
@@ -61,4 +65,7 @@ test('hovering a row does not replace its DOM node (real-browser click requires 
   expect(rowsAfter[1]).toBe(rowsBefore[1])
   expect(rowsAfter[1]!.classList.contains('selected')).toBe(true)
   expect(rowsAfter[0]!.classList.contains('selected')).toBe(false)
+
+  // Clean up the keydown listener registered by palette.open()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
 })
