@@ -314,6 +314,24 @@ describe('renderRisks', () => {
     expect(store.doc.teams[0]!.risks).toHaveLength(1)
   })
 
+  test('deleting a risk unlinks every reference to it across the team\'s notes', () => {
+    const team = makeTeam({
+      risks: [
+        risk({ id: 'r1', title: 'Vendor delay', order: 0 }),
+        risk({ id: 'r2', title: 'Other risk', order: 1, followup: 'related to @[Vendor delay](risk:r1) closely' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(rows(container)[0]!, 'Delete risk')
+    clickByTitleOrText(document.body, 'Delete')
+
+    const remaining = store.doc.teams[0]!.risks
+    expect(remaining.map((r) => r.id)).toEqual(['r2'])
+    expect(remaining[0]!.followup).toBe('related to Vendor delay closely')
+  })
+
   test('close button moves risk to the closed section; reopen brings it back', () => {
     const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay' })] })
     const { container, store, pm, loc } = setup(team)

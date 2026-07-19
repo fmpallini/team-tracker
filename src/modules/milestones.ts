@@ -13,6 +13,7 @@
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
+import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
@@ -226,6 +227,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
+      unlinkRefsInTeam(tm, 'milestone', [id])
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
     })
   }

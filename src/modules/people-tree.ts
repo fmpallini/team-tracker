@@ -7,6 +7,7 @@ import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { el } from '../ui/dom'
+import { unlinkRefsInTeam } from '../core/refs'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -226,6 +227,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           ctx.store.update((d) => {
             const tm = d.teams.find((t2) => t2.id === teamId)
             if (!tm) return
+            unlinkRefsInTeam(tm, 'person', [person.id])
             tm[group] = deletePerson(tm[group], person.id)
           })
           handle.close()

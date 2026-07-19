@@ -9,6 +9,7 @@ import {
 } from '../src/modules/people-tree'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { unlinkRefsInTeam } from '../src/core/refs'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Person, Team } from '../src/core/types'
 
@@ -362,6 +363,25 @@ describe('renderPeopleTree', () => {
     expect(container.children).toHaveLength(0)
   })
 
+  test('the trash hover button\'s delete-confirm handler unlinks references to the deleted person from another person\'s notes', () => {
+    const team = makeTeam({
+      members: [
+        person({ id: 'a', name: 'Ana', order: 0 }),
+        person({ id: 'b', name: 'Bruno', order: 1, notes: 'ping @[Ana](person:a) about this' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+
+    const anaBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ana')!
+    clickByTitleOrText(anaBox, 'Delete person')
+    clickByTitleOrText(document.body, 'Delete')
+
+    const remaining = store.doc.teams[0]!.members
+    expect(remaining.map((p) => p.name)).toEqual(['Bruno'])
+    expect(remaining[0]!.notes).toBe('ping Ana about this')
+  })
+
   describe('root drop zone', () => {
     function nestedTeam(): Team {
       return makeTeam({
@@ -405,4 +425,25 @@ describe('renderPeopleTree', () => {
       expect(zone.classList.contains('active')).toBe(false)
     })
   })
+})
+
+test('deleting a person unlinks every reference to them across the team\'s notes', () => {
+  const doc = createEmptyDocument('pt-BR')
+  doc.teams.push({
+    id: 'T1', name: 'Team 1', emoji: '🚀',
+    stakeholders: [{ id: 'carla', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
+    members: [{ id: 'bruno', name: 'Bruno', role: '', parentId: null, order: 0, notes: 'ping @[Carla](person:carla)' }],
+    actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-01': 'saw @[Carla](person:carla) today' },
+  })
+  const store = createStore(doc)
+  store.update((d) => {
+    const tm = d.teams.find((t) => t.id === 'T1')!
+    unlinkRefsInTeam(tm, 'person', ['carla'])
+    tm.stakeholders = deletePerson(tm.stakeholders, 'carla')
+  })
+  const tm = store.doc.teams[0]!
+  expect(tm.members[0]!.notes).toBe('ping Carla')
+  expect(tm.dailyNotes['2026-07-01']).toBe('saw Carla today')
+  expect(tm.stakeholders).toEqual([])
 })

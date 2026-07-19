@@ -333,6 +333,26 @@ describe('renderActionItems — edit modal', () => {
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
   })
 
+  test('deleting an action item unlinks every reference to it across the team\'s notes', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'a1', summary: 'Fix bug' }),
+        item({ id: 'a2', summary: 'Other', order: 1, notes: 'see @[Fix bug](action:a1) for details' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardA1 = cards(container).find((c) => c.getAttribute('data-item-id') === 'a1')!
+    cardA1.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    clickByTitleOrText(document.body, 'Delete')
+    clickByTitleOrText(document.body, 'Delete')
+
+    const remaining = store.doc.teams[0]!.actionItems
+    expect(remaining.map((i) => i.id)).toEqual(['a2'])
+    expect(remaining[0]!.notes).toBe('see Fix bug for details')
+  })
+
   test('deleting a card whose summary is blank removes it immediately with no confirmation', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: '' })] })
     const { container, store, pm, loc } = setup(team)
@@ -375,6 +395,24 @@ describe('renderActionItems — zone clear-all', () => {
     clickByTitleOrText(container, 'Clear cards')
     clickByTitleOrText(document.body, 'Cancel')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+  })
+
+  test('clearing a zone unlinks references to every removed card across the team\'s notes', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'd1', status: 'done', summary: 'Done thing' }),
+        item({ id: 'todo1', status: 'todo', notes: 'follows up on @[Done thing](action:d1)' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
+    clickByTitleOrText(document.body, 'Delete all')
+
+    const remaining = store.doc.teams[0]!.actionItems
+    expect(remaining.map((i) => i.id)).toEqual(['todo1'])
+    expect(remaining[0]!.notes).toBe('follows up on Done thing')
   })
 })
 

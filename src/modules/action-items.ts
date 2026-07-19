@@ -8,6 +8,7 @@
 import type { ActionItem, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
+import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
@@ -154,6 +155,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
+      unlinkRefsInTeam(tm, 'action', [id])
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
     })
   }
@@ -192,6 +194,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
+          const removedIds = tm.actionItems.filter((i) => i.status === status).map((i) => i.id)
+          unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
         })
         handle.close()
