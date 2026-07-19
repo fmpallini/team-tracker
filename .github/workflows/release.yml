@@ -65,6 +65,44 @@ jobs:
           name: pwa-build
           path: dist/pwa
 
+  # dev -> main PRs always merge with a merge commit (never squash — see
+  # CLAUDE.md), so main's tip is always dev's own tip plus that merge commit:
+  # a pure fast-forward, never a real divergence. Nothing moves dev's ref
+  # forward past those merge commits on its own though, so GitHub keeps
+  # showing dev as "N commits behind" and it grows by one merge each release.
+  # This job closes that gap right after every tagged release. It only ever
+  # fast-forwards (never force-pushes/rewrites): if dev and the tag have
+  # truly diverged — e.g. a squash-merged PR broke the ancestor invariant —
+  # it warns and leaves both branches untouched for manual resolution.
+  sync-dev:
+    name: Fast-forward dev to match this release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward dev if it's a clean ancestor of this tag
+        run: |
+          set -euo pipefail
+          git fetch origin dev
+          dev_sha="$(git rev-parse origin/dev)"
+          tag_sha="$(git rev-parse "${{ github.ref_name }}^{commit}")"
+
+          if [ "$dev_sha" = "$tag_sha" ]; then
+            echo "dev already matches ${tag_sha}."
+          elif git merge-base --is-ancestor "$tag_sha" "$dev_sha"; then
+            echo "dev already contains ${tag_sha} (dev is ahead) — nothing to do."
+          elif git merge-base --is-ancestor "$dev_sha" "$tag_sha"; then
+            git push origin "${tag_sha}:refs/heads/dev"
+            echo "Fast-forwarded dev from ${dev_sha} to ${tag_sha}."
+          else
+            echo "::warning::dev (${dev_sha}) and ${{ github.ref_name }} (${tag_sha}) have diverged — not a clean fast-forward, skipping. Check for a squash-merged PR (see CLAUDE.md) and resolve manually."
+          fi
+
   # Publishes the same attested PWA build to GitHub Pages on every tagged
   # release — separate job so its own `pages`/`id-token` permissions and
   # `github-pages` environment stay scoped away from the release-asset job
