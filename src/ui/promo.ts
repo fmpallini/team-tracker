@@ -54,10 +54,13 @@ function hidePromoUi(): void {
  * fall back to the existing appinstalled/isStandalone checks.
  */
 async function checkRelatedAppsInstalled(): Promise<void> {
-  const gira = navigator.getInstalledRelatedApps
-  if (typeof gira !== 'function') return
+  // Call through navigator.* directly rather than tearing the method off into
+  // a local binding: WebIDL methods on Navigator require `this === navigator`
+  // and throw "Illegal invocation" otherwise, which the catch below would
+  // silently swallow as "unsupported".
+  if (typeof navigator.getInstalledRelatedApps !== 'function') return
   try {
-    const apps = await gira()
+    const apps = await navigator.getInstalledRelatedApps()
     if (apps.length > 0) hidePromoUi()
   } catch {
     // Denied/unsupported at runtime despite the feature check — leave the
