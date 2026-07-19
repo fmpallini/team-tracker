@@ -5,23 +5,13 @@ import type { Shell } from './shell'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
-import { searchDocument, normalize, type SearchResult } from '../core/search'
+import { searchDocument, normalize, KIND_ICON, type SearchResult } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
 import { applySearchHighlight } from './search-highlight'
 import { onLocaleChanged } from './prefs'
 
 const DEBOUNCE_MS = 150
-
-const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
-  daily: '📅',
-  person: '🧑',
-  stakeholders: '👥',
-  members: '👥',
-  actions: '✅',
-  milestones: '🚩',
-  risks: '⚠️',
-}
 
 /**
  * Builds the highlighted snippet DOM. `snippet` and `normalize(snippet)` are

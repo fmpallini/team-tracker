@@ -1,4 +1,4 @@
-import { searchDocument, normalize } from '../src/core/search'
+import { searchDocument, normalize, teamRefCandidates, KIND_ICON } from '../src/core/search'
 import { createEmptyDocument } from '../src/core/document'
 import type { Team } from '../src/core/types'
 
@@ -54,4 +54,25 @@ test('finds text inside milestone followups', () => {
 test('risks results carry the risk id', () => {
   const r = searchDocument(fixture(), 'fornecedor', 't2')
   expect(r[0]!.loc.ref).toMatchObject({ kind: 'risks', itemId: 'r1' })
+})
+
+test('teamRefCandidates extracts id+title for people/action items/milestones/risks', () => {
+  const d = fixture()
+  const t1 = d.teams.find((tm) => tm.id === 't1')!
+  const candidates = teamRefCandidates(t1)
+  expect(candidates.people).toEqual([{ id: 'p1', name: 'Ana', group: 'members' }])
+  expect(candidates.actionItems).toEqual([{ id: 'a1', title: 'Fechar contrato' }])
+  expect(candidates.milestones).toEqual([{ id: 'm1', title: 'Entrega beta' }])
+  expect(candidates.risks).toEqual([]) // r1 lives on t2, not t1
+})
+
+test('teamRefCandidates returns all-empty lists for an undefined team', () => {
+  expect(teamRefCandidates(undefined)).toEqual({ people: [], actionItems: [], milestones: [], risks: [] })
+})
+
+test('KIND_ICON has an entry for every moduleKind used by search results', () => {
+  const d = fixture()
+  const results = searchDocument(d, 'orcamento', null)
+  expect(results.length).toBeGreaterThan(0)
+  for (const r of results) expect(KIND_ICON[r.moduleKind]).toBeTruthy()
 })

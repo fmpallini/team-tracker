@@ -7,20 +7,33 @@
 // foreign store update.
 import type { ActionItem, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
+import { teamRefCandidates } from '../core/search'
+import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
+import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
 
-const COLORS: ActionItem['color'][] = ['slate', 'brass', 'sage', 'rust', 'plum', 'ledger']
+// Display order: red, yellow, blue (the three with a suggested default name
+// — see SUGGESTED_TAG_NAME_KEYS and src/ui/sidebar.ts's emptyTeam), then the
+// rest.
+const COLORS: ActionItem['color'][] = ['rust', 'brass', 'slate', 'sage', 'plum', 'ledger']
 const COLOR_KEYS: Record<ActionItem['color'], 'kanban_color_slate' | 'kanban_color_brass' | 'kanban_color_sage' | 'kanban_color_rust' | 'kanban_color_plum' | 'kanban_color_ledger'> = {
   slate: 'kanban_color_slate', brass: 'kanban_color_brass', sage: 'kanban_color_sage',
   rust: 'kanban_color_rust', plum: 'kanban_color_plum', ledger: 'kanban_color_ledger',
+}
+// Fallback hint only — shown as a placeholder/aria-label for a color that
+// isn't named yet. New teams are seeded with these same three names for
+// real (src/ui/sidebar.ts's emptyTeam); this is what's left for a team that
+// cleared one, or predates that seeding. The other three colors stay
+// unopinionated (plain color name).
+const SUGGESTED_TAG_NAME_KEYS: Partial<Record<ActionItem['color'], 'kanban_suggest_urgent' | 'kanban_suggest_blocked' | 'kanban_suggest_in_review'>> = {
+  rust: 'kanban_suggest_urgent', brass: 'kanban_suggest_blocked', slate: 'kanban_suggest_in_review',
 }
 
 function pad2(n: number): string {
@@ -97,9 +110,15 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   let activeTagFilter: ActionItem['color'] | null = null
 
-  /** The team's custom name for `color`, or `null` if none has been assigned yet (see openEditTagsModal). Unnamed colors render as a bare swatch — no generic fallback text. */
+  /** The team's custom name for `color`, or `null` if none has been assigned yet (see showColorNamer in openEditModal). Unnamed colors render as a bare swatch — no generic fallback text. */
   function customTagName(color: ActionItem['color']): string | null {
     return findTeam()?.actionTagNames?.[color] ?? null
+  }
+
+  /** A starter-name hint for an unnamed color (see SUGGESTED_TAG_NAME_KEYS), falling back to the plain color name — used for placeholders/aria-labels, never stored. */
+  function suggestedTagName(color: ActionItem['color']): string {
+    const key = SUGGESTED_TAG_NAME_KEYS[color]
+    return t(lc, key ?? COLOR_KEYS[color])
   }
 
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
@@ -111,15 +130,16 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         'button',
         {
           type: 'button',
-          class: 'tt-kanban-tag-chip' + (activeTagFilter === c ? ' selected' : ''),
-          'aria-label': custom ?? t(lc, COLOR_KEYS[c]),
+          // Same square swatch pattern as the color picker in the card modal
+          // (.tt-kanban-color-chip) — blank until named, name shown inside once it is.
+          class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}` + (activeTagFilter === c ? ' selected' : ''),
+          'aria-label': custom ?? suggestedTagName(c),
           onclick: () => {
             activeTagFilter = activeTagFilter === c ? null : c
             renderAll()
           },
         },
-        el('span', { class: `tt-kanban-tag-chip-swatch color-${c}` }),
-        custom ? ` ${custom}` : null
+        custom
       )
       tagChipsEl.appendChild(chip)
     }
@@ -131,19 +151,11 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     })
   }
 
-  function getPeople(): AtPerson[] {
-    const tm = findTeam()
-    if (!tm) return []
-    return [
-      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ]
-  }
-
   function removeItem(id: string): void {
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
+      unlinkRefsInTeam(tm, 'action', [id])
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
     })
   }
@@ -182,6 +194,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
+          const removedIds = tm.actionItems.filter((i) => i.status === status).map((i) => i.id)
+          unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
         })
         handle.close()
@@ -202,11 +216,17 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const errorEl = el('div', { class: 'tt-field-error' })
 
     const editor: Editor = createEditor(
-      { onChange() {}, onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId), onAtTrigger() {}, onSlashTrigger() {} },
+      {
+        onChange() {},
+        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
+        onAtTrigger() {},
+        onSlashTrigger() {},
+        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+      },
       lc
     )
     editor.setMd(existing?.notes ?? '')
-    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
       getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
@@ -226,25 +246,15 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         const custom = customTagName(c)
         colorRow.appendChild(
           el('button', {
-            type: 'button', class: `tt-kanban-color-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? t(lc, COLOR_KEYS[c]),
+            type: 'button', class: `tt-kanban-color-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? suggestedTagName(c),
             onclick: () => { selectedColor = c; paintSelectedColor() },
           }, custom)
         )
       }
       paintSelectedColor()
     }
+
     renderColorChips()
-    // Lets someone name a color right from the card they're tagging, instead
-    // of backing out to the toolbar's "Edit tags" button. Opens as a nested
-    // modal (same stacking as e.g. src/ui/prefs.ts's template delete-confirm)
-    // on top of this one; renderColorChips() re-reads actionTagNames and
-    // repaints in place once it closes, since a background store.update()
-    // doesn't touch this modal's detached DOM the way renderAll() does.
-    const editColorNamesBtn = el(
-      'button',
-      { type: 'button', class: 'tt-btn tt-kanban-color-names-btn', title: t(lc, 'kanban_edit_tags_btn'), onclick: () => openEditTagsModal(renderColorChips) },
-      '✎'
-    )
 
     const body = el(
       'div',
@@ -257,7 +267,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), dueInput),
         el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeInput)
       ),
-      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), el('div', { class: 'tt-kanban-color-field-row' }, colorRow, editColorNamesBtn)),
+      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow),
       errorEl
     )
 
@@ -274,6 +284,13 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       const dueDate = dueInput.value === '' ? null : dueInput.value
       const assignee = assigneeInput.value
       const notes = editor.getMd()
+      // A new card whose color the active filter would hide is invisible the
+      // instant it's created — clear the filter first so store.update()'s
+      // synchronous renderAll() (see src/core/store.ts) picks it up already
+      // showing everything, rather than needing a second click to find it.
+      if (existing === null && activeTagFilter !== null && activeTagFilter !== selectedColor) {
+        activeTagFilter = null
+      }
       ctx.store.update((d) => {
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
@@ -317,18 +334,19 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     summaryInput.focus()
   }
 
-  /** `onSaved` lets a caller with its own detached modal content (see openEditModal's editColorNamesBtn) repaint after a save — a background store.update() alone won't reach DOM outside the subscribe()-driven renderAll(). */
-  function openEditTagsModal(onSaved?: () => void): void {
+  function openEditTagsModal(): void {
     const tm = findTeam()
     if (!tm) return
     const inputs = new Map<ActionItem['color'], HTMLInputElement>()
     const rows = COLORS.map((c) => {
-      const input = el('input', { type: 'text', class: 'tt-input', value: tm.actionTagNames?.[c] ?? '' }) as HTMLInputElement
+      const input = el('input', {
+        type: 'text', class: 'tt-input tt-kanban-color-name-input',
+        value: tm.actionTagNames?.[c] ?? '', placeholder: suggestedTagName(c),
+      }) as HTMLInputElement
       inputs.set(c, input)
-      const swatch = el('span', { class: `tt-kanban-tag-chip-swatch color-${c}` })
-      return el('div', { class: 'tt-edit-tags-row' }, swatch, el('span', { class: 'tt-edit-tags-row-label' }, t(lc, COLOR_KEYS[c])), input)
+      return el('div', { class: 'tt-kanban-color-name-row' }, el('span', { class: `tt-kanban-color-chip color-${c}` }), input)
     })
-    const body = el('div', { class: 'tt-edit-tags-form' }, ...rows)
+    const body = el('div', { class: 'tt-kanban-color-name-rows' }, ...rows)
     const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
     const saveBtn: ModalButton = {
       label: t(lc, 'kanban_save_btn'),
@@ -346,7 +364,6 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           target.actionTagNames = nextTags
         })
         handle.close()
-        onSaved?.()
       },
     }
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_edit_tags_title'), body, buttons: [cancelBtn, saveBtn] })
@@ -452,9 +469,15 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const dropZones = [todoZoneEl, wipZoneEl, doneZoneEl, cancelledZoneEl]
   function showDropZones(): void {
     dropZones.forEach((z) => z.classList.add('active'))
+    // Lets the CSS shrink each column drop-zone's bottom edge, clearing
+    // space for the full-width trash bar (see .tt-kanban-trash) so the two
+    // never overlap. Also out-of-flow (see the drop-zone comment below), so
+    // this doesn't reflow anything mid-dragstart either.
+    kanbanRootEl.classList.add('dragging')
   }
   function hideDropZones(): void {
     dropZones.forEach((z) => z.classList.remove('active', 'drag-over'))
+    kanbanRootEl.classList.remove('dragging')
   }
 
   const todoColEl = el(
@@ -594,14 +617,16 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     renderAll()
   })
 
+  const filterLabelEl = el('span', { class: 'tt-kanban-filter-label' }, t(lc, 'kanban_filter_label'))
   const editTagsBtn = el(
     'button',
     { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
     t(lc, 'kanban_edit_tags_btn')
   )
-  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, tagChipsEl, editTagsBtn)
+  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, editTagsBtn)
 
-  container.appendChild(el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl))
+  const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
+  container.appendChild(kanbanRootEl)
 
   disposers.set(container, () => {
     unsubscribe()

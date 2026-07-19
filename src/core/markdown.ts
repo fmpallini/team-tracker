@@ -1,10 +1,18 @@
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-function inline(s: string): string {
+export type LabelResolver = (target: RefInfo['target']) => string | null
+
+const REF_PATTERN = /@\[([^\]]+)\]\((person:[^)\s]+|day:\d{4}-\d{2}-\d{2}|action:[^)\s]+|milestone:[^)\s]+|risk:[^)\s]+)\)/g
+
+function inline(s: string, resolveLabel?: LabelResolver): string {
   let out = esc(s)
-  // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date)
-  out = out.replace(/@\[([^\]]+)\]\((person:[^)\s]+|day:\d{4}-\d{2}-\d{2})\)/g,
-    (_, label, ref) => `<a class="ref" data-ref="${ref}" contenteditable="false">@${label}</a>`)
+  // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
+  out = out.replace(REF_PATTERN, (_, label: string, ref: string) => {
+    const target = resolveLabel ? parseRef(ref) : null
+    const resolved = target ? resolveLabel!(target) : null
+    const shown = resolved !== null ? esc(resolved) : label
+    return `<a class="ref" data-ref="${ref}" contenteditable="false">@${shown}</a>`
+  })
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
   out = out.replace(/~~([^~]+)~~/g, '<s>$1</s>')
@@ -18,9 +26,9 @@ function inline(s: string): string {
 // shaped "**Label:** " hit this). A trailing &nbsp; keeps a real, visible
 // caret slot after the formatting; htmlToMd normalizes it back to a regular
 // space so documents never accumulate U+00A0.
-const blockInline = (s: string) => inline(s).replace(/ $/, '&nbsp;')
+const blockInline = (s: string, resolveLabel?: LabelResolver) => inline(s, resolveLabel).replace(/ $/, '&nbsp;')
 
-export function mdToHtml(md: string): string {
+export function mdToHtml(md: string, resolveLabel?: LabelResolver): string {
   const lines = md.split('\n'); const out: string[] = []
   let list: 'ul' | 'ol' | null = null
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null } }
@@ -28,17 +36,28 @@ export function mdToHtml(md: string): string {
     const h = /^(#{1,3}) (.*)$/.exec(line)
     const ul = /^- (.*)$/.exec(line)
     const ol = /^(\d+)\. (.*)$/.exec(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(h[2]!)}</h${h[1]!.length}>`) }
-    else if (ul) { if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' } out.push(`<li>${blockInline(ul[1]!)}</li>`) }
-    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' } out.push(`<li value="${ol[1]}">${blockInline(ol[2]!)}</li>`) }
-    else { closeList(); out.push(`<div>${line ? blockInline(line) : '<br>'}</div>`) }
+    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(h[2]!, resolveLabel)}</h${h[1]!.length}>`) }
+    else if (ul) { if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' } out.push(`<li>${blockInline(ul[1]!, resolveLabel)}</li>`) }
+    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' } out.push(`<li value="${ol[1]}">${blockInline(ol[2]!, resolveLabel)}</li>`) }
+    else { closeList(); out.push(`<div>${line ? blockInline(line, resolveLabel) : '<br>'}</div>`) }
   }
   closeList(); return out.join('')
 }
 
-export interface RefInfo { label: string; target: { kind: 'person'; id: string } | { kind: 'day'; date: string } }
+export interface RefInfo {
+  label: string
+  target:
+    | { kind: 'person'; id: string }
+    | { kind: 'day'; date: string }
+    | { kind: 'action'; id: string }
+    | { kind: 'milestone'; id: string }
+    | { kind: 'risk'; id: string }
+}
 export function parseRef(href: string): RefInfo['target'] | null {
   if (href.startsWith('person:')) return { kind: 'person', id: href.slice(7) }
+  if (href.startsWith('action:')) return { kind: 'action', id: href.slice(7) }
+  if (href.startsWith('milestone:')) return { kind: 'milestone', id: href.slice(10) }
+  if (href.startsWith('risk:')) return { kind: 'risk', id: href.slice(5) }
   const m = /^day:(\d{4}-\d{2}-\d{2})$/.exec(href)
   return m ? { kind: 'day', date: m[1]! } : null
 }

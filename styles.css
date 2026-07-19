@@ -382,6 +382,11 @@ body { background: var(--bg); color: var(--fg); }
   color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: 4px;
   padding: 0 .25em; cursor: pointer; text-decoration: none;
 }
+.editor a.ref[data-ref^="person:"]::before { content: "🧑 "; }
+.editor a.ref[data-ref^="day:"]::before { content: "📅 "; }
+.editor a.ref[data-ref^="action:"]::before { content: "✅ "; }
+.editor a.ref[data-ref^="milestone:"]::before { content: "🚩 "; }
+.editor a.ref[data-ref^="risk:"]::before { content: "⚠️ "; }
 
 /* @ reference autocomplete */
 .tt-atref-dropdown {
@@ -391,6 +396,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-atref-item { padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .9rem; }
 .tt-atref-item.selected, .tt-atref-item:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
 .tt-templates-empty { color: var(--muted); cursor: default; }
 .tt-templates-empty:hover { background: none; }
 
@@ -543,21 +549,24 @@ body { background: var(--bg); color: var(--fg); }
    treatment. Lives in the wrap (sibling of the body, not a child of it) so
    renderAll()'s `body.innerHTML = ''` never destroys it mid-drag. */
 .tt-kanban-dropzone {
-  display: none; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none;
   border: 2px dashed var(--accent); border-radius: 8px;
 }
 .tt-kanban-dropzone.active { display: block; }
 .tt-kanban-dropzone.drag-over { background: rgba(var(--accent-rgb), .12); }
+/* Leaves clear space for the full-width .tt-kanban-trash bar below (see
+   there) — the two must never visually overlap. */
+.tt-kanban.dragging .tt-kanban-dropzone { bottom: 44px; }
 .tt-kanban-empty { color: var(--muted); padding: .5rem; font-size: .85rem; }
 .tt-kanban-zone-label { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 .3rem; flex: none; }
-.tt-kanban-zone-trash { border: none; background: transparent; opacity: .6; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
+.tt-kanban-zone-trash { border: none; background: transparent; opacity: .6; cursor: pointer; font-size: 1.15rem; padding: .1rem .3rem; }
 .tt-kanban-zone-trash:hover { opacity: 1; }
 .tt-kanban-divider { border-top: 1px dashed var(--border); margin: .5rem 0 .4rem; flex: none; }
 
 .tt-kanban-card {
   position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   padding: .5rem .55rem .45rem; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); cursor: grab;
-  border-left: 5px solid var(--card-ledger);
+  border-left: 8px solid var(--card-ledger);
 }
 .tt-kanban-card.color-slate { border-left-color: var(--card-slate); }
 .tt-kanban-card.color-brass { border-left-color: var(--card-brass); }
@@ -575,15 +584,19 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-card.tt-kanban-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-kanban-card.tt-kanban-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
 
-/* Floating trash drop zone — absolute overlay, hidden until a drag starts
-   (same rationale as .tt-people-root-drop: revealing it must not reflow the
-   board mid-dragstart, or Chrome cancels the drag). */
+/* Floating trash drop zone — a full-width bar along the whole bottom edge
+   of the module (not just under one column), so a card can be dropped there
+   from anywhere. Absolute overlay, hidden until a drag starts (same
+   rationale as .tt-people-root-drop: revealing it must not reflow the board
+   mid-dragstart, or Chrome cancels the drag). The column drop-zones (above)
+   pull their own bottom edge in while dragging so the two never overlap. */
 .tt-kanban-trash {
-  display: none; position: absolute; bottom: .6rem; left: 50%; transform: translateX(-50%); z-index: 5;
-  padding: .5rem 1rem; border: 2px dashed var(--danger); border-radius: 8px; color: var(--danger);
+  display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; z-index: 6;
+  align-items: center; justify-content: center;
+  border-top: 2px dashed var(--danger); color: var(--danger);
   background: var(--bg); font-size: .85rem; text-align: center;
 }
-.tt-kanban-trash.active { display: block; }
+.tt-kanban-trash.active { display: flex; }
 .tt-kanban-trash.drag-over { background: rgba(var(--accent-rgb), .12); }
 
 .tt-kanban-form { display: flex; flex-direction: column; gap: .65rem; }
@@ -591,8 +604,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-form .editor { min-height: 120px; max-height: 280px; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
-.tt-kanban-color-field-row { display: flex; align-items: center; gap: .5rem; }
-.tt-kanban-color-names-btn { flex: none; padding: .2rem .4rem; font-size: .85rem; }
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
 .tt-kanban-color-chip {
   min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
@@ -607,19 +618,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-color-chip.color-ledger { background: var(--card-ledger); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
 .tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.tt-kanban-filter-label { color: var(--muted); font-size: .8rem; flex: none; }
 .tt-kanban-edit-tags-btn { margin-left: auto; }
-.tt-kanban-tag-chip-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
-.tt-kanban-tag-chip-swatch.color-slate { background: var(--card-slate); }
-.tt-kanban-tag-chip-swatch.color-brass { background: var(--card-brass); }
-.tt-kanban-tag-chip-swatch.color-sage { background: var(--card-sage); }
-.tt-kanban-tag-chip-swatch.color-rust { background: var(--card-rust); }
-.tt-kanban-tag-chip-swatch.color-plum { background: var(--card-plum); }
-.tt-kanban-tag-chip-swatch.color-ledger { background: var(--card-ledger); }
-.tt-edit-tags-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
-.tt-edit-tags-row-label { width: 80px; flex: none; color: var(--muted); }
-.tt-kanban-tag-chips { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
-.tt-kanban-tag-chip { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--border); border-radius: 999px; padding: .1rem .55rem; background: var(--panel); cursor: pointer; font-size: .8rem; color: var(--fg); }
-.tt-kanban-tag-chip.selected { border-color: var(--fg); font-weight: 700; }
+/* Color-naming rows — src/modules/action-items.ts's openEditTagsModal. */
+.tt-kanban-color-name-rows { display: flex; flex-direction: column; gap: .4rem; }
+.tt-kanban-color-name-row { display: flex; align-items: center; gap: .5rem; }
+.tt-kanban-color-name-row .tt-kanban-color-chip { flex: none; cursor: default; }
+.tt-kanban-color-name-input { flex: 1; }
+.tt-kanban-tag-chips { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .tt-kanban-card-tag { font-size: .7rem; color: var(--muted); }
 
 /* Milestones module */

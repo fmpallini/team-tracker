@@ -140,6 +140,20 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   expect(store.doc.nav.activeTeamId).toBe(store.doc.teams[0]!.id)
 })
 
+test('a new team is seeded with default names for the urgent/blocked/in-review colors', () => {
+  const { store } = setup()
+  clickByText('➕')
+  const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
+  nameInput.value = 'Gamma'
+  nameInput.dispatchEvent(new Event('input'))
+  const emojiInput = document.querySelector('input[name="tt-team-emoji"]') as HTMLInputElement
+  emojiInput.value = '🐙'
+  emojiInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+
+  expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Urgent', brass: 'Blocked', slate: 'In Review' })
+})
+
 test('+ modal requires a name', () => {
   setup()
   clickByText('➕')

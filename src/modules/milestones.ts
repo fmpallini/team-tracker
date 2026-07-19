@@ -12,10 +12,12 @@
 // this module never talks to the calendar.
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
+import { teamRefCandidates } from '../core/search'
+import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
+import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { el } from '../ui/dom'
 
@@ -187,15 +189,6 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     renderAll()
   }
 
-  function getPeople(): AtPerson[] {
-    const tm = findTeam()
-    if (!tm) return []
-    return [
-      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ]
-  }
-
   /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself as `expandedBundle` so the caller can dispose it later. */
   function renderFollowupRow(m: Milestone): HTMLElement {
     const editor: Editor = createEditor(
@@ -212,12 +205,13 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
         onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
         onAtTrigger() {},
         onSlashTrigger() {},
+        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
       },
       lc
     )
     editor.setMd(m.followup)
 
-    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
       getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
@@ -233,6 +227,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
+      unlinkRefsInTeam(tm, 'milestone', [id])
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
     })
   }

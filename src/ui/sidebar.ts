@@ -67,11 +67,20 @@ export function onNavChanged(cb: () => void): () => void {
  */
 export const ADD_TEAM_REQUEST_EVENT = 'tt-add-team-request'
 
-function emptyTeam(id: string, name: string, emoji: string): Team {
+// Same three colors/words as src/modules/action-items.ts's
+// SUGGESTED_TAG_NAME_KEYS (red/yellow/blue — the first three in its display
+// order) — real, editable/removable data here rather than that file's
+// placeholder-only fallback, since this only runs once, at team creation.
+function emptyTeam(id: string, name: string, emoji: string, locale: Locale): Team {
   return {
     id, name, emoji,
     stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
     dailyNotes: {},
+    actionTagNames: {
+      rust: t(locale, 'kanban_suggest_urgent'),
+      brass: t(locale, 'kanban_suggest_blocked'),
+      slate: t(locale, 'kanban_suggest_in_review'),
+    },
   }
 }
 
@@ -345,7 +354,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         }
         const newTeamId = crypto.randomUUID()
         store.update((d) => {
-          d.teams.push(emptyTeam(newTeamId, name, emoji))
+          d.teams.push(emptyTeam(newTeamId, name, emoji, locale()))
         })
         picker.dispose()
         handle.close()

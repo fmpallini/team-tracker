@@ -3,19 +3,24 @@
 // app-level ref-click navigation handler every module renderer (Tasks 18/19)
 // wires into EditorHooks.onRefClick.
 import { AT_TRIGGER_EVENT, type Editor } from './editor'
-import type { RefInfo } from '../core/markdown'
-import { t, formatDate, parseLocaleDate, type Locale } from '../core/i18n'
-import { normalize } from '../core/search'
+import type { RefInfo, LabelResolver } from '../core/markdown'
+import { t, formatDate, parseLocaleDate, type Locale, type MsgKey } from '../core/i18n'
+import { normalize, KIND_ICON, type TeamRefCandidates } from '../core/search'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
-import { toast } from './modal'
 import { el } from './dom'
 
-export interface AtPerson { id: string; name: string; group: 'stakeholders' | 'members' }
+export type { AtPerson } from '../core/search'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
-  | { kind: 'day'; date: string }
+  // `relativeWord` is set only for the hoje/ontem/amanhã (today/yesterday/
+  // tomorrow) matches — lets the dropdown show "@hoje · 19/07/2026" so the
+  // trigger word is discoverable, vs. a typed-exact-date match or the
+  // format-hint item below, which stay unlabeled and just read as a normal
+  // "go to day" result.
+  | { kind: 'day'; date: string; relativeWord?: string }
+  | { kind: 'action' | 'milestone' | 'risk'; id: string; title: string }
 
 const RELATIVE_DAYS: Record<Locale, [string, number][]> = {
   'pt-BR': [['hoje', 0], ['ontem', -1], ['amanhã', 1]],
@@ -28,26 +33,55 @@ function isoWithOffset(days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const GROUP_CAP = 5
+
 /**
- * Pure, unit-testable filter: substring match (accent/case-insensitive, via
- * core/search's normalize) on people names, plus relative-day words
- * (hoje/ontem/amanhã, today/yesterday/tomorrow) and a "go to day" item
- * appended when `typed` parses as a *complete* date in the locale's format.
+ * Pure, unit-testable filter over a team's candidates, grouped by type
+ * (people, dates, action items, milestones, risks — in that order) and
+ * capped at GROUP_CAP per group. Substring match (accent/case-insensitive,
+ * via core/search's normalize). Relative-day words (hoje/ontem/amanhã,
+ * today/yesterday/tomorrow) always show, even on an empty query — that's
+ * what makes '@today' discoverable from a bare '@'. A "go to day" item is
+ * additionally appended when `typed` parses as a *complete* date in the
+ * locale's format.
  */
-export function filterAtItems(people: AtPerson[], typed: string, locale: Locale): AtItem[] {
+export function filterAtItems(candidates: TeamRefCandidates, typed: string, locale: Locale): AtItem[] {
   const trimmed = typed.trim()
   const q = normalize(trimmed)
-  const items: AtItem[] = people
+
+  const people: AtItem[] = candidates.people
     .filter((p) => normalize(p.name).includes(q))
+    .slice(0, GROUP_CAP)
     .map((p): AtItem => ({ kind: 'person', id: p.id, name: p.name }))
-  if (trimmed !== '') {
-    for (const [word, offset] of RELATIVE_DAYS[locale]) {
-      if (normalize(word).startsWith(q)) items.push({ kind: 'day', date: isoWithOffset(offset) })
-    }
+
+  const days: AtItem[] = []
+  for (const [word, offset] of RELATIVE_DAYS[locale]) {
+    if (normalize(word).startsWith(q)) days.push({ kind: 'day', date: isoWithOffset(offset), relativeWord: word })
   }
   const iso = parseLocaleDate(trimmed, locale)
-  if (iso) items.push({ kind: 'day', date: iso })
-  return items
+  if (iso) days.push({ kind: 'day', date: iso })
+  // Format-hint: on a bare '@' (alongside the 3 relative words), a 4th real,
+  // selectable day item using today+2 — its label (a plain "go to day"
+  // result showing a dd/mm/yyyy-shaped date) doubles as a worked example of
+  // the exact-date format users can type directly, without any new copy.
+  if (trimmed === '') days.push({ kind: 'day', date: isoWithOffset(2) })
+
+  const actions: AtItem[] = candidates.actionItems
+    .filter((c) => normalize(c.title).includes(q))
+    .slice(0, GROUP_CAP)
+    .map((c): AtItem => ({ kind: 'action', id: c.id, title: c.title }))
+
+  const milestones: AtItem[] = candidates.milestones
+    .filter((c) => normalize(c.title).includes(q))
+    .slice(0, GROUP_CAP)
+    .map((c): AtItem => ({ kind: 'milestone', id: c.id, title: c.title }))
+
+  const risks: AtItem[] = candidates.risks
+    .filter((c) => normalize(c.title).includes(q))
+    .slice(0, GROUP_CAP)
+    .map((c): AtItem => ({ kind: 'risk', id: c.id, title: c.title }))
+
+  return [...people, ...days, ...actions, ...milestones, ...risks]
 }
 
 interface AtLoc { block: HTMLElement; atOffset: number; caretOffset: number; typed: string }
@@ -58,7 +92,7 @@ export interface AtAutocompleteHandle {
 }
 
 export function attachAtAutocomplete(editor: Editor, opts: {
-  getPeople(): AtPerson[]
+  getRefCandidates(): TeamRefCandidates
   locale: Locale
   onPick(item: AtItem): void
 }): AtAutocompleteHandle {
@@ -130,13 +164,39 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 
   // --- dropdown rendering ---------------------------------------------------
 
+  const GROUP_HEADER_KEY: Record<AtItem['kind'], MsgKey> = {
+    person: 'atref_group_people',
+    day: 'atref_group_dates',
+    action: 'module_actions',
+    milestone: 'module_milestones',
+    risk: 'module_risks',
+  }
+  const GROUP_ICON: Record<AtItem['kind'], string> = {
+    person: KIND_ICON.person,
+    day: KIND_ICON.daily,
+    action: KIND_ICON.actions,
+    milestone: KIND_ICON.milestones,
+    risk: KIND_ICON.risks,
+  }
+
   function renderList(): void {
     if (!listEl) return
     listEl.innerHTML = ''
+    let lastKind: AtItem['kind'] | null = null
     items.forEach((item, i) => {
+      if (item.kind !== lastKind) {
+        listEl!.appendChild(
+          el('div', { class: 'tt-atref-group-header' }, `${GROUP_ICON[item.kind]} ${t(opts.locale, GROUP_HEADER_KEY[item.kind])}`)
+        )
+        lastKind = item.kind
+      }
       const label = item.kind === 'person'
         ? item.name
-        : t(opts.locale, 'atref_goto_day', { date: formatDate(item.date, opts.locale) })
+        : item.kind === 'day'
+          ? item.relativeWord
+            ? `@${item.relativeWord} · ${formatDate(item.date, opts.locale)}`
+            : t(opts.locale, 'atref_goto_day', { date: formatDate(item.date, opts.locale) })
+          : item.title
       const row = el(
         'div',
         {
@@ -156,9 +216,11 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     })
   }
 
+  /** Only .tt-atref-item rows are selectable — group headers are interspersed in the DOM but not in `items`/`selected`, so this must query past them rather than index into listEl.children directly. */
   function updateSelectedClass(): void {
     if (!listEl) return
-    Array.from(listEl.children).forEach((child, i) => child.classList.toggle('selected', i === selected))
+    const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-atref-item'))
+    rows.forEach((row, i) => row.classList.toggle('selected', i === selected))
   }
 
   function positionOverlay(): void {
@@ -176,7 +238,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     const loc = locateAt()
     if (!loc) { close(); return }
     lastLoc = loc
-    items = filterAtItems(opts.getPeople(), loc.typed, opts.locale)
+    items = filterAtItems(opts.getRefCandidates(), loc.typed, opts.locale)
     selected = items.length === 0 ? 0 : Math.min(selected, items.length - 1)
     renderList()
   }
@@ -218,12 +280,21 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     const range = rangeForOffsets(block, atOffset, caretOffset)
     range.deleteContents()
 
-    const label = item.kind === 'person' ? item.name : formatDate(item.date, opts.locale)
+    const label = item.kind === 'person'
+      ? item.name
+      : item.kind === 'day'
+        ? formatDate(item.date, opts.locale)
+        : item.title
     const safeLabel = label.replace(/[[\]()]/g, '')
     const chip = document.createElement('a')
     chip.className = 'ref'
     chip.setAttribute('contenteditable', 'false')
-    chip.dataset.ref = item.kind === 'person' ? `person:${item.id}` : `day:${item.date}`
+    // Chip *text content* stays exactly `@${safeLabel}` — the per-kind icon
+    // is CSS-only (styles.css, keyed off this same data-ref prefix), never
+    // baked into textContent. inlineMd (core/markdown.ts) derives the
+    // persisted markdown label straight from textContent, so an icon inside
+    // it would round-trip into storage as part of the label forever.
+    chip.dataset.ref = item.kind === 'person' ? `person:${item.id}` : item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
     chip.textContent = `@${safeLabel}`
     range.insertNode(chip)
     // A trailing space after the chip lets the user keep typing immediately
@@ -312,16 +383,65 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
       return
     }
 
+    if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
+      const moduleKind = target.kind === 'action' ? 'actions' : target.kind === 'milestone' ? 'milestones' : 'risks'
+      pm.openInPane(paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } })
+      // Best-effort scroll to the specific card, mirroring search-ui.ts's
+      // commit() — no toast if the item was deleted (decision 7: with
+      // auto-unlink-on-delete this is a defensive fallback for edge cases
+      // outside the app's own control, e.g. a hand-edited .tmv or an import
+      // merge, not the common path).
+      requestAnimationFrame(() => {
+        const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
+        paneEl?.querySelector(`[data-item-id="${target.id}"]`)?.scrollIntoView({ block: 'center' })
+      })
+      return
+    }
+
     const team = store.doc.teams.find((tm) => tm.id === teamId)
     const group = team?.stakeholders.some((p) => p.id === target.id)
       ? 'stakeholders'
       : team?.members.some((p) => p.id === target.id)
         ? 'members'
         : null
-    if (!group) {
-      toast(t(locale, 'toast_person_not_found'))
-      return
-    }
+    // No toast on a dangling person ref either — same reasoning as above,
+    // and consistent with the other 3 kinds instead of the other way around.
+    if (!group) return
     pm.openInPane(paneIdx, { teamId, ref: { kind: 'person', personId: target.id, group } })
+  }
+}
+
+/**
+ * Live label resolution for core/markdown.ts's mdToHtml: given a ref target,
+ * returns the item's *current* name/title (so a chip shows the up-to-date
+ * label even if the item was renamed after the mention was typed), or null
+ * if resolveLabel has nothing to offer (day is always resolvable; the other
+ * 4 fall back to null only if the id genuinely isn't found, which per
+ * decision 7 shouldn't normally happen once auto-unlink-on-delete is wired
+ * up in Task 7).
+ */
+export function makeRefLabelResolver(store: Store, teamId: string): LabelResolver {
+  return (target) => {
+    if (target.kind === 'day') return formatDate(target.date, store.doc.prefs.locale)
+    const team = store.doc.teams.find((tm) => tm.id === teamId)
+    if (!team) return null
+    switch (target.kind) {
+      case 'person': {
+        const p = team.stakeholders.find((pp) => pp.id === target.id) ?? team.members.find((pp) => pp.id === target.id)
+        return p ? p.name : null
+      }
+      case 'action': {
+        const a = team.actionItems.find((i) => i.id === target.id)
+        return a ? a.summary : null
+      }
+      case 'milestone': {
+        const m = team.milestones.find((i) => i.id === target.id)
+        return m ? m.title : null
+      }
+      case 'risk': {
+        const r = team.risks.find((i) => i.id === target.id)
+        return r ? r.title : null
+      }
+    }
   }
 }

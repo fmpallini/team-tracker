@@ -75,3 +75,49 @@ test('ref chip with problematic chars in label sanitizes on md export', () => {
   expect(html).toContain('>@badlabelchars<')
   expect(roundTrip(md)).toBe(md)
 })
+
+test('parseRef accepts action/milestone/risk prefixes', () => {
+  expect(parseRef('action:x1')).toEqual({ kind: 'action', id: 'x1' })
+  expect(parseRef('milestone:x2')).toEqual({ kind: 'milestone', id: 'x2' })
+  expect(parseRef('risk:x3')).toEqual({ kind: 'risk', id: 'x3' })
+})
+
+test('action/milestone/risk refs become chips and round-trip', () => {
+  const md = 'ver @[Fix bug](action:a1) e @[Ship v2](milestone:m1) e @[Vendor delay](risk:r1)'
+  const html = mdToHtml(md)
+  expect(html).toContain('data-ref="action:a1"')
+  expect(html).toContain('data-ref="milestone:m1"')
+  expect(html).toContain('data-ref="risk:r1"')
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('mdToHtml with a resolver shows the resolved label instead of the stored one', () => {
+  const md = 'see @[Old Name](action:a1)'
+  const html = mdToHtml(md, (target) => (target.kind === 'action' && target.id === 'a1' ? 'New Name' : null))
+  expect(html).toContain('>@New Name<')
+  expect(html).not.toContain('Old Name')
+})
+
+test('mdToHtml resolver returning null falls back to the stored label', () => {
+  const md = 'see @[Old Name](action:a1)'
+  const html = mdToHtml(md, () => null)
+  expect(html).toContain('>@Old Name<')
+})
+
+test('mdToHtml with no resolver uses the stored label (existing callers unaffected)', () => {
+  const md = 'see @[Old Name](action:a1)'
+  expect(mdToHtml(md)).toContain('>@Old Name<')
+})
+
+test('resolved label is HTML-escaped', () => {
+  const md = 'see @[Old](action:a1)'
+  const html = mdToHtml(md, () => '<script>x</script>')
+  expect(html).not.toContain('<script>')
+  expect(html).toContain('&lt;script&gt;')
+})
+
+test('day ref resolves to the current locale format via the resolver', () => {
+  const md = 'ver @[02/07/2026](day:2026-07-02)'
+  const html = mdToHtml(md, (target) => (target.kind === 'day' ? `${target.date} (resolved)` : null))
+  expect(html).toContain('>@2026-07-02 (resolved)<')
+})

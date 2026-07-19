@@ -5,9 +5,10 @@
 // tree, possibly in the *other* pane) while this module is mounted.
 import type { Loc, Person, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
+import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
 import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, type AtPerson } from '../ui/atref'
+import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
 import { attachTemplatePicker } from '../ui/template-picker'
 import { el } from '../ui/dom'
 
@@ -70,21 +71,13 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
       onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
       onAtTrigger() {},
       onSlashTrigger() {},
+      resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
     },
     lc
   )
   editor.setMd(person.notes)
 
-  function getPeople(): AtPerson[] {
-    const tm = findTeam()
-    if (!tm) return []
-    return [
-      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ]
-  }
-
-  const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+  const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
 
   const tplHandle = attachTemplatePicker(editor, {
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),

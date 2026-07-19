@@ -377,6 +377,25 @@ describe('renderMilestones', () => {
     expect(store.doc.teams[0]!.milestones).toHaveLength(1)
   })
 
+  test('deleting a milestone unlinks every reference to it across the team\'s notes', () => {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'a', title: 'Launch', date: '2026-01-01' }),
+        milestone({ id: 'b', title: 'Follow-up', date: '2026-02-01', followup: 'depends on @[Launch](milestone:a) landing first' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    // Milestones render sorted by date ascending, so row 0 is 'Launch'.
+    clickByTitleOrText(rows(container)[0]!, 'Delete milestone')
+    clickByTitleOrText(document.body, 'Delete')
+
+    const remaining = store.doc.teams[0]!.milestones
+    expect(remaining.map((m) => m.id)).toEqual(['b'])
+    expect(remaining[0]!.followup).toBe('depends on Launch landing first')
+  })
+
   test('preserves an in-progress title edit (skips rebuild, defers to blur) when the store changes elsewhere while focused', () => {
     const team = makeTeam({
       milestones: [milestone({ id: 'a', date: '2026-01-01', title: 'A' }), milestone({ id: 'b', date: '2026-02-01', title: 'B' })],

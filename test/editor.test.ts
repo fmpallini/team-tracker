@@ -111,6 +111,61 @@ describe('@ trigger', () => {
     expect(hooks.atRanges.length).toBe(1)
     editor.destroy()
   })
+
+  // Regression: contenteditable's native "select all + delete" can leave
+  // editorEl with zero element children — no wrapping <div>/<p> at all,
+  // unlike a freshly loaded note (setMd always leaves at least one block,
+  // even for an empty string — see core/markdown.ts's mdToHtml). Typing "@"
+  // right into that bare state lands the character as a direct text-node
+  // child of editorEl, which the block-walk in currentBlockAndOffset()
+  // can't resolve to a block, so the trigger silently didn't fire — until
+  // the user pressed Enter first, which creates a real block as a side effect.
+  test('typing @ into an editor emptied by select-all+delete (no wrapping block left) still fires onAtTrigger', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '' // simulates the post-"select all + Backspace" state
+    editorEl.appendChild(document.createTextNode('@')) // simulates the browser's default action for the keystroke
+    const textNode = editorEl.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, 1)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(hooks.atRanges.length).toBe(1)
+    editor.destroy()
+  })
+})
+
+describe('/ trigger', () => {
+  // Same root cause as the @ regression above, for the slash-template trigger.
+  test('typing / into an editor emptied by select-all+delete (no wrapping block left) still fires onSlashTrigger', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = ''
+    editorEl.appendChild(document.createTextNode('/'))
+    const textNode = editorEl.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, 1)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(hooks.slashRanges.length).toBe(1)
+    editor.destroy()
+  })
 })
 
 describe('keyboard shortcuts', () => {
@@ -407,9 +462,31 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('hello')).toBeNull()
   })
   test('matches when the trailing space is a non-breaking space (\\u00A0) — real Chrome inserts nbsp instead of a regular space for whitespace at the edge of a text node, which is exactly the position typing "- " at the start of an empty line lands in', () => {
-    const nbsp = ' '
+    const nbsp = ' '
     expect(detectBlockPrefix('-' + nbsp)).toEqual({ type: 'ul', prefixLen: 2 })
     expect(detectBlockPrefix('1.' + nbsp)).toEqual({ type: 'ol', prefixLen: 3 })
     expect(detectBlockPrefix('#' + nbsp)).toEqual({ type: 'h1', prefixLen: 2 })
+  })
+})
+
+describe('resolveRefLabel hook', () => {
+  test('setMd uses hooks.resolveRefLabel to show the live label when provided', () => {
+    const hooks = makeHooks()
+    const editorWithResolver = createEditor(
+      { ...hooks, resolveRefLabel: (target) => (target.kind === 'action' ? 'Live Title' : null) },
+      'pt-BR'
+    )
+    editorWithResolver.setMd('see @[Stale Title](action:a1)')
+    const chip = editorWithResolver.root.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.textContent).toBe('@Live Title')
+    editorWithResolver.destroy()
+  })
+
+  test('setMd falls back to the stored label when resolveRefLabel is not provided', () => {
+    const editor = createEditor(makeHooks(), 'pt-BR')
+    editor.setMd('see @[Stale Title](action:a1)')
+    const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.textContent).toBe('@Stale Title')
+    editor.destroy()
   })
 })

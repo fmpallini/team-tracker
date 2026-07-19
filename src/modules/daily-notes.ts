@@ -4,9 +4,10 @@
 // src/ui/calendar.ts (day picker) into the pane system (src/ui/panes.ts).
 import type { Loc, Team } from '../core/types'
 import { t } from '../core/i18n'
+import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
 import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, type AtPerson } from '../ui/atref'
+import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
 import { attachTemplatePicker } from '../ui/template-picker'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
 import { el } from '../ui/dom'
@@ -111,21 +112,13 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
       onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
       onAtTrigger() {},
       onSlashTrigger() {},
+      resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
     },
     lc
   )
   editor.setMd(findTeam(ctx, teamId)?.dailyNotes[date] ?? '')
 
-  function getPeople(): AtPerson[] {
-    const tm = findTeam(ctx, teamId)
-    if (!tm) return []
-    return [
-      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ]
-  }
-
-  const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+  const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam(ctx, teamId)), locale: lc, onPick: () => {} })
 
   const tplHandle = attachTemplatePicker(editor, {
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'daily' || tpl.scope === 'any'),

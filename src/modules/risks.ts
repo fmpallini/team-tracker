@@ -11,10 +11,12 @@
 // rebuilds).
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
+import { teamRefCandidates } from '../core/search'
+import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, type AtPerson, type AtAutocompleteHandle } from '../ui/atref'
+import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { computeDropPosition } from './action-items'
 import { el } from '../ui/dom'
@@ -159,6 +161,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
+      unlinkRefsInTeam(tm, 'risk', [id])
       tm.risks = tm.risks.filter((r) => r.id !== id)
     })
   }
@@ -209,15 +212,6 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     return select
   }
 
-  function getPeople(): AtPerson[] {
-    const tm = findTeam()
-    if (!tm) return []
-    return [
-      ...tm.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...tm.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ]
-  }
-
   /** Builds the full rich editor for a risk's follow-up, wired exactly like src/modules/person-notes.ts (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself as `expandedBundle` so the caller can dispose it later. */
   function renderFollowupRow(r: Risk): HTMLElement {
     const editor: Editor = createEditor(
@@ -234,12 +228,13 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
         onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
         onAtTrigger() {},
         onSlashTrigger() {},
+        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
       },
       lc
     )
     editor.setMd(r.followup)
 
-    const atHandle = attachAtAutocomplete(editor, { getPeople, locale: lc, onPick: () => {} })
+    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
       getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
