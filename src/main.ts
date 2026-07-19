@@ -28,7 +28,7 @@ import { createSaveController, type SaveController } from './core/save-controlle
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
-import { initInstallCapture, promoHeaderButton } from './ui/promo'
+import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
 
 // beforeinstallprompt fires before the UI mounts — capture must be
 // registered at startup or the native install prompt is lost (see
@@ -242,7 +242,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   pm.renderAll()
   const palette = createPalette(store, pm)
   shell.onAppNameClick(() => palette.open())
-  mountSearch(shell, store, pm, selectTeam)
+  disposers.push(mountSearch(shell, store, pm, selectTeam))
   app = { store, session, password, shell, pm, dispose }
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
@@ -424,7 +424,13 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     showGlobalHelp(store.doc.prefs.locale)
   })
   store.onMutate(() => clearSearchHighlight())
-  onLocaleChanged(() => pm.renderAll())
+  disposers.push(
+    onLocaleChanged(() => {
+      pm.renderAll()
+      // Header chrome outside the shell's own applyPrefs re-stamp list.
+      if (promoBtn) refreshPromoHeaderButton(promoBtn, store.doc.prefs.locale)
+    })
+  )
 
   // Saves (if dirty) and fully tears this document down, releasing the
   // cross-tab write lock, then returns to the start screen — the 🔒 header

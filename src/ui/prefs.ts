@@ -47,8 +47,12 @@ export function notifyLocaleChanged(): void {
   document.dispatchEvent(new CustomEvent(LOCALE_CHANGED_EVENT))
 }
 
-export function onLocaleChanged(cb: () => void): void {
+/** Returns an unsubscribe function (mirrors sidebar.ts's onNavChanged) so per-document listeners can be torn down on close-file instead of leaking across sessions. */
+export function onLocaleChanged(cb: () => void): () => void {
   document.addEventListener(LOCALE_CHANGED_EVENT, cb)
+  return () => {
+    document.removeEventListener(LOCALE_CHANGED_EVENT, cb)
+  }
 }
 
 type TabId = 'general' | 'templates' | 'security' | 'data' | 'about'
@@ -609,7 +613,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     function doImport(): void {
       if (!importTeams) return
       const selected = importTeams.filter((_, i) => importChecks[i]?.checked)
-      const newTeams = remapForImport(selected)
+      const newTeams = remapForImport(selected, locale)
       store.update((d) => {
         d.teams.push(...newTeams)
       })

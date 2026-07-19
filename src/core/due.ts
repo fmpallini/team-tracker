@@ -1,9 +1,10 @@
-// src/core/due.ts — pure computation of overdue/due-soon action items and
-// milestones across every team, for the sidebar badge/list (src/ui/sidebar.ts).
-// Deliberately independent of src/modules/action-items.ts's own isOverdue
-// (same "date < today, not done/cancelled" semantics) — core/ must not
-// depend on modules/.
-import type { Doc, Loc } from './types'
+// src/core/due.ts — the app's single "what counts as overdue/active" rule,
+// plus pure computation of overdue/due-soon action items and milestones
+// across every team for the sidebar badge/list (src/ui/sidebar.ts). The
+// kanban card highlight (src/modules/action-items.ts) imports isOverdue from
+// here, so the badge and the board can never disagree on the semantics.
+import type { ActionItem, Doc, Loc } from './types'
+import { addDaysIso } from './date'
 
 export interface DueItem {
   loc: Loc
@@ -18,14 +19,14 @@ export interface DueBuckets {
   dueSoon: DueItem[]
 }
 
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
+/** An item still in play — not landed in a terminal status. */
+export function isActionActive(item: Pick<ActionItem, 'status'>): boolean {
+  return item.status !== 'done' && item.status !== 'cancelled'
 }
 
-function addDaysIso(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number) as [number, number, number]
-  const dt = new Date(y, m - 1, d + days)
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
+/** True when the item has a due date strictly before `today` and is still active. */
+export function isOverdue(item: Pick<ActionItem, 'dueDate' | 'status'>, today: string): boolean {
+  return item.dueDate !== null && item.dueDate < today && isActionActive(item)
 }
 
 export function collectDueItems(doc: Doc, today: string): DueBuckets {
@@ -40,8 +41,7 @@ export function collectDueItems(doc: Doc, today: string): DueBuckets {
 
   for (const team of doc.teams) {
     for (const it of team.actionItems) {
-      if (it.status === 'done' || it.status === 'cancelled') continue
-      if (it.dueDate === null) continue
+      if (!isActionActive(it) || it.dueDate === null) continue
       classify({
         loc: { teamId: team.id, ref: { kind: 'actions', itemId: it.id } },
         title: it.summary, teamName: team.name, date: it.dueDate, kind: 'action',

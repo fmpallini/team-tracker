@@ -63,10 +63,9 @@ export const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
   daily: '📅', person: '🧑', stakeholders: '👥', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
 }
 
-export interface AtPerson { id: string; name: string; group: 'stakeholders' | 'members' }
 export interface RefCandidate { id: string; title: string }
 export interface TeamRefCandidates {
-  people: AtPerson[]
+  people: RefCandidate[]
   actionItems: RefCandidate[]
   milestones: RefCandidate[]
   risks: RefCandidate[]
@@ -76,10 +75,7 @@ export interface TeamRefCandidates {
 export function teamRefCandidates(team: Team | undefined): TeamRefCandidates {
   if (!team) return { people: [], actionItems: [], milestones: [], risks: [] }
   return {
-    people: [
-      ...team.stakeholders.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'stakeholders' })),
-      ...team.members.map((p): AtPerson => ({ id: p.id, name: p.name, group: 'members' })),
-    ],
+    people: [...team.stakeholders, ...team.members].map((p): RefCandidate => ({ id: p.id, title: p.name })),
     actionItems: team.actionItems.map((i): RefCandidate => ({ id: i.id, title: i.summary })),
     milestones: team.milestones.map((m): RefCandidate => ({ id: m.id, title: m.title })),
     risks: team.risks.map((r): RefCandidate => ({ id: r.id, title: r.title })),

@@ -5,6 +5,7 @@ import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { normalize } from '../core/search'
 import { el } from './dom'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { buildModuleItems, type ModuleItem, type PaneManager } from './panes'
 
 export interface Palette {
@@ -45,32 +46,24 @@ export function createPalette(store: Store, pm: PaneManager): Palette {
     pm.openInFocused({ teamId, ref: item.ref })
   }
 
+  // Hover/arrow selection repaints in place via paintSelection — see
+  // src/ui/select-list.ts for the rebuild-on-hover Chrome loop this avoids.
   function renderList(): void {
     if (!listEl) return
     listEl.innerHTML = ''
     filtered.forEach((item, i) => {
       const row = el(
         'div',
-        {
-          class: 'tt-palette-item' + (i === selected ? ' selected' : ''),
-          onmousedown: (e: Event) => e.preventDefault(),
-          onclick: () => commit(item),
-          // See src/ui/template-picker.ts's and src/ui/atref.ts's identical
-          // fix: rebuilding every row on hover (via renderList()) made real
-          // Chrome re-fire mouseenter on the replacement node under a
-          // stationary pointer, looping forever and leaving mousedown/mouseup
-          // on two different elements — so no click event ever fired.
-          onmouseenter: () => { selected = i; updateSelectedClass() },
-        },
+        selectableRowProps({
+          class: 'tt-palette-item',
+          selected: i === selected,
+          onCommit: () => commit(item),
+          onHover: () => { selected = i; paintSelection(listEl, '.tt-palette-item', selected) },
+        }),
         item.label
       )
       listEl!.appendChild(row)
     })
-  }
-
-  function updateSelectedClass(): void {
-    if (!listEl) return
-    Array.from(listEl.children).forEach((child, i) => child.classList.toggle('selected', i === selected))
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -79,16 +72,10 @@ export function createPalette(store: Store, pm: PaneManager): Palette {
       close()
       return
     }
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      selected = filtered.length === 0 ? 0 : Math.min(selected + 1, filtered.length - 1)
-      renderList()
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      selected = Math.max(selected - 1, 0)
-      renderList()
+      selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, filtered.length)
+      paintSelection(listEl, '.tt-palette-item', selected)
       return
     }
     if (e.key === 'Enter') {

@@ -19,6 +19,7 @@ import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -27,15 +28,6 @@ const disposers = new WeakMap<HTMLElement, () => void>()
 /** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
 function blurOnEnter(e: Event): void {
   if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
-function nowHHMM(): string {
-  const now = new Date()
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

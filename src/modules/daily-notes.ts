@@ -10,6 +10,7 @@ import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
 import { attachTemplatePicker } from '../ui/template-picker'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
+import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
 
 /**
@@ -28,15 +29,6 @@ import { el } from '../ui/dom'
  * container be garbage-collected normally once panes.ts drops it.
  */
 const disposers = new WeakMap<HTMLElement, () => void>()
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
-function nowHHMM(): string {
-  const now = new Date()
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
-}
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return ctx.store.doc.teams.find((tm) => tm.id === teamId)

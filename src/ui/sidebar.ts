@@ -6,6 +6,10 @@ import type { Loc, Team } from '../core/types'
 import { lastLocForTeam } from '../core/nav'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { collectDueItems, type DueBuckets, type DueItem } from '../core/due'
+import { diffDays } from '../core/date'
+import { createEmptyTeam } from '../core/document'
+import { KIND_ICON } from '../core/search'
+import { REF_KINDS } from '../core/refs'
 import { el } from './dom'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
@@ -67,23 +71,6 @@ export function onNavChanged(cb: () => void): () => void {
  */
 export const ADD_TEAM_REQUEST_EVENT = 'tt-add-team-request'
 
-// Same three colors/words as src/modules/action-items.ts's
-// SUGGESTED_TAG_NAME_KEYS (red/yellow/blue — the first three in its display
-// order) — real, editable/removable data here rather than that file's
-// placeholder-only fallback, since this only runs once, at team creation.
-function emptyTeam(id: string, name: string, emoji: string, locale: Locale): Team {
-  return {
-    id, name, emoji,
-    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
-    dailyNotes: {},
-    actionTagNames: {
-      rust: t(locale, 'kanban_suggest_urgent'),
-      brass: t(locale, 'kanban_suggest_blocked'),
-      slate: t(locale, 'kanban_suggest_in_review'),
-    },
-  }
-}
-
 export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): void {
   let dragSrcIndex: number | null = null
 
@@ -110,12 +97,19 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     '⏰', dueBadgeEl
   )
 
-  function diffDays(later: string, earlier: string): number {
-    const [ly, lm, ld] = later.split('-').map(Number) as [number, number, number]
-    const [ey, em, ed] = earlier.split('-').map(Number) as [number, number, number]
-    const a = Date.UTC(ly, lm - 1, ld)
-    const b = Date.UTC(ey, em - 1, ed)
-    return Math.round((a - b) / 86400000)
+  /**
+   * Due buckets are recomputed only when content actually changed (cache
+   * cleared in the store.subscribe handler below) or the calendar day rolled
+   * over — nav-only re-renders (team switch, active-highlight moves) reuse
+   * the cached scan instead of re-walking every team's items.
+   */
+  let dueCache: { today: string; buckets: DueBuckets } | null = null
+  function dueBuckets(): DueBuckets {
+    const today = todayIso()
+    if (!dueCache || dueCache.today !== today) {
+      dueCache = { today, buckets: collectDueItems(store.doc, today) }
+    }
+    return dueCache.buckets
   }
 
   function relLabel(dateIso: string): string {
@@ -124,14 +118,14 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     return t(locale(), 'due_in_days', { days: String(diffDays(dateIso, today)) })
   }
 
-  function renderDueRow(item: DueItem, handleRef: { current: ModalHandle | null }): HTMLElement {
-    const icon = item.kind === 'action' ? '✅' : '🚩'
+  function renderDueRow(item: DueItem, closeModal: () => void): HTMLElement {
+    const icon = KIND_ICON[REF_KINDS[item.kind].moduleKind]
     return el(
       'div',
       {
         class: 'tt-due-row',
         onclick: () => {
-          handleRef.current?.close()
+          closeModal()
           if (item.loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(item.loc.teamId)
           pm.openInFocused(item.loc)
         },
@@ -144,24 +138,25 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   function openDueModal(): void {
-    const buckets = collectDueItems(store.doc, todayIso())
-    const handleRef: { current: ModalHandle | null } = { current: null }
+    const buckets = dueBuckets()
+    let handle: ModalHandle | null = null
+    const closeModal = (): void => { handle?.close() }
     const sections: HTMLElement[] = []
     if (buckets.overdue.length + buckets.dueSoon.length === 0) {
       sections.push(el('p', { class: 'tt-modal-message' }, t(locale(), 'due_empty')))
     } else {
       if (buckets.overdue.length > 0) {
         sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_overdue')))
-        sections.push(...buckets.overdue.map((it) => renderDueRow(it, handleRef)))
+        sections.push(...buckets.overdue.map((it) => renderDueRow(it, closeModal)))
       }
       if (buckets.dueSoon.length > 0) {
         sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_due_soon')))
-        sections.push(...buckets.dueSoon.map((it) => renderDueRow(it, handleRef)))
+        sections.push(...buckets.dueSoon.map((it) => renderDueRow(it, closeModal)))
       }
     }
     const body = el('div', { class: 'tt-due-list' }, ...sections)
-    const closeBtn: ModalButton = { label: t(locale(), 'ok'), primary: true, onClick: () => handleRef.current?.close() }
-    handleRef.current = showModal({ title: t(locale(), 'due_panel_title'), body, buttons: [closeBtn] })
+    const closeBtn: ModalButton = { label: t(locale(), 'ok'), primary: true, onClick: closeModal }
+    handle = showModal({ title: t(locale(), 'due_panel_title'), body, buttons: [closeBtn] })
   }
 
   function renderDueBadge(buckets: DueBuckets): void {
@@ -245,7 +240,11 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
   function render(): void {
     listEl.innerHTML = ''
-    const buckets = collectDueItems(store.doc, todayIso())
+    // Static chrome tooltips are re-stamped here so a locale change (a store
+    // update like any other) refreshes them through the same render path.
+    addBtn.title = t(locale(), 'team_add_title')
+    dueBtn.title = t(locale(), 'due_badge_title')
+    const buckets = dueBuckets()
     renderDueBadge(buckets)
     const teamDueCounts = new Map<string, number>()
     for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
@@ -354,7 +353,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         }
         const newTeamId = crypto.randomUUID()
         store.update((d) => {
-          d.teams.push(emptyTeam(newTeamId, name, emoji, locale()))
+          d.teams.push(createEmptyTeam(newTeamId, name, emoji, locale()))
         })
         picker.dispose()
         handle.close()
@@ -368,9 +367,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   function openEditModal(team: Team): void {
     const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
     nameInput.value = team.name
-    // No maxlength: it counts UTF-16 code units, which both lets two simple
-    // emojis through and blocks single ZWJ emojis — attachEmojiPicker
-    // enforces "exactly one grapheme" on input instead.
+    // No maxlength — see the identical note in openAddModal.
     const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
     emojiInput.value = team.emoji
     const errorEl = el('div', { class: 'tt-field-error' })
@@ -433,7 +430,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   render()
-  store.subscribe(render)
+  store.subscribe(() => {
+    dueCache = null // content changed — due data may have too
+    render()
+  })
   document.addEventListener(NAV_CHANGED_EVENT, render)
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 }

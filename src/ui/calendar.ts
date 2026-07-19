@@ -6,16 +6,13 @@
 // this module has no external "refresh" hook by design (matches the fixed
 // `createCalendar(opts): HTMLElement` contract).
 import { t, todayIso, type Locale } from '../core/i18n'
+import { pad2 } from '../core/date'
 import { el } from './dom'
 
 export interface CalendarMarks {
   hasNote(dateIso: string): boolean
   /** Titles of milestones landing on this day; empty array = no milestone. */
   milestones(dateIso: string): string[]
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
 }
 
 function parseIso(iso: string): { y: number; m: number; d: number } {
