@@ -1,12 +1,13 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
-import type { Loc } from '../src/core/types'
+import { KIND_ICON } from '../src/core/search'
+import type { Loc, Team } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
 // OS theme preference (same stub as test/sidebar.test.ts).
@@ -352,4 +353,28 @@ test('toggleSplit does not record anything when no team is active', () => {
   expect(store.doc.nav.activeTeamId).toBeNull()
   pm.toggleSplit()
   expect(store.doc.nav.teamSplit).toEqual({})
+})
+
+test('buildModuleItems includes one entry per action item/milestone/risk, after the whole-board entries', () => {
+  const team: Team = {
+    id: 'T1', name: 'Team 1', emoji: '🚀', stakeholders: [], members: [],
+    actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+    milestones: [{ id: 'm1', date: '2026-08-01', title: 'Ship v2', done: false, followup: '' }],
+    risks: [{ id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
+    dailyNotes: {},
+  }
+  const items = buildModuleItems(team, 'en-US')
+
+  expect(items).toContainEqual({ label: `${KIND_ICON.actions} Fix bug`, ref: { kind: 'actions', itemId: 'a1' } })
+  expect(items).toContainEqual({ label: `${KIND_ICON.milestones} Ship v2`, ref: { kind: 'milestones', itemId: 'm1' } })
+  expect(items).toContainEqual({ label: `${KIND_ICON.risks} Vendor delay`, ref: { kind: 'risks', itemId: 'r1' } })
+
+  const actionsBoardIdx = items.findIndex((i) => i.ref.kind === 'actions' && !('itemId' in i.ref && i.ref.itemId))
+  const actionItemIdx = items.findIndex((i) => i.ref.kind === 'actions' && 'itemId' in i.ref && i.ref.itemId === 'a1')
+  expect(actionItemIdx).toBeGreaterThan(actionsBoardIdx)
+})
+
+test('buildModuleItems with no team omits all per-item entries (only the daily-notes entry remains)', () => {
+  const items = buildModuleItems(null, 'en-US')
+  expect(items).toEqual([{ label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } }])
 })
