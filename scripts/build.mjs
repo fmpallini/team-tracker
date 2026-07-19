@@ -33,7 +33,17 @@ mkdirSync('dist/pwa', { recursive: true })
 writeFileSync('dist/app.html', page(await bundle(false)))
 writeFileSync('dist/pwa/index.html', withPwaHead(page(await bundle(true))))
 
-const manifest = readFileSync('pwa/manifest.json', 'utf8').replaceAll('__APP_VERSION__', pkg.version)
+// __APP_ORIGIN__ is the site origin, not pkg.homepage's /team-tracker/ subpath:
+// the manifest's top-level "id" ("/") resolves against the manifest URL as an
+// absolute-path reference, so Chrome's actually-computed app identity for every
+// install to date is the origin root (verified via DevTools Application panel
+// "Computed App Id"), not the subpath. The related_applications self-entry
+// below must match that already-installed identity exactly or
+// getInstalledRelatedApps() never matches.
+const appOrigin = pkg.homepage ? `${new URL(pkg.homepage).origin}/` : ''
+const manifest = readFileSync('pwa/manifest.json', 'utf8')
+  .replaceAll('__APP_VERSION__', pkg.version)
+  .replaceAll('__APP_ORIGIN__', appOrigin)
 writeFileSync('dist/pwa/manifest.json', manifest)
 copyFileSync('pwa/icon.svg', 'dist/pwa/icon.svg')
 copyFileSync('pwa/icon-maskable.svg', 'dist/pwa/icon-maskable.svg')
