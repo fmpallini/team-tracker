@@ -5,7 +5,7 @@
 import { AT_TRIGGER_EVENT, type Editor } from './editor'
 import type { RefInfo, LabelResolver } from '../core/markdown'
 import { t, formatDate, parseLocaleDate, type Locale, type MsgKey } from '../core/i18n'
-import { normalize, type TeamRefCandidates } from '../core/search'
+import { normalize, KIND_ICON, type TeamRefCandidates } from '../core/search'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { el } from './dom'
@@ -14,7 +14,12 @@ export type { AtPerson } from '../core/search'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
-  | { kind: 'day'; date: string }
+  // `relativeWord` is set only for the hoje/ontem/amanhã (today/yesterday/
+  // tomorrow) matches — lets the dropdown show "@hoje · 19/07/2026" so the
+  // trigger word is discoverable, vs. a typed-exact-date match or the
+  // format-hint item below, which stay unlabeled and just read as a normal
+  // "go to day" result.
+  | { kind: 'day'; date: string; relativeWord?: string }
   | { kind: 'action' | 'milestone' | 'risk'; id: string; title: string }
 
 const RELATIVE_DAYS: Record<Locale, [string, number][]> = {
@@ -51,10 +56,15 @@ export function filterAtItems(candidates: TeamRefCandidates, typed: string, loca
 
   const days: AtItem[] = []
   for (const [word, offset] of RELATIVE_DAYS[locale]) {
-    if (normalize(word).startsWith(q)) days.push({ kind: 'day', date: isoWithOffset(offset) })
+    if (normalize(word).startsWith(q)) days.push({ kind: 'day', date: isoWithOffset(offset), relativeWord: word })
   }
   const iso = parseLocaleDate(trimmed, locale)
   if (iso) days.push({ kind: 'day', date: iso })
+  // Format-hint: on a bare '@' (alongside the 3 relative words), a 4th real,
+  // selectable day item using today+2 — its label (a plain "go to day"
+  // result showing a dd/mm/yyyy-shaped date) doubles as a worked example of
+  // the exact-date format users can type directly, without any new copy.
+  if (trimmed === '') days.push({ kind: 'day', date: isoWithOffset(2) })
 
   const actions: AtItem[] = candidates.actionItems
     .filter((c) => normalize(c.title).includes(q))
@@ -161,6 +171,13 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     milestone: 'module_milestones',
     risk: 'module_risks',
   }
+  const GROUP_ICON: Record<AtItem['kind'], string> = {
+    person: KIND_ICON.person,
+    day: KIND_ICON.daily,
+    action: KIND_ICON.actions,
+    milestone: KIND_ICON.milestones,
+    risk: KIND_ICON.risks,
+  }
 
   function renderList(): void {
     if (!listEl) return
@@ -168,13 +185,17 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     let lastKind: AtItem['kind'] | null = null
     items.forEach((item, i) => {
       if (item.kind !== lastKind) {
-        listEl!.appendChild(el('div', { class: 'tt-atref-group-header' }, t(opts.locale, GROUP_HEADER_KEY[item.kind])))
+        listEl!.appendChild(
+          el('div', { class: 'tt-atref-group-header' }, `${GROUP_ICON[item.kind]} ${t(opts.locale, GROUP_HEADER_KEY[item.kind])}`)
+        )
         lastKind = item.kind
       }
       const label = item.kind === 'person'
         ? item.name
         : item.kind === 'day'
-          ? t(opts.locale, 'atref_goto_day', { date: formatDate(item.date, opts.locale) })
+          ? item.relativeWord
+            ? `@${item.relativeWord} · ${formatDate(item.date, opts.locale)}`
+            : t(opts.locale, 'atref_goto_day', { date: formatDate(item.date, opts.locale) })
           : item.title
       const row = el(
         'div',

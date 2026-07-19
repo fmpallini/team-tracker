@@ -396,7 +396,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-atref-item { padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .9rem; }
 .tt-atref-item.selected, .tt-atref-item:hover { background: rgba(var(--accent-rgb), .12); }
-.tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
 .tt-templates-empty { color: var(--muted); cursor: default; }
 .tt-templates-empty:hover { background: none; }
 

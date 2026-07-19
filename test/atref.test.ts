@@ -4,7 +4,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager } from '../src/ui/panes'
 import type { Loc } from '../src/core/types'
-import { formatDate, type Locale } from '../src/core/i18n'
+import { formatDate, t, type Locale } from '../src/core/i18n'
 
 function makeHooks(): EditorHooks {
   return {
@@ -31,10 +31,10 @@ describe('filterAtItems', () => {
     expect(items.filter((i) => i.kind === 'person').map((i) => (i as { name: string }).name)).toEqual(['María'])
   })
 
-  test('empty typed text returns all people plus all three relative days', () => {
+  test('empty typed text returns all people plus the 3 relative days and the format-hint item', () => {
     const items = filterAtItems(candidates({ people }), '', 'pt-BR')
     expect(items.filter((i) => i.kind === 'person')).toHaveLength(3)
-    expect(items.filter((i) => i.kind === 'day')).toHaveLength(3) // @today discoverability: bare '@' shows hoje/ontem/amanhã
+    expect(items.filter((i) => i.kind === 'day')).toHaveLength(4) // @today discoverability: bare '@' shows hoje/ontem/amanhã + the today+2 format-hint item
   })
 
   test('no substring match yields an empty person list', () => {
@@ -61,22 +61,23 @@ describe('filterAtItems', () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
 
-  test('offers relative days in pt-BR', () => {
-    expect(filterAtItems(candidates(), 'hoje', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(0) })
-    expect(filterAtItems(candidates(), 'ont', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(-1) })
-    expect(filterAtItems(candidates(), 'amanh', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(1) })
+  test('offers relative days in pt-BR, tagged with the trigger word', () => {
+    expect(filterAtItems(candidates(), 'hoje', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(0), relativeWord: 'hoje' })
+    expect(filterAtItems(candidates(), 'ont', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(-1), relativeWord: 'ontem' })
+    expect(filterAtItems(candidates(), 'amanh', 'pt-BR')).toContainEqual({ kind: 'day', date: isoShift(1), relativeWord: 'amanhã' })
   })
 
-  test('offers relative days in en-US', () => {
-    expect(filterAtItems(candidates(), 'tomo', 'en-US')).toContainEqual({ kind: 'day', date: isoShift(1) })
+  test('offers relative days in en-US, tagged with the trigger word', () => {
+    expect(filterAtItems(candidates(), 'tomo', 'en-US')).toContainEqual({ kind: 'day', date: isoShift(1), relativeWord: 'tomorrow' })
   })
 
-  test('offers all three relative days on empty input (bare @ discoverability)', () => {
+  test('offers all three relative days plus a today+2 format-hint item on empty input (bare @ discoverability)', () => {
     const days = filterAtItems(candidates(), '', 'pt-BR').filter((i) => i.kind === 'day')
     expect(days).toEqual([
-      { kind: 'day', date: isoShift(0) },
-      { kind: 'day', date: isoShift(-1) },
-      { kind: 'day', date: isoShift(1) },
+      { kind: 'day', date: isoShift(0), relativeWord: 'hoje' },
+      { kind: 'day', date: isoShift(-1), relativeWord: 'ontem' },
+      { kind: 'day', date: isoShift(1), relativeWord: 'amanhã' },
+      { kind: 'day', date: isoShift(2) }, // format-hint: no relativeWord, demonstrates the typed-date format
     ])
   })
 
@@ -160,15 +161,26 @@ describe('attachAtAutocomplete', () => {
     editorEl.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
   }
 
-  test('typing @ opens the dropdown listing all people plus the 3 relative-day suggestions, under group headers', () => {
+  test('typing @ opens the dropdown listing all people plus the 3 relative-day suggestions and the format-hint item, under group headers', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '@')
     fireInput(editorEl)
 
     const dropdown = document.querySelector('.tt-atref-dropdown')
     expect(dropdown).not.toBeNull()
-    expect(dropdown!.querySelectorAll('.tt-atref-item')).toHaveLength(5) // 2 people + 3 relative days
+    expect(dropdown!.querySelectorAll('.tt-atref-item')).toHaveLength(6) // 2 people + 3 relative days + 1 format-hint
     expect(dropdown!.querySelectorAll('.tt-atref-group-header')).toHaveLength(2) // People, Dates
+  })
+
+  test('relative-day rows show the trigger word so it\'s discoverable ("@hoje · <date>")', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+
+    const today = new Date()
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const rows = Array.from(document.querySelectorAll('.tt-atref-item')).map((r) => r.textContent)
+    expect(rows).toContain(`@hoje · ${formatDate(todayIso, 'pt-BR')}`)
   })
 
   test('hovering a row does not replace its DOM node (real-browser click requires mousedown/mouseup on the same element)', () => {
@@ -250,6 +262,36 @@ describe('attachAtAutocomplete', () => {
     expect(chip.dataset.ref).toBe('day:2026-07-02')
     expect(chip.textContent).toBe('@02/07/2026')
     expect(picks).toEqual([{ kind: 'day', date: '2026-07-02' }])
+  })
+
+  test('group headers are icon-prefixed', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+
+    const headers = Array.from(document.querySelectorAll('.tt-atref-group-header')).map((h) => h.textContent)
+    expect(headers[0]).toMatch(/^🧑/) // People
+    expect(headers[1]).toMatch(/^📅/) // Dates
+  })
+
+  test('the format-hint item (today+2, no relative word) is a real, selectable item that inserts a normal day chip', () => {
+    const { editorEl, picks } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+
+    const dayRows = Array.from(document.querySelectorAll('.tt-atref-item')).filter((r) => !r.textContent?.startsWith('@'))
+    const hintRow = dayRows[dayRows.length - 1]! // last of the 4 date rows: hoje/ontem/amanhã then the hint
+    const d = new Date(); d.setDate(d.getDate() + 2)
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    // No relativeWord -> plain "go to day" phrasing (same as any typed-exact-date match), which
+    // doubles as a worked example of the dd/mm/yyyy format since the date itself is shown that way.
+    expect(hintRow.textContent).toBe(t('pt-BR', 'atref_goto_day', { date: formatDate(iso, 'pt-BR') }))
+
+    hintRow.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const chip = editorEl.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.dataset.ref).toBe(`day:${iso}`)
+    expect(picks).toEqual([{ kind: 'day', date: iso }])
   })
 
   test('deleting back past the @ closes the dropdown', () => {
