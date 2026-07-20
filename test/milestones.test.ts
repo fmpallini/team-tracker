@@ -75,6 +75,14 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function rightClick(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+function contextMenuItem(text: string): HTMLButtonElement {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
 afterEach(() => {
   vi.useRealTimers()
   document.body.innerHTML = ''
@@ -511,5 +519,42 @@ describe('renderMilestones', () => {
     expect(row.querySelector('.tt-milestone-title-input')!.getAttribute('tabindex')).toBeNull()
     expect((row.querySelector('.tt-milestone-expand-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-milestone-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
+})
+
+describe('row context menu', () => {
+  test('Duplicate appends a copy to the same team', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'milestones' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+  })
+
+  test('Copy to team… copies into the target team with refs stripped, source untouched', () => {
+    const from = makeTeam({ id: 'from', milestones: [milestone({ id: 'm1', followup: 'blocked by @[Fix](action:a1)' })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'milestones' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.milestones).toHaveLength(1)
+    const copied = store.doc.teams.find((t) => t.id === 'to')!.milestones
+    expect(copied).toHaveLength(1)
+    expect(copied[0]!.followup).toBe('blocked by Fix')
   })
 })
