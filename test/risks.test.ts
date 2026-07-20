@@ -86,6 +86,14 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function rightClick(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+function contextMenuItem(text: string): HTMLButtonElement {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
 afterEach(() => {
   vi.useRealTimers()
   document.body.innerHTML = ''
@@ -523,5 +531,40 @@ describe('renderRisks', () => {
     expect((row.querySelector('.tt-risk-expand-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-risk-close-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-risk-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
+})
+
+describe('row context menu', () => {
+  test('Duplicate appends a copy to the same team', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'risks' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+  })
+
+  test('Move to team… removes the row from the source team', () => {
+    const from = makeTeam({ id: 'from', risks: [risk({ id: 'r1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'risks' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Move to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.risks).toHaveLength(0)
+    expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(1)
   })
 })

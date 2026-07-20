@@ -13,11 +13,14 @@ import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
+import { duplicateRisk, transferRisk } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { showContextMenu, type ContextMenuItem } from '../ui/context-menu'
+import { openTeamPickerModal } from '../ui/team-picker-modal'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
@@ -238,6 +241,40 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id }, editor.root)
   }
 
+  function openRowContextMenu(itemId: string, x: number, y: number): void {
+    const otherTeams = ctx.store.doc.teams.filter((tm) => tm.id !== teamId)
+    const menuItems: ContextMenuItem[] = [
+      {
+        label: t(lc, 'context_menu_duplicate'),
+        onClick: () => {
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            if (tm) duplicateRisk(tm, itemId)
+          })
+        },
+      },
+    ]
+    if (otherTeams.length > 0) {
+      menuItems.push({ label: t(lc, 'context_menu_copy_to_team'), onClick: () => openTransferModal(itemId, 'copy', otherTeams) })
+      menuItems.push({ label: t(lc, 'context_menu_move_to_team'), onClick: () => openTransferModal(itemId, 'move', otherTeams) })
+    }
+    showContextMenu(x, y, menuItems)
+  }
+
+  function openTransferModal(itemId: string, mode: 'copy' | 'move', otherTeams: Team[]): void {
+    openTeamPickerModal({
+      title: t(lc, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title'),
+      confirmLabel: t(lc, 'team_picker_confirm_btn'),
+      cancelLabel: t(lc, 'cancel'),
+      teams: otherTeams,
+      onConfirm: (targetTeamId) => {
+        ctx.store.update((d) => {
+          transferRisk(d.teams, itemId, teamId, targetTeamId, mode)
+        })
+      },
+    })
+  }
+
   function renderRow(r: Risk): HTMLElement {
     const exposure = computeExposure(r.chance, r.impact)
 
@@ -319,6 +356,11 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       titleInput, chanceSelect, impactSelect, exposureCell, planSelect, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
+
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
 
     // Drag reorder only makes sense against the manual `order` sequence — a
     // display-only exposure sort has no manual position to reorder into, so
