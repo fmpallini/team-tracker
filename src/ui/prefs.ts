@@ -55,11 +55,12 @@ export function onLocaleChanged(cb: () => void): () => void {
   }
 }
 
-type TabId = 'general' | 'templates' | 'security' | 'data' | 'about'
+type TabId = 'general' | 'templates' | 'tags' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
   { id: 'templates', key: 'prefs_tab_templates' },
+  { id: 'tags', key: 'prefs_tab_tags' },
   { id: 'security', key: 'prefs_tab_security' },
   { id: 'data', key: 'prefs_tab_data' },
   { id: 'about', key: 'prefs_tab_about' },
@@ -447,7 +448,66 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.append(toolbar, listEl)
   }
 
-  // --- Tab 3: Segurança ----------------------------------------------------
+  // --- Tab: Tags (cross-apply across teams) --------------------------------
+  function renderTags(container: HTMLElement): void {
+    container.innerHTML = ''
+    const teams = store.doc.teams
+
+    if (teams.length < 2) {
+      container.append(el('p', { class: 'tt-data-hint' }, t(locale, 'tags_cross_apply_need_two_teams')))
+      return
+    }
+
+    const sourceSelect = el('select', { class: 'tt-input' }) as HTMLSelectElement
+    for (const team of teams) {
+      sourceSelect.appendChild(el('option', { value: team.id }, `${team.emoji} ${team.name}`))
+    }
+
+    function applyClick(): void {
+      const source = store.doc.teams.find((tm) => tm.id === sourceSelect.value)
+      if (!source) return
+      const body = el('p', { class: 'tt-modal-message' }, t(locale, 'tags_cross_apply_confirm_body', { source: source.name }))
+      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+      const confirmBtn: ModalButton = {
+        label: t(locale, 'tags_cross_apply_btn'),
+        primary: true,
+        onClick: () => {
+          const sourceId = source.id
+          store.update((d) => {
+            const src = d.teams.find((tm) => tm.id === sourceId)
+            if (!src) return
+            const tags = { ...src.actionTagNames }
+            for (const tm of d.teams) {
+              if (tm.id === sourceId) continue
+              tm.actionTagNames = { ...tags }
+            }
+          })
+          inner.close()
+          toast(t(locale, 'tags_cross_apply_success_toast'))
+        },
+      }
+      const inner: ModalHandle = showModal({ title: t(locale, 'tags_cross_apply_confirm_title'), body, buttons: [cancelBtn, confirmBtn] })
+    }
+
+    const applyBtn = el(
+      'button',
+      { class: 'tt-btn tt-btn-primary', type: 'button', onclick: () => applyClick() },
+      t(locale, 'tags_cross_apply_btn')
+    )
+
+    container.append(
+      el(
+        'div',
+        { class: 'tt-prefs-field' },
+        el('div', { class: 'tt-prefs-field-label' }, t(locale, 'tags_cross_apply_heading')),
+        el('p', { class: 'tt-data-hint' }, t(locale, 'tags_cross_apply_hint')),
+        el('label', { class: 'tt-field' }, t(locale, 'tags_cross_apply_source_label'), sourceSelect),
+        applyBtn
+      )
+    )
+  }
+
+  // --- Tab 4: Segurança ----------------------------------------------------
   function renderSecurity(container: HTMLElement): void {
     container.innerHTML = ''
     const readOnly = appCtl.isReadOnly()
@@ -517,7 +577,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     )
   }
 
-  // --- Tab 4: Dados (export/import) ---------------------------------------
+  // --- Tab 5: Dados (export/import) ---------------------------------------
   function renderData(container: HTMLElement): void {
     container.innerHTML = ''
 
@@ -678,7 +738,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.append(exportSection, importSection)
   }
 
-  // --- Tab 5: Sobre ----------------------------------------------------
+  // --- Tab 6: Sobre ----------------------------------------------------
   function renderAbout(container: HTMLElement): void {
     container.innerHTML = ''
     const rows: readonly (readonly [string, string])[] = [
@@ -712,6 +772,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         return
       case 'templates':
         renderTemplates(contentEl)
+        return
+      case 'tags':
+        renderTags(contentEl)
         return
       case 'security':
         renderSecurity(contentEl)
