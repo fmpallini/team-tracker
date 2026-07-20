@@ -355,6 +355,12 @@ const pt = {
   due_in_days: 'em {days}d',
   editor_paragraph_title: 'Parágrafo normal (Ctrl+0)',
   editor_clear_format_title: 'Limpar formatação',
+  context_menu_duplicate: 'Duplicar',
+  context_menu_copy_to_team: 'Copiar para time…',
+  context_menu_move_to_team: 'Mover para time…',
+  team_picker_copy_title: 'Copiar para qual time?',
+  team_picker_move_title: 'Mover para qual time?',
+  team_picker_confirm_btn: 'Confirmar',
 } as const
 
 export type MsgKey = keyof typeof pt
@@ -710,6 +716,12 @@ const en: Record<MsgKey, string> = {
   due_in_days: 'in {days}d',
   editor_paragraph_title: 'Normal paragraph (Ctrl+0)',
   editor_clear_format_title: 'Clear formatting',
+  context_menu_duplicate: 'Duplicate',
+  context_menu_copy_to_team: 'Copy to team…',
+  context_menu_move_to_team: 'Move to team…',
+  team_picker_copy_title: 'Copy to which team?',
+  team_picker_move_title: 'Move to which team?',
+  team_picker_confirm_btn: 'Confirm',
 }
 
 const dicts: Record<Locale, Record<MsgKey, string>> = {
