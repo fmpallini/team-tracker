@@ -12,11 +12,14 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS } from '../core/document'
+import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { showContextMenu, type ContextMenuItem } from '../ui/context-menu'
+import { openTeamPickerModal } from '../ui/team-picker-modal'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -362,6 +365,46 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
 
+  function openCardContextMenu(itemId: string, x: number, y: number): void {
+    const otherTeams = ctx.store.doc.teams.filter((tm) => tm.id !== teamId)
+    const menuItems: ContextMenuItem[] = [
+      {
+        label: t(lc, 'context_menu_duplicate'),
+        onClick: () => {
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            if (tm) duplicateActionItem(tm, itemId)
+          })
+        },
+      },
+    ]
+    if (otherTeams.length > 0) {
+      menuItems.push({
+        label: t(lc, 'context_menu_copy_to_team'),
+        onClick: () => openTransferModal(itemId, 'copy', otherTeams),
+      })
+      menuItems.push({
+        label: t(lc, 'context_menu_move_to_team'),
+        onClick: () => openTransferModal(itemId, 'move', otherTeams),
+      })
+    }
+    showContextMenu(x, y, menuItems)
+  }
+
+  function openTransferModal(itemId: string, mode: 'copy' | 'move', otherTeams: Team[]): void {
+    openTeamPickerModal({
+      title: t(lc, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title'),
+      confirmLabel: t(lc, 'team_picker_confirm_btn'),
+      cancelLabel: t(lc, 'cancel'),
+      teams: otherTeams,
+      onConfirm: (targetTeamId) => {
+        ctx.store.update((d) => {
+          transferActionItem(d.teams, itemId, teamId, targetTeamId, mode)
+        })
+      },
+    })
+  }
+
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItem['color'], string>>): HTMLElement {
     const editBtn = el(
       'button',
@@ -384,6 +427,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       editBtn, titleEl, metaEl
     )
     card.addEventListener('dblclick', () => openEditModal(item))
+    card.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      openCardContextMenu(item.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
 
     card.addEventListener('dragstart', (e) => {
       draggedId = item.id

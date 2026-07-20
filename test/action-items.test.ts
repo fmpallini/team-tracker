@@ -55,6 +55,14 @@ function cards(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card'))
 }
 
+function rightClick(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+function contextMenuItem(text: string): HTMLButtonElement {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
 afterEach(() => {
   document.body.innerHTML = ''
 })
@@ -136,6 +144,76 @@ describe('pure helpers', () => {
       moveCard(items, 'a', 'wip', 'ghost', 'before')
       expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
     })
+  })
+})
+
+describe('card context menu', () => {
+  test('right-click shows only Duplicate when there is just one team', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+
+    const labels = Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.textContent)
+    expect(labels).toEqual(['Duplicate'])
+  })
+
+  test('Duplicate appends a copy to the same team', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(2)
+  })
+
+  test('Copy to team… copies into the target team with refs stripped and does not affect the source', () => {
+    const from = makeTeam({ id: 'from', actionItems: [item({ id: 'a1', order: 0, notes: 'ping @[Ana](person:p1)' })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(1)
+    const copied = store.doc.teams.find((t) => t.id === 'to')!.actionItems
+    expect(copied).toHaveLength(1)
+    expect(copied[0]!.notes).toBe('ping Ana')
+  })
+
+  test('Move to team… removes the card from the source team', () => {
+    const from = makeTeam({ id: 'from', actionItems: [item({ id: 'a1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Move to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(0)
+    expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems).toHaveLength(1)
   })
 })
 
