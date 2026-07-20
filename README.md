@@ -79,27 +79,26 @@ hand.
 
 ## Verifying a release
 
-Every tagged release publishes `checksums.txt` alongside its assets, plus a
+Every tagged release publishes `checksums.txt` alongside `app.html`, plus a
 [GitHub build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
-for `app.html` and the PWA zip — cryptographic proof (Sigstore-backed, not
-just a checksum) that a given file was built by this repo's own `Release`
-GitHub Actions workflow from that exact tagged commit, not hand-assembled or
-modified after the fact. You can verify this yourself instead of taking it on
-faith:
+for `app.html` and every file in the PWA build (`dist/pwa/**`) — cryptographic
+proof (Sigstore-backed, not just a checksum) that a given file was built by
+this repo's own `Release` GitHub Actions workflow from that exact tagged
+commit, not hand-assembled or modified after the fact. You can verify this
+yourself instead of taking it on faith:
 
 ```
-# 1. Download the assets for the tag you want to verify (example: v1.3.0)
-gh release download v1.3.0 -R fmpallini/team-tracker -p "*"
+# 1. Download the release assets for the tag you want to verify (example: v1.5.1)
+gh release download v1.5.1 -R fmpallini/team-tracker -p "*"
 
-# 2. Confirm the files match the published checksums
+# 2. Confirm app.html matches the published checksum
 sha256sum -c checksums.txt
 
-# 3. Verify the build-provenance attestation for each asset — requires the
-#    GitHub CLI (gh). Confirms the file's hash was attested by the
-#    "Attest build provenance" step in this repo's release.yml, tying it to
-#    a specific workflow run and source commit.
-gh attestation verify team-tracker-1.3.0.html -R fmpallini/team-tracker
-gh attestation verify team-tracker-pwa-1.3.0.zip -R fmpallini/team-tracker
+# 3. Verify the build-provenance attestation — requires the GitHub CLI (gh).
+#    Confirms the file's hash was attested by the "Attest build provenance"
+#    step in this repo's release.yml, tying it to a specific workflow run and
+#    source commit.
+gh attestation verify team-tracker-1.5.1.html -R fmpallini/team-tracker
 ```
 
 A successful verify exits with status `0` (silently, in most shells); a
@@ -108,7 +107,7 @@ attestation for that file's hash. To see exactly which commit the file was
 built from, add `--format json` (requires [`jq`](https://jqlang.org/)):
 
 ```
-gh attestation verify team-tracker-1.3.0.html -R fmpallini/team-tracker --format json \
+gh attestation verify team-tracker-1.5.1.html -R fmpallini/team-tracker --format json \
   | jq -r '.[0].verificationResult.statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit'
 ```
 
@@ -116,17 +115,15 @@ Compare that SHA against the tag's commit on the
 [commits page](https://github.com/fmpallini/team-tracker/commits/main) to
 confirm they match.
 
-This also covers the live GitHub Pages site: `release.yml`'s `deploy-pages`
-job deploys the exact same `dist/pwa` build that was just attested — not a
-separate rebuild — so verifying the PWA zip's attestation is equivalent to
-verifying what's live. To confirm the live site is byte-identical to the
-attested asset yourself:
+The PWA build isn't a separate downloadable release asset — it's attested
+directly and deployed straight from that same attested build to GitHub Pages,
+so you can verify what's actually live by downloading each served file and
+checking its attestation directly, no zip needed:
 
 ```
-unzip -o team-tracker-pwa-1.3.0.zip -d attested-pwa
 for f in index.html sw.js manifest.json; do
-  diff <(curl -s "https://fmpallini.github.io/team-tracker/$f") "attested-pwa/$f" \
-    && echo "$f: matches live Pages site"
+  curl -s "https://fmpallini.github.io/team-tracker/$f" -o "live-$f"
+  gh attestation verify "live-$f" -R fmpallini/team-tracker
 done
 ```
 
@@ -180,24 +177,100 @@ the same with the local `app.html` and the installed PWA:
 ### Adding a new module/pane
 
 Because every pane is just a render function registered by string key, adding
-a new tracked entity (say, a "decisions log") is mostly additive:
+a new tracked entity (say, a "decisions log", kind `decisions`) is mostly
+additive. The one thing that's easy to half-do is wiring it into global search
+and the `Ctrl+K` palette — both are covered explicitly below, since they don't
+come for free just from registering the module.
 
-1. Add its shape to `Doc` in `src/core/types.ts`, bump `SCHEMA_VERSION` in
-   `src/core/document.ts`, and add a migration step for existing files.
-2. Add a `ModuleRef` variant and a case in `src/core/nav.ts` for its location
-   type.
-3. Write `src/modules/<name>.ts` exporting a render function matching
-   `ModuleRenderer`.
-4. Register it in `src/main.ts` with `pm.registerModule('<kind>', renderFn)`,
-   and add it to the fixed module list in `src/ui/panes.ts` so it shows up in
-   the pane switcher and command palette.
-5. Add `pt-BR`/`en-US` strings for it in `src/core/i18n.ts` — every
-   user-visible string goes through `t(locale, key)`.
-6. Add `test/<name>.test.ts` alongside it.
+1. **Shape and schema.** Add its shape to `Team` (or `Doc`) in
+   `src/core/types.ts`, add a `ModuleRef` variant (`{ kind: 'decisions';
+   itemId?: string }` — the `itemId?` is only needed if items are individually
+   addressable, the way action items/milestones/risks are for deep-linking
+   from search and `@`-mentions). Bump `SCHEMA_VERSION` in
+   `src/core/document.ts` and add a step to the `MIGRATIONS` ladder there if
+   existing `.tmv` files need the field backfilled on open.
+
+2. **The renderer.** Write `src/modules/<name>.ts` exporting a function
+   matching `ModuleRenderer` — `(container: HTMLElement, loc: Loc, ctx:
+   ModuleCtx) => void`. `ctx` gives you `store`, `pm` (for opening other
+   locs), `paneIdx`, `locale`. Read the team via
+   `ctx.store.doc.teams.find(...)`, build DOM with `src/ui/dom.ts`'s `el()`
+   helper, mutate through `ctx.store.update((d) => { ... })`, and re-render on
+   every store change via `ctx.store.subscribe(renderAll)`. Conventions worth
+   matching rather than reinventing — look at `src/modules/action-items.ts`
+   (no live inputs → full rebuild on every change) or
+   `src/modules/milestones.ts` (has inline-editable fields → skips rebuild
+   while one is focused, so an in-progress edit's caret survives a foreign
+   store change):
+   - `store.update()` is for content (marks the doc dirty, fires
+     `subscribe()`); `store.updateNav()` is for navigation-only state (pane
+     focus, split %) and deliberately bypasses `subscribe()` so switching
+     panes doesn't blow away an in-progress edit elsewhere. Don't mix them up.
+   - Anything your renderer attaches outside `container` — a document-level
+     listener, an overlay appended to `document.body` (see `src/ui/atref.ts`'s
+     `@`-mention dropdown) — needs an explicit disposer, tracked in a
+     per-container `WeakMap<HTMLElement, () => void>` and called both at the
+     top of the renderer (before rebuilding) and from the pane manager's own
+     teardown. `panes.ts` clears `container`'s DOM children between renders,
+     but has no way to know about listeners/overlays living outside it.
+
+3. **Register it.** In `src/main.ts`, alongside the other
+   `pm.registerModule(...)` calls: `pm.registerModule('decisions',
+   renderDecisions)`. Do this before the post-registration `pm.renderAll()`
+   call a few lines down, or a pane whose saved nav state already points at
+   the new kind renders "Módulo em construção…" and never gets a second pass.
+
+4. **Pane switcher + palette (one list, both surfaces).** Add it to
+   `FIXED_MODULE_KEYS` in `src/ui/panes.ts`. `buildModuleItems()` in that same
+   file turns that list into the `ModuleItem[]` array shown in the pane's own
+   "＋" module dropdown — **and `src/ui/palette.ts`'s `Ctrl+K` palette calls
+   this exact same function.** There's no separate palette item list to
+   maintain; wiring the pane switcher wires the palette too.
+   If individual items (not just the module as a whole) should get their own
+   palette entries — the way each action item/milestone/risk shows up as its
+   own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
+   `milestones`/`risks` do, sourcing the list from `teamRefCandidates()` (step
+   6 below — you'll likely want that list anyway).
+
+5. **Global search.** The header search bar (`Ctrl+F` / `/`,
+   `src/ui/search-ui.ts`) is backed by `searchDocument()` in
+   `src/core/search.ts`, which works over a flat candidate list built by that
+   file's `collectCandidates()`. Add a loop over your module's items there:
+   ```ts
+   for (const d of team.decisions) {
+     out.push({ raw: `${d.title}\n${d.rationale}`, title: d.title, ref: { kind: 'decisions', itemId: d.id } })
+   }
+   ```
+   `raw` is whatever free text should be searchable — `searchDocument()`
+   strips markdown syntax from it and does a normalized (accent/case
+   insensitive), term-by-term substring match; if there's no free-text field,
+   `raw` can just equal `title`. Then add an icon to `KIND_ICON` (same file)
+   so results render with a matching glyph — that's the only other piece;
+   snippet highlighting and the results dropdown are already generic over
+   `ref.kind`.
+
+6. **i18n.** Add `pt-BR`/`en-US` strings to `src/core/i18n.ts` — every
+   user-visible string goes through `t(locale, key)`, in both locale blocks.
+
+7. **Optional: `@`-mentions.** If notes should be able to `@`-link to one of
+   your items, add an entry to the `REF_KINDS` registry in `src/core/refs.ts`
+   (drives the mention regex, auto-unlink-on-delete via `unlinkRefsInTeam` —
+   call it from your delete path — and the `@`-picker's group header/icon),
+   and add the item list to `teamRefCandidates()` in `src/core/search.ts` —
+   the same function step 4 mentioned, and what the `@` picker and palette
+   both actually filter over.
+
+8. **Tests.** Add `test/<name>.test.ts`. Pure logic gets plain unit tests; the
+   renderer gets exercised against a real `createStore(createEmptyDocument(locale))`
+   + jsdom the way `test/action-items.test.ts` does — mount, assert on
+   `container.querySelector(...)`, dispatch DOM events, assert on the mutated
+   `store.doc`.
 
 No other module needs to know the new one exists — the pane manager, sidebar,
-palette, and search all work off the registered module list and the `Loc`
-union.
+and search all work off the registered module list and the `Loc` union. The
+two places that genuinely don't come for free are global search
+(`collectCandidates`/`KIND_ICON`) and, if wanted, `@`-mentions (`REF_KINDS`) —
+everything else (pane switcher, palette, history, print) is generic.
 
 ## Build
 
