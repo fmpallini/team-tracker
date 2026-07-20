@@ -117,6 +117,23 @@ test('openInPane resolves conflicts by focusing the other pane and shows a toast
   expect(document.querySelector('.tt-toast')).not.toBeNull()
 })
 
+test('openInPane({ force: true }) bypasses the same-module conflict guard entirely', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit()
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+
+  pm.openInPane(0, locA)
+  // Without force this would silently refuse (focusOther) and leave pane 1 untouched,
+  // since both panes would show the same module kind for the same team.
+  pm.openInPane(1, locA, { force: true })
+
+  expect(document.querySelector('.tt-toast')).toBeNull()
+  expect(store.doc.nav.focusedPane).toBe(1)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(locA)
+})
+
 test('unsplit: opening a module in pane 0 succeeds even if pane 1 (hidden) has that exact module stashed as current', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

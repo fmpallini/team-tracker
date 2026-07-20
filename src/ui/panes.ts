@@ -20,7 +20,7 @@ export interface ModuleCtx {
 }
 
 export interface PaneManager {
-  openInPane(paneIdx: 0 | 1, loc: Loc): void
+  openInPane(paneIdx: 0 | 1, loc: Loc, opts?: { force?: boolean }): void
   openInFocused(loc: Loc): void
   toggleSplit(): void
   renderAll(): void
@@ -162,8 +162,8 @@ export function teamHasHistory(store: Store, teamId: string): boolean {
 /** Task 5.6: first-ever open of a team lands in a split view — daily today on the left, members on the right — instead of the last-used single-pane layout. */
 export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: string): void {
   store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0; d.nav.teamSplit[teamId] = true })
-  pm.openInPane(1, { teamId, ref: { kind: 'members' } })
-  pm.openInPane(0, { teamId, ref: { kind: 'daily', date: todayIso() } })
+  pm.openInPane(1, { teamId, ref: { kind: 'members' } }, { force: true })
+  pm.openInPane(0, { teamId, ref: { kind: 'daily', date: todayIso() } }, { force: true })
 }
 
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
@@ -274,7 +274,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     renderAll()
   }
 
-  function openInPane(idx: 0 | 1, target: Loc): void {
+  function openInPane(idx: 0 | 1, target: Loc, opts?: { force?: boolean }): void {
     clearSearchHighlight()
     const nav = store.doc.nav
     const otherIdx = otherPaneIdx(idx)
@@ -283,7 +283,16 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     // still holds a stashed current Loc — without this, opening a module
     // here that happens to match that stashed Loc would silently refuse
     // (focusOther) and hand focus to a pane the user can't even see.
-    const other = nav.split ? currentLoc(nav.panes[otherIdx]) : null
+    //
+    // `force` skips this guard entirely. It's for programmatic per-pane
+    // resyncs (team switch, first-visit default layout) that restore each
+    // pane's own independently-remembered Loc for the newly active team —
+    // not a live user action picking a module. Applying the duplicate-guard
+    // there would silently drop one pane's write whenever the two remembered
+    // Locs happen to share a kind, leaving that pane stuck on the previous
+    // team while the other one switches — exactly the "mixed teams across
+    // panes" bug this is guarding against.
+    const other = nav.split && !opts?.force ? currentLoc(nav.panes[otherIdx]) : null
     const result = openLoc(nav.panes[idx], target, other)
     if (result.type === 'focusOther') {
       store.updateNav((d) => {
