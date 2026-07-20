@@ -68,3 +68,21 @@ describe('unlinkRefsInTeam', () => {
     expect(JSON.stringify(tm)).toBe(before)
   })
 })
+
+import { stripAllRefs } from '../src/core/refs'
+
+describe('stripAllRefs', () => {
+  test('flattens every ref kind to its plain label', () => {
+    const text = 'ping @[Ana](person:p1) about @[Fix bug](action:a1) before @[Ship](milestone:m1) and @[Vendor](risk:r1)'
+    expect(stripAllRefs(text)).toBe('ping Ana about Fix bug before Ship and Vendor')
+  })
+
+  test('leaves day refs and plain text untouched aside from person/action/milestone/risk', () => {
+    const text = 'see you @[02/07/2026](day:2026-07-02), no other refs here'
+    expect(stripAllRefs(text)).toBe('see you 02/07/2026, no other refs here')
+  })
+
+  test('no-ops on text with no refs', () => {
+    expect(stripAllRefs('plain text, nothing to strip')).toBe('plain text, nothing to strip')
+  })
+})

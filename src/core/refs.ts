@@ -75,3 +75,16 @@ export function unlinkRefsInTeam(team: Team, kind: IdRefKind, ids: string[]): vo
   for (const m of team.milestones) m.followup = unlink(m.followup)
   for (const r of team.risks) r.followup = unlink(r.followup)
 }
+
+/**
+ * Unconditionally flattens every @[label](kind:id) mention in `text` to its
+ * plain label — unlike unlinkRefsInText/unlinkRefsInTeam, which only rewrite
+ * mentions pointing at specific deleted ids. Used when a card's free-text
+ * field moves to a *different* team (Task 2's card-transfer.ts): the ids it
+ * mentions belong to the source team and are meaningless (or collide) in the
+ * destination, so every mention — not just dangling ones — must lose its
+ * link and become ordinary prose.
+ */
+export function stripAllRefs(text: string): string {
+  return text.replace(refPattern(), (_, label: string) => label)
+}
