@@ -154,8 +154,8 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   let i = 0
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
-    const nested = child.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
-    const text = blockToMdNodes(Array.from(child.childNodes).filter(n => n !== nested))
+    const nestedLists = Array.from(child.querySelectorAll(':scope > ul, :scope > ol')) as HTMLElement[]
+    const text = blockToMdNodes(Array.from(child.childNodes).filter(n => !nestedLists.includes(n as HTMLElement)))
     if (tag === 'ol') {
       const v = child.getAttribute('value')
       i = v ? Number(v) : i + 1
@@ -163,7 +163,7 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     } else {
       out.push(`${prefix}- ${text}`)
     }
-    if (nested) renderListMd(nested, depth + 1, out)
+    nestedLists.forEach(nested => renderListMd(nested, depth + 1, out))
   })
 }
 
@@ -196,9 +196,9 @@ function blockToText(node: HTMLElement): string {
 function renderListText(list: HTMLElement, out: string[]): void {
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
-    const nested = child.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
-    out.push(blockToTextNodes(Array.from(child.childNodes).filter(n => n !== nested)))
-    if (nested) renderListText(nested, out)
+    const nestedLists = Array.from(child.querySelectorAll(':scope > ul, :scope > ol')) as HTMLElement[]
+    out.push(blockToTextNodes(Array.from(child.childNodes).filter(n => !nestedLists.includes(n as HTMLElement))))
+    nestedLists.forEach(nested => renderListText(nested, out))
   })
 }
 

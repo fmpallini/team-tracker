@@ -187,6 +187,17 @@ test('nesting depth caps at 4 levels (0-3) even if indentation implies deeper', 
   expect(htmlToMd(div)).toBe('- a\n  - b\n    - c\n      - d\n      - e')
 })
 
+test('a nested level that switches marker type mid-level round-trips without dropping the second list', () => {
+  const md = '- a\n  - b\n  1. c'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('htmlToPlainText keeps every item when a nested level switches marker type mid-level', () => {
+  const div = document.createElement('div')
+  div.innerHTML = mdToHtml('- a\n  - b\n  1. c')
+  expect(htmlToPlainText(div)).toBe('a\nb\nc')
+})
+
 test('htmlToPlainText keeps nested list item text on its own line', () => {
   const div = document.createElement('div')
   div.innerHTML = mdToHtml('- a\n  - a1\n- b')
