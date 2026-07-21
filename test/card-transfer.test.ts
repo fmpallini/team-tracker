@@ -83,6 +83,14 @@ describe('transferActionItem', () => {
     expect(to.actionItems).toHaveLength(1)
   })
 
+  test('move: unlinks dangling refs to the moved item elsewhere in the source team', () => {
+    const [from, to] = twoTeams()
+    from.actionItems.push({ id: 'a2', summary: 'Follow up', notes: 'see @[Do thing](action:a1)', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 1 })
+    transferActionItem([from, to], 'a1', 'from', 'to', 'move')
+    expect(from.actionItems).toHaveLength(1)
+    expect(from.actionItems[0]!.notes).toBe('see Do thing') // ref flattened, not left dangling
+  })
+
   test('no-ops when the item id is not found', () => {
     const [from, to] = twoTeams()
     transferActionItem([from, to], 'missing', 'from', 'to', 'copy')
@@ -106,6 +114,18 @@ describe('transferMilestone', () => {
     expect(from.milestones).toHaveLength(0)
     expect(to.milestones).toHaveLength(1)
   })
+
+  test('move: unlinks dangling refs to the moved milestone elsewhere in the source team', () => {
+    const from = team({
+      id: 'from',
+      milestones: [{ id: 'm1', date: '2026-08-01', title: 'Ship', done: false, followup: '' }],
+      dailyNotes: { '2026-07-20': 'waiting on @[Ship](milestone:m1)' },
+    })
+    const to = team({ id: 'to' })
+    transferMilestone([from, to], 'm1', 'from', 'to', 'move')
+    expect(from.milestones).toHaveLength(0)
+    expect(from.dailyNotes['2026-07-20']).toBe('waiting on Ship') // ref flattened, not left dangling
+  })
 })
 
 describe('transferRisk', () => {
@@ -125,5 +145,17 @@ describe('transferRisk', () => {
     const to = team({ id: 'to' })
     transferRisk([from, to], 'r1', 'from', 'to', 'move')
     expect(from.risks).toHaveLength(0)
+  })
+
+  test('move: unlinks dangling refs to the moved risk elsewhere in the source team', () => {
+    const from = team({
+      id: 'from',
+      risks: [{ id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
+      dailyNotes: { '2026-07-20': 'tracking @[Vendor delay](risk:r1)' },
+    })
+    const to = team({ id: 'to' })
+    transferRisk([from, to], 'r1', 'from', 'to', 'move')
+    expect(from.risks).toHaveLength(0)
+    expect(from.dailyNotes['2026-07-20']).toBe('tracking Vendor delay') // ref flattened, not left dangling
   })
 })

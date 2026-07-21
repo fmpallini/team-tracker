@@ -5,7 +5,7 @@
 // transfer strips them to plain text via stripAllRefs, since a mention's id
 // only means something inside the team it was written in.
 import type { Team } from './types'
-import { stripAllRefs } from './refs'
+import { stripAllRefs, unlinkRefsInTeam } from './refs'
 
 export function duplicateActionItem(team: Team, itemId: string): void {
   const src = team.actionItems.find((i) => i.id === itemId)
@@ -34,7 +34,10 @@ export function transferActionItem(
   const src = from.actionItems.find((i) => i.id === itemId)
   if (!src) return
   to.actionItems.push({ ...src, id: crypto.randomUUID(), order: to.actionItems.length, notes: stripAllRefs(src.notes) })
-  if (mode === 'move') from.actionItems = from.actionItems.filter((i) => i.id !== itemId)
+  if (mode === 'move') {
+    unlinkRefsInTeam(from, 'action', [itemId])
+    from.actionItems = from.actionItems.filter((i) => i.id !== itemId)
+  }
 }
 
 export function transferMilestone(
@@ -46,7 +49,10 @@ export function transferMilestone(
   const src = from.milestones.find((i) => i.id === itemId)
   if (!src) return
   to.milestones.push({ ...src, id: crypto.randomUUID(), followup: stripAllRefs(src.followup) })
-  if (mode === 'move') from.milestones = from.milestones.filter((i) => i.id !== itemId)
+  if (mode === 'move') {
+    unlinkRefsInTeam(from, 'milestone', [itemId])
+    from.milestones = from.milestones.filter((i) => i.id !== itemId)
+  }
 }
 
 export function transferRisk(
@@ -58,5 +64,8 @@ export function transferRisk(
   const src = from.risks.find((i) => i.id === itemId)
   if (!src) return
   to.risks.push({ ...src, id: crypto.randomUUID(), order: to.risks.length, followup: stripAllRefs(src.followup) })
-  if (mode === 'move') from.risks = from.risks.filter((i) => i.id !== itemId)
+  if (mode === 'move') {
+    unlinkRefsInTeam(from, 'risk', [itemId])
+    from.risks = from.risks.filter((i) => i.id !== itemId)
+  }
 }
