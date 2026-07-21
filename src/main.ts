@@ -47,6 +47,7 @@ interface AppController {
   password: string
   shell: Shell
   pm: PaneManager
+  saveCtl: SaveController
   /**
    * Task 25 re-review item #4c: tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
@@ -61,12 +62,6 @@ interface AppController {
 }
 
 let app: AppController | null = null
-
-// Set in onDocumentOpened, cleared in closeFile — same closure-only pattern
-// as `app` itself. Needed by reloadForUpdate() below: the update banner can
-// be dismissed and re-shown across open/close cycles, so it can't just close
-// over the SaveController from whatever onDocumentOpened call created it.
-let activeSaveController: SaveController | null = null
 
 function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
@@ -253,7 +248,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   const palette = createPalette(store, pm)
   shell.onAppNameClick(() => palette.open())
   disposers.push(mountSearch(shell, store, pm, selectTeam))
-  app = { store, session, password, shell, pm, dispose }
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
   // the first — e.g. a trailing save round (fix #1) or the auto-save
@@ -312,7 +306,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     },
   })
   disposers.push(() => saveCtl.dispose())
-  activeSaveController = saveCtl
+  app = { store, session, password, shell, pm, saveCtl, dispose }
   saveCtl.scheduleFrom(store.doc.prefs)
 
   // Task 25 fix #6: `onDirty` was never wired up — the save indicator and
@@ -456,7 +450,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       await saveCtl.flush()
       dispose()
       app = null
-      activeSaveController = null
       // crypto.ts's session key cache is keyed by password alone, with no
       // notion of *which* document it belongs to — must not survive past
       // this document's lifetime, or opening/creating a different file
@@ -505,8 +498,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     const todayLoc = (): Loc => ({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
     const pane0Last = lastLocForTeam(store.doc.nav.panes[0], id)
     const pane1Last = lastLocForTeam(store.doc.nav.panes[1], id)
-    pm.openInPane(0, pane0Last ?? todayLoc(), { force: true })
-    pm.openInPane(1, pane1Last ?? { teamId: id, ref: { kind: 'members' } }, { force: true })
+    pm.openBothPanes(pane0Last ?? todayLoc(), pane1Last ?? { teamId: id, ref: { kind: 'members' } }, 1)
   }
 
   const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
@@ -573,12 +565,11 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
  * already raised as the user's recovery path.
  */
 async function reloadForUpdate(): Promise<void> {
-  const saveCtl = activeSaveController
-  const store = app?.store ?? null
-  if (saveCtl && store) {
-    await saveCtl.saveNow({ explicit: true })
-    await saveCtl.flush()
-    if (store.dirty) return
+  const current = app
+  if (current) {
+    await current.saveCtl.saveNow({ explicit: true })
+    await current.saveCtl.flush()
+    if (current.store.dirty) return
   }
   location.reload()
 }

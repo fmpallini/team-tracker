@@ -21,6 +21,19 @@ export interface ModuleCtx {
 
 export interface PaneManager {
   openInPane(paneIdx: 0 | 1, loc: Loc, opts?: { force?: boolean }): void
+  /**
+   * Writes both panes' targets in one store update and renders once —
+   * for programmatic full-layout writes (team switch, first-visit default
+   * layout) where both panes are being resynced together. Two sequential
+   * `openInPane(..., { force: true })` calls reach the same end state but
+   * render each pane twice (once per call's own renderAll()), including once
+   * for the hidden pane while unsplit with content about to be overwritten
+   * by the second call anyway. `force` semantics apply to both (no
+   * cross-pane duplicate-module check, no hidden-pane staleness cleanup) —
+   * appropriate here since both panes are being freshly set, not read then
+   * compared against each other.
+   */
+  openBothPanes(target0: Loc, target1: Loc, focusedPane: 0 | 1): void
   openInFocused(loc: Loc): void
   toggleSplit(): void
   renderAll(): void
@@ -170,8 +183,7 @@ export function teamHasHistory(store: Store, teamId: string): boolean {
 /** Task 5.6: first-ever open of a team lands in a split view — daily today on the left, members on the right — instead of the last-used single-pane layout. */
 export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: string): void {
   store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0; d.nav.teamSplit[teamId] = true })
-  pm.openInPane(1, { teamId, ref: { kind: 'members' } }, { force: true })
-  pm.openInPane(0, { teamId, ref: { kind: 'daily', date: todayIso() } }, { force: true })
+  pm.openBothPanes({ teamId, ref: { kind: 'daily', date: todayIso() } }, { teamId, ref: { kind: 'members' } }, 0)
 }
 
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
@@ -337,6 +349,23 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     store.updateNav((d) => {
       d.nav.panes[idx] = result.pane
       d.nav.focusedPane = idx
+    })
+    notifyNavChanged()
+    renderAll()
+  }
+
+  function openBothPanes(target0: Loc, target1: Loc, focusedPane: 0 | 1): void {
+    clearSearchHighlight()
+    // otherCurrent=null means locsConflict() is never true (see its own
+    // `if (b === null) return false` guard), so 'focusOther' is unreachable
+    // here — matches openInPane's own `force: true` semantics.
+    const result0 = openLoc(store.doc.nav.panes[0], target0, null)
+    const result1 = openLoc(store.doc.nav.panes[1], target1, null)
+    if (result0.type !== 'opened' || result1.type !== 'opened') return
+    store.updateNav((d) => {
+      d.nav.panes[0] = result0.pane
+      d.nav.panes[1] = result1.pane
+      d.nav.focusedPane = focusedPane
     })
     notifyNavChanged()
     renderAll()
@@ -588,6 +617,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
 
   const pm: PaneManager = {
     openInPane,
+    openBothPanes,
     openInFocused,
     toggleSplit,
     renderAll,

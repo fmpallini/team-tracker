@@ -19,14 +19,10 @@ function parseVersion(v: string): [number, number, number] | null {
   return nums as [number, number, number]
 }
 
-function isVersionValid(v: [number, number, number] | null): v is [number, number, number] {
-  return v !== null
-}
-
 export function isNewer(latestTag: string, currentVersion: string): boolean {
   const latest = parseVersion(latestTag)
   const current = parseVersion(currentVersion)
-  if (!isVersionValid(latest) || !isVersionValid(current)) return false
+  if (latest === null || current === null) return false
   const [latestMajor, latestMinor, latestPatch] = latest
   const [currentMajor, currentMinor, currentPatch] = current
   if (latestMajor > currentMajor) return true

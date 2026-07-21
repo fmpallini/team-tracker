@@ -65,6 +65,24 @@ test('first open of a team lands in split: daily today left, members right', () 
   expect(right.ref).toEqual({ kind: 'members' })
 })
 
+test('openBothPanes writes both panes and the given focusedPane in one shot', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  addTeam(store, 'T2')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'members' } })
+
+  const target0: Loc = { teamId: 'T2', ref: { kind: 'daily', date: '2026-07-05' } }
+  const target1: Loc = { teamId: 'T2', ref: { kind: 'actions' } }
+  pm.openBothPanes(target0, target1, 1)
+
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(target0)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(target1)
+  expect(store.doc.nav.focusedPane).toBe(1)
+})
+
 test('teamHasHistory reflects whether any pane history contains the team', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

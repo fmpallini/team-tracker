@@ -9,6 +9,7 @@ import type { PaneManager } from '../src/ui/panes'
 function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: Loc) => void>> } {
   return {
     openInPane: () => {},
+    openBothPanes: () => {},
     openInFocused: vi.fn<(loc: Loc) => void>(),
     toggleSplit: () => {},
     renderAll: () => {},

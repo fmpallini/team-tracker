@@ -127,14 +127,28 @@ function inlineMd(node: Node): string {
   }
 }
 
-function blockToMdNodes(nodes: Node[]): string {
+// Splits `nodes` at <br> boundaries into segments, renders each node with
+// `render`, and joins segments with '\n' — shared by blockToMdNodes (markdown
+// output) and blockToTextNodes (plain-text output), which differ only in
+// which renderer they pass.
+function segmentsToLines(nodes: Node[], render: (n: Node) => string): string {
   const segments: Node[][] = [[]]
   nodes.forEach(child => {
     if (child instanceof HTMLElement && child.tagName.toLowerCase() === 'br') segments.push([])
     else segments[segments.length - 1]!.push(child)
   })
   if (segments.length > 1 && segments[segments.length - 1]!.length === 0) segments.pop()
-  return segments.map(seg => seg.map(inlineMd).join('')).join('\n')
+  return segments.map(seg => seg.map(render).join('')).join('\n')
+}
+
+function blockToMdNodes(nodes: Node[]): string {
+  return segmentsToLines(nodes, inlineMd)
+}
+
+// An <li>'s direct <ul>/<ol> children — its nested sub-list, rendered
+// separately from the item's own text by both renderListMd and renderListText.
+function nestedListsOf(li: HTMLElement): HTMLElement[] {
+  return Array.from(li.querySelectorAll(':scope > ul, :scope > ol')) as HTMLElement[]
 }
 
 // Splits a block element's children at <br> boundaries and joins each
@@ -154,7 +168,7 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   let i = 0
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
-    const nestedLists = Array.from(child.querySelectorAll(':scope > ul, :scope > ol')) as HTMLElement[]
+    const nestedLists = nestedListsOf(child)
     const text = blockToMdNodes(Array.from(child.childNodes).filter(n => !nestedLists.includes(n as HTMLElement)))
     if (tag === 'ol') {
       const v = child.getAttribute('value')
@@ -175,13 +189,7 @@ function inlineText(node: Node): string {
 }
 
 function blockToTextNodes(nodes: Node[]): string {
-  const segments: Node[][] = [[]]
-  nodes.forEach(child => {
-    if (child instanceof HTMLElement && child.tagName.toLowerCase() === 'br') segments.push([])
-    else segments[segments.length - 1]!.push(child)
-  })
-  if (segments.length > 1 && segments[segments.length - 1]!.length === 0) segments.pop()
-  return segments.map(seg => seg.map(inlineText).join('')).join('\n')
+  return segmentsToLines(nodes, inlineText)
 }
 
 // Same <br>-segment-splitting shape as blockToMd, but renders visual text
@@ -196,7 +204,7 @@ function blockToText(node: HTMLElement): string {
 function renderListText(list: HTMLElement, out: string[]): void {
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
-    const nestedLists = Array.from(child.querySelectorAll(':scope > ul, :scope > ol')) as HTMLElement[]
+    const nestedLists = nestedListsOf(child)
     out.push(blockToTextNodes(Array.from(child.childNodes).filter(n => !nestedLists.includes(n as HTMLElement))))
     nestedLists.forEach(nested => renderListText(nested, out))
   })

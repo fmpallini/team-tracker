@@ -12,6 +12,7 @@ import type { Loc, Milestone, Team } from '../src/core/types'
 function fakePM(): PaneManager {
   return {
     openInPane: () => {},
+    openBothPanes: () => {},
     openInFocused: () => {},
     toggleSplit: () => {},
     renderAll: () => {},

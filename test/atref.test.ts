@@ -334,6 +334,7 @@ describe('makeRefClickHandler', () => {
     return {
       calls,
       openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
+      openBothPanes: () => {},
       openInFocused: () => { throw new Error('onRefClick must navigate the editor\'s own pane via openInPane, not openInFocused') },
       toggleSplit: () => {},
       renderAll: () => {},

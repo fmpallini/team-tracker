@@ -18,8 +18,7 @@ import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
-import { showContextMenu, type ContextMenuItem } from '../ui/context-menu'
-import { openTeamPickerModal } from '../ui/team-picker-modal'
+import { showCardContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
@@ -257,34 +256,16 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    const otherTeams = ctx.store.doc.teams.filter((tm) => tm.id !== teamId)
-    const menuItems: ContextMenuItem[] = [
-      {
-        label: t(lc, 'context_menu_duplicate'),
-        onClick: () => {
-          ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
-            if (tm) duplicateRisk(tm, itemId)
-          })
-        },
-      },
-    ]
-    if (otherTeams.length > 0) {
-      menuItems.push({ label: t(lc, 'context_menu_copy_to_team'), onClick: () => openTransferModal(itemId, 'copy', otherTeams) })
-      menuItems.push({ label: t(lc, 'context_menu_move_to_team'), onClick: () => openTransferModal(itemId, 'move', otherTeams) })
-    }
-    showContextMenu(x, y, menuItems)
-  }
-
-  function openTransferModal(itemId: string, mode: 'copy' | 'move', otherTeams: Team[]): void {
-    openTeamPickerModal({
-      title: t(lc, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title'),
-      confirmLabel: t(lc, 'team_picker_confirm_btn'),
-      cancelLabel: t(lc, 'cancel'),
-      teams: otherTeams,
-      onConfirm: (targetTeamId) => {
+    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
+      duplicate: (id) => {
         ctx.store.update((d) => {
-          transferRisk(d.teams, itemId, teamId, targetTeamId, mode)
+          const tm = d.teams.find((t2) => t2.id === teamId)
+          if (tm) duplicateRisk(tm, id)
+        })
+      },
+      transfer: (id, targetTeamId, mode) => {
+        ctx.store.update((d) => {
+          transferRisk(d.teams, id, teamId, targetTeamId, mode)
         })
       },
     })
@@ -525,15 +506,21 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   )
   const expandAllBtn = el(
     'button',
-    { class: 'tt-btn tt-risk-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!allExpanded) },
+    {
+      class: 'tt-btn tt-risk-expand-all-btn',
+      type: 'button',
+      onclick: () => setAllExpanded(!isAllExpanded(risks().filter((r) => !r.closed))),
+    },
     ''
   )
-  let allExpanded = false
+
+  function isAllExpanded(open: Risk[]): boolean {
+    return open.length > 0 && open.every((r) => expandedIds.has(r.id))
+  }
 
   /** Label reads "Expand all" unless every open (non-closed) row is already expanded, in which case it flips to "Collapse all" — mirrors risk_expand_all_btn/risk_collapse_all_btn i18n keys. */
   function updateExpandAllBtn(open: Risk[]): void {
-    allExpanded = open.length > 0 && open.every((r) => expandedIds.has(r.id))
-    expandAllBtn.textContent = t(lc, allExpanded ? 'risk_collapse_all_btn' : 'risk_expand_all_btn')
+    expandAllBtn.textContent = t(lc, isAllExpanded(open) ? 'risk_collapse_all_btn' : 'risk_expand_all_btn')
   }
 
   const toolbar = el('div', { class: 'tt-risk-toolbar' }, addBtn, expandAllBtn)

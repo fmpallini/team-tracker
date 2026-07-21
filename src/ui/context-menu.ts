@@ -2,7 +2,7 @@
 // overlay anchored at the click point, closed by Escape or an outside click.
 // Mirrors the open/close lifecycle of ui/atref.ts's @ dropdown but with no
 // keyboard navigation — every current use (card actions) is mouse-driven.
-import { el } from './dom'
+import { el, bindOutsideDismiss } from './dom'
 
 export interface ContextMenuItem {
   label: string
@@ -19,17 +19,8 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
 
   function close(): void {
     menu.remove()
-    document.removeEventListener('mousedown', onDocMousedown, true)
-    document.removeEventListener('keydown', onKeydown, true)
+    unbind()
     closeCurrent = null
-  }
-
-  function onDocMousedown(e: MouseEvent): void {
-    if (!menu.contains(e.target as Node)) close()
-  }
-
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') close()
   }
 
   const menu = el(
@@ -48,7 +39,6 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
     )
   )
   document.body.appendChild(menu)
-  document.addEventListener('mousedown', onDocMousedown, true)
-  document.addEventListener('keydown', onKeydown, true)
+  const unbind = bindOutsideDismiss((target) => !menu.contains(target), close)
   closeCurrent = close
 }
