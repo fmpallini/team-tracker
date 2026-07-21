@@ -116,7 +116,7 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'daily' || tpl.scope === 'any'),
     getCtx: () => ({
       dateIso: date,
-      time: nowHHMM(),
+      time: nowHHMM(lc),
       teamName: findTeam(ctx, teamId)?.name,
       locale: lc,
     }),

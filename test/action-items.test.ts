@@ -63,8 +63,17 @@ function contextMenuItem(text: string): HTMLButtonElement {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
 }
 
+function pickDate(day: number): void {
+  const input = document.querySelector('.tt-date-picker-input') as HTMLInputElement
+  input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+    .find((b) => b.textContent === String(day))!
+    .click()
+}
+
 afterEach(() => {
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
 
 describe('pure helpers', () => {
@@ -305,7 +314,7 @@ describe('renderActionItems — board', () => {
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
-    const assigneeInput = document.querySelector('.tt-kanban-form-row input[type="text"]') as HTMLInputElement
+    const assigneeInput = document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement
     const datalist = document.getElementById(assigneeInput.getAttribute('list')!)!
     const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
     expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
@@ -314,6 +323,8 @@ describe('renderActionItems — board', () => {
 
 describe('renderActionItems — edit modal', () => {
   test('"+ Card" in To Do creates a card in the todo column with the entered fields', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 1)) // Aug 1, 2026 — the date picker opens on "today"'s month when empty
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -321,8 +332,7 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(container, '+ Card')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     summaryInput.value = 'New task'
-    const dueInput = document.querySelector('.tt-kanban-form input[type="date"]') as HTMLInputElement
-    dueInput.value = '2026-08-01'
+    pickDate(1)
     // Scoped to the modal form: the toolbar's filter chips now share the
     // .tt-kanban-color-chip class (same square swatch pattern), so an
     // unscoped query would also match those. Selected by color class, not

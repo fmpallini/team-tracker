@@ -22,6 +22,7 @@ import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type A
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
 import { showContextMenu, type ContextMenuItem } from '../ui/context-menu'
 import { openTeamPickerModal } from '../ui/team-picker-modal'
+import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
 
@@ -209,7 +210,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
       locale: lc,
     })
 
@@ -388,18 +389,18 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   }
 
   function renderRow(m: Milestone): HTMLElement {
-    const dateInput = el('input', {
-      type: 'date', class: 'tt-milestone-date-input tt-input', value: m.date,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        if (value === '') return // type=date: browsers don't normally allow clearing to '', guard anyway
+    // No allowClear: a milestone always has a date, same constraint the old
+    // native <input type=date> relied on browsers to (mostly) enforce.
+    const datePicker = createDatePicker({
+      value: m.date, locale: lc,
+      onChange: (iso) => {
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
-          if (found) found.date = value
+          if (found) found.date = iso
         })
       },
     })
+    datePicker.root.classList.add('tt-milestone-date-input')
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-milestone-title-input tt-input', placeholder: t(lc, 'milestone_title_placeholder'), value: m.title,
@@ -442,7 +443,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const row = el(
       'div',
       { class: 'tt-milestone-row', 'data-milestone-id': m.id, 'data-item-id': m.id },
-      dateInput, titleInput, doneCheckbox, expandBtn, deleteBtn
+      datePicker.root, titleInput, doneCheckbox, expandBtn, deleteBtn
     )
     if (m.done) row.classList.add('tt-milestone-done-row')
     row.addEventListener('contextmenu', (e) => {

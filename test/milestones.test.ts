@@ -329,9 +329,13 @@ describe('renderMilestones', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const dateInput = rows(container)[0]!.querySelector('.tt-milestone-date-input') as HTMLInputElement
-    dateInput.value = '2026-03-01'
-    dateInput.dispatchEvent(new Event('change'))
+    const dateInput = rows(container)[0]!.querySelector('.tt-date-picker-input') as HTMLInputElement
+    dateInput.dispatchEvent(new MouseEvent('click', { bubbles: true })) // opens on the row's current date: Jan 2026
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.textContent === '›')!.click() // -> Feb
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.textContent === '›')!.click() // -> Mar
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+      .find((b) => b.textContent === '1')!
+      .click()
 
     expect(store.doc.teams[0]!.milestones.find((m) => m.id === 'a')!.date).toBe('2026-03-01')
     const titlesAfter = Array.from(container.querySelectorAll<HTMLInputElement>('.tt-milestone-title-input')).map((i) => i.value)

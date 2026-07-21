@@ -75,7 +75,7 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),
     getCtx: () => ({
       dateIso: todayIso(),
-      time: nowHHMM(),
+      time: nowHHMM(lc),
       personName: person.name,
       teamName: findTeam()?.name,
       locale: lc,

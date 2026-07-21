@@ -232,7 +232,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
       locale: lc,
     })
 
