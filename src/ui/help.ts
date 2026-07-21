@@ -64,15 +64,23 @@ export function showEditorHelp(locale: Locale): void {
   })
 }
 
-export function showGlobalHelp(locale: Locale): void {
+export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
+  const isPwa = opts?.pwa ?? __PWA__
   const body = el(
     'div',
     { class: 'tt-help-body' },
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_global_shortcuts_heading')),
     table(locale, GLOBAL_ROWS),
-    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_appwindow_heading')),
-    el('p', { class: 'tt-help-text' }, t(locale, 'help_appwindow_body')),
-    el('pre', { class: 'tt-help-code-block' }, 'chrome --app=file:///caminho/para/app.html')
+    // The chrome --app= recipe is a workaround for opening the plain
+    // dist/app.html without browser chrome — moot in the PWA build, which is
+    // already installable/standalone, so it's only shown there.
+    ...(isPwa
+      ? []
+      : [
+          el('h3', { class: 'tt-help-heading' }, t(locale, 'help_appwindow_heading')),
+          el('p', { class: 'tt-help-text' }, t(locale, 'help_appwindow_body')),
+          el('pre', { class: 'tt-help-code-block' }, 'chrome --app=file:///caminho/para/app.html'),
+        ])
   )
 
   const handle: { close: () => void } = showModal({

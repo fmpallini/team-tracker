@@ -556,8 +556,8 @@ describe('Data tab (export/import)', () => {
     expect(document.querySelector('.tt-data-team-name')?.textContent).toBe('Engineering')
     const hints = Array.from(document.querySelectorAll('.tt-data-hint')).map((n) => n.textContent)
     expect(hints).toEqual([
-      'Personal notes and daily notes are never included.',
-      'Personal notes and daily notes are never included.',
+      'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, action items, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
+      'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
     ])
   })
 
@@ -579,7 +579,7 @@ describe('Data tab (export/import)', () => {
     const team = file.teams[0]
     expect(team.dailyNotes).toBeUndefined()
     expect(team.stakeholders[0].notes).toBeUndefined()
-    expect(team.actionItems[0].notes).toBe('audit detail') // item free-text stays (decision 2)
+    expect(team.actionItems).toBeUndefined() // no work content is exported, only org structure
   })
 
   test('import: valid file shows a checklist with per-team counts, Import appends with fresh ids and "(imported)" suffix', async () => {
@@ -595,7 +595,7 @@ describe('Data tab (export/import)', () => {
     await new Promise((r) => setTimeout(r, 0)) // flush handleFilePicked's await file.arrayBuffer()
 
     expect(document.querySelector('.tt-data-team-summary')?.textContent)
-      .toBe('1 stakeholders · 1 members · 1 action items · 1 milestones · 1 risks')
+      .toBe('1 stakeholders · 1 members')
 
     clickByText('Import selected')
 

@@ -36,6 +36,7 @@ function fakePM(): PaneManager & { calls: Loc[] } {
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},
+    setSplitSpaceConstrained: () => {},
   }
 }
 

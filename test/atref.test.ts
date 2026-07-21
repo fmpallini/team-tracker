@@ -338,6 +338,7 @@ describe('makeRefClickHandler', () => {
       toggleSplit: () => {},
       renderAll: () => {},
       registerModule: () => {},
+      setSplitSpaceConstrained: () => {},
     }
   }
 

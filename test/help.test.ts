@@ -84,3 +84,10 @@ test('editor help no longer carries the app-window recipe', () => {
   showEditorHelp('en-US')
   expect(document.body.textContent!).not.toContain('chrome --app')
 })
+
+test('global help omits the app-window recipe in the PWA build (opts.pwa: true) — moot once already installable/standalone', () => {
+  showGlobalHelp('en-US', { pwa: true })
+  const text = document.body.textContent!
+  expect(text).toContain('Alt+1') // shortcuts stay
+  expect(text).not.toContain('chrome --app')
+})

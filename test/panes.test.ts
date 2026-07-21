@@ -219,6 +219,45 @@ test('toggleSplit flips nav.split and the grid dataset', () => {
   expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
 })
 
+describe('setSplitSpaceConstrained (responsive auto-hide)', () => {
+  test('hides the grid split without touching persisted nav.split', () => {
+    const { store, pm } = setup()
+    pm.toggleSplit()
+    expect(store.doc.nav.split).toBe(true)
+
+    pm.setSplitSpaceConstrained(true)
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+    expect(store.doc.nav.split).toBe(true) // preference untouched, purely visual
+
+    pm.setSplitSpaceConstrained(false)
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('true')
+  })
+
+  test('manual toggleSplit click wins over an active space-constrained hide', () => {
+    const { store, pm } = setup()
+    pm.toggleSplit() // split on
+    pm.setSplitSpaceConstrained(true) // then narrowed — visually hidden again
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+
+    pm.toggleSplit() // user forces it back open even though still "narrow"
+
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('true')
+    expect(store.doc.nav.split).toBe(true)
+  })
+
+  test('a later widen (setSplitSpaceConstrained(false)) does not fight a manual unsplit made while narrow', () => {
+    const { store, pm } = setup()
+    pm.toggleSplit() // split on
+    pm.setSplitSpaceConstrained(true) // narrowed
+    pm.toggleSplit() // user manually re-shows despite being narrow -> split true, spaceHidden cleared
+    pm.toggleSplit() // user then manually unsplits again -> split false
+    expect(store.doc.nav.split).toBe(false)
+
+    pm.setSplitSpaceConstrained(false) // window widens back out
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+  })
+})
+
 test('navigateFocusedHistory steps the currently focused pane and re-renders', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

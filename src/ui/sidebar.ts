@@ -71,13 +71,69 @@ export function onNavChanged(cb: () => void): () => void {
  */
 export const ADD_TEAM_REQUEST_EVENT = 'tt-add-team-request'
 
-export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): void {
+export interface SidebarHandle {
+  /**
+   * Driven by the responsive-layout ResizeObserver (src/ui/responsive.ts):
+   * forces the sidebar hidden when the window is too narrow, independent of
+   * (and without persisting over) the user's own manual collapse preference
+   * (`nav.sidebarCollapsed`). Purely transient — never written to the doc,
+   * so a resize alone never marks the file dirty.
+   */
+  setSpaceConstrained(hidden: boolean): void
+}
+
+export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): SidebarHandle {
   let dragSrcIndex: number | null = null
+  // Transient, in-memory only (see SidebarHandle.setSpaceConstrained) — not
+  // part of Doc, so it never persists and never marks the file dirty.
+  let spaceHidden = false
 
   function locale(): Locale {
     return store.doc.prefs.locale
   }
 
+  function effectivelyCollapsed(): boolean {
+    return store.doc.nav.sidebarCollapsed || spaceHidden
+  }
+
+  /**
+   * Manual click always reflects the user's intent immediately: expanding
+   * while the sidebar is only hidden because the window is narrow
+   * (spaceHidden) clears that transient override too, so it actually
+   * reappears — the next auto-hide only re-fires on a fresh downward width
+   * crossing (see responsive.ts). Collapsing always sets the persisted
+   * preference, regardless of why it was visible.
+   */
+  function toggleCollapsed(): void {
+    const collapsed = effectivelyCollapsed()
+    store.updateNav((d) => {
+      d.nav.sidebarCollapsed = !collapsed
+    })
+    if (collapsed) spaceHidden = false
+    notifyNavChanged()
+    renderCollapseState()
+  }
+
+  const collapseBtn = el(
+    'button',
+    { class: 'tt-btn tt-sidebar-toggle', type: 'button', onclick: () => toggleCollapsed() },
+    '◀'
+  )
+
+  function renderCollapseState(): void {
+    const collapsed = effectivelyCollapsed()
+    shell.sidebar.dataset.collapsed = String(collapsed)
+    collapseBtn.textContent = collapsed ? '▶' : '◀'
+    collapseBtn.title = t(locale(), collapsed ? 'sidebar_expand_title' : 'sidebar_collapse_title')
+  }
+
+  function setSpaceConstrained(hidden: boolean): void {
+    if (spaceHidden === hidden) return
+    spaceHidden = hidden
+    renderCollapseState()
+  }
+
+  const contentEl = el('div', { class: 'tt-sidebar-content' })
   const listEl = el('div', { class: 'tt-team-list' })
   const addBtn = el(
     'button',
@@ -168,7 +224,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   shell.sidebar.innerHTML = ''
-  shell.sidebar.append(dueBtn, listEl, addBtn)
+  contentEl.append(dueBtn, listEl, addBtn)
+  shell.sidebar.append(collapseBtn, contentEl)
+  renderCollapseState()
 
   function clearDragOverClasses(): void {
     listEl.querySelectorAll('.tt-team-item').forEach((n) => {
@@ -244,6 +302,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     // update like any other) refreshes them through the same render path.
     addBtn.title = t(locale(), 'team_add_title')
     dueBtn.title = t(locale(), 'due_badge_title')
+    renderCollapseState()
     const buckets = dueBuckets()
     renderDueBadge(buckets)
     const teamDueCounts = new Map<string, number>()
@@ -436,4 +495,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   })
   document.addEventListener(NAV_CHANGED_EVENT, render)
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
+
+  return { setSpaceConstrained }
 }

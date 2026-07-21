@@ -13,6 +13,7 @@ function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: 
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},
+    setSplitSpaceConstrained: () => {},
   }
 }
 
@@ -31,7 +32,14 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
-function setup(): { shell: Shell; store: Store; pm: ReturnType<typeof fakePM>; selectTeam: ReturnType<typeof vi.fn>; renderPanes: ReturnType<typeof vi.fn> } {
+function setup(): {
+  shell: Shell
+  store: Store
+  pm: ReturnType<typeof fakePM>
+  selectTeam: ReturnType<typeof vi.fn>
+  renderPanes: ReturnType<typeof vi.fn>
+  sidebar: ReturnType<typeof mountSidebar>
+} {
   document.body.innerHTML = ''
   stubMatchMedia()
   const doc = createEmptyDocument('en-US')
@@ -43,8 +51,8 @@ function setup(): { shell: Shell; store: Store; pm: ReturnType<typeof fakePM>; s
     store.updateNav((d) => { d.nav.activeTeamId = id })
   })
   const renderPanes = vi.fn()
-  mountSidebar(shell, store, pm, { selectTeam, renderPanes })
-  return { shell, store, pm, selectTeam, renderPanes }
+  const sidebar = mountSidebar(shell, store, pm, { selectTeam, renderPanes })
+  return { shell, store, pm, selectTeam, renderPanes, sidebar }
 }
 
 function addTeam(store: Store, name: string, emoji = '🚀'): void {
@@ -511,5 +519,57 @@ describe('due list modal', () => {
     const row = document.querySelector('.tt-due-row') as HTMLElement
     row.click()
     expect(selectTeam).toHaveBeenCalledWith('Beta')
+  })
+})
+
+describe('sidebar collapse', () => {
+  function toggleBtn(): HTMLButtonElement {
+    return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
+  }
+
+  test('starts expanded by default and persists nav.sidebarCollapsed on click', () => {
+    const { store, shell } = setup()
+    expect(shell.sidebar.dataset.collapsed).toBe('false')
+
+    toggleBtn().click()
+
+    expect(store.doc.nav.sidebarCollapsed).toBe(true)
+    expect(shell.sidebar.dataset.collapsed).toBe('true')
+
+    toggleBtn().click()
+    expect(store.doc.nav.sidebarCollapsed).toBe(false)
+    expect(shell.sidebar.dataset.collapsed).toBe('false')
+  })
+
+  test('setSpaceConstrained hides the sidebar without touching the persisted preference', () => {
+    const { store, shell, sidebar } = setup()
+
+    sidebar.setSpaceConstrained(true)
+    expect(shell.sidebar.dataset.collapsed).toBe('true')
+    expect(store.doc.nav.sidebarCollapsed).toBe(false) // not persisted — purely visual
+
+    sidebar.setSpaceConstrained(false)
+    expect(shell.sidebar.dataset.collapsed).toBe('false')
+  })
+
+  test('manual expand click wins over an active space-constrained hide', () => {
+    const { store, shell, sidebar } = setup()
+    sidebar.setSpaceConstrained(true)
+    expect(shell.sidebar.dataset.collapsed).toBe('true')
+
+    toggleBtn().click() // user forces it back open even though still "narrow"
+
+    expect(shell.sidebar.dataset.collapsed).toBe('false')
+    expect(store.doc.nav.sidebarCollapsed).toBe(false)
+  })
+
+  test('manual collapse click persists even after a later setSpaceConstrained(false)', () => {
+    const { store, shell, sidebar } = setup()
+    toggleBtn().click() // manual collapse
+    expect(store.doc.nav.sidebarCollapsed).toBe(true)
+
+    sidebar.setSpaceConstrained(true)
+    sidebar.setSpaceConstrained(false) // window widens back out
+    expect(shell.sidebar.dataset.collapsed).toBe('true') // stays collapsed — that was a manual choice
   })
 })

@@ -10,6 +10,7 @@ import { showStartScreen } from './ui/start'
 import { mountSidebar, notifyNavChanged } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
 import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager } from './ui/panes'
+import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
 import { t, todayIso } from './core/i18n'
@@ -497,7 +498,13 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     pm.openInPane(1, pane1Last ?? { teamId: id, ref: { kind: 'members' } }, { force: true })
   }
 
-  mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
+  const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
+  disposers.push(
+    setupResponsiveLayout(shell.root, {
+      setSplitSpaceHidden: (hidden) => pm.setSplitSpaceConstrained(hidden),
+      setSidebarSpaceHidden: (hidden) => sidebarHandle.setSpaceConstrained(hidden),
+    })
+  )
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {

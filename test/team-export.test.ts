@@ -29,6 +29,7 @@ function sampleTeam(): Team {
     risks: [
       { id: 'r1', title: 'Vendor lock-in', chance: 2, impact: 3, plan: 'mitigate', followup: 'quarterly review', order: 0, closed: false },
     ],
+    actionTagNames: { rust: 'Blocked' },
   }
 }
 
@@ -43,12 +44,13 @@ describe('buildExport', () => {
     }
   })
 
-  it('keeps actionItem.notes, milestone.followup, and risk.followup', () => {
+  it('omits actionItems, milestones, risks, and actionTagNames entirely — only org structure is exported', () => {
     const file = buildExport([sampleTeam()])
-    const team = file.teams[0]!
-    expect(team.actionItems[0]!.notes).toBe('SOC2 audit detail')
-    expect(team.milestones[0]!.followup).toBe('ship checklist')
-    expect(team.risks[0]!.followup).toBe('quarterly review')
+    const team = file.teams[0]! as unknown as Record<string, unknown>
+    expect(team.actionItems).toBeUndefined()
+    expect(team.milestones).toBeUndefined()
+    expect(team.risks).toBeUndefined()
+    expect(team.actionTagNames).toBeUndefined()
   })
 
   it('stamps the current schema version and kind marker', () => {
@@ -83,7 +85,7 @@ describe('parseImportFile', () => {
 })
 
 describe('remapForImport', () => {
-  it('gives every team/person/item a fresh id, distinct from the source', () => {
+  it('gives every team/person a fresh id, distinct from the source', () => {
     const file = buildExport([sampleTeam()])
     const [imported] = remapForImport(file.teams, 'en-US')
     expect(imported!.id).not.toBe('t1')
@@ -92,9 +94,6 @@ describe('remapForImport', () => {
     expect(allNewPersonIds).not.toContain('p2')
     expect(allNewPersonIds).not.toContain('p3')
     expect(new Set(allNewPersonIds).size).toBe(allNewPersonIds.length)
-    expect(imported!.actionItems[0]!.id).not.toBe('a1')
-    expect(imported!.milestones[0]!.id).not.toBe('m1')
-    expect(imported!.risks[0]!.id).not.toBe('r1')
   })
 
   it('rebuilds parentId chains against the new ids, not the old ones', () => {
@@ -117,26 +116,20 @@ describe('remapForImport', () => {
     expect(imported!.dailyNotes).toEqual({})
     expect(imported!.stakeholders[0]!.notes).toBe('')
   })
-})
 
-describe('actionTagNames pass-through', () => {
-  it('buildExport carries actionTagNames through unchanged', () => {
-    const team = { ...sampleTeam(), actionTagNames: { rust: 'Blocked' } }
-    const file = buildExport([team])
-    expect(file.teams[0]!.actionTagNames).toEqual({ rust: 'Blocked' })
-  })
-
-  it('remapForImport carries actionTagNames through without remapping (keyed by color, not id)', () => {
-    const team = { ...sampleTeam(), actionTagNames: { plum: 'Urgent' } }
-    const file = buildExport([team])
-    const [imported] = remapForImport(file.teams, 'en-US')
-    expect(imported!.actionTagNames).toEqual({ plum: 'Urgent' })
-  })
-
-  it('a team with no actionTagNames exports and imports with an empty object', () => {
+  it('starts with no action items, milestones, or risks — none were exported', () => {
     const file = buildExport([sampleTeam()])
-    expect(file.teams[0]!.actionTagNames).toEqual({})
     const [imported] = remapForImport(file.teams, 'en-US')
-    expect(imported!.actionTagNames).toEqual({})
+    expect(imported!.actionItems).toEqual([])
+    expect(imported!.milestones).toEqual([])
+    expect(imported!.risks).toEqual([])
+  })
+
+  it('seeds fresh default actionTagNames (locale-appropriate), ignoring the source team\'s own', () => {
+    const file = buildExport([sampleTeam()])
+    const [imported] = remapForImport(file.teams, 'en-US')
+    expect(imported!.actionTagNames?.rust).toBe('Urgent')
+    expect(imported!.actionTagNames?.brass).toBe('Blocked')
+    expect(imported!.actionTagNames?.slate).toBe('In Review')
   })
 })

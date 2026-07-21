@@ -1,13 +1,14 @@
 // src/core/team-export.ts — export/import a subset of teams as a plain,
-// unencrypted JSON file. Deliberately narrower than a Team: strips
-// `Team.dailyNotes` and every `Person.notes` structurally (the types below
-// have no field to carry them), while keeping ActionItem/Milestone/Risk in
-// full — their free-text fields (notes/followup) are intrinsic to the item,
-// not personal journaling. See docs/superpowers/specs/2026-07-16-team-
-// export-import-design.md for the full rationale.
-import type { ActionItem, Milestone, Person, Risk, Team } from './types'
-import { SCHEMA_VERSION } from './document'
-import { t, type Locale } from './i18n'
+// unencrypted JSON file. Deliberately narrower than a Team: only the org
+// structure (name/emoji, stakeholders, members — hierarchy and roles, no
+// notes) is included. Action items, milestones, risks, and all free-text
+// content are intentionally excluded — this file is meant to be handed to
+// teammates so they can skip re-entering the team/people structure, not to
+// carry work content. See docs/superpowers/specs/2026-07-16-team-export-
+// import-design.md and 2026-07-21-shell-layout-export-help-fixes-design.md.
+import type { ActionItem, Person, Team } from './types'
+import { SCHEMA_VERSION, SUGGESTED_TAG_NAME_KEYS } from './document'
+import { t, type Locale, type MsgKey } from './i18n'
 
 export class InvalidExportFileError extends Error {}
 export class ExportTooNewError extends Error {}
@@ -25,10 +26,6 @@ export interface ExportedTeam {
   emoji: string
   stakeholders: ExportedPerson[]
   members: ExportedPerson[]
-  actionItems: ActionItem[]
-  milestones: Milestone[]
-  risks: Risk[]
-  actionTagNames: Partial<Record<ActionItem['color'], string>>
 }
 
 export interface TeamExportFile {
@@ -52,10 +49,6 @@ export function buildExport(teams: Team[]): TeamExportFile {
       emoji: t.emoji,
       stakeholders: t.stakeholders.map(stripPerson),
       members: t.members.map(stripPerson),
-      actionItems: t.actionItems,
-      milestones: t.milestones,
-      risks: t.risks,
-      actionTagNames: t.actionTagNames ?? {},
     })),
   }
 }
@@ -102,6 +95,15 @@ function remapPersonList(people: ExportedPerson[]): Team['stakeholders'] {
  * of whether a same-named team already exists, so there's no collision-
  * detection logic to get wrong.
  */
+/** Same default seeding `createEmptyTeam` (document.ts) gives brand-new teams — an imported team has no action items of its own to carry tag names from, so it starts fresh like any other new team. */
+function defaultActionTagNames(locale: Locale): Partial<Record<ActionItem['color'], string>> {
+  const names: Partial<Record<ActionItem['color'], string>> = {}
+  for (const [color, key] of Object.entries(SUGGESTED_TAG_NAME_KEYS) as [ActionItem['color'], MsgKey][]) {
+    names[color] = t(locale, key)
+  }
+  return names
+}
+
 export function remapForImport(teams: ExportedTeam[], locale: Locale): Team[] {
   return teams.map((src) => ({
     id: crypto.randomUUID(),
@@ -109,10 +111,10 @@ export function remapForImport(teams: ExportedTeam[], locale: Locale): Team[] {
     emoji: src.emoji,
     stakeholders: remapPersonList(src.stakeholders),
     members: remapPersonList(src.members),
-    actionItems: src.actionItems.map((a) => ({ ...a, id: crypto.randomUUID() })),
-    milestones: src.milestones.map((m) => ({ ...m, id: crypto.randomUUID() })),
-    risks: src.risks.map((r) => ({ ...r, id: crypto.randomUUID() })),
+    actionItems: [],
+    milestones: [],
+    risks: [],
     dailyNotes: {},
-    actionTagNames: src.actionTagNames ?? {},
+    actionTagNames: defaultActionTagNames(locale),
   }))
 }

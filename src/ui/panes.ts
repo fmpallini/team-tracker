@@ -25,6 +25,14 @@ export interface PaneManager {
   toggleSplit(): void
   renderAll(): void
   registerModule(kind: ModuleRef['kind'], render: ModuleRenderer): void
+  /**
+   * Driven by the responsive-layout ResizeObserver (src/ui/responsive.ts):
+   * forces single-pane view when the window is too narrow, independent of
+   * (and without persisting over) `nav.split`/`nav.teamSplit`. Purely
+   * transient — never written to the doc, so a resize alone never marks the
+   * file dirty.
+   */
+  setSplitSpaceConstrained(hidden: boolean): void
 }
 
 /** Same item list feeds both the pane module dropdown and the Ctrl+K palette. */
@@ -171,6 +179,13 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   const menuOpen: [boolean, boolean] = [false, false]
   const personSubOpen: [boolean, boolean] = [false, false]
   let splitPct = 50
+  // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
+  // not part of Doc, so it never persists and never marks the file dirty.
+  let spaceHideSplit = false
+
+  function effectiveSplit(): boolean {
+    return store.doc.nav.split && !spaceHideSplit
+  }
 
   function localeNow(): Locale {
     return store.doc.prefs.locale
@@ -254,9 +269,10 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       noTeamsTitleEl.textContent = t(lc, 'empty_no_teams_title')
       noTeamsBtn.textContent = t(lc, 'empty_no_teams_btn')
     }
-    gridEl.dataset.split = String(nav.split)
-    paneEls[1].style.display = nav.split ? '' : 'none'
-    dividerEl.style.display = nav.split ? '' : 'none'
+    const split = effectiveSplit()
+    gridEl.dataset.split = String(split)
+    paneEls[1].style.display = split ? '' : 'none'
+    dividerEl.style.display = split ? '' : 'none'
     // fr, not %: the two flexible columns plus the fixed 6px divider must
     // share exactly 100% of the grid's width. Percent columns don't account
     // for a sibling fixed-width column at all — splitPct% + 6px + (100 -
@@ -264,7 +280,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     // by the divider's width and forcing a horizontal scrollbar. fr columns
     // share whatever space is left *after* fixed-width columns are
     // subtracted, so the total is always exactly 100%.
-    gridEl.style.gridTemplateColumns = nav.split ? `${splitPct}fr 6px ${100 - splitPct}fr` : '1fr'
+    gridEl.style.gridTemplateColumns = split ? `${splitPct}fr 6px ${100 - splitPct}fr` : '1fr'
     paneEls[0].classList.toggle('focused', nav.focusedPane === 0)
     paneEls[1].classList.toggle('focused', nav.focusedPane === 1)
   }
@@ -330,9 +346,18 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane(store.doc.nav.focusedPane, target)
   }
 
+  /**
+   * Toggles against the *effective* (visible) split state, not the raw
+   * persisted `nav.split` — when the responsive layout (responsive.ts) has
+   * force-hidden the split view because the window is narrow, clicking this
+   * button means "show it anyway" and must also clear that transient
+   * override, or the click would appear to do nothing. See
+   * PaneManager.setSplitSpaceConstrained.
+   */
   function toggleSplit(): void {
+    const wasVisible = effectiveSplit()
     store.updateNav((d) => {
-      d.nav.split = !d.nav.split
+      d.nav.split = !wasVisible
       // Un-splitting hides pane 1 (layout() never hides pane 0) — leaving
       // focus stuck there would silently misdirect every focused-pane action
       // (Ctrl+K palette picks, Alt+arrow history, team hotkeys) at a pane the
@@ -348,8 +373,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       // main.ts's selectTeam) restores split/single view as last left it.
       if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split
     })
+    if (wasVisible === false) spaceHideSplit = false
     notifyNavChanged()
     renderAll()
+  }
+
+  function setSplitSpaceConstrained(hidden: boolean): void {
+    if (spaceHideSplit === hidden) return
+    spaceHideSplit = hidden
+    layout()
   }
 
   function toggleMenu(idx: 0 | 1): void {
@@ -513,7 +545,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       {
         class: 'tt-btn tt-pane-split-btn',
         type: 'button',
-        title: t(lc, nav.split ? 'pane_unsplit_title' : 'pane_split_title'),
+        title: t(lc, effectiveSplit() ? 'pane_unsplit_title' : 'pane_split_title'),
         onclick: () => toggleSplit(),
       },
       '⧉'
@@ -562,6 +594,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     registerModule(kind, render) {
       modules.set(kind, render)
     },
+    setSplitSpaceConstrained,
   }
 
   renderAll()
