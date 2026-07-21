@@ -256,13 +256,28 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
-  // Task 4 replaces this with a version that also detects a multi-item
-  // sibling selection; for now, only the item containing the collapsed caret.
-  function selectedListItemsForTab(): HTMLElement[] {
+  /* Task 4: resolves the list item(s) a Tab/Shift+Tab keypress should act
+   * on. A collapsed caret or a selection within a single item resolves to
+   * that one item. A selection spanning multiple sibling `<li>`s (same
+   * parent `<ul>/<ol>`) resolves to the whole ordered batch. A selection
+   * whose start/end land in list items that aren't siblings (mixed-depth
+   * selection) falls back to just the item containing the selection's
+   * start point. */
+  function selectedListItems(): HTMLElement[] {
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0) return []
-    const li = closestLi(sel.getRangeAt(0).startContainer)
-    return li ? [li] : []
+    const range = sel.getRangeAt(0)
+    const startLi = closestLi(range.startContainer)
+    if (!startLi) return []
+    const endLi = closestLi(range.endContainer)
+    if (!endLi || endLi === startLi) return [startLi]
+    if (startLi.parentElement !== endLi.parentElement) return [startLi]
+    const siblings = Array.from(startLi.parentElement!.children).filter(
+      (c): c is HTMLElement => c instanceof HTMLElement && c.tagName === 'LI'
+    )
+    const startIdx = siblings.indexOf(startLi)
+    const endIdx = siblings.indexOf(endLi)
+    return siblings.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1)
   }
 
   function setCaretAfter(node: Node): void {
@@ -518,7 +533,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
-      const listItems = selectedListItemsForTab()
+      const listItems = selectedListItems()
       if (listItems.length > 0) {
         if (e.shiftKey) outdentListItems(listItems)
         else indentListItems(listItems)

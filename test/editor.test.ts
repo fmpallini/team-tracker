@@ -384,6 +384,43 @@ describe('list nesting via Tab/Shift+Tab', () => {
     expect(editor.getMd()).toBe(md)
     editor.destroy()
   })
+
+  function selectAcross(startLi: Element, endLi: Element): void {
+    const range = document.createRange()
+    range.setStart(startLi.firstChild!, 0)
+    range.setEnd(endLi.firstChild!, endLi.firstChild!.textContent!.length)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('Tab with multiple sibling list items selected nests the whole batch together', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n- b\n- c')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const [, liB, liC] = Array.from(editorEl.querySelectorAll('li'))
+    selectAcross(liB!, liC!)
+
+    dispatchKey(editorEl, { key: 'Tab' })
+
+    expect(editor.getMd()).toBe('- a\n  - b\n  - c')
+    editor.destroy()
+  })
+
+  test('Shift+Tab with multiple sibling nested items selected promotes the whole batch together', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n  - b\n  - c\n- d')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const items = editorEl.querySelectorAll('li')
+    selectAcross(items[1]!, items[2]!) // "b", "c"
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('- a\n- b\n- c\n- d')
+    editor.destroy()
+  })
 })
 
 describe('toolbar', () => {
