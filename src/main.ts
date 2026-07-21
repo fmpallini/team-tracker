@@ -1,4 +1,4 @@
-declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string }
+declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string; const __REPO__: string }
 
 import type { Locale } from './core/i18n'
 import type { Doc, Loc } from './core/types'

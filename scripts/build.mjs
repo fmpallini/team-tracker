@@ -11,6 +11,7 @@ async function bundle(pwa) {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __PWA__: String(pwa),
       __PAGES_URL__: JSON.stringify(pkg.homepage ?? ''),
+      __REPO__: JSON.stringify(pkg.repository ?? ''),
     },
   })
   return r.outputFiles[0].text
