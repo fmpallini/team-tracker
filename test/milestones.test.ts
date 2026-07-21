@@ -480,6 +480,55 @@ describe('renderMilestones', () => {
       toggle().click()
       expect(container.querySelector('.editor')).toBeNull()
     })
+
+    test('multiple rows can have their follow-up editors expanded simultaneously', () => {
+      const team = makeTeam({
+        milestones: [
+          milestone({ id: 'a', title: 'A', date: '2026-01-01', followup: 'follow A' }),
+          milestone({ id: 'b', title: 'B', date: '2026-02-01', followup: 'follow B' }),
+        ],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const rowFor = (id: string) => container.querySelector(`[data-milestone-id="${id}"]`) as HTMLElement
+      rowFor('a').querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+      rowFor('b').querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      const editors = [...container.querySelectorAll('.editor')]
+      expect(editors).toHaveLength(2)
+      expect(editors.map((e) => e.textContent)).toEqual(['follow A', 'follow B'])
+    })
+
+    test('expand-all button expands every milestone\'s follow-up and flips to "Collapse all"; clicking again collapses all', () => {
+      const team = makeTeam({
+        milestones: [
+          milestone({ id: 'a', title: 'A', date: '2026-01-01', followup: 'follow A' }),
+          milestone({ id: 'b', title: 'B', date: '2026-02-01', followup: 'follow B' }),
+        ],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const expandAllBtn = container.querySelector<HTMLButtonElement>('.tt-milestone-expand-all-btn')!
+      expect(expandAllBtn.textContent).toBe('Expand all')
+
+      expandAllBtn.click()
+      expect(container.querySelectorAll('.editor')).toHaveLength(2)
+      expect(expandAllBtn.textContent).toBe('Collapse all')
+
+      expandAllBtn.click()
+      expect(container.querySelectorAll('.editor')).toHaveLength(0)
+      expect(expandAllBtn.textContent).toBe('Expand all')
+    })
+  })
+
+  test('a row carries a hover hint that right-click opens more actions', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team)')
   })
 
   test('a defensive no-op when loc.ref.kind is not "milestones"', () => {

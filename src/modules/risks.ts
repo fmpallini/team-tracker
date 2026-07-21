@@ -5,10 +5,9 @@
 // a *computed, never-persisted* exposure column (chance*impact, colored by
 // range) and a per-row expandable follow-up editor that mirrors
 // src/modules/person-notes.ts's full editor + @ref + template-picker wiring.
-// Only one follow-up editor is ever mounted at a time — expanding a row
-// disposes whichever editor was previously expanded, which keeps the
-// lifecycle simple (no need to track/preserve multiple live editors across
-// rebuilds).
+// Any number of follow-up editors can be expanded at once (tracked in
+// expandedIds/expandedBundles), which is what backs the toolbar's
+// expand-all/collapse-all button.
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
@@ -131,18 +130,26 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
 
   let draggedId: string | null = null
   let sortMode: ExposureSort = 'none'
-  let expandedId: string | null = null
+  // Every currently-expanded row's follow-up editor is mounted at once —
+  // not just one — so expand-all/collapse-all can show every follow-up
+  // simultaneously.
+  let expandedIds = new Set<string>()
   let focusRiskId: string | null = null
 
-  interface ExpandedBundle { id: string; editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
-  let expandedBundle: ExpandedBundle | null = null
+  interface ExpandedBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  const expandedBundles = new Map<string, ExpandedBundle>()
 
-  function disposeExpandedBundle(): void {
-    if (!expandedBundle) return
-    expandedBundle.atHandle.dispose()
-    expandedBundle.tplHandle.dispose()
-    expandedBundle.editor.destroy()
-    expandedBundle = null
+  function disposeExpandedBundle(id: string): void {
+    const bundle = expandedBundles.get(id)
+    if (!bundle) return
+    bundle.atHandle.dispose()
+    bundle.tplHandle.dispose()
+    bundle.editor.destroy()
+    expandedBundles.delete(id)
+  }
+
+  function disposeAllExpandedBundles(): void {
+    for (const id of [...expandedBundles.keys()]) disposeExpandedBundle(id)
   }
 
   function clearDropClasses(): void {
@@ -152,7 +159,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function removeRisk(id: string): void {
-    if (expandedId === id) expandedId = null // local UI state; must flip before store.update fires the synchronous subscriber below
+    expandedIds.delete(id) // local UI state; must flip before store.update fires the synchronous subscriber below
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
@@ -176,6 +183,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function setClosed(id: string, closed: boolean): void {
+    if (closed) expandedIds.delete(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
     ctx.store.update((d) => {
       const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
       if (found) found.closed = closed
@@ -191,7 +199,14 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function toggleExpand(id: string): void {
-    expandedId = expandedId === id ? null : id
+    if (expandedIds.has(id)) expandedIds.delete(id)
+    else expandedIds.add(id)
+    renderAll()
+  }
+
+  /** Expands (or collapses) every currently-open (non-closed) risk's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
+  function setAllExpanded(expand: boolean): void {
+    expandedIds = expand ? new Set(risks().filter((r) => !r.closed).map((r) => r.id)) : new Set()
     renderAll()
   }
 
@@ -207,7 +222,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     return select
   }
 
-  /** Builds the full rich editor for a risk's follow-up, wired exactly like src/modules/person-notes.ts (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself as `expandedBundle` so the caller can dispose it later. */
+  /** Builds the full rich editor for a risk's follow-up, wired exactly like src/modules/person-notes.ts (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself in `expandedBundles` so the caller can dispose it later. */
   function renderFollowupRow(r: Risk): HTMLElement {
     const editor: Editor = createEditor(
       {
@@ -236,7 +251,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       locale: lc,
     })
 
-    expandedBundle = { id: r.id, editor, atHandle, tplHandle }
+    expandedBundles.set(r.id, { editor, atHandle, tplHandle })
 
     return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id }, editor.root)
   }
@@ -331,7 +346,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     // tabindex="-1": Tab should move cleanly between the row's data fields
     // (title/chance/impact/plan) like a spreadsheet, not stop on every
     // hover-revealed icon button in between — still reachable by click/hover.
-    const expanded = expandedId === r.id
+    const expanded = expandedIds.has(r.id)
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => toggleExpand(r.id) },
@@ -352,7 +367,13 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
 
     const row = el(
       'div',
-      { class: 'tt-risk-row', draggable: sortMode === 'none' ? 'true' : 'false', 'data-risk-id': r.id, 'data-item-id': r.id },
+      {
+        class: 'tt-risk-row',
+        draggable: sortMode === 'none' ? 'true' : 'false',
+        'data-risk-id': r.id,
+        'data-item-id': r.id,
+        title: t(lc, 'risk_row_context_hint'),
+      },
       titleInput, chanceSelect, impactSelect, exposureCell, planSelect, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
@@ -459,7 +480,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function renderAll(): void {
-    disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
+    disposeAllExpandedBundles() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     listEl.innerHTML = ''
     const all = risks()
     const open = sortRisksForDisplay(all.filter((r) => !r.closed), sortMode)
@@ -469,10 +490,11 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     } else {
       for (const r of open) {
         listEl.appendChild(renderRow(r))
-        if (expandedId === r.id) listEl.appendChild(renderFollowupRow(r))
+        if (expandedIds.has(r.id)) listEl.appendChild(renderFollowupRow(r))
       }
     }
     updateSortIndicator()
+    updateExpandAllBtn(open)
 
     closedEl.innerHTML = ''
     closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) })))
@@ -501,7 +523,20 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     { class: 'tt-btn tt-risk-add-btn', type: 'button', onclick: () => addRisk() },
     t(lc, 'risk_add_btn')
   )
-  const toolbar = el('div', { class: 'tt-risk-toolbar' }, addBtn)
+  const expandAllBtn = el(
+    'button',
+    { class: 'tt-btn tt-risk-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!allExpanded) },
+    ''
+  )
+  let allExpanded = false
+
+  /** Label reads "Expand all" unless every open (non-closed) row is already expanded, in which case it flips to "Collapse all" — mirrors risk_expand_all_btn/risk_collapse_all_btn i18n keys. */
+  function updateExpandAllBtn(open: Risk[]): void {
+    allExpanded = open.length > 0 && open.every((r) => expandedIds.has(r.id))
+    expandAllBtn.textContent = t(lc, allExpanded ? 'risk_collapse_all_btn' : 'risk_expand_all_btn')
+  }
+
+  const toolbar = el('div', { class: 'tt-risk-toolbar' }, addBtn, expandAllBtn)
 
   /**
    * True (and returns the focused element) for the caret-sensitive elements
@@ -544,6 +579,6 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
 
   disposers.set(container, () => {
     unsubscribe()
-    disposeExpandedBundle()
+    disposeAllExpandedBundles()
   })
 }

@@ -167,25 +167,40 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   }
 
   let focusMilestoneId: string | null = null
-  let expandedId: string | null = null
+  // Every currently-expanded row's follow-up editor is mounted at once —
+  // not just one — so expand-all/collapse-all can show every follow-up
+  // simultaneously.
+  let expandedIds = new Set<string>()
 
-  interface ExpandedBundle { id: string; editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
-  let expandedBundle: ExpandedBundle | null = null
+  interface ExpandedBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  const expandedBundles = new Map<string, ExpandedBundle>()
 
-  function disposeExpandedBundle(): void {
-    if (!expandedBundle) return
-    expandedBundle.atHandle.dispose()
-    expandedBundle.tplHandle.dispose()
-    expandedBundle.editor.destroy()
-    expandedBundle = null
+  function disposeExpandedBundle(id: string): void {
+    const bundle = expandedBundles.get(id)
+    if (!bundle) return
+    bundle.atHandle.dispose()
+    bundle.tplHandle.dispose()
+    bundle.editor.destroy()
+    expandedBundles.delete(id)
+  }
+
+  function disposeAllExpandedBundles(): void {
+    for (const id of [...expandedBundles.keys()]) disposeExpandedBundle(id)
   }
 
   function toggleExpand(id: string): void {
-    expandedId = expandedId === id ? null : id
+    if (expandedIds.has(id)) expandedIds.delete(id)
+    else expandedIds.add(id)
     renderAll()
   }
 
-  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself as `expandedBundle` so the caller can dispose it later. */
+  /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
+  function setAllExpanded(expand: boolean): void {
+    expandedIds = expand ? new Set(milestones().map((m) => m.id)) : new Set()
+    renderAll()
+  }
+
+  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself in `expandedBundles` so the caller can dispose it later. */
   function renderFollowupRow(m: Milestone): HTMLElement {
     const editor: Editor = createEditor(
       {
@@ -214,12 +229,13 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       locale: lc,
     })
 
-    expandedBundle = { id: m.id, editor, atHandle, tplHandle }
+    expandedBundles.set(m.id, { editor, atHandle, tplHandle })
 
     return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id }, editor.root)
   }
 
   function removeMilestone(id: string): void {
+    expandedIds.delete(id) // local UI state; must flip before store.update fires the synchronous subscriber below
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
@@ -431,7 +447,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
-      expandedId === m.id ? '▾' : '▸'
+      expandedIds.has(m.id) ? '▾' : '▸'
     )
 
     const deleteBtn = el(
@@ -442,7 +458,12 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
     const row = el(
       'div',
-      { class: 'tt-milestone-row', 'data-milestone-id': m.id, 'data-item-id': m.id },
+      {
+        class: 'tt-milestone-row',
+        'data-milestone-id': m.id,
+        'data-item-id': m.id,
+        title: t(lc, 'milestone_row_context_hint'),
+      },
       datePicker.root, titleInput, doneCheckbox, expandBtn, deleteBtn
     )
     if (m.done) row.classList.add('tt-milestone-done-row')
@@ -463,17 +484,18 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))
-        if (expandedId === m.id) listEl.appendChild(renderFollowupRow(m))
+        if (expandedIds.has(m.id)) listEl.appendChild(renderFollowupRow(m))
       })
     }
     if (focusMilestoneId) {
       listEl.querySelector<HTMLInputElement>(`[data-milestone-id="${focusMilestoneId}"] .tt-milestone-title-input`)?.focus()
       focusMilestoneId = null
     }
+    updateExpandAllBtn(sorted)
   }
 
   function renderAll(): void {
-    disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
+    disposeAllExpandedBundles() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     renderTimeline()
     renderList()
   }
@@ -493,7 +515,20 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     { class: 'tt-btn tt-milestone-add-btn', type: 'button', onclick: () => addMilestone() },
     t(lc, 'milestone_add_btn')
   )
-  const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn)
+  const expandAllBtn = el(
+    'button',
+    { class: 'tt-btn tt-milestone-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!allExpanded) },
+    ''
+  )
+  let allExpanded = false
+
+  /** Label reads "Expand all" unless every milestone is already expanded, in which case it flips to "Collapse all" — mirrors milestone_expand_all_btn/milestone_collapse_all_btn i18n keys. */
+  function updateExpandAllBtn(sorted: Milestone[]): void {
+    allExpanded = sorted.length > 0 && sorted.every((m) => expandedIds.has(m.id))
+    expandAllBtn.textContent = t(lc, allExpanded ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn')
+  }
+
+  const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, expandAllBtn)
 
   /**
    * True (and returns the focused element) for the caret-sensitive elements
@@ -535,6 +570,6 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   disposers.set(container, () => {
     unsubscribe()
-    disposeExpandedBundle()
+    disposeAllExpandedBundles()
   })
 }
