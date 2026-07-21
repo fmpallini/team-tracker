@@ -31,6 +31,7 @@ import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
 import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
+import { waitForActivation } from './core/sw-ready'
 import { showUpdateNotice } from './ui/update-notice'
 
 // beforeinstallprompt fires before the UI mounts — capture must be
@@ -583,8 +584,37 @@ async function reloadForUpdate(): Promise<void> {
 }
 
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+const SW_READY_TIMEOUT_MS = 15000
 
 let dismissedUpdateVersion: string | null = null
+
+/**
+ * Forces the PWA build's service worker to check for and install a new
+ * version right now, independent of whatever the boot-time `register()` call
+ * below is doing on its own schedule, and waits until it's actually ready
+ * (or gives up after SW_READY_TIMEOUT_MS) before returning. This exists so
+ * `reloadForUpdate`'s `location.reload()` is guaranteed to be served by the
+ * new worker's new cache rather than racing an install still in progress —
+ * see docs/superpowers/specs/2026-07-21-update-check-design.md.
+ *
+ * No-ops for the standalone build (no service worker exists there) and in
+ * jsdom (`serviceWorker` is absent from `navigator`, same guard Task 26 uses
+ * below for `register()`).
+ */
+async function ensureServiceWorkerReady(): Promise<void> {
+  if (!__PWA__ || !('serviceWorker' in navigator)) return
+  const registration = await navigator.serviceWorker.getRegistration().catch(() => null)
+  if (!registration) return
+  try {
+    await registration.update()
+  } catch (e) {
+    console.error(e)
+    return
+  }
+  const sw = registration.installing ?? registration.waiting
+  if (!sw) return
+  await waitForActivation(sw, SW_READY_TIMEOUT_MS)
+}
 
 async function runUpdateCheck(): Promise<void> {
   if (!shouldCheck(localStorage.getItem(LAST_CHECK_STORAGE_KEY), Date.now())) return
@@ -592,6 +622,7 @@ async function runUpdateCheck(): Promise<void> {
   if (result.status === 'error') return
   localStorage.setItem(LAST_CHECK_STORAGE_KEY, new Date().toISOString())
   if (result.status !== 'newer' || result.version === dismissedUpdateVersion) return
+  await ensureServiceWorkerReady()
   const locale = app?.store.doc.prefs.locale ?? detectBrowserLocale()
   const banner = showUpdateNotice(locale, result.version, reloadForUpdate, (v) => {
     dismissedUpdateVersion = v
