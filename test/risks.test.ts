@@ -18,10 +18,12 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
   return {
     calls,
     openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
+    openBothPanes: () => {},
     openInFocused: () => {},
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},
+    setSplitSpaceConstrained: () => {},
   }
 }
 

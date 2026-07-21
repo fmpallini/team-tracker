@@ -2,7 +2,7 @@ import type { ActionItem, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 export class SchemaTooNewError extends Error {}
 
@@ -12,7 +12,7 @@ export function createEmptyDocument(locale: Locale): Doc {
     prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 3 },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
-      panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} },
+      panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false },
     teams: [],
   }
 }
@@ -83,6 +83,10 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   5: (d) => {
     const prefs = d.prefs as Record<string, unknown> | undefined
     if (prefs) prefs.dueSoonDays = prefs.dueSoonDays ?? 3
+  },
+  6: (d) => {
+    const nav = d.nav as Record<string, unknown> | undefined
+    if (nav) nav.sidebarCollapsed = nav.sidebarCollapsed ?? false
   },
 }
 

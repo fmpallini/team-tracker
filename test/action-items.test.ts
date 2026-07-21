@@ -7,10 +7,12 @@ import type { ActionItem, Loc, Team } from '../src/core/types'
 function fakePM(): PaneManager {
   return {
     openInPane: () => {},
+    openBothPanes: () => {},
     openInFocused: () => {},
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},
+    setSplitSpaceConstrained: () => {},
   }
 }
 

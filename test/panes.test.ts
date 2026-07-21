@@ -65,6 +65,24 @@ test('first open of a team lands in split: daily today left, members right', () 
   expect(right.ref).toEqual({ kind: 'members' })
 })
 
+test('openBothPanes writes both panes and the given focusedPane in one shot', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  addTeam(store, 'T2')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'members' } })
+
+  const target0: Loc = { teamId: 'T2', ref: { kind: 'daily', date: '2026-07-05' } }
+  const target1: Loc = { teamId: 'T2', ref: { kind: 'actions' } }
+  pm.openBothPanes(target0, target1, 1)
+
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(target0)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(target1)
+  expect(store.doc.nav.focusedPane).toBe(1)
+})
+
 test('teamHasHistory reflects whether any pane history contains the team', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -217,6 +235,45 @@ test('toggleSplit flips nav.split and the grid dataset', () => {
   pm.toggleSplit()
   expect(store.doc.nav.split).toBe(false)
   expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+})
+
+describe('setSplitSpaceConstrained (responsive auto-hide)', () => {
+  test('hides the grid split without touching persisted nav.split', () => {
+    const { store, pm } = setup()
+    pm.toggleSplit()
+    expect(store.doc.nav.split).toBe(true)
+
+    pm.setSplitSpaceConstrained(true)
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+    expect(store.doc.nav.split).toBe(true) // preference untouched, purely visual
+
+    pm.setSplitSpaceConstrained(false)
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('true')
+  })
+
+  test('manual toggleSplit click wins over an active space-constrained hide', () => {
+    const { store, pm } = setup()
+    pm.toggleSplit() // split on
+    pm.setSplitSpaceConstrained(true) // then narrowed — visually hidden again
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+
+    pm.toggleSplit() // user forces it back open even though still "narrow"
+
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('true')
+    expect(store.doc.nav.split).toBe(true)
+  })
+
+  test('a later widen (setSplitSpaceConstrained(false)) does not fight a manual unsplit made while narrow', () => {
+    const { store, pm } = setup()
+    pm.toggleSplit() // split on
+    pm.setSplitSpaceConstrained(true) // narrowed
+    pm.toggleSplit() // user manually re-shows despite being narrow -> split true, spaceHidden cleared
+    pm.toggleSplit() // user then manually unsplits again -> split false
+    expect(store.doc.nav.split).toBe(false)
+
+    pm.setSplitSpaceConstrained(false) // window widens back out
+    expect(document.querySelector('.tt-panes-grid')?.getAttribute('data-split')).toBe('false')
+  })
 })
 
 test('navigateFocusedHistory steps the currently focused pane and re-renders', () => {

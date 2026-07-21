@@ -50,6 +50,8 @@ export interface NavState {
   panes: [PaneState, PaneState]; focusedPane: 0 | 1
   /** Remembers, per team, whether its last session used split view — restored on switching back to that team. */
   teamSplit: Record<string, boolean>
+  /** Manual sidebar collapse — a global layout choice (not per-team), toggled from the sidebar's own collapse button. */
+  sidebarCollapsed: boolean
 }
 export interface Doc {
   schemaVersion: number; prefs: Prefs; templates: Template[]

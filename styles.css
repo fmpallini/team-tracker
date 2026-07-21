@@ -124,14 +124,37 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
 .tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
+/* headerRight (save pill, fullscreen/help/close/settings buttons) must
+   never shrink or get pushed off — it's fixed-size and absorbs none of the
+   squeeze. headerLeft (app name + search bar) takes 100% of what's left and
+   shrinks into it; min-width: 0 overrides flexbox's default min-width: auto,
+   which otherwise refuses to shrink a flex item below its content's
+   intrinsic width and forces the whole header to overflow instead. */
+.tt-header-left { flex: 1 1 auto; min-width: 0; }
+.tt-header-right { flex: none; }
+
+/* Sidebar collapse toggle: lives in the header (prepended before the app
+   name button, see sidebar.ts) rather than inside the sidebar, so it stays
+   put — and the sidebar can shrink to 0 — regardless of collapsed state.
+   Deliberately tiny (smaller than the header's other icon buttons): it's a
+   secondary, infrequently-used control, not one that should compete for
+   attention with save-state/help/settings. */
+.tt-sidebar-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; padding: 0; flex: none;
+}
+.tt-sidebar-toggle-icon { display: inline-flex; }
+.tt-sidebar-toggle-icon svg { display: block; }
+
 /* Fixed to (sidebar width − header's own left padding − the gap before the
-   search bar) so the search bar's left edge lines up with the sidebar/first
-   module boundary below it, regardless of font-size preference (both the
-   padding and the gap are in rem, so this tracks the root font-size live). */
+   search bar − the collapse toggle's own width and its gap) so the search
+   bar's left edge lines up with the sidebar/first module boundary below it,
+   regardless of font-size preference (all in rem, so this tracks the root
+   font-size live). */
 .tt-app-name {
   font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; line-height: .85; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
-  width: calc(220px - 1.5rem); height: 2.25rem; flex: none;
+  width: calc(220px - 1.5rem - 1.5rem - .75rem); height: 2.25rem; flex: none;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 .55rem; cursor: pointer;
 }
@@ -142,6 +165,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-sidebar {
   overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border);
 }
+
+/* Collapsed: the sidebar frees its full width — its toggle button lives in
+   the header (always visible, see .tt-sidebar-toggle below), not inside the
+   sidebar itself, so there's no button left to make room for. :has() reaches
+   into .tt-body from the sidebar's own data attribute so no separate
+   class/JS hook on the grid container is needed. */
+.tt-sidebar[data-collapsed="true"] .tt-sidebar-content { display: none; }
+.tt-body:has(.tt-sidebar[data-collapsed="true"]) { grid-template-columns: 0 1fr; }
 
 .tt-panes { overflow: auto; min-width: 0; }
 
@@ -282,6 +313,20 @@ body { background: var(--bg); color: var(--fg); }
 .tt-readonly-takeover-btn { border-color: rgba(255, 255, 255, .6); color: #fff; }
 .tt-readonly-takeover-btn:hover { border-color: #fff; color: #fff; opacity: .85; }
 
+/* Update-available banner (fixed to viewport top: can show before any document is open) */
+.tt-update-banner {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  padding: .4rem .75rem; background: var(--accent); color: #fff; font-size: .9rem; text-align: center;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+}
+.tt-update-banner-row { display: flex; align-items: center; justify-content: center; gap: .75rem; width: 100%; }
+.tt-update-banner-action { border-color: rgba(255, 255, 255, .6); color: #fff; }
+.tt-update-banner-action:hover { border-color: #fff; opacity: .85; }
+.tt-update-banner-action:disabled { opacity: .5; cursor: default; }
+.tt-update-banner-dismiss { border: none; background: none; color: #fff; font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
+.tt-update-banner-dismiss:hover { opacity: .85; }
+.tt-update-banner-hint { margin: 0; font-size: .8rem; opacity: .9; max-width: 44em; }
+
 /* Team sidebar */
 .tt-team-list { display: flex; flex-direction: column; }
 .tt-team-item {
@@ -299,7 +344,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-item.drag-over-top { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-team-item.drag-over-bottom { box-shadow: inset 0 -2px 0 0 var(--accent); }
 
-.tt-due-btn { position: relative; margin: 0 .6rem .5rem; width: calc(100% - 1.2rem); display: flex; align-items: center; justify-content: center; gap: .4rem; }
+.tt-due-btn { position: relative; margin: .6rem .6rem .5rem; width: calc(100% - 1.2rem); display: flex; align-items: center; justify-content: center; gap: .4rem; }
 .tt-due-btn.tt-due-empty { display: none; }
 .tt-due-badge { font-family: var(--font-data); font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; background: var(--muted); color: var(--bg); }
 .tt-due-btn.has-overdue .tt-due-badge { background: var(--danger); color: #fff; }
@@ -375,8 +420,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-item.selected, .tt-palette-item:hover { background: rgba(var(--accent-rgb), .12); }
 
 /* Header search */
-.tt-search-wrap { position: relative; }
-.tt-search-input { width: 360px; height: 2.25rem; box-sizing: border-box; }
+.tt-search-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
+.tt-search-input { width: 100%; max-width: 360px; min-width: 60px; height: 2.25rem; box-sizing: border-box; }
 .tt-search-dropdown {
   display: none; position: absolute; top: 100%; left: 0; margin-top: .25rem; z-index: 1200;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;

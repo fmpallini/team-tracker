@@ -168,6 +168,8 @@ const pt = {
   pane_modules_title: 'Módulos',
   pane_split_title: 'Dividir painel',
   pane_unsplit_title: 'Fechar divisão',
+  sidebar_collapse_title: 'Recolher seletor de times',
+  sidebar_expand_title: 'Expandir seletor de times',
   pane_empty: 'Nenhum módulo aberto',
   pane_no_team: 'Selecione um time',
   empty_no_teams_title: '👋 Nenhum time ainda. Crie o primeiro para começar.',
@@ -334,14 +336,15 @@ const pt = {
   prefs_about_filename_label: 'Arquivo',
   prefs_tab_data: 'Dados',
   data_export_heading: 'Exportar times',
-  data_export_hint: 'Notas pessoais e diárias nunca são incluídas.',
+  data_export_hint:
+    'Inclui apenas a estrutura de times, membros e stakeholders (nomes, papéis e hierarquia) — nenhum conteúdo é exportado (sem notas, itens de ação, marcos ou riscos). O arquivo gerado NÃO é criptografado. Pensado para colegas do mesmo time importarem e pularem a configuração inicial.',
   data_export_empty: 'Nenhum time neste arquivo para exportar.',
   data_export_btn: 'Exportar selecionados',
   data_export_success_toast: 'Times exportados',
   data_import_heading: 'Importar times',
-  data_import_hint: 'Notas pessoais e diárias nunca são incluídas.',
+  data_import_hint: 'Arquivo de estrutura de times/membros/stakeholders (sem conteúdo) exportado por outro usuário — importar apenas de fontes em que você confia.',
   data_import_pick_btn: 'Escolher arquivo…',
-  data_import_summary: '{stakeholders} stakeholders · {members} membros · {actionItems} ações · {milestones} marcos · {risks} riscos',
+  data_import_summary: '{stakeholders} stakeholders · {members} membros',
   data_import_btn: 'Importar selecionados',
   data_import_success_toast: 'Times importados',
   team_imported_suffix: '(importado)',
@@ -379,6 +382,12 @@ const pt = {
   team_picker_copy_title: 'Copiar para qual time?',
   team_picker_move_title: 'Mover para qual time?',
   team_picker_confirm_btn: 'Confirmar',
+  update_notice_title: 'Nova versão {version} disponível',
+  update_notice_reload: 'Recarregar agora',
+  update_notice_view_release: 'Ver versão',
+  update_notice_dismiss_title: 'Dispensar',
+  update_notice_standalone_hint:
+    'Você precisa baixar o novo arquivo e executá-lo manualmente para ter as novidades. Para uma versão sempre atualizada, instale a versão PWA no seu computador — ela se atualiza sozinha.',
 } as const
 
 export type MsgKey = keyof typeof pt
@@ -547,6 +556,8 @@ const en: Record<MsgKey, string> = {
   pane_modules_title: 'Modules',
   pane_split_title: 'Split pane',
   pane_unsplit_title: 'Close split',
+  sidebar_collapse_title: 'Collapse team selector',
+  sidebar_expand_title: 'Expand team selector',
   pane_empty: 'No module open',
   pane_no_team: 'Select a team',
   empty_no_teams_title: '👋 No teams yet. Create your first one to get started.',
@@ -713,14 +724,15 @@ const en: Record<MsgKey, string> = {
   prefs_about_filename_label: 'File',
   prefs_tab_data: 'Data',
   data_export_heading: 'Export teams',
-  data_export_hint: 'Personal notes and daily notes are never included.',
+  data_export_hint:
+    'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, action items, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
   data_export_empty: 'No teams in this file to export.',
   data_export_btn: 'Export selected',
   data_export_success_toast: 'Teams exported',
   data_import_heading: 'Import teams',
-  data_import_hint: 'Personal notes and daily notes are never included.',
+  data_import_hint: 'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
   data_import_pick_btn: 'Choose file…',
-  data_import_summary: '{stakeholders} stakeholders · {members} members · {actionItems} action items · {milestones} milestones · {risks} risks',
+  data_import_summary: '{stakeholders} stakeholders · {members} members',
   data_import_btn: 'Import selected',
   data_import_success_toast: 'Teams imported',
   team_imported_suffix: '(imported)',
@@ -758,6 +770,12 @@ const en: Record<MsgKey, string> = {
   team_picker_copy_title: 'Copy to which team?',
   team_picker_move_title: 'Move to which team?',
   team_picker_confirm_btn: 'Confirm',
+  update_notice_title: 'New version {version} available',
+  update_notice_reload: 'Reload now',
+  update_notice_view_release: 'View release',
+  update_notice_dismiss_title: 'Dismiss',
+  update_notice_standalone_hint:
+    "You'll need to download the new file and run it manually to get the latest changes. For an always up-to-date app, install the PWA version on your computer instead — it updates itself.",
 }
 
 const dicts: Record<Locale, Record<MsgKey, string>> = {

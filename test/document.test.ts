@@ -6,7 +6,7 @@ test('createEmptyDocument shape', () => {
   expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 3 })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
-    panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {} })
+    panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false })
 })
 
 test('migrate accepts current version untouched', () => {
@@ -124,6 +124,24 @@ describe('v5 → v6 migration (due-soon window)', () => {
     d.prefs.dueSoonDays = 7
     const doc = migrate(d)
     expect(doc.prefs.dueSoonDays).toBe(7)
+  })
+})
+
+describe('v6 → v7 migration (sidebar collapse)', () => {
+  it('defaults nav.sidebarCollapsed to false when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 6
+    delete d.nav.sidebarCollapsed
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.nav.sidebarCollapsed).toBe(false)
+  })
+  it('leaves an existing sidebarCollapsed untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 6
+    d.nav.sidebarCollapsed = true
+    const doc = migrate(d)
+    expect(doc.nav.sidebarCollapsed).toBe(true)
   })
 })
 

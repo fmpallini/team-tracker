@@ -1,4 +1,4 @@
-declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string }
+declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string; const __REPO__: string }
 
 import type { Locale } from './core/i18n'
 import type { Doc, Loc } from './core/types'
@@ -10,6 +10,7 @@ import { showStartScreen } from './ui/start'
 import { mountSidebar, notifyNavChanged } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
 import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager } from './ui/panes'
+import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
 import { t, todayIso } from './core/i18n'
@@ -29,6 +30,9 @@ import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
+import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
+import { waitForActivation } from './core/sw-ready'
+import { showUpdateNotice } from './ui/update-notice'
 
 // beforeinstallprompt fires before the UI mounts — capture must be
 // registered at startup or the native install prompt is lost (see
@@ -43,6 +47,7 @@ interface AppController {
   password: string
   shell: Shell
   pm: PaneManager
+  saveCtl: SaveController
   /**
    * Task 25 re-review item #4c: tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
@@ -243,7 +248,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   const palette = createPalette(store, pm)
   shell.onAppNameClick(() => palette.open())
   disposers.push(mountSearch(shell, store, pm, selectTeam))
-  app = { store, session, password, shell, pm, dispose }
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
   // the first — e.g. a trailing save round (fix #1) or the auto-save
@@ -302,6 +306,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     },
   })
   disposers.push(() => saveCtl.dispose())
+  app = { store, session, password, shell, pm, saveCtl, dispose }
   saveCtl.scheduleFrom(store.doc.prefs)
 
   // Task 25 fix #6: `onDirty` was never wired up — the save indicator and
@@ -493,11 +498,16 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     const todayLoc = (): Loc => ({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
     const pane0Last = lastLocForTeam(store.doc.nav.panes[0], id)
     const pane1Last = lastLocForTeam(store.doc.nav.panes[1], id)
-    pm.openInPane(0, pane0Last ?? todayLoc(), { force: true })
-    pm.openInPane(1, pane1Last ?? { teamId: id, ref: { kind: 'members' } }, { force: true })
+    pm.openBothPanes(pane0Last ?? todayLoc(), pane1Last ?? { teamId: id, ref: { kind: 'members' } }, 1)
   }
 
-  mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
+  const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
+  disposers.push(
+    setupResponsiveLayout(shell.root, {
+      setSplitSpaceHidden: (hidden) => pm.setSplitSpaceConstrained(hidden),
+      setSidebarSpaceHidden: (hidden) => sidebarHandle.setSpaceConstrained(hidden),
+    })
+  )
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -542,7 +552,79 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   disposers.push(() => document.removeEventListener('keydown', onKeyDown))
 }
 
+/**
+ * The update banner's PWA reload action. Must guarantee no silent data loss:
+ * `saveCtl.flush()` alone only waits out an *already in-flight* save, and
+ * `saveNow()` resolves normally even when the write itself fails (errors
+ * surface via save-controller.ts's own toast, not a rejection here). So this
+ * explicitly saves, waits for that save (and any trailing round) to settle,
+ * then checks `store.dirty` as the one signal that survives regardless of
+ * *why* the save didn't land (write error, external-change conflict, or a
+ * read-only tab that never attempts one in the first place) — if still
+ * dirty, abort the reload and leave whatever error UI save-controller.ts
+ * already raised as the user's recovery path.
+ */
+async function reloadForUpdate(): Promise<void> {
+  const current = app
+  if (current) {
+    await current.saveCtl.saveNow({ explicit: true })
+    await current.saveCtl.flush()
+    if (current.store.dirty) return
+  }
+  location.reload()
+}
+
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+const SW_READY_TIMEOUT_MS = 15000
+
+let dismissedUpdateVersion: string | null = null
+
+/**
+ * Forces the PWA build's service worker to check for and install a new
+ * version right now, independent of whatever the boot-time `register()` call
+ * below is doing on its own schedule, and waits until it's actually ready
+ * (or gives up after SW_READY_TIMEOUT_MS) before returning. This exists so
+ * `reloadForUpdate`'s `location.reload()` is guaranteed to be served by the
+ * new worker's new cache rather than racing an install still in progress —
+ * see docs/superpowers/specs/2026-07-21-update-check-design.md.
+ *
+ * No-ops for the standalone build (no service worker exists there) and in
+ * jsdom (`serviceWorker` is absent from `navigator`, same guard Task 26 uses
+ * below for `register()`).
+ */
+async function ensureServiceWorkerReady(): Promise<void> {
+  if (!__PWA__ || !('serviceWorker' in navigator)) return
+  const registration = await navigator.serviceWorker.getRegistration().catch(() => null)
+  if (!registration) return
+  try {
+    await registration.update()
+  } catch (e) {
+    console.error(e)
+    return
+  }
+  const sw = registration.installing ?? registration.waiting
+  if (!sw) return
+  await waitForActivation(sw, SW_READY_TIMEOUT_MS)
+}
+
+async function runUpdateCheck(): Promise<void> {
+  if (!shouldCheck(localStorage.getItem(LAST_CHECK_STORAGE_KEY), Date.now())) return
+  const result = await checkForUpdate(fetch, __APP_VERSION__, __REPO__)
+  if (result.status === 'error') return
+  localStorage.setItem(LAST_CHECK_STORAGE_KEY, new Date().toISOString())
+  if (result.status !== 'newer' || result.version === dismissedUpdateVersion) return
+  await ensureServiceWorkerReady()
+  const locale = app?.store.doc.prefs.locale ?? detectBrowserLocale()
+  const banner = showUpdateNotice(locale, result.version, reloadForUpdate, (v) => {
+    dismissedUpdateVersion = v
+  })
+  document.body.appendChild(banner)
+}
+
 showStartScreen(detectBrowserLocale(), onDocumentOpened)
+
+void runUpdateCheck()
+setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)
 
 // Task 26: only the PWA build variant (`__PWA__` true) registers a service
 // worker, and only when actually served over http(s) — file:// (the

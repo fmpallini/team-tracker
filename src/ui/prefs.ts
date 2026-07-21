@@ -585,9 +585,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       return t(locale, 'data_import_summary', {
         stakeholders: String(team.stakeholders.length),
         members: String(team.members.length),
-        actionItems: String(team.actionItems.length),
-        milestones: String(team.milestones.length),
-        risks: String(team.risks.length),
       })
     }
 

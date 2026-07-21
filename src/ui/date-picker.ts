@@ -11,7 +11,7 @@
 // value, plus its own Today/Clear date shortcuts.
 import { t, formatDate, parseLocaleDate, todayIso, type Locale } from '../core/i18n'
 import { createCalendar, type CalendarMarks } from './calendar'
-import { el } from './dom'
+import { el, bindOutsideDismiss } from './dom'
 
 const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [] }
 
@@ -112,23 +112,14 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
   }
 
   let popover: HTMLElement | null = null
+  let unbind: (() => void) | null = null
 
   function closePopover(): void {
     if (!popover) return
     popover.remove()
-    document.removeEventListener('mousedown', onDocMousedown, true)
-    document.removeEventListener('keydown', onKeydown, true)
+    unbind?.()
     popover = null
     closeCurrentPopover = null
-  }
-
-  function onDocMousedown(e: MouseEvent): void {
-    const target = e.target as Node
-    if (popover && !popover.contains(target) && target !== input) closePopover()
-  }
-
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') closePopover()
   }
 
   function openPopover(): void {
@@ -173,8 +164,7 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
     wrap.style.left = `${rect.left}px`
     wrap.style.top = `${rect.bottom + 4}px`
     popover = wrap
-    document.addEventListener('mousedown', onDocMousedown, true)
-    document.addEventListener('keydown', onKeydown, true)
+    unbind = bindOutsideDismiss((target) => !!popover && !popover.contains(target) && target !== input, closePopover)
     closeCurrentPopover = closePopover
   }
 
