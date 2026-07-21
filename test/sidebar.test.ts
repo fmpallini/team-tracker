@@ -527,6 +527,14 @@ describe('sidebar collapse', () => {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
   }
 
+  test('lives in the header (not the sidebar), as the first element before the app name', () => {
+    const { shell } = setup()
+    const btn = toggleBtn()
+    expect(shell.headerLeft.contains(btn)).toBe(true)
+    expect(shell.sidebar.contains(btn)).toBe(false)
+    expect(shell.headerLeft.firstElementChild).toBe(btn)
+  })
+
   test('starts expanded by default and persists nav.sidebarCollapsed on click', () => {
     const { store, shell } = setup()
     expect(shell.sidebar.dataset.collapsed).toBe('false')
@@ -539,6 +547,18 @@ describe('sidebar collapse', () => {
     toggleBtn().click()
     expect(store.doc.nav.sidebarCollapsed).toBe(false)
     expect(shell.sidebar.dataset.collapsed).toBe('false')
+  })
+
+  test('icon is a panel glyph distinct from the pane bar\'s ◀/▶ history buttons', () => {
+    const { store } = setup()
+    const btn = toggleBtn()
+    expect(btn.textContent).not.toBe('◀')
+    expect(btn.textContent).not.toBe('▶')
+    expect(btn.querySelector('svg')).not.toBeNull()
+
+    btn.click() // collapse
+    expect(store.doc.nav.sidebarCollapsed).toBe(true)
+    expect(btn.querySelector('svg')).not.toBeNull() // still an svg glyph, just the collapsed variant
   })
 
   test('setSpaceConstrained hides the sidebar without touching the persisted preference', () => {

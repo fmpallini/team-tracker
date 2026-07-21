@@ -114,16 +114,23 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     renderCollapseState()
   }
 
+  // A small panel glyph (outline + a divider, left cell filled when the
+  // sidebar is showing) rather than a directional arrow — the pane bar
+  // already uses ◀/▶ for history back/forward, and reusing those here read
+  // as "navigate", not "show/hide panel".
+  const collapseIcon = el('span', { class: 'tt-sidebar-toggle-icon', 'aria-hidden': 'true' })
   const collapseBtn = el(
     'button',
     { class: 'tt-btn tt-sidebar-toggle', type: 'button', onclick: () => toggleCollapsed() },
-    '◀'
+    collapseIcon
   )
 
   function renderCollapseState(): void {
     const collapsed = effectivelyCollapsed()
     shell.sidebar.dataset.collapsed = String(collapsed)
-    collapseBtn.textContent = collapsed ? '▶' : '◀'
+    collapseIcon.innerHTML = collapsed
+      ? '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/></svg>'
+      : '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/><rect x="1.5" y="2.5" width="4.75" height="11" rx="1" fill="currentColor" opacity=".4" stroke="none"/></svg>'
     collapseBtn.title = t(locale(), collapsed ? 'sidebar_expand_title' : 'sidebar_collapse_title')
   }
 
@@ -225,7 +232,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
   shell.sidebar.innerHTML = ''
   contentEl.append(dueBtn, listEl, addBtn)
-  shell.sidebar.append(collapseBtn, contentEl)
+  shell.sidebar.append(contentEl)
+  // Lives in the header, not the sidebar itself, so collapsing the sidebar
+  // frees its full width instead of reserving room for the toggle.
+  shell.headerLeft.prepend(collapseBtn)
   renderCollapseState()
 
   function clearDragOverClasses(): void {

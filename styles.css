@@ -132,14 +132,29 @@ body { background: var(--bg); color: var(--fg); }
    intrinsic width and forces the whole header to overflow instead. */
 .tt-header-left { flex: 1 1 auto; min-width: 0; }
 .tt-header-right { flex: none; }
+
+/* Sidebar collapse toggle: lives in the header (prepended before the app
+   name button, see sidebar.ts) rather than inside the sidebar, so it stays
+   put — and the sidebar can shrink to 0 — regardless of collapsed state.
+   Deliberately tiny (smaller than the header's other icon buttons): it's a
+   secondary, infrequently-used control, not one that should compete for
+   attention with save-state/help/settings. */
+.tt-sidebar-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; padding: 0; flex: none;
+}
+.tt-sidebar-toggle-icon { display: inline-flex; }
+.tt-sidebar-toggle-icon svg { display: block; }
+
 /* Fixed to (sidebar width − header's own left padding − the gap before the
-   search bar) so the search bar's left edge lines up with the sidebar/first
-   module boundary below it, regardless of font-size preference (both the
-   padding and the gap are in rem, so this tracks the root font-size live). */
+   search bar − the collapse toggle's own width and its gap) so the search
+   bar's left edge lines up with the sidebar/first module boundary below it,
+   regardless of font-size preference (all in rem, so this tracks the root
+   font-size live). */
 .tt-app-name {
   font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; line-height: .85; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
-  width: calc(220px - 1.5rem); height: 2.25rem; flex: none;
+  width: calc(220px - 1.5rem - 1.5rem - .75rem); height: 2.25rem; flex: none;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 .55rem; cursor: pointer;
 }
@@ -151,16 +166,13 @@ body { background: var(--bg); color: var(--fg); }
   overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border);
 }
 
-.tt-sidebar-toggle {
-  display: flex; align-items: center; justify-content: center;
-  width: calc(100% - 1rem); margin: .5rem .5rem 0; padding: .3rem 0;
-}
-/* Collapsed: only the toggle stays visible, sidebar shrinks to fit it —
-   :has() reaches into .tt-body from the sidebar's own data attribute so no
-   separate class/JS hook on the grid container is needed. */
+/* Collapsed: the sidebar frees its full width — its toggle button lives in
+   the header (always visible, see .tt-sidebar-toggle below), not inside the
+   sidebar itself, so there's no button left to make room for. :has() reaches
+   into .tt-body from the sidebar's own data attribute so no separate
+   class/JS hook on the grid container is needed. */
 .tt-sidebar[data-collapsed="true"] .tt-sidebar-content { display: none; }
-.tt-sidebar[data-collapsed="true"] .tt-sidebar-toggle { width: auto; margin: .5rem auto 0; }
-.tt-body:has(.tt-sidebar[data-collapsed="true"]) { grid-template-columns: 2.25rem 1fr; }
+.tt-body:has(.tt-sidebar[data-collapsed="true"]) { grid-template-columns: 0 1fr; }
 
 .tt-panes { overflow: auto; min-width: 0; }
 
