@@ -124,6 +124,7 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
 .tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
+.tt-header-filename { color: var(--muted); font-size: .85rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Fixed to (sidebar width − header's own left padding − the gap before the
    search bar) so the search bar's left edge lines up with the sidebar/first
    module boundary below it, regardless of font-size preference (both the
@@ -151,7 +152,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-.tt-save-indicator { font-family: var(--font-data); color: var(--muted); min-width: 1.2em; text-align: center; }
+.tt-save-indicator { font-family: var(--font-data); color: var(--muted); min-width: 1.2em; text-align: center; white-space: nowrap; }
 .tt-save-indicator[data-state="saved"] { color: var(--accent); }
 .tt-save-indicator[data-state="error"] { color: var(--danger); }
 

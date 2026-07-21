@@ -2,6 +2,7 @@
 import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
+import { nowHHMM } from '../core/date'
 
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 
@@ -76,6 +77,9 @@ export function createShell(locale: Locale): Shell {
   )
   headerLeft.appendChild(appNameBtn)
 
+  const fileNameEl = el('span', { class: 'tt-header-filename' })
+  headerLeft.appendChild(fileNameEl)
+
   const saveIndicator = el('span', { class: 'tt-save-indicator' })
 
   const fullscreenBtn = el(
@@ -125,11 +129,13 @@ export function createShell(locale: Locale): Shell {
 
   let currentState: SaveState = 'saved'
   let fallbackHint = false
+  let lastSavedAt: string | null = null
 
   function setSaveState(state: SaveState): void {
     currentState = state
     const { icon, key } = SAVE_STATE_INFO[state]
-    saveIndicator.textContent = icon
+    if (state === 'saved') lastSavedAt = nowHHMM()
+    saveIndicator.textContent = state === 'saved' && lastSavedAt ? `${icon} ${lastSavedAt}` : icon
     let title = t(currentLocale, key)
     if (state === 'dirty' && fallbackHint) {
       title += ` — ${t(currentLocale, 'save_fallback_hint')}`
@@ -165,6 +171,8 @@ export function createShell(locale: Locale): Shell {
   function setTitle(fileName: string | null, dirty: boolean): void {
     document.title =
       `Team Tracker v${__APP_VERSION__}` + (fileName ? ` — ${fileName}` : '') + (dirty ? ' ●' : '')
+    fileNameEl.textContent = fileName ?? ''
+    fileNameEl.title = fileName ?? ''
   }
 
   function onSettings(cb: () => void): void {
