@@ -43,6 +43,7 @@ export const AT_TRIGGER_EVENT = 'tt-at-trigger'
 export const SLASH_TRIGGER_EVENT = 'tt-slash-trigger'
 
 const CHANGE_DEBOUNCE_MS = 300
+const TAB_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 
 // --- pure, unit-testable auto-format detection -----------------------------
 
@@ -104,6 +105,13 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
   return null
 }
 /* eslint-enable no-irregular-whitespace */
+
+/** Leading run of indent chars (space or the non-breaking space Tab inserts), capped at 4 — how much Shift+Tab removes in one press. */
+export function leadingIndentLen(text: string): number {
+  let n = 0
+  while (n < text.length && n < 4 && (text[n] === ' ' || text[n] === '\u00a0')) n++
+  return n
+}
 
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: 'true' })
@@ -429,6 +437,31 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      if (e.shiftKey) {
+        const ctx = currentBlockAndOffset()
+        if (ctx) {
+          const n = leadingIndentLen(ctx.text)
+          if (n > 0) {
+            const range = rangeForTextOffsets(ctx.block, 0, n)
+            range.deleteContents()
+            const sel = window.getSelection()
+            if (sel) {
+              sel.removeAllRanges()
+              const r = document.createRange()
+              r.setStart(ctx.block, 0)
+              r.collapse(true)
+              sel.addRange(r)
+            }
+            scheduleChange()
+          }
+        }
+      } else {
+        exec('insertText', TAB_INDENT)
+      }
+      return
+    }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
     const key = e.key.toLowerCase()
 

@@ -31,6 +31,20 @@ function inline(s: string, resolveLabel?: LabelResolver): string {
 // space so documents never accumulate U+00A0.
 const blockInline = (s: string, resolveLabel?: LabelResolver) => inline(s, resolveLabel).replace(/ $/, '&nbsp;')
 
+/**
+ * A line's leading run of plain spaces (Tab-inserted indent — see
+ * ui/editor.ts) is rendered as non-breaking spaces so it survives the
+ * editor's default `white-space: normal` instead of collapsing to one space
+ * on re-render. htmlToMd's inlineMd normalizes '\u00a0' straight back to
+ * plain spaces on the way out (existing behavior), so storage always stays
+ * plain-space text — human-readable, and stable across repeated round trips.
+ */
+function preserveIndent(s: string): string {
+  const m = /^( +)/.exec(s)
+  if (!m) return s
+  return '\u00a0'.repeat(m[1]!.length) + s.slice(m[1]!.length)
+}
+
 export function mdToHtml(md: string, resolveLabel?: LabelResolver): string {
   const lines = md.split('\n'); const out: string[] = []
   let list: 'ul' | 'ol' | null = null
@@ -39,10 +53,10 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver): string {
     const h = /^(#{1,3}) (.*)$/.exec(line)
     const ul = /^- (.*)$/.exec(line)
     const ol = /^(\d+)\. (.*)$/.exec(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(h[2]!, resolveLabel)}</h${h[1]!.length}>`) }
-    else if (ul) { if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' } out.push(`<li>${blockInline(ul[1]!, resolveLabel)}</li>`) }
-    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' } out.push(`<li value="${ol[1]}">${blockInline(ol[2]!, resolveLabel)}</li>`) }
-    else { closeList(); out.push(`<div>${line ? blockInline(line, resolveLabel) : '<br>'}</div>`) }
+    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel)}</h${h[1]!.length}>`) }
+    else if (ul) { if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul' } out.push(`<li>${blockInline(preserveIndent(ul[1]!), resolveLabel)}</li>`) }
+    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol' } out.push(`<li value="${ol[1]}">${blockInline(preserveIndent(ol[2]!), resolveLabel)}</li>`) }
+    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel) : '<br>'}</div>`) }
   }
   closeList(); return out.join('')
 }

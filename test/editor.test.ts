@@ -1,4 +1,4 @@
-import { createEditor, detectInlinePattern, detectBlockPrefix, type Editor, type EditorHooks } from '../src/ui/editor'
+import { createEditor, detectInlinePattern, detectBlockPrefix, leadingIndentLen, type Editor, type EditorHooks } from '../src/ui/editor'
 import type { RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 
@@ -13,6 +13,12 @@ function makeHooks(): EditorHooks & { changes: number; refs: RefInfo['target'][]
     onAtTrigger(range) { this.atRanges.push(range) },
     onSlashTrigger(range) { this.slashRanges.push(range) },
   }
+}
+
+function dispatchKey(el: HTMLElement, init: KeyboardEventInit): KeyboardEvent {
+  const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+  el.dispatchEvent(e)
+  return e
 }
 
 // jsdom does not implement document.execCommand at all (not even as a no-op),
@@ -169,12 +175,6 @@ describe('/ trigger', () => {
 })
 
 describe('keyboard shortcuts', () => {
-  function dispatchKey(el: HTMLElement, init: KeyboardEventInit): KeyboardEvent {
-    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
-    el.dispatchEvent(e)
-    return e
-  }
-
   test.each([
     [{ key: 'b', ctrlKey: true }, 'bold'],
     [{ key: 'i', ctrlKey: true }, 'italic'],
@@ -211,6 +211,70 @@ describe('keyboard shortcuts', () => {
 
     dispatchKey(editorEl, { key: '*', ctrlKey: true, shiftKey: true, code: 'Digit8' })
     expect(execSpy).toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    editor.destroy()
+  })
+})
+
+describe('Tab indent', () => {
+  test('leadingIndentLen counts leading space/nbsp chars, capped at 4', () => {
+    expect(leadingIndentLen('')).toBe(0)
+    expect(leadingIndentLen('abc')).toBe(0)
+    expect(leadingIndentLen(' abc')).toBe(1)
+    expect(leadingIndentLen('    abc')).toBe(4)
+    expect(leadingIndentLen('      abc')).toBe(4)
+    expect(leadingIndentLen('\u00a0\u00a0abc')).toBe(2)
+    expect(leadingIndentLen(' \u00a0 \u00a0abc')).toBe(4)
+  })
+
+  test('Tab inserts a 4-char non-breaking indent at the caret', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    dispatchKey(editorEl, { key: 'Tab' })
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, '\u00a0\u00a0\u00a0\u00a0')
+    editor.destroy()
+  })
+
+  test('Shift+Tab removes up to 4 leading indent chars from the current line', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('    hello')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const block = editorEl.firstElementChild as HTMLElement
+    const textNode = block.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('hello')
+    editor.destroy()
+  })
+
+  test('Shift+Tab on a line with no leading indent is a no-op', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('hello')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const block = editorEl.firstElementChild as HTMLElement
+    const textNode = block.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('hello')
     editor.destroy()
   })
 })

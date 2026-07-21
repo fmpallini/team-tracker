@@ -121,3 +121,20 @@ test('day ref resolves to the current locale format via the resolver', () => {
   const html = mdToHtml(md, (target) => (target.kind === 'day' ? `${target.date} (resolved)` : null))
   expect(html).toContain('>@2026-07-02 (resolved)<')
 })
+
+test('leading indent renders as non-breaking spaces and round-trips as plain spaces', () => {
+  const md = '    indented line'
+  const html = mdToHtml(md)
+  expect(html).toBe('<div>\u00a0\u00a0\u00a0\u00a0indented line</div>')
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('leading indent inside a list item round-trips', () => {
+  const md = '-     indented bullet text'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('leading indent inside a header round-trips', () => {
+  const md = '#   indented heading'
+  expect(roundTrip(md)).toBe(md)
+})
