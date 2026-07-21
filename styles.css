@@ -698,14 +698,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-dot { stroke-width: 2; }
 .tt-milestone-date-label, .tt-milestone-title-label { font-size: 9px; fill: var(--fg); text-anchor: middle; }
 .tt-milestone-title-label { fill: var(--muted); }
-.tt-milestone-toolbar { flex: none; }
+.tt-milestone-toolbar { flex: none; display: flex; align-items: center; }
+.tt-milestone-expand-all-btn { margin-left: auto; }
 .tt-milestone-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-milestone-empty { color: var(--muted); padding: .5rem; }
 .tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; border: 1px solid var(--border); }
 .tt-milestone-row:hover { background: rgba(var(--accent-rgb), .08); }
 .tt-milestone-date-input { font-family: var(--font-data); flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
-.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: 0; flex: none; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
+.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: 0; flex: none; padding: .15rem .45rem; font-size: 1.3rem; line-height: 1; border: none; background: transparent; }
 .tt-milestone-row:hover .tt-milestone-expand-btn, .tt-milestone-expand-btn:focus,
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
@@ -715,7 +716,8 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Risks module */
 .tt-risks { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
-.tt-risk-toolbar { flex: none; }
+.tt-risk-toolbar { flex: none; display: flex; align-items: center; }
+.tt-risk-expand-all-btn { margin-left: auto; }
 .tt-risk-header-row, .tt-risk-row {
   display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem;
 }
@@ -727,7 +729,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 3.5rem; }
 .tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
-.tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 1.8rem; padding: .1rem .35rem; }
+.tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
 .tt-risk-header-exposure {
   display: flex; align-items: center; justify-content: center; gap: .1rem;
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
@@ -771,7 +773,7 @@ select option { background: var(--bg); color: var(--fg); }
   box-shadow: 0 0 0 1px currentColor inset;
   transform: rotate(-4deg);
 }
-.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: 0; border: none; background: transparent; font-size: .85rem; }
+.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: 0; border: none; background: transparent; font-size: 1.3rem; line-height: 1; }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-close-btn:focus,
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }
