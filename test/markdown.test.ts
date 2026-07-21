@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, parseRef } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -137,4 +137,58 @@ test('leading indent inside a list item round-trips', () => {
 test('leading indent inside a header round-trips', () => {
   const md = '#   indented heading'
   expect(roundTrip(md)).toBe(md)
+})
+
+test('nested unordered list round-trips (2 levels)', () => {
+  const md = '- a\n  - a1\n  - a2\n- b'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('nested list round-trips 4 levels deep', () => {
+  const md = '- a\n  - b\n    - c\n      - d'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('nested list produces a real nested <ul> inside the parent <li>', () => {
+  const md = '- a\n  - a1'
+  expect(mdToHtml(md)).toBe('<ul><li>a<ul><li>a1</li></ul></li></ul>')
+})
+
+test('promoting a nested item back to a top-level sibling round-trips', () => {
+  const md = '- a\n  - a1\n- b\n  - b1\n  - b2'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('ordered list with nested unordered sublist round-trips, numbering restarts per level', () => {
+  const md = '1. a\n  - a1\n  - a2\n2. b'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('nested ordered list restarts numbering independently per level', () => {
+  const md = '1. a\n  1. a-sub\n  2. a-sub2\n2. b'
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('an indent jump of more than one level clamps to one level deeper than the actual parent', () => {
+  const md = '- a\n      - too deep'
+  expect(mdToHtml(md)).toBe('<ul><li>a<ul><li>too deep</li></ul></li></ul>')
+})
+
+test('an over-indented first list line (no parent yet) clamps to depth 0', () => {
+  const md = '        - way too deep'
+  expect(mdToHtml(md)).toBe('<ul><li>way too deep</li></ul>')
+})
+
+test('nesting depth caps at 4 levels (0-3) even if indentation implies deeper', () => {
+  const md = '- a\n  - b\n    - c\n      - d\n        - e'
+  const html = mdToHtml(md)
+  const div = document.createElement('div')
+  div.innerHTML = html
+  expect(htmlToMd(div)).toBe('- a\n  - b\n    - c\n      - d\n      - e')
+})
+
+test('htmlToPlainText keeps nested list item text on its own line', () => {
+  const div = document.createElement('div')
+  div.innerHTML = mdToHtml('- a\n  - a1\n- b')
+  expect(htmlToPlainText(div)).toBe('a\na1\nb')
 })
