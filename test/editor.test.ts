@@ -277,6 +277,33 @@ describe('Tab indent', () => {
     expect(editor.getMd()).toBe('hello')
     editor.destroy()
   })
+
+  test('Shift+Tab keeps the caret near its position, not jumped to line start', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('    hello world')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const block = editorEl.firstElementChild as HTMLElement
+    const textNode = block.firstChild!
+    // Caret right after "hello" (4 indent chars + "hello".length = 9).
+    const range = document.createRange()
+    range.setStart(textNode, 9)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('hello world')
+    const newRange = window.getSelection()!.getRangeAt(0)
+    const pre = document.createRange()
+    pre.selectNodeContents(block)
+    pre.setEnd(newRange.startContainer, newRange.startOffset)
+    // 4 indent chars removed from an offset-9 caret -> offset 5, right after "hello".
+    expect(pre.toString().length).toBe(5)
+    editor.destroy()
+  })
 })
 
 describe('toolbar', () => {

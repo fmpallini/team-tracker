@@ -449,10 +449,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
             const sel = window.getSelection()
             if (sel) {
               sel.removeAllRanges()
-              const r = document.createRange()
-              r.setStart(ctx.block, 0)
-              r.collapse(true)
-              sel.addRange(r)
+              const newOffset = Math.max(0, ctx.caretOffset - n)
+              sel.addRange(rangeForTextOffsets(ctx.block, newOffset, newOffset))
             }
             scheduleChange()
           }
