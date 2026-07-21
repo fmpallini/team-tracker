@@ -30,6 +30,8 @@ import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
+import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
+import { showUpdateNotice } from './ui/update-notice'
 
 // beforeinstallprompt fires before the UI mounts — capture must be
 // registered at startup or the native install prompt is lost (see
@@ -58,6 +60,12 @@ interface AppController {
 }
 
 let app: AppController | null = null
+
+// Set in onDocumentOpened, cleared in closeFile — same closure-only pattern
+// as `app` itself. Needed by reloadForUpdate() below: the update banner can
+// be dismissed and re-shown across open/close cycles, so it can't just close
+// over the SaveController from whatever onDocumentOpened call created it.
+let activeSaveController: SaveController | null = null
 
 function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
@@ -303,6 +311,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     },
   })
   disposers.push(() => saveCtl.dispose())
+  activeSaveController = saveCtl
   saveCtl.scheduleFrom(store.doc.prefs)
 
   // Task 25 fix #6: `onDirty` was never wired up — the save indicator and
@@ -446,6 +455,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       await saveCtl.flush()
       dispose()
       app = null
+      activeSaveController = null
       // crypto.ts's session key cache is keyed by password alone, with no
       // notion of *which* document it belongs to — must not survive past
       // this document's lifetime, or opening/creating a different file
@@ -549,7 +559,50 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   disposers.push(() => document.removeEventListener('keydown', onKeyDown))
 }
 
+/**
+ * The update banner's PWA reload action. Must guarantee no silent data loss:
+ * `saveCtl.flush()` alone only waits out an *already in-flight* save, and
+ * `saveNow()` resolves normally even when the write itself fails (errors
+ * surface via save-controller.ts's own toast, not a rejection here). So this
+ * explicitly saves, waits for that save (and any trailing round) to settle,
+ * then checks `store.dirty` as the one signal that survives regardless of
+ * *why* the save didn't land (write error, external-change conflict, or a
+ * read-only tab that never attempts one in the first place) — if still
+ * dirty, abort the reload and leave whatever error UI save-controller.ts
+ * already raised as the user's recovery path.
+ */
+async function reloadForUpdate(): Promise<void> {
+  const saveCtl = activeSaveController
+  const store = app?.store ?? null
+  if (saveCtl && store) {
+    await saveCtl.saveNow({ explicit: true })
+    await saveCtl.flush()
+    if (store.dirty) return
+  }
+  location.reload()
+}
+
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+
+let dismissedUpdateVersion: string | null = null
+
+async function runUpdateCheck(): Promise<void> {
+  if (!shouldCheck(localStorage.getItem(LAST_CHECK_STORAGE_KEY), Date.now())) return
+  const result = await checkForUpdate(fetch, __APP_VERSION__, __REPO__)
+  if (result.status === 'error') return
+  localStorage.setItem(LAST_CHECK_STORAGE_KEY, new Date().toISOString())
+  if (result.status !== 'newer' || result.version === dismissedUpdateVersion) return
+  const locale = app?.store.doc.prefs.locale ?? detectBrowserLocale()
+  const banner = showUpdateNotice(locale, result.version, reloadForUpdate, (v) => {
+    dismissedUpdateVersion = v
+  })
+  document.body.appendChild(banner)
+}
+
 showStartScreen(detectBrowserLocale(), onDocumentOpened)
+
+void runUpdateCheck()
+setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)
 
 // Task 26: only the PWA build variant (`__PWA__` true) registers a service
 // worker, and only when actually served over http(s) — file:// (the
