@@ -382,6 +382,10 @@ const pt = {
   team_picker_copy_title: 'Copiar para qual time?',
   team_picker_move_title: 'Mover para qual time?',
   team_picker_confirm_btn: 'Confirmar',
+  update_notice_title: 'Nova versão {version} disponível',
+  update_notice_reload: 'Recarregar agora',
+  update_notice_view_release: 'Ver versão',
+  update_notice_dismiss_title: 'Dispensar',
 } as const
 
 export type MsgKey = keyof typeof pt
@@ -764,6 +768,10 @@ const en: Record<MsgKey, string> = {
   team_picker_copy_title: 'Copy to which team?',
   team_picker_move_title: 'Move to which team?',
   team_picker_confirm_btn: 'Confirm',
+  update_notice_title: 'New version {version} available',
+  update_notice_reload: 'Reload now',
+  update_notice_view_release: 'View release',
+  update_notice_dismiss_title: 'Dismiss',
 }
 
 const dicts: Record<Locale, Record<MsgKey, string>> = {
