@@ -306,6 +306,86 @@ describe('Tab indent', () => {
   })
 })
 
+describe('list nesting via Tab/Shift+Tab', () => {
+  function collapseInto(li: Element): void {
+    const range = document.createRange()
+    range.selectNodeContents(li)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('Tab nests a list item under its previous sibling', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n- b')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    collapseInto(editorEl.querySelectorAll('li')[1]!)
+
+    dispatchKey(editorEl, { key: 'Tab' })
+
+    expect(editor.getMd()).toBe('- a\n  - b')
+    editor.destroy()
+  })
+
+  test('Tab on the first item of a list is a no-op (nothing to nest under)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const md = '- a\n- b'
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    collapseInto(editorEl.querySelectorAll('li')[0]!)
+
+    dispatchKey(editorEl, { key: 'Tab' })
+
+    expect(editor.getMd()).toBe(md)
+    editor.destroy()
+  })
+
+  test('Tab at max nesting depth (4 levels) is a no-op', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const md = '- a\n  - b\n    - c\n      - d\n      - e'
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const items = editorEl.querySelectorAll('li')
+    collapseInto(items[items.length - 1]!) // "e", already at depth 3 alongside "d"
+
+    dispatchKey(editorEl, { key: 'Tab' })
+
+    expect(editor.getMd()).toBe(md)
+    editor.destroy()
+  })
+
+  test('Shift+Tab promotes a nested item out one level, carrying its trailing siblings as its own children', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n  - b\n  - c\n- d')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    collapseInto(editorEl.querySelectorAll('li')[1]!) // "b"
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('- a\n- b\n  - c\n- d')
+    editor.destroy()
+  })
+
+  test('Shift+Tab on a top-level list item is a no-op', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const md = '- a\n- b'
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    collapseInto(editorEl.querySelectorAll('li')[0]!)
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe(md)
+    editor.destroy()
+  })
+})
+
 describe('toolbar', () => {
   test('help button opens the help modal', () => {
     const editor = createEditor(makeHooks(), 'en-US')

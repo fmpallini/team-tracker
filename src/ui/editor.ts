@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 
 export interface Editor {
@@ -184,6 +184,85 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!startSet) range.setStart(block, block.childNodes.length)
     if (!endSet) range.setEnd(block, block.childNodes.length)
     return range
+  }
+
+  function closestLi(node: Node): HTMLElement | null {
+    let n: Node | null = node
+    while (n && n !== editorEl) {
+      if (n instanceof HTMLElement && n.tagName === 'LI') return n
+      n = n.parentElement
+    }
+    return null
+  }
+
+  function listItemDepth(li: HTMLElement): number {
+    let depth = 0
+    let n: HTMLElement | null = li.parentElement
+    while (n && n !== editorEl) {
+      if (n.tagName === 'LI') depth++
+      n = n.parentElement
+    }
+    return depth
+  }
+
+  /** Nests `items` (sibling <li>s, in document order) under the previous
+   * sibling of the first one, as that sibling's nested sub-list (reusing one
+   * if it already has one). No-op if there's no previous sibling to nest
+   * under, or the batch is already at MAX_LIST_DEPTH. */
+  function indentListItems(items: HTMLElement[]): void {
+    const first = items[0]
+    if (!first || listItemDepth(first) >= MAX_LIST_DEPTH) return
+    const prev = first.previousElementSibling as HTMLElement | null
+    if (!prev || prev.tagName !== 'LI') return
+    const parentList = first.parentElement as HTMLElement
+    let sub = prev.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+    if (!sub) {
+      sub = document.createElement(parentList.tagName.toLowerCase())
+      prev.appendChild(sub)
+    }
+    items.forEach(li => sub!.appendChild(li))
+    scheduleChange()
+  }
+
+  /** Promotes `items` (sibling <li>s, in document order) out one level, into
+   * the list they're nested under as new siblings right after the item they
+   * were nested under. Any items after `items` in the same nested list move
+   * with them, becoming children of the last promoted item (preserves
+   * hierarchy). No-op at depth 0. */
+  function outdentListItems(items: HTMLElement[]): void {
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (!first || !last) return
+    const list = first.parentElement as HTMLElement
+    const parentLi = list.parentElement as HTMLElement | null
+    if (!parentLi || parentLi.tagName !== 'LI') return
+    const grandList = parentLi.parentElement as HTMLElement
+
+    const trailing: HTMLElement[] = []
+    let sib = last.nextElementSibling
+    while (sib) { trailing.push(sib as HTMLElement); sib = sib.nextElementSibling }
+    if (trailing.length > 0) {
+      let sub = last.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+      if (!sub) {
+        sub = document.createElement(list.tagName.toLowerCase())
+        last.appendChild(sub)
+      }
+      trailing.forEach(li => sub!.appendChild(li))
+    }
+
+    const insertBefore = parentLi.nextElementSibling
+    items.forEach(li => grandList.insertBefore(li, insertBefore))
+    if (list.children.length === 0) list.remove()
+    scheduleChange()
+  }
+
+  // Task 4 replaces this with a version that also detects a multi-item
+  // sibling selection; for now, only the item containing the collapsed caret.
+  function selectedListItemsForTab(): HTMLElement[] {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return []
+    const li = closestLi(sel.getRangeAt(0).startContainer)
+    return li ? [li] : []
   }
 
   function setCaretAfter(node: Node): void {
@@ -439,6 +518,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
+      const listItems = selectedListItemsForTab()
+      if (listItems.length > 0) {
+        if (e.shiftKey) outdentListItems(listItems)
+        else indentListItems(listItems)
+        return
+      }
       if (e.shiftKey) {
         const ctx = currentBlockAndOffset()
         if (ctx) {
