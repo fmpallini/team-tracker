@@ -27,6 +27,11 @@ export function showUpdateNotice(
   const { pwa, repo } = resolve(opts)
   document.querySelector('.tt-update-banner')?.remove()
 
+  function dismiss(): void {
+    banner.remove()
+    onDismiss(latestVersion)
+  }
+
   const actionBtn: HTMLButtonElement = pwa
     ? el(
         'button',
@@ -49,7 +54,10 @@ export function showUpdateNotice(
         {
           class: 'tt-btn tt-update-banner-action',
           type: 'button',
-          onclick: () => window.open(`https://github.com/${repo}/releases/latest`, '_blank', 'noopener'),
+          onclick: () => {
+            window.open(`https://github.com/${repo}/releases/latest`, '_blank', 'noopener')
+            dismiss()
+          },
         },
         t(locale, 'update_notice_view_release')
       )
@@ -60,20 +68,27 @@ export function showUpdateNotice(
       class: 'tt-update-banner-dismiss',
       type: 'button',
       title: t(locale, 'update_notice_dismiss_title'),
-      onclick: () => {
-        banner.remove()
-        onDismiss(latestVersion)
-      },
+      onclick: () => dismiss(),
     },
     '×'
+  )
+
+  const row = el(
+    'div',
+    { class: 'tt-update-banner-row' },
+    el('span', { class: 'tt-update-banner-text' }, t(locale, 'update_notice_title', { version: latestVersion })),
+    actionBtn,
+    dismissBtn
   )
 
   const banner = el(
     'div',
     { class: 'tt-update-banner' },
-    el('span', { class: 'tt-update-banner-text' }, t(locale, 'update_notice_title', { version: latestVersion })),
-    actionBtn,
-    dismissBtn
+    row,
+    // Standalone build only: a static file:// build can't self-update, so
+    // this points the user at the PWA build instead of leaving them to
+    // guess why "Reload now" isn't offered here.
+    pwa ? null : el('p', { class: 'tt-update-banner-hint' }, t(locale, 'update_notice_standalone_hint'))
   )
   return banner
 }

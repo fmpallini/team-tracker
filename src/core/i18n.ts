@@ -386,6 +386,8 @@ const pt = {
   update_notice_reload: 'Recarregar agora',
   update_notice_view_release: 'Ver versão',
   update_notice_dismiss_title: 'Dispensar',
+  update_notice_standalone_hint:
+    'Você precisa baixar o novo arquivo e executá-lo manualmente para ter as novidades. Para uma versão sempre atualizada, instale a versão PWA no seu computador — ela se atualiza sozinha.',
 } as const
 
 export type MsgKey = keyof typeof pt
@@ -772,6 +774,8 @@ const en: Record<MsgKey, string> = {
   update_notice_reload: 'Reload now',
   update_notice_view_release: 'View release',
   update_notice_dismiss_title: 'Dismiss',
+  update_notice_standalone_hint:
+    "You'll need to download the new file and run it manually to get the latest changes. For an always up-to-date app, install the PWA version on your computer instead — it updates itself.",
 }
 
 const dicts: Record<Locale, Record<MsgKey, string>> = {

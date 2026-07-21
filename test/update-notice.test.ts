@@ -21,6 +21,11 @@ describe('PWA variant', () => {
     expect(onReload).toHaveBeenCalledTimes(1)
   })
 
+  it('does not render the standalone hint', () => {
+    const banner = showUpdateNotice(LOCALE, '9.9.9', vi.fn(), vi.fn(), { pwa: true })
+    expect(banner.querySelector('.tt-update-banner-hint')).toBeNull()
+  })
+
   it('disables the reload button while onReload is pending and re-enables if it resolves without navigating', async () => {
     let resolvePending: () => void
     const pending = new Promise<void>((r) => { resolvePending = r })
@@ -47,6 +52,22 @@ describe('standalone variant', () => {
     btn.click()
     expect(open).toHaveBeenCalledWith(`https://github.com/${REPO}/releases/latest`, '_blank', 'noopener')
     open.mockRestore()
+  })
+
+  it('dismisses the banner when "view release" is clicked', () => {
+    const onDismiss = vi.fn()
+    const banner = showUpdateNotice(LOCALE, '9.9.9', vi.fn(), onDismiss, { pwa: false, repo: REPO })
+    document.body.appendChild(banner)
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    banner.querySelector<HTMLButtonElement>('.tt-update-banner-action')!.click()
+    expect(banner.isConnected).toBe(false)
+    expect(onDismiss).toHaveBeenCalledWith('9.9.9')
+  })
+
+  it('renders a hint pointing at the installable PWA version', () => {
+    const banner = showUpdateNotice(LOCALE, '9.9.9', vi.fn(), vi.fn(), { pwa: false, repo: REPO })
+    expect(banner.querySelector('.tt-update-banner-hint')).not.toBeNull()
+    expect(banner.textContent).toContain('download the new file')
   })
 })
 

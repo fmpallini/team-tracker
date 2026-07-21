@@ -315,15 +315,17 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Update-available banner (fixed to viewport top: can show before any document is open) */
 .tt-update-banner {
-  display: flex; align-items: center; justify-content: center; gap: .75rem;
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
   padding: .4rem .75rem; background: var(--accent); color: #fff; font-size: .9rem; text-align: center;
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
 }
+.tt-update-banner-row { display: flex; align-items: center; justify-content: center; gap: .75rem; width: 100%; }
 .tt-update-banner-action { border-color: rgba(255, 255, 255, .6); color: #fff; }
 .tt-update-banner-action:hover { border-color: #fff; opacity: .85; }
 .tt-update-banner-action:disabled { opacity: .5; cursor: default; }
 .tt-update-banner-dismiss { border: none; background: none; color: #fff; font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
 .tt-update-banner-dismiss:hover { opacity: .85; }
+.tt-update-banner-hint { margin: 0; font-size: .8rem; opacity: .9; max-width: 44em; }
 
 /* Team sidebar */
 .tt-team-list { display: flex; flex-direction: column; }
