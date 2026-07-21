@@ -2,6 +2,7 @@
 import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
+import { formatHHMM } from '../core/date'
 
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 
@@ -33,11 +34,11 @@ export interface Shell {
   onCloseFile(cb: () => void): void
 }
 
-const SAVE_STATE_INFO: Record<SaveState, { icon: string; key: MsgKey }> = {
-  saved: { icon: '✓', key: 'save_saved' },
-  dirty: { icon: '●', key: 'save_dirty' },
-  saving: { icon: '…', key: 'save_saving' },
-  error: { icon: '⚠', key: 'save_error' },
+const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
+  saved: 'save_saved',
+  dirty: 'save_dirty',
+  saving: 'save_saving',
+  error: 'save_error',
 }
 
 function toggleFullscreen(): void {
@@ -76,7 +77,15 @@ export function createShell(locale: Locale): Shell {
   )
   headerLeft.appendChild(appNameBtn)
 
-  const saveIndicator = el('span', { class: 'tt-save-indicator' })
+  // An inline SVG (currentColor stroke) rather than a clock emoji: emoji
+  // glyph metrics vary by platform font and never sit flush with the pill's
+  // text baseline, and a stroke icon can pick up the pill's per-state color
+  // (green/red/etc.) for free instead of staying a fixed glyph color.
+  const savePillIcon = el('span', { class: 'tt-save-pill-icon', 'aria-hidden': 'true' })
+  savePillIcon.innerHTML =
+    '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75V8.25L10.25 9.75"/></svg>'
+  const savePillText = el('span', { class: 'tt-save-pill-text' })
+  const saveIndicator = el('span', { class: 'tt-save-pill' }, savePillIcon, savePillText)
 
   const fullscreenBtn = el(
     'button',
@@ -125,22 +134,42 @@ export function createShell(locale: Locale): Shell {
 
   let currentState: SaveState = 'saved'
   let fallbackHint = false
+  // Raw hours/minutes, not a pre-formatted string — formatting happens in
+  // renderSaveIndicator() so a locale switch reformats the last-saved time
+  // immediately (12h/24h), instead of leaving it stuck in whatever format
+  // was current when the save actually happened.
+  let lastSavedAt: { h: number; m: number } | null = null
 
-  function setSaveState(state: SaveState): void {
-    currentState = state
-    const { icon, key } = SAVE_STATE_INFO[state]
-    saveIndicator.textContent = icon
-    let title = t(currentLocale, key)
-    if (state === 'dirty' && fallbackHint) {
+  // Redraws the pill from `currentState`/`lastSavedAt`/`fallbackHint`/
+  // `currentLocale` without touching `lastSavedAt` — callers that only need
+  // to refresh the displayed text (locale switch, fallback-hint toggle) use
+  // this instead of setSaveState() so a re-render never re-stamps the
+  // timestamp as if a fresh save had just happened.
+  function renderSaveIndicator(): void {
+    const label = t(currentLocale, SAVE_STATE_KEY[currentState])
+    const time = lastSavedAt ? formatHHMM(lastSavedAt.h, lastSavedAt.m, currentLocale) : null
+    savePillText.textContent = currentState !== 'saving' && time ? `${label} · ${time}` : label
+    savePillIcon.classList.toggle('tt-save-pill-spin', currentState === 'saving')
+    let title = label
+    if (currentState === 'dirty' && fallbackHint) {
       title += ` — ${t(currentLocale, 'save_fallback_hint')}`
     }
     saveIndicator.title = title
-    saveIndicator.dataset.state = state
+    saveIndicator.dataset.state = currentState
+  }
+
+  function setSaveState(state: SaveState): void {
+    currentState = state
+    if (state === 'saved') {
+      const now = new Date()
+      lastSavedAt = { h: now.getHours(), m: now.getMinutes() }
+    }
+    renderSaveIndicator()
   }
 
   function setFallbackHint(active: boolean): void {
     fallbackHint = active
-    setSaveState(currentState)
+    renderSaveIndicator()
   }
 
   function applyPrefs(prefs: Prefs): void {
@@ -158,7 +187,7 @@ export function createShell(locale: Locale): Shell {
       closeFileBtn.title = t(currentLocale, 'close_file_title')
       settingsBtn.title = t(currentLocale, 'settings')
       helpBtn.title = t(currentLocale, 'help_global_title')
-      setSaveState(currentState)
+      renderSaveIndicator()
     }
   }
 

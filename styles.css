@@ -151,9 +151,43 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-.tt-save-indicator { font-family: var(--font-data); color: var(--muted); min-width: 1.2em; text-align: center; }
-.tt-save-indicator[data-state="saved"] { color: var(--accent); }
-.tt-save-indicator[data-state="error"] { color: var(--danger); }
+/* Save-state pill (header): always visible, states differentiated by both
+   the text label and a tinted background/border (color-mix keeps this to
+   one rule per state instead of needing an --ok-rgb/--danger-rgb variable
+   in all 20 theme/palette blocks — safe here since :has() elsewhere in this
+   file already commits this app to a modern-Chromium baseline). */
+.tt-save-pill {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .3rem .7rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  font-size: .78rem; font-weight: 600; white-space: nowrap; cursor: default;
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+.tt-save-pill-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.tt-save-pill-icon svg { display: block; }
+.tt-save-pill-text { font-family: var(--font-data); letter-spacing: .01em; }
+
+.tt-save-pill[data-state="saved"] {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
+}
+.tt-save-pill[data-state="saving"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.tt-save-pill[data-state="error"] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+@keyframes tt-save-pill-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.tt-save-pill-spin { animation: tt-save-pill-spin 1.1s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tt-save-pill-spin { animation: none; }
+}
 
 .tt-btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .tt-btn-primary:hover { color: #fff; opacity: .9; }
@@ -210,6 +244,20 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--bg); color: var(--fg); font-size: 1rem;
 }
 .tt-field-error { color: var(--danger); font-size: .85rem; min-height: 1.1em; }
+
+/* Date picker (replaces native <input type=date> — see ui/date-picker.ts
+   for why: the browser's own language controls that field's display
+   format, not the page's) */
+.tt-date-picker { position: relative; display: inline-flex; align-items: center; }
+.tt-date-picker-input { font-family: inherit; width: 100%; }
+.tt-date-picker-input-invalid { border-color: var(--danger); }
+.tt-date-picker-input-invalid:focus { outline-color: var(--danger); }
+.tt-date-picker-popover {
+  position: fixed; z-index: 1300; background: var(--bg); border-radius: 6px;
+  display: flex; flex-direction: column; gap: .35rem;
+}
+.tt-date-picker-popover-actions { display: flex; gap: .35rem; padding: 0 .1rem; }
+.tt-date-picker-popover-actions .tt-btn { flex: 1; font-size: .8rem; padding: .3rem .4rem; }
 
 /* Toast */
 .tt-toast-stack {
@@ -399,6 +447,19 @@ body { background: var(--bg); color: var(--fg); }
 .tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
 .tt-templates-empty { color: var(--muted); cursor: default; }
 .tt-templates-empty:hover { background: none; }
+
+/* Right-click card context menu (action items / risks / milestones) */
+.tt-context-menu {
+  position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  min-width: 170px; padding: .25rem; display: flex; flex-direction: column;
+}
+.tt-context-menu-item {
+  display: block; width: 100%; text-align: left; padding: .4rem .6rem; border-radius: 4px;
+  cursor: pointer; font-size: .9rem; background: none; border: none; color: inherit; font-family: inherit;
+}
+.tt-context-menu-item:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-context-menu-item.danger { color: var(--danger); }
 
 /* Emoji picker popup (team emoji fields) */
 .tt-emoji-popup {
@@ -637,14 +698,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-dot { stroke-width: 2; }
 .tt-milestone-date-label, .tt-milestone-title-label { font-size: 9px; fill: var(--fg); text-anchor: middle; }
 .tt-milestone-title-label { fill: var(--muted); }
-.tt-milestone-toolbar { flex: none; }
+.tt-milestone-toolbar { flex: none; display: flex; align-items: center; }
+.tt-milestone-expand-all-btn { margin-left: auto; }
 .tt-milestone-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-milestone-empty { color: var(--muted); padding: .5rem; }
 .tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; border: 1px solid var(--border); }
 .tt-milestone-row:hover { background: rgba(var(--accent-rgb), .08); }
 .tt-milestone-date-input { font-family: var(--font-data); flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
-.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: 0; flex: none; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
+.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: 0; flex: none; padding: .15rem .45rem; font-size: 1.3rem; line-height: 1; border: none; background: transparent; }
 .tt-milestone-row:hover .tt-milestone-expand-btn, .tt-milestone-expand-btn:focus,
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
@@ -654,7 +716,8 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Risks module */
 .tt-risks { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
-.tt-risk-toolbar { flex: none; }
+.tt-risk-toolbar { flex: none; display: flex; align-items: center; }
+.tt-risk-expand-all-btn { margin-left: auto; }
 .tt-risk-header-row, .tt-risk-row {
   display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem;
 }
@@ -666,7 +729,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 3.5rem; }
 .tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
-.tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 1.8rem; padding: .1rem .35rem; }
+.tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
 .tt-risk-header-exposure {
   display: flex; align-items: center; justify-content: center; gap: .1rem;
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
@@ -710,7 +773,7 @@ select option { background: var(--bg); color: var(--fg); }
   box-shadow: 0 0 0 1px currentColor inset;
   transform: rotate(-4deg);
 }
-.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: 0; border: none; background: transparent; font-size: .85rem; }
+.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: 0; border: none; background: transparent; font-size: 1.3rem; line-height: 1; }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-close-btn:focus,
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }

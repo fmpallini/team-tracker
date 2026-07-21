@@ -55,8 +55,25 @@ function cards(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card'))
 }
 
+function rightClick(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+function contextMenuItem(text: string): HTMLButtonElement {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
+function pickDate(day: number): void {
+  const input = document.querySelector('.tt-date-picker-input') as HTMLInputElement
+  input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+    .find((b) => b.textContent === String(day))!
+    .click()
+}
+
 afterEach(() => {
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
 
 describe('pure helpers', () => {
@@ -136,6 +153,76 @@ describe('pure helpers', () => {
       moveCard(items, 'a', 'wip', 'ghost', 'before')
       expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
     })
+  })
+})
+
+describe('card context menu', () => {
+  test('right-click shows only Duplicate when there is just one team', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+
+    const labels = Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.textContent)
+    expect(labels).toEqual(['Duplicate'])
+  })
+
+  test('Duplicate appends a copy to the same team', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(2)
+  })
+
+  test('Copy to team… copies into the target team with refs stripped and does not affect the source', () => {
+    const from = makeTeam({ id: 'from', actionItems: [item({ id: 'a1', order: 0, notes: 'ping @[Ana](person:p1)' })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(1)
+    const copied = store.doc.teams.find((t) => t.id === 'to')!.actionItems
+    expect(copied).toHaveLength(1)
+    expect(copied[0]!.notes).toBe('ping Ana')
+  })
+
+  test('Move to team… removes the card from the source team', () => {
+    const from = makeTeam({ id: 'from', actionItems: [item({ id: 'a1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Move to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(0)
+    expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems).toHaveLength(1)
   })
 })
 
@@ -227,7 +314,7 @@ describe('renderActionItems — board', () => {
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
-    const assigneeInput = document.querySelector('.tt-kanban-form-row input[type="text"]') as HTMLInputElement
+    const assigneeInput = document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement
     const datalist = document.getElementById(assigneeInput.getAttribute('list')!)!
     const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
     expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
@@ -236,6 +323,8 @@ describe('renderActionItems — board', () => {
 
 describe('renderActionItems — edit modal', () => {
   test('"+ Card" in To Do creates a card in the todo column with the entered fields', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 1)) // Aug 1, 2026 — the date picker opens on "today"'s month when empty
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -243,8 +332,7 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(container, '+ Card')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     summaryInput.value = 'New task'
-    const dueInput = document.querySelector('.tt-kanban-form input[type="date"]') as HTMLInputElement
-    dueInput.value = '2026-08-01'
+    pickDate(1)
     // Scoped to the modal form: the toolbar's filter chips now share the
     // .tt-kanban-color-chip class (same square swatch pattern), so an
     // unscoped query would also match those. Selected by color class, not

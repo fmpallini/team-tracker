@@ -86,6 +86,14 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function rightClick(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+function contextMenuItem(text: string): HTMLButtonElement {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
 afterEach(() => {
   vi.useRealTimers()
   document.body.innerHTML = ''
@@ -206,6 +214,14 @@ describe('renderRisks', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     expect(titles(container)).toEqual(['A', 'B'])
+  })
+
+  test('a row carries a hover hint that right-click opens more actions', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team)')
   })
 
   test('"+ Risk" appends a risk with default fields and focuses its title input', () => {
@@ -426,7 +442,7 @@ describe('renderRisks', () => {
       expect(container.querySelector('.editor')).toBeNull()
     })
 
-    test('only one follow-up editor is expanded at a time: expanding another row collapses and disposes the previous one', () => {
+    test('multiple rows can have their follow-up editors expanded simultaneously', () => {
       const team = makeTeam({
         risks: [risk({ id: 'a', title: 'A', followup: 'follow A' }), risk({ id: 'b', title: 'B', followup: 'follow B' })],
       })
@@ -439,8 +455,45 @@ describe('renderRisks', () => {
       expect(container.querySelector('.editor')!.textContent).toBe('follow A')
 
       rowFor('b').querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+      const editors = [...container.querySelectorAll('.editor')]
+      expect(editors).toHaveLength(2)
+      expect(editors.map((e) => e.textContent)).toEqual(['follow A', 'follow B'])
+    })
+
+    test('expand-all button expands every open risk\'s follow-up and flips to "Collapse all"; clicking again collapses all', () => {
+      const team = makeTeam({
+        risks: [risk({ id: 'a', title: 'A', followup: 'follow A' }), risk({ id: 'b', title: 'B', followup: 'follow B' })],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const expandAllBtn = container.querySelector<HTMLButtonElement>('.tt-risk-expand-all-btn')!
+      expect(expandAllBtn.textContent).toBe('Expand all')
+
+      expandAllBtn.click()
+      expect(container.querySelectorAll('.editor')).toHaveLength(2)
+      expect(expandAllBtn.textContent).toBe('Collapse all')
+
+      expandAllBtn.click()
+      expect(container.querySelectorAll('.editor')).toHaveLength(0)
+      expect(expandAllBtn.textContent).toBe('Expand all')
+    })
+
+    test('expand-all label reverts to "Expand all" as soon as one row is collapsed out of an all-expanded state', () => {
+      const team = makeTeam({
+        risks: [risk({ id: 'a', title: 'A', followup: 'follow A' }), risk({ id: 'b', title: 'B', followup: 'follow B' })],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const expandAllBtn = container.querySelector<HTMLButtonElement>('.tt-risk-expand-all-btn')!
+      expandAllBtn.click()
+      expect(expandAllBtn.textContent).toBe('Collapse all')
+
+      const rowFor = (id: string) => container.querySelector(`[data-risk-id="${id}"]`) as HTMLElement
+      rowFor('a').querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
       expect(container.querySelectorAll('.editor')).toHaveLength(1)
-      expect(container.querySelector('.editor')!.textContent).toBe('follow B')
+      expect(expandAllBtn.textContent).toBe('Expand all')
     })
 
     test('clicking a ref chip in the follow-up navigates via makeRefClickHandler using the pane it was mounted in', () => {
@@ -523,5 +576,40 @@ describe('renderRisks', () => {
     expect((row.querySelector('.tt-risk-expand-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-risk-close-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-risk-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
+})
+
+describe('row context menu', () => {
+  test('Duplicate appends a copy to the same team', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'risks' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+  })
+
+  test('Move to team… removes the row from the source team', () => {
+    const from = makeTeam({ id: 'from', risks: [risk({ id: 'r1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'risks' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Move to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.risks).toHaveLength(0)
+    expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(1)
   })
 })

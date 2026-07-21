@@ -14,11 +14,15 @@ import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
+import { duplicateMilestone, transferMilestone } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { showContextMenu, type ContextMenuItem } from '../ui/context-menu'
+import { openTeamPickerModal } from '../ui/team-picker-modal'
+import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { el } from '../ui/dom'
 
@@ -163,25 +167,40 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   }
 
   let focusMilestoneId: string | null = null
-  let expandedId: string | null = null
+  // Every currently-expanded row's follow-up editor is mounted at once —
+  // not just one — so expand-all/collapse-all can show every follow-up
+  // simultaneously.
+  let expandedIds = new Set<string>()
 
-  interface ExpandedBundle { id: string; editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
-  let expandedBundle: ExpandedBundle | null = null
+  interface ExpandedBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  const expandedBundles = new Map<string, ExpandedBundle>()
 
-  function disposeExpandedBundle(): void {
-    if (!expandedBundle) return
-    expandedBundle.atHandle.dispose()
-    expandedBundle.tplHandle.dispose()
-    expandedBundle.editor.destroy()
-    expandedBundle = null
+  function disposeExpandedBundle(id: string): void {
+    const bundle = expandedBundles.get(id)
+    if (!bundle) return
+    bundle.atHandle.dispose()
+    bundle.tplHandle.dispose()
+    bundle.editor.destroy()
+    expandedBundles.delete(id)
+  }
+
+  function disposeAllExpandedBundles(): void {
+    for (const id of [...expandedBundles.keys()]) disposeExpandedBundle(id)
   }
 
   function toggleExpand(id: string): void {
-    expandedId = expandedId === id ? null : id
+    if (expandedIds.has(id)) expandedIds.delete(id)
+    else expandedIds.add(id)
     renderAll()
   }
 
-  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself as `expandedBundle` so the caller can dispose it later. */
+  /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
+  function setAllExpanded(expand: boolean): void {
+    expandedIds = expand ? new Set(milestones().map((m) => m.id)) : new Set()
+    renderAll()
+  }
+
+  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself in `expandedBundles` so the caller can dispose it later. */
   function renderFollowupRow(m: Milestone): HTMLElement {
     const editor: Editor = createEditor(
       {
@@ -206,16 +225,17 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
       locale: lc,
     })
 
-    expandedBundle = { id: m.id, editor, atHandle, tplHandle }
+    expandedBundles.set(m.id, { editor, atHandle, tplHandle })
 
     return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id }, editor.root)
   }
 
   function removeMilestone(id: string): void {
+    expandedIds.delete(id) // local UI state; must flip before store.update fires the synchronous subscriber below
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
@@ -350,19 +370,53 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   // --- list -------------------------------------------------------------
 
-  function renderRow(m: Milestone): HTMLElement {
-    const dateInput = el('input', {
-      type: 'date', class: 'tt-milestone-date-input tt-input', value: m.date,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        if (value === '') return // type=date: browsers don't normally allow clearing to '', guard anyway
+  function openRowContextMenu(itemId: string, x: number, y: number): void {
+    const otherTeams = ctx.store.doc.teams.filter((tm) => tm.id !== teamId)
+    const menuItems: ContextMenuItem[] = [
+      {
+        label: t(lc, 'context_menu_duplicate'),
+        onClick: () => {
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            if (tm) duplicateMilestone(tm, itemId)
+          })
+        },
+      },
+    ]
+    if (otherTeams.length > 0) {
+      menuItems.push({ label: t(lc, 'context_menu_copy_to_team'), onClick: () => openTransferModal(itemId, 'copy', otherTeams) })
+      menuItems.push({ label: t(lc, 'context_menu_move_to_team'), onClick: () => openTransferModal(itemId, 'move', otherTeams) })
+    }
+    showContextMenu(x, y, menuItems)
+  }
+
+  function openTransferModal(itemId: string, mode: 'copy' | 'move', otherTeams: Team[]): void {
+    openTeamPickerModal({
+      title: t(lc, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title'),
+      confirmLabel: t(lc, 'team_picker_confirm_btn'),
+      cancelLabel: t(lc, 'cancel'),
+      teams: otherTeams,
+      onConfirm: (targetTeamId) => {
         ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
-          if (found) found.date = value
+          transferMilestone(d.teams, itemId, teamId, targetTeamId, mode)
         })
       },
     })
+  }
+
+  function renderRow(m: Milestone): HTMLElement {
+    // No allowClear: a milestone always has a date, same constraint the old
+    // native <input type=date> relied on browsers to (mostly) enforce.
+    const datePicker = createDatePicker({
+      value: m.date, locale: lc,
+      onChange: (iso) => {
+        ctx.store.update((d) => {
+          const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
+          if (found) found.date = iso
+        })
+      },
+    })
+    datePicker.root.classList.add('tt-milestone-date-input')
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-milestone-title-input tt-input', placeholder: t(lc, 'milestone_title_placeholder'), value: m.title,
@@ -393,7 +447,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
-      expandedId === m.id ? '▾' : '▸'
+      expandedIds.has(m.id) ? '▾' : '▸'
     )
 
     const deleteBtn = el(
@@ -404,10 +458,19 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
     const row = el(
       'div',
-      { class: 'tt-milestone-row', 'data-milestone-id': m.id, 'data-item-id': m.id },
-      dateInput, titleInput, doneCheckbox, expandBtn, deleteBtn
+      {
+        class: 'tt-milestone-row',
+        'data-milestone-id': m.id,
+        'data-item-id': m.id,
+        title: t(lc, 'milestone_row_context_hint'),
+      },
+      datePicker.root, titleInput, doneCheckbox, expandBtn, deleteBtn
     )
     if (m.done) row.classList.add('tt-milestone-done-row')
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
     return row
   }
 
@@ -421,17 +484,18 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))
-        if (expandedId === m.id) listEl.appendChild(renderFollowupRow(m))
+        if (expandedIds.has(m.id)) listEl.appendChild(renderFollowupRow(m))
       })
     }
     if (focusMilestoneId) {
       listEl.querySelector<HTMLInputElement>(`[data-milestone-id="${focusMilestoneId}"] .tt-milestone-title-input`)?.focus()
       focusMilestoneId = null
     }
+    updateExpandAllBtn(sorted)
   }
 
   function renderAll(): void {
-    disposeExpandedBundle() // any previously-expanded editor is torn down before the list (and possibly a fresh one) is rebuilt
+    disposeAllExpandedBundles() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     renderTimeline()
     renderList()
   }
@@ -451,7 +515,20 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     { class: 'tt-btn tt-milestone-add-btn', type: 'button', onclick: () => addMilestone() },
     t(lc, 'milestone_add_btn')
   )
-  const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn)
+  const expandAllBtn = el(
+    'button',
+    { class: 'tt-btn tt-milestone-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!allExpanded) },
+    ''
+  )
+  let allExpanded = false
+
+  /** Label reads "Expand all" unless every milestone is already expanded, in which case it flips to "Collapse all" — mirrors milestone_expand_all_btn/milestone_collapse_all_btn i18n keys. */
+  function updateExpandAllBtn(sorted: Milestone[]): void {
+    allExpanded = sorted.length > 0 && sorted.every((m) => expandedIds.has(m.id))
+    expandAllBtn.textContent = t(lc, allExpanded ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn')
+  }
+
+  const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, expandAllBtn)
 
   /**
    * True (and returns the focused element) for the caret-sensitive elements
@@ -493,6 +570,6 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   disposers.set(container, () => {
     unsubscribe()
-    disposeExpandedBundle()
+    disposeAllExpandedBundles()
   })
 }

@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 
 export interface Editor {
@@ -43,6 +43,7 @@ export const AT_TRIGGER_EVENT = 'tt-at-trigger'
 export const SLASH_TRIGGER_EVENT = 'tt-slash-trigger'
 
 const CHANGE_DEBOUNCE_MS = 300
+const TAB_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 
 // --- pure, unit-testable auto-format detection -----------------------------
 
@@ -104,6 +105,13 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
   return null
 }
 /* eslint-enable no-irregular-whitespace */
+
+/** Leading run of indent chars (space or the non-breaking space Tab inserts), capped at 4 — how much Shift+Tab removes in one press. */
+export function leadingIndentLen(text: string): number {
+  let n = 0
+  while (n < text.length && n < 4 && (text[n] === ' ' || text[n] === '\u00a0')) n++
+  return n
+}
 
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: 'true' })
@@ -176,6 +184,100 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!startSet) range.setStart(block, block.childNodes.length)
     if (!endSet) range.setEnd(block, block.childNodes.length)
     return range
+  }
+
+  function closestLi(node: Node): HTMLElement | null {
+    let n: Node | null = node
+    while (n && n !== editorEl) {
+      if (n instanceof HTMLElement && n.tagName === 'LI') return n
+      n = n.parentElement
+    }
+    return null
+  }
+
+  function listItemDepth(li: HTMLElement): number {
+    let depth = 0
+    let n: HTMLElement | null = li.parentElement
+    while (n && n !== editorEl) {
+      if (n.tagName === 'LI') depth++
+      n = n.parentElement
+    }
+    return depth
+  }
+
+  /** Nests `items` (sibling <li>s, in document order) under the previous
+   * sibling of the first one, as that sibling's nested sub-list (reusing one
+   * if it already has one). No-op if there's no previous sibling to nest
+   * under, or the batch is already at MAX_LIST_DEPTH. */
+  function indentListItems(items: HTMLElement[]): void {
+    const first = items[0]
+    if (!first || listItemDepth(first) >= MAX_LIST_DEPTH) return
+    const prev = first.previousElementSibling as HTMLElement | null
+    if (!prev || prev.tagName !== 'LI') return
+    const parentList = first.parentElement as HTMLElement
+    let sub = prev.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+    if (!sub) {
+      sub = document.createElement(parentList.tagName.toLowerCase())
+      prev.appendChild(sub)
+    }
+    items.forEach(li => sub!.appendChild(li))
+    scheduleChange()
+  }
+
+  /** Promotes `items` (sibling <li>s, in document order) out one level, into
+   * the list they're nested under as new siblings right after the item they
+   * were nested under. Any items after `items` in the same nested list move
+   * with them, becoming children of the last promoted item (preserves
+   * hierarchy). No-op at depth 0. */
+  function outdentListItems(items: HTMLElement[]): void {
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (!first || !last) return
+    const list = first.parentElement as HTMLElement
+    const parentLi = list.parentElement as HTMLElement | null
+    if (!parentLi || parentLi.tagName !== 'LI') return
+    const grandList = parentLi.parentElement as HTMLElement
+
+    const trailing: HTMLElement[] = []
+    let sib = last.nextElementSibling
+    while (sib) { trailing.push(sib as HTMLElement); sib = sib.nextElementSibling }
+    if (trailing.length > 0) {
+      let sub = last.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+      if (!sub) {
+        sub = document.createElement(list.tagName.toLowerCase())
+        last.appendChild(sub)
+      }
+      trailing.forEach(li => sub!.appendChild(li))
+    }
+
+    const insertBefore = parentLi.nextElementSibling
+    items.forEach(li => grandList.insertBefore(li, insertBefore))
+    if (list.children.length === 0) list.remove()
+    scheduleChange()
+  }
+
+  /* Task 4: resolves the list item(s) a Tab/Shift+Tab keypress should act
+   * on. A collapsed caret or a selection within a single item resolves to
+   * that one item. A selection spanning multiple sibling `<li>`s (same
+   * parent `<ul>/<ol>`) resolves to the whole ordered batch. A selection
+   * whose start/end land in list items that aren't siblings (mixed-depth
+   * selection) falls back to just the item containing the selection's
+   * start point. */
+  function selectedListItems(): HTMLElement[] {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return []
+    const range = sel.getRangeAt(0)
+    const startLi = closestLi(range.startContainer)
+    if (!startLi) return []
+    const endLi = closestLi(range.endContainer)
+    if (!endLi || endLi === startLi) return [startLi]
+    if (startLi.parentElement !== endLi.parentElement) return [startLi]
+    const siblings = Array.from(startLi.parentElement!.children).filter(
+      (c): c is HTMLElement => c instanceof HTMLElement && c.tagName === 'LI'
+    )
+    const startIdx = siblings.indexOf(startLi)
+    const endIdx = siblings.indexOf(endLi)
+    return siblings.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1)
   }
 
   function setCaretAfter(node: Node): void {
@@ -429,6 +531,35 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      const listItems = selectedListItems()
+      if (listItems.length > 0) {
+        if (e.shiftKey) outdentListItems(listItems)
+        else indentListItems(listItems)
+        return
+      }
+      if (e.shiftKey) {
+        const ctx = currentBlockAndOffset()
+        if (ctx) {
+          const n = leadingIndentLen(ctx.text)
+          if (n > 0) {
+            const range = rangeForTextOffsets(ctx.block, 0, n)
+            range.deleteContents()
+            const sel = window.getSelection()
+            if (sel) {
+              sel.removeAllRanges()
+              const newOffset = Math.max(0, ctx.caretOffset - n)
+              sel.addRange(rangeForTextOffsets(ctx.block, newOffset, newOffset))
+            }
+            scheduleChange()
+          }
+        }
+      } else {
+        exec('insertText', TAB_INDENT)
+      }
+      return
+    }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
     const key = e.key.toLowerCase()
 

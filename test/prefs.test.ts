@@ -87,7 +87,7 @@ test('renders 4 tabs, defaulting to Geral/General', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['General', 'Templates', 'Security', 'Data', 'About'])
+  expect(tabs).toEqual(['General', 'Templates', 'Tags', 'Security', 'Data', 'About'])
   expect(document.querySelector('.tt-prefs-tab-btn.active')?.textContent).toBe('General')
   expect(document.querySelector('input[name="tt-prefs-theme"][value="system"]')).not.toBeNull()
 })
@@ -206,7 +206,7 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   // tab labels should now read in Portuguese.
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['Geral', 'Templates', 'Segurança', 'Dados', 'Sobre'])
+  expect(tabs).toEqual(['Geral', 'Templates', 'Tags', 'Segurança', 'Dados', 'Sobre'])
 })
 
 test('templates tab lists the 5 builtins with scope badges', () => {
@@ -634,5 +634,46 @@ describe('Data tab (export/import)', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('This file was exported by a newer version of Team Tracker')
+  })
+})
+
+function openTab(label: string): void {
+  Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-prefs-tab-btn')).find((b) => b.textContent === label)!.click()
+}
+
+function team(id: string, name: string, actionTagNames: Team['actionTagNames'] = {}): Team {
+  return { id, name, emoji: '🚀', stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {}, actionTagNames }
+}
+
+describe('Tags tab', () => {
+  test('shows a hint instead of the form when there are fewer than 2 teams', () => {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => { d.teams.push(team('t1', 'Solo')) })
+    openPrefs(store, shell, 'en-US', appCtl)
+    openTab('Tags')
+    expect(document.querySelector('.tt-prefs-content')!.textContent).toContain('Create at least two teams to use this.')
+  })
+
+  test('applying copies the source team\'s actionTagNames onto every other team, leaves the source untouched', () => {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => {
+      d.teams.push(team('t1', 'Alpha', { rust: 'Urgent' }))
+      d.teams.push(team('t2', 'Beta', { rust: 'Old name' }))
+      d.teams.push(team('t3', 'Gamma'))
+    })
+    openPrefs(store, shell, 'en-US', appCtl)
+    openTab('Tags')
+
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 't1'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Apply to all teams')!.click()
+    // confirm modal — scoped to the topmost overlay via clickByText, since the
+    // confirm button reuses the same label as the tab's own apply button and
+    // an unscoped lookup would match the (still-present) one behind it.
+    clickByText('Apply to all teams')
+
+    expect(store.doc.teams.find((t) => t.id === 't1')!.actionTagNames).toEqual({ rust: 'Urgent' })
+    expect(store.doc.teams.find((t) => t.id === 't2')!.actionTagNames).toEqual({ rust: 'Urgent' })
+    expect(store.doc.teams.find((t) => t.id === 't3')!.actionTagNames).toEqual({ rust: 'Urgent' })
   })
 })

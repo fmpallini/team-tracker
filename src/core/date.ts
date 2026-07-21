@@ -1,6 +1,11 @@
 // src/core/date.ts — single home for ISO-date ("YYYY-MM-DD") and wall-clock
 // arithmetic shared across core and the module renderers. Keep every date
 // computation here rather than re-implementing per file.
+//
+// `Locale` is imported type-only from ./i18n, which itself imports `pad2`
+// from here — safe because a type-only import is erased at compile time, so
+// there's no runtime import cycle.
+import type { Locale } from './i18n'
 
 export function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
@@ -20,8 +25,23 @@ export function diffDays(later: string, earlier: string): number {
   return Math.round((Date.UTC(ly, lm - 1, ld) - Date.UTC(ey, em - 1, ed)) / 86400000)
 }
 
-/** Current local wall-clock time as "HH:MM". */
-export function nowHHMM(): string {
+/**
+ * Wall-clock hours/minutes as locale-formatted text: 24h "HH:MM" for pt-BR,
+ * 12h "H:MM AM/PM" for en-US — matching each locale's everyday clock
+ * convention, same as formatDate() (src/core/i18n.ts) already does for
+ * day/month order. Manual formatting (not Intl) for the same reason the
+ * rest of this file avoids Intl: fully deterministic output across
+ * platforms/environments, and trivially testable without locale-data quirks.
+ */
+export function formatHHMM(hours: number, minutes: number, locale: Locale): string {
+  if (locale === 'pt-BR') return `${pad2(hours)}:${pad2(minutes)}`
+  const period = hours < 12 ? 'AM' : 'PM'
+  const h12 = hours % 12 || 12
+  return `${h12}:${pad2(minutes)} ${period}`
+}
+
+/** Current local wall-clock time, locale-formatted (see formatHHMM). */
+export function nowHHMM(locale: Locale): string {
   const now = new Date()
-  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
+  return formatHHMM(now.getHours(), now.getMinutes(), locale)
 }

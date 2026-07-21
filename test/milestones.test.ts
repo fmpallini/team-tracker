@@ -75,6 +75,14 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function rightClick(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+function contextMenuItem(text: string): HTMLButtonElement {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
 afterEach(() => {
   vi.useRealTimers()
   document.body.innerHTML = ''
@@ -321,9 +329,13 @@ describe('renderMilestones', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const dateInput = rows(container)[0]!.querySelector('.tt-milestone-date-input') as HTMLInputElement
-    dateInput.value = '2026-03-01'
-    dateInput.dispatchEvent(new Event('change'))
+    const dateInput = rows(container)[0]!.querySelector('.tt-date-picker-input') as HTMLInputElement
+    dateInput.dispatchEvent(new MouseEvent('click', { bubbles: true })) // opens on the row's current date: Jan 2026
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.textContent === '›')!.click() // -> Feb
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.textContent === '›')!.click() // -> Mar
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+      .find((b) => b.textContent === '1')!
+      .click()
 
     expect(store.doc.teams[0]!.milestones.find((m) => m.id === 'a')!.date).toBe('2026-03-01')
     const titlesAfter = Array.from(container.querySelectorAll<HTMLInputElement>('.tt-milestone-title-input')).map((i) => i.value)
@@ -468,6 +480,55 @@ describe('renderMilestones', () => {
       toggle().click()
       expect(container.querySelector('.editor')).toBeNull()
     })
+
+    test('multiple rows can have their follow-up editors expanded simultaneously', () => {
+      const team = makeTeam({
+        milestones: [
+          milestone({ id: 'a', title: 'A', date: '2026-01-01', followup: 'follow A' }),
+          milestone({ id: 'b', title: 'B', date: '2026-02-01', followup: 'follow B' }),
+        ],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const rowFor = (id: string) => container.querySelector(`[data-milestone-id="${id}"]`) as HTMLElement
+      rowFor('a').querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+      rowFor('b').querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      const editors = [...container.querySelectorAll('.editor')]
+      expect(editors).toHaveLength(2)
+      expect(editors.map((e) => e.textContent)).toEqual(['follow A', 'follow B'])
+    })
+
+    test('expand-all button expands every milestone\'s follow-up and flips to "Collapse all"; clicking again collapses all', () => {
+      const team = makeTeam({
+        milestones: [
+          milestone({ id: 'a', title: 'A', date: '2026-01-01', followup: 'follow A' }),
+          milestone({ id: 'b', title: 'B', date: '2026-02-01', followup: 'follow B' }),
+        ],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const expandAllBtn = container.querySelector<HTMLButtonElement>('.tt-milestone-expand-all-btn')!
+      expect(expandAllBtn.textContent).toBe('Expand all')
+
+      expandAllBtn.click()
+      expect(container.querySelectorAll('.editor')).toHaveLength(2)
+      expect(expandAllBtn.textContent).toBe('Collapse all')
+
+      expandAllBtn.click()
+      expect(container.querySelectorAll('.editor')).toHaveLength(0)
+      expect(expandAllBtn.textContent).toBe('Expand all')
+    })
+  })
+
+  test('a row carries a hover hint that right-click opens more actions', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team)')
   })
 
   test('a defensive no-op when loc.ref.kind is not "milestones"', () => {
@@ -511,5 +572,42 @@ describe('renderMilestones', () => {
     expect(row.querySelector('.tt-milestone-title-input')!.getAttribute('tabindex')).toBeNull()
     expect((row.querySelector('.tt-milestone-expand-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-milestone-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
+})
+
+describe('row context menu', () => {
+  test('Duplicate appends a copy to the same team', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'milestones' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+  })
+
+  test('Copy to team… copies into the target team with refs stripped, source untouched', () => {
+    const from = makeTeam({ id: 'from', milestones: [milestone({ id: 'm1', followup: 'blocked by @[Fix](action:a1)' })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'milestones' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    const select = document.querySelector('select') as HTMLSelectElement
+    select.value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.milestones).toHaveLength(1)
+    const copied = store.doc.teams.find((t) => t.id === 'to')!.milestones
+    expect(copied).toHaveLength(1)
+    expect(copied[0]!.followup).toBe('blocked by Fix')
   })
 })

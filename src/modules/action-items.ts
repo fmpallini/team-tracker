@@ -12,11 +12,15 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS } from '../core/document'
+import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
+import { showContextMenu, type ContextMenuItem } from '../ui/context-menu'
+import { openTeamPickerModal } from '../ui/team-picker-modal'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -189,7 +193,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_clear_zone_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
-  interface ModalBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
+  interface ModalBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle; datePicker: DatePickerHandle }
   let openBundle: ModalBundle | null = null
 
   /** Single teardown for the edit modal's editor bundle — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
@@ -198,13 +202,14 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     openBundle.atHandle.dispose()
     openBundle.tplHandle.dispose()
     openBundle.editor.destroy()
+    openBundle.datePicker.destroy()
     openBundle = null
   }
 
   /** Full CRUD modal: `existing === null` creates a new card in `defaultStatus`; otherwise edits/deletes `existing`. Mirrors src/modules/people-tree.ts's openPersonModal shape, plus a rich-text notes editor (created on open, destroyed on close) wired exactly like the old inline renderNotesRow (@ref autocomplete + '/' template picker). */
   function openEditModal(existing: ActionItem | null, defaultStatus: 'todo' | 'wip' = 'todo'): void {
     const summaryInput = el('input', { type: 'text', class: 'tt-input', value: existing?.summary ?? '' }) as HTMLInputElement
-    const dueInput = el('input', { type: 'date', class: 'tt-input', value: existing?.dueDate ?? '' }) as HTMLInputElement
+    const datePicker = createDatePicker({ value: existing?.dueDate ?? '', locale: lc, allowClear: true, onChange: () => {} })
     const assigneeInput = el('input', { type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '' }) as HTMLInputElement
     let selectedColor: ActionItem['color'] = existing?.color ?? 'ledger'
     const errorEl = el('div', { class: 'tt-field-error' })
@@ -223,10 +228,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
     const tplHandle = attachTemplatePicker(editor, {
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(), teamName: findTeam()?.name, locale: lc }),
+      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
       locale: lc,
     })
-    openBundle = { editor, atHandle, tplHandle }
+    openBundle = { editor, atHandle, tplHandle, datePicker }
 
     const colorRow = el('div', { class: 'tt-kanban-color-row' })
     function paintSelectedColor(): void {
@@ -258,7 +263,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       el(
         'div',
         { class: 'tt-kanban-form-row' },
-        el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), dueInput),
+        el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), datePicker.root),
         el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeInput)
       ),
       el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow),
@@ -275,7 +280,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         errorEl.textContent = t(lc, 'kanban_summary_required')
         return
       }
-      const dueDate = dueInput.value === '' ? null : dueInput.value
+      const dueDate = datePicker.getValue() === '' ? null : datePicker.getValue()
       const assignee = assigneeInput.value
       const notes = editor.getMd()
       // A new card whose color the active filter would hide is invisible the
@@ -362,6 +367,46 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
 
+  function openCardContextMenu(itemId: string, x: number, y: number): void {
+    const otherTeams = ctx.store.doc.teams.filter((tm) => tm.id !== teamId)
+    const menuItems: ContextMenuItem[] = [
+      {
+        label: t(lc, 'context_menu_duplicate'),
+        onClick: () => {
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            if (tm) duplicateActionItem(tm, itemId)
+          })
+        },
+      },
+    ]
+    if (otherTeams.length > 0) {
+      menuItems.push({
+        label: t(lc, 'context_menu_copy_to_team'),
+        onClick: () => openTransferModal(itemId, 'copy', otherTeams),
+      })
+      menuItems.push({
+        label: t(lc, 'context_menu_move_to_team'),
+        onClick: () => openTransferModal(itemId, 'move', otherTeams),
+      })
+    }
+    showContextMenu(x, y, menuItems)
+  }
+
+  function openTransferModal(itemId: string, mode: 'copy' | 'move', otherTeams: Team[]): void {
+    openTeamPickerModal({
+      title: t(lc, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title'),
+      confirmLabel: t(lc, 'team_picker_confirm_btn'),
+      cancelLabel: t(lc, 'cancel'),
+      teams: otherTeams,
+      onConfirm: (targetTeamId) => {
+        ctx.store.update((d) => {
+          transferActionItem(d.teams, itemId, teamId, targetTeamId, mode)
+        })
+      },
+    })
+  }
+
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItem['color'], string>>): HTMLElement {
     const editBtn = el(
       'button',
@@ -384,6 +429,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       editBtn, titleEl, metaEl
     )
     card.addEventListener('dblclick', () => openEditModal(item))
+    card.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      openCardContextMenu(item.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
 
     card.addEventListener('dragstart', (e) => {
       draggedId = item.id

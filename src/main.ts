@@ -480,13 +480,21 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     })
     notifyNavChanged()
 
+    // Both panes always get resynced to the new team, regardless of whether
+    // it's remembered split or single — `rememberedSplit` only controls
+    // *visibility* (d.nav.split, above). Leaving pane 1 unsynced whenever a
+    // team's remembered layout is single would let it keep the *previous*
+    // team's Loc; that stale state then resurfaces (mixing two teams across
+    // visible panes) the moment split is toggled back on. `force: true`
+    // bypasses openInPane's same-module dedup guard, which exists for live
+    // user actions, not this automated per-pane restore — without it, the
+    // write for whichever pane runs second is silently dropped whenever the
+    // two remembered Locs happen to share a module kind.
     const todayLoc = (): Loc => ({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
     const pane0Last = lastLocForTeam(store.doc.nav.panes[0], id)
-    pm.openInPane(0, pane0Last ?? todayLoc())
-    if (rememberedSplit) {
-      const pane1Last = lastLocForTeam(store.doc.nav.panes[1], id)
-      pm.openInPane(1, pane1Last ?? { teamId: id, ref: { kind: 'members' } })
-    }
+    const pane1Last = lastLocForTeam(store.doc.nav.panes[1], id)
+    pm.openInPane(0, pane0Last ?? todayLoc(), { force: true })
+    pm.openInPane(1, pane1Last ?? { teamId: id, ref: { kind: 'members' } }, { force: true })
   }
 
   mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
