@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
@@ -81,6 +81,31 @@ test('openBothPanes writes both panes and the given focusedPane in one shot', ()
   expect(currentLoc(store.doc.nav.panes[0])).toEqual(target0)
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(target1)
   expect(store.doc.nav.focusedPane).toBe(1)
+})
+
+test('restoreTeamLayout keeps focusedPane on 0 when the team\'s remembered layout is single-pane, so a later openInFocused (e.g. the due-date reminder list) lands on the visible pane', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  addTeam(store, 'T2')
+
+  // T1 gets history and is explicitly remembered as single-pane, with pane 1
+  // last focused while it was still visible (split) — mirrors a team that
+  // was viewed split, then unsplit (toggleSplit resets focusedPane to 0, but
+  // teamSplit[id] stays whatever the user last chose before restoreTeamLayout
+  // runs again on a later visit).
+  openTeamDefaultLayout(pm, store, 'T1')
+  store.updateNav((d) => { d.nav.teamSplit['T1'] = false })
+
+  // Switch away to T2 (also split by default) so focusedPane is free to be
+  // anything before we switch back to T1.
+  openTeamDefaultLayout(pm, store, 'T2')
+  expect(store.doc.nav.focusedPane).toBe(0)
+  store.updateNav((d) => { d.nav.focusedPane = 1 })
+
+  restoreTeamLayout(pm, store, 'T1')
+
+  expect(store.doc.nav.split).toBe(false)
+  expect(store.doc.nav.focusedPane).toBe(0)
 })
 
 test('teamHasHistory reflects whether any pane history contains the team', () => {

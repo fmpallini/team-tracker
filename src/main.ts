@@ -1,19 +1,18 @@
 declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string; const __REPO__: string }
 
 import type { Locale } from './core/i18n'
-import type { Doc, Loc } from './core/types'
+import type { Doc } from './core/types'
 import type { FileSession } from './core/fs'
 import { createStore, type Store } from './core/store'
-import { lastLocForTeam } from './core/nav'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar, notifyNavChanged } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
-import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
-import { t, todayIso } from './core/i18n'
+import { t } from './core/i18n'
 import { renderDailyNotes } from './modules/daily-notes'
 import { renderPeopleTree } from './modules/people-tree'
 import { renderPersonNotes } from './modules/person-notes'
@@ -477,28 +476,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       openTeamDefaultLayout(pm, store, id)
       return
     }
-
-    const rememberedSplit = store.doc.nav.teamSplit[id] ?? false
-    store.updateNav((d) => {
-      d.nav.activeTeamId = id
-      d.nav.split = rememberedSplit
-    })
-    notifyNavChanged()
-
-    // Both panes always get resynced to the new team, regardless of whether
-    // it's remembered split or single — `rememberedSplit` only controls
-    // *visibility* (d.nav.split, above). Leaving pane 1 unsynced whenever a
-    // team's remembered layout is single would let it keep the *previous*
-    // team's Loc; that stale state then resurfaces (mixing two teams across
-    // visible panes) the moment split is toggled back on. `force: true`
-    // bypasses openInPane's same-module dedup guard, which exists for live
-    // user actions, not this automated per-pane restore — without it, the
-    // write for whichever pane runs second is silently dropped whenever the
-    // two remembered Locs happen to share a module kind.
-    const todayLoc = (): Loc => ({ teamId: id, ref: { kind: 'daily', date: todayIso() } })
-    const pane0Last = lastLocForTeam(store.doc.nav.panes[0], id)
-    const pane1Last = lastLocForTeam(store.doc.nav.panes[1], id)
-    pm.openBothPanes(pane0Last ?? todayLoc(), pane1Last ?? { teamId: id, ref: { kind: 'members' } }, 1)
+    restoreTeamLayout(pm, store, id)
   }
 
   const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })

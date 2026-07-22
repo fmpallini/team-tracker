@@ -2,7 +2,7 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
-import { currentLoc, locsConflict, navigateHistory, openLoc } from '../core/nav'
+import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
 import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
 import { el } from './dom'
@@ -184,6 +184,43 @@ export function teamHasHistory(store: Store, teamId: string): boolean {
 export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: string): void {
   store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0; d.nav.teamSplit[teamId] = true })
   pm.openBothPanes({ teamId, ref: { kind: 'daily', date: todayIso() } }, { teamId, ref: { kind: 'members' } }, 0)
+}
+
+/**
+ * Returning to a team that already has history: restores whether it was last
+ * viewed split or single, and — per pane — whichever module it was last
+ * showing for this team (from that pane's own history), not a blanket reset
+ * to today's daily notes.
+ *
+ * `focusedPane` is derived from `rememberedSplit`, never hardcoded — pane 1
+ * is only ever visible while split, so focusing it while restoring a
+ * single-pane layout would silently point every focused-pane action
+ * (Ctrl+K palette picks, the due-date reminder list, Alt+arrow history) at a
+ * pane the user can't see, making it look like selecting an item did
+ * nothing. Same invariant `toggleSplit` enforces when un-splitting.
+ */
+export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string): void {
+  const rememberedSplit = store.doc.nav.teamSplit[teamId] ?? false
+  store.updateNav((d) => {
+    d.nav.activeTeamId = teamId
+    d.nav.split = rememberedSplit
+  })
+  notifyNavChanged()
+
+  // Both panes always get resynced to the new team, regardless of whether
+  // it's remembered split or single — `rememberedSplit` only controls
+  // *visibility* (d.nav.split, above). Leaving pane 1 unsynced whenever a
+  // team's remembered layout is single would let it keep the *previous*
+  // team's Loc; that stale state then resurfaces (mixing two teams across
+  // visible panes) the moment split is toggled back on. `force: true`
+  // (via openBothPanes) bypasses openInPane's same-module dedup guard, which
+  // exists for live user actions, not this automated per-pane restore —
+  // without it, the write for whichever pane runs second is silently
+  // dropped whenever the two remembered Locs happen to share a module kind.
+  const todayLoc = (): Loc => ({ teamId, ref: { kind: 'daily', date: todayIso() } })
+  const pane0Last = lastLocForTeam(store.doc.nav.panes[0], teamId)
+  const pane1Last = lastLocForTeam(store.doc.nav.panes[1], teamId)
+  pm.openBothPanes(pane0Last ?? todayLoc(), pane1Last ?? { teamId, ref: { kind: 'members' } }, rememberedSplit ? 1 : 0)
 }
 
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
