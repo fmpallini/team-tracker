@@ -228,6 +228,45 @@ test('toggleSplit resets focusedPane to 0 when un-splitting, so it never points 
   expect(store.doc.nav.focusedPane).toBe(0)
 })
 
+test('un-splitting while pane 1 is focused, then re-splitting without navigating, restores pane 0\'s original content instead of leaving both panes on pane 1\'s content', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB) // focuses pane 1
+
+  pm.toggleSplit() // "expand the right pane": unsplit, pane 0 pulls in pane 1's (B) content
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+
+  pm.toggleSplit() // back to split — previously this left both panes showing B
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locA)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB)
+})
+
+test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+  const locC: Loc = { teamId: 'T1', ref: { kind: 'risks' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB) // focuses pane 1
+
+  pm.toggleSplit() // unsplit: pane 0 pulls in B
+  pm.openInPane(0, locC) // user browses elsewhere while single-pane
+
+  pm.toggleSplit() // back to split — should keep C on the left, not resurrect stashed A
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB)
+})
+
 test('pane back/forward buttons are disabled exactly when navigateHistory would return null', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -477,10 +516,22 @@ test('buildModuleItems with no team includes the daily-notes entry and all 5 who
   const items = buildModuleItems(null, 'en-US')
   expect(items).toEqual([
     { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
-    { label: 'Stakeholders', ref: { kind: 'stakeholders' } },
-    { label: 'Members', ref: { kind: 'members' } },
-    { label: 'Action items', ref: { kind: 'actions' } },
-    { label: 'Milestones', ref: { kind: 'milestones' } },
-    { label: 'Risks', ref: { kind: 'risks' } },
+    { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
+    { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
+    { label: `${KIND_ICON.actions} Action items`, ref: { kind: 'actions' } },
+    { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
+    { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
   ])
+})
+
+test('buildModuleItems prefixes every entry with its module icon (daily, person, and each whole-board entry)', () => {
+  const team: Team = {
+    id: 'T1', name: 'Team 1', emoji: '🚀',
+    stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
+    members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
+  }
+  const items = buildModuleItems(team, 'en-US')
+
+  expect(items[0]!.label.startsWith(KIND_ICON.daily)).toBe(true)
+  expect(items).toContainEqual({ label: `${KIND_ICON.person} Carla`, ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
 })

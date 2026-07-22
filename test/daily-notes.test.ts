@@ -135,6 +135,19 @@ describe('renderDailyNotes', () => {
     expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-22' } } }])
   })
 
+  test('clicking the Today button opens today\'s date in the same pane via pm.openInPane', () => {
+    vi.setSystemTime(new Date('2026-07-15T12:00:00'))
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-01')
+    render(container, loc, store, pm, 1)
+
+    const todayBtn = container.querySelector<HTMLButtonElement>('.tt-daily-calendar-today-btn')
+    if (!todayBtn) throw new Error('.tt-daily-calendar-today-btn not found')
+    todayBtn.click()
+
+    expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-15' } } }])
+  })
+
   test('double render into the same container disposes the previous instance: no duplicate @ dropdowns', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
