@@ -45,7 +45,7 @@ test('clicking a row commits it and closes the palette', () => {
 
   const rows = document.querySelectorAll('.tt-palette-item')
   expect(rows.length).toBeGreaterThan(0)
-  const carlaRow = Array.from(rows).find((r) => r.textContent === 'Carla')!
+  const carlaRow = Array.from(rows).find((r) => r.textContent?.includes('Carla'))!
 
   carlaRow.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 

@@ -1,7 +1,7 @@
 // src/ui/panes.ts — central navigation hub; every module open goes through here.
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
-import type { Loc, ModuleRef, Team } from '../core/types'
+import type { Loc, ModuleRef, PaneState, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
 import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
@@ -63,17 +63,17 @@ const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' | 'miles
 ]
 
 export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
-  const items: ModuleItem[] = [{ label: t(locale, 'module_daily'), ref: { kind: 'daily', date: todayIso() } }]
+  const items: ModuleItem[] = [{ label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } }]
   if (team) {
     for (const group of ['stakeholders', 'members'] as const) {
       for (const person of team[group]) {
-        items.push({ label: person.name, ref: { kind: 'person', personId: person.id, group } })
+        items.push({ label: `${KIND_ICON.person} ${person.name}`, ref: { kind: 'person', personId: person.id, group } })
       }
     }
   }
   const cands = team ? teamRefCandidates(team) : null
   for (const { kind, key } of FIXED_MODULE_KEYS) {
-    items.push({ label: t(locale, key), ref: { kind } })
+    items.push({ label: `${KIND_ICON[kind]} ${t(locale, key)}`, ref: { kind } })
     if (!cands || kind === 'stakeholders' || kind === 'members') continue
     const list = { actions: cands.actionItems, milestones: cands.milestones, risks: cands.risks }[kind]
     for (const c of list) items.push({ label: `${KIND_ICON[kind]} ${c.title}`, ref: { kind, itemId: c.id } })
@@ -412,6 +412,19 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane(store.doc.nav.focusedPane, target)
   }
 
+  // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
+  // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
+  // put it back on the left instead of leaving pane 0 and pane 1 showing an
+  // identical duplicate. `store.updateNav` mutates `doc` in place rather than
+  // cloning (see store.ts), so `d.nav.panes[0] = d.nav.panes[1]` makes both
+  // slots the exact same object reference — meaning `pane0 === pane1` is a
+  // cheap, reliable "nothing navigated away since the pull" check: any real
+  // navigation (openInPane, stepPaneHistory, a team switch) always replaces
+  // pane 0 with a freshly constructed object, breaking the aliasing. Never
+  // persisted, like `spaceHideSplit` — losing it on reload is fine, it's a
+  // same-session UX nicety, not app state.
+  let unsplitStash: PaneState | null = null
+
   /**
    * Toggles against the *effective* (visible) split state, not the raw
    * persisted `nav.split` — when the responsive layout (responsive.ts) has
@@ -430,10 +443,20 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       // user can no longer see. If pane 1 was the focused (visible-to-the-
       // user) pane, pull its content into pane 0 first so closing split
       // keeps what the user was looking at instead of reverting to pane 0's
-      // stale content.
+      // stale content — stashing pane 0's own content first so re-splitting
+      // can restore it instead of leaving both panes showing pane 1's old
+      // content twice.
       if (!d.nav.split) {
-        if (d.nav.focusedPane === 1) d.nav.panes[0] = d.nav.panes[1]
+        if (d.nav.focusedPane === 1) {
+          unsplitStash = d.nav.panes[0]
+          d.nav.panes[0] = d.nav.panes[1]
+        } else {
+          unsplitStash = null
+        }
         d.nav.focusedPane = 0
+      } else if (unsplitStash && d.nav.panes[0] === d.nav.panes[1]) {
+        d.nav.panes[0] = unsplitStash
+        unsplitStash = null
       }
       // Remembers this choice per team so switching back to it later (see
       // main.ts's selectTeam) restores split/single view as last left it.

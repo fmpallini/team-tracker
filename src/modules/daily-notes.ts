@@ -3,7 +3,7 @@
 // ref-click navigation), src/ui/template-picker.ts (/ templates) and
 // src/ui/calendar.ts (day picker) into the pane system (src/ui/panes.ts).
 import type { Loc, Team } from '../core/types'
-import { t } from '../core/i18n'
+import { t, todayIso } from '../core/i18n'
 import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
 import { createEditor, type Editor } from '../ui/editor'
@@ -69,6 +69,21 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
           ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: pickedDate } })
         },
       })
+    )
+    calendarSlot.appendChild(
+      el(
+        'div',
+        { class: 'tt-daily-calendar-actions' },
+        el(
+          'button',
+          {
+            class: 'tt-btn tt-daily-calendar-today-btn',
+            type: 'button',
+            onclick: () => ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: todayIso() } }),
+          },
+          t(lc, 'date_picker_today_btn')
+        )
+      )
     )
   }
   rebuildCalendar()
