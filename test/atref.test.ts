@@ -5,7 +5,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager } from '../src/ui/panes'
 import type { Loc } from '../src/core/types'
-import { formatDate, t, type Locale } from '../src/core/i18n'
+import { formatDateWithWeekday, t, type Locale } from '../src/core/i18n'
 
 function makeHooks(): EditorHooks {
   return {
@@ -181,7 +181,7 @@ describe('attachAtAutocomplete', () => {
     const today = new Date()
     const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
     const rows = Array.from(document.querySelectorAll('.tt-atref-item')).map((r) => r.textContent)
-    expect(rows).toContain(`@hoje · ${formatDate(todayIso, 'pt-BR')}`)
+    expect(rows).toContain(`@hoje · ${formatDateWithWeekday(todayIso, 'pt-BR')}`)
   })
 
   test('hovering a row does not replace its DOM node (real-browser click requires mousedown/mouseup on the same element)', () => {
@@ -261,7 +261,7 @@ describe('attachAtAutocomplete', () => {
 
     const chip = editorEl.querySelector('a.ref') as HTMLAnchorElement
     expect(chip.dataset.ref).toBe('day:2026-07-02')
-    expect(chip.textContent).toBe('@02/07/2026')
+    expect(chip.textContent).toBe('@Qui, 02/07/2026')
     expect(picks).toEqual([{ kind: 'day', date: '2026-07-02' }])
   })
 
@@ -286,7 +286,7 @@ describe('attachAtAutocomplete', () => {
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     // No relativeWord -> plain "go to day" phrasing (same as any typed-exact-date match), which
     // doubles as a worked example of the dd/mm/yyyy format since the date itself is shown that way.
-    expect(hintRow.textContent).toBe(t('pt-BR', 'atref_goto_day', { date: formatDate(iso, 'pt-BR') }))
+    expect(hintRow.textContent).toBe(t('pt-BR', 'atref_goto_day', { date: formatDateWithWeekday(iso, 'pt-BR') }))
 
     hintRow.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
@@ -528,7 +528,7 @@ describe('makeRefLabelResolver', () => {
 
   test('resolves day to the formatted date in the store\'s current locale', () => {
     const resolve = makeRefLabelResolver(setupStore(), 'T1')
-    expect(resolve({ kind: 'day', date: '2026-07-02' })).toBe(formatDate('2026-07-02', 'pt-BR'))
+    expect(resolve({ kind: 'day', date: '2026-07-02' })).toBe(formatDateWithWeekday('2026-07-02', 'pt-BR'))
   })
 
   test('returns null for an id that no longer exists', () => {
