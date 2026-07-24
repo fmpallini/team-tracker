@@ -4,7 +4,7 @@
 // wires into EditorHooks.onRefClick.
 import { AT_TRIGGER_EVENT, type Editor } from './editor'
 import type { RefInfo, LabelResolver } from '../core/markdown'
-import { t, todayIso, formatDate, parseLocaleDate, type Locale } from '../core/i18n'
+import { t, todayIso, formatDateWithWeekday, parseLocaleDate, type Locale } from '../core/i18n'
 import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from '../core/search'
 import { REF_KINDS } from '../core/refs'
 import { addDaysIso } from '../core/date'
@@ -175,8 +175,8 @@ export function attachAtAutocomplete(editor: Editor, opts: {
         ? item.name
         : item.kind === 'day'
           ? item.relativeWord
-            ? `@${item.relativeWord} · ${formatDate(item.date, opts.locale)}`
-            : t(opts.locale, 'atref_goto_day', { date: formatDate(item.date, opts.locale) })
+            ? `@${item.relativeWord} · ${formatDateWithWeekday(item.date, opts.locale)}`
+            : t(opts.locale, 'atref_goto_day', { date: formatDateWithWeekday(item.date, opts.locale) })
           : item.title
       // Hover/arrow selection repaints in place via paintSelection — see
       // src/ui/select-list.ts for the rebuild-on-hover Chrome loop this
@@ -251,7 +251,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     const label = item.kind === 'person'
       ? item.name
       : item.kind === 'day'
-        ? formatDate(item.date, opts.locale)
+        ? formatDateWithWeekday(item.date, opts.locale)
         : item.title
     const safeLabel = label.replace(/[[\]()]/g, '')
     const chip = document.createElement('a')
@@ -391,7 +391,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
  */
 export function makeRefLabelResolver(store: Store, teamId: string): LabelResolver {
   return (target) => {
-    if (target.kind === 'day') return formatDate(target.date, store.doc.prefs.locale)
+    if (target.kind === 'day') return formatDateWithWeekday(target.date, store.doc.prefs.locale)
     const team = store.doc.teams.find((tm) => tm.id === teamId)
     if (!team) return null
     switch (target.kind) {

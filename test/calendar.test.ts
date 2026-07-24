@@ -2,7 +2,7 @@ import { createCalendar, type CalendarMarks } from '../src/ui/calendar'
 import type { Locale } from '../src/core/i18n'
 
 function noMarks(): CalendarMarks {
-  return { hasNote: () => false, milestones: () => [] }
+  return { hasNote: () => false, milestones: () => [], actionItems: () => [] }
 }
 
 function dayButtons(root: HTMLElement): HTMLButtonElement[] {
@@ -64,7 +64,7 @@ describe('createCalendar today ring', () => {
 
 describe('createCalendar marks', () => {
   test('hasNote(day) tints that day and no other', () => {
-    const marks: CalendarMarks = { hasNote: (d) => d === '2026-07-10', milestones: () => [] }
+    const marks: CalendarMarks = { hasNote: (d) => d === '2026-07-10', milestones: () => [], actionItems: () => [] }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
     expect(dayButtonFor(root, 10).classList.contains('tt-calendar-day-has-note')).toBe(true)
@@ -75,6 +75,7 @@ describe('createCalendar marks', () => {
     const marks: CalendarMarks = {
       hasNote: () => false,
       milestones: (d) => (d === '2026-07-20' ? ['Launch', 'Freeze'] : []),
+      actionItems: () => [],
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
@@ -83,6 +84,21 @@ describe('createCalendar marks', () => {
     expect(flag!.textContent).toBe('🚩')
     expect(flag!.getAttribute('title')).toBe('Launch, Freeze')
     expect(dayButtonFor(root, 21).querySelector('.tt-calendar-flag')).toBeNull()
+  })
+
+  test('actionItems(day) renders a ✅ check with a title of the joined summaries', () => {
+    const marks: CalendarMarks = {
+      hasNote: () => false,
+      milestones: () => [],
+      actionItems: (d) => (d === '2026-07-20' ? ['Ship report', 'Review budget'] : []),
+    }
+    const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
+
+    const check = dayButtonFor(root, 20).querySelector('.tt-calendar-check')
+    expect(check).not.toBeNull()
+    expect(check!.textContent).toBe('✅')
+    expect(check!.getAttribute('title')).toBe('Ship report, Review budget')
+    expect(dayButtonFor(root, 21).querySelector('.tt-calendar-check')).toBeNull()
   })
 })
 

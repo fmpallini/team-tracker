@@ -118,20 +118,24 @@ body { background: var(--bg); color: var(--fg); }
 /* App shell layout */
 .tt-shell { flex: 1; min-height: 0; display: grid; grid-template-rows: auto 1fr; grid-template-columns: 1fr; }
 
+/* Grid, not flex: a plain flex row can't center headerCenter between
+   headerLeft and headerRight (headerLeft's flex-grow would just push it
+   flush against headerRight instead). Two equal 1fr side columns make
+   headerCenter sit at the header's true horizontal midpoint regardless of
+   how much either side's content actually uses. */
 .tt-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
   gap: .5rem; padding: .5rem .75rem;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
 .tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
-/* headerRight (save pill, fullscreen/help/close/settings buttons) must
-   never shrink or get pushed off — it's fixed-size and absorbs none of the
-   squeeze. headerLeft (app name + search bar) takes 100% of what's left and
-   shrinks into it; min-width: 0 overrides flexbox's default min-width: auto,
-   which otherwise refuses to shrink a flex item below its content's
-   intrinsic width and forces the whole header to overflow instead. */
-.tt-header-left { flex: 1 1 auto; min-width: 0; }
-.tt-header-right { flex: none; }
+/* headerLeft (app name + search bar) takes its whole 1fr column and shrinks
+   into it; min-width: 0 overrides the grid item default of min-width: auto,
+   which otherwise refuses to shrink below its content's intrinsic width and
+   forces the whole header to overflow instead. */
+.tt-header-left { min-width: 0; }
+.tt-header-right { justify-self: end; }
+.tt-header-center { justify-self: center; min-width: 0; }
 
 /* Sidebar collapse toggle: lives in the header (prepended before the app
    name button, see sidebar.ts) rather than inside the sidebar, so it stays
@@ -145,6 +149,38 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-sidebar-toggle-icon { display: inline-flex; }
 .tt-sidebar-toggle-icon svg { display: block; }
+
+/* Active-team indicator: only shown (via .visible) when the sidebar's own
+   team list — the normal place to see which team is active — is collapsed.
+   Pill-shaped (same border/radius language as the save-state pill) so it
+   reads as a chip anchored to the header, not a name floating loose in the
+   middle of the bar. */
+.tt-header-team-indicator {
+  display: none; align-items: center;
+  font-family: var(--font-display); font-weight: 600; font-size: .85rem;
+  padding: .3rem .7rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.tt-header-team-indicator.visible { display: inline-flex; }
+
+/* Space-constrained override (src/ui/responsive.ts, below
+   HEADER_COMPACT_BELOW_PX): hides every non-mandatory header element at
+   once — wins over .tt-header-team-indicator.visible above regardless of
+   sidebar collapse state. Only the close-file (🔒) and settings (⚙) buttons
+   (both untouched here) are guaranteed room — closing the file and reaching
+   prefs must always be reachable; everything else has a keyboard equivalent
+   (Ctrl+K/Ctrl+F for the app name/search, Ctrl+S still saves with the pill
+   hidden) or simply isn't essential moment-to-moment. */
+.tt-header.tt-header-compact .tt-sidebar-toggle,
+.tt-header.tt-header-compact .tt-app-name,
+.tt-header.tt-header-compact .tt-search-wrap,
+.tt-header.tt-header-compact .tt-header-team-indicator,
+.tt-header.tt-header-compact .tt-save-pill,
+.tt-header.tt-header-compact .tt-btn-fullscreen,
+.tt-header.tt-header-compact .tt-btn-help {
+  display: none;
+}
 
 /* Fixed to (sidebar width − header's own left padding − the gap before the
    search bar − the collapse toggle's own width and its gap) so the search
@@ -213,6 +249,9 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--danger) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
+.tt-save-pill-clickable { cursor: pointer; }
+.tt-save-pill-clickable:hover { filter: brightness(0.95); }
+[data-theme="dark"] .tt-save-pill-clickable:hover { filter: brightness(1.15); }
 
 @keyframes tt-save-pill-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .tt-save-pill-spin { animation: tt-save-pill-spin 1.1s linear infinite; }
@@ -421,7 +460,15 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Header search */
 .tt-search-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
-.tt-search-input { width: 100%; max-width: 360px; min-width: 60px; height: 2.25rem; box-sizing: border-box; }
+.tt-search-input-box { position: relative; width: 100%; max-width: 360px; min-width: 60px; }
+.tt-search-input { width: 100%; height: 2.25rem; box-sizing: border-box; padding-right: 1.8rem; }
+.tt-search-clear-btn {
+  display: none; position: absolute; right: .35rem; top: 0; height: 2.25rem; width: 1.5rem;
+  align-items: center; justify-content: center; border: none; background: transparent;
+  color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; border-radius: 4px;
+}
+.tt-search-clear-btn.visible { display: flex; }
+.tt-search-clear-btn:hover { color: var(--fg); background: rgba(var(--accent-rgb), .12); }
 .tt-search-dropdown {
   display: none; position: absolute; top: 100%; left: 0; margin-top: .25rem; z-index: 1200;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
@@ -542,7 +589,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-calendar-col.tt-daily-collapsed .tt-daily-calendar-slot { display: none; }
 .tt-daily-calendar-toggle { align-self: flex-start; margin: .4rem; }
 .tt-daily-calendar-slot { padding: 0 .5rem .5rem; }
-.tt-daily-calendar-actions { display: flex; padding: 0 .1rem; }
+.tt-daily-calendar-actions { display: flex; padding: 0 .1rem; margin-top: .5rem; }
 .tt-daily-calendar-today-btn { flex: 1; font-size: .8rem; padding: .3rem .4rem; }
 .tt-daily-editor-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tt-daily-editor-col .tt-editor { flex: 1; }
@@ -579,6 +626,7 @@ body { background: var(--bg); color: var(--fg); }
   box-shadow: 0 0 0 2px var(--fg);
 }
 .tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
+.tt-calendar-check { position: absolute; bottom: -2px; right: -2px; font-size: .6rem; line-height: 1; }
 
 /* People tree module (stakeholders / members) — org-chart layout */
 .tt-people { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
@@ -709,7 +757,7 @@ body { background: var(--bg); color: var(--fg); }
 
 .tt-kanban-form { display: flex; flex-direction: column; gap: .65rem; }
 .tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
-.tt-kanban-form .editor { min-height: 120px; max-height: 280px; overflow-y: auto; }
+.tt-kanban-form .editor { min-height: 240px; max-height: 55vh; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
@@ -853,6 +901,10 @@ select option { background: var(--bg); color: var(--fg); }
    modal without touching every other showModal() caller. Widened past the
    generic modal's 480px cap to comfortably fit Templates' widest row. */
 .tt-modal-dialog:has(.tt-prefs-dialog) { width: min(640px, 90vw); max-width: min(640px, 90vw); }
+/* Action item edit modal: widened past the generic 480px cap so the notes
+   editor (bumped to min-height 240px above) has real room to read/write in,
+   not a cramped strip inside an otherwise-narrow dialog. */
+.tt-modal-dialog:has(.tt-kanban-form) { width: min(720px, 90vw); max-width: min(720px, 90vw); }
 .tt-prefs-dialog { display: flex; flex-direction: column; gap: 1rem; }
 .tt-prefs-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); }
 .tt-prefs-tab-btn { border: none; border-bottom: 2px solid transparent; border-radius: 0; }

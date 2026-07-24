@@ -180,6 +180,7 @@ const pt = {
   search_placeholder: '🔍 Buscar…',
   search_all_teams: 'Todos os times',
   search_no_results: 'Nenhum resultado',
+  search_clear_title: 'Limpar busca',
   atref_goto_day: 'Ir para notas de {date}',
   atref_group_people: 'Pessoas',
   atref_group_dates: 'Datas',
@@ -568,6 +569,7 @@ const en: Record<MsgKey, string> = {
   search_placeholder: '🔍 Search…',
   search_all_teams: 'All teams',
   search_no_results: 'No results',
+  search_clear_title: 'Clear search',
   atref_goto_day: 'Go to day {date}',
   atref_group_people: 'People',
   atref_group_dates: 'Dates',
@@ -797,6 +799,13 @@ export function formatDate(iso: string, locale: Locale): string {
   const [y, m, d] = iso.split('-')
   if (locale === 'pt-BR') return `${d}/${m}/${y}`
   return `${m}/${d}/${y}`
+}
+
+/** formatDate() prefixed with the 3-letter weekday abbreviation (e.g. "Wed, 07/24/2026") — used for `@day` ref chips, where recalling the weekday at a glance matters more than in a plain due-date field. */
+export function formatDateWithWeekday(iso: string, locale: Locale): string {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number]
+  const dow = new Date(y, m - 1, d).getDay()
+  return `${t(locale, `calendar_weekday_${dow}` as MsgKey)}, ${formatDate(iso, locale)}`
 }
 
 export function parseLocaleDate(s: string, locale: Locale): string | null {

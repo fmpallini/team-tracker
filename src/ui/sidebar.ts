@@ -125,6 +125,22 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     collapseIcon
   )
 
+  // Collapsing the sidebar hides the team list's own emoji+name — the only
+  // place that showed which team is active — so the header grows a matching
+  // indicator (shell's headerCenter slot) that appears exactly when the
+  // sidebar is hidden. Driven from renderCollapseState() since that's the
+  // one choke point every path that can change "is the sidebar visible"
+  // already runs through (manual toggle, responsive auto-hide, and the
+  // generic render() below).
+  const headerTeamIndicator = el('span', { class: 'tt-header-team-indicator' })
+
+  function renderHeaderTeamIndicator(): void {
+    const collapsed = effectivelyCollapsed()
+    const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
+    headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
+    if (team) headerTeamIndicator.textContent = `${team.emoji} ${team.name}`
+  }
+
   function renderCollapseState(): void {
     const collapsed = effectivelyCollapsed()
     shell.sidebar.dataset.collapsed = String(collapsed)
@@ -132,6 +148,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       ? '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/></svg>'
       : '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/><rect x="1.5" y="2.5" width="4.75" height="11" rx="1" fill="currentColor" opacity=".4" stroke="none"/></svg>'
     collapseBtn.title = t(locale(), collapsed ? 'sidebar_expand_title' : 'sidebar_collapse_title')
+    renderHeaderTeamIndicator()
   }
 
   function setSpaceConstrained(hidden: boolean): void {
@@ -236,6 +253,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // Lives in the header, not the sidebar itself, so collapsing the sidebar
   // frees its full width instead of reserving room for the toggle.
   shell.headerLeft.prepend(collapseBtn)
+  shell.headerCenter.appendChild(headerTeamIndicator)
   renderCollapseState()
 
   function clearDragOverClasses(): void {

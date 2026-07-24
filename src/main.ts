@@ -461,6 +461,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     })
   }
   shell.onCloseFile(closeFile)
+  shell.onSaveRequest(() => void saveCtl.saveNow({ explicit: true }))
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was
@@ -484,6 +485,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     setupResponsiveLayout(shell.root, {
       setSplitSpaceHidden: (hidden) => pm.setSplitSpaceConstrained(hidden),
       setSidebarSpaceHidden: (hidden) => sidebarHandle.setSpaceConstrained(hidden),
+      setHeaderCompactSpaceHidden: (hidden) => shell.setHeaderCompactSpaceHidden(hidden),
     })
   )
 

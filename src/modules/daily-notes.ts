@@ -54,6 +54,9 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
       milestones(d: string): string[] {
         return (findTeam(ctx, teamId)?.milestones ?? []).filter((m) => m.date === d).map((m) => m.title)
       },
+      actionItems(d: string): string[] {
+        return (findTeam(ctx, teamId)?.actionItems ?? []).filter((a) => a.dueDate === d).map((a) => a.summary)
+      },
     }
   }
 

@@ -13,7 +13,7 @@ import { t, formatDate, parseLocaleDate, todayIso, type Locale } from '../core/i
 import { createCalendar, type CalendarMarks } from './calendar'
 import { el, bindOutsideDismiss } from './dom'
 
-const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [] }
+const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [] }
 
 /** Strips everything but digits, capped at 8 (2+2+4 = DDMMYYYY/MMDDYYYY). */
 export function digitsOnly(s: string): string {
