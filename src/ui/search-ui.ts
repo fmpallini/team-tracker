@@ -81,6 +81,27 @@ export function mountSearch(
   const checkboxLabelText = el('span', {}, t(localeNow(), 'search_all_teams'))
   const checkboxLabel = el('label', { class: 'tt-search-all-teams' }, checkbox, ' ', checkboxLabelText)
 
+  const clearBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'tt-search-clear-btn',
+      title: t(localeNow(), 'search_clear_title'),
+      onclick: () => {
+        input.value = ''
+        updateClearBtn()
+        results = []
+        closeDropdown()
+        input.focus()
+      },
+    },
+    '×'
+  )
+  function updateClearBtn(): void {
+    clearBtn.classList.toggle('visible', input.value.length > 0)
+  }
+  updateClearBtn()
+
   // Header-adjacent text captured at mount time would otherwise stay stale
   // after a locale switch (see prefs.ts's LOCALE_CHANGED_EVENT comment) —
   // refresh it live instead of waiting for the next remount.
@@ -88,11 +109,13 @@ export function mountSearch(
     const lc = localeNow()
     input.placeholder = t(lc, 'search_placeholder')
     checkboxLabelText.textContent = t(lc, 'search_all_teams')
+    clearBtn.title = t(lc, 'search_clear_title')
     if (open) renderList()
   })
   const listEl = el('div', { class: 'tt-search-list' })
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
-  const wrap = el('div', { class: 'tt-search-wrap' }, input, dropdown)
+  const inputBox = el('div', { class: 'tt-search-input-box' }, input, clearBtn)
+  const wrap = el('div', { class: 'tt-search-wrap' }, inputBox, dropdown)
   shell.headerLeft.appendChild(wrap)
 
   function currentTerms(): string[] {
@@ -185,6 +208,7 @@ export function mountSearch(
   })
 
   input.addEventListener('input', () => {
+    updateClearBtn()
     if (debounceTimer !== null) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(runSearch, DEBOUNCE_MS)
   })

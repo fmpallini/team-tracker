@@ -13,6 +13,8 @@ export interface CalendarMarks {
   hasNote(dateIso: string): boolean
   /** Titles of milestones landing on this day; empty array = no milestone. */
   milestones(dateIso: string): string[]
+  /** Summaries of action items due this day; empty array = none due. */
+  actionItems(dateIso: string): string[]
 }
 
 function parseIso(iso: string): { y: number; m: number; d: number } {
@@ -99,6 +101,11 @@ export function createCalendar(opts: {
       const titles = opts.marks.milestones(iso)
       if (titles.length > 0) {
         dayBtn.appendChild(el('span', { class: 'tt-calendar-flag', title: titles.join(', ') }, '🚩'))
+      }
+
+      const dueSummaries = opts.marks.actionItems(iso)
+      if (dueSummaries.length > 0) {
+        dayBtn.appendChild(el('span', { class: 'tt-calendar-check', title: dueSummaries.join(', ') }, '✅'))
       }
 
       grid.appendChild(dayBtn)

@@ -43,6 +43,28 @@ describe('header title', () => {
   })
 })
 
+describe('header compact mode', () => {
+  function header(shell: Shell): HTMLElement {
+    return shell.root.querySelector('.tt-header') as HTMLElement
+  }
+
+  test('setHeaderCompactSpaceHidden toggles a single class on the header, independent of any content already inside', () => {
+    const shell = setup()
+    const indicator = document.createElement('span')
+    indicator.className = 'visible'
+    shell.headerCenter.appendChild(indicator)
+
+    expect(header(shell).classList.contains('tt-header-compact')).toBe(false)
+    shell.setHeaderCompactSpaceHidden(true)
+    expect(header(shell).classList.contains('tt-header-compact')).toBe(true)
+    // content already inside headerCenter is untouched — hiding is a pure CSS override
+    expect(indicator.classList.contains('visible')).toBe(true)
+
+    shell.setHeaderCompactSpaceHidden(false)
+    expect(header(shell).classList.contains('tt-header-compact')).toBe(false)
+  })
+})
+
 describe('save indicator pill', () => {
   function pillText(shell: Shell): string {
     return shell.root.querySelector('.tt-save-pill-text')!.textContent!
@@ -78,6 +100,41 @@ describe('save indicator pill', () => {
     expect(shell.root.querySelector('.tt-save-pill-icon')!.classList.contains('tt-save-pill-spin')).toBe(true)
     shell.setSaveState('saved')
     expect(shell.root.querySelector('.tt-save-pill-icon')!.classList.contains('tt-save-pill-spin')).toBe(false)
+  })
+
+  test('clicking the pill fires onSaveRequest only in dirty/error states, not saved/saving', () => {
+    const shell = setup()
+    const cb = vi.fn()
+    shell.onSaveRequest(cb)
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('saved')
+    pill.click()
+    shell.setSaveState('saving')
+    pill.click()
+    expect(cb).not.toHaveBeenCalled()
+
+    shell.setSaveState('dirty')
+    pill.click()
+    expect(cb).toHaveBeenCalledOnce()
+
+    shell.setSaveState('error')
+    pill.click()
+    expect(cb).toHaveBeenCalledTimes(2)
+  })
+
+  test('the pill is only styled clickable (cursor) in dirty/error states', () => {
+    const shell = setup()
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('saved')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+    shell.setSaveState('dirty')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+    shell.setSaveState('saving')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+    shell.setSaveState('error')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
   })
 
   test('createShell stamps an initial timestamp, so dirty shows it immediately', () => {

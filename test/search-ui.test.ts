@@ -107,6 +107,23 @@ test('clearing the query closes the dropdown', () => {
   expect(isOpen()).toBe(false)
 })
 
+test('clear button appears only with typed text and resets the input + dropdown on click', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const { input } = mount(store, fakePM())
+  const clearBtn = document.querySelector('.tt-search-clear-btn') as HTMLButtonElement
+  expect(clearBtn.classList.contains('visible')).toBe(false)
+
+  type(input, 'alpha')
+  vi.advanceTimersByTime(200)
+  expect(clearBtn.classList.contains('visible')).toBe(true)
+  expect(isOpen()).toBe(true)
+
+  clearBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  expect(input.value).toBe('')
+  expect(clearBtn.classList.contains('visible')).toBe(false)
+  expect(isOpen()).toBe(false)
+})
+
 test('renders module icons per kind, in candidate order, and toggles teamName with the all-teams checkbox', () => {
   const team: Team = {
     id: 'T1', name: 'Team One', emoji: '🚀',

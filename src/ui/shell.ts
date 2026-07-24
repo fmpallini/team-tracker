@@ -9,6 +9,8 @@ export type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 export interface Shell {
   root: HTMLElement
   headerLeft: HTMLElement
+  /** Center header slot, between the search bar and the right-side buttons — empty/unused by the shell itself; sidebar.ts fills it with the active team's name when the team sidebar is collapsed. */
+  headerCenter: HTMLElement
   headerRight: HTMLElement
   sidebar: HTMLElement
   panesRoot: HTMLElement
@@ -32,6 +34,21 @@ export interface Shell {
   onAppNameClick(cb: () => void): void
   /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Alt+L). */
   onCloseFile(cb: () => void): void
+  /** Registers the click handler for the save-state pill — clicking it while a save is pending ('dirty'/'error') triggers an explicit save, same as Ctrl+S. */
+  onSaveRequest(cb: () => void): void
+  /**
+   * Driven by the responsive-layout ResizeObserver (src/ui/responsive.ts):
+   * below a width threshold, force-hides every non-mandatory header element
+   * at once — sidebar collapse toggle, app name, search bar, the active-team
+   * indicator (whatever sidebar.ts put in headerCenter), the save-state pill,
+   * fullscreen, and help — leaving only the close-file (🔒) and settings (⚙)
+   * buttons. A single threshold covering the whole optional set, rather than
+   * one per element: hiding them one at a time just relocates the point
+   * where the two fixed/floored clusters either side of them collide
+   * instead of removing it, since close-file+settings is the only content
+   * that actually needs guaranteed room.
+   */
+  setHeaderCompactSpaceHidden(hidden: boolean): void
 }
 
 const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
@@ -65,6 +82,7 @@ export function createShell(locale: Locale): Shell {
   const mq = window.matchMedia('(prefers-color-scheme: dark)')
 
   const headerLeft = el('div', { class: 'tt-header-left' })
+  const headerCenter = el('div', { class: 'tt-header-center' })
   const headerRight = el('div', { class: 'tt-header-right' })
 
   // Appended first so it renders to the left of the search bar, which
@@ -85,7 +103,18 @@ export function createShell(locale: Locale): Shell {
   savePillIcon.innerHTML =
     '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75V8.25L10.25 9.75"/></svg>'
   const savePillText = el('span', { class: 'tt-save-pill-text' })
-  const saveIndicator = el('span', { class: 'tt-save-pill' }, savePillIcon, savePillText)
+  let saveRequestHandler: (() => void) | null = null
+  const saveIndicator = el(
+    'span',
+    {
+      class: 'tt-save-pill',
+      onclick: () => {
+        if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
+      },
+    },
+    savePillIcon,
+    savePillText
+  )
 
   const fullscreenBtn = el(
     'button',
@@ -113,7 +142,7 @@ export function createShell(locale: Locale): Shell {
 
   headerRight.append(saveIndicator, fullscreenBtn, helpBtn, closeFileBtn, settingsBtn)
 
-  const header = el('header', { class: 'tt-header' }, headerLeft, headerRight)
+  const header = el('header', { class: 'tt-header' }, headerLeft, headerCenter, headerRight)
   const sidebar = el('aside', { class: 'tt-sidebar' })
   const panesRoot = el('div', { class: 'tt-panes' })
   const body = el('div', { class: 'tt-body' }, sidebar, panesRoot)
@@ -156,6 +185,7 @@ export function createShell(locale: Locale): Shell {
     }
     saveIndicator.title = title
     saveIndicator.dataset.state = currentState
+    saveIndicator.classList.toggle('tt-save-pill-clickable', currentState === 'dirty' || currentState === 'error')
   }
 
   function setSaveState(state: SaveState): void {
@@ -212,7 +242,15 @@ export function createShell(locale: Locale): Shell {
     closeFileHandler = cb
   }
 
+  function onSaveRequest(cb: () => void): void {
+    saveRequestHandler = cb
+  }
+
+  function setHeaderCompactSpaceHidden(hidden: boolean): void {
+    header.classList.toggle('tt-header-compact', hidden)
+  }
+
   setSaveState('saved')
 
-  return { root, headerLeft, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, onCloseFile }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, onCloseFile, onSaveRequest, setHeaderCompactSpaceHidden }
 }

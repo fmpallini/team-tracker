@@ -25,14 +25,18 @@ class FakeResizeObserver {
 function fakeHooks(): ResponsiveHooks & {
   splitCalls: boolean[]
   sidebarCalls: boolean[]
+  headerCompactCalls: boolean[]
 } {
   const splitCalls: boolean[] = []
   const sidebarCalls: boolean[] = []
+  const headerCompactCalls: boolean[] = []
   return {
     splitCalls,
     sidebarCalls,
+    headerCompactCalls,
     setSplitSpaceHidden: (hidden) => splitCalls.push(hidden),
     setSidebarSpaceHidden: (hidden) => sidebarCalls.push(hidden),
+    setHeaderCompactSpaceHidden: (hidden) => headerCompactCalls.push(hidden),
   }
 }
 
@@ -61,6 +65,7 @@ test('no-ops gracefully when ResizeObserver is unavailable (e.g. jsdom without a
 
   expect(hooks.splitCalls).toEqual([])
   expect(hooks.sidebarCalls).toEqual([])
+  expect(hooks.headerCompactCalls).toEqual([])
 })
 
 describe('with ResizeObserver available', () => {
@@ -68,42 +73,57 @@ describe('with ResizeObserver available', () => {
     ;(globalThis as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver
   })
 
-  test('fires setSplitSpaceHidden(true) crossing below 900px, leaves sidebar hook untouched above 650px', () => {
+  test('fires setSplitSpaceHidden(true) crossing below 900px, leaves narrower thresholds untouched above their own', () => {
     const hooks = fakeHooks()
     setupResponsiveLayout(document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
-    ro.fire(1200) // wide: neither threshold crossed relative to initial state (both false)
+    ro.fire(1200) // wide: no threshold crossed relative to initial state (all false)
     expect(hooks.splitCalls).toEqual([])
     expect(hooks.sidebarCalls).toEqual([])
+    expect(hooks.headerCompactCalls).toEqual([])
 
-    ro.fire(800) // crosses split threshold (900), not sidebar (650)
+    ro.fire(850) // crosses split (900), not headerCompact (820) or sidebar (650)
     expect(hooks.splitCalls).toEqual([true])
+    expect(hooks.headerCompactCalls).toEqual([])
     expect(hooks.sidebarCalls).toEqual([])
   })
 
-  test('fires both hooks once each crossing below 650px, edge-triggered (repeat widths do not refire)', () => {
+  test('fires headerCompact alone crossing below 820px, above the sidebar threshold (650)', () => {
     const hooks = fakeHooks()
     setupResponsiveLayout(document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
-    ro.fire(500) // below both thresholds
+    ro.fire(700) // below headerCompact (820), still above sidebar (650)
+    expect(hooks.headerCompactCalls).toEqual([true])
+    expect(hooks.sidebarCalls).toEqual([])
+  })
+
+  test('fires all three hooks once each crossing below 650px, edge-triggered (repeat widths do not refire)', () => {
+    const hooks = fakeHooks()
+    setupResponsiveLayout(document.createElement('div'), hooks)
+    const ro = FakeResizeObserver.instances[0]!
+
+    ro.fire(500) // below all three thresholds
     expect(hooks.splitCalls).toEqual([true])
+    expect(hooks.headerCompactCalls).toEqual([true])
     expect(hooks.sidebarCalls).toEqual([true])
 
-    ro.fire(400) // still below both — no repeat firing
+    ro.fire(400) // still below all — no repeat firing
     expect(hooks.splitCalls).toEqual([true])
+    expect(hooks.headerCompactCalls).toEqual([true])
     expect(hooks.sidebarCalls).toEqual([true])
   })
 
-  test('widening back past a threshold fires the hook again with false', () => {
+  test('widening back past every threshold fires each hook again with false', () => {
     const hooks = fakeHooks()
     setupResponsiveLayout(document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
-    ro.fire(500) // hides both
-    ro.fire(1000) // widens past both thresholds again
+    ro.fire(500) // hides all three
+    ro.fire(1000) // widens past all three thresholds again
     expect(hooks.splitCalls).toEqual([true, false])
+    expect(hooks.headerCompactCalls).toEqual([true, false])
     expect(hooks.sidebarCalls).toEqual([true, false])
   })
 

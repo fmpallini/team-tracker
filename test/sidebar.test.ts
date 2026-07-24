@@ -594,3 +594,64 @@ describe('sidebar collapse', () => {
     expect(shell.sidebar.dataset.collapsed).toBe('true') // stays collapsed — that was a manual choice
   })
 })
+
+describe('header team indicator (shown only while the sidebar is collapsed)', () => {
+  function indicator(): HTMLElement {
+    return document.querySelector('.tt-header-team-indicator') as HTMLElement
+  }
+
+  test('lives in headerCenter and stays hidden while the sidebar is expanded', () => {
+    const { shell, store } = setup()
+    addTeam(store, 'Team One', '🚀')
+    store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
+    notifyNavChanged()
+
+    expect(shell.headerCenter.contains(indicator())).toBe(true)
+    expect(indicator().classList.contains('visible')).toBe(false)
+  })
+
+  test('shows the active team\'s emoji + name once the sidebar collapses', () => {
+    const { store } = setup()
+    addTeam(store, 'Team One', '🚀')
+    store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
+    notifyNavChanged()
+
+    toggleBtn().click() // manual collapse
+
+    expect(indicator().classList.contains('visible')).toBe(true)
+    expect(indicator().textContent).toBe('🚀 Team One')
+  })
+
+  test('also shows on a space-constrained (responsive) hide, and hides again once expanded', () => {
+    const { store, sidebar } = setup()
+    addTeam(store, 'Team One', '🚀')
+    store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
+    notifyNavChanged()
+
+    sidebar.setSpaceConstrained(true)
+    expect(indicator().classList.contains('visible')).toBe(true)
+
+    sidebar.setSpaceConstrained(false)
+    expect(indicator().classList.contains('visible')).toBe(false)
+  })
+
+  test('updates when the active team changes while collapsed', () => {
+    const { store } = setup()
+    addTeam(store, 'Team One', '🚀')
+    addTeam(store, 'Team Two', '🎯')
+    store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
+    notifyNavChanged()
+    toggleBtn().click() // manual collapse
+
+    expect(indicator().textContent).toBe('🚀 Team One')
+
+    store.updateNav((d) => { d.nav.activeTeamId = 'Team Two' })
+    notifyNavChanged()
+
+    expect(indicator().textContent).toBe('🎯 Team Two')
+  })
+
+  function toggleBtn(): HTMLButtonElement {
+    return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
+  }
+})
