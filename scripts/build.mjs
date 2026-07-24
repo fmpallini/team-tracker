@@ -31,8 +31,12 @@ const withPwaHead = (html) =>
   )
 
 mkdirSync('dist/pwa', { recursive: true })
-writeFileSync('dist/app.html', page(await bundle(false)))
-writeFileSync('dist/pwa/index.html', withPwaHead(page(await bundle(true))))
+// The two variants only differ in the __PWA__ define, so bundle them
+// concurrently rather than back-to-back — esbuild's service process handles
+// both jobs in parallel instead of one waiting on the other.
+const [appJs, pwaJs] = await Promise.all([bundle(false), bundle(true)])
+writeFileSync('dist/app.html', page(appJs))
+writeFileSync('dist/pwa/index.html', withPwaHead(page(pwaJs)))
 
 // __APP_ORIGIN__ is the site origin, not pkg.homepage's /team-tracker/ subpath:
 // the manifest's top-level "id" ("/") resolves against the manifest URL as an
