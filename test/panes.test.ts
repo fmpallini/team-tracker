@@ -267,6 +267,34 @@ test('un-splitting while pane 1 is focused, navigating in the now-single pane, t
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB)
 })
 
+test('un-splitting while pane 1 is focused, then stepping history via navigateFocusedHistory (the Alt+Arrow hotkey path, which bypasses openInPane), then re-splitting keeps the stepped-to entry instead of resurrecting the stash', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB1: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+  const locB2: Loc = { teamId: 'T1', ref: { kind: 'risks' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB1)
+  pm.openInPane(1, locB2) // pane 1 history: [locB1, locB2], index 1, current locB2; focuses pane 1
+
+  pm.toggleSplit() // unsplit: pane 0 pulls in pane 1's (locB2) content
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB2)
+
+  // Real navigation via the Alt+Arrow hotkey path — stepPaneHistory is
+  // called directly, not through openInPane, so this exercises the one
+  // invalidation site that can't reach into createPaneManager's closure
+  // directly (see unsplitStashInvalidators in src/ui/panes.ts).
+  navigateFocusedHistory(pm, store, -1)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB1)
+
+  pm.toggleSplit() // back to split — should keep locB1 (the stepped-to entry), not resurrect stashed A
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB1)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB2)
+})
+
 test('pane back/forward buttons are disabled exactly when navigateHistory would return null', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

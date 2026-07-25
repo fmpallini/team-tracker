@@ -148,6 +148,21 @@ function otherPaneIdx(idx: 0 | 1): 0 | 1 {
 }
 
 /**
+ * Per-store invalidation hook for `unsplitStashValid` (declared inside
+ * `createPaneManager`, see `toggleSplit` below). `stepPaneHistory` just below
+ * is intentionally a free function, not a `PaneManager` method — see its own
+ * docstring — so main.ts's global Alt+ArrowLeft/Right hotkey
+ * (`navigateFocusedHistory`) can drive pane-0 history directly, without
+ * reaching into `createPaneManager`'s closure. That means it's also the one
+ * real-navigation site that can't set the closure-local `unsplitStashValid`
+ * flag directly. A `WeakMap` keyed by the `Store` instance gives it a narrow
+ * way back in — one entry per `PaneManager`, replaced (not accumulated) if a
+ * store ever gets a new one, and GC'd along with the store — without
+ * widening the `PaneManager` interface just for this.
+ */
+const unsplitStashInvalidators = new WeakMap<Store, () => void>()
+
+/**
  * Applies one history step (back/forward) to pane `idx`, skipping over any
  * entry that would conflict with the other pane's current Loc (same rule
  * `navigateHistory` itself enforces). Returns whether the nav state changed.
@@ -165,6 +180,8 @@ export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean 
     d.nav.panes[idx] = result
     d.nav.focusedPane = idx
   })
+  // Real navigation into pane 0 — see unsplitStashInvalidators above.
+  if (idx === 0) unsplitStashInvalidators.get(store)?.()
   return true
 }
 
@@ -383,6 +400,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[idx] = result.pane
       d.nav.focusedPane = idx
     })
+    // Real navigation into pane 0 — see unsplitStash/unsplitStashValid below.
+    if (idx === 0) unsplitStashValid = false
     renderAll()
   }
 
@@ -399,6 +418,9 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[1] = result1.pane
       d.nav.focusedPane = focusedPane
     })
+    // Always a real (programmatic) navigation into pane 0 — see
+    // unsplitStash/unsplitStashValid below.
+    unsplitStashValid = false
     renderAll()
   }
 
@@ -409,15 +431,17 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
   // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
   // put it back on the left instead of leaving pane 0 and pane 1 showing an
-  // identical duplicate. `store.updateNav` mutates `doc` in place rather than
-  // cloning (see store.ts), so `d.nav.panes[0] = d.nav.panes[1]` makes both
-  // slots the exact same object reference — meaning `pane0 === pane1` is a
-  // cheap, reliable "nothing navigated away since the pull" check: any real
-  // navigation (openInPane, stepPaneHistory, a team switch) always replaces
-  // pane 0 with a freshly constructed object, breaking the aliasing. Never
-  // persisted, like `spaceHideSplit` — losing it on reload is fine, it's a
-  // same-session UX nicety, not app state.
+  // identical duplicate. Never persisted, like `spaceHideSplit` — losing it
+  // on reload is fine, it's a same-session UX nicety, not app state.
   let unsplitStash: PaneState | null = null
+  // Explicit instead of relying on `d.nav.panes[0] === d.nav.panes[1]`
+  // object-identity (which happens to hold because store.updateNav mutates
+  // in place) — any real navigation while unsplit invalidates the stash.
+  // Cleared directly by openInPane/openBothPanes below (idx 0 writes) and,
+  // for stepPaneHistory, via the unsplitStashInvalidators WeakMap registered
+  // just below (see that WeakMap's own comment for why).
+  let unsplitStashValid = false
+  unsplitStashInvalidators.set(store, () => { unsplitStashValid = false })
 
   /**
    * Toggles against the *effective* (visible) split state, not the raw
@@ -443,14 +467,17 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       if (!d.nav.split) {
         if (d.nav.focusedPane === 1) {
           unsplitStash = d.nav.panes[0]
+          unsplitStashValid = true
           d.nav.panes[0] = d.nav.panes[1]
         } else {
           unsplitStash = null
+          unsplitStashValid = false
         }
         d.nav.focusedPane = 0
-      } else if (unsplitStash && d.nav.panes[0] === d.nav.panes[1]) {
+      } else if (unsplitStashValid && unsplitStash) {
         d.nav.panes[0] = unsplitStash
         unsplitStash = null
+        unsplitStashValid = false
       }
       // Remembers this choice per team so switching back to it later (see
       // main.ts's selectTeam) restores split/single view as last left it.
