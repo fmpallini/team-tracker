@@ -26,7 +26,12 @@ editor (`▸`/`▾` button, `ExpandableRowsController`), and search indexes
 
 Action items keep their current behavior — notes only exist inside the
 edit modal (no inline expandable row), and per product decision a search hit
-there should just scroll/focus the card, not auto-open the modal.
+there should just scroll/focus the card, not auto-open the modal. That
+"just scroll/focus" is itself currently broken: `commit()` derives the
+scroll target from the first *painted text match*, not from the card it
+already resolved via `data-item-id` — so a notes-only match (nothing visible
+on the card to match) scrolls to nothing and the card is never focused at
+all.
 
 ## Design
 
@@ -110,17 +115,39 @@ el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.
 This makes `[data-item-id="..."]` resolve to *both* the title row and (once
 expanded) its follow-up row, so both are included in the highlight scope.
 
-### 4. `search-highlight.ts` — `applySearchHighlight` takes multiple roots
+### 4. `search-highlight.ts` — multiple roots, and a scroll target independent of matches
+
+Two changes to `applySearchHighlight`:
+
+- Takes `HTMLElement[]` instead of one root (so a highlight can span a row +
+  its separate follow-up sibling).
+- Takes an optional explicit `scrollTarget`. **This is the actual fix for
+  the reported action-items bug**, not just a highlight nicety: today,
+  `commit()` resolves the exact card via `[data-item-id]` but then throws
+  that knowledge away and re-derives *where to scroll* from `ranges[0]` —
+  the first painted text match. When the search hit came from an action
+  item's `notes` field (modal-only, never rendered on the card), scoping
+  `findMatchRanges` to the card finds nothing there, `ranges` is empty,
+  `ranges[0]` is `undefined`, and the code silently does nothing at all —
+  no scroll, no focus, no highlight, even though we know precisely which
+  card the result points to. A resolved anchor should always win the scroll
+  target over "wherever the first text match happened to land":
 
 ```ts
-export function applySearchHighlight(rootEls: HTMLElement[], terms: string[]): void {
+export function applySearchHighlight(rootEls: HTMLElement[], terms: string[], scrollTarget?: HTMLElement): void {
   const ranges = rootEls.flatMap((r) => findMatchRanges(r, terms))
-  // ...unchanged from here (CSS.highlights set/delete, scroll first range into view)
+  if (typeof CSS !== 'undefined' && 'highlights' in CSS && CSS.highlights) {
+    if (ranges.length === 0) CSS.highlights.delete(HIGHLIGHT_NAME)
+    else CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges))
+  }
+  const first = ranges[0]
+  const target = scrollTarget ?? (first && (first.startContainer instanceof Element ? first.startContainer : first.startContainer.parentElement))
+  target?.scrollIntoView({ block: 'center' })
 }
 ```
 `findMatchRanges` itself is unchanged (still single-root).
 
-### 5. `search-ui.ts` — dispatch, then gather all matching anchors
+### 5. `search-ui.ts` — dispatch, gather all matching anchors, always scroll to the resolved one
 
 ```ts
 pm.openInFocused(result.loc)
@@ -134,18 +161,22 @@ requestAnimationFrame(() => {
   const anchors = itemId
     ? Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
     : []
-  applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], terms)
+  applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], terms, anchors[0])
 })
 ```
 
 For action items: no listener exists, so the dispatch is inert; the anchor
-lookup still finds the single kanban card element exactly as today, so its
-title/assignee text still highlights and scrolls into view ("focus the
-card" — matches the product decision to not auto-open the edit modal).
+lookup still finds the single kanban card element exactly as today. If the
+match is in the visible title/assignee it highlights *and* scrolls, same as
+before. If the match is only in `notes` (modal-only), there's nothing to
+highlight, but the card now still scrolls into view via `scrollTarget` —
+"focus the card" holds even with zero visible text matches, matching the
+earlier product decision to not auto-open the edit modal.
 
 For daily/person notes: `itemId` is never part of those refs, so `anchors`
-is empty and the fallback `[paneEl]` preserves today's whole-editor
-highlight behavior unchanged.
+is empty, `scrollTarget` is `undefined`, and the fallback `[paneEl]` +
+ranges-derived scroll preserves today's whole-editor highlight behavior
+unchanged.
 
 ## Testing
 
@@ -153,7 +184,9 @@ highlight behavior unchanged.
   (mirrors existing `collapse` coverage).
 - `test/search-highlight.test.ts`: update existing single-root calls to pass
   a one-element array; add a case with two root elements confirming ranges
-  from both are combined.
+  from both are combined; add a case with zero matching ranges but an
+  explicit `scrollTarget` confirming that element (not `ranges[0]`) gets
+  `scrollIntoView` — this is the regression test for the action-items bug.
 - `test/milestones.test.ts` / `test/risks.test.ts`: dispatching
   `SEARCH_FOCUS_ITEM_EVENT` with a collapsed item's id expands it (follow-up
   editor appears in the DOM) and re-renders; dispatching with an id that
@@ -168,8 +201,10 @@ highlight behavior unchanged.
 
 ## Out of scope
 
-- Action items stay as they are today (card-level focus only, no modal
-  auto-open) — explicit product decision.
+- Action items still don't get their `notes` text highlighted or the edit
+  modal auto-opened (card-level focus only) — explicit product decision.
+  What changes here is that the card reliably scrolls into view even when
+  the match is notes-only, instead of silently doing nothing.
 - No change to how search indexes/ranks results — only what happens after a
   result is clicked.
 - No persistence of "which item was expanded by search" — it's rebuilt fresh
