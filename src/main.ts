@@ -207,8 +207,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   // Task 25 re-review item #4c: every document/window listener this function
   // registers gets its remover collected here so `dispose()` (assigned to
   // `app.dispose` below) can fully tear the document down. See the
-  // `AppController.dispose` doc comment for why this matters even though
-  // nothing calls it yet.
+  // `AppController.dispose` doc comment for why this matters.
   const disposers: Array<() => void> = []
   function dispose(): void {
     for (const d of disposers.splice(0)) {

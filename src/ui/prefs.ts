@@ -35,10 +35,11 @@ export interface PrefsAppCtl {
  * `PaneManager` — not available in this module per the Task 24 contract) can
  * re-render pane bars/bodies in the new locale. Sidebar highlight/labels are
  * covered by the existing `store.subscribe` wiring (any `store.update` call
- * already re-renders the sidebar) plus `notifyNavChanged()` below; per-module
- * pane content that captured its locale string at mount time is not fully
- * re-translated until the user navigates away and back — acceptable per the
- * Task 24 brief, which explicitly defers full-fidelity re-render.
+ * already re-renders the sidebar, and nav-only changes are covered by
+ * `store.onMutate`); per-module pane content that captured its locale string
+ * at mount time is not fully re-translated until the user navigates away and
+ * back — acceptable per the Task 24 brief, which explicitly defers
+ * full-fidelity re-render.
  */
 const LOCALE_CHANGED_EVENT = 'tt-locale-changed'
 
@@ -46,7 +47,7 @@ export function notifyLocaleChanged(): void {
   document.dispatchEvent(new CustomEvent(LOCALE_CHANGED_EVENT))
 }
 
-/** Returns an unsubscribe function (mirrors sidebar.ts's onNavChanged) so per-document listeners can be torn down on close-file instead of leaking across sessions. */
+/** Returns an unsubscribe function so per-document listeners can be torn down on close-file instead of leaking across sessions. */
 export function onLocaleChanged(cb: () => void): () => void {
   document.addEventListener(LOCALE_CHANGED_EVENT, cb)
   return () => {

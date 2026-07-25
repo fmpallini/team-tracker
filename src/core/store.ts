@@ -55,8 +55,7 @@ export interface Store {
 
 type ReadOnlyState =
   | { kind: 'writable' }
-  | { kind: 'blocked'; warned: boolean }
-  | { kind: 'blocked-silent' }
+  | { kind: 'blocked'; silent: boolean; warned: boolean }
 
 export function createStore(initialDoc: Doc): Store {
   let doc = initialDoc
@@ -79,8 +78,8 @@ export function createStore(initialDoc: Doc): Store {
   }
 
   const warnBlocked = () => {
-    if (roState.kind !== 'blocked' || roState.warned) return
-    roState = { kind: 'blocked', warned: true }
+    if (roState.kind !== 'blocked' || roState.silent || roState.warned) return
+    roState = { ...roState, warned: true }
     for (const fn of Array.from(blockedCallbacks)) { try { fn() } catch (e) { console.error(e) } }
   }
 
@@ -135,10 +134,12 @@ export function createStore(initialDoc: Doc): Store {
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
       if (!ro) {
         roState = { kind: 'writable' }
-      } else if (opts?.silent) {
-        roState = { kind: 'blocked-silent' }
-      } else {
-        roState = { kind: 'blocked', warned: false }
+        return
+      }
+      roState = {
+        kind: 'blocked',
+        silent: !!opts?.silent,
+        warned: roState.kind === 'blocked' ? roState.warned : false,
       }
     },
     onBlockedUpdate(fn: () => void): void {
