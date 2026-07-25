@@ -47,6 +47,7 @@ describe('unlinkRefsInTeam', () => {
       milestones: [{ id: 'mi1', date: '2026-08-01', title: 'Ship', done: false, followup: 'blocked by @[Fix bug](action:a1)' }],
       risks: [{ id: 'r1', title: 'Risk', chance: 1, impact: 1, plan: 'accept', followup: 'linked to @[Fix bug](action:a1)', order: 0, closed: false }],
       dailyNotes: { '2026-07-01': 'today: @[Fix bug](action:a1)' },
+      generalNotes: 'also see @[Fix bug](action:a1)',
     }
   }
 
@@ -59,6 +60,14 @@ describe('unlinkRefsInTeam', () => {
     expect(tm.milestones[0]!.followup).toBe('blocked by Fix bug')
     expect(tm.risks[0]!.followup).toBe('linked to Fix bug')
     expect(tm.dailyNotes['2026-07-01']).toBe('today: Fix bug')
+    expect(tm.generalNotes).toBe('also see Fix bug')
+  })
+
+  test('leaves generalNotes as undefined when it was never set (no crash)', () => {
+    const tm = team()
+    delete (tm as { generalNotes?: string }).generalNotes
+    expect(() => unlinkRefsInTeam(tm, 'action', ['a1'])).not.toThrow()
+    expect(tm.generalNotes).toBe('')
   })
 
   test('no-ops when ids is empty', () => {
