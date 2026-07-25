@@ -4,6 +4,7 @@ import { createPaneManager } from '../src/ui/panes'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { renderMilestones } from '../src/modules/milestones'
+import { renderActionItems } from '../src/modules/action-items'
 import type { Team } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
@@ -102,4 +103,33 @@ test('a search result matching only a milestone\'s follow-up text expands that r
   expect(editorEl).not.toBeNull()
   expect(editorEl.textContent).toContain('buried-unique-term')
   expect(store.doc.nav.focusedPane).toBe(0)
+})
+
+test('a search result matching only an action item\'s notes (modal-only field) still scrolls the card into view (regression: previously did nothing — no scroll, no focus, no highlight)', () => {
+  stubMatchMedia()
+  const doc = createEmptyDocument('en-US')
+  doc.teams.push(buildTeam({
+    actionItems: [{
+      id: 'a1', summary: 'Ship v2', notes: 'blocked-on-xyz-vendor',
+      status: 'todo', dueDate: null, assignee: '', color: 'slate', order: 0,
+    }],
+  }))
+  doc.nav.activeTeamId = 'T1'
+  const store = createStore(doc)
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const pm = createPaneManager(shell, store, 'en-US')
+  pm.registerModule('actions', renderActionItems)
+  mountSearch(shell, store, pm, () => {})
+  const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
+
+  const raf = search(input, 'blocked-on-xyz-vendor')
+
+  const card = document.querySelector('[data-item-id="a1"]') as HTMLElement
+  expect(card).not.toBeNull()
+  card.scrollIntoView = vi.fn()
+
+  raf(0)
+
+  expect(card.scrollIntoView).toHaveBeenCalled()
 })
