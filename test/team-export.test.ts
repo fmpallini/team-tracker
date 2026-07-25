@@ -117,6 +117,12 @@ describe('remapForImport', () => {
     expect(imported!.stakeholders[0]!.notes).toBe('')
   })
 
+  it('seeds an empty generalNotes, matching createEmptyTeam\'s default for brand-new teams', () => {
+    const file = buildExport([sampleTeam()])
+    const [imported] = remapForImport(file.teams, 'en-US')
+    expect(imported!.generalNotes).toBe('')
+  })
+
   it('starts with no action items, milestones, or risks — none were exported', () => {
     const file = buildExport([sampleTeam()])
     const [imported] = remapForImport(file.teams, 'en-US')
