@@ -41,6 +41,10 @@ export function createEmptyTeam(id: string, name: string, emoji: string, locale:
   }
 }
 
+export function findTeam(doc: Doc, teamId: string): Team | undefined {
+  return doc.teams.find((tm) => tm.id === teamId)
+}
+
 const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   1: (d) => {
     for (const team of (d.teams as Record<string, unknown>[]) ?? []) {

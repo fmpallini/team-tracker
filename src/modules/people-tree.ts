@@ -8,6 +8,7 @@ import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
 import { el } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
+import { findTeam as docFindTeam } from '../core/document'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -137,7 +138,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     const lc = ctx.locale
 
     function findTeam(): Team | undefined {
-      return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+      return docFindTeam(ctx.store.doc, teamId)
     }
     function people(): Person[] {
       return findTeam()?.[group] ?? []

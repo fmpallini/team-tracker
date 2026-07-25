@@ -11,7 +11,7 @@ import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
-import { SUGGESTED_TAG_NAME_KEYS } from '../core/document'
+import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
@@ -88,7 +88,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const datalistId = `tt-kanban-people-${Math.random().toString(36).slice(2)}`
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function items(): ActionItem[] {
     return findTeam()?.actionItems ?? []

@@ -11,6 +11,7 @@ import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
 import { attachTemplatePicker } from '../ui/template-picker'
 import { nowHHMM } from '../core/date'
+import { findTeam as docFindTeam } from '../core/document'
 import { el } from '../ui/dom'
 
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -29,7 +30,7 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
   const lc = ctx.locale
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function findPerson(): Person | undefined {
     return findTeam()?.[group].find((p) => p.id === personId)

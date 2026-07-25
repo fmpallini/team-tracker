@@ -21,6 +21,7 @@ import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-
 import { showCardContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
+import { findTeam as docFindTeam } from '../core/document'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -121,7 +122,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   const lc = ctx.locale
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function risks(): Risk[] {
     return findTeam()?.risks ?? []

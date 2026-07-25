@@ -1,4 +1,4 @@
-import { createEmptyDocument, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
+import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError, findTeam } from '../src/core/document'
 
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
@@ -177,4 +177,11 @@ describe('migrateTeams (team export/import)', () => {
     const teams = createEmptyDocument('en-US').teams
     expect(migrateTeams(teams, SCHEMA_VERSION)).toEqual(teams)
   })
+})
+
+test('findTeam finds a team by id, undefined when missing', () => {
+  const d = createEmptyDocument('en-US')
+  d.teams.push(createEmptyTeam('t1', 'Alpha', '🙂', 'en-US'))
+  expect(findTeam(d, 't1')?.name).toBe('Alpha')
+  expect(findTeam(d, 'nope')).toBeUndefined()
 })

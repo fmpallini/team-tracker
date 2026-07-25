@@ -11,6 +11,7 @@ import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from 
 import { attachTemplatePicker } from '../ui/template-picker'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
 import { nowHHMM } from '../core/date'
+import { findTeam as docFindTeam } from '../core/document'
 import { el } from '../ui/dom'
 
 /**
@@ -31,7 +32,7 @@ import { el } from '../ui/dom'
 const disposers = new WeakMap<HTMLElement, () => void>()
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
-  return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+  return docFindTeam(ctx.store.doc, teamId)
 }
 
 export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
