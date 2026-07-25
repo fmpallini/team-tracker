@@ -15,6 +15,7 @@ import type { ModuleCtx } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
@@ -206,7 +207,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
     expandable.register(r.id, bundle)
-    return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id }, bundle.editor.root)
+    return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id, 'data-item-id': r.id }, bundle.editor.root)
   }
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
@@ -499,11 +500,22 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     renderAll()
   })
 
+  /** Expands the risk a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's risks or is already expanded. */
+  function onSearchFocusItem(e: Event): void {
+    const itemId = (e as CustomEvent<string>).detail
+    if (!risks().some((r) => r.id === itemId)) return
+    if (expandable.isExpanded(itemId)) return
+    expandable.expand(itemId)
+    renderAll()
+  }
+  container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
 
   disposers.set(container, () => {
     unsubscribe()
     expandable.disposeAll()
+    container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   })
 }
