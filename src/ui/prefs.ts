@@ -11,7 +11,6 @@ import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
-import { notifyNavChanged } from './sidebar'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 
@@ -175,7 +174,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         d.prefs.locale = newLocale
       })
       shell.applyPrefs(store.doc.prefs)
-      notifyNavChanged()
       notifyLocaleChanged()
       handle.close()
       openPrefs(store, shell, newLocale, appCtl)
@@ -667,7 +665,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       })
       importTeams = null
       renderImportChecklist()
-      notifyNavChanged()
       toast(t(locale, 'data_import_success_toast'))
     }
 
@@ -803,12 +800,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     title: t(locale, 'prefs_title'),
     body: dialogBody,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
-    // Prefs apply live via store.update on every interaction (theme, locale,
-    // font, autosave, templates), so nothing "commits" on close — but closing
-    // is also the one moment nothing else guarantees a save happens next.
-    // Reuses the same nav-changed → save hook main.ts wires up for module
-    // navigation (see sidebar.ts's deleteTeam for the same pattern).
-    onClose: () => notifyNavChanged(),
   })
 
   renderActiveTab()

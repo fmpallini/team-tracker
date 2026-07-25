@@ -1,5 +1,4 @@
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
-import { onNavChanged } from '../src/ui/sidebar'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -489,40 +488,6 @@ test('about tab reflects a mismatched file schema version from appCtl', () => {
 
   const rows = Array.from(document.querySelectorAll('.tt-prefs-content td')).map((td) => td.textContent)
   expect(rows).toContain('0')
-})
-
-test('closing the prefs modal (OK) fires onNavChanged (sidebar re-render hook)', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  radio('tt-prefs-theme', 'dark').click()
-  expect(store.dirty).toBe(true)
-
-  let navChangedCount = 0
-  const off = onNavChanged(() => navChangedCount++)
-  clickByText('OK')
-
-  expect(navChangedCount).toBe(1)
-  off()
-})
-
-test('closing the prefs modal via Escape also fires onNavChanged', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  radio('tt-prefs-theme', 'dark').click()
-  expect(store.dirty).toBe(true)
-
-  // Other tests in this file open the prefs modal via openPrefs() and never
-  // close it, leaking document-level Escape listeners across tests within
-  // the same file (same pre-existing pattern noted in sidebar.test.ts's
-  // ADD_TEAM_REQUEST_EVENT comment) — so dispatching a real Escape here also
-  // re-triggers those stale listeners' own onClose. Assert "at least one"
-  // rather than an exact count.
-  let navChangedCount = 0
-  const off = onNavChanged(() => navChangedCount++)
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-
-  expect(navChangedCount).toBeGreaterThanOrEqual(1)
-  off()
 })
 
 test('builtinTemplates helper used by restore-defaults produces 5 named templates (sanity)', () => {

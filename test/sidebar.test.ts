@@ -1,4 +1,4 @@
-import { mountSidebar, notifyNavChanged, onNavChanged, ADD_TEAM_REQUEST_EVENT } from '../src/ui/sidebar'
+import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from '../src/ui/sidebar'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -121,13 +121,11 @@ test('clicking a team calls selectTeam', () => {
   expect(selectTeam).toHaveBeenCalledWith('Alpha')
 })
 
-test('selectTeam via updateNav + notifyNavChanged re-renders the highlight (hotkey path)', () => {
+test('selectTeam via updateNav re-renders the highlight immediately (hotkey path, via store.onMutate)', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')
   addTeam(store, 'Beta')
   store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
-  expect(items()[1]!.classList.contains('active')).toBe(false) // not yet, no notify
-  notifyNavChanged()
   expect(items()[1]!.classList.contains('active')).toBe(true)
 })
 
@@ -263,11 +261,11 @@ test('deleting a team re-renders the pane view — a stale module display would 
   expect(renderPanes).toHaveBeenCalledOnce()
 })
 
-test('deleting a team fires onNavChanged — main.ts hooks this to save the now-dirty doc immediately, not just on the next auto-save tick', () => {
+test('deleting a team fires store.onMutate — lets a save trigger see the now-dirty doc immediately, not just on the next auto-save tick', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')
-  let navChangedCount = 0
-  const off = onNavChanged(() => navChangedCount++)
+  let mutateCount = 0
+  const off = store.onMutate(() => mutateCount++)
 
   const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement
   editBtn.click()
@@ -275,7 +273,7 @@ test('deleting a team fires onNavChanged — main.ts hooks this to save the now-
   clickByText('Delete')
 
   expect(store.dirty).toBe(true)
-  expect(navChangedCount).toBe(1)
+  expect(mutateCount).toBeGreaterThanOrEqual(1)
   off()
 })
 
@@ -441,10 +439,10 @@ test('drag and drop reorders the teams array', () => {
 })
 
 test('tt-add-team-request event opens the add-team modal (Task 3 empty-state CTA)', () => {
-  // Note: mountSidebar's document-level ADD_TEAM_REQUEST_EVENT listener (like
-  // NAV_CHANGED_EVENT) is never torn down between `setup()` calls within a
-  // test file, so earlier tests' stale listeners also fire here — hence
-  // asserting "at least one" modal opened rather than an exact count.
+  // Note: mountSidebar's document-level ADD_TEAM_REQUEST_EVENT listener is
+  // never torn down between `setup()` calls within a test file, so earlier
+  // tests' stale listeners also fire here — hence asserting "at least one"
+  // modal opened rather than an exact count.
   setup()
   expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
@@ -453,17 +451,6 @@ test('tt-add-team-request event opens the add-team modal (Task 3 empty-state CTA
   expect(document.querySelectorAll('.tt-modal-overlay').length).toBeGreaterThanOrEqual(1)
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   expect(nameInput).not.toBeNull()
-})
-
-test('onNavChanged returns an unsubscribe function (Task 25 re-review item #4c)', () => {
-  let count = 0
-  const off = onNavChanged(() => count++)
-  notifyNavChanged()
-  expect(count).toBe(1)
-
-  off()
-  notifyNavChanged()
-  expect(count).toBe(1)
 })
 
 test('dropping a team back onto its own slot is a no-op (no dirty flag)', () => {
@@ -637,7 +624,6 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
     const { shell, store } = setup()
     addTeam(store, 'Team One', '🚀')
     store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
-    notifyNavChanged()
 
     expect(shell.headerCenter.contains(indicator())).toBe(true)
     expect(indicator().classList.contains('visible')).toBe(false)
@@ -647,7 +633,6 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
     const { store } = setup()
     addTeam(store, 'Team One', '🚀')
     store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
-    notifyNavChanged()
 
     toggleBtn().click() // manual collapse
 
@@ -659,7 +644,6 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
     const { store, sidebar } = setup()
     addTeam(store, 'Team One', '🚀')
     store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
-    notifyNavChanged()
 
     sidebar.setSpaceConstrained(true)
     expect(indicator().classList.contains('visible')).toBe(true)
@@ -673,13 +657,11 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
     addTeam(store, 'Team One', '🚀')
     addTeam(store, 'Team Two', '🎯')
     store.updateNav((d) => { d.nav.activeTeamId = 'Team One' })
-    notifyNavChanged()
     toggleBtn().click() // manual collapse
 
     expect(indicator().textContent).toBe('🚀 Team One')
 
     store.updateNav((d) => { d.nav.activeTeamId = 'Team Two' })
-    notifyNavChanged()
 
     expect(indicator().textContent).toBe('🎯 Team Two')
   })

@@ -6,7 +6,7 @@ import type { FileSession } from './core/fs'
 import { createStore, type Store } from './core/store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
-import { mountSidebar, notifyNavChanged } from './ui/sidebar'
+import { mountSidebar } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
 import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
@@ -276,7 +276,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
             const reloaded = await decryptDocument(bytes, app ? app.password : password)
             store.replaceDoc(reloaded)
             pm.renderAll()
-            notifyNavChanged()
             shell.setSaveState('saved')
             shell.setTitle(session.name, false)
           } catch (e) {
@@ -475,7 +474,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       store.updateNav((d) => {
         d.nav.activeTeamId = id
       })
-      notifyNavChanged()
       openTeamDefaultLayout(pm, store, id)
       return
     }

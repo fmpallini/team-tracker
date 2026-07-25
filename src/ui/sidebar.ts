@@ -29,45 +29,11 @@ export interface SidebarActions {
 }
 
 /**
- * `Store.updateNav()` intentionally does not notify `store.subscribe()`
- * listeners (see store.ts) — nav-only changes are meant to be cheap and not
- * trigger a full content re-render. The sidebar's active-team highlight is
- * nav state though, so `selectTeam()` (in main.ts) dispatches this DOM event
- * after every `updateNav()` call, and the sidebar listens for it. This keeps
- * the highlight in sync for both sidebar clicks and the global Alt+1..9
- * hotkey without coupling main.ts to sidebar internals or widening the
- * Store contract.
- */
-const NAV_CHANGED_EVENT = 'tt-nav-changed'
-
-export function notifyNavChanged(): void {
-  document.dispatchEvent(new CustomEvent(NAV_CHANGED_EVENT))
-}
-
-/**
- * Task 25: lets main.ts trigger a save on module/team navigation without
- * reaching into PaneManager internals — every nav change already calls
- * `notifyNavChanged()` above, so this is just a public subscribe point for
- * that same event (mirrors `onLocaleChanged` in ui/prefs.ts).
- *
- * Returns an unsubscribe function (Task 25 re-review item #4c) so callers
- * that need a full teardown path — main.ts's dispose, going forward — can
- * remove the listener instead of leaking it for the lifetime of the
- * document. Existing callers that ignore the return value are unaffected.
- */
-export function onNavChanged(cb: () => void): () => void {
-  document.addEventListener(NAV_CHANGED_EVENT, cb)
-  return () => {
-    document.removeEventListener(NAV_CHANGED_EVENT, cb)
-  }
-}
-
-/**
  * Task 3: the empty-pane CTA (panes.ts, rendered when `store.doc.teams` is
  * empty) has no reach into sidebar internals like `openAddModal`, so it
- * dispatches this document-level event instead — mirrors `NAV_CHANGED_EVENT`
- * above. Exported so panes.ts can reference the same string without either
- * module reaching into the other's implementation.
+ * dispatches this document-level event instead. Exported so panes.ts can
+ * reference the same string without either module reaching into the other's
+ * implementation.
  */
 export const ADD_TEAM_REQUEST_EVENT = 'tt-add-team-request'
 
@@ -110,7 +76,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       d.nav.sidebarCollapsed = !collapsed
     })
     if (collapsed) spaceHidden = false
-    notifyNavChanged()
     renderCollapseState()
   }
 
@@ -318,10 +283,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       }
     })
     actions.renderPanes()
-    // Deleting a team is destructive and doesn't wait for the auto-save
-    // timer or a later nav change — reuse the nav-changed event's existing
-    // save hook (main.ts's onNavChanged listener) to persist it right away.
-    notifyNavChanged()
   }
 
   function render(): void {
@@ -512,7 +473,18 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     dueCache = null // content changed — due data may have too
     render()
   })
-  document.addEventListener(NAV_CHANGED_EVENT, render)
+  // Nav-only changes (store.updateNav — team switch, Alt+1..9, pane history)
+  // don't fire subscribe() above, but do need the active-team highlight to
+  // update. onMutate() fires on both update() and updateNav(); re-running
+  // render() an extra time on a content change (already covered by
+  // subscribe() above) is a harmless idempotent DOM rebuild — cheaper than
+  // hand-rolling a second nav-only event channel, and it's exactly the
+  // "generalize the mechanism" fix core/save-controller.ts already made for
+  // its own dirty-guard (see that file's comment on onMutate()). Content
+  // changes must NOT reset dueCache here too, or every pane navigation would
+  // force a full due-items rescan for no reason — that stays only in the
+  // subscribe() callback above.
+  store.onMutate(() => render())
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 
   return { setSpaceConstrained }

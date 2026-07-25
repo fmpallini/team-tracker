@@ -7,7 +7,7 @@ import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
 import { el } from './dom'
 import { toast } from './modal'
-import { notifyNavChanged, ADD_TEAM_REQUEST_EVENT } from './sidebar'
+import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
@@ -165,7 +165,6 @@ export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean 
     d.nav.panes[idx] = result
     d.nav.focusedPane = idx
   })
-  notifyNavChanged()
   return true
 }
 
@@ -205,7 +204,6 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
     d.nav.activeTeamId = teamId
     d.nav.split = rememberedSplit
   })
-  notifyNavChanged()
 
   // Both panes always get resynced to the new team, regardless of whether
   // it's remembered split or single — `rememberedSplit` only controls
@@ -304,7 +302,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     store.updateNav((d) => {
       d.nav.focusedPane = idx
     })
-    notifyNavChanged()
     layout()
   }
 
@@ -363,7 +360,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       store.updateNav((d) => {
         d.nav.focusedPane = otherIdx
       })
-      notifyNavChanged()
       toast(t(localeNow(), 'toast_focus_other'))
       renderAll()
       return
@@ -387,7 +383,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[idx] = result.pane
       d.nav.focusedPane = idx
     })
-    notifyNavChanged()
     renderAll()
   }
 
@@ -404,7 +399,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[1] = result1.pane
       d.nav.focusedPane = focusedPane
     })
-    notifyNavChanged()
     renderAll()
   }
 
@@ -463,7 +457,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split
     })
     if (wasVisible === false) spaceHideSplit = false
-    notifyNavChanged()
     renderAll()
   }
 
