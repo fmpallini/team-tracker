@@ -32,6 +32,11 @@ export class ExpandableRowsController {
     return ids.length > 0 && ids.every((id) => this.expandedIds.has(id))
   }
 
+  /** Adds `id` to the expanded set. Idempotent — expanding an already-expanded id is a no-op. */
+  expand(id: string): void {
+    this.expandedIds.add(id)
+  }
+
   /** Drops `id` from the expanded set without disposing its bundle — for a row about to be deleted via store.update anyway, where the next render() rebuilds nothing for it. */
   collapse(id: string): void {
     this.expandedIds.delete(id)

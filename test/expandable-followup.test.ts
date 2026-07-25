@@ -32,3 +32,12 @@ test('collapse drops the id without requiring a registered bundle', () => {
   c.collapse('x')
   expect(c.isExpanded('x')).toBe(false)
 })
+
+test('expand adds the id to the expanded set, idempotently', () => {
+  const c = new ExpandableRowsController()
+  expect(c.isExpanded('x')).toBe(false)
+  c.expand('x')
+  expect(c.isExpanded('x')).toBe(true)
+  c.expand('x') // calling again is a no-op, not an error
+  expect(c.isExpanded('x')).toBe(true)
+})
