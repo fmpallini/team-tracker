@@ -407,12 +407,18 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     })
   }
 
-  function openAddModal(): void {
-    const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
+  function buildTeamForm(initial?: { name: string; emoji: string }): {
+    nameInput: HTMLInputElement
+    emojiInput: HTMLInputElement
+    errorEl: HTMLElement
+    body: HTMLElement
+    picker: ReturnType<typeof attachEmojiPicker>
+  } {
+    const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name', value: initial?.name ?? '' }) as HTMLInputElement
     // No maxlength: it counts UTF-16 code units, which both lets two simple
     // emojis through and blocks single ZWJ emojis — attachEmojiPicker
     // enforces "exactly one grapheme" on input instead.
-    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
+    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji', value: initial?.emoji ?? '' }) as HTMLInputElement
     const errorEl = el('div', { class: 'tt-field-error' })
     const body = el(
       'div',
@@ -422,8 +428,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       errorEl
     )
     const picker = attachEmojiPicker(emojiInput, locale())
+    return { nameInput, emojiInput, errorEl, body, picker }
+  }
 
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
+  function openAddModal(): void {
+    const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm()
+
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
     const okBtn: ModalButton = {
       label: t(locale(), 'ok'),
       primary: true,
@@ -442,36 +453,24 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         store.update((d) => {
           d.teams.push(createEmptyTeam(newTeamId, name, emoji, locale()))
         })
-        picker.dispose()
         handle.close()
         actions.selectTeam(newTeamId)
       },
     }
-    const handle: ModalHandle = showModal({ title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn] })
+    const handle: ModalHandle = showModal({
+      title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn],
+      onClose: () => picker.dispose(),
+    })
     nameInput.focus()
   }
 
   function openEditModal(team: Team): void {
-    const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
-    nameInput.value = team.name
-    // No maxlength — see the identical note in openAddModal.
-    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
-    emojiInput.value = team.emoji
-    const errorEl = el('div', { class: 'tt-field-error' })
-    const body = el(
-      'div',
-      { class: 'tt-team-form' },
-      el('label', { class: 'tt-field' }, t(locale(), 'team_name_label'), nameInput),
-      el('label', { class: 'tt-field' }, t(locale(), 'team_emoji_label'), emojiInput),
-      errorEl
-    )
-    const picker = attachEmojiPicker(emojiInput, locale())
+    const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm({ name: team.name, emoji: team.emoji })
 
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
       onClick: () => {
-        picker.dispose()
         handle.close()
         confirmDelete(locale(), {
           title: t(locale(), 'team_delete_title'),
@@ -498,11 +497,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
             target.emoji = emoji
           }
         })
-        picker.dispose()
         handle.close()
       },
     }
-    const handle: ModalHandle = showModal({ title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn] })
+    const handle: ModalHandle = showModal({
+      title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn],
+      onClose: () => picker.dispose(),
+    })
     nameInput.focus()
   }
 

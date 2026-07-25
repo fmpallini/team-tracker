@@ -149,6 +149,22 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   expect(store.doc.nav.activeTeamId).toBe(store.doc.teams[0]!.id)
 })
 
+test('canceling the add-team modal disposes the emoji picker (no leaked listener)', () => {
+  setup()
+  clickByText('➕')
+  const emojiInput = document.querySelector<HTMLInputElement>('input[name="tt-team-emoji"]')!
+  emojiInput.dispatchEvent(new Event('focus'))
+  expect(document.querySelector('.tt-emoji-popup')).not.toBeNull()
+
+  clickByText('Cancel')
+
+  // The picker's own `focus` listener is torn down by dispose(); firing
+  // `input` post-dispose must not throw or reopen the popup.
+  emojiInput.value = '😀'
+  emojiInput.dispatchEvent(new Event('input'))
+  expect(document.querySelector('.tt-emoji-popup')).toBeNull()
+})
+
 test('a new team is seeded with default names for the urgent/blocked/in-review colors', () => {
   const { store } = setup()
   clickByText('➕')
@@ -216,6 +232,23 @@ test('pencil icon opens edit modal to rename/re-emoji a team', () => {
   clickByText('OK')
 
   expect(store.doc.teams[0]!.name).toBe('Alpha Renamed')
+})
+
+test('canceling the edit-team modal disposes the emoji picker (no leaked listener)', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha', '🅰️')
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement
+  editBtn.click()
+
+  const emojiInput = document.querySelector<HTMLInputElement>('input[name="tt-team-emoji"]')!
+  emojiInput.dispatchEvent(new Event('focus'))
+  expect(document.querySelector('.tt-emoji-popup')).not.toBeNull()
+
+  clickByText('Cancel')
+
+  emojiInput.value = '😀'
+  emojiInput.dispatchEvent(new Event('input'))
+  expect(document.querySelector('.tt-emoji-popup')).toBeNull()
 })
 
 test('deleting a team re-renders the pane view — a stale module display would otherwise survive the last team being removed', () => {
