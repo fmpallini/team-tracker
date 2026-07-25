@@ -78,3 +78,55 @@ test('openItemContextMenu dispatches duplicate to the right kind', () => {
   menuItems()[0]!.click() // "Duplicate"
   expect(store.doc.teams[0]!.actionItems.length).toBe(2)
 })
+
+test('openItemContextMenu dispatches duplicate for milestones to team.milestones only', () => {
+  const doc = createEmptyDocument('en-US')
+  const team2 = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+  team2.milestones.push({ id: 'm1', date: '2026-01-01', title: 'X', done: false, followup: '' })
+  doc.teams.push(team2)
+  const store = createStore(doc)
+  const ctx = { store, locale: 'en-US' } as any
+
+  openItemContextMenu(ctx, 'milestone', 't1', 'm1', 10, 10)
+  menuItems()[0]!.click() // "Duplicate"
+  expect(store.doc.teams[0]!.milestones.length).toBe(2)
+  expect(store.doc.teams[0]!.actionItems.length).toBe(0)
+  expect(store.doc.teams[0]!.risks.length).toBe(0)
+})
+
+test('openItemContextMenu dispatches duplicate for risks to team.risks only', () => {
+  const doc = createEmptyDocument('en-US')
+  const team2 = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+  team2.risks.push({ id: 'r1', title: 'X', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: 0, closed: false })
+  doc.teams.push(team2)
+  const store = createStore(doc)
+  const ctx = { store, locale: 'en-US' } as any
+
+  openItemContextMenu(ctx, 'risk', 't1', 'r1', 10, 10)
+  menuItems()[0]!.click() // "Duplicate"
+  expect(store.doc.teams[0]!.risks.length).toBe(2)
+  expect(store.doc.teams[0]!.actionItems.length).toBe(0)
+  expect(store.doc.teams[0]!.milestones.length).toBe(0)
+})
+
+test('openItemContextMenu dispatches transfer (copy) to the right kind and target team', () => {
+  const doc = createEmptyDocument('en-US')
+  const teamA = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+  teamA.actionItems.push({ id: 'a1', summary: 'X', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 })
+  const teamB = createEmptyTeam('t2', 'Beta', '🚀', 'en-US')
+  doc.teams.push(teamA, teamB)
+  const store = createStore(doc)
+  const ctx = { store, locale: 'en-US' } as any
+
+  openItemContextMenu(ctx, 'action', 't1', 'a1', 10, 10)
+  expect(menuItems().map((b) => b.textContent)).toEqual(['Duplicate', 'Copy to team…', 'Move to team…'])
+  menuItems()[1]!.click() // "Copy to team…"
+  const select = document.querySelector('select') as HTMLSelectElement
+  select.value = 't2'
+  modalButton('Confirm').click()
+
+  expect(store.doc.teams[0]!.actionItems.length).toBe(1) // copy mode: source untouched
+  expect(store.doc.teams[1]!.actionItems.length).toBe(1) // landed in the target team's actionItems
+  expect(store.doc.teams[1]!.milestones.length).toBe(0)
+  expect(store.doc.teams[1]!.risks.length).toBe(0)
+})
