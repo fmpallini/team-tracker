@@ -17,6 +17,7 @@ import type { ModuleCtx } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
@@ -193,7 +194,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
     expandable.register(m.id, bundle)
-    return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id }, bundle.editor.root)
+    return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id, 'data-item-id': m.id }, bundle.editor.root)
   }
 
   function removeMilestone(id: string): void {
@@ -486,11 +487,22 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     renderAll()
   })
 
+  /** Expands the milestone a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's milestones or is already expanded. */
+  function onSearchFocusItem(e: Event): void {
+    const itemId = (e as CustomEvent<string>).detail
+    if (!milestones().some((m) => m.id === itemId)) return
+    if (expandable.isExpanded(itemId)) return
+    expandable.expand(itemId)
+    renderAll()
+  }
+  container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+
   container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
   renderAll()
 
   disposers.set(container, () => {
     unsubscribe()
     expandable.disposeAll()
+    container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   })
 }

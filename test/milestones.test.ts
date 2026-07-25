@@ -8,6 +8,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Milestone, Team } from '../src/core/types'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
 
 function fakePM(): PaneManager {
   return {
@@ -550,6 +551,53 @@ describe('renderMilestones', () => {
     expect(btn.textContent).toBe('▸')
     btn.click()
     expect(container.querySelector('.tt-milestone-expand-btn')!.textContent).toBe('▾')
+  })
+
+  describe('search-focus-item event', () => {
+    test('expands a collapsed milestone and mounts its follow-up editor', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'm1', followup: 'buried text' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'm1' }))
+
+      const editorEl = container.querySelector('.tt-milestone-followup-row .editor') as HTMLElement
+      expect(editorEl).not.toBeNull()
+      expect(editorEl.textContent).toContain('buried text')
+    })
+
+    test('is a no-op for an id that is not one of this team\'s milestones', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'does-not-exist' }))
+
+      expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
+    })
+
+    test('is a no-op (no duplicate row) when the milestone is already expanded', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'm1' }))
+
+      expect(container.querySelectorAll('.tt-milestone-followup-row').length).toBe(1)
+    })
+
+    test('the follow-up row carries the same data-item-id as its title row', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      const followupRow = container.querySelector('.tt-milestone-followup-row') as HTMLElement
+      expect(followupRow.getAttribute('data-item-id')).toBe('m1')
+    })
   })
 
   test('Enter in the title field blurs it, committing via onchange', () => {
