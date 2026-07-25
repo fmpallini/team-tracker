@@ -44,16 +44,31 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
   const lc = ctx.locale
 
   function buildMarks(): CalendarMarks {
+    const team = findTeam(ctx, teamId)
+    const milestonesByDate = new Map<string, string[]>()
+    for (const m of team?.milestones ?? []) {
+      const list = milestonesByDate.get(m.date)
+      if (list) list.push(m.title)
+      else milestonesByDate.set(m.date, [m.title])
+    }
+    const actionItemsByDate = new Map<string, string[]>()
+    for (const a of team?.actionItems ?? []) {
+      if (a.dueDate === null) continue
+      const list = actionItemsByDate.get(a.dueDate)
+      if (list) list.push(a.summary)
+      else actionItemsByDate.set(a.dueDate, [a.summary])
+    }
+    const dailyNotes = team?.dailyNotes ?? {}
     return {
       hasNote(d: string): boolean {
-        const note = findTeam(ctx, teamId)?.dailyNotes[d]
+        const note = dailyNotes[d]
         return typeof note === 'string' && note.trim() !== ''
       },
       milestones(d: string): string[] {
-        return (findTeam(ctx, teamId)?.milestones ?? []).filter((m) => m.date === d).map((m) => m.title)
+        return milestonesByDate.get(d) ?? []
       },
       actionItems(d: string): string[] {
-        return (findTeam(ctx, teamId)?.actionItems ?? []).filter((a) => a.dueDate === d).map((a) => a.summary)
+        return actionItemsByDate.get(d) ?? []
       },
     }
   }
