@@ -108,6 +108,35 @@ test('restoreTeamLayout keeps focusedPane on 0 when the team\'s remembered layou
   expect(store.doc.nav.focusedPane).toBe(0)
 })
 
+test('restoreTeamLayout never restores the same module kind into both panes, even when each pane\'s own independent history says to (regression: search-triggered team switch could open the same module side by side)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  addTeam(store, 'T2')
+
+  openTeamDefaultLayout(pm, store, 'T1') // pane0=daily(T1), pane1=members(T1)
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } }) // pane0=milestones(T1)
+
+  // pane0 moves on to T2 entirely — its own history still remembers
+  // milestones as the last thing it showed for T1.
+  pm.openInPane(0, { teamId: 'T2', ref: { kind: 'daily', date: '2026-03-01' } }, { force: true })
+
+  // pane1 (still on T1) now also navigates to milestones — live conflict
+  // guard sees pane0 on a *different team* and lets it through.
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'milestones' } })
+
+  // Switching back to T1 (what search does when a result belongs to a team
+  // other than the one currently active) restores each pane's own
+  // independently-remembered T1 Loc — both happen to be "milestones".
+  restoreTeamLayout(pm, store, 'T1')
+
+  const p0 = currentLoc(store.doc.nav.panes[0])!
+  const p1 = currentLoc(store.doc.nav.panes[1])!
+  expect(p0.teamId).toBe('T1')
+  expect(p1.teamId).toBe('T1')
+  expect(p0.ref.kind).toBe('milestones')
+  expect(p1.ref.kind).not.toBe('milestones') // resolved to a fallback instead of duplicating
+})
+
 test('teamHasHistory reflects whether any pane history contains the team', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

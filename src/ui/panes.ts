@@ -247,7 +247,21 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   const todayLoc = (): Loc => ({ teamId, ref: { kind: 'daily', date: todayIso() } })
   const pane0Last = lastLocForTeam(store.doc.nav.panes[0], teamId)
   const pane1Last = lastLocForTeam(store.doc.nav.panes[1], teamId)
-  pm.openBothPanes(pane0Last ?? todayLoc(), pane1Last ?? { teamId, ref: { kind: 'members' } }, rememberedSplit ? 1 : 0)
+  const target0 = pane0Last ?? todayLoc()
+  let target1 = pane1Last ?? { teamId, ref: { kind: 'members' } }
+  // Each pane's remembered Loc for this team is picked from its own
+  // independent history and can coincidentally land on the same module kind
+  // even though the two panes never conflicted live (e.g. pane 0 had since
+  // moved on to a different team by the time pane 1 picked up that same kind
+  // for this one). openBothPanes intentionally skips the duplicate guard
+  // (see its own doc comment) — resolve the clash here, or it lands on
+  // screen (immediately if remembered split, or the next time split is
+  // toggled on otherwise) as the same module open in both panes at once.
+  if (locsConflict(target1, target0)) {
+    const fallback: Loc = { teamId, ref: { kind: 'members' } }
+    target1 = locsConflict(fallback, target0) ? { teamId, ref: { kind: 'stakeholders' } } : fallback
+  }
+  pm.openBothPanes(target0, target1, rememberedSplit ? 1 : 0)
 }
 
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
