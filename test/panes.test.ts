@@ -321,6 +321,19 @@ test('opening a module already shown in the other pane focuses that pane for rea
   expect(store.doc.nav.focusedPane).toBe(1)
 })
 
+test('pane module dropdown lists General notes right after Daily notes', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
+
+  expect(items[0]?.textContent).toBe(t('en-US', 'module_daily'))
+  expect(items[1]?.textContent).toBe(t('en-US', 'module_general_notes'))
+})
+
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

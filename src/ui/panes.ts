@@ -555,6 +555,12 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       t(lc, 'module_daily')
     )
 
+    const generalBtn = el(
+      'button',
+      { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'general' }) },
+      t(lc, 'module_general_notes')
+    )
+
     const personToggle = el(
       'button',
       {
@@ -597,7 +603,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       el('button', { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind }) }, t(lc, key))
     )
 
-    return el('div', { class: 'tt-pane-menu' }, dailyBtn, personGroup, ...fixedBtns)
+    return el('div', { class: 'tt-pane-menu' }, dailyBtn, generalBtn, personGroup, ...fixedBtns)
   }
 
   /** Opens a print-only window with a clone of the pane's current module content — whatever it is (note editor, risks table, people tree, ...) — plus a clone of the app's own stylesheet (see PRINT_CSS) and a small discreet header identifying the team/module/detail being printed. Content is inserted via appendChild(cloneNode), never through document.write, matching src/ui/editor.ts's prior print implementation this replaces. */
