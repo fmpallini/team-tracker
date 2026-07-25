@@ -41,6 +41,7 @@ export interface Template {
 }
 export type ModuleRef =
   | { kind: 'daily'; date: string }
+  | { kind: 'general' }
   | { kind: 'person'; personId: string; group: 'stakeholders' | 'members' }
   | { kind: 'stakeholders' } | { kind: 'members' }
   | { kind: 'actions'; itemId?: string } | { kind: 'milestones'; itemId?: string } | { kind: 'risks'; itemId?: string }
