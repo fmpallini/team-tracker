@@ -1,4 +1,4 @@
-import { showModal, promptPassword, toast } from '../src/ui/modal'
+import { showModal, promptPassword, toast, confirmDelete } from '../src/ui/modal'
 import { el } from '../src/ui/dom'
 
 function overlays(): NodeListOf<Element> {
@@ -149,6 +149,25 @@ test('promptPassword confirm mismatch shows inline error and does not resolve', 
   confirm!.dispatchEvent(new Event('input'))
   ok.click()
   await expect(promise).resolves.toBe('abcd')
+})
+
+test('confirmDelete shows a title/message/confirm button and calls onConfirm', () => {
+  const onConfirm = vi.fn()
+  confirmDelete('en-US', {
+    title: 'Delete X',
+    message: 'Are you sure?',
+    confirmLabel: 'Delete',
+    variant: 'danger',
+    onConfirm,
+  })
+  const dialog = document.querySelector('.tt-modal-dialog')!
+  expect(dialog.querySelector('.tt-modal-title')?.textContent).toBe('Delete X')
+  expect(dialog.querySelector('.tt-modal-message')?.textContent).toBe('Are you sure?')
+  const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Delete')!
+  expect(confirmBtn.className).toContain('tt-btn-danger')
+  confirmBtn.click()
+  expect(onConfirm).toHaveBeenCalledOnce()
+  expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 })
 
 test('toast renders message and is removed on click', () => {

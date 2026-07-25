@@ -16,7 +16,7 @@ import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
 import { duplicateMilestone, transferMilestone } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
+import { confirmDelete } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
@@ -244,26 +244,17 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     })
   }
 
-  function openDeleteConfirm(m: Milestone): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'milestone_delete_confirm', { title: m.title }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'milestone_delete_btn'),
-      primary: true,
-      onClick: () => {
-        removeMilestone(m.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'milestone_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-  }
-
   function requestDelete(m: Milestone): void {
     if (m.title.trim() === '') {
       removeMilestone(m.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
-    openDeleteConfirm(m)
+    confirmDelete(lc, {
+      title: t(lc, 'milestone_delete_title'),
+      message: t(lc, 'milestone_delete_confirm', { title: m.title }),
+      confirmLabel: t(lc, 'milestone_delete_btn'),
+      onConfirm: () => removeMilestone(m.id),
+    })
   }
 
   // --- timeline (SVG) -------------------------------------------------------

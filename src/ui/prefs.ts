@@ -8,7 +8,7 @@ import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
-import { showModal, showErrorModal, toast, type ModalButton, type ModalHandle } from './modal'
+import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { notifyNavChanged } from './sidebar'
@@ -285,20 +285,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       refreshList()
     }
 
-    function openDeleteConfirm(tpl: Template): void {
-      const body = el('p', { class: 'tt-modal-message' }, t(locale, 'prefs_templates_delete_confirm', { name: tpl.name }))
-      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
-      const confirmBtn: ModalButton = {
-        label: t(locale, 'prefs_templates_delete_btn'),
-        primary: true,
-        onClick: () => {
-          removeTemplate(tpl.id)
-          inner.close()
-        },
-      }
-      const inner: ModalHandle = showModal({ title: t(locale, 'prefs_templates_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-    }
-
     function openEditModal(tpl: Template | null): void {
       const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-prefs-template-name' })
       nameInput.value = tpl?.name ?? ''
@@ -419,7 +405,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           class: 'tt-btn tt-prefs-template-delete-btn',
           type: 'button',
           title: t(locale, 'prefs_templates_delete_btn_title'),
-          onclick: () => openDeleteConfirm(tpl),
+          onclick: () => confirmDelete(locale, {
+            title: t(locale, 'prefs_templates_delete_title'),
+            message: t(locale, 'prefs_templates_delete_confirm', { name: tpl.name }),
+            confirmLabel: t(locale, 'prefs_templates_delete_btn'),
+            onConfirm: () => removeTemplate(tpl.id),
+          }),
         },
         '🗑'
       )

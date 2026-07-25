@@ -11,7 +11,7 @@ import { createEmptyTeam } from '../core/document'
 import { KIND_ICON } from '../core/search'
 import { REF_KINDS } from '../core/refs'
 import { el } from './dom'
-import { showModal, type ModalButton, type ModalHandle } from './modal'
+import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
 
 export interface SidebarActions {
@@ -473,7 +473,12 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       onClick: () => {
         picker.dispose()
         handle.close()
-        openDeleteConfirm(team)
+        confirmDelete(locale(), {
+          title: t(locale(), 'team_delete_title'),
+          message: t(locale(), 'team_delete_confirm', { name: team.name }),
+          confirmLabel: t(locale(), 'team_delete_btn'),
+          onConfirm: () => deleteTeam(team.id),
+        })
       },
     }
     const saveBtn: ModalButton = {
@@ -499,21 +504,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     }
     const handle: ModalHandle = showModal({ title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn] })
     nameInput.focus()
-  }
-
-  function openDeleteConfirm(team: Team): void {
-    const message = t(locale(), 'team_delete_confirm', { name: team.name })
-    const body = el('p', { class: 'tt-modal-message' }, message)
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(locale(), 'team_delete_btn'),
-      primary: true,
-      onClick: () => {
-        deleteTeam(team.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(locale(), 'team_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   render()

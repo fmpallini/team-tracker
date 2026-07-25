@@ -14,7 +14,7 @@ import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
+import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
@@ -148,26 +148,18 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     })
   }
 
-  function openDeleteConfirm(item: ActionItem): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_confirm', { summary: item.summary }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'kanban_delete_btn'),
-      danger: true,
-      onClick: () => {
-        removeItem(item.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-  }
-
   function requestDelete(item: ActionItem): void {
     if (item.summary.trim() === '') {
       removeItem(item.id) // empty cards carry no meaningful content to lose — delete silently
       return
     }
-    openDeleteConfirm(item)
+    confirmDelete(lc, {
+      title: t(lc, 'kanban_delete_title'),
+      message: t(lc, 'kanban_delete_confirm', { summary: item.summary }),
+      confirmLabel: t(lc, 'kanban_delete_btn'),
+      variant: 'danger',
+      onConfirm: () => removeItem(item.id),
+    })
   }
 
   function clearZone(status: ActionItem['status']): void {

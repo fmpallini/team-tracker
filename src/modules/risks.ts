@@ -14,7 +14,7 @@ import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
 import { duplicateRisk, transferRisk } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
+import { confirmDelete } from '../ui/modal'
 import { createEditor, type Editor } from '../ui/editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
 import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
@@ -168,20 +168,6 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     })
   }
 
-  function openDeleteConfirm(r: Risk): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'risk_delete_confirm', { title: r.title }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'risk_delete_btn'),
-      primary: true,
-      onClick: () => {
-        removeRisk(r.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'risk_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-  }
-
   function setClosed(id: string, closed: boolean): void {
     if (closed) expandedIds.delete(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
     ctx.store.update((d) => {
@@ -195,7 +181,12 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       removeRisk(r.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
-    openDeleteConfirm(r)
+    confirmDelete(lc, {
+      title: t(lc, 'risk_delete_title'),
+      message: t(lc, 'risk_delete_confirm', { title: r.title }),
+      confirmLabel: t(lc, 'risk_delete_btn'),
+      onConfirm: () => removeRisk(r.id),
+    })
   }
 
   function toggleExpand(id: string): void {
