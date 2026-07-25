@@ -487,7 +487,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     renderAll()
   })
 
-  /** Expands the milestone a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's milestones or is already expanded. */
+  /** Expands the milestone a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's milestones or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
   function onSearchFocusItem(e: Event): void {
     const itemId = (e as CustomEvent<string>).detail
     if (!milestones().some((m) => m.id === itemId)) return

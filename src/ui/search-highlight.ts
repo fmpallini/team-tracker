@@ -60,7 +60,11 @@ export function findMatchRanges(rootEl: HTMLElement, terms: string[]): Range[] {
  * *currently visible* text happens to match (it may not — e.g. an action
  * item's notes field only exists inside its edit modal). Without an explicit
  * target, falls back to the first match's containing element, or does
- * nothing if there are no matches. Safe to call unconditionally.
+ * nothing if there are no matches. Safe to call unconditionally. A
+ * milestone/risk title is likewise unreachable by the highlight walk: it's
+ * an `<input>` element's `value`, not a text node, so `findMatchRanges`'
+ * `TreeWalker` (SHOW_TEXT only) never finds it either — another reason
+ * `scrollTarget` must drive the scroll rather than a found range.
  */
 export function applySearchHighlight(rootEls: HTMLElement[], terms: string[], scrollTarget?: HTMLElement): void {
   const ranges = rootEls.flatMap((rootEl) => findMatchRanges(rootEl, terms))

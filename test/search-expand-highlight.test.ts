@@ -75,8 +75,17 @@ function search(input: HTMLInputElement, query: string): FrameRequestCallback {
   return raf
 }
 
+// Captured once so afterEach can restore them — search() and the tests below
+// overwrite window.requestAnimationFrame / Element.prototype.scrollIntoView
+// (jsdom implements neither), and without restoring them the stubs would
+// leak into whichever test file runs next in the same worker.
+const originalRAF = window.requestAnimationFrame
+const originalScrollIntoView = Element.prototype.scrollIntoView
+
 afterEach(() => {
   document.body.innerHTML = ''
+  window.requestAnimationFrame = originalRAF
+  Element.prototype.scrollIntoView = originalScrollIntoView
 })
 
 test('a search result matching only a milestone\'s follow-up text expands that row and scrolls to it', () => {
@@ -93,9 +102,11 @@ test('a search result matching only a milestone\'s follow-up text expands that r
   // onSearchFocusItem listener calls renderAll() (a full list rebuild) before
   // the anchor lookup in search-ui.ts's commit() runs — so the element that
   // ends up as the scroll target is a freshly-built node, not the one
-  // currently in the DOM. Stub at the prototype level rather than on this
+  // currently in the DOM. Spy at the prototype level rather than on this
   // stale instance so whichever node the rebuild produces is covered.
-  Element.prototype.scrollIntoView = vi.fn()
+  // vi.spyOn requires the property to already exist, so define a no-op first.
+  Element.prototype.scrollIntoView = () => {}
+  const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
 
   raf(0)
 
@@ -103,6 +114,17 @@ test('a search result matching only a milestone\'s follow-up text expands that r
   expect(editorEl).not.toBeNull()
   expect(editorEl.textContent).toContain('buried-unique-term')
   expect(store.doc.nav.focusedPane).toBe(0)
+
+  // commit()'s anchors are resolved via querySelectorAll *after* the expand
+  // happens, and the title row precedes the follow-up row in document order
+  // (renderList()'s append order in milestones.ts) — so it's anchors[0], the
+  // correct scroll target. Query fresh (post-raf) rather than reusing any
+  // earlier reference, since the rebuild replaces the node. Vitest tracks the
+  // `this` binding per call in mock.contexts, index-aligned with mock.calls.
+  expect(scrollSpy).toHaveBeenCalledTimes(1)
+  const anchor = document.querySelector('[data-item-id="m1"]')
+  expect(anchor).not.toBeNull()
+  expect(scrollSpy.mock.contexts[0]).toBe(anchor)
 })
 
 test('a search result matching only an action item\'s notes (modal-only field) still scrolls the card into view (regression: previously did nothing — no scroll, no focus, no highlight)', () => {
