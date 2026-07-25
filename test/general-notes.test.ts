@@ -136,6 +136,25 @@ describe('renderGeneralNotes', () => {
     expect(document.querySelectorAll('.tt-atref-dropdown')).toHaveLength(1)
   })
 
+  test('template picker only offers scope:any templates', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'general' } }
+    render(container, loc, store, pm)
+
+    setBlockText(editorEl(container), '/')
+    fireInput(editorEl(container))
+
+    const items = document.querySelectorAll('.tt-atref-item')
+    expect(items.length).toBe(1) // only the single scope:'any' builtin (Decision) out of the 5 builtins
+    ;(items[0] as HTMLElement).click()
+    vi.advanceTimersByTime(500)
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(store.doc.teams[0]!.generalNotes).toBeTruthy()
+  })
+
   test('clicking a ref chip navigates via makeRefClickHandler using the pane it was mounted in', () => {
     const team = makeTeam({
       stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
