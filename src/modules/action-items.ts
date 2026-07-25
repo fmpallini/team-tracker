@@ -161,12 +161,12 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   function clearZone(status: ActionItem['status']): void {
     const count = itemsByStatus(items(), status).length
     if (count === 0) return
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_clear_zone_confirm', { count: String(count) }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'kanban_clear_zone_btn'),
-      danger: true,
-      onClick: () => {
+    confirmDelete(lc, {
+      title: t(lc, 'kanban_clear_zone_title'),
+      message: t(lc, 'kanban_clear_zone_confirm', { count: String(count) }),
+      confirmLabel: t(lc, 'kanban_clear_zone_btn'),
+      variant: 'danger',
+      onConfirm: () => {
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
@@ -174,10 +174,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
         })
-        handle.close()
       },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_clear_zone_title'), body, buttons: [cancelBtn, confirmBtn] })
+    })
   }
 
   interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle }

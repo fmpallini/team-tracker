@@ -175,7 +175,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     renderAll()
   }
 
-  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself with `expandable` so the caller can dispose it later. */
+  /** Full rich editor for a milestone's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself with `expandable` so the caller can dispose it later. */
   function renderFollowupRow(m: Milestone): HTMLElement {
     const bundle = createRichEditorBundle({
       store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,

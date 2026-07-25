@@ -188,7 +188,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     return select
   }
 
-  /** Builds the full rich editor for a risk's follow-up, wired exactly like src/modules/person-notes.ts (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself with `expandable` so the caller can dispose it later. */
+  /** Builds the full rich editor for a risk's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself with `expandable` so the caller can dispose it later. */
   function renderFollowupRow(r: Risk): HTMLElement {
     const bundle = createRichEditorBundle({
       store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,

@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
@@ -293,6 +293,26 @@ test('un-splitting while pane 1 is focused, then stepping history via navigateFo
   pm.toggleSplit() // back to split — should keep locB1 (the stepped-to entry), not resurrect stashed A
   expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB1)
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB2)
+})
+
+test('invalidateUnsplitStash (the hook sidebar.ts\'s deleteTeam uses, since it prunes nav.panes history directly rather than through openInPane/stepPaneHistory) clears the stash so a later re-split does not resurrect it', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB) // focuses pane 1
+
+  pm.toggleSplit() // unsplit: pane 0 pulls in pane 1's (locB) content
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+
+  invalidateUnsplitStash(store) // simulates deleteTeam's direct history mutation
+  pm.toggleSplit() // back to split — stash was invalidated, so pane 0 keeps locB instead of resurrecting locA
+
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
 })
 
 test('pane back/forward buttons are disabled exactly when navigateHistory would return null', () => {

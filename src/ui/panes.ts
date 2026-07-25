@@ -163,6 +163,18 @@ function otherPaneIdx(idx: 0 | 1): 0 | 1 {
 const unsplitStashInvalidators = new WeakMap<Store, () => void>()
 
 /**
+ * Invalidates `store`'s stashed pane-0 content (see `unsplitStashInvalidators`
+ * above) from outside `createPaneManager`'s closure — e.g. sidebar.ts's
+ * `deleteTeam`, which prunes `d.nav.panes[*].history` directly rather than
+ * through `openInPane`/`stepPaneHistory`, so it would otherwise leave a stash
+ * referencing the deleted team's history restorable by a later re-split.
+ * No-op if `store` has no registered `PaneManager` yet.
+ */
+export function invalidateUnsplitStash(store: Store): void {
+  unsplitStashInvalidators.get(store)?.()
+}
+
+/**
  * Applies one history step (back/forward) to pane `idx`, skipping over any
  * entry that would conflict with the other pane's current Loc (same rule
  * `navigateHistory` itself enforces). Returns whether the nav state changed.
@@ -181,7 +193,7 @@ export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean 
     d.nav.focusedPane = idx
   })
   // Real navigation into pane 0 — see unsplitStashInvalidators above.
-  if (idx === 0) unsplitStashInvalidators.get(store)?.()
+  if (idx === 0) invalidateUnsplitStash(store)
   return true
 }
 

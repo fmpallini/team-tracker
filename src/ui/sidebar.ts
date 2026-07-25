@@ -2,6 +2,7 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { PaneManager } from './panes'
+import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam } from '../core/nav'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
@@ -282,6 +283,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         }
       }
     })
+    invalidateUnsplitStash(store) // deleted team's history may be what an unsplit stash is holding onto
     actions.renderPanes()
   }
 
