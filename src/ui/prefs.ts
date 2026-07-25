@@ -450,7 +450,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const sourceSelect = el('select', { class: 'tt-input' }) as HTMLSelectElement
     for (const team of teams) {
-      sourceSelect.appendChild(el('option', { value: team.id }, `${team.emoji} ${team.name}`))
+      sourceSelect.appendChild(el('option', { value: team.id }, team.emoji ? `${team.emoji} ${team.name}` : team.name))
     }
 
     function applyClick(): void {

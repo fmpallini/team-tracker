@@ -204,7 +204,7 @@ test('+ modal requires a name', () => {
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
 })
 
-test('+ modal requires an emoji — leaving it blank must not silently persist a default 🙂', () => {
+test('+ modal allows a blank emoji — no default is silently persisted', () => {
   const { store } = setup()
   clickByText('➕')
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
@@ -212,9 +212,9 @@ test('+ modal requires an emoji — leaving it blank must not silently persist a
   nameInput.dispatchEvent(new Event('input'))
   clickByText('OK')
 
-  expect(document.querySelector('.tt-field-error')?.textContent).toBe('Emoji is required')
-  expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
-  expect(store.doc.teams).toHaveLength(0)
+  expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(0)
+  expect(store.doc.teams).toHaveLength(1)
+  expect(store.doc.teams[0]!.emoji).toBe('')
 })
 
 test('adding a team while another already exists still auto-selects the new team', () => {

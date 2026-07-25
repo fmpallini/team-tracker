@@ -104,7 +104,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const collapsed = effectivelyCollapsed()
     const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
-    if (team) headerTeamIndicator.textContent = `${team.emoji} ${team.name}`
+    if (team) headerTeamIndicator.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
   }
 
   function renderCollapseState(): void {
@@ -408,10 +408,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
           return
         }
         const emoji = emojiInput.value.trim()
-        if (!emoji) {
-          errorEl.textContent = t(locale(), 'team_emoji_required')
-          return
-        }
         const newTeamId = crypto.randomUUID()
         store.update((d) => {
           d.teams.push(createEmptyTeam(newTeamId, name, emoji, locale()))
