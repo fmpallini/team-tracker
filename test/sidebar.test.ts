@@ -129,6 +129,25 @@ test('selectTeam via updateNav re-renders the highlight immediately (hotkey path
   expect(items()[1]!.classList.contains('active')).toBe(true)
 })
 
+test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar even though it does not fire onMutate', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  expect(items()).toHaveLength(1)
+
+  const reloadedDoc = createEmptyDocument('en-US')
+  reloadedDoc.teams.push({
+    id: 'Beta', name: 'Beta', emoji: '🅱️',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
+  })
+  reloadedDoc.nav.activeTeamId = 'Beta'
+  store.replaceDoc(reloadedDoc)
+
+  const rows = items()
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.querySelector('.tt-team-name')?.textContent).toBe('Beta')
+  expect(rows[0]!.classList.contains('active')).toBe(true)
+})
+
 test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   const { store } = setup()
   clickByText('➕')

@@ -484,6 +484,12 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // changes must NOT reset dueCache here too, or every pane navigation would
   // force a full due-items rescan for no reason — that stays only in the
   // subscribe() callback above.
+  //
+  // Load-bearing detail: store.replaceDoc() (used by the conflict-modal
+  // reload path in main.ts's onReload handler) fires subscribe() listeners
+  // but NOT onMutate() listeners — so it's the store.subscribe() render
+  // above, not this onMutate() one, that keeps the sidebar in sync after a
+  // reload. Don't collapse these two registrations into just onMutate().
   store.onMutate(() => render())
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 
