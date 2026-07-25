@@ -107,7 +107,11 @@ function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl:
 
   function enterReadOnly(): void {
     store.setReadOnly(true)
-    if (!banner.isConnected) shell.root.prepend(banner)
+    // Sibling before shell.root, not prepended inside it: .tt-shell is a
+    // 2-row CSS grid (header auto, body 1fr) — a 3rd grid child shifts
+    // auto-placement so header lands in the 1fr row (stretches full-height)
+    // and body collapses into an unaccounted implicit row.
+    if (!banner.isConnected) shell.root.parentElement?.insertBefore(banner, shell.root)
   }
 
   function exitReadOnly(): void {
