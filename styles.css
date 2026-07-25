@@ -161,6 +161,7 @@ body { background: var(--bg); color: var(--fg); }
   padding: .3rem .7rem; border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); color: var(--fg);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  user-select: none;
 }
 .tt-header-team-indicator.visible { display: inline-flex; }
 

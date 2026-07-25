@@ -271,9 +271,18 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   const barEls: [HTMLElement, HTMLElement] = [el('div', { class: 'tt-pane-bar' }), el('div', { class: 'tt-pane-bar' })]
   const bodyEls: [HTMLElement, HTMLElement] = [el('div', { class: 'tt-pane-body' }), el('div', { class: 'tt-pane-body' })]
   const paneEls: [HTMLElement, HTMLElement] = [
-    el('div', { class: 'tt-pane', 'data-pane-idx': '0', onclick: () => setFocusedPane(0) }, barEls[0], bodyEls[0]),
-    el('div', { class: 'tt-pane', 'data-pane-idx': '1', onclick: () => setFocusedPane(1) }, barEls[1], bodyEls[1]),
+    el('div', { class: 'tt-pane', 'data-pane-idx': '0' }, barEls[0], bodyEls[0]),
+    el('div', { class: 'tt-pane', 'data-pane-idx': '1' }, barEls[1], bodyEls[1]),
   ]
+  // Capture phase, not bubble: nested handlers (split button, module menu
+  // items, ref chips, ...) can themselves change nav.focusedPane and
+  // re-render synchronously (e.g. openInPane's focusOther branch). A
+  // bubble-phase listener here would run *after* those, silently
+  // overwriting whatever they just set back to "whichever pane this click
+  // started in" — capture runs top-down before the click ever reaches its
+  // target, so this always lands first.
+  paneEls[0].addEventListener('click', () => setFocusedPane(0), true)
+  paneEls[1].addEventListener('click', () => setFocusedPane(1), true)
 
   const dividerEl = el('div', { class: 'tt-pane-divider' })
   dividerEl.addEventListener('mousedown', (downEvt) => {

@@ -3,7 +3,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createPaneManager, navigateFocusedHistory, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
-import { todayIso } from '../src/core/i18n'
+import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
 import { KIND_ICON } from '../src/core/search'
@@ -245,6 +245,51 @@ test('un-splitting while pane 1 is focused, then re-splitting without navigating
   pm.toggleSplit() // back to split — previously this left both panes showing B
   expect(currentLoc(store.doc.nav.panes[0])).toEqual(locA)
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB)
+})
+
+test('clicking the unsplit button in pane 1\'s own bar expands pane 1, even when pane 0 was the last focused pane (regression: click target is the button, not the pane div, so a bubble-phase focus listener used to fire too late)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB)
+  // Force focus back onto pane 0 (as if the user last clicked there), then
+  // click the unsplit button that lives in pane 1's own bar — expanding
+  // pane 1 is exactly what clicking *its* button means, regardless of which
+  // pane was focused a moment ago.
+  store.updateNav((d) => { d.nav.focusedPane = 0 })
+
+  paneBtn(1, 'tt-pane-split-btn').click()
+
+  expect(store.doc.nav.split).toBe(false)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+})
+
+test('opening a module already shown in the other pane focuses that pane for real, surviving the click bubbling back up to the pane it started in (regression)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(1, locB)
+  store.updateNav((d) => { d.nav.focusedPane = 0 })
+
+  // Pick "Milestones" from pane 0's own module menu — a real DOM click whose
+  // target is nested inside pane 0's bar, so it bubbles back up through pane
+  // 0's wrapper after openInPane's focusOther branch runs.
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const milestonesItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
+    .find((b) => b.textContent === t('en-US', 'module_milestones'))
+  if (!milestonesItem) throw new Error('milestones menu item not found')
+  milestonesItem.click()
+
+  expect(document.querySelector('.tt-toast')).not.toBeNull()
+  expect(store.doc.nav.focusedPane).toBe(1)
 })
 
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
