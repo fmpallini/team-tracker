@@ -6,6 +6,10 @@
 import { normalize } from '../core/search'
 
 const HIGHLIGHT_NAME = 'tt-search'
+/** Class toggled on a search result's resolved target element (see `applySearchHighlight`'s `scrollTarget`) — an outline the CSS Custom Highlight API can't provide when there's no visible matched text to mark (a kanban card whose only match is in the modal-only `notes` field; a milestone/risk title, which lives in an `<input>` value, not a text node). */
+const TARGET_FLASH_CLASS = 'tt-search-target-flash'
+/** The element `TARGET_FLASH_CLASS` is currently on, if any — tracked so `clearSearchHighlight` can remove it without needing the element passed back in. */
+let flashedEl: HTMLElement | null = null
 
 /** Fired on a pane's `.tt-pane-body` element right after a search result navigates there, carrying the result's `itemId` (if any) as `detail`. Modules with collapsible per-item content (milestones.ts, risks.ts) listen for this to auto-expand the matching row before highlighting runs. Modules that don't listen simply never see any effect — safe no-op. */
 export const SEARCH_FOCUS_ITEM_EVENT = 'tt-search-focus-item'
@@ -78,6 +82,10 @@ export function applySearchHighlight(rootEls: HTMLElement[], terms: string[], sc
   const first = ranges[0]
   const target = scrollTarget ?? (first && (first.startContainer instanceof Element ? first.startContainer : first.startContainer.parentElement))
   target?.scrollIntoView({ block: 'center' })
+
+  if (flashedEl && flashedEl !== scrollTarget) flashedEl.classList.remove(TARGET_FLASH_CLASS)
+  flashedEl = scrollTarget ?? null
+  flashedEl?.classList.add(TARGET_FLASH_CLASS)
 }
 
 /** Clears any highlight painted by `applySearchHighlight`. Safe to call even if nothing was ever highlighted. */
@@ -85,4 +93,6 @@ export function clearSearchHighlight(): void {
   if (typeof CSS !== 'undefined' && 'highlights' in CSS && CSS.highlights) {
     CSS.highlights.delete(HIGHLIGHT_NAME)
   }
+  flashedEl?.classList.remove(TARGET_FLASH_CLASS)
+  flashedEl = null
 }

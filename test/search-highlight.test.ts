@@ -2,6 +2,7 @@ import { findMatchRanges, applySearchHighlight, clearSearchHighlight, SEARCH_FOC
 
 afterEach(() => {
   document.body.innerHTML = ''
+  clearSearchHighlight() // flashedEl is module-scoped state; don't leak it across tests
 })
 
 test('finds accent-insensitive match ranges across text nodes', () => {
@@ -62,6 +63,57 @@ test('an explicit scrollTarget takes precedence over a found text range', () => 
 
 test('clearSearchHighlight is a safe no-op when nothing was ever highlighted', () => {
   expect(() => clearSearchHighlight()).not.toThrow()
+})
+
+test('an explicit scrollTarget gets an accent outline flashed on it, since CSS.highlights can\'t mark text that isn\'t there (e.g. an action-item card whose only match is in the modal-only notes field)', () => {
+  const root = document.createElement('div')
+  root.textContent = 'irrelevant'
+  const card = document.createElement('div')
+  card.scrollIntoView = vi.fn()
+
+  applySearchHighlight([root], ['zzz'], card)
+
+  expect(card.classList.contains('tt-search-target-flash')).toBe(true)
+})
+
+test('flashing a new scrollTarget removes the outline from the previous one', () => {
+  const root = document.createElement('div')
+  root.textContent = 'irrelevant'
+  const cardA = document.createElement('div')
+  cardA.scrollIntoView = vi.fn()
+  const cardB = document.createElement('div')
+  cardB.scrollIntoView = vi.fn()
+
+  applySearchHighlight([root], ['zzz'], cardA)
+  expect(cardA.classList.contains('tt-search-target-flash')).toBe(true)
+
+  applySearchHighlight([root], ['zzz'], cardB)
+
+  expect(cardA.classList.contains('tt-search-target-flash')).toBe(false)
+  expect(cardB.classList.contains('tt-search-target-flash')).toBe(true)
+})
+
+test('clearSearchHighlight removes the outline from the last flashed target', () => {
+  const root = document.createElement('div')
+  root.textContent = 'irrelevant'
+  const card = document.createElement('div')
+  card.scrollIntoView = vi.fn()
+  applySearchHighlight([root], ['zzz'], card)
+  expect(card.classList.contains('tt-search-target-flash')).toBe(true)
+
+  clearSearchHighlight()
+
+  expect(card.classList.contains('tt-search-target-flash')).toBe(false)
+})
+
+test('without an explicit scrollTarget, nothing is flashed (the free-text CSS.highlights mark is the only indicator there)', () => {
+  const root = document.createElement('div')
+  root.textContent = 'target word'
+  root.scrollIntoView = vi.fn()
+
+  applySearchHighlight([root], ['target'])
+
+  expect(root.classList.contains('tt-search-target-flash')).toBe(false)
 })
 
 test('dispatchSearchFocusItem dispatches the event on the given container with itemId as detail', () => {
