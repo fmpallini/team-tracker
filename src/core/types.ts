@@ -33,6 +33,7 @@ export interface Team {
   actionItems: ActionItem[]; milestones: Milestone[]; risks: Risk[]
   dailyNotes: Record<string, string>
   actionTagNames?: Partial<Record<ActionItem['color'], string>>
+  generalNotes?: string
 }
 export interface Template {
   id: string; name: string

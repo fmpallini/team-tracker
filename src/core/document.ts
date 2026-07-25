@@ -38,6 +38,7 @@ export function createEmptyTeam(id: string, name: string, emoji: string, locale:
     stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
     dailyNotes: {},
     actionTagNames,
+    generalNotes: '',
   }
 }
 

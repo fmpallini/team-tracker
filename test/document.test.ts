@@ -185,3 +185,8 @@ test('findTeam finds a team by id, undefined when missing', () => {
   expect(findTeam(d, 't1')?.name).toBe('Alpha')
   expect(findTeam(d, 'nope')).toBeUndefined()
 })
+
+test('createEmptyTeam seeds generalNotes as an empty string', () => {
+  const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+  expect(team.generalNotes).toBe('')
+})
