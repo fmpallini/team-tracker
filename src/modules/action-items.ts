@@ -7,7 +7,6 @@
 // foreign store update.
 import type { ActionItem, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate, type MsgKey } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
@@ -15,9 +14,7 @@ import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/docume
 import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
-import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { showCardContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
@@ -184,15 +181,13 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_clear_zone_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
-  interface ModalBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle; datePicker: DatePickerHandle }
+  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle }
   let openBundle: ModalBundle | null = null
 
   /** Single teardown for the edit modal's editor bundle — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
   function disposeOpenBundle(): void {
     if (!openBundle) return
-    openBundle.atHandle.dispose()
-    openBundle.tplHandle.dispose()
-    openBundle.editor.destroy()
+    openBundle.richBundle.dispose()
     openBundle.datePicker.destroy()
     openBundle = null
   }
@@ -205,24 +200,16 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     let selectedColor: ActionItem['color'] = existing?.color ?? 'ledger'
     const errorEl = el('div', { class: 'tt-field-error' })
 
-    const editor: Editor = createEditor(
-      {
-        onChange() {},
-        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-        onAtTrigger() {},
-        onSlashTrigger() {},
-        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
-      },
-      lc
-    )
-    editor.setMd(existing?.notes ?? '')
-    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
-    const tplHandle = attachTemplatePicker(editor, {
+    const richBundle = createRichEditorBundle({
+      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+      initialMd: existing?.notes ?? '',
+      onChange: () => {}, // this modal reads editor.getMd() on Save instead of live-persisting
+      getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
-      locale: lc,
+      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
-    openBundle = { editor, atHandle, tplHandle, datePicker }
+    const editor = richBundle.editor
+    openBundle = { richBundle, datePicker }
 
     const colorRow = el('div', { class: 'tt-kanban-color-row' })
     function paintSelectedColor(): void {

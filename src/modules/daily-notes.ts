@@ -4,11 +4,8 @@
 // src/ui/calendar.ts (day picker) into the pane system (src/ui/panes.ts).
 import type { Loc, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
-import { attachTemplatePicker } from '../ui/template-picker'
+import { createRichEditorBundle } from '../ui/rich-editor'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
@@ -109,38 +106,22 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
   )
   calendarCol.append(toggleBtn, calendarSlot)
 
-  const editor: Editor = createEditor(
-    {
-      onChange() {
-        const md = editor.getMd()
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (!tm) return
-          if (md.trim() === '') delete tm.dailyNotes[date]
-          else tm.dailyNotes[date] = md
-        })
-      },
-      onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-      onAtTrigger() {},
-      onSlashTrigger() {},
-      resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+  const bundle = createRichEditorBundle({
+    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    initialMd: findTeam(ctx, teamId)?.dailyNotes[date] ?? '',
+    onChange: (md) => {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        if (md.trim() === '') delete tm.dailyNotes[date]
+        else tm.dailyNotes[date] = md
+      })
     },
-    lc
-  )
-  editor.setMd(findTeam(ctx, teamId)?.dailyNotes[date] ?? '')
-
-  const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam(ctx, teamId)), locale: lc, onPick: () => {} })
-
-  const tplHandle = attachTemplatePicker(editor, {
+    getTeam: () => findTeam(ctx, teamId),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'daily' || tpl.scope === 'any'),
-    getCtx: () => ({
-      dateIso: date,
-      time: nowHHMM(lc),
-      teamName: findTeam(ctx, teamId)?.name,
-      locale: lc,
-    }),
-    locale: lc,
+    getTemplateCtx: () => ({ dateIso: date, time: nowHHMM(lc), teamName: findTeam(ctx, teamId)?.name, locale: lc }),
   })
+  const editor = bundle.editor
 
   // Marks (has-note tint, milestone flags) can change from edits made
   // elsewhere (this same note, the milestones module in the other split
@@ -160,8 +141,6 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   disposers.set(container, () => {
     unsubscribe()
-    atHandle.dispose()
-    tplHandle.dispose()
-    editor.destroy()
+    bundle.dispose()
   })
 }
