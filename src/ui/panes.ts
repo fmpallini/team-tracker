@@ -63,7 +63,10 @@ const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' | 'miles
 ]
 
 export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
-  const items: ModuleItem[] = [{ label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } }]
+  const items: ModuleItem[] = [
+    { label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } },
+    { label: `${KIND_ICON.general} ${t(locale, 'module_general_notes')}`, ref: { kind: 'general' } },
+  ]
   if (team) {
     for (const group of ['stakeholders', 'members'] as const) {
       for (const person of team[group]) {
@@ -85,6 +88,8 @@ function titleFor(store: Store, loc: Loc, locale: Locale): string {
   switch (loc.ref.kind) {
     case 'daily':
       return `${t(locale, 'module_daily')} · ${formatDate(loc.ref.date, locale)}`
+    case 'general':
+      return t(locale, 'module_general_notes')
     case 'person': {
       // `loc.ref` is narrowed to the 'person' variant here by the switch, but
       // that narrowing does not survive into the .find() callback below (TS

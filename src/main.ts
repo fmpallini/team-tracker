@@ -14,6 +14,7 @@ import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
 import { t } from './core/i18n'
 import { renderDailyNotes } from './modules/daily-notes'
+import { renderGeneralNotes } from './modules/general-notes'
 import { renderPeopleTree } from './modules/people-tree'
 import { renderPersonNotes } from './modules/person-notes'
 import { renderActionItems } from './modules/action-items'
@@ -230,6 +231,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   const store = createStore(doc)
   const pm = createPaneManager(shell, store, doc.prefs.locale)
   pm.registerModule('daily', renderDailyNotes)
+  pm.registerModule('general', renderGeneralNotes)
   pm.registerModule('stakeholders', renderPeopleTree('stakeholders'))
   pm.registerModule('members', renderPeopleTree('members'))
   pm.registerModule('person', renderPersonNotes)

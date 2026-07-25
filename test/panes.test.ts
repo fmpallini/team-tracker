@@ -634,16 +634,28 @@ test('buildModuleItems includes one entry per action item/milestone/risk, after 
   expect(actionItemIdx).toBeGreaterThan(actionsBoardIdx)
 })
 
-test('buildModuleItems with no team includes the daily-notes entry and all 5 whole-board entries, but no per-item entries', () => {
+test('buildModuleItems with no team includes the daily-notes entry, the general-notes entry, and all 5 whole-board entries, but no per-item entries', () => {
   const items = buildModuleItems(null, 'en-US')
   expect(items).toEqual([
     { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
+    { label: `${KIND_ICON.general} General notes`, ref: { kind: 'general' } },
     { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
     { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
     { label: `${KIND_ICON.actions} Action items`, ref: { kind: 'actions' } },
     { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
     { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
   ])
+})
+
+test('buildModuleItems places the general-notes entry immediately after daily, before any per-person entries', () => {
+  const team: Team = {
+    id: 'T1', name: 'Team 1', emoji: '🚀',
+    stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
+    members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
+  }
+  const items = buildModuleItems(team, 'en-US')
+  expect(items[0]!.ref.kind).toBe('daily')
+  expect(items[1]!.ref).toEqual({ kind: 'general' })
 })
 
 test('buildModuleItems prefixes every entry with its module icon (daily, person, and each whole-board entry)', () => {
