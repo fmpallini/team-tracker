@@ -51,11 +51,11 @@ interface AppController {
    * Task 25 re-review item #4c: tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
    * beforeunload) plus the save controller's own interval/mutation-guard
-   * teardown. Nothing calls this today — the app has a single-document
-   * lifecycle for its whole lifetime — but future callers (hot-reload, a
-   * "close file" action, tests that open more than one document) now have a
-   * real, complete teardown path instead of having to rediscover and unwind
-   * each listener by hand.
+   * teardown. Invoked by `closeFile()` below (the 🔒 header button /
+   * Ctrl+Alt+L) before returning to the start screen — every listener this
+   * function tears down must actually be pushed onto `disposers` (see the two
+   * registrations fixed alongside this comment) or it leaks across a
+   * close-file → open-another-file cycle in the same tab.
    */
   dispose(): void
 }
@@ -324,12 +324,14 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   // touched via `store.update` (see ui/prefs.ts), so this is a simple,
   // single-point hook that doesn't need to widen ui/prefs.ts's contract.
   let lastAutoSaveMin = store.doc.prefs.autoSaveMin
-  store.subscribe(() => {
-    if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
-      lastAutoSaveMin = store.doc.prefs.autoSaveMin
-      saveCtl.scheduleFrom(store.doc.prefs)
-    }
-  })
+  disposers.push(
+    store.subscribe(() => {
+      if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
+        lastAutoSaveMin = store.doc.prefs.autoSaveMin
+        saveCtl.scheduleFrom(store.doc.prefs)
+      }
+    })
+  )
 
   const onVisibilityChange = (): void => {
     if (document.visibilityState === 'hidden' && store.dirty) void saveCtl.saveNow()
@@ -427,7 +429,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   shell.onHelp(() => {
     showGlobalHelp(store.doc.prefs.locale)
   })
-  store.onMutate(() => clearSearchHighlight())
+  disposers.push(store.onMutate(() => clearSearchHighlight()))
   disposers.push(
     onLocaleChanged(() => {
       pm.renderAll()
