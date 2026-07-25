@@ -7,6 +7,14 @@ import { normalize } from '../core/search'
 
 const HIGHLIGHT_NAME = 'tt-search'
 
+/** Fired on a pane's `.tt-pane-body` element right after a search result navigates there, carrying the result's `itemId` (if any) as `detail`. Modules with collapsible per-item content (milestones.ts, risks.ts) listen for this to auto-expand the matching row before highlighting runs. Modules that don't listen simply never see any effect — safe no-op. */
+export const SEARCH_FOCUS_ITEM_EVENT = 'tt-search-focus-item'
+
+/** Dispatches SEARCH_FOCUS_ITEM_EVENT on `container` with `itemId` as `detail`. */
+export function dispatchSearchFocusItem(container: HTMLElement, itemId: string): void {
+  container.dispatchEvent(new CustomEvent<string>(SEARCH_FOCUS_ITEM_EVENT, { detail: itemId }))
+}
+
 /**
  * Walks text nodes under `rootEl`, finds `normalize()`-matched term
  * positions and returns a `Range` per match. `normalize()` preserves
@@ -42,12 +50,20 @@ export function findMatchRanges(rootEl: HTMLElement, terms: string[]): Range[] {
 }
 
 /**
- * Paints `terms`' matches under `rootEl` via `CSS.highlights` (no-op where
- * unsupported — e.g. jsdom, or a browser without the Custom Highlight API)
- * and scrolls the first match into view. Safe to call unconditionally.
+ * Paints `terms`' matches across every root in `rootEls` via `CSS.highlights`
+ * (no-op where unsupported — e.g. jsdom, or a browser without the Custom
+ * Highlight API) and scrolls a target into view. `scrollTarget`, when given,
+ * always wins as the scroll destination over the first painted match —
+ * callers pass it when they've already resolved exactly which element a
+ * search result belongs to (e.g. a specific milestone row or kanban card),
+ * so scrolling there doesn't depend on whether any of that element's
+ * *currently visible* text happens to match (it may not — e.g. an action
+ * item's notes field only exists inside its edit modal). Without an explicit
+ * target, falls back to the first match's containing element, or does
+ * nothing if there are no matches. Safe to call unconditionally.
  */
-export function applySearchHighlight(rootEl: HTMLElement, terms: string[]): void {
-  const ranges = findMatchRanges(rootEl, terms)
+export function applySearchHighlight(rootEls: HTMLElement[], terms: string[], scrollTarget?: HTMLElement): void {
+  const ranges = rootEls.flatMap((rootEl) => findMatchRanges(rootEl, terms))
   if (typeof CSS !== 'undefined' && 'highlights' in CSS && CSS.highlights) {
     if (ranges.length === 0) {
       CSS.highlights.delete(HIGHLIGHT_NAME)
@@ -56,10 +72,8 @@ export function applySearchHighlight(rootEl: HTMLElement, terms: string[]): void
     }
   }
   const first = ranges[0]
-  if (first) {
-    const el = first.startContainer instanceof Element ? first.startContainer : first.startContainer.parentElement
-    el?.scrollIntoView({ block: 'center' })
-  }
+  const target = scrollTarget ?? (first && (first.startContainer instanceof Element ? first.startContainer : first.startContainer.parentElement))
+  target?.scrollIntoView({ block: 'center' })
 }
 
 /** Clears any highlight painted by `applySearchHighlight`. Safe to call even if nothing was ever highlighted. */
