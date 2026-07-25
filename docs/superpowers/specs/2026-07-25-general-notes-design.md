@@ -11,13 +11,23 @@ than about a date or an individual.
 
 ## Data model
 
-- `Team` gains `generalNotes: string` (`src/core/types.ts`) — a single
+- `Team` gains `generalNotes?: string` (`src/core/types.ts`) — a single
   markdown blob, team-scoped, no id. Same shape as `Person.notes`, not the
-  id-bearing arrays (`actionItems`/`milestones`/`risks`).
-- `SCHEMA_VERSION` bumps to `8` (`src/core/document.ts`); `MIGRATIONS[7]`
-  backfills `team.generalNotes = team.generalNotes ?? ''` for every team on
-  an older doc.
-- `createEmptyTeam` seeds `generalNotes: ''`.
+  id-bearing arrays (`actionItems`/`milestones`/`risks`), but **optional**,
+  not required.
+- **No `SCHEMA_VERSION` bump, no migration step.** This follows the existing
+  precedent set by `Team.actionTagNames?:` (types.ts) — a team-level field
+  added after the initial schema, kept optional specifically so a doc
+  written before the field existed just has it `undefined` forever, read as
+  `team.generalNotes ?? ''` at every call site, with no ladder step needed.
+  The alternative (required field + migration, as originally scoped) would
+  force every one of the ~20 test files that construct a bare `Team` object
+  literal (`dailyNotes: {}` is the grep anchor) to gain a new required
+  property for no behavioral benefit — optional-with-fallback is how this
+  codebase already solves exactly this problem.
+- `createEmptyTeam` seeds `generalNotes: ''` for newly created teams (same
+  as it does for `actionTagNames`) — only pre-existing teams in older `.tmv`
+  files ever see the field as `undefined`.
 - `ModuleRef` gains `{ kind: 'general' }` — no `itemId`, since the note isn't
   individually addressable (mirrors `stakeholders`/`members`, not
   `actions`/`milestones`/`risks`).
@@ -66,7 +76,7 @@ export function renderGeneralNotes(container: HTMLElement, loc: Loc, ctx: Module
 - `src/core/search.ts`:
   - `KIND_ICON.general = '🗒️'`.
   - `collectCandidates()` gains a loop pushing one candidate per team:
-    `out.push({ raw: team.generalNotes, title: t(doc.prefs.locale,
+    `out.push({ raw: team.generalNotes ?? '', title: t(doc.prefs.locale,
     'module_general_notes'), ref: { kind: 'general' } })`. `searchDocument()`
     wraps `candidate.ref` into `{ teamId, ref }` itself (see its `loc:
     { teamId: team.id, ref: candidate.ref }` line) — `collectCandidates`
@@ -78,8 +88,8 @@ export function renderGeneralNotes(container: HTMLElement, loc: Loc, ctx: Module
   - Not added to `teamRefCandidates()` / `REF_KINDS` — the note has no id to
     target, so it's not `@`-mentionable, matching `stakeholders`/`members`.
 - `src/core/refs.ts`: `unlinkRefsInTeam()` gains `team.generalNotes =
-  unlink(team.generalNotes)` alongside its existing sweeps of `dailyNotes`
-  and each person's `notes`. This is independent of the `REF_KINDS`
+  unlink(team.generalNotes ?? '')` alongside its existing sweeps of
+  `dailyNotes` and each person's `notes`. This is independent of the `REF_KINDS`
   decision above — the blob's free text can itself *contain* `@[label](kind:id)`
   mentions of people/actions/milestones/risks, and those need the same
   auto-unlink-on-delete as every other free-text field gets.
@@ -106,13 +116,16 @@ this module (see Renderer section above).
 `test/action-items.test.ts`'s pattern:
 
 - Renders existing `team.generalNotes` content into the editor.
+- Renders a team whose `generalNotes` is `undefined` (older-doc case, no
+  field present) without throwing — editor starts empty.
 - Typing updates `store.doc` via `store.update()` (marks dirty).
 - Empty content round-trips as `''`, not left `undefined`.
 - Template picker only offers `scope: 'any'` templates.
-- Migration test: a v7 doc without `generalNotes` opens with `generalNotes: ''`
-  backfilled on every team.
+- `createEmptyTeam` seeds `generalNotes: ''` for a freshly created team.
 - Search: a team with non-empty `generalNotes` shows up in
   `searchDocument()` results with `moduleKind: 'general'`.
+- Search: a team with `generalNotes` left `undefined` doesn't throw and
+  simply never matches (no crash on the missing field).
 - Unlink: an `@[Name](person:id)` mention inside `generalNotes` reverts to
   plain text when that person is deleted.
 
@@ -124,3 +137,4 @@ this module (see Renderer section above).
 - No dedicated not-found placeholder — team deletion is handled upstream by
   navigation away from the pane, consistent with every other fixed-kind
   module (actions/milestones/risks/stakeholders/members).
+- No `SCHEMA_VERSION` bump / migration ladder step — see Data model section.
