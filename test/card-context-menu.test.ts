@@ -1,4 +1,6 @@
-import { showCardContextMenu } from '../src/ui/card-context-menu'
+import { showCardContextMenu, openItemContextMenu } from '../src/ui/card-context-menu'
+import { createStore } from '../src/core/store'
+import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import type { Team } from '../src/core/types'
 
 const LOCALE = 'en-US' as const
@@ -62,4 +64,17 @@ test('"Move to team…" calls transfer with mode "move" and the picked team', ()
   select.value = 'T2'
   modalButton('Confirm').click()
   expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'move')
+})
+
+test('openItemContextMenu dispatches duplicate to the right kind', () => {
+  const doc = createEmptyDocument('en-US')
+  const team2 = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+  team2.actionItems.push({ id: 'a1', summary: 'X', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 })
+  doc.teams.push(team2)
+  const store = createStore(doc)
+  const ctx = { store, locale: 'en-US' } as any // extend with pm/paneIdx if ModuleCtx requires them for this path
+
+  openItemContextMenu(ctx, 'action', 't1', 'a1', 10, 10)
+  menuItems()[0]!.click() // "Duplicate"
+  expect(store.doc.teams[0]!.actionItems.length).toBe(2)
 })

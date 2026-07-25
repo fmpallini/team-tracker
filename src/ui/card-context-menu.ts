@@ -8,6 +8,12 @@ import type { Team } from '../core/types'
 import { t, type Locale } from '../core/i18n'
 import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { openTeamPickerModal } from './team-picker-modal'
+import type { ModuleCtx } from './panes'
+import {
+  duplicateActionItem, transferActionItem,
+  duplicateMilestone, transferMilestone,
+  duplicateRisk, transferRisk,
+} from '../core/card-transfer'
 
 export interface CardContextMenuActions {
   duplicate(itemId: string): void
@@ -38,4 +44,35 @@ export function showCardContextMenu(
     menuItems.push({ label: t(locale, 'context_menu_move_to_team'), onClick: () => openTransferModal(locale, itemId, 'move', otherTeams, actions) })
   }
   showContextMenu(x, y, menuItems)
+}
+
+export type CardKind = 'action' | 'milestone' | 'risk'
+
+const DUPLICATE_FNS: Record<CardKind, (team: Team, itemId: string) => void> = {
+  action: duplicateActionItem,
+  milestone: duplicateMilestone,
+  risk: duplicateRisk,
+}
+
+const TRANSFER_FNS: Record<CardKind, (teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move') => void> = {
+  action: transferActionItem,
+  milestone: transferMilestone,
+  risk: transferRisk,
+}
+
+/** Wires showCardContextMenu's duplicate/transfer callbacks to the right per-kind core/card-transfer.ts function, so action-items.ts/milestones.ts/risks.ts don't each hand-roll the same store.update wrapper. */
+export function openItemContextMenu(ctx: ModuleCtx, kind: CardKind, teamId: string, itemId: string, x: number, y: number): void {
+  showCardContextMenu(ctx.locale, teamId, ctx.store.doc.teams, itemId, x, y, {
+    duplicate: (id) => {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (tm) DUPLICATE_FNS[kind](tm, id)
+      })
+    },
+    transfer: (id, targetTeamId, mode) => {
+      ctx.store.update((d) => {
+        TRANSFER_FNS[kind](d.teams, id, teamId, targetTeamId, mode)
+      })
+    },
+  })
 }

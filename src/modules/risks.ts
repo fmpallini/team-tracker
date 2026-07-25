@@ -11,12 +11,11 @@
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
-import { duplicateRisk, transferRisk } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { showCardContextMenu } from '../ui/card-context-menu'
+import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
@@ -211,19 +210,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
-      duplicate: (id) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (tm) duplicateRisk(tm, id)
-        })
-      },
-      transfer: (id, targetTeamId, mode) => {
-        ctx.store.update((d) => {
-          transferRisk(d.teams, id, teamId, targetTeamId, mode)
-        })
-      },
-    })
+    openItemContextMenu(ctx, 'risk', teamId, itemId, x, y)
   }
 
   function renderRow(r: Risk): HTMLElement {

@@ -11,12 +11,11 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
-import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
-import { showCardContextMenu } from '../ui/card-context-menu'
+import { openItemContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -346,19 +345,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   function openCardContextMenu(itemId: string, x: number, y: number): void {
-    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
-      duplicate: (id) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (tm) duplicateActionItem(tm, id)
-        })
-      },
-      transfer: (id, targetTeamId, mode) => {
-        ctx.store.update((d) => {
-          transferActionItem(d.teams, id, teamId, targetTeamId, mode)
-        })
-      },
-    })
+    openItemContextMenu(ctx, 'action', teamId, itemId, x, y)
   }
 
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItem['color'], string>>): HTMLElement {

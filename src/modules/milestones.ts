@@ -13,12 +13,11 @@
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
-import { duplicateMilestone, transferMilestone } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { showCardContextMenu } from '../ui/card-context-menu'
+import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
@@ -325,19 +324,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   // --- list -------------------------------------------------------------
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
-      duplicate: (id) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (tm) duplicateMilestone(tm, id)
-        })
-      },
-      transfer: (id, targetTeamId, mode) => {
-        ctx.store.update((d) => {
-          transferMilestone(d.teams, id, teamId, targetTeamId, mode)
-        })
-      },
-    })
+    openItemContextMenu(ctx, 'milestone', teamId, itemId, x, y)
   }
 
   function renderRow(m: Milestone): HTMLElement {
