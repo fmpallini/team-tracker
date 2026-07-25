@@ -32,6 +32,11 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
+/** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
+export function blurOnEnter(e: Event): void {
+  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
+}
+
 /**
  * Wires the "dismiss on outside click or Escape" lifecycle shared by every
  * floating overlay in this app (context menus, popovers, the @-mention

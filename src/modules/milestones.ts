@@ -24,15 +24,10 @@ import { showCardContextMenu } from '../ui/card-context-menu'
 import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el } from '../ui/dom'
+import { el, blurOnEnter } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
-
-/** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
-function blurOnEnter(e: Event): void {
-  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
-}
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /** Minimum horizontal distance (px) between two neighboring milestone dots. */
