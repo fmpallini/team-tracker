@@ -1,9 +1,9 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
-import { todayIso } from '../src/core/i18n'
+import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
 import { KIND_ICON } from '../src/core/search'
@@ -106,6 +106,35 @@ test('restoreTeamLayout keeps focusedPane on 0 when the team\'s remembered layou
 
   expect(store.doc.nav.split).toBe(false)
   expect(store.doc.nav.focusedPane).toBe(0)
+})
+
+test('restoreTeamLayout never restores the same module kind into both panes, even when each pane\'s own independent history says to (regression: search-triggered team switch could open the same module side by side)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  addTeam(store, 'T2')
+
+  openTeamDefaultLayout(pm, store, 'T1') // pane0=daily(T1), pane1=members(T1)
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } }) // pane0=milestones(T1)
+
+  // pane0 moves on to T2 entirely — its own history still remembers
+  // milestones as the last thing it showed for T1.
+  pm.openInPane(0, { teamId: 'T2', ref: { kind: 'daily', date: '2026-03-01' } }, { force: true })
+
+  // pane1 (still on T1) now also navigates to milestones — live conflict
+  // guard sees pane0 on a *different team* and lets it through.
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'milestones' } })
+
+  // Switching back to T1 (what search does when a result belongs to a team
+  // other than the one currently active) restores each pane's own
+  // independently-remembered T1 Loc — both happen to be "milestones".
+  restoreTeamLayout(pm, store, 'T1')
+
+  const p0 = currentLoc(store.doc.nav.panes[0])!
+  const p1 = currentLoc(store.doc.nav.panes[1])!
+  expect(p0.teamId).toBe('T1')
+  expect(p1.teamId).toBe('T1')
+  expect(p0.ref.kind).toBe('milestones')
+  expect(p1.ref.kind).not.toBe('milestones') // resolved to a fallback instead of duplicating
 })
 
 test('teamHasHistory reflects whether any pane history contains the team', () => {
@@ -247,6 +276,64 @@ test('un-splitting while pane 1 is focused, then re-splitting without navigating
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB)
 })
 
+test('clicking the unsplit button in pane 1\'s own bar expands pane 1, even when pane 0 was the last focused pane (regression: click target is the button, not the pane div, so a bubble-phase focus listener used to fire too late)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB)
+  // Force focus back onto pane 0 (as if the user last clicked there), then
+  // click the unsplit button that lives in pane 1's own bar — expanding
+  // pane 1 is exactly what clicking *its* button means, regardless of which
+  // pane was focused a moment ago.
+  store.updateNav((d) => { d.nav.focusedPane = 0 })
+
+  paneBtn(1, 'tt-pane-split-btn').click()
+
+  expect(store.doc.nav.split).toBe(false)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+})
+
+test('opening a module already shown in the other pane focuses that pane for real, surviving the click bubbling back up to the pane it started in (regression)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(1, locB)
+  store.updateNav((d) => { d.nav.focusedPane = 0 })
+
+  // Pick "Milestones" from pane 0's own module menu — a real DOM click whose
+  // target is nested inside pane 0's bar, so it bubbles back up through pane
+  // 0's wrapper after openInPane's focusOther branch runs.
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const milestonesItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
+    .find((b) => b.textContent === t('en-US', 'module_milestones'))
+  if (!milestonesItem) throw new Error('milestones menu item not found')
+  milestonesItem.click()
+
+  expect(document.querySelector('.tt-toast')).not.toBeNull()
+  expect(store.doc.nav.focusedPane).toBe(1)
+})
+
+test('pane module dropdown lists General notes right after Daily notes', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
+
+  expect(items[0]?.textContent).toBe(t('en-US', 'module_daily'))
+  expect(items[1]?.textContent).toBe(t('en-US', 'module_general_notes'))
+})
+
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -265,6 +352,54 @@ test('un-splitting while pane 1 is focused, navigating in the now-single pane, t
   pm.toggleSplit() // back to split — should keep C on the left, not resurrect stashed A
   expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC)
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB)
+})
+
+test('un-splitting while pane 1 is focused, then stepping history via navigateFocusedHistory (the Alt+Arrow hotkey path, which bypasses openInPane), then re-splitting keeps the stepped-to entry instead of resurrecting the stash', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB1: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+  const locB2: Loc = { teamId: 'T1', ref: { kind: 'risks' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB1)
+  pm.openInPane(1, locB2) // pane 1 history: [locB1, locB2], index 1, current locB2; focuses pane 1
+
+  pm.toggleSplit() // unsplit: pane 0 pulls in pane 1's (locB2) content
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB2)
+
+  // Real navigation via the Alt+Arrow hotkey path — stepPaneHistory is
+  // called directly, not through openInPane, so this exercises the one
+  // invalidation site that can't reach into createPaneManager's closure
+  // directly (see unsplitStashInvalidators in src/ui/panes.ts).
+  navigateFocusedHistory(pm, store, -1)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB1)
+
+  pm.toggleSplit() // back to split — should keep locB1 (the stepped-to entry), not resurrect stashed A
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB1)
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual(locB2)
+})
+
+test('invalidateUnsplitStash (the hook sidebar.ts\'s deleteTeam uses, since it prunes nav.panes history directly rather than through openInPane/stepPaneHistory) clears the stash so a later re-split does not resurrect it', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB) // focuses pane 1
+
+  pm.toggleSplit() // unsplit: pane 0 pulls in pane 1's (locB) content
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+
+  invalidateUnsplitStash(store) // simulates deleteTeam's direct history mutation
+  pm.toggleSplit() // back to split — stash was invalidated, so pane 0 keeps locB instead of resurrecting locA
+
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
 })
 
 test('pane back/forward buttons are disabled exactly when navigateHistory would return null', () => {
@@ -512,16 +647,28 @@ test('buildModuleItems includes one entry per action item/milestone/risk, after 
   expect(actionItemIdx).toBeGreaterThan(actionsBoardIdx)
 })
 
-test('buildModuleItems with no team includes the daily-notes entry and all 5 whole-board entries, but no per-item entries', () => {
+test('buildModuleItems with no team includes the daily-notes entry, the general-notes entry, and all 5 whole-board entries, but no per-item entries', () => {
   const items = buildModuleItems(null, 'en-US')
   expect(items).toEqual([
     { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
+    { label: `${KIND_ICON.general} General notes`, ref: { kind: 'general' } },
     { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
     { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
     { label: `${KIND_ICON.actions} Action items`, ref: { kind: 'actions' } },
     { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
     { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
   ])
+})
+
+test('buildModuleItems places the general-notes entry immediately after daily, before any per-person entries', () => {
+  const team: Team = {
+    id: 'T1', name: 'Team 1', emoji: '🚀',
+    stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
+    members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
+  }
+  const items = buildModuleItems(team, 'en-US')
+  expect(items[0]!.ref.kind).toBe('daily')
+  expect(items[1]!.ref).toEqual({ kind: 'general' })
 })
 
 test('buildModuleItems prefixes every entry with its module icon (daily, person, and each whole-board entry)', () => {

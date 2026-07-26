@@ -8,7 +8,7 @@ import { t, type Locale } from '../core/i18n'
 import { searchDocument, normalize, KIND_ICON, type SearchResult } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
-import { applySearchHighlight } from './search-highlight'
+import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
 
@@ -197,8 +197,20 @@ export function mountSearch(
       const paneEl = document.querySelectorAll('.tt-pane-body')[store.doc.nav.focusedPane] as HTMLElement | undefined
       if (!paneEl) return
       const ref = result.loc.ref
-      const anchor = 'itemId' in ref && ref.itemId ? paneEl.querySelector(`[data-item-id="${ref.itemId}"]`) : null
-      applySearchHighlight((anchor as HTMLElement) ?? paneEl, terms)
+      const itemId = 'itemId' in ref ? ref.itemId : undefined
+      // No-op for modules that don't listen (action-items, daily/person notes).
+      // For milestones/risks, this expands the matching row (if collapsed)
+      // before the anchor lookup below, so its follow-up text is in the DOM
+      // to highlight.
+      if (itemId) dispatchSearchFocusItem(paneEl, itemId)
+      const anchors = itemId
+        ? Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
+        : []
+      // anchors[0], not a range-derived position, is the scroll target: we
+      // already know exactly which element this result belongs to, and that
+      // must win even if none of its *currently visible* text matches (e.g.
+      // an action item's notes field, which only exists in its edit modal).
+      applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], terms, anchors[0])
     })
   }
 
@@ -252,6 +264,15 @@ export function mountSearch(
   })
 
   const onDocKeydown = (e: KeyboardEvent): void => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      checkbox.checked = true
+      allTeams = true
+      input.focus()
+      input.select()
+      runSearch()
+      return
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault()
       input.focus()

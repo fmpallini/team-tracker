@@ -7,7 +7,7 @@ import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
 import { el } from './dom'
 import { toast } from './modal'
-import { notifyNavChanged, ADD_TEAM_REQUEST_EVENT } from './sidebar'
+import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
@@ -63,7 +63,10 @@ const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' | 'miles
 ]
 
 export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
-  const items: ModuleItem[] = [{ label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } }]
+  const items: ModuleItem[] = [
+    { label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } },
+    { label: `${KIND_ICON.general} ${t(locale, 'module_general_notes')}`, ref: { kind: 'general' } },
+  ]
   if (team) {
     for (const group of ['stakeholders', 'members'] as const) {
       for (const person of team[group]) {
@@ -85,6 +88,8 @@ function titleFor(store: Store, loc: Loc, locale: Locale): string {
   switch (loc.ref.kind) {
     case 'daily':
       return `${t(locale, 'module_daily')} · ${formatDate(loc.ref.date, locale)}`
+    case 'general':
+      return t(locale, 'module_general_notes')
     case 'person': {
       // `loc.ref` is narrowed to the 'person' variant here by the switch, but
       // that narrowing does not survive into the .find() callback below (TS
@@ -148,6 +153,33 @@ function otherPaneIdx(idx: 0 | 1): 0 | 1 {
 }
 
 /**
+ * Per-store invalidation hook for `unsplitStashValid` (declared inside
+ * `createPaneManager`, see `toggleSplit` below). `stepPaneHistory` just below
+ * is intentionally a free function, not a `PaneManager` method — see its own
+ * docstring — so main.ts's global Alt+ArrowLeft/Right hotkey
+ * (`navigateFocusedHistory`) can drive pane-0 history directly, without
+ * reaching into `createPaneManager`'s closure. That means it's also the one
+ * real-navigation site that can't set the closure-local `unsplitStashValid`
+ * flag directly. A `WeakMap` keyed by the `Store` instance gives it a narrow
+ * way back in — one entry per `PaneManager`, replaced (not accumulated) if a
+ * store ever gets a new one, and GC'd along with the store — without
+ * widening the `PaneManager` interface just for this.
+ */
+const unsplitStashInvalidators = new WeakMap<Store, () => void>()
+
+/**
+ * Invalidates `store`'s stashed pane-0 content (see `unsplitStashInvalidators`
+ * above) from outside `createPaneManager`'s closure — e.g. sidebar.ts's
+ * `deleteTeam`, which prunes `d.nav.panes[*].history` directly rather than
+ * through `openInPane`/`stepPaneHistory`, so it would otherwise leave a stash
+ * referencing the deleted team's history restorable by a later re-split.
+ * No-op if `store` has no registered `PaneManager` yet.
+ */
+export function invalidateUnsplitStash(store: Store): void {
+  unsplitStashInvalidators.get(store)?.()
+}
+
+/**
  * Applies one history step (back/forward) to pane `idx`, skipping over any
  * entry that would conflict with the other pane's current Loc (same rule
  * `navigateHistory` itself enforces). Returns whether the nav state changed.
@@ -165,7 +197,8 @@ export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean 
     d.nav.panes[idx] = result
     d.nav.focusedPane = idx
   })
-  notifyNavChanged()
+  // Real navigation into pane 0 — see unsplitStashInvalidators above.
+  if (idx === 0) invalidateUnsplitStash(store)
   return true
 }
 
@@ -205,7 +238,6 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
     d.nav.activeTeamId = teamId
     d.nav.split = rememberedSplit
   })
-  notifyNavChanged()
 
   // Both panes always get resynced to the new team, regardless of whether
   // it's remembered split or single — `rememberedSplit` only controls
@@ -220,7 +252,21 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   const todayLoc = (): Loc => ({ teamId, ref: { kind: 'daily', date: todayIso() } })
   const pane0Last = lastLocForTeam(store.doc.nav.panes[0], teamId)
   const pane1Last = lastLocForTeam(store.doc.nav.panes[1], teamId)
-  pm.openBothPanes(pane0Last ?? todayLoc(), pane1Last ?? { teamId, ref: { kind: 'members' } }, rememberedSplit ? 1 : 0)
+  const target0 = pane0Last ?? todayLoc()
+  let target1 = pane1Last ?? { teamId, ref: { kind: 'members' } }
+  // Each pane's remembered Loc for this team is picked from its own
+  // independent history and can coincidentally land on the same module kind
+  // even though the two panes never conflicted live (e.g. pane 0 had since
+  // moved on to a different team by the time pane 1 picked up that same kind
+  // for this one). openBothPanes intentionally skips the duplicate guard
+  // (see its own doc comment) — resolve the clash here, or it lands on
+  // screen (immediately if remembered split, or the next time split is
+  // toggled on otherwise) as the same module open in both panes at once.
+  if (locsConflict(target1, target0)) {
+    const fallback: Loc = { teamId, ref: { kind: 'members' } }
+    target1 = locsConflict(fallback, target0) ? { teamId, ref: { kind: 'stakeholders' } } : fallback
+  }
+  pm.openBothPanes(target0, target1, rememberedSplit ? 1 : 0)
 }
 
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
@@ -244,9 +290,18 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   const barEls: [HTMLElement, HTMLElement] = [el('div', { class: 'tt-pane-bar' }), el('div', { class: 'tt-pane-bar' })]
   const bodyEls: [HTMLElement, HTMLElement] = [el('div', { class: 'tt-pane-body' }), el('div', { class: 'tt-pane-body' })]
   const paneEls: [HTMLElement, HTMLElement] = [
-    el('div', { class: 'tt-pane', 'data-pane-idx': '0', onclick: () => setFocusedPane(0) }, barEls[0], bodyEls[0]),
-    el('div', { class: 'tt-pane', 'data-pane-idx': '1', onclick: () => setFocusedPane(1) }, barEls[1], bodyEls[1]),
+    el('div', { class: 'tt-pane', 'data-pane-idx': '0' }, barEls[0], bodyEls[0]),
+    el('div', { class: 'tt-pane', 'data-pane-idx': '1' }, barEls[1], bodyEls[1]),
   ]
+  // Capture phase, not bubble: nested handlers (split button, module menu
+  // items, ref chips, ...) can themselves change nav.focusedPane and
+  // re-render synchronously (e.g. openInPane's focusOther branch). A
+  // bubble-phase listener here would run *after* those, silently
+  // overwriting whatever they just set back to "whichever pane this click
+  // started in" — capture runs top-down before the click ever reaches its
+  // target, so this always lands first.
+  paneEls[0].addEventListener('click', () => setFocusedPane(0), true)
+  paneEls[1].addEventListener('click', () => setFocusedPane(1), true)
 
   const dividerEl = el('div', { class: 'tt-pane-divider' })
   dividerEl.addEventListener('mousedown', (downEvt) => {
@@ -304,7 +359,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     store.updateNav((d) => {
       d.nav.focusedPane = idx
     })
-    notifyNavChanged()
     layout()
   }
 
@@ -363,7 +417,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       store.updateNav((d) => {
         d.nav.focusedPane = otherIdx
       })
-      notifyNavChanged()
       toast(t(localeNow(), 'toast_focus_other'))
       renderAll()
       return
@@ -387,7 +440,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[idx] = result.pane
       d.nav.focusedPane = idx
     })
-    notifyNavChanged()
+    // Real navigation into pane 0 — see unsplitStash/unsplitStashValid below.
+    if (idx === 0) unsplitStashValid = false
     renderAll()
   }
 
@@ -404,7 +458,9 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[1] = result1.pane
       d.nav.focusedPane = focusedPane
     })
-    notifyNavChanged()
+    // Always a real (programmatic) navigation into pane 0 — see
+    // unsplitStash/unsplitStashValid below.
+    unsplitStashValid = false
     renderAll()
   }
 
@@ -415,15 +471,17 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
   // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
   // put it back on the left instead of leaving pane 0 and pane 1 showing an
-  // identical duplicate. `store.updateNav` mutates `doc` in place rather than
-  // cloning (see store.ts), so `d.nav.panes[0] = d.nav.panes[1]` makes both
-  // slots the exact same object reference — meaning `pane0 === pane1` is a
-  // cheap, reliable "nothing navigated away since the pull" check: any real
-  // navigation (openInPane, stepPaneHistory, a team switch) always replaces
-  // pane 0 with a freshly constructed object, breaking the aliasing. Never
-  // persisted, like `spaceHideSplit` — losing it on reload is fine, it's a
-  // same-session UX nicety, not app state.
+  // identical duplicate. Never persisted, like `spaceHideSplit` — losing it
+  // on reload is fine, it's a same-session UX nicety, not app state.
   let unsplitStash: PaneState | null = null
+  // Explicit instead of relying on `d.nav.panes[0] === d.nav.panes[1]`
+  // object-identity (which happens to hold because store.updateNav mutates
+  // in place) — any real navigation while unsplit invalidates the stash.
+  // Cleared directly by openInPane/openBothPanes below (idx 0 writes) and,
+  // for stepPaneHistory, via the unsplitStashInvalidators WeakMap registered
+  // just below (see that WeakMap's own comment for why).
+  let unsplitStashValid = false
+  unsplitStashInvalidators.set(store, () => { unsplitStashValid = false })
 
   /**
    * Toggles against the *effective* (visible) split state, not the raw
@@ -449,21 +507,23 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       if (!d.nav.split) {
         if (d.nav.focusedPane === 1) {
           unsplitStash = d.nav.panes[0]
+          unsplitStashValid = true
           d.nav.panes[0] = d.nav.panes[1]
         } else {
           unsplitStash = null
+          unsplitStashValid = false
         }
         d.nav.focusedPane = 0
-      } else if (unsplitStash && d.nav.panes[0] === d.nav.panes[1]) {
+      } else if (unsplitStashValid && unsplitStash) {
         d.nav.panes[0] = unsplitStash
         unsplitStash = null
+        unsplitStashValid = false
       }
       // Remembers this choice per team so switching back to it later (see
       // main.ts's selectTeam) restores split/single view as last left it.
       if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split
     })
     if (wasVisible === false) spaceHideSplit = false
-    notifyNavChanged()
     renderAll()
   }
 
@@ -493,6 +553,12 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       'button',
       { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'daily', date: todayIso() }) },
       t(lc, 'module_daily')
+    )
+
+    const generalBtn = el(
+      'button',
+      { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'general' }) },
+      t(lc, 'module_general_notes')
     )
 
     const personToggle = el(
@@ -537,7 +603,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       el('button', { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind }) }, t(lc, key))
     )
 
-    return el('div', { class: 'tt-pane-menu' }, dailyBtn, personGroup, ...fixedBtns)
+    return el('div', { class: 'tt-pane-menu' }, dailyBtn, generalBtn, personGroup, ...fixedBtns)
   }
 
   /** Opens a print-only window with a clone of the pane's current module content — whatever it is (note editor, risks table, people tree, ...) — plus a clone of the app's own stylesheet (see PRINT_CSS) and a small discreet header identifying the team/module/detail being printed. Content is inserted via appendChild(cloneNode), never through document.write, matching src/ui/editor.ts's prior print implementation this replaces. */

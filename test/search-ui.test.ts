@@ -200,6 +200,45 @@ test('scopes to the active team by default; the all-teams checkbox widens the se
   expect(document.querySelector('.tt-search-team')!.textContent).toBe('Team Two')
 })
 
+test('Ctrl+Shift+F checks the all-teams box, focuses the search input, and widens an existing query', () => {
+  const t1: Team = {
+    id: 'T1', name: 'Team One', emoji: '🚀',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-01': 'nothing relevant here' },
+  }
+  const t2: Team = {
+    id: 'T2', name: 'Team Two', emoji: '🎯',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-02': 'zephyr project kickoff' },
+  }
+  const store = buildStore([t1, t2], 'T1')
+  const { input } = mount(store, fakePM())
+
+  type(input, 'zephyr')
+  vi.advanceTimersByTime(200)
+  expect(document.querySelectorAll('.tt-search-row')).toHaveLength(0)
+
+  input.blur()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+
+  expect(document.activeElement).toBe(input)
+  expect((document.querySelector('.tt-search-all-teams input') as HTMLInputElement).checked).toBe(true)
+  const rows = document.querySelectorAll('.tt-search-row')
+  expect(rows).toHaveLength(1)
+  expect(document.querySelector('.tt-search-team')!.textContent).toBe('Team Two')
+})
+
+test('Ctrl+F (no Shift) still just focuses the search input, without touching the all-teams scope', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const { input } = mount(store, fakePM())
+  input.blur()
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))
+
+  expect(document.activeElement).toBe(input)
+  expect((document.querySelector('.tt-search-all-teams input') as HTMLInputElement).checked).toBe(false)
+})
+
 test('arrow keys navigate results with wraparound in both directions; Enter opens the selected result', () => {
   const team: Team = {
     id: 'T1', name: 'Team One', emoji: '🚀',

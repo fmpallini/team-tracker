@@ -9,6 +9,7 @@ function fixture() {
   const d = createEmptyDocument('pt-BR')
   const t1 = team('t1', 'Alpha'), t2 = team('t2', 'Beta')
   t1.dailyNotes['2026-07-01'] = '# Reunião\nDiscussão sobre **orçamento** anual'
+  t1.generalNotes = 'Vendor contact: Acme Corp, renewal in março'
   t1.members.push({ id: 'p1', name: 'Ana', role: 'Dev', parentId: null, order: 0, notes: 'Promoção pendente' })
   t1.actionItems.push({ id: 'a1', summary: 'Fechar contrato', status: 'todo', color: 'ledger', dueDate: null, assignee: 'Ana', order: 0, notes: 'contrato assinado' })
   t1.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Entrega beta', done: false, followup: 'Cronograma atrasou muito' })
@@ -68,6 +69,19 @@ test('teamRefCandidates extracts id+title for people/action items/milestones/ris
 
 test('teamRefCandidates returns all-empty lists for an undefined team', () => {
   expect(teamRefCandidates(undefined)).toEqual({ people: [], actionItems: [], milestones: [], risks: [] })
+})
+
+test('finds text inside a team\'s generalNotes', () => {
+  const r = searchDocument(fixture(), 'acme', 't1')
+  expect(r[0]!.loc.ref).toEqual({ kind: 'general' })
+  expect(r[0]!.moduleKind).toBe('general')
+})
+
+test('a team with undefined generalNotes does not throw and never matches', () => {
+  const d = fixture()
+  const t1 = d.teams.find((tm) => tm.id === 't1')!
+  delete (t1 as { generalNotes?: string }).generalNotes
+  expect(() => searchDocument(d, 'anything', 't1')).not.toThrow()
 })
 
 test('KIND_ICON has an entry for every moduleKind used by search results', () => {

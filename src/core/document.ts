@@ -9,7 +9,7 @@ export class SchemaTooNewError extends Error {}
 export function createEmptyDocument(locale: Locale): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 3 },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7 },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false },
@@ -38,7 +38,12 @@ export function createEmptyTeam(id: string, name: string, emoji: string, locale:
     stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
     dailyNotes: {},
     actionTagNames,
+    generalNotes: '',
   }
+}
+
+export function findTeam(doc: Doc, teamId: string): Team | undefined {
+  return doc.teams.find((tm) => tm.id === teamId)
 }
 
 const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
@@ -82,7 +87,7 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   },
   5: (d) => {
     const prefs = d.prefs as Record<string, unknown> | undefined
-    if (prefs) prefs.dueSoonDays = prefs.dueSoonDays ?? 3
+    if (prefs) prefs.dueSoonDays = prefs.dueSoonDays ?? 7
   },
   6: (d) => {
     const nav = d.nav as Record<string, unknown> | undefined

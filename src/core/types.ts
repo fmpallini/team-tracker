@@ -33,6 +33,7 @@ export interface Team {
   actionItems: ActionItem[]; milestones: Milestone[]; risks: Risk[]
   dailyNotes: Record<string, string>
   actionTagNames?: Partial<Record<ActionItem['color'], string>>
+  generalNotes?: string
 }
 export interface Template {
   id: string; name: string
@@ -40,6 +41,7 @@ export interface Template {
 }
 export type ModuleRef =
   | { kind: 'daily'; date: string }
+  | { kind: 'general' }
   | { kind: 'person'; personId: string; group: 'stakeholders' | 'members' }
   | { kind: 'stakeholders' } | { kind: 'members' }
   | { kind: 'actions'; itemId?: string } | { kind: 'milestones'; itemId?: string } | { kind: 'risks'; itemId?: string }

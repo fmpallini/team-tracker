@@ -1,5 +1,5 @@
 import type { Doc, ModuleRef, Team } from './types'
-import { formatDate } from './i18n'
+import { formatDate, t } from './i18n'
 
 export interface SearchResult {
   loc: { teamId: string; ref: ModuleRef }
@@ -60,7 +60,7 @@ function makeSnippet(stripped: string, normalized: string, terms: string[]): str
 }
 
 export const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
-  daily: '📅', person: '🧑', stakeholders: '👥', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
+  daily: '📅', general: '🗒️', person: '🧑', stakeholders: '👥', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
 }
 
 export interface RefCandidate { id: string; title: string }
@@ -89,6 +89,7 @@ function collectCandidates(team: Team, doc: Doc): Candidate[] {
   for (const [date, text] of Object.entries(team.dailyNotes)) {
     out.push({ raw: text, title: formatDate(date, doc.prefs.locale), ref: { kind: 'daily', date } })
   }
+  out.push({ raw: team.generalNotes ?? '', title: t(doc.prefs.locale, 'module_general_notes'), ref: { kind: 'general' } })
   for (const group of ['stakeholders', 'members'] as const) {
     for (const person of team[group]) {
       out.push({ raw: person.notes, title: person.name, ref: { kind: 'person', personId: person.id, group } })

@@ -6,14 +6,14 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
-import { t, type Locale, type MsgKey } from '../core/i18n'
+import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
-import { showModal, showErrorModal, toast, type ModalButton, type ModalHandle } from './modal'
+import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
-import { notifyNavChanged } from './sidebar'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
+import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 
 export interface PrefsAppCtl {
   changePassword(newPw: string): Promise<void>
@@ -36,10 +36,11 @@ export interface PrefsAppCtl {
  * `PaneManager` — not available in this module per the Task 24 contract) can
  * re-render pane bars/bodies in the new locale. Sidebar highlight/labels are
  * covered by the existing `store.subscribe` wiring (any `store.update` call
- * already re-renders the sidebar) plus `notifyNavChanged()` below; per-module
- * pane content that captured its locale string at mount time is not fully
- * re-translated until the user navigates away and back — acceptable per the
- * Task 24 brief, which explicitly defers full-fidelity re-render.
+ * already re-renders the sidebar, and nav-only changes are covered by
+ * `store.onMutate`); per-module pane content that captured its locale string
+ * at mount time is not fully re-translated until the user navigates away and
+ * back — acceptable per the Task 24 brief, which explicitly defers
+ * full-fidelity re-render.
  */
 const LOCALE_CHANGED_EVENT = 'tt-locale-changed'
 
@@ -47,7 +48,7 @@ export function notifyLocaleChanged(): void {
   document.dispatchEvent(new CustomEvent(LOCALE_CHANGED_EVENT))
 }
 
-/** Returns an unsubscribe function (mirrors sidebar.ts's onNavChanged) so per-document listeners can be torn down on close-file instead of leaking across sessions. */
+/** Returns an unsubscribe function so per-document listeners can be torn down on close-file instead of leaking across sessions. */
 export function onLocaleChanged(cb: () => void): () => void {
   document.addEventListener(LOCALE_CHANGED_EVENT, cb)
   return () => {
@@ -175,7 +176,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         d.prefs.locale = newLocale
       })
       shell.applyPrefs(store.doc.prefs)
-      notifyNavChanged()
       notifyLocaleChanged()
       handle.close()
       openPrefs(store, shell, newLocale, appCtl)
@@ -283,20 +283,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         d.templates = d.templates.filter((tp) => tp.id !== id)
       })
       refreshList()
-    }
-
-    function openDeleteConfirm(tpl: Template): void {
-      const body = el('p', { class: 'tt-modal-message' }, t(locale, 'prefs_templates_delete_confirm', { name: tpl.name }))
-      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
-      const confirmBtn: ModalButton = {
-        label: t(locale, 'prefs_templates_delete_btn'),
-        primary: true,
-        onClick: () => {
-          removeTemplate(tpl.id)
-          inner.close()
-        },
-      }
-      const inner: ModalHandle = showModal({ title: t(locale, 'prefs_templates_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
     }
 
     function openEditModal(tpl: Template | null): void {
@@ -419,7 +405,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           class: 'tt-btn tt-prefs-template-delete-btn',
           type: 'button',
           title: t(locale, 'prefs_templates_delete_btn_title'),
-          onclick: () => openDeleteConfirm(tpl),
+          onclick: () => confirmDelete(locale, {
+            title: t(locale, 'prefs_templates_delete_title'),
+            message: t(locale, 'prefs_templates_delete_confirm', { name: tpl.name }),
+            confirmLabel: t(locale, 'prefs_templates_delete_btn'),
+            onConfirm: () => removeTemplate(tpl.id),
+          }),
         },
         '🗑'
       )
@@ -460,7 +451,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const sourceSelect = el('select', { class: 'tt-input' }) as HTMLSelectElement
     for (const team of teams) {
-      sourceSelect.appendChild(el('option', { value: team.id }, `${team.emoji} ${team.name}`))
+      sourceSelect.appendChild(el('option', { value: team.id }, team.emoji ? `${team.emoji} ${team.name}` : team.name))
     }
 
     function applyClick(): void {
@@ -676,7 +667,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       })
       importTeams = null
       renderImportChecklist()
-      notifyNavChanged()
       toast(t(locale, 'data_import_success_toast'))
     }
 
@@ -732,7 +722,65 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       importActionsEl
     )
 
-    container.append(exportSection, importSection)
+    // --- Cleanup (cross-team) ---
+    const cleanupDaysInput = el('input', {
+      type: 'number',
+      class: 'tt-input tt-data-cleanup-days-input',
+      min: '1',
+      max: '3650',
+      value: '60',
+    }) as HTMLInputElement
+    cleanupDaysInput.addEventListener('change', () => {
+      const raw = Number(cleanupDaysInput.value)
+      const clamped = Math.min(3650, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : 1))
+      cleanupDaysInput.value = String(clamped)
+    })
+
+    function doCleanup(): void {
+      const days = Math.min(3650, Math.max(1, Math.round(Number(cleanupDaysInput.value)) || 1))
+      const today = todayIso()
+      const counts = countCleanupTargets(store.doc, days, today)
+      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0) {
+        const nothingHandle: ModalHandle = showModal({
+          title: t(locale, 'data_cleanup_nothing_title'),
+          body: el('p', { class: 'tt-modal-message' }, t(locale, 'data_cleanup_nothing_body')),
+          buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => nothingHandle.close() }],
+        })
+        return
+      }
+      confirmDelete(locale, {
+        title: t(locale, 'data_cleanup_confirm_title'),
+        message: t(locale, 'data_cleanup_confirm_body', {
+          actions: String(counts.actions),
+          milestones: String(counts.milestones),
+          risks: String(counts.risks),
+          dailyNotes: String(counts.dailyNotes),
+        }),
+        confirmLabel: t(locale, 'data_cleanup_btn'),
+        variant: 'danger',
+        onConfirm: () => {
+          store.update((d) => applyCleanup(d, days, today))
+          toast(t(locale, 'data_cleanup_success_toast'))
+        },
+      })
+    }
+
+    const cleanupBtn = el(
+      'button',
+      { class: 'tt-btn tt-btn-danger', type: 'button', onclick: () => doCleanup() },
+      t(locale, 'data_cleanup_btn')
+    )
+
+    const cleanupSection = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_cleanup_heading')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'data_cleanup_hint')),
+      el('label', { class: 'tt-field' }, t(locale, 'data_cleanup_days_label'), cleanupDaysInput),
+      cleanupBtn
+    )
+
+    container.append(exportSection, importSection, cleanupSection)
   }
 
   // --- Tab 6: Sobre ----------------------------------------------------
@@ -812,12 +860,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     title: t(locale, 'prefs_title'),
     body: dialogBody,
     buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
-    // Prefs apply live via store.update on every interaction (theme, locale,
-    // font, autosave, templates), so nothing "commits" on close — but closing
-    // is also the one moment nothing else guarantees a save happens next.
-    // Reuses the same nav-changed → save hook main.ts wires up for module
-    // navigation (see sidebar.ts's deleteTeam for the same pattern).
-    onClose: () => notifyNavChanged(),
   })
 
   renderActiveTab()

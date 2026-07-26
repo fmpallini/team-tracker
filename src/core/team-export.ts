@@ -115,6 +115,7 @@ export function remapForImport(teams: ExportedTeam[], locale: Locale): Team[] {
     milestones: [],
     risks: [],
     dailyNotes: {},
+    generalNotes: '',
     actionTagNames: defaultActionTagNames(locale),
   }))
 }

@@ -101,6 +101,33 @@ export function showErrorModal(locale: Locale, message: string): ModalHandle {
   return handle
 }
 
+/**
+ * Shared shape for every "confirm before deleting" dialog in the app: a
+ * message, Cancel, and a confirm button that closes the dialog either way.
+ * `variant` defaults to 'primary' (most callers) — action-items.ts's kanban
+ * card delete is the one caller that wants the stronger 'danger' styling.
+ */
+export function confirmDelete(locale: Locale, opts: {
+  title: string
+  message: string
+  confirmLabel: string
+  variant?: 'danger' | 'primary'
+  onConfirm: () => void
+}): void {
+  const body = el('p', { class: 'tt-modal-message' }, opts.message)
+  const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => handle.close() }
+  const confirmBtn: ModalButton = {
+    label: opts.confirmLabel,
+    danger: opts.variant === 'danger',
+    primary: opts.variant !== 'danger',
+    onClick: () => {
+      opts.onConfirm()
+      handle.close()
+    },
+  }
+  const handle: ModalHandle = showModal({ title: opts.title, body, buttons: [cancelBtn, confirmBtn] })
+}
+
 export function promptPassword(locale: Locale, opts: { confirm?: boolean; title: string }): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false

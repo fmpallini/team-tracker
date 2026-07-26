@@ -12,26 +12,20 @@
 // this module never talks to the calendar.
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
-import { duplicateMilestone, transferMilestone } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
-import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
-import { showCardContextMenu } from '../ui/card-context-menu'
+import { confirmDelete } from '../ui/modal'
+import { createRichEditorBundle } from '../ui/rich-editor'
+import { ExpandableRowsController } from '../ui/expandable-followup'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
+import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
-import { el } from '../ui/dom'
+import { findTeam as docFindTeam } from '../core/document'
+import { el, blurOnEnter } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
-
-/** Enter confirms a row's text/date field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
-function blurOnEnter(e: Event): void {
-  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
-}
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /** Minimum horizontal distance (px) between two neighboring milestone dots. */
@@ -159,7 +153,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   const lc = ctx.locale
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function milestones(): Milestone[] {
     return findTeam()?.milestones ?? []
@@ -169,72 +163,42 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   // Every currently-expanded row's follow-up editor is mounted at once —
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
-  let expandedIds = new Set<string>()
-
-  interface ExpandedBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
-  const expandedBundles = new Map<string, ExpandedBundle>()
-
-  function disposeExpandedBundle(id: string): void {
-    const bundle = expandedBundles.get(id)
-    if (!bundle) return
-    bundle.atHandle.dispose()
-    bundle.tplHandle.dispose()
-    bundle.editor.destroy()
-    expandedBundles.delete(id)
-  }
-
-  function disposeAllExpandedBundles(): void {
-    for (const id of [...expandedBundles.keys()]) disposeExpandedBundle(id)
-  }
+  const expandable = new ExpandableRowsController()
 
   function toggleExpand(id: string): void {
-    if (expandedIds.has(id)) expandedIds.delete(id)
-    else expandedIds.add(id)
+    expandable.toggle(id)
     renderAll()
   }
 
   /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
   function setAllExpanded(expand: boolean): void {
-    expandedIds = expand ? new Set(milestones().map((m) => m.id)) : new Set()
+    expandable.setAll(milestones().map((m) => m.id), expand)
     renderAll()
   }
 
-  /** Full rich editor for a milestone's follow-up, wired exactly like src/modules/risks.ts's renderFollowupRow (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself in `expandedBundles` so the caller can dispose it later. */
+  /** Full rich editor for a milestone's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself with `expandable` so the caller can dispose it later. */
   function renderFollowupRow(m: Milestone): HTMLElement {
-    const editor: Editor = createEditor(
-      {
-        onChange() {
-          const md = editor.getMd()
-          ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
-            const found = tm?.milestones.find((mm) => mm.id === m.id)
-            if (!found) return
-            found.followup = md.trim() === '' ? '' : md
-          })
-        },
-        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-        onAtTrigger() {},
-        onSlashTrigger() {},
-        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+    const bundle = createRichEditorBundle({
+      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+      initialMd: m.followup,
+      onChange: (md) => {
+        ctx.store.update((d) => {
+          const tm = d.teams.find((t2) => t2.id === teamId)
+          const found = tm?.milestones.find((mm) => mm.id === m.id)
+          if (!found) return
+          found.followup = md.trim() === '' ? '' : md
+        })
       },
-      lc
-    )
-    editor.setMd(m.followup)
-
-    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
-    const tplHandle = attachTemplatePicker(editor, {
+      getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
-      locale: lc,
+      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
-
-    expandedBundles.set(m.id, { editor, atHandle, tplHandle })
-
-    return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id }, editor.root)
+    expandable.register(m.id, bundle)
+    return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id, 'data-item-id': m.id }, bundle.editor.root)
   }
 
   function removeMilestone(id: string): void {
-    expandedIds.delete(id) // local UI state; must flip before store.update fires the synchronous subscriber below
+    expandable.collapse(id) // local UI state; must flip before store.update fires the synchronous subscriber below
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
@@ -243,26 +207,17 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     })
   }
 
-  function openDeleteConfirm(m: Milestone): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'milestone_delete_confirm', { title: m.title }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'milestone_delete_btn'),
-      primary: true,
-      onClick: () => {
-        removeMilestone(m.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'milestone_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-  }
-
   function requestDelete(m: Milestone): void {
     if (m.title.trim() === '') {
       removeMilestone(m.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
-    openDeleteConfirm(m)
+    confirmDelete(lc, {
+      title: t(lc, 'milestone_delete_title'),
+      message: t(lc, 'milestone_delete_confirm', { title: m.title }),
+      confirmLabel: t(lc, 'milestone_delete_btn'),
+      onConfirm: () => removeMilestone(m.id),
+    })
   }
 
   // --- timeline (SVG) -------------------------------------------------------
@@ -370,19 +325,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   // --- list -------------------------------------------------------------
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
-      duplicate: (id) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (tm) duplicateMilestone(tm, id)
-        })
-      },
-      transfer: (id, targetTeamId, mode) => {
-        ctx.store.update((d) => {
-          transferMilestone(d.teams, id, teamId, targetTeamId, mode)
-        })
-      },
-    })
+    openItemContextMenu(ctx, 'milestone', teamId, itemId, x, y)
   }
 
   function renderRow(m: Milestone): HTMLElement {
@@ -428,7 +371,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
-      expandedIds.has(m.id) ? '▾' : '▸'
+      expandable.isExpanded(m.id) ? '▾' : '▸'
     )
 
     const deleteBtn = el(
@@ -465,7 +408,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))
-        if (expandedIds.has(m.id)) listEl.appendChild(renderFollowupRow(m))
+        if (expandable.isExpanded(m.id)) listEl.appendChild(renderFollowupRow(m))
       })
     }
     if (focusMilestoneId) {
@@ -476,7 +419,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   }
 
   function renderAll(): void {
-    disposeAllExpandedBundles() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
+    expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     renderTimeline()
     renderList()
   }
@@ -498,17 +441,13 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   )
   const expandAllBtn = el(
     'button',
-    { class: 'tt-btn tt-milestone-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!isAllExpanded(milestones())) },
+    { class: 'tt-btn tt-milestone-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!expandable.isAllExpanded(milestones().map((m) => m.id))) },
     ''
   )
 
-  function isAllExpanded(items: Milestone[]): boolean {
-    return items.length > 0 && items.every((m) => expandedIds.has(m.id))
-  }
-
   /** Label reads "Expand all" unless every milestone is already expanded, in which case it flips to "Collapse all" — mirrors milestone_expand_all_btn/milestone_collapse_all_btn i18n keys. */
   function updateExpandAllBtn(sorted: Milestone[]): void {
-    expandAllBtn.textContent = t(lc, isAllExpanded(sorted) ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn')
+    expandAllBtn.textContent = t(lc, expandable.isAllExpanded(sorted.map((m) => m.id)) ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn')
   }
 
   const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, expandAllBtn)
@@ -548,11 +487,22 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
     renderAll()
   })
 
+  /** Expands the milestone a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's milestones or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
+  function onSearchFocusItem(e: Event): void {
+    const itemId = (e as CustomEvent<string>).detail
+    if (!milestones().some((m) => m.id === itemId)) return
+    if (expandable.isExpanded(itemId)) return
+    expandable.expand(itemId)
+    renderAll()
+  }
+  container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+
   container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
   renderAll()
 
   disposers.set(container, () => {
     unsubscribe()
-    disposeAllExpandedBundles()
+    expandable.disposeAll()
+    container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   })
 }

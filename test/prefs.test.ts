@@ -1,5 +1,4 @@
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
-import { onNavChanged } from '../src/ui/sidebar'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -491,40 +490,6 @@ test('about tab reflects a mismatched file schema version from appCtl', () => {
   expect(rows).toContain('0')
 })
 
-test('closing the prefs modal (OK) fires onNavChanged (sidebar re-render hook)', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  radio('tt-prefs-theme', 'dark').click()
-  expect(store.dirty).toBe(true)
-
-  let navChangedCount = 0
-  const off = onNavChanged(() => navChangedCount++)
-  clickByText('OK')
-
-  expect(navChangedCount).toBe(1)
-  off()
-})
-
-test('closing the prefs modal via Escape also fires onNavChanged', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  radio('tt-prefs-theme', 'dark').click()
-  expect(store.dirty).toBe(true)
-
-  // Other tests in this file open the prefs modal via openPrefs() and never
-  // close it, leaking document-level Escape listeners across tests within
-  // the same file (same pre-existing pattern noted in sidebar.test.ts's
-  // ADD_TEAM_REQUEST_EVENT comment) — so dispatching a real Escape here also
-  // re-triggers those stale listeners' own onClose. Assert "at least one"
-  // rather than an exact count.
-  let navChangedCount = 0
-  const off = onNavChanged(() => navChangedCount++)
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-
-  expect(navChangedCount).toBeGreaterThanOrEqual(1)
-  off()
-})
-
 test('builtinTemplates helper used by restore-defaults produces 5 named templates (sanity)', () => {
   const names = builtinTemplates('en-US').map((tp: Template) => tp.name)
   expect(new Set(names).size).toBe(5)
@@ -558,6 +523,7 @@ describe('Data tab (export/import)', () => {
     expect(hints).toEqual([
       'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, action items, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
       'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
+      'Removes done/cancelled action items, completed milestones, and closed risks, plus old daily notes — across every team in this file. This cannot be undone.',
     ])
   })
 
@@ -634,6 +600,65 @@ describe('Data tab (export/import)', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('This file was exported by a newer version of Team Tracker')
+  })
+
+  test('cleanup: shows "nothing to clean up" when no team has any matching data', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20)) // sampleTeam's daily note (2026-07-16) is only 4 days old
+    try {
+      const { store, shell, appCtl } = setup()
+      store.update((d) => { d.teams.push(sampleTeam()) })
+      openPrefs(store, shell, 'en-US', appCtl)
+      clickTab('Data')
+
+      clickByText('Clean up data')
+
+      const titles = document.querySelectorAll('.tt-modal-title')
+      expect(titles[titles.length - 1]?.textContent).toBe('Nothing to clean up')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('cleanup: counts done/cancelled actions, completed milestones, closed risks, and old daily notes across teams, then removes them on confirm', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20))
+    try {
+      const { store, shell, appCtl } = setup()
+      store.update((d) => {
+        const teamA = sampleTeam()
+        teamA.actionItems.push({ id: 'done1', summary: 'x', notes: '', status: 'done', dueDate: null, assignee: '', color: 'ledger', order: 1 })
+        teamA.milestones.push({ id: 'm2', date: '2026-07-01', title: 'Old launch', done: true, followup: '' })
+        teamA.risks.push({ id: 'r2', title: 'Stale risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 1, closed: true })
+        teamA.dailyNotes['2000-01-01'] = 'ancient note'
+        const teamB: Team = { id: 't2', name: 'Support', emoji: '🛟', stakeholders: [], members: [],
+          actionItems: [{ id: 'cancelled1', summary: 'y', notes: '', status: 'cancelled', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+          milestones: [], risks: [], dailyNotes: {} }
+        d.teams.push(teamA, teamB)
+      })
+      openPrefs(store, shell, 'en-US', appCtl)
+      clickTab('Data')
+
+      clickByText('Clean up data')
+
+      const titles = document.querySelectorAll('.tt-modal-title')
+      const messages = document.querySelectorAll('.tt-modal-message')
+      expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
+      expect(messages[messages.length - 1]?.textContent).toBe(
+        '2 action items, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
+      )
+
+      clickByText('Clean up data')
+
+      const teams = store.doc.teams
+      expect(teams[0]!.actionItems.map((a) => a.id)).toEqual(['a1'])
+      expect(teams[0]!.dailyNotes).toEqual({ '2026-07-16': 'private daily note' })
+      expect(teams[0]!.milestones.map((m) => m.id)).toEqual(['m1'])
+      expect(teams[0]!.risks.map((r) => r.id)).toEqual(['r1'])
+      expect(teams[1]!.actionItems).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

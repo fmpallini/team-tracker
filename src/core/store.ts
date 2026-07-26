@@ -53,12 +53,14 @@ export interface Store {
   onBlockedUpdate(fn: () => void): void
 }
 
+type ReadOnlyState =
+  | { kind: 'writable' }
+  | { kind: 'blocked'; silent: boolean; warned: boolean }
+
 export function createStore(initialDoc: Doc): Store {
   let doc = initialDoc
   let dirty = false
-  let readOnly = false
-  let blockedWarned = false
-  let silentReadOnly = false
+  let roState: ReadOnlyState = { kind: 'writable' }
   const subscribers = new Set<() => void>()
   const mutationListeners = new Set<() => void>()
   const dirtyCallbacks = new Set<(dirty: boolean) => void>()
@@ -76,8 +78,8 @@ export function createStore(initialDoc: Doc): Store {
   }
 
   const warnBlocked = () => {
-    if (blockedWarned || silentReadOnly) return
-    blockedWarned = true
+    if (roState.kind !== 'blocked' || roState.silent || roState.warned) return
+    roState = { ...roState, warned: true }
     for (const fn of Array.from(blockedCallbacks)) { try { fn() } catch (e) { console.error(e) } }
   }
 
@@ -89,10 +91,10 @@ export function createStore(initialDoc: Doc): Store {
       return dirty
     },
     get readOnly() {
-      return readOnly
+      return roState.kind !== 'writable'
     },
     update(fn: (d: Doc) => void): void {
-      if (readOnly) {
+      if (roState.kind !== 'writable') {
         warnBlocked()
         return
       }
@@ -130,9 +132,15 @@ export function createStore(initialDoc: Doc): Store {
       for (const fn of Array.from(subscribers)) { try { fn() } catch (e) { console.error(e) } }
     },
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
-      readOnly = ro
-      silentReadOnly = ro ? !!opts?.silent : false
-      if (!ro) blockedWarned = false
+      if (!ro) {
+        roState = { kind: 'writable' }
+        return
+      }
+      roState = {
+        kind: 'blocked',
+        silent: !!opts?.silent,
+        warned: roState.kind === 'blocked' ? roState.warned : false,
+      }
     },
     onBlockedUpdate(fn: () => void): void {
       blockedCallbacks.add(fn)

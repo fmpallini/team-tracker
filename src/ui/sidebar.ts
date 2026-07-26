@@ -2,6 +2,7 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { PaneManager } from './panes'
+import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam } from '../core/nav'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
@@ -11,7 +12,7 @@ import { createEmptyTeam } from '../core/document'
 import { KIND_ICON } from '../core/search'
 import { REF_KINDS } from '../core/refs'
 import { el } from './dom'
-import { showModal, type ModalButton, type ModalHandle } from './modal'
+import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
 
 export interface SidebarActions {
@@ -29,45 +30,11 @@ export interface SidebarActions {
 }
 
 /**
- * `Store.updateNav()` intentionally does not notify `store.subscribe()`
- * listeners (see store.ts) — nav-only changes are meant to be cheap and not
- * trigger a full content re-render. The sidebar's active-team highlight is
- * nav state though, so `selectTeam()` (in main.ts) dispatches this DOM event
- * after every `updateNav()` call, and the sidebar listens for it. This keeps
- * the highlight in sync for both sidebar clicks and the global Alt+1..9
- * hotkey without coupling main.ts to sidebar internals or widening the
- * Store contract.
- */
-const NAV_CHANGED_EVENT = 'tt-nav-changed'
-
-export function notifyNavChanged(): void {
-  document.dispatchEvent(new CustomEvent(NAV_CHANGED_EVENT))
-}
-
-/**
- * Task 25: lets main.ts trigger a save on module/team navigation without
- * reaching into PaneManager internals — every nav change already calls
- * `notifyNavChanged()` above, so this is just a public subscribe point for
- * that same event (mirrors `onLocaleChanged` in ui/prefs.ts).
- *
- * Returns an unsubscribe function (Task 25 re-review item #4c) so callers
- * that need a full teardown path — main.ts's dispose, going forward — can
- * remove the listener instead of leaking it for the lifetime of the
- * document. Existing callers that ignore the return value are unaffected.
- */
-export function onNavChanged(cb: () => void): () => void {
-  document.addEventListener(NAV_CHANGED_EVENT, cb)
-  return () => {
-    document.removeEventListener(NAV_CHANGED_EVENT, cb)
-  }
-}
-
-/**
  * Task 3: the empty-pane CTA (panes.ts, rendered when `store.doc.teams` is
  * empty) has no reach into sidebar internals like `openAddModal`, so it
- * dispatches this document-level event instead — mirrors `NAV_CHANGED_EVENT`
- * above. Exported so panes.ts can reference the same string without either
- * module reaching into the other's implementation.
+ * dispatches this document-level event instead. Exported so panes.ts can
+ * reference the same string without either module reaching into the other's
+ * implementation.
  */
 export const ADD_TEAM_REQUEST_EVENT = 'tt-add-team-request'
 
@@ -110,7 +77,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       d.nav.sidebarCollapsed = !collapsed
     })
     if (collapsed) spaceHidden = false
-    notifyNavChanged()
     renderCollapseState()
   }
 
@@ -138,7 +104,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const collapsed = effectivelyCollapsed()
     const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
-    if (team) headerTeamIndicator.textContent = `${team.emoji} ${team.name}`
+    if (team) headerTeamIndicator.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
   }
 
   function renderCollapseState(): void {
@@ -317,11 +283,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         }
       }
     })
+    invalidateUnsplitStash(store) // deleted team's history may be what an unsplit stash is holding onto
     actions.renderPanes()
-    // Deleting a team is destructive and doesn't wait for the auto-save
-    // timer or a later nav change — reuse the nav-changed event's existing
-    // save hook (main.ts's onNavChanged listener) to persist it right away.
-    notifyNavChanged()
   }
 
   function render(): void {
@@ -407,12 +370,18 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     })
   }
 
-  function openAddModal(): void {
-    const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
+  function buildTeamForm(initial?: { name: string; emoji: string }): {
+    nameInput: HTMLInputElement
+    emojiInput: HTMLInputElement
+    errorEl: HTMLElement
+    body: HTMLElement
+    picker: ReturnType<typeof attachEmojiPicker>
+  } {
+    const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name', value: initial?.name ?? '' }) as HTMLInputElement
     // No maxlength: it counts UTF-16 code units, which both lets two simple
     // emojis through and blocks single ZWJ emojis — attachEmojiPicker
     // enforces "exactly one grapheme" on input instead.
-    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
+    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji', value: initial?.emoji ?? '' }) as HTMLInputElement
     const errorEl = el('div', { class: 'tt-field-error' })
     const body = el(
       'div',
@@ -422,8 +391,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       errorEl
     )
     const picker = attachEmojiPicker(emojiInput, locale())
+    return { nameInput, emojiInput, errorEl, body, picker }
+  }
 
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
+  function openAddModal(): void {
+    const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm()
+
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
     const okBtn: ModalButton = {
       label: t(locale(), 'ok'),
       primary: true,
@@ -434,46 +408,35 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
           return
         }
         const emoji = emojiInput.value.trim()
-        if (!emoji) {
-          errorEl.textContent = t(locale(), 'team_emoji_required')
-          return
-        }
         const newTeamId = crypto.randomUUID()
         store.update((d) => {
           d.teams.push(createEmptyTeam(newTeamId, name, emoji, locale()))
         })
-        picker.dispose()
         handle.close()
         actions.selectTeam(newTeamId)
       },
     }
-    const handle: ModalHandle = showModal({ title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn] })
+    const handle: ModalHandle = showModal({
+      title: t(locale(), 'team_add_title'), body, buttons: [cancelBtn, okBtn],
+      onClose: () => picker.dispose(),
+    })
     nameInput.focus()
   }
 
   function openEditModal(team: Team): void {
-    const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-name' })
-    nameInput.value = team.name
-    // No maxlength — see the identical note in openAddModal.
-    const emojiInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-team-emoji' })
-    emojiInput.value = team.emoji
-    const errorEl = el('div', { class: 'tt-field-error' })
-    const body = el(
-      'div',
-      { class: 'tt-team-form' },
-      el('label', { class: 'tt-field' }, t(locale(), 'team_name_label'), nameInput),
-      el('label', { class: 'tt-field' }, t(locale(), 'team_emoji_label'), emojiInput),
-      errorEl
-    )
-    const picker = attachEmojiPicker(emojiInput, locale())
+    const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm({ name: team.name, emoji: team.emoji })
 
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => { picker.dispose(); handle.close() } }
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
       onClick: () => {
-        picker.dispose()
         handle.close()
-        openDeleteConfirm(team)
+        confirmDelete(locale(), {
+          title: t(locale(), 'team_delete_title'),
+          message: t(locale(), 'team_delete_confirm', { name: team.name }),
+          confirmLabel: t(locale(), 'team_delete_btn'),
+          onConfirm: () => deleteTeam(team.id),
+        })
       },
     }
     const saveBtn: ModalButton = {
@@ -493,27 +456,14 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
             target.emoji = emoji
           }
         })
-        picker.dispose()
         handle.close()
       },
     }
-    const handle: ModalHandle = showModal({ title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn] })
+    const handle: ModalHandle = showModal({
+      title: t(locale(), 'team_edit_title'), body, buttons: [cancelBtn, deleteBtn, saveBtn],
+      onClose: () => picker.dispose(),
+    })
     nameInput.focus()
-  }
-
-  function openDeleteConfirm(team: Team): void {
-    const message = t(locale(), 'team_delete_confirm', { name: team.name })
-    const body = el('p', { class: 'tt-modal-message' }, message)
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(locale(), 'team_delete_btn'),
-      primary: true,
-      onClick: () => {
-        deleteTeam(team.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(locale(), 'team_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
   }
 
   render()
@@ -521,7 +471,24 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     dueCache = null // content changed — due data may have too
     render()
   })
-  document.addEventListener(NAV_CHANGED_EVENT, render)
+  // Nav-only changes (store.updateNav — team switch, Alt+1..9, pane history)
+  // don't fire subscribe() above, but do need the active-team highlight to
+  // update. onMutate() fires on both update() and updateNav(); re-running
+  // render() an extra time on a content change (already covered by
+  // subscribe() above) is a harmless idempotent DOM rebuild — cheaper than
+  // hand-rolling a second nav-only event channel, and it's exactly the
+  // "generalize the mechanism" fix core/save-controller.ts already made for
+  // its own dirty-guard (see that file's comment on onMutate()). Content
+  // changes must NOT reset dueCache here too, or every pane navigation would
+  // force a full due-items rescan for no reason — that stays only in the
+  // subscribe() callback above.
+  //
+  // Load-bearing detail: store.replaceDoc() (used by the conflict-modal
+  // reload path in main.ts's onReload handler) fires subscribe() listeners
+  // but NOT onMutate() listeners — so it's the store.subscribe() render
+  // above, not this onMutate() one, that keeps the sidebar in sync after a
+  // reload. Don't collapse these two registrations into just onMutate().
+  store.onMutate(() => render())
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 
   return { setSpaceConstrained }

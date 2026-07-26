@@ -5,9 +5,10 @@
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
+import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { el } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
+import { findTeam as docFindTeam } from '../core/document'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -137,7 +138,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     const lc = ctx.locale
 
     function findTeam(): Team | undefined {
-      return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+      return docFindTeam(ctx.store.doc, teamId)
     }
     function people(): Person[] {
       return findTeam()?.[group] ?? []
@@ -216,26 +217,6 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       })
     }
 
-    function openDeleteConfirm(person: Person): void {
-      const message = t(lc, 'person_delete_confirm', { name: person.name })
-      const body = el('p', { class: 'tt-modal-message' }, message)
-      const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-      const confirmBtn: ModalButton = {
-        label: t(lc, 'person_delete_btn'),
-        primary: true,
-        onClick: () => {
-          ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
-            if (!tm) return
-            unlinkRefsInTeam(tm, 'person', [person.id])
-            tm[group] = deletePerson(tm[group], person.id)
-          })
-          handle.close()
-        },
-      }
-      const handle: ModalHandle = showModal({ title: t(lc, 'person_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-    }
-
     function renderBox(person: Person): HTMLElement {
       const notesBtn = el(
         'button',
@@ -257,7 +238,25 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       )
       const deleteBtn = el(
         'button',
-        { class: 'tt-btn tt-people-delete-btn', type: 'button', title: t(lc, 'person_delete_title'), onclick: (e: Event) => { e.stopPropagation(); openDeleteConfirm(person) } },
+        {
+          class: 'tt-btn tt-people-delete-btn', type: 'button', title: t(lc, 'person_delete_title'),
+          onclick: (e: Event) => {
+            e.stopPropagation()
+            confirmDelete(lc, {
+              title: t(lc, 'person_delete_title'),
+              message: t(lc, 'person_delete_confirm', { name: person.name }),
+              confirmLabel: t(lc, 'person_delete_btn'),
+              onConfirm: () => {
+                ctx.store.update((d) => {
+                  const tm = d.teams.find((t2) => t2.id === teamId)
+                  if (!tm) return
+                  unlinkRefsInTeam(tm, 'person', [person.id])
+                  tm[group] = deletePerson(tm[group], person.id)
+                })
+              },
+            })
+          },
+        },
         '🗑'
       )
       const actions = el('div', { class: 'tt-people-actions' }, notesBtn, editBtn, addChildBtn, deleteBtn)

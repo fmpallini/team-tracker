@@ -421,7 +421,91 @@ describe('list nesting via Tab/Shift+Tab', () => {
     expect(editor.getMd()).toBe('- a\n- b\n- c\n- d')
     editor.destroy()
   })
+
+  test('Tab keeps the caret in the item just nested, not jumped elsewhere', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n- bb')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const liB = editorEl.querySelectorAll('li')[1]!
+    const range = document.createRange()
+    range.setStart(liB.firstChild!, 1) // caret between "b" and "b"
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Tab' })
+
+    expect(editor.getMd()).toBe('- a\n  - bb')
+    const newRange = window.getSelection()!.getRangeAt(0)
+    expect(closestLiOf(newRange.startContainer)?.textContent).toBe('bb')
+    const pre = document.createRange()
+    pre.selectNodeContents(closestLiOf(newRange.startContainer)!)
+    pre.setEnd(newRange.startContainer, newRange.startOffset)
+    expect(pre.toString().length).toBe(1)
+    editor.destroy()
+  })
+
+  test('Shift+Tab keeps the caret in the item just promoted, not jumped to the line above (regression)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n  - bb')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const liB = editorEl.querySelectorAll('li')[1]!
+    const range = document.createRange()
+    range.setStart(liB.firstChild!, 1) // caret between "b" and "b"
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('- a\n- bb')
+    const newRange = window.getSelection()!.getRangeAt(0)
+    expect(closestLiOf(newRange.startContainer)?.textContent).toBe('bb')
+    const pre = document.createRange()
+    pre.selectNodeContents(closestLiOf(newRange.startContainer)!)
+    pre.setEnd(newRange.startContainer, newRange.startOffset)
+    expect(pre.toString().length).toBe(1)
+    editor.destroy()
+  })
+
+  test('Shift+Tab at deeper nesting (3rd level) also keeps the caret in place (regression)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- a\n  - b\n    - cc')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const liC = editorEl.querySelectorAll('li')[2]!
+    const range = document.createRange()
+    range.setStart(liC.firstChild!, 1) // caret between "c" and "c"
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('- a\n  - b\n  - cc')
+    const newRange = window.getSelection()!.getRangeAt(0)
+    expect(closestLiOf(newRange.startContainer)?.textContent).toBe('cc')
+    const pre = document.createRange()
+    pre.selectNodeContents(closestLiOf(newRange.startContainer)!)
+    pre.setEnd(newRange.startContainer, newRange.startOffset)
+    expect(pre.toString().length).toBe(1)
+    editor.destroy()
+  })
 })
+
+function closestLiOf(node: Node): HTMLElement | null {
+  let n: Node | null = node
+  while (n) {
+    if (n instanceof HTMLElement && n.tagName === 'LI') return n
+    n = n.parentElement
+  }
+  return null
+}
 
 describe('toolbar', () => {
   test('help button opens the help modal', () => {

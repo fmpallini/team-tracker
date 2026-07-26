@@ -4,13 +4,11 @@
 // src/ui/calendar.ts (day picker) into the pane system (src/ui/panes.ts).
 import type { Loc, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
-import { attachTemplatePicker } from '../ui/template-picker'
+import { createRichEditorBundle } from '../ui/rich-editor'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
 import { nowHHMM } from '../core/date'
+import { findTeam as docFindTeam } from '../core/document'
 import { el } from '../ui/dom'
 
 /**
@@ -31,7 +29,7 @@ import { el } from '../ui/dom'
 const disposers = new WeakMap<HTMLElement, () => void>()
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
-  return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+  return docFindTeam(ctx.store.doc, teamId)
 }
 
 export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
@@ -46,16 +44,31 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
   const lc = ctx.locale
 
   function buildMarks(): CalendarMarks {
+    const team = findTeam(ctx, teamId)
+    const milestonesByDate = new Map<string, string[]>()
+    for (const m of team?.milestones ?? []) {
+      const list = milestonesByDate.get(m.date)
+      if (list) list.push(m.title)
+      else milestonesByDate.set(m.date, [m.title])
+    }
+    const actionItemsByDate = new Map<string, string[]>()
+    for (const a of team?.actionItems ?? []) {
+      if (a.dueDate === null) continue
+      const list = actionItemsByDate.get(a.dueDate)
+      if (list) list.push(a.summary)
+      else actionItemsByDate.set(a.dueDate, [a.summary])
+    }
+    const dailyNotes = team?.dailyNotes ?? {}
     return {
       hasNote(d: string): boolean {
-        const note = findTeam(ctx, teamId)?.dailyNotes[d]
+        const note = dailyNotes[d]
         return typeof note === 'string' && note.trim() !== ''
       },
       milestones(d: string): string[] {
-        return (findTeam(ctx, teamId)?.milestones ?? []).filter((m) => m.date === d).map((m) => m.title)
+        return milestonesByDate.get(d) ?? []
       },
       actionItems(d: string): string[] {
-        return (findTeam(ctx, teamId)?.actionItems ?? []).filter((a) => a.dueDate === d).map((a) => a.summary)
+        return actionItemsByDate.get(d) ?? []
       },
     }
   }
@@ -108,38 +121,22 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
   )
   calendarCol.append(toggleBtn, calendarSlot)
 
-  const editor: Editor = createEditor(
-    {
-      onChange() {
-        const md = editor.getMd()
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (!tm) return
-          if (md.trim() === '') delete tm.dailyNotes[date]
-          else tm.dailyNotes[date] = md
-        })
-      },
-      onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-      onAtTrigger() {},
-      onSlashTrigger() {},
-      resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+  const bundle = createRichEditorBundle({
+    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    initialMd: findTeam(ctx, teamId)?.dailyNotes[date] ?? '',
+    onChange: (md) => {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        if (md.trim() === '') delete tm.dailyNotes[date]
+        else tm.dailyNotes[date] = md
+      })
     },
-    lc
-  )
-  editor.setMd(findTeam(ctx, teamId)?.dailyNotes[date] ?? '')
-
-  const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam(ctx, teamId)), locale: lc, onPick: () => {} })
-
-  const tplHandle = attachTemplatePicker(editor, {
+    getTeam: () => findTeam(ctx, teamId),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'daily' || tpl.scope === 'any'),
-    getCtx: () => ({
-      dateIso: date,
-      time: nowHHMM(lc),
-      teamName: findTeam(ctx, teamId)?.name,
-      locale: lc,
-    }),
-    locale: lc,
+    getTemplateCtx: () => ({ dateIso: date, time: nowHHMM(lc), teamName: findTeam(ctx, teamId)?.name, locale: lc }),
   })
+  const editor = bundle.editor
 
   // Marks (has-note tint, milestone flags) can change from edits made
   // elsewhere (this same note, the milestones module in the other split
@@ -159,8 +156,6 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
 
   disposers.set(container, () => {
     unsubscribe()
-    atHandle.dispose()
-    tplHandle.dispose()
-    editor.destroy()
+    bundle.dispose()
   })
 }

@@ -5,12 +5,10 @@
 // tree, possibly in the *other* pane) while this module is mounted.
 import type { Loc, Person, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import type { ModuleCtx } from '../ui/panes'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from '../ui/atref'
-import { attachTemplatePicker } from '../ui/template-picker'
+import { createRichEditorBundle } from '../ui/rich-editor'
 import { nowHHMM } from '../core/date'
+import { findTeam as docFindTeam } from '../core/document'
 import { el } from '../ui/dom'
 
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -29,7 +27,7 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
   const lc = ctx.locale
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function findPerson(): Person | undefined {
     return findTeam()?.[group].find((p) => p.id === personId)
@@ -49,39 +47,22 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   const headerEl = el('div', { class: 'tt-person-header' }, personLabel(person))
 
-  const editor: Editor = createEditor(
-    {
-      onChange() {
-        const md = editor.getMd()
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          const p = tm?.[group].find((pp) => pp.id === personId)
-          if (!p) return
-          p.notes = md.trim() === '' ? '' : md
-        })
-      },
-      onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-      onAtTrigger() {},
-      onSlashTrigger() {},
-      resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+  const bundle = createRichEditorBundle({
+    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    initialMd: person.notes,
+    onChange: (md) => {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        const p = tm?.[group].find((pp) => pp.id === personId)
+        if (!p) return
+        p.notes = md.trim() === '' ? '' : md
+      })
     },
-    lc
-  )
-  editor.setMd(person.notes)
-
-  const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
-
-  const tplHandle = attachTemplatePicker(editor, {
+    getTeam: () => findTeam(),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),
-    getCtx: () => ({
-      dateIso: todayIso(),
-      time: nowHHMM(lc),
-      personName: person.name,
-      teamName: findTeam()?.name,
-      locale: lc,
-    }),
-    locale: lc,
+    getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), personName: person.name, teamName: findTeam()?.name, locale: lc }),
   })
+  const editor = bundle.editor
 
   // Unlike src/modules/daily-notes.ts's calendar-marks refresh, the notes
   // editor's *content* is deliberately never rebuilt from a live store
@@ -96,9 +77,7 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
     if (findPerson()) return
     torn = true
     unsubscribe()
-    atHandle.dispose()
-    tplHandle.dispose()
-    editor.destroy()
+    bundle.dispose()
     showNotFound()
   })
 
@@ -106,8 +85,6 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   disposers.set(container, () => {
     unsubscribe()
-    atHandle.dispose()
-    tplHandle.dispose()
-    editor.destroy()
+    bundle.dispose()
   })
 }

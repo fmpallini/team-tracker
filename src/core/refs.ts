@@ -68,6 +68,7 @@ export function unlinkRefsInTeam(team: Team, kind: IdRefKind, ids: string[]): vo
   for (const date of Object.keys(team.dailyNotes)) {
     team.dailyNotes[date] = unlink(team.dailyNotes[date]!)
   }
+  team.generalNotes = unlink(team.generalNotes ?? '')
   for (const group of ['stakeholders', 'members'] as const) {
     for (const p of team[group]) p.notes = unlink(p.notes)
   }

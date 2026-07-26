@@ -5,31 +5,25 @@
 // a *computed, never-persisted* exposure column (chance*impact, colored by
 // range) and a per-row expandable follow-up editor that mirrors
 // src/modules/person-notes.ts's full editor + @ref + template-picker wiring.
-// Any number of follow-up editors can be expanded at once (tracked in
-// expandedIds/expandedBundles), which is what backs the toolbar's
-// expand-all/collapse-all button.
+// Any number of follow-up editors can be expanded at once (tracked in the
+// shared `expandable` ExpandableRowsController, src/ui/expandable-followup.ts),
+// which is what backs the toolbar's expand-all/collapse-all button.
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
-import { duplicateRisk, transferRisk } from '../core/card-transfer'
 import type { ModuleCtx } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
-import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
-import { showCardContextMenu } from '../ui/card-context-menu'
+import { confirmDelete } from '../ui/modal'
+import { createRichEditorBundle } from '../ui/rich-editor'
+import { ExpandableRowsController } from '../ui/expandable-followup'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
+import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
-import { el } from '../ui/dom'
+import { findTeam as docFindTeam } from '../core/document'
+import { el, blurOnEnter } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
-
-/** Enter confirms a row's text field the same way Tab/click-away already does: blur it, which commits via the field's own `onchange` handler. */
-function blurOnEnter(e: Event): void {
-  if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
-}
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -121,7 +115,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   const lc = ctx.locale
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function risks(): Risk[] {
     return findTeam()?.risks ?? []
@@ -132,24 +126,8 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   // Every currently-expanded row's follow-up editor is mounted at once —
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
-  let expandedIds = new Set<string>()
+  const expandable = new ExpandableRowsController()
   let focusRiskId: string | null = null
-
-  interface ExpandedBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle }
-  const expandedBundles = new Map<string, ExpandedBundle>()
-
-  function disposeExpandedBundle(id: string): void {
-    const bundle = expandedBundles.get(id)
-    if (!bundle) return
-    bundle.atHandle.dispose()
-    bundle.tplHandle.dispose()
-    bundle.editor.destroy()
-    expandedBundles.delete(id)
-  }
-
-  function disposeAllExpandedBundles(): void {
-    for (const id of [...expandedBundles.keys()]) disposeExpandedBundle(id)
-  }
 
   function clearDropClasses(): void {
     listEl.querySelectorAll('.tt-risk-row').forEach((n) => {
@@ -158,7 +136,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function removeRisk(id: string): void {
-    expandedIds.delete(id) // local UI state; must flip before store.update fires the synchronous subscriber below
+    expandable.collapse(id) // local UI state; must flip before store.update fires the synchronous subscriber below
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
@@ -167,22 +145,8 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     })
   }
 
-  function openDeleteConfirm(r: Risk): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'risk_delete_confirm', { title: r.title }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'risk_delete_btn'),
-      primary: true,
-      onClick: () => {
-        removeRisk(r.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'risk_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-  }
-
   function setClosed(id: string, closed: boolean): void {
-    if (closed) expandedIds.delete(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
+    if (closed) expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
     ctx.store.update((d) => {
       const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
       if (found) found.closed = closed
@@ -194,18 +158,22 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       removeRisk(r.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
-    openDeleteConfirm(r)
+    confirmDelete(lc, {
+      title: t(lc, 'risk_delete_title'),
+      message: t(lc, 'risk_delete_confirm', { title: r.title }),
+      confirmLabel: t(lc, 'risk_delete_btn'),
+      onConfirm: () => removeRisk(r.id),
+    })
   }
 
   function toggleExpand(id: string): void {
-    if (expandedIds.has(id)) expandedIds.delete(id)
-    else expandedIds.add(id)
+    expandable.toggle(id)
     renderAll()
   }
 
   /** Expands (or collapses) every currently-open (non-closed) risk's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
   function setAllExpanded(expand: boolean): void {
-    expandedIds = expand ? new Set(risks().filter((r) => !r.closed).map((r) => r.id)) : new Set()
+    expandable.setAll(risks().filter((r) => !r.closed).map((r) => r.id), expand)
     renderAll()
   }
 
@@ -221,54 +189,29 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     return select
   }
 
-  /** Builds the full rich editor for a risk's follow-up, wired exactly like src/modules/person-notes.ts (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself in `expandedBundles` so the caller can dispose it later. */
+  /** Builds the full rich editor for a risk's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself with `expandable` so the caller can dispose it later. */
   function renderFollowupRow(r: Risk): HTMLElement {
-    const editor: Editor = createEditor(
-      {
-        onChange() {
-          const md = editor.getMd()
-          ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
-            const found = tm?.risks.find((rr) => rr.id === r.id)
-            if (!found) return
-            found.followup = md.trim() === '' ? '' : md
-          })
-        },
-        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-        onAtTrigger() {},
-        onSlashTrigger() {},
-        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
+    const bundle = createRichEditorBundle({
+      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+      initialMd: r.followup,
+      onChange: (md) => {
+        ctx.store.update((d) => {
+          const tm = d.teams.find((t2) => t2.id === teamId)
+          const found = tm?.risks.find((rr) => rr.id === r.id)
+          if (!found) return
+          found.followup = md.trim() === '' ? '' : md
+        })
       },
-      lc
-    )
-    editor.setMd(r.followup)
-
-    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
-    const tplHandle = attachTemplatePicker(editor, {
+      getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
-      locale: lc,
+      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
-
-    expandedBundles.set(r.id, { editor, atHandle, tplHandle })
-
-    return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id }, editor.root)
+    expandable.register(r.id, bundle)
+    return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id, 'data-item-id': r.id }, bundle.editor.root)
   }
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
-      duplicate: (id) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (tm) duplicateRisk(tm, id)
-        })
-      },
-      transfer: (id, targetTeamId, mode) => {
-        ctx.store.update((d) => {
-          transferRisk(d.teams, id, teamId, targetTeamId, mode)
-        })
-      },
-    })
+    openItemContextMenu(ctx, 'risk', teamId, itemId, x, y)
   }
 
   function renderRow(r: Risk): HTMLElement {
@@ -327,7 +270,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     // tabindex="-1": Tab should move cleanly between the row's data fields
     // (title/chance/impact/plan) like a spreadsheet, not stop on every
     // hover-revealed icon button in between — still reachable by click/hover.
-    const expanded = expandedIds.has(r.id)
+    const expanded = expandable.isExpanded(r.id)
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => toggleExpand(r.id) },
@@ -461,7 +404,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   }
 
   function renderAll(): void {
-    disposeAllExpandedBundles() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
+    expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     listEl.innerHTML = ''
     const all = risks()
     const open = sortRisksForDisplay(all.filter((r) => !r.closed), sortMode)
@@ -471,7 +414,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     } else {
       for (const r of open) {
         listEl.appendChild(renderRow(r))
-        if (expandedIds.has(r.id)) listEl.appendChild(renderFollowupRow(r))
+        if (expandable.isExpanded(r.id)) listEl.appendChild(renderFollowupRow(r))
       }
     }
     updateSortIndicator()
@@ -509,18 +452,14 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     {
       class: 'tt-btn tt-risk-expand-all-btn',
       type: 'button',
-      onclick: () => setAllExpanded(!isAllExpanded(risks().filter((r) => !r.closed))),
+      onclick: () => setAllExpanded(!expandable.isAllExpanded(risks().filter((r) => !r.closed).map((r) => r.id))),
     },
     ''
   )
 
-  function isAllExpanded(open: Risk[]): boolean {
-    return open.length > 0 && open.every((r) => expandedIds.has(r.id))
-  }
-
   /** Label reads "Expand all" unless every open (non-closed) row is already expanded, in which case it flips to "Collapse all" — mirrors risk_expand_all_btn/risk_collapse_all_btn i18n keys. */
   function updateExpandAllBtn(open: Risk[]): void {
-    expandAllBtn.textContent = t(lc, isAllExpanded(open) ? 'risk_collapse_all_btn' : 'risk_expand_all_btn')
+    expandAllBtn.textContent = t(lc, expandable.isAllExpanded(open.map((r) => r.id)) ? 'risk_collapse_all_btn' : 'risk_expand_all_btn')
   }
 
   const toolbar = el('div', { class: 'tt-risk-toolbar' }, addBtn, expandAllBtn)
@@ -561,11 +500,22 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     renderAll()
   })
 
+  /** Expands the risk a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's risks or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
+  function onSearchFocusItem(e: Event): void {
+    const itemId = (e as CustomEvent<string>).detail
+    if (!risks().some((r) => r.id === itemId)) return
+    if (expandable.isExpanded(itemId)) return
+    expandable.expand(itemId)
+    renderAll()
+  }
+  container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
 
   disposers.set(container, () => {
     unsubscribe()
-    disposeAllExpandedBundles()
+    expandable.disposeAll()
+    container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   })
 }

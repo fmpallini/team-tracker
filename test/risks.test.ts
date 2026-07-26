@@ -12,6 +12,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Risk, Team } from '../src/core/types'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
 
 function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
   const calls: { idx: 0 | 1; loc: Loc }[] = []
@@ -508,6 +509,53 @@ describe('renderRisks', () => {
       chip.click()
 
       expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } } }])
+    })
+  })
+
+  describe('search-focus-item event', () => {
+    test('expands a collapsed risk and mounts its follow-up editor', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', followup: 'buried text' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      const editorEl = container.querySelector('.tt-risk-followup-row .editor') as HTMLElement
+      expect(editorEl).not.toBeNull()
+      expect(editorEl.textContent).toContain('buried text')
+    })
+
+    test('is a no-op for an id that is not one of this team\'s risks', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'does-not-exist' }))
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+    })
+
+    test('is a no-op (no duplicate row) when the risk is already expanded', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      expect(container.querySelectorAll('.tt-risk-followup-row').length).toBe(1)
+    })
+
+    test('the follow-up row carries the same data-item-id as its title row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+
+      const followupRow = container.querySelector('.tt-risk-followup-row') as HTMLElement
+      expect(followupRow.getAttribute('data-item-id')).toBe('r1')
     })
   })
 

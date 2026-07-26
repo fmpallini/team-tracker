@@ -6,7 +6,7 @@ import type { FileSession } from './core/fs'
 import { createStore, type Store } from './core/store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
-import { mountSidebar, notifyNavChanged } from './ui/sidebar'
+import { mountSidebar } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
 import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
@@ -14,6 +14,7 @@ import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
 import { t } from './core/i18n'
 import { renderDailyNotes } from './modules/daily-notes'
+import { renderGeneralNotes } from './modules/general-notes'
 import { renderPeopleTree } from './modules/people-tree'
 import { renderPersonNotes } from './modules/person-notes'
 import { renderActionItems } from './modules/action-items'
@@ -51,11 +52,11 @@ interface AppController {
    * Task 25 re-review item #4c: tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
    * beforeunload) plus the save controller's own interval/mutation-guard
-   * teardown. Nothing calls this today — the app has a single-document
-   * lifecycle for its whole lifetime — but future callers (hot-reload, a
-   * "close file" action, tests that open more than one document) now have a
-   * real, complete teardown path instead of having to rediscover and unwind
-   * each listener by hand.
+   * teardown. Invoked by `closeFile()` below (the 🔒 header button /
+   * Ctrl+Alt+L) before returning to the start screen — every listener this
+   * function tears down must actually be pushed onto `disposers` (see the two
+   * registrations fixed alongside this comment) or it leaks across a
+   * close-file → open-another-file cycle in the same tab.
    */
   dispose(): void
 }
@@ -106,7 +107,11 @@ function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl:
 
   function enterReadOnly(): void {
     store.setReadOnly(true)
-    if (!banner.isConnected) shell.root.prepend(banner)
+    // Sibling before shell.root, not prepended inside it: .tt-shell is a
+    // 2-row CSS grid (header auto, body 1fr) — a 3rd grid child shifts
+    // auto-placement so header lands in the 1fr row (stretches full-height)
+    // and body collapses into an unaccounted implicit row.
+    if (!banner.isConnected) shell.root.parentElement?.insertBefore(banner, shell.root)
   }
 
   function exitReadOnly(): void {
@@ -207,8 +212,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   // Task 25 re-review item #4c: every document/window listener this function
   // registers gets its remover collected here so `dispose()` (assigned to
   // `app.dispose` below) can fully tear the document down. See the
-  // `AppController.dispose` doc comment for why this matters even though
-  // nothing calls it yet.
+  // `AppController.dispose` doc comment for why this matters.
   const disposers: Array<() => void> = []
   function dispose(): void {
     for (const d of disposers.splice(0)) {
@@ -231,6 +235,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   const store = createStore(doc)
   const pm = createPaneManager(shell, store, doc.prefs.locale)
   pm.registerModule('daily', renderDailyNotes)
+  pm.registerModule('general', renderGeneralNotes)
   pm.registerModule('stakeholders', renderPeopleTree('stakeholders'))
   pm.registerModule('members', renderPeopleTree('members'))
   pm.registerModule('person', renderPersonNotes)
@@ -276,7 +281,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
             const reloaded = await decryptDocument(bytes, app ? app.password : password)
             store.replaceDoc(reloaded)
             pm.renderAll()
-            notifyNavChanged()
             shell.setSaveState('saved')
             shell.setTitle(session.name, false)
           } catch (e) {
@@ -324,12 +328,14 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   // touched via `store.update` (see ui/prefs.ts), so this is a simple,
   // single-point hook that doesn't need to widen ui/prefs.ts's contract.
   let lastAutoSaveMin = store.doc.prefs.autoSaveMin
-  store.subscribe(() => {
-    if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
-      lastAutoSaveMin = store.doc.prefs.autoSaveMin
-      saveCtl.scheduleFrom(store.doc.prefs)
-    }
-  })
+  disposers.push(
+    store.subscribe(() => {
+      if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
+        lastAutoSaveMin = store.doc.prefs.autoSaveMin
+        saveCtl.scheduleFrom(store.doc.prefs)
+      }
+    })
+  )
 
   const onVisibilityChange = (): void => {
     if (document.visibilityState === 'hidden' && store.dirty) void saveCtl.saveNow()
@@ -427,7 +433,7 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   shell.onHelp(() => {
     showGlobalHelp(store.doc.prefs.locale)
   })
-  store.onMutate(() => clearSearchHighlight())
+  disposers.push(store.onMutate(() => clearSearchHighlight()))
   disposers.push(
     onLocaleChanged(() => {
       pm.renderAll()
@@ -473,7 +479,6 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
       store.updateNav((d) => {
         d.nav.activeTeamId = id
       })
-      notifyNavChanged()
       openTeamDefaultLayout(pm, store, id)
       return
     }

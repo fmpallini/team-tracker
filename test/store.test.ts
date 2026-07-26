@@ -93,6 +93,23 @@ test('setReadOnly(true) blocks update() but not updateNav(), and warns via onBlo
   expect(warned).toEqual([1, 1])
 })
 
+test('repeated setReadOnly(true) without an intervening setReadOnly(false) does not re-arm the one-shot warning', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const warned: number[] = []
+  s.onBlockedUpdate(() => warned.push(1))
+
+  s.setReadOnly(true)
+  s.update(() => {})
+  expect(warned).toEqual([1])
+
+  // A second setReadOnly(true) call (e.g. a re-entrant "takeover" handler
+  // firing twice) with no intervening setReadOnly(false) must not re-arm
+  // the one-shot warning.
+  s.setReadOnly(true)
+  s.update(() => {})
+  expect(warned).toEqual([1])
+})
+
 test('onMutate fires synchronously for both update() and updateNav(), unlike subscribe()', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   let subscribeCount = 0

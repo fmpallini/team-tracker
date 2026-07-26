@@ -208,12 +208,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /** Nests `items` (sibling <li>s, in document order) under the previous
    * sibling of the first one, as that sibling's nested sub-list (reusing one
    * if it already has one). No-op if there's no previous sibling to nest
-   * under, or the batch is already at MAX_LIST_DEPTH. */
-  function indentListItems(items: HTMLElement[]): void {
+   * under, or the batch is already at MAX_LIST_DEPTH. Returns whether it
+   * actually moved anything (callers use this to decide whether the caret
+   * needs restoring afterward — see restoreCaret). */
+  function indentListItems(items: HTMLElement[]): boolean {
     const first = items[0]
-    if (!first || listItemDepth(first) >= MAX_LIST_DEPTH) return
+    if (!first || listItemDepth(first) >= MAX_LIST_DEPTH) return false
     const prev = first.previousElementSibling as HTMLElement | null
-    if (!prev || prev.tagName !== 'LI') return
+    if (!prev || prev.tagName !== 'LI') return false
     const parentList = first.parentElement as HTMLElement
     let sub = prev.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
     if (!sub) {
@@ -222,20 +224,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     items.forEach(li => sub!.appendChild(li))
     scheduleChange()
+    return true
   }
 
   /** Promotes `items` (sibling <li>s, in document order) out one level, into
    * the list they're nested under as new siblings right after the item they
    * were nested under. Any items after `items` in the same nested list move
    * with them, becoming children of the last promoted item (preserves
-   * hierarchy). No-op at depth 0. */
-  function outdentListItems(items: HTMLElement[]): void {
+   * hierarchy). No-op at depth 0. Returns whether it actually moved
+   * anything (callers use this to decide whether the caret needs restoring
+   * afterward — see restoreCaret). */
+  function outdentListItems(items: HTMLElement[]): boolean {
     const first = items[0]
     const last = items[items.length - 1]
-    if (!first || !last) return
+    if (!first || !last) return false
     const list = first.parentElement as HTMLElement
     const parentLi = list.parentElement as HTMLElement | null
-    if (!parentLi || parentLi.tagName !== 'LI') return
+    if (!parentLi || parentLi.tagName !== 'LI') return false
     const grandList = parentLi.parentElement as HTMLElement
 
     const trailing: HTMLElement[] = []
@@ -254,6 +259,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     items.forEach(li => grandList.insertBefore(li, insertBefore))
     if (list.children.length === 0) list.remove()
     scheduleChange()
+    return true
   }
 
   /* Task 4: resolves the list item(s) a Tab/Shift+Tab keypress should act
@@ -288,6 +294,19 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     r.collapse(true)
     sel.removeAllRanges()
     sel.addRange(r)
+  }
+
+  /** Collapses the caret to a text offset within `block` (typically an `<li>`
+   * just moved by indentListItems/outdentListItems). Moving list nodes via
+   * insertBefore/appendChild invalidates the browser's live selection, which
+   * Chrome then "recovers" by dropping the caret onto the nearest surviving
+   * node — usually the line above the item that was just indented/outdented.
+   * Called right after the move so the caret visibly stays put. */
+  function restoreCaret(block: HTMLElement, offset: number): void {
+    const sel = window.getSelection()
+    if (!sel) return
+    sel.removeAllRanges()
+    sel.addRange(rangeForTextOffsets(block, offset, offset))
   }
 
   function applyBlockFormat(type: BlockPrefixMatch['type']): void {
@@ -535,8 +554,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       e.preventDefault()
       const listItems = selectedListItems()
       if (listItems.length > 0) {
-        if (e.shiftKey) outdentListItems(listItems)
-        else indentListItems(listItems)
+        const ctx = currentBlockAndOffset() // collapsed-caret case only; null for multi-item selections
+        const moved = e.shiftKey ? outdentListItems(listItems) : indentListItems(listItems)
+        if (moved) restoreCaret(ctx ? (ctx.block) : listItems[0]!, ctx ? ctx.caretOffset : 0)
         return
       }
       if (e.shiftKey) {

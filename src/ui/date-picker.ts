@@ -11,7 +11,7 @@
 // value, plus its own Today/Clear date shortcuts.
 import { t, formatDate, parseLocaleDate, todayIso, type Locale } from '../core/i18n'
 import { createCalendar, type CalendarMarks } from './calendar'
-import { el, bindOutsideDismiss } from './dom'
+import { el, bindOutsideDismiss, blurOnEnter } from './dom'
 
 const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [] }
 
@@ -172,9 +172,7 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
   input.addEventListener('focus', openPopover)
   input.addEventListener('input', onInput)
   input.addEventListener('blur', onBlur)
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') input.blur()
-  })
+  input.addEventListener('keydown', blurOnEnter)
 
   return {
     root,

@@ -4,10 +4,24 @@ A zero-runtime-dependency, single-file web app for tracking teams: people and
 hierarchy, daily/per-person notes, action items, milestones (with a calendar
 view), and risks.
 
-![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshot.png)
+![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshots/daily-notes-and-org.png)
 
 **[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
 your browser, nothing to install.
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![Action items kanban board with tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) |
+| Action items — kanban board | Milestones — timeline + list |
+| ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![Ctrl+K command palette for jumping to any team, person, or item](docs/screenshots/command-palette.png) |
+| Risks — chance × impact exposure | `Ctrl+K` command palette |
+| ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) | |
+| `Ctrl+Shift+F` search across every team | |
+
+</details>
 
 ## Why
 
@@ -153,6 +167,71 @@ the same with the local `app.html` and the installed PWA:
 - **Version history for free** — most providers keep previous versions of a
   synced file for a while (Google Drive keeps them for ~30 days), so you can
   also recover an earlier state by downloading an older version of the file.
+
+## FAQ
+
+**Where do notes or action items go if they aren't about one specific team?**
+Every module (daily notes, general notes, action items, milestones, risks) is
+scoped to a team. If you have org-wide stuff that doesn't belong to any one
+team, make a dedicated team for it — e.g. `🌐 General` or `🔗 Cross-team` — and
+use that team's General Notes / action items for anything that doesn't fit
+elsewhere. The global search bar (`Ctrl+F`) and its all-teams mode
+(`Ctrl+Shift+F`) then find it alongside everything else.
+
+**Can I use this for just myself, not an actual "team"?**
+Yes. A "team" is just a grouping — one person, one project, one client,
+whatever's useful to you. Nothing about the app assumes multiple people.
+
+**How many teams can I have?**
+No hard limit. `Alt+1` … `Alt+9` quick-switches the first nine; beyond that,
+the sidebar and `Ctrl+K` palette still get you anywhere.
+
+**Can multiple people edit the same file at the same time?**
+No — this isn't a real-time collaboration tool. Only one browser tab can hold
+write access to a given file at a time (a cross-tab lock enforces this);
+opening it elsewhere shows a read-only view with a "take control" option.
+Think of it as one manager's tracking tool, not a shared team workspace.
+
+**Can I use it across my phone and laptop?**
+Not on the phone — mobile browsers get a blocking screen instead of the app,
+since they lack the file APIs the save flow depends on and the UI is
+keyboard/desktop-only by design. Across desktops, copy the `.tmv` file
+yourself or keep it in a cloud-synced folder (see [Backing up your team
+file](#backing-up-your-team-file)) — there's no live sync between devices.
+
+**What happens if I forget my password?**
+There's no recovery — the file is encrypted with a key derived from that
+password, and nobody (including the app's author) can decrypt it without
+it. Use a password manager.
+
+**What if I lose the `.tmv` file itself?**
+Team Tracker has no backup service — if the file's gone and you never synced
+it anywhere, the data is gone too. See [Backing up your team
+file](#backing-up-your-team-file).
+
+**Is there version history or an undo for past edits?**
+Not inside the app. Whatever version history your cloud sync provider offers
+(e.g. Google Drive keeps ~30 days) is the only way to recover an earlier
+state of the file.
+
+**Does any of my data leave my machine — analytics, telemetry, anything?**
+No. Zero network calls. The app doesn't know or care whether you're online.
+
+**Can I import an org chart from a CSV or HR system?**
+No bulk import. The only import/export feature is team-to-team: exporting a
+team's people/hierarchy (no notes, action items, milestones, or risks) so a
+teammate can import it and skip re-typing the org chart — see the Data tab
+in preferences.
+
+**Does it send reminders or notifications for due dates?**
+No push or email notifications — due/overdue items only show up (sidebar
+badge, kanban highlighting) while you actually have the app open.
+
+**Is the "clean up" button in preferences safe to click?**
+It's irreversible and deliberately cross-team: it permanently deletes every
+done/cancelled action item, completed milestone, closed risk, and daily note
+older than the day count you set, across **all** teams in the file in one
+go. It shows you the exact counts before you confirm — read them first.
 
 ## Architecture
 

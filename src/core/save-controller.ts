@@ -74,7 +74,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   // call-site convention, not something this file could rely on. `onMutate()`
   // fires synchronously from both `update()` and `updateNav()`, so a mutation
   // via either path during an in-flight save now forces the trailing round
-  // directly, with no dependence on what the caller does afterward.
+  // directly, with no dependence on what the caller does afterward. (Task
+  // 11: that call-site convention — `notifyNavChanged()`/`onNavChanged()` —
+  // has since been fully removed from the codebase, not just worked around;
+  // `ui/sidebar.ts` now hooks `store.onMutate()` the same way this file
+  // does.)
   const unsubscribeDirtyGuard = deps.store.onMutate(() => {
     if (saving) queued = true
   })

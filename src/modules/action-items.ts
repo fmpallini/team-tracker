@@ -7,19 +7,15 @@
 // foreign store update.
 import type { ActionItem, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate, type MsgKey } from '../core/i18n'
-import { teamRefCandidates } from '../core/search'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
-import { SUGGESTED_TAG_NAME_KEYS } from '../core/document'
-import { duplicateActionItem, transferActionItem } from '../core/card-transfer'
+import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import type { ModuleCtx } from '../ui/panes'
-import { showModal, type ModalButton, type ModalHandle } from '../ui/modal'
-import { createEditor, type Editor } from '../ui/editor'
-import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver, type AtAutocompleteHandle } from '../ui/atref'
-import { attachTemplatePicker, type TemplatePickerHandle } from '../ui/template-picker'
+import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
+import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
-import { showCardContextMenu } from '../ui/card-context-menu'
+import { openItemContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
@@ -88,7 +84,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const datalistId = `tt-kanban-people-${Math.random().toString(36).slice(2)}`
 
   function findTeam(): Team | undefined {
-    return ctx.store.doc.teams.find((tm) => tm.id === teamId)
+    return docFindTeam(ctx.store.doc, teamId)
   }
   function items(): ActionItem[] {
     return findTeam()?.actionItems ?? []
@@ -148,37 +144,29 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     })
   }
 
-  function openDeleteConfirm(item: ActionItem): void {
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_confirm', { summary: item.summary }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'kanban_delete_btn'),
-      danger: true,
-      onClick: () => {
-        removeItem(item.id)
-        handle.close()
-      },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_delete_title'), body, buttons: [cancelBtn, confirmBtn] })
-  }
-
   function requestDelete(item: ActionItem): void {
     if (item.summary.trim() === '') {
       removeItem(item.id) // empty cards carry no meaningful content to lose — delete silently
       return
     }
-    openDeleteConfirm(item)
+    confirmDelete(lc, {
+      title: t(lc, 'kanban_delete_title'),
+      message: t(lc, 'kanban_delete_confirm', { summary: item.summary }),
+      confirmLabel: t(lc, 'kanban_delete_btn'),
+      variant: 'danger',
+      onConfirm: () => removeItem(item.id),
+    })
   }
 
   function clearZone(status: ActionItem['status']): void {
     const count = itemsByStatus(items(), status).length
     if (count === 0) return
-    const body = el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_clear_zone_confirm', { count: String(count) }))
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-    const confirmBtn: ModalButton = {
-      label: t(lc, 'kanban_clear_zone_btn'),
-      danger: true,
-      onClick: () => {
+    confirmDelete(lc, {
+      title: t(lc, 'kanban_clear_zone_title'),
+      message: t(lc, 'kanban_clear_zone_confirm', { count: String(count) }),
+      confirmLabel: t(lc, 'kanban_clear_zone_btn'),
+      variant: 'danger',
+      onConfirm: () => {
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
@@ -186,21 +174,17 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
         })
-        handle.close()
       },
-    }
-    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_clear_zone_title'), body, buttons: [cancelBtn, confirmBtn] })
+    })
   }
 
-  interface ModalBundle { editor: Editor; atHandle: AtAutocompleteHandle; tplHandle: TemplatePickerHandle; datePicker: DatePickerHandle }
+  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle }
   let openBundle: ModalBundle | null = null
 
   /** Single teardown for the edit modal's editor bundle — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
   function disposeOpenBundle(): void {
     if (!openBundle) return
-    openBundle.atHandle.dispose()
-    openBundle.tplHandle.dispose()
-    openBundle.editor.destroy()
+    openBundle.richBundle.dispose()
     openBundle.datePicker.destroy()
     openBundle = null
   }
@@ -213,24 +197,16 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
     let selectedColor: ActionItem['color'] = existing?.color ?? 'ledger'
     const errorEl = el('div', { class: 'tt-field-error' })
 
-    const editor: Editor = createEditor(
-      {
-        onChange() {},
-        onRefClick: makeRefClickHandler(ctx.store, ctx.pm, ctx.paneIdx, lc, teamId),
-        onAtTrigger() {},
-        onSlashTrigger() {},
-        resolveRefLabel: makeRefLabelResolver(ctx.store, teamId),
-      },
-      lc
-    )
-    editor.setMd(existing?.notes ?? '')
-    const atHandle = attachAtAutocomplete(editor, { getRefCandidates: () => teamRefCandidates(findTeam()), locale: lc, onPick: () => {} })
-    const tplHandle = attachTemplatePicker(editor, {
+    const richBundle = createRichEditorBundle({
+      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+      initialMd: existing?.notes ?? '',
+      onChange: () => {}, // this modal reads editor.getMd() on Save instead of live-persisting
+      getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
-      locale: lc,
+      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
-    openBundle = { editor, atHandle, tplHandle, datePicker }
+    const editor = richBundle.editor
+    openBundle = { richBundle, datePicker }
 
     const colorRow = el('div', { class: 'tt-kanban-color-row' })
     function paintSelectedColor(): void {
@@ -367,19 +343,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
 
   function openCardContextMenu(itemId: string, x: number, y: number): void {
-    showCardContextMenu(lc, teamId, ctx.store.doc.teams, itemId, x, y, {
-      duplicate: (id) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          if (tm) duplicateActionItem(tm, id)
-        })
-      },
-      transfer: (id, targetTeamId, mode) => {
-        ctx.store.update((d) => {
-          transferActionItem(d.teams, id, teamId, targetTeamId, mode)
-        })
-      },
-    })
+    openItemContextMenu(ctx, 'action', teamId, itemId, x, y)
   }
 
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItem['color'], string>>): HTMLElement {

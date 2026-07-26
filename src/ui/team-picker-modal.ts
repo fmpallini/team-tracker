@@ -15,7 +15,7 @@ export function openTeamPickerModal(opts: {
 }): void {
   const select = el('select', { class: 'tt-input' }) as HTMLSelectElement
   for (const team of opts.teams) {
-    select.appendChild(el('option', { value: team.id }, `${team.emoji} ${team.name}`))
+    select.appendChild(el('option', { value: team.id }, team.emoji ? `${team.emoji} ${team.name}` : team.name))
   }
   const body = el('div', { class: 'tt-prefs-field' }, select)
 
