@@ -3,7 +3,7 @@ import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VER
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
   expect(d.schemaVersion).toBe(SCHEMA_VERSION)
-  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 3 })
+  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7 })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
     panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false })
@@ -110,20 +110,20 @@ describe('v4 → v5 migration (palette default)', () => {
 })
 
 describe('v5 → v6 migration (due-soon window)', () => {
-  it('defaults dueSoonDays to 3 when missing', () => {
+  it('defaults dueSoonDays to 7 when missing', () => {
     const d = createEmptyDocument('en-US') as any
     d.schemaVersion = 5
     delete d.prefs.dueSoonDays
     const doc = migrate(d)
     expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
-    expect(doc.prefs.dueSoonDays).toBe(3)
+    expect(doc.prefs.dueSoonDays).toBe(7)
   })
   it('leaves an existing dueSoonDays untouched', () => {
     const d = createEmptyDocument('en-US') as any
     d.schemaVersion = 5
-    d.prefs.dueSoonDays = 7
+    d.prefs.dueSoonDays = 12
     const doc = migrate(d)
-    expect(doc.prefs.dueSoonDays).toBe(7)
+    expect(doc.prefs.dueSoonDays).toBe(12)
   })
 })
 

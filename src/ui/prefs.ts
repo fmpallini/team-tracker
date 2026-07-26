@@ -6,13 +6,14 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
-import { t, type Locale, type MsgKey } from '../core/i18n'
+import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
+import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 
 export interface PrefsAppCtl {
   changePassword(newPw: string): Promise<void>
@@ -721,7 +722,65 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       importActionsEl
     )
 
-    container.append(exportSection, importSection)
+    // --- Cleanup (cross-team) ---
+    const cleanupDaysInput = el('input', {
+      type: 'number',
+      class: 'tt-input tt-data-cleanup-days-input',
+      min: '1',
+      max: '3650',
+      value: '60',
+    }) as HTMLInputElement
+    cleanupDaysInput.addEventListener('change', () => {
+      const raw = Number(cleanupDaysInput.value)
+      const clamped = Math.min(3650, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : 1))
+      cleanupDaysInput.value = String(clamped)
+    })
+
+    function doCleanup(): void {
+      const days = Math.min(3650, Math.max(1, Math.round(Number(cleanupDaysInput.value)) || 1))
+      const today = todayIso()
+      const counts = countCleanupTargets(store.doc, days, today)
+      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0) {
+        const nothingHandle: ModalHandle = showModal({
+          title: t(locale, 'data_cleanup_nothing_title'),
+          body: el('p', { class: 'tt-modal-message' }, t(locale, 'data_cleanup_nothing_body')),
+          buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => nothingHandle.close() }],
+        })
+        return
+      }
+      confirmDelete(locale, {
+        title: t(locale, 'data_cleanup_confirm_title'),
+        message: t(locale, 'data_cleanup_confirm_body', {
+          actions: String(counts.actions),
+          milestones: String(counts.milestones),
+          risks: String(counts.risks),
+          dailyNotes: String(counts.dailyNotes),
+        }),
+        confirmLabel: t(locale, 'data_cleanup_btn'),
+        variant: 'danger',
+        onConfirm: () => {
+          store.update((d) => applyCleanup(d, days, today))
+          toast(t(locale, 'data_cleanup_success_toast'))
+        },
+      })
+    }
+
+    const cleanupBtn = el(
+      'button',
+      { class: 'tt-btn tt-btn-danger', type: 'button', onclick: () => doCleanup() },
+      t(locale, 'data_cleanup_btn')
+    )
+
+    const cleanupSection = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_cleanup_heading')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'data_cleanup_hint')),
+      el('label', { class: 'tt-field' }, t(locale, 'data_cleanup_days_label'), cleanupDaysInput),
+      cleanupBtn
+    )
+
+    container.append(exportSection, importSection, cleanupSection)
   }
 
   // --- Tab 6: Sobre ----------------------------------------------------
