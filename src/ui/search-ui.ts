@@ -264,6 +264,15 @@ export function mountSearch(
   })
 
   const onDocKeydown = (e: KeyboardEvent): void => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      checkbox.checked = true
+      allTeams = true
+      input.focus()
+      input.select()
+      runSearch()
+      return
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault()
       input.focus()
