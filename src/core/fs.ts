@@ -58,15 +58,45 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
   }
 }
 
-export async function reopenLast(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
-  const handle = await idbGet<FileSystemFileHandle>('lastHandle')
-  if (!handle) return null
+/**
+ * Shared by `reopenLast` (handle pulled from IndexedDB) and the File Handling
+ * API launch path (handle handed in by the OS/browser on `.tmv` double-click,
+ * see `pwa/manifest.json`'s `file_handlers` and `ui/start.ts`'s
+ * `window.launchQueue` consumer) — both need the same permission re-check
+ * before reading, since a handle persisted or received across a launch
+ * doesn't carry its earlier grant with it.
+ */
+export async function openFromHandle(
+  handle: FileSystemFileHandle,
+  persist = true
+): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   let permission = await handle.queryPermission({ mode: 'readwrite' })
   if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
   if (permission !== 'granted') return null
   const { bytes, lastModified } = await readHandle(handle)
   const session: FileSession = { handle, name: handle.name, lastModified }
+  // `reopenLast` passes persist:false — the handle it hands in came from this
+  // same IndexedDB entry, so writing it straight back is a no-op round trip.
+  if (persist) await idbSet('lastHandle', handle)
   return { session, bytes }
+}
+
+export async function reopenLast(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+  const handle = await idbGet<FileSystemFileHandle>('lastHandle')
+  if (!handle) return null
+  return openFromHandle(handle, false)
+}
+
+/**
+ * Compares two sessions by their underlying file-system entry (not
+ * name/path, so it stays correct across renames) — e.g. so a File Handling
+ * API launch (see `ui/start.ts`) can detect it's re-launching the file
+ * that's already open rather than reopening it from disk over unsaved
+ * in-memory edits. `false` in fallback mode, where sessions have no handle.
+ */
+export async function sameEntry(a: FileSession, b: FileSession): Promise<boolean> {
+  if (!a.handle || !b.handle) return false
+  return a.handle.isSameEntry(b.handle)
 }
 
 export async function writeFile(session: FileSession, bytes: Uint8Array): Promise<void> {

@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, sameEntry, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number) {
   let mtime = initialMtime
@@ -37,4 +37,52 @@ test('forceWrite ignores external change', async () => {
   bump()
   await forceWrite(s, new Uint8Array([9]))
   expect(getWritten()).toEqual(new Uint8Array([9]))
+})
+
+function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
+  const handle = {
+    name: 'launched.tmv',
+    async getFile() { return { lastModified: 42, async arrayBuffer() { return new Uint8Array([7]).buffer } } },
+    async queryPermission() { return permission },
+    async requestPermission() { return permission === 'prompt' ? 'granted' : permission },
+  } as unknown as FileSystemFileHandle
+  return handle
+}
+
+test('openFromHandle reads the file when permission is already granted', async () => {
+  const handle = mockLaunchHandle('granted')
+  const result = await openFromHandle(handle)
+  expect(result).not.toBeNull()
+  expect(result!.session).toEqual({ handle, name: 'launched.tmv', lastModified: 42 })
+  expect(result!.bytes).toEqual(new Uint8Array([7]))
+})
+
+test('openFromHandle requests permission when not yet granted, then reads', async () => {
+  const handle = mockLaunchHandle('prompt')
+  const result = await openFromHandle(handle)
+  expect(result).not.toBeNull()
+  expect(result!.bytes).toEqual(new Uint8Array([7]))
+})
+
+test('openFromHandle returns null when permission is denied', async () => {
+  const handle = mockLaunchHandle('denied')
+  const result = await openFromHandle(handle)
+  expect(result).toBeNull()
+})
+
+test('sameEntry delegates to handle.isSameEntry', async () => {
+  const isSameEntry = vi.fn(async () => true)
+  const handleA = { isSameEntry } as unknown as FileSystemFileHandle
+  const handleB = {} as unknown as FileSystemFileHandle
+  const s1: FileSession = { handle: handleA, name: 'x.tmv', lastModified: 1 }
+  const s2: FileSession = { handle: handleB, name: 'x.tmv', lastModified: 1 }
+  expect(await sameEntry(s1, s2)).toBe(true)
+  expect(isSameEntry).toHaveBeenCalledWith(handleB)
+})
+
+test('sameEntry false when either session has no handle (fallback mode)', async () => {
+  const withHandle: FileSession = { handle: mockLaunchHandle('granted'), name: 'x.tmv', lastModified: 1 }
+  const fallback: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
+  expect(await sameEntry(withHandle, fallback)).toBe(false)
+  expect(await sameEntry(fallback, fallback)).toBe(false)
 })

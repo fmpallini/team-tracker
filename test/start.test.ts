@@ -10,6 +10,7 @@ const fsMocks = vi.hoisted(() => ({
   reopenLast: vi.fn(),
   writeFile: vi.fn(async () => {}),
   downloadFallback: vi.fn(),
+  openFromHandle: vi.fn(),
 }))
 vi.mock('../src/core/fs', () => fsMocks)
 
@@ -40,6 +41,8 @@ beforeEach(() => {
   fsMocks.reopenLast.mockReset()
   fsMocks.writeFile.mockReset().mockImplementation(async () => {})
   fsMocks.downloadFallback.mockReset()
+  fsMocks.openFromHandle.mockReset()
+  delete (window as unknown as { launchQueue?: unknown }).launchQueue
   idbMocks.idbGet.mockReset().mockImplementation(async () => undefined)
   cryptoMocks.decryptDocument.mockReset()
   cryptoMocks.encryptDocument.mockReset().mockImplementation(async () => new Uint8Array([1, 2, 3]))
@@ -49,6 +52,21 @@ function clickByText(text: string): void {
   const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text)
   if (!btn) throw new Error(`button "${text}" not found`)
   btn.click()
+}
+
+type LaunchConsumer = (launchParams: { files: FileSystemFileHandle[] }) => void
+
+function mockLaunchQueue(): () => LaunchConsumer {
+  let consumer: LaunchConsumer | null = null
+  ;(window as unknown as { launchQueue: unknown }).launchQueue = {
+    setConsumer: (cb: LaunchConsumer) => {
+      consumer = cb
+    },
+  }
+  return () => {
+    if (!consumer) throw new Error('launchQueue.setConsumer was never called')
+    return consumer
+  }
 }
 
 test('renders start screen with open/create buttons but no reopen when no lastHandle', async () => {
@@ -66,6 +84,51 @@ test('shows reopen button when idbGet resolves a handle', async () => {
   await flush()
   const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('')
+})
+
+test('file handling launch: consumes launchQueue file, decrypts, and calls onOpen', async () => {
+  const getConsumer = mockLaunchQueue()
+
+  const handle = {} as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'launched.tmv', lastModified: 1 }
+  const bytes = new Uint8Array([9])
+  fsMocks.openFromHandle.mockResolvedValue({ session, bytes })
+  const doc = createEmptyDocument('en-US')
+  cryptoMocks.decryptDocument.mockResolvedValue(doc)
+
+  let opened: [FileSession, Doc, string] | null = null
+  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  await flush()
+
+  getConsumer()({ files: [handle] })
+  await flush()
+
+  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+  pwInput.value = 'right'
+  pwInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+  await flush()
+  await flush()
+
+  expect(fsMocks.openFromHandle).toHaveBeenCalledWith(handle)
+  expect(opened).not.toBeNull()
+  expect(opened![0]).toBe(session)
+  expect(opened![1]).toEqual(doc)
+})
+
+test('file handling launch: permission denied (openFromHandle returns null) is a no-op', async () => {
+  const getConsumer = mockLaunchQueue()
+  fsMocks.openFromHandle.mockResolvedValue(null)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+
+  getConsumer()({ files: [{} as unknown as FileSystemFileHandle] })
+  await flush()
+
+  expect(onOpen).not.toHaveBeenCalled()
+  expect(document.querySelector('input[name="tt-password"]')).toBeNull()
 })
 
 test('open flow: wrong password loops until correct, then calls onOpen', async () => {

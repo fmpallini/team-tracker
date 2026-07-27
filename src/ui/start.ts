@@ -10,6 +10,7 @@ import {
   reopenLast,
   writeFile,
   downloadFallback,
+  openFromHandle,
   type FileSession,
 } from '../core/fs'
 import { idbGet } from '../core/idb'
@@ -18,6 +19,21 @@ import { createEmptyDocument, SchemaTooNewError } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
+
+// File Handling API (Chromium, PWA-installed only): OS-level "open with" /
+// double-click on a .tmv file launches the app and hands it the file's
+// FileSystemFileHandle here instead of the picker flow. Declared locally
+// since it's not yet in lib.dom.d.ts. See pwa/manifest.json's file_handlers.
+interface FileHandlingLaunchParams {
+  files: FileSystemFileHandle[]
+}
+declare global {
+  interface Window {
+    launchQueue?: {
+      setConsumer(consumer: (launchParams: FileHandlingLaunchParams) => void): void
+    }
+  }
+}
 
 /**
  * Mobile browsers get a blocking notice instead of the start screen: they
@@ -96,12 +112,19 @@ export function showStartScreen(
     }
   }
 
-  async function handleOpenViaPicker(): Promise<void> {
-    const result = await pickOpen()
+  // Shared by every "get a {session, bytes} pair, then decrypt it" open
+  // route (picker, reopen-last, File Handling API launch) — they differ only
+  // in how the pair is obtained.
+  async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
+    const result = await fetchResult()
     if (!result) return
     const outcome = await decryptLoop(result.bytes)
     if (outcome) onOpen(result.session, outcome.doc, outcome.password)
   }
+
+  const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(pickOpen)
+  const handleReopenLast = (): Promise<void> => openAndDecrypt(reopenLast)
+  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
 
   async function handleOpenFallbackFile(file: File): Promise<void> {
     const buf = await file.arrayBuffer()
@@ -109,13 +132,6 @@ export function showStartScreen(
     const session: FileSession = { handle: null, name: file.name, lastModified: file.lastModified }
     const outcome = await decryptLoop(bytes)
     if (outcome) onOpen(session, outcome.doc, outcome.password)
-  }
-
-  async function handleReopenLast(): Promise<void> {
-    const result = await reopenLast()
-    if (!result) return
-    const outcome = await decryptLoop(result.bytes)
-    if (outcome) onOpen(result.session, outcome.doc, outcome.password)
   }
 
   async function handleCreate(): Promise<void> {
@@ -248,4 +264,11 @@ export function showStartScreen(
       if (handle !== undefined) reopenBtn.style.display = ''
     })
     .catch((e: unknown) => console.error(e))
+
+  // Absent outside Chromium and in jsdom (tests) — feature-detected, no-op
+  // everywhere else.
+  window.launchQueue?.setConsumer((launchParams) => {
+    const handle = launchParams.files[0]
+    if (handle) handleLaunchFile(handle).catch(reportUnexpected)
+  })
 }
