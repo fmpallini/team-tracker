@@ -11,9 +11,10 @@ import { diffDays } from '../core/date'
 import { createEmptyTeam } from '../core/document'
 import { KIND_ICON } from '../core/search'
 import { REF_KINDS } from '../core/refs'
-import { el } from './dom'
+import { el, bindOutsideDismiss } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -97,14 +98,30 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // sidebar is hidden. Driven from renderCollapseState() since that's the
   // one choke point every path that can change "is the sidebar visible"
   // already runs through (manual toggle, responsive auto-hide, and the
-  // generic render() below).
-  const headerTeamIndicator = el('span', { class: 'tt-header-team-indicator' })
+  // generic render() below). It doubles as the team switcher's trigger
+  // (openTeamSwitcher() below) — with the sidebar's own team list hidden,
+  // this pill is the only way left to change teams without a hotkey.
+  const headerTeamIndicatorLabel = el('span', { class: 'tt-header-team-indicator-label' })
+  const headerTeamIndicatorCaret = el('span', { class: 'tt-header-team-indicator-caret', 'aria-hidden': 'true' })
+  headerTeamIndicatorCaret.innerHTML =
+    '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
+  const headerTeamIndicator = el(
+    'button',
+    { class: 'tt-header-team-indicator', type: 'button', onclick: () => toggleTeamSwitcher() },
+    headerTeamIndicatorLabel,
+    headerTeamIndicatorCaret
+  )
 
   function renderHeaderTeamIndicator(): void {
     const collapsed = effectivelyCollapsed()
     const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
-    if (team) headerTeamIndicator.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
+    headerTeamIndicator.title = t(locale(), 'team_switch_title')
+    if (team) headerTeamIndicatorLabel.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
+    // The pill only exists while the sidebar is hidden — if a resize or the
+    // manual toggle just brought the sidebar back, a switcher left open
+    // would float over nothing, anchored to a button that's no longer shown.
+    if (!collapsed) closeTeamSwitcher()
   }
 
   function renderCollapseState(): void {
@@ -121,6 +138,101 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     if (spaceHidden === hidden) return
     spaceHidden = hidden
     renderCollapseState()
+  }
+
+  // --- header team switcher: a dropdown opened from headerTeamIndicator,
+  // letting the collapsed header pick a team the same way the sidebar's own
+  // team list would (row layout intentionally mirrors it — num/emoji/name/
+  // due-badge — see the shared .tt-team-num/.tt-team-emoji/.tt-team-name/
+  // .tt-team-due-badge classes in styles.css). Structurally modeled on
+  // showContextMenu() (context-menu.ts): a fixed-position overlay appended to
+  // <body>, dismissed via bindOutsideDismiss (outside click or Escape) —
+  // plus arrow-key/Enter navigation via select-list.ts, matching every other
+  // dropdown list widget in this app (palette, @ autocomplete, template
+  // picker).
+  let switcherEl: HTMLElement | null = null
+  let switcherListEl: HTMLElement | null = null
+  let switcherTeams: Team[] = []
+  let switcherSelected = 0
+  let unbindSwitcherDismiss: (() => void) | null = null
+
+  function onSwitcherKeydown(e: KeyboardEvent): void {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      switcherSelected = clampMove(switcherSelected, e.key === 'ArrowDown' ? 1 : -1, switcherTeams.length)
+      paintSelection(switcherListEl, '.tt-team-switcher-item', switcherSelected)
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      pickSwitcherTeam(switcherTeams[switcherSelected])
+    }
+  }
+
+  function pickSwitcherTeam(team: Team | undefined): void {
+    if (!team) return
+    closeTeamSwitcher()
+    if (team.id !== store.doc.nav.activeTeamId) actions.selectTeam(team.id)
+  }
+
+  function closeTeamSwitcher(): void {
+    if (!switcherEl) return
+    switcherEl.remove()
+    switcherEl = null
+    switcherListEl = null
+    unbindSwitcherDismiss?.()
+    unbindSwitcherDismiss = null
+    document.removeEventListener('keydown', onSwitcherKeydown, true)
+  }
+
+  function openTeamSwitcher(): void {
+    if (store.doc.teams.length === 0) return
+    switcherTeams = store.doc.teams
+    const buckets = dueBuckets()
+    const teamDueCounts = new Map<string, number>()
+    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
+      teamDueCounts.set(it.loc.teamId, (teamDueCounts.get(it.loc.teamId) ?? 0) + 1)
+    }
+    switcherSelected = Math.max(0, switcherTeams.findIndex((tm) => tm.id === store.doc.nav.activeTeamId))
+    switcherListEl = el('div', { class: 'tt-team-switcher-list' })
+    switcherTeams.forEach((team, index) => {
+      const dueCount = teamDueCounts.get(team.id) ?? 0
+      const row = el(
+        'div',
+        {
+          ...selectableRowProps({
+            class: 'tt-team-switcher-item' + (team.id === store.doc.nav.activeTeamId ? ' active' : ''),
+            selected: index === switcherSelected,
+            onCommit: () => pickSwitcherTeam(team),
+            onHover: () => { switcherSelected = index; paintSelection(switcherListEl, '.tt-team-switcher-item', switcherSelected) },
+          }),
+          ...(index < 9 ? { title: t(locale(), 'team_alt_hint') } : {}),
+        },
+        el('span', { class: 'tt-team-num' }, String(index + 1)),
+        el('span', { class: 'tt-team-emoji' }, team.emoji),
+        el('span', { class: 'tt-team-name' }, team.name),
+        ...(dueCount > 0 ? [el('span', { class: 'tt-team-due-badge' }, String(dueCount))] : [])
+      )
+      switcherListEl!.appendChild(row)
+    })
+    switcherEl = el('div', { class: 'tt-team-switcher-dropdown' }, switcherListEl)
+    document.body.appendChild(switcherEl)
+    const rect = headerTeamIndicator.getBoundingClientRect()
+    switcherEl.style.left = `${rect.left}px`
+    switcherEl.style.top = `${rect.bottom + 4}px`
+    unbindSwitcherDismiss = bindOutsideDismiss(
+      (target) => !switcherEl!.contains(target) && !headerTeamIndicator.contains(target),
+      closeTeamSwitcher
+    )
+    document.addEventListener('keydown', onSwitcherKeydown, true)
+  }
+
+  function toggleTeamSwitcher(): void {
+    if (switcherEl) {
+      closeTeamSwitcher()
+      return
+    }
+    openTeamSwitcher()
   }
 
   const contentEl = el('div', { class: 'tt-sidebar-content' })

@@ -10,7 +10,7 @@ const ITERATIONS = 600_000
 const KCV_PLAIN = new Uint8Array(16)
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password.normalize('NFC')), 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: salt as BufferSource, iterations: ITERATIONS, hash: 'SHA-256' },
     base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
