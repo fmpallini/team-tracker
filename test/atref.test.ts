@@ -3,9 +3,26 @@ import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelR
 import type { RefCandidate } from '../src/core/search'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import type { PaneManager } from '../src/ui/panes'
+import { createShell, type Shell } from '../src/ui/shell'
+import { createPaneManager, type PaneManager } from '../src/ui/panes'
+import { renderActionItems } from '../src/modules/action-items'
 import type { Loc } from '../src/core/types'
 import { formatDateWithWeekday, t, type Locale } from '../src/core/i18n'
+
+// jsdom does not implement matchMedia; createShell() needs it to watch the
+// OS theme preference (same stub as test/search-expand-highlight.test.ts).
+function stubMatchMedia(): void {
+  window.matchMedia = ((query: string): MediaQueryList => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
 
 function makeHooks(): EditorHooks {
   return {
@@ -499,6 +516,48 @@ describe('makeRefClickHandler', () => {
 
     expect(() => handler({ kind: 'action', id: 'missing' })).not.toThrow()
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'missing' } } }])
+  })
+})
+
+describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts commit())', () => {
+  const originalRAF = window.requestAnimationFrame
+  const originalScrollIntoView = Element.prototype.scrollIntoView
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    window.requestAnimationFrame = originalRAF
+    Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
+  test('clicking an @-mention action-item chip flashes the target card, same as a search-result click', () => {
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({
+      id: 'T1', name: 'Team 1', emoji: '🚀',
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [], risks: [], dailyNotes: {},
+    })
+    doc.nav.activeTeamId = 'T1'
+    const store = createStore(doc)
+    const shell: Shell = createShell('pt-BR')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'pt-BR')
+    pm.registerModule('actions', renderActionItems)
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+    handler({ kind: 'action', id: 'a1' })
+
+    if (!raf) throw new Error('ref click handler did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const card = document.querySelector('[data-item-id="a1"]')
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
   })
 })
 

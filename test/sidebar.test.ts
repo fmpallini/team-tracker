@@ -4,7 +4,8 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
-import type { PaneManager } from '../src/ui/panes'
+import { createPaneManager, type PaneManager } from '../src/ui/panes'
+import { renderActionItems } from '../src/modules/action-items'
 
 function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: Loc) => void>> } {
   return {
@@ -836,5 +837,47 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
       expect(document.querySelectorAll('.tt-due-row')).toHaveLength(3)
       expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
     })
+  })
+})
+
+describe('due list modal - card highlight (real pane, mirrors search-ui.ts commit())', () => {
+  const originalRAF = window.requestAnimationFrame
+  const originalScrollIntoView = Element.prototype.scrollIntoView
+
+  afterEach(() => {
+    window.requestAnimationFrame = originalRAF
+    Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
+  test('clicking a due-list row flashes the target card, same as a search-result click', () => {
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('en-US')
+    const store = createStore(doc)
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'en-US')
+    pm.registerModule('actions', renderActionItems)
+    const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
+    mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
+
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'overdue-1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.click()
+
+    if (!raf) throw new Error('due-row click did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const card = document.querySelector('[data-item-id="overdue-1"]')
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
   })
 })

@@ -12,6 +12,7 @@ import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -355,14 +356,19 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
     if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
       const moduleKind = REF_KINDS[target.kind].moduleKind
       pm.openInPane(paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } })
-      // Best-effort scroll to the specific card, mirroring search-ui.ts's
-      // commit() — no toast if the item was deleted (decision 7: with
-      // auto-unlink-on-delete this is a defensive fallback for edge cases
-      // outside the app's own control, e.g. a hand-edited .tmv or an import
-      // merge, not the common path).
+      // Scroll to and flash-highlight the specific card, mirroring
+      // search-ui.ts's commit() exactly (same dispatch-then-highlight
+      // sequence, so a milestone/risk row collapsed in the kanban gets
+      // expanded before the anchor lookup runs) — no toast if the item was
+      // deleted (decision 7: with auto-unlink-on-delete this is a
+      // defensive fallback for edge cases outside the app's own control,
+      // e.g. a hand-edited .tmv or an import merge, not the common path).
       requestAnimationFrame(() => {
         const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
-        paneEl?.querySelector(`[data-item-id="${target.id}"]`)?.scrollIntoView({ block: 'center' })
+        if (!paneEl) return
+        dispatchSearchFocusItem(paneEl, target.id)
+        const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${target.id}"]`))
+        applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
       })
       return
     }
