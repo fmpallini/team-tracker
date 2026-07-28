@@ -100,6 +100,15 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // (openTeamSwitcher() below) — with the sidebar's own team list hidden,
   // this pill is the only way left to change teams without a hotkey.
   const headerTeamIndicatorLabel = el('span', { class: 'tt-header-team-indicator-label' })
+  const headerTeamIndicatorDueBadge = el('span', {
+    class: 'tt-team-due-badge',
+    onclick: (e: Event) => {
+      e.stopPropagation()
+      const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
+      if (!team) return
+      openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
+    },
+  })
   const headerTeamIndicatorCaret = el('span', { class: 'tt-header-team-indicator-caret', 'aria-hidden': 'true' })
   headerTeamIndicatorCaret.innerHTML =
     '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
@@ -107,8 +116,21 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     'button',
     { class: 'tt-header-team-indicator', type: 'button', onclick: () => toggleTeamSwitcher() },
     headerTeamIndicatorLabel,
+    headerTeamIndicatorDueBadge,
     headerTeamIndicatorCaret
   )
+  const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, '⏰')
+  const headerDueSummaryCount = el('span', { class: 'tt-header-due-summary-count' })
+  const headerDueSummary = el(
+    'button',
+    {
+      class: 'tt-header-due-summary', type: 'button',
+      onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+    },
+    headerDueSummaryIcon,
+    headerDueSummaryCount
+  )
+  const headerTeamIndicatorGroup = el('div', { class: 'tt-header-team-indicator-group' }, headerDueSummary, headerTeamIndicator)
 
   function renderHeaderTeamIndicator(): void {
     const collapsed = effectivelyCollapsed()
@@ -116,6 +138,18 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
     headerTeamIndicator.title = t(locale(), 'team_switch_title')
     if (team) headerTeamIndicatorLabel.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
+
+    const teamDueCounts = teamDueCountsMap(dueBuckets())
+    const ownCount = team ? teamDueCounts.get(team.id) ?? 0 : 0
+    headerTeamIndicatorDueBadge.textContent = ownCount > 0 ? String(ownCount) : ''
+
+    let otherCount = 0
+    for (const [tid, count] of teamDueCounts) {
+      if (tid !== team?.id) otherCount += count
+    }
+    headerDueSummaryCount.textContent = String(otherCount)
+    headerDueSummary.classList.toggle('visible', collapsed && otherCount > 0)
+
     // The pill only exists while the sidebar is hidden — if a resize or the
     // manual toggle just brought the sidebar back, a switcher left open
     // would float over nothing, anchored to a button that's no longer shown.
@@ -310,7 +344,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // Lives in the header, not the sidebar itself, so collapsing the sidebar
   // frees its full width instead of reserving room for the toggle.
   shell.headerLeft.prepend(collapseBtn)
-  shell.headerCenter.appendChild(headerTeamIndicator)
+  shell.headerCenter.appendChild(headerTeamIndicatorGroup)
   renderCollapseState()
 
   function clearDragOverClasses(): void {

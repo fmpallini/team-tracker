@@ -170,6 +170,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-team-indicator:hover .tt-header-team-indicator-caret,
 .tt-header-team-indicator:focus-visible .tt-header-team-indicator-caret { opacity: 1; }
 
+.tt-header-team-indicator-group { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
+
+.tt-header-due-summary {
+  display: none; align-items: center; gap: .3rem;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: var(--font-data); font-size: .8rem; font-weight: 700; color: var(--fg); flex: none;
+}
+.tt-header-due-summary.visible { display: inline-flex; }
+.tt-header-due-summary:hover, .tt-header-due-summary:focus-visible { color: var(--accent); }
+.tt-header-due-summary-icon { display: inline-flex; }
+
 /* Header team switcher dropdown (sidebar.ts openTeamSwitcher) — rows reuse
    the sidebar team list's own .tt-team-num/-emoji/-name/-due-badge classes
    (styles.css above) so the popup reads as that same list, just relocated. */
@@ -196,7 +207,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header.tt-header-compact .tt-sidebar-toggle,
 .tt-header.tt-header-compact .tt-app-name,
 .tt-header.tt-header-compact .tt-search-wrap,
-.tt-header.tt-header-compact .tt-header-team-indicator,
+.tt-header.tt-header-compact .tt-header-team-indicator-group,
 .tt-header.tt-header-compact .tt-save-pill,
 .tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {

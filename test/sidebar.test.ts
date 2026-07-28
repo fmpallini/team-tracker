@@ -746,4 +746,60 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
   function toggleBtn(): HTMLButtonElement {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
   }
+
+  describe('due counters', () => {
+    function summary(): HTMLElement {
+      return document.querySelector('.tt-header-due-summary') as HTMLElement
+    }
+
+    test('shows the active team\'s own due count inside the pill', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(indicator().querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+    })
+
+    test('the global summary is hidden when only the active team has due items', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(summary().classList.contains('visible')).toBe(false)
+    })
+
+    test('the global summary shows the total from OTHER teams and opens the unfiltered panel', () => {
+      const { store, selectTeam } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(summary().classList.contains('visible')).toBe(true)
+      expect(summary().textContent).toContain('1')
+
+      summary().click()
+      expect(selectTeam).not.toHaveBeenCalled()
+      expect(document.querySelectorAll('.tt-due-row')).toHaveLength(1)
+      expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
+    })
+
+    test('clicking the pill\'s own due badge opens the filtered panel for the active team, not the switcher', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      ;(indicator().querySelector('.tt-team-due-badge') as HTMLElement).click()
+
+      expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
+      expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
+    })
+  })
 })
