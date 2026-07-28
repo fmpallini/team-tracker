@@ -562,6 +562,22 @@ describe('due list modal', () => {
   })
 })
 
+describe('SidebarHandle.openDuePanel()', () => {
+  test('opens the real, unfiltered, global due panel (used by the Ctrl+K palette\'s "Due" entry)', () => {
+    const { store, sidebar } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-02' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+    sidebar.openDuePanel()
+
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
+    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(2)
+  })
+})
+
 describe('per-team due badge (sidebar list)', () => {
   test('clicking it opens a panel scoped to just that team, without selecting the team', () => {
     const { store, selectTeam } = setup()
@@ -800,6 +816,25 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
 
       expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
       expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
+    })
+
+    test('partitions the global total between the pill\'s own badge and the summary without double-counting or dropping items', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      addActionItem(store, 'Alpha', { id: 'a2', dueDate: '2000-01-02' })
+      addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(indicator().querySelector('.tt-team-due-badge')?.textContent).toBe('2')
+      expect(summary().classList.contains('visible')).toBe(true)
+      expect(summary().querySelector('.tt-header-due-summary-count')?.textContent).toBe('1')
+
+      summary().click()
+      expect(document.querySelectorAll('.tt-due-row')).toHaveLength(3)
+      expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
     })
   })
 })

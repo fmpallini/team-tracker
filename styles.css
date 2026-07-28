@@ -420,7 +420,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-due-badge { font-family: var(--font-data); font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; background: var(--muted); color: var(--bg); }
 .tt-due-btn.has-overdue .tt-due-badge { background: var(--danger); color: #fff; }
 .tt-due-btn.has-due-soon .tt-due-badge { background: var(--brass); color: #fff; }
-.tt-team-due-badge { font-family: var(--font-data); font-size: .65rem; font-weight: 700; border-radius: 999px; padding: 0 .4rem; background: var(--danger); color: #fff; flex: none; cursor: pointer; }
+.tt-team-due-badge { font-family: var(--font-data); font-size: .65rem; font-weight: 700; border-radius: 999px; padding: 0 .4rem; background: var(--danger); color: #fff; flex: none; cursor: pointer; border: none; }
 .tt-team-due-badge:empty { display: none; }
 
 .tt-due-list { display: flex; flex-direction: column; gap: .15rem; max-height: 60vh; overflow-y: auto; }

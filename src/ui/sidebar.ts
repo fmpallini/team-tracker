@@ -139,6 +139,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
     headerTeamIndicator.title = t(locale(), 'team_switch_title')
+    headerTeamIndicatorDueBadge.title = t(locale(), 'due_badge_title')
+    headerDueSummary.title = t(locale(), 'due_badge_title')
     if (team) headerTeamIndicatorLabel.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
 
     const teamDueCounts = teamDueCountsMap(dueBuckets())
@@ -245,9 +247,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         ...(dueCount > 0
           ? [
               el(
-                'span',
+                'button',
                 {
                   class: 'tt-team-due-badge',
+                  type: 'button',
                   onclick: (e: Event) => {
                     e.stopPropagation()
                     closeTeamSwitcher()
@@ -438,9 +441,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const dueCount = teamDueCounts.get(team.id) ?? 0
       const teamDueBadgeEl = dueCount > 0
         ? el(
-            'span',
+            'button',
             {
               class: 'tt-team-due-badge',
+              type: 'button',
               onclick: (e: Event) => {
                 e.stopPropagation()
                 openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
