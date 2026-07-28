@@ -46,6 +46,8 @@ export interface SidebarHandle {
    * so a resize alone never marks the file dirty.
    */
   setSpaceConstrained(hidden: boolean): void
+  /** Opens the global (all-teams) due-dates panel — used by the Ctrl+K palette's "Due" entry (src/ui/palette.ts). */
+  openDuePanel(): void
 }
 
 export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): SidebarHandle {
@@ -625,5 +627,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   store.onMutate(() => render())
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 
-  return { setSpaceConstrained }
+  return {
+    setSpaceConstrained,
+    openDuePanel: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+  }
 }
