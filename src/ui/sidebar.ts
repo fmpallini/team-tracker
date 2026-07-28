@@ -385,7 +385,19 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const emojiEl = el('span', { class: 'tt-team-emoji' }, team.emoji)
       const nameEl = el('span', { class: 'tt-team-name' }, team.name)
       const dueCount = teamDueCounts.get(team.id) ?? 0
-      const teamDueBadgeEl = dueCount > 0 ? el('span', { class: 'tt-team-due-badge' }, String(dueCount)) : null
+      const teamDueBadgeEl = dueCount > 0
+        ? el(
+            'span',
+            {
+              class: 'tt-team-due-badge',
+              onclick: (e: Event) => {
+                e.stopPropagation()
+                openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
+              },
+            },
+            String(dueCount)
+          )
+        : null
       const editBtn = el(
         'button',
         {

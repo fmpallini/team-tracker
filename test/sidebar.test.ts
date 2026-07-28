@@ -562,6 +562,37 @@ describe('due list modal', () => {
   })
 })
 
+describe('per-team due badge (sidebar list)', () => {
+  test('clicking it opens a panel scoped to just that team, without selecting the team', () => {
+    const { store, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+    const badge = items()[0]!.querySelector('.tt-team-due-badge') as HTMLElement
+    badge.click()
+
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
+  })
+
+  test('clicking a due row inside the filtered panel still jumps to it (switches team + opens the item)', () => {
+    const { store, pm, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+    ;(items()[0]!.querySelector('.tt-team-due-badge') as HTMLElement).click()
+    ;(document.querySelector('.tt-due-row') as HTMLElement).click()
+
+    expect(selectTeam).toHaveBeenCalledWith('Alpha')
+    expect(pm.openInFocused).toHaveBeenCalledWith({ teamId: 'Alpha', ref: { kind: 'actions', itemId: 'a1' } })
+  })
+})
+
 describe('sidebar collapse', () => {
   function toggleBtn(): HTMLButtonElement {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
