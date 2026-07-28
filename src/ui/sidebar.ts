@@ -206,7 +206,22 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         el('span', { class: 'tt-team-num' }, String(index + 1)),
         el('span', { class: 'tt-team-emoji' }, team.emoji),
         el('span', { class: 'tt-team-name' }, team.name),
-        ...(dueCount > 0 ? [el('span', { class: 'tt-team-due-badge' }, String(dueCount))] : [])
+        ...(dueCount > 0
+          ? [
+              el(
+                'span',
+                {
+                  class: 'tt-team-due-badge',
+                  onclick: (e: Event) => {
+                    e.stopPropagation()
+                    closeTeamSwitcher()
+                    openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
+                  },
+                },
+                String(dueCount)
+              ),
+            ]
+          : [])
       )
       switcherListEl!.appendChild(row)
     })

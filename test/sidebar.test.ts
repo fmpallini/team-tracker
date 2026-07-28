@@ -593,6 +593,33 @@ describe('per-team due badge (sidebar list)', () => {
   })
 })
 
+describe('team switcher dropdown due badge', () => {
+  function toggleBtn(): HTMLButtonElement {
+    return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
+  }
+  function openSwitcher(): void {
+    toggleBtn().click() // collapse the sidebar so the header pill appears
+    ;(document.querySelector('.tt-header-team-indicator') as HTMLElement).click()
+  }
+
+  test('clicking a team\'s badge opens its filtered panel, closes the dropdown, and does not switch teams', () => {
+    const { store, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+    openSwitcher()
+    const badge = document.querySelector('.tt-team-switcher-item .tt-team-due-badge') as HTMLElement
+    badge.click()
+
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
+    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
+  })
+})
+
 describe('sidebar collapse', () => {
   function toggleBtn(): HTMLButtonElement {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
