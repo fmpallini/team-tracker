@@ -5,16 +5,14 @@ import type { PaneManager } from './panes'
 import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam } from '../core/nav'
-import { t, todayIso, formatDate, type Locale } from '../core/i18n'
-import { collectDueItems, type DueBuckets, type DueItem } from '../core/due'
-import { diffDays } from '../core/date'
+import { t, todayIso, type Locale } from '../core/i18n'
+import { collectDueItems, type DueBuckets } from '../core/due'
 import { createEmptyTeam } from '../core/document'
-import { KIND_ICON } from '../core/search'
-import { REF_KINDS } from '../core/refs'
 import { el, bindOutsideDismiss } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { openDuePanel } from './due-panel'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -189,10 +187,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     if (store.doc.teams.length === 0) return
     switcherTeams = store.doc.teams
     const buckets = dueBuckets()
-    const teamDueCounts = new Map<string, number>()
-    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
-      teamDueCounts.set(it.loc.teamId, (teamDueCounts.get(it.loc.teamId) ?? 0) + 1)
-    }
+    const teamDueCounts = teamDueCountsMap(buckets)
     switcherSelected = Math.max(0, switcherTeams.findIndex((tm) => tm.id === store.doc.nav.activeTeamId))
     switcherListEl = el('div', { class: 'tt-team-switcher-list' })
     switcherTeams.forEach((team, index) => {
@@ -251,7 +246,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   const dueBadgeEl = el('span', { class: 'tt-due-badge' })
   const dueBtn = el(
     'button',
-    { class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'), onclick: () => openDueModal() },
+    {
+      class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'),
+      onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+    },
     '⏰', dueBadgeEl
   )
 
@@ -270,51 +268,17 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     return dueCache.buckets
   }
 
-  function relLabel(dateIso: string): string {
-    const today = todayIso()
-    if (dateIso < today) return t(locale(), 'due_overdue_by', { days: String(diffDays(today, dateIso)) })
-    return t(locale(), 'due_in_days', { days: String(diffDays(dateIso, today)) })
-  }
-
-  function renderDueRow(item: DueItem, closeModal: () => void): HTMLElement {
-    const icon = KIND_ICON[REF_KINDS[item.kind].moduleKind]
-    return el(
-      'div',
-      {
-        class: 'tt-due-row',
-        onclick: () => {
-          closeModal()
-          if (item.loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(item.loc.teamId)
-          pm.openInFocused(item.loc)
-        },
-      },
-      el('span', { class: 'tt-due-row-icon' }, icon),
-      el('span', { class: 'tt-due-row-title' }, item.title),
-      el('span', { class: 'tt-due-row-team' }, item.teamName),
-      el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale())} · ${relLabel(item.date)}`)
-    )
-  }
-
-  function openDueModal(): void {
-    const buckets = dueBuckets()
-    let handle: ModalHandle | null = null
-    const closeModal = (): void => { handle?.close() }
-    const sections: HTMLElement[] = []
-    if (buckets.overdue.length + buckets.dueSoon.length === 0) {
-      sections.push(el('p', { class: 'tt-modal-message' }, t(locale(), 'due_empty')))
-    } else {
-      if (buckets.overdue.length > 0) {
-        sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_overdue')))
-        sections.push(...buckets.overdue.map((it) => renderDueRow(it, closeModal)))
-      }
-      if (buckets.dueSoon.length > 0) {
-        sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_due_soon')))
-        sections.push(...buckets.dueSoon.map((it) => renderDueRow(it, closeModal)))
-      }
+  function teamDueCountsMap(buckets: DueBuckets): Map<string, number> {
+    const counts = new Map<string, number>()
+    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
+      counts.set(it.loc.teamId, (counts.get(it.loc.teamId) ?? 0) + 1)
     }
-    const body = el('div', { class: 'tt-due-list' }, ...sections)
-    const closeBtn: ModalButton = { label: t(locale(), 'ok'), primary: true, onClick: closeModal }
-    handle = showModal({ title: t(locale(), 'due_panel_title'), body, buttons: [closeBtn] })
+    return counts
+  }
+
+  function onOpenItem(loc: Loc): void {
+    if (loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(loc.teamId)
+    pm.openInFocused(loc)
   }
 
   function renderDueBadge(buckets: DueBuckets): void {
@@ -408,10 +372,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     renderCollapseState()
     const buckets = dueBuckets()
     renderDueBadge(buckets)
-    const teamDueCounts = new Map<string, number>()
-    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
-      teamDueCounts.set(it.loc.teamId, (teamDueCounts.get(it.loc.teamId) ?? 0) + 1)
-    }
+    const teamDueCounts = teamDueCountsMap(buckets)
     store.doc.teams.forEach((team, index) => {
       const isActive = store.doc.nav.activeTeamId === team.id
       const item = el('div', {
