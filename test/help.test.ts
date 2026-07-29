@@ -91,3 +91,10 @@ test('global help omits the app-window recipe in the PWA build (opts.pwa: true) 
   expect(text).toContain('Alt+1') // shortcuts stay
   expect(text).not.toContain('chrome --app')
 })
+
+test('editor help explains ctrl/middle-click for the secondary pane', () => {
+  showEditorHelp('en-US')
+  const text = document.body.textContent!
+  expect(text).toContain('Ctrl')
+  expect(text.toLowerCase()).toContain('middle')
+})
