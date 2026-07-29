@@ -345,16 +345,20 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * `paneIdx` keeps "chip navigates within the same pane" correct regardless
  * of which pane had focus before the click. Duplicate-open handling (focus
  * the other pane instead) is inherited for free from `PaneManager.openInPane`
- * -> `openLoc`.
+ * -> `openLoc`. When `store.doc.prefs.openRefsInSecondaryPane` is on, or the
+ * click carried a Ctrl/Meta/middle-click modifier, navigation instead
+ * targets the *other* pane (splitting the view if needed) via
+ * `PaneManager.openInSecondaryPane` — falling back to the click's own pane
+ * if the target module is already open in the other pane.
  */
 export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 1, locale: Locale, teamId: string): (target: RefInfo['target'], opts: { secondary: boolean }) => void {
   return (target, opts) => {
     const openSecondary = store.doc.prefs.openRefsInSecondaryPane || opts.secondary
-    const open = (loc: Loc): void => {
-      if (openSecondary) pm.openInSecondaryPane(paneIdx, loc)
-      else pm.openInPane(paneIdx, loc)
+    const open = (loc: Loc): 0 | 1 => {
+      if (openSecondary) return pm.openInSecondaryPane(paneIdx, loc)
+      pm.openInPane(paneIdx, loc)
+      return paneIdx
     }
-    const targetPaneIdx = openSecondary ? (paneIdx === 0 ? 1 : 0) : paneIdx
 
     if (target.kind === 'day') {
       open({ teamId, ref: { kind: 'daily', date: target.date } })
@@ -363,7 +367,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
 
     if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
       const moduleKind = REF_KINDS[target.kind].moduleKind
-      open({ teamId, ref: { kind: moduleKind, itemId: target.id } })
+      const landedIdx = open({ teamId, ref: { kind: moduleKind, itemId: target.id } })
       // Scroll to and flash-highlight the specific card, mirroring
       // search-ui.ts's commit() exactly (same dispatch-then-highlight
       // sequence, so a milestone/risk row collapsed in the kanban gets
@@ -372,7 +376,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
       // defensive fallback for edge cases outside the app's own control,
       // e.g. a hand-edited .tmv or an import merge, not the common path).
       requestAnimationFrame(() => {
-        const paneEl = document.querySelectorAll('.tt-pane-body')[targetPaneIdx] as HTMLElement | undefined
+        const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined
         if (!paneEl) return
         dispatchSearchFocusItem(paneEl, target.id)
         const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${target.id}"]`))

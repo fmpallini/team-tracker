@@ -12,7 +12,7 @@ function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: 
     openInPane: () => {},
     openBothPanes: () => {},
     openInFocused: vi.fn<(loc: Loc) => void>(),
-    openInSecondaryPane: () => {},
+    openInSecondaryPane: () => 0,
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},

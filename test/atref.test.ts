@@ -353,7 +353,7 @@ describe('makeRefClickHandler', () => {
       openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
       openBothPanes: () => {},
       openInFocused: () => { throw new Error('onRefClick must navigate the editor\'s own pane via openInPane, not openInFocused') },
-      openInSecondaryPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc, secondary: true }) },
+      openInSecondaryPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc, secondary: true }); return idx === 0 ? 1 : 0 },
       toggleSplit: () => {},
       renderAll: () => {},
       registerModule: () => {},

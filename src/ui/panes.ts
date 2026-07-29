@@ -39,10 +39,14 @@ export interface PaneManager {
    * Opens `target` in whichever pane is *not* `fromIdx` — the pane that
    * doesn't host the click that triggered this navigation (an @-ref chip
    * click, per the Task decision to always keep the source pane's content
-   * untouched). Turns split view on first if it's currently off, so the
-   * target pane exists to open into; leaves it alone if already split.
+   * untouched) — turning split view on first if it's currently off. If
+   * `target` conflicts with `fromIdx`'s own current Loc (the chip's target
+   * module is already the one open in the pane hosting the click), there is
+   * no useful secondary-pane outcome: navigates `fromIdx` itself instead,
+   * without touching split state. Returns the pane index the target
+   * actually landed in.
    */
-  openInSecondaryPane(fromIdx: 0 | 1, target: Loc): void
+  openInSecondaryPane(fromIdx: 0 | 1, target: Loc): 0 | 1
   toggleSplit(): void
   renderAll(): void
   registerModule(kind: ModuleRef['kind'], render: ModuleRenderer): void
@@ -476,7 +480,12 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane(store.doc.nav.focusedPane, target)
   }
 
-  function openInSecondaryPane(fromIdx: 0 | 1, target: Loc): void {
+  function openInSecondaryPane(fromIdx: 0 | 1, target: Loc): 0 | 1 {
+    const sourceLoc = currentLoc(store.doc.nav.panes[fromIdx])
+    if (sourceLoc && locsConflict(target, sourceLoc)) {
+      openInPane(fromIdx, target)
+      return fromIdx
+    }
     if (!effectiveSplit()) {
       store.updateNav((d) => {
         d.nav.split = true
@@ -484,7 +493,9 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       })
       spaceHideSplit = false
     }
-    openInPane(otherPaneIdx(fromIdx), target)
+    const toIdx = otherPaneIdx(fromIdx)
+    openInPane(toIdx, target)
+    return toIdx
   }
 
   // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
