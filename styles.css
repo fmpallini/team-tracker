@@ -963,6 +963,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-prefs-content { display: flex; flex-direction: column; gap: 1rem; height: 55vh; overflow-y: auto; }
 .tt-prefs-field { display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-field-label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .35rem; }
+.tt-prefs-checkbox-label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; color: var(--muted); }
 .tt-prefs-radio-row { display: flex; flex-wrap: wrap; gap: .5rem; }
 /* Replaces the raw OS-native radio row (inconsistent circle styling across
    browsers, no relation to the Field Ledger look) with a bordered pill —

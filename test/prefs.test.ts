@@ -189,6 +189,20 @@ test('due-soon-days number input clamps to 1..30 and updates store.prefs', () =>
   expect(store.doc.prefs.dueSoonDays).toBe(1)
 })
 
+test('the "open refs in secondary pane" checkbox reflects and updates the pref', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('.tt-prefs-open-refs-secondary-checkbox') as HTMLInputElement
+  expect(checkbox).not.toBeNull()
+  expect(checkbox.checked).toBe(false)
+
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+
+  expect(store.doc.prefs.openRefsInSecondaryPane).toBe(true)
+})
+
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')

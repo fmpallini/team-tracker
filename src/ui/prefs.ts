@@ -237,7 +237,24 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_due_soon_days_label'), dueSoonInput)
     )
 
-    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField)
+    const openRefsSecondaryInput = el('input', {
+      type: 'checkbox',
+      class: 'tt-prefs-open-refs-secondary-checkbox',
+      checked: prefs.openRefsInSecondaryPane,
+      onchange: (e: Event) => {
+        const checked = (e.target as HTMLInputElement).checked
+        store.update((d) => {
+          d.prefs.openRefsInSecondaryPane = checked
+        })
+      },
+    })
+    const openRefsSecondaryField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
+    )
+
+    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------
