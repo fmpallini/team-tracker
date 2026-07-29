@@ -17,7 +17,7 @@ export interface Editor {
 
 export interface EditorHooks {
   onChange(): void
-  onRefClick(target: RefInfo['target']): void
+  onRefClick(target: RefInfo['target'], opts: { secondary: boolean }): void
   onAtTrigger(anchor: Range): void
   onSlashTrigger(anchor: Range): void
   /** Optional: resolves a ref chip's *current* label from live team data instead of trusting the frozen text baked into stored markdown. Omitted by callers (e.g. template-picker.ts's preview) that have no team-scoped data to resolve against. */
@@ -606,21 +606,44 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
-  function onClick(e: MouseEvent): void {
+  function refElFromEvent(e: MouseEvent): HTMLAnchorElement | null {
     const target = e.target as HTMLElement | null
-    const refEl = target?.closest?.('a.ref') as HTMLAnchorElement | null
+    return target?.closest?.('a.ref') as HTMLAnchorElement | null
+  }
+
+  function handleRefActivate(e: MouseEvent): void {
+    const refEl = refElFromEvent(e)
     if (!refEl) return
     e.preventDefault()
     const href = refEl.dataset.ref
     if (!href) return
     const parsed = parseRef(href)
-    if (parsed) hooks.onRefClick(parsed)
+    if (parsed) hooks.onRefClick(parsed, { secondary: e.ctrlKey || e.metaKey || e.button === 1 })
+  }
+
+  function onClick(e: MouseEvent): void {
+    handleRefActivate(e)
+  }
+
+  function onAuxClick(e: MouseEvent): void {
+    if (e.button !== 1) return
+    handleRefActivate(e)
+  }
+
+  // Middle-mousedown on a ref chip would otherwise trigger the browser's
+  // autoscroll-pan cursor (the chip has no real `href`, so there's no
+  // native middle-click-opens-in-new-tab behavior to preserve).
+  function onMouseDownForRef(e: MouseEvent): void {
+    if (e.button !== 1) return
+    if (refElFromEvent(e)) e.preventDefault()
   }
 
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
   editorEl.addEventListener('click', onClick)
+  editorEl.addEventListener('auxclick', onAuxClick)
+  editorEl.addEventListener('mousedown', onMouseDownForRef)
 
   // --- toolbar -----------------------------------------------------------
 
