@@ -2,14 +2,14 @@ import type { ActionItem, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 export class SchemaTooNewError extends Error {}
 
 export function createEmptyDocument(locale: Locale): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7 },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false },
@@ -92,6 +92,10 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   6: (d) => {
     const nav = d.nav as Record<string, unknown> | undefined
     if (nav) nav.sidebarCollapsed = nav.sidebarCollapsed ?? false
+  },
+  7: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs) prefs.openRefsInSecondaryPane = prefs.openRefsInSecondaryPane ?? false
   },
 }
 

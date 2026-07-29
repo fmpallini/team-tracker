@@ -8,6 +8,7 @@ export interface Prefs {
   autoSaveMin: number
   palette: PaletteId
   dueSoonDays: number
+  openRefsInSecondaryPane: boolean
 }
 export interface Person {
   id: string; name: string; role: string

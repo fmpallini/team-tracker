@@ -3,7 +3,10 @@ import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VER
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
   expect(d.schemaVersion).toBe(SCHEMA_VERSION)
-  expect(d.prefs).toEqual({ theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7 })
+  expect(d.prefs).toEqual({
+    theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
+    autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
+  })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
     panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false })
@@ -142,6 +145,24 @@ describe('v6 → v7 migration (sidebar collapse)', () => {
     d.nav.sidebarCollapsed = true
     const doc = migrate(d)
     expect(doc.nav.sidebarCollapsed).toBe(true)
+  })
+})
+
+describe('v7 → v8 migration (open refs in secondary pane)', () => {
+  it('defaults prefs.openRefsInSecondaryPane to false when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 7
+    delete d.prefs.openRefsInSecondaryPane
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.prefs.openRefsInSecondaryPane).toBe(false)
+  })
+  it('leaves an existing openRefsInSecondaryPane untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 7
+    d.prefs.openRefsInSecondaryPane = true
+    const doc = migrate(d)
+    expect(doc.prefs.openRefsInSecondaryPane).toBe(true)
   })
 })
 
