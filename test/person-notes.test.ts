@@ -11,6 +11,7 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
     openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
     openBothPanes: () => {},
     openInFocused: () => {},
+    openInSecondaryPane: () => {},
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},

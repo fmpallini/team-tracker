@@ -35,6 +35,14 @@ export interface PaneManager {
    */
   openBothPanes(target0: Loc, target1: Loc, focusedPane: 0 | 1): void
   openInFocused(loc: Loc): void
+  /**
+   * Opens `target` in whichever pane is *not* `fromIdx` — the pane that
+   * doesn't host the click that triggered this navigation (an @-ref chip
+   * click, per the Task decision to always keep the source pane's content
+   * untouched). Turns split view on first if it's currently off, so the
+   * target pane exists to open into; leaves it alone if already split.
+   */
+  openInSecondaryPane(fromIdx: 0 | 1, target: Loc): void
   toggleSplit(): void
   renderAll(): void
   registerModule(kind: ModuleRef['kind'], render: ModuleRenderer): void
@@ -468,6 +476,17 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane(store.doc.nav.focusedPane, target)
   }
 
+  function openInSecondaryPane(fromIdx: 0 | 1, target: Loc): void {
+    if (!effectiveSplit()) {
+      store.updateNav((d) => {
+        d.nav.split = true
+        if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = true
+      })
+      spaceHideSplit = false
+    }
+    openInPane(otherPaneIdx(fromIdx), target)
+  }
+
   // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
   // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
   // put it back on the left instead of leaving pane 0 and pane 1 showing an
@@ -745,6 +764,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane,
     openBothPanes,
     openInFocused,
+    openInSecondaryPane,
     toggleSplit,
     renderAll,
     registerModule(kind, render) {
