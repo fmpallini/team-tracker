@@ -37,7 +37,7 @@ function relLabel(locale: Locale, dateIso: string): string {
   return t(locale, 'due_in_days', { days: String(diffDays(dateIso, today)) })
 }
 
-function renderDueRow(locale: Locale, item: DueItem, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
+function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
   const icon = KIND_ICON[REF_KINDS[item.kind].moduleKind]
   return el(
     'div',
@@ -50,7 +50,10 @@ function renderDueRow(locale: Locale, item: DueItem, onOpenItem: (loc: Loc) => v
     },
     el('span', { class: 'tt-due-row-icon' }, icon),
     el('span', { class: 'tt-due-row-title' }, item.title),
-    el('span', { class: 'tt-due-row-team' }, item.teamName),
+    // The team name only carries information when the panel spans multiple
+    // teams — a team-scoped panel (teamId set) already says which team it's
+    // for in the modal title, so repeating it on every row is just noise.
+    ...(showTeam ? [el('span', { class: 'tt-due-row-team' }, item.teamName)] : []),
     el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale)} · ${relLabel(locale, item.date)}`)
   )
 }
@@ -60,17 +63,18 @@ export function openDuePanel(opts: DuePanelOpts): void {
   const buckets = filterBucketsByTeam(opts.buckets, teamId)
   let handle: ModalHandle | null = null
   const closeModal = (): void => { handle?.close() }
+  const showTeam = teamId === undefined
   const sections: HTMLElement[] = []
   if (buckets.overdue.length + buckets.dueSoon.length === 0) {
     sections.push(el('p', { class: 'tt-modal-message' }, t(locale, 'due_empty')))
   } else {
     if (buckets.overdue.length > 0) {
       sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale, 'due_section_overdue')))
-      sections.push(...buckets.overdue.map((it) => renderDueRow(locale, it, onOpenItem, closeModal)))
+      sections.push(...buckets.overdue.map((it) => renderDueRow(locale, it, showTeam, onOpenItem, closeModal)))
     }
     if (buckets.dueSoon.length > 0) {
       sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale, 'due_section_due_soon')))
-      sections.push(...buckets.dueSoon.map((it) => renderDueRow(locale, it, onOpenItem, closeModal)))
+      sections.push(...buckets.dueSoon.map((it) => renderDueRow(locale, it, showTeam, onOpenItem, closeModal)))
     }
   }
   const body = el('div', { class: 'tt-due-list' }, ...sections)

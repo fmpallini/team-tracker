@@ -504,14 +504,13 @@ describe('due badge', () => {
     expect(document.querySelector('.tt-due-btn.tt-due-empty')).not.toBeNull()
   })
 
-  test('shows the total overdue+due-soon count and the overdue color when any item is overdue', () => {
+  test('becomes visible (no count of its own — each team already shows one) once any team has a due item', () => {
     const { store } = setup()
     addTeam(store, 'Alpha')
     addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
     const btn = document.querySelector('.tt-due-btn')!
     expect(btn.classList.contains('tt-due-empty')).toBe(false)
-    expect(btn.classList.contains('has-overdue')).toBe(true)
-    expect(btn.querySelector('.tt-due-badge')!.textContent).toBe('1')
+    expect(btn.querySelector('.tt-due-badge')).toBeNull()
   })
 
   test('per-team badge appears next to a team row only when that team has due items', () => {
@@ -522,6 +521,14 @@ describe('due badge', () => {
     const rows = items()
     expect(rows[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
     expect(rows[1]!.querySelector('.tt-team-due-badge')).toBeNull()
+  })
+
+  test('per-team badge has a tooltip explaining what hovering/clicking it does', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    const badge = items()[0]!.querySelector('.tt-team-due-badge') as HTMLElement
+    expect(badge.title).toBe('View the due dates for this team')
   })
 })
 
@@ -798,7 +805,6 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
       toggleBtn().click()
 
       expect(summary().classList.contains('visible')).toBe(true)
-      expect(summary().textContent).toContain('1')
 
       summary().click()
       expect(selectTeam).not.toHaveBeenCalled()
@@ -819,7 +825,7 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
       expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
     })
 
-    test('partitions the global total between the pill\'s own badge and the summary without double-counting or dropping items', () => {
+    test('the pill\'s own badge shows only the active team\'s count, and the global summary\'s click still reaches every team\'s items', () => {
       const { store } = setup()
       addTeam(store, 'Alpha')
       addTeam(store, 'Beta')
@@ -831,7 +837,6 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
 
       expect(indicator().querySelector('.tt-team-due-badge')?.textContent).toBe('2')
       expect(summary().classList.contains('visible')).toBe(true)
-      expect(summary().querySelector('.tt-header-due-summary-count')?.textContent).toBe('1')
 
       summary().click()
       expect(document.querySelectorAll('.tt-due-row')).toHaveLength(3)

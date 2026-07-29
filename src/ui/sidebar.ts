@@ -123,15 +123,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicatorCaret
   )
   const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, '⏰')
-  const headerDueSummaryCount = el('span', { class: 'tt-header-due-summary-count' })
   const headerDueSummary = el(
     'button',
     {
       class: 'tt-header-due-summary', type: 'button',
       onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     },
-    headerDueSummaryIcon,
-    headerDueSummaryCount
+    headerDueSummaryIcon
   )
   const headerTeamIndicatorGroup = el('div', { class: 'tt-header-team-indicator-group' }, headerDueSummary, headerTeamIndicator)
 
@@ -140,7 +138,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
     headerTeamIndicator.title = t(locale(), 'team_switch_title')
-    headerTeamIndicatorDueBadge.title = t(locale(), 'due_badge_title')
+    headerTeamIndicatorDueBadge.title = t(locale(), 'due_team_badge_title')
     headerDueSummary.title = t(locale(), 'due_badge_title')
     if (team) headerTeamIndicatorLabel.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
 
@@ -152,7 +150,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     for (const [tid, count] of teamDueCounts) {
       if (tid !== team?.id) otherCount += count
     }
-    headerDueSummaryCount.textContent = String(otherCount)
     headerDueSummary.classList.toggle('visible', collapsed && otherCount > 0)
 
     // The pill only exists while the sidebar is hidden — if a resize or the
@@ -252,6 +249,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
                 {
                   class: 'tt-team-due-badge',
                   type: 'button',
+                  title: t(locale(), 'due_team_badge_title'),
                   onclick: (e: Event) => {
                     e.stopPropagation()
                     closeTeamSwitcher()
@@ -298,14 +296,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     '➕'
   )
 
-  const dueBadgeEl = el('span', { class: 'tt-due-badge' })
   const dueBtn = el(
     'button',
     {
       class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'),
       onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     },
-    '⏰', dueBadgeEl
+    '⏰'
   )
 
   /**
@@ -349,12 +346,12 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     })
   }
 
+  // Only toggles visibility — each team's own count already shows next to
+  // its name in the list below, so this button doesn't need to repeat it;
+  // it's just the way to reach the all-teams panel once any team has items.
   function renderDueBadge(buckets: DueBuckets): void {
     const total = buckets.overdue.length + buckets.dueSoon.length
-    dueBadgeEl.textContent = total > 0 ? String(total) : ''
     dueBtn.classList.toggle('tt-due-empty', total === 0)
-    dueBtn.classList.toggle('has-overdue', buckets.overdue.length > 0)
-    dueBtn.classList.toggle('has-due-soon', buckets.overdue.length === 0 && buckets.dueSoon.length > 0)
   }
 
   shell.sidebar.innerHTML = ''
@@ -459,6 +456,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
             {
               class: 'tt-team-due-badge',
               type: 'button',
+              title: t(locale(), 'due_team_badge_title'),
               onclick: (e: Event) => {
                 e.stopPropagation()
                 openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })

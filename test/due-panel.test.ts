@@ -56,6 +56,16 @@ describe('openDuePanel', () => {
     expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
   })
 
+  test('shows each row\'s team name when unfiltered (multiple teams in view)', () => {
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem()], dueSoon: [] }, onOpenItem: () => {} })
+    expect(document.querySelector('.tt-due-row-team')?.textContent).toBe('Alpha')
+  })
+
+  test('omits the redundant team name from rows when filtered to a single team (already named in the modal title)', () => {
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem()], dueSoon: [] }, teamId: 'T1', teamName: 'Alpha', onOpenItem: () => {} })
+    expect(document.querySelector('.tt-due-row-team')).toBeNull()
+  })
+
   test('clicking a row calls onOpenItem with its loc and closes the modal', () => {
     const loc: Loc = { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } }
     const onOpenItem = vi.fn()
