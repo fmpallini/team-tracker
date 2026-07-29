@@ -9,6 +9,7 @@ import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from 
 import { REF_KINDS } from '../core/refs'
 import { addDaysIso } from '../core/date'
 import type { Store } from '../core/store'
+import type { Loc } from '../core/types'
 import type { PaneManager } from './panes'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
@@ -346,16 +347,23 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * the other pane instead) is inherited for free from `PaneManager.openInPane`
  * -> `openLoc`.
  */
-export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 1, locale: Locale, teamId: string): (target: RefInfo['target']) => void {
-  return (target) => {
+export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 1, locale: Locale, teamId: string): (target: RefInfo['target'], opts: { secondary: boolean }) => void {
+  return (target, opts) => {
+    const openSecondary = store.doc.prefs.openRefsInSecondaryPane || opts.secondary
+    const open = (loc: Loc): void => {
+      if (openSecondary) pm.openInSecondaryPane(paneIdx, loc)
+      else pm.openInPane(paneIdx, loc)
+    }
+    const targetPaneIdx = openSecondary ? (paneIdx === 0 ? 1 : 0) : paneIdx
+
     if (target.kind === 'day') {
-      pm.openInPane(paneIdx, { teamId, ref: { kind: 'daily', date: target.date } })
+      open({ teamId, ref: { kind: 'daily', date: target.date } })
       return
     }
 
     if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
       const moduleKind = REF_KINDS[target.kind].moduleKind
-      pm.openInPane(paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } })
+      open({ teamId, ref: { kind: moduleKind, itemId: target.id } })
       // Scroll to and flash-highlight the specific card, mirroring
       // search-ui.ts's commit() exactly (same dispatch-then-highlight
       // sequence, so a milestone/risk row collapsed in the kanban gets
@@ -364,7 +372,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
       // defensive fallback for edge cases outside the app's own control,
       // e.g. a hand-edited .tmv or an import merge, not the common path).
       requestAnimationFrame(() => {
-        const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
+        const paneEl = document.querySelectorAll('.tt-pane-body')[targetPaneIdx] as HTMLElement | undefined
         if (!paneEl) return
         dispatchSearchFocusItem(paneEl, target.id)
         const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${target.id}"]`))
@@ -382,7 +390,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
     // No toast on a dangling person ref either — same reasoning as above,
     // and consistent with the other 3 kinds instead of the other way around.
     if (!group) return
-    pm.openInPane(paneIdx, { teamId, ref: { kind: 'person', personId: target.id, group } })
+    open({ teamId, ref: { kind: 'person', personId: target.id, group } })
   }
 }
 
