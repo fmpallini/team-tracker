@@ -542,11 +542,49 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   // --- event handlers --------------------------------------------------------
 
+  // The browser's own caret-follow scroll only moves the minimum distance
+  // needed to bring the caret flush to the bottom edge — the `.editor`
+  // bottom padding gives room to scroll into manually, but typing at the
+  // bottom never reaches it on its own, so the caret still hugs the edge.
+  // This tops that up: whenever the caret ends up within
+  // CARET_SCROLL_MARGIN_PX of the bottom, scroll further so that margin of
+  // room stays visible below it as you keep typing.
+  const CARET_SCROLL_MARGIN_PX = 56
+
+  /**
+   * A collapsed Range's `getBoundingClientRect()` comes back an all-zero
+   * rect at exactly the position that matters here — the caret sitting
+   * right at the end of a line/block, which is where typing happens — so
+   * relying on it alone silently no-ops on every real keystroke. Falls back
+   * to the caret's containing block (always has real layout) when that
+   * happens.
+   */
+  function caretRect(): DOMRect | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
+    const range = sel.getRangeAt(0)
+    if (!editorEl.contains(range.startContainer)) return null
+    if (typeof range.getBoundingClientRect !== 'function') return null // jsdom has no layout engine
+    const rect = range.getBoundingClientRect()
+    if (rect.height > 0) return rect
+    const ctx = currentBlockAndOffset()
+    return ctx ? ctx.block.getBoundingClientRect() : null
+  }
+
+  function keepCaretVisible(): void {
+    const rect = caretRect()
+    if (!rect) return
+    const editorRect = editorEl.getBoundingClientRect()
+    const overflow = rect.bottom + CARET_SCROLL_MARGIN_PX - editorRect.bottom
+    if (overflow > 0) editorEl.scrollTop += overflow
+  }
+
   function onInput(): void {
     ensureBlock()
     handleAutoFormat()
     checkTriggers()
     scheduleChange()
+    keepCaretVisible()
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -699,7 +737,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       clearTimeout(changeTimer)
       changeTimer = null
     }
-    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel)
+    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
   }
 
   function focus(): void {

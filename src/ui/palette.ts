@@ -9,6 +9,7 @@ import { normalize } from '../core/search'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { buildModuleItems, type PaneManager } from './panes'
+import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 
 export interface Palette {
   open(): void
@@ -99,6 +100,18 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
         const activeTeamId = store.doc.nav.activeTeamId
         if (activeTeamId === null) return
         pm.openInFocused({ teamId: activeTeamId, ref: item.ref })
+        // Mirrors search-ui.ts's commit(): expand the item (if collapsible)
+        // and scroll/flash it into view, just without term highlighting —
+        // the palette has no search query, only a resolved itemId.
+        const itemId = 'itemId' in item.ref ? item.ref.itemId : undefined
+        if (!itemId) return
+        requestAnimationFrame(() => {
+          const paneEl = document.querySelectorAll('.tt-pane-body')[store.doc.nav.focusedPane] as HTMLElement | undefined
+          if (!paneEl) return
+          dispatchSearchFocusItem(paneEl, itemId)
+          const anchor = paneEl.querySelector<HTMLElement>(`[data-item-id="${itemId}"]`)
+          if (anchor) applySearchHighlight([paneEl], [], anchor)
+        })
       },
     }))
     const dueRow: PaletteRow[] = onOpenDue
