@@ -4,7 +4,7 @@ import type { Shell } from './shell'
 import type { PaneManager } from './panes'
 import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
-import { lastLocForTeam } from '../core/nav'
+import { lastLocForTeam, locsConflict } from '../core/nav'
 import { t, todayIso, type Locale } from '../core/i18n'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { createEmptyTeam } from '../core/document'
@@ -395,34 +395,48 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         d.nav.activeTeamId = nextTeamId
         if (nextTeamId) d.nav.split = d.nav.teamSplit[nextTeamId] ?? false
       }
-      for (const pane of d.nav.panes) {
+      // Two-pass resync: pass 1 prunes the deleted team's entries out of
+      // each pane's history and works out what each pane's *current* Loc
+      // should become, without committing it yet. Each pane's target is
+      // picked from that pane's own independent history — pane 0 and pane 1
+      // can coincidentally land on the same module kind for `nextTeamId`
+      // even though they never conflicted live (same clash restoreTeamLayout
+      // guards against for the ordinary team-switch path, see its own doc
+      // comment in panes.ts). Pass 2 resolves that against pane 0's already-
+      // decided Loc before either index is actually written.
+      type Resolved = { loc: Loc | null; push: Loc | null }
+      const resolved: Resolved[] = d.nav.panes.map((pane) => {
         const current = pane.index >= 0 ? pane.history[pane.index] : undefined
         pane.history = pane.history.filter((loc) => loc.teamId !== teamId)
         if (current && current.teamId !== teamId) {
-          // Current entry survives the filter (same object reference), but
-          // entries deleted from earlier in the history may have shifted
-          // its position — re-locate it instead of reusing the old index.
-          pane.index = pane.history.indexOf(current)
-          continue
+          // Current entry survives the filter (same object reference).
+          return { loc: current, push: null }
         }
         // This pane was showing the deleted team (or had nothing open):
         // land it on the newly active team's own most recent Loc in *this*
         // pane's history — i.e. the module it last had open for that team —
         // falling back to today's daily notes if this pane never had that
         // team open before.
-        if (!nextTeamId) {
-          pane.index = pane.history.length - 1 // no teams left; history is empty
-          continue
-        }
+        if (!nextTeamId) return { loc: null, push: null }
         const lastForNext = lastLocForTeam(pane, nextTeamId)
-        if (lastForNext) {
-          pane.index = pane.history.indexOf(lastForNext)
-        } else {
-          const fallback: Loc = { teamId: nextTeamId, ref: { kind: 'daily', date: todayIso() } }
-          pane.history.push(fallback)
-          pane.index = pane.history.length - 1
-        }
+        if (lastForNext) return { loc: lastForNext, push: null }
+        const fallback: Loc = { teamId: nextTeamId, ref: { kind: 'daily', date: todayIso() } }
+        return { loc: fallback, push: fallback }
+      })
+
+      const loc0 = resolved[0]!.loc
+      const loc1 = resolved[1]!.loc
+      if (nextTeamId && loc1 && locsConflict(loc1, loc0)) {
+        const membersLoc: Loc = { teamId: nextTeamId, ref: { kind: 'members' } }
+        const fallback: Loc = locsConflict(membersLoc, loc0) ? { teamId: nextTeamId, ref: { kind: 'stakeholders' } } : membersLoc
+        resolved[1] = { loc: fallback, push: fallback }
       }
+
+      d.nav.panes.forEach((pane, i) => {
+        const r = resolved[i]!
+        if (r.push) pane.history.push(r.push)
+        pane.index = r.loc ? pane.history.indexOf(r.loc) : pane.history.length - 1
+      })
     })
     invalidateUnsplitStash(store) // deleted team's history may be what an unsplit stash is holding onto
     actions.renderPanes()
