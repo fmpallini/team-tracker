@@ -34,6 +34,7 @@ function fakePM(): PaneManager & { calls: Loc[] } {
     openInPane: () => {},
     openBothPanes: () => {},
     openInFocused: (loc: Loc) => { calls.push(loc) },
+    openInSecondaryPane: () => 0,
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},

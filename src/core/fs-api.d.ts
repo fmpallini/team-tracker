@@ -9,6 +9,7 @@ interface FsPermissionDescriptor {
 }
 
 interface FileSystemHandle {
+  isSameEntry(other: FileSystemHandle): Promise<boolean>
   queryPermission(descriptor?: FsPermissionDescriptor): Promise<PermissionState>
   requestPermission(descriptor?: FsPermissionDescriptor): Promise<PermissionState>
 }

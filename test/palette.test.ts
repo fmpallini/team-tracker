@@ -12,7 +12,7 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
-function setup(): { store: Store; pm: PaneManager; palette: Palette } {
+function setup(onOpenDue?: () => void): { store: Store; pm: PaneManager; palette: Palette } {
   document.body.innerHTML = ''
   stubMatchMedia()
   const doc = createEmptyDocument('en-US')
@@ -25,7 +25,7 @@ function setup(): { store: Store; pm: PaneManager; palette: Palette } {
   const store = createStore(doc)
   const shell = createShell('en-US')
   const pm = createPaneManager(shell, store, 'en-US')
-  const palette = createPalette(store, pm)
+  const palette = createPalette(store, pm, onOpenDue)
   return { store, pm, palette }
 }
 
@@ -68,4 +68,38 @@ test('hovering a row does not replace its DOM node (real-browser click requires 
 
   // Clean up the keydown listener registered by palette.open()
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+})
+
+test('shows a "Due" entry first when onOpenDue is provided, and invokes it instead of navigating', () => {
+  const onOpenDue = vi.fn()
+  const { palette } = setup(onOpenDue)
+  palette.open()
+
+  const rows = document.querySelectorAll('.tt-palette-item')
+  expect(rows[0]!.textContent).toContain('Due')
+
+  rows[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+  expect(onOpenDue).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+})
+
+test('typing a query that does not match "due" filters the Due entry out', () => {
+  const { palette } = setup(() => {})
+  palette.open()
+
+  const input = document.querySelector('.tt-palette-input') as HTMLInputElement
+  input.value = 'stakeholders'
+  input.dispatchEvent(new Event('input'))
+
+  const labels = Array.from(document.querySelectorAll('.tt-palette-item')).map((r) => r.textContent)
+  expect(labels.some((l) => l?.includes('Due'))).toBe(false)
+})
+
+test('without onOpenDue, no Due entry appears', () => {
+  const { palette } = setup()
+  palette.open()
+
+  const labels = Array.from(document.querySelectorAll('.tt-palette-item')).map((r) => r.textContent)
+  expect(labels.some((l) => l?.includes('Due'))).toBe(false)
 })

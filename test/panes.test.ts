@@ -83,6 +83,95 @@ test('openBothPanes writes both panes and the given focusedPane in one shot', ()
   expect(store.doc.nav.focusedPane).toBe(1)
 })
 
+describe('openInSecondaryPane', () => {
+  test('turns split on when unsplit, and opens the target in the other pane', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    expect(store.doc.nav.split).toBe(false)
+
+    const target: Loc = { teamId: 'T1', ref: { kind: 'members' } }
+    pm.openInSecondaryPane(0, target)
+
+    expect(store.doc.nav.split).toBe(true)
+    expect(currentLoc(store.doc.nav.panes[1])).toEqual(target)
+    // The pane hosting the click (0) keeps its own content — untouched.
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual({ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+  })
+
+  test('remembers the team as split (teamSplit) when turning split on', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+
+    pm.openInSecondaryPane(0, { teamId: 'T1', ref: { kind: 'members' } })
+
+    expect(store.doc.nav.teamSplit['T1']).toBe(true)
+  })
+
+  test('leaves split alone when already split', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    store.updateNav((d) => { d.nav.split = true })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'members' } })
+
+    const target: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+    pm.openInSecondaryPane(0, target)
+
+    expect(currentLoc(store.doc.nav.panes[1])).toEqual(target)
+  })
+
+  test('clicking from pane 1 opens the target in pane 0', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    store.updateNav((d) => { d.nav.split = true })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'members' } })
+
+    const target: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+    pm.openInSecondaryPane(1, target)
+
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(target)
+    // The pane hosting the click (1) keeps its own content.
+    expect(currentLoc(store.doc.nav.panes[1])).toEqual({ teamId: 'T1', ref: { kind: 'members' } })
+  })
+
+  test('falls back to same-pane navigation when the target conflicts with the source pane\'s own loc, without touching split state', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+
+    const landed = pm.openInSecondaryPane(0, { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } })
+
+    expect(landed).toBe(0)
+    // Board-kind Locs (actions/milestones/risks) are identity-equal at the
+    // module level regardless of itemId — see sameLoc/locsConflict in
+    // core/nav.ts, which only special-case 'daily' and 'person'. So the
+    // fallback's openInPane(fromIdx, target) call is correctly a same-Loc
+    // no-op here: pane 0 stays on the actions board it already had open
+    // (itemId-specific scrolling/highlighting is driven separately, from
+    // atref.ts's own closure over target.id, not from the persisted nav Loc).
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual({ teamId: 'T1', ref: { kind: 'actions' } })
+    expect(store.doc.nav.split).toBe(false)
+  })
+
+  test('returns the landing pane index (otherPaneIdx) on the normal, non-conflicting path', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+
+    const landed = pm.openInSecondaryPane(0, { teamId: 'T1', ref: { kind: 'members' } })
+
+    expect(landed).toBe(1)
+  })
+})
+
 test('restoreTeamLayout keeps focusedPane on 0 when the team\'s remembered layout is single-pane, so a later openInFocused (e.g. the due-date reminder list) lands on the visible pane', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

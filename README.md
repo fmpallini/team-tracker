@@ -29,6 +29,11 @@ Most team-tracking tools require an account, a server, and your data leaving
 your machine. Team Tracker doesn't:
 
 - 🔌 **100% offline** — works without internet; nothing leaves your machine.
+  The one exception: the app checks GitHub for a newer release at most once a
+  day (a plain, read-only request to the public releases API — no data of
+  yours is sent) and shows a banner if one exists; it never downloads or
+  installs anything on its own; that's always something you have to trigger
+  — see [Checking for updates](#checking-for-updates).
 - 🗄️ **A single `.tmv` file** you keep wherever you want — copy it, back it up,
   put it in your own cloud sync, put it on a USB stick. There is no vendor
   storing it for you.
@@ -70,8 +75,10 @@ on the release page, expand the **Assets** arrow at the bottom of the release
 notes and click `app.html` there — that single file is everything you need
 (or build it yourself, see [Build](#build), where it lands in `dist/app.html`).
 Just double-click it, or open it from your browser's file picker. No install,
-no server, no network access required — the whole app (HTML, CSS, JS) is
-inlined into that one file.
+no server required — the whole app (HTML, CSS, JS) is inlined into that one
+file. The only network request it ever makes is the once-a-day update check
+(see [Checking for updates](#checking-for-updates)); nothing else needs, or
+uses, a connection.
 
 To open it in its own app-like window (no address bar/tabs) instead of a
 regular browser tab, launch Chrome with the `--app` flag:
@@ -90,6 +97,25 @@ file, it can be installed as a local app (Chrome/Edge show an install prompt;
 it opens in its own standalone window), and it **updates automatically**
 whenever a new version is released — no re-downloading a release asset by
 hand.
+
+## Checking for updates
+
+This is the one network call the app ever makes, in both build variants:
+once a day, it fetches `https://api.github.com/repos/fmpallini/team-tracker/releases/latest`
+(a public, unauthenticated read — nothing about you or your data is sent) and
+shows a banner if a newer version is out. It's purely informational — the
+app never downloads or installs anything by itself; you decide whether to
+act on the banner:
+
+- **PWA build**: the banner offers a "Reload now" button that has the
+  already-updated service worker take over on reload — no re-download by
+  hand.
+- **Standalone `app.html`**: a static file:// build can't self-update, so the
+  banner instead links to the GitHub releases page for you to download the
+  new `app.html` yourself.
+
+Dismissing the banner silences it for that version; there's no preference to
+turn the check off entirely.
 
 ## Verifying a release
 
@@ -215,7 +241,25 @@ Not inside the app. Whatever version history your cloud sync provider offers
 state of the file.
 
 **Does any of my data leave my machine — analytics, telemetry, anything?**
-No. Zero network calls. The app doesn't know or care whether you're online.
+No. There's no analytics or telemetry, ever. The one network call the app
+makes, in either build, is a once-a-day read-only check against GitHub's
+public releases API to see if a newer version exists (see [Checking for
+updates](#checking-for-updates)) — it sends no data of yours, and it never
+downloads or installs anything by itself; updating is always something you
+choose to do.
+
+**How secure is the `.tmv` file's encryption — could someone brute-force my password?**
+The file is AES-256-GCM encrypted with a key derived from your password via
+PBKDF2-SHA256 at 600,000 iterations — that iteration count is deliberately
+expensive, so guessing passwords against a stolen file is slow even on
+dedicated hardware. In practice the real variable is your password's length:
+a password of 10+ characters (mixed case/numbers/symbols, not a dictionary
+word or reused password) would take a regular computer far longer than a
+human lifetime to brute-force. Shorter or common passwords are much weaker —
+password strength, not the encryption itself, is the limiting factor. Since
+there's no "forgot password" recovery (see above), we strongly recommend
+generating and storing the password in a password manager rather than
+memorizing something short enough to type easily.
 
 **Can I import an org chart from a CSV or HR system?**
 No bulk import. The only import/export feature is team-to-team: exporting a

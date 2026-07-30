@@ -10,14 +10,15 @@ const DAY_TARGET = new RegExp(`^${REF_KINDS.day.targetPattern}$`)
 /** Max list nesting depth (0-indexed) — depths 0-3 = 4 levels. Shared with src/ui/editor.ts's Tab/Shift+Tab nest/promote logic so both sides agree on the cap. */
 export const MAX_LIST_DEPTH = 3
 
-function inline(s: string, resolveLabel?: LabelResolver): string {
+function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): string {
   let out = esc(s)
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
   out = out.replace(REF_PATTERN, (_, label: string, ref: string) => {
     const target = resolveLabel ? parseRef(ref) : null
     const resolved = target ? resolveLabel!(target) : null
     const shown = resolved !== null ? esc(resolved) : label
-    return `<a class="ref" data-ref="${ref}" contenteditable="false">@${shown}</a>`
+    const titleAttr = refTitle ? ` title="${esc(refTitle)}"` : ''
+    return `<a class="ref" data-ref="${ref}" contenteditable="false"${titleAttr}>@${shown}</a>`
   })
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
@@ -32,7 +33,8 @@ function inline(s: string, resolveLabel?: LabelResolver): string {
 // shaped "**Label:** " hit this). A trailing &nbsp; keeps a real, visible
 // caret slot after the formatting; htmlToMd normalizes it back to a regular
 // space so documents never accumulate U+00A0.
-const blockInline = (s: string, resolveLabel?: LabelResolver) => inline(s, resolveLabel).replace(/ $/, '&nbsp;')
+const blockInline = (s: string, resolveLabel?: LabelResolver, refTitle?: string) =>
+  inline(s, resolveLabel, refTitle).replace(/ $/, '&nbsp;')
 
 /**
  * A line's leading run of plain spaces (Tab-inserted indent — see
@@ -48,7 +50,7 @@ function preserveIndent(s: string): string {
   return '\u00a0'.repeat(m[1]!.length) + s.slice(m[1]!.length)
 }
 
-export function mdToHtml(md: string, resolveLabel?: LabelResolver): string {
+export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string): string {
   const lines = md.split('\n'); const out: string[] = []
   interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean }
   const stack: ListFrame[] = []
@@ -78,10 +80,10 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver): string {
     const h = /^(#{1,3}) (.*)$/.exec(line)
     const ul = /^( *)- (.*)$/.exec(line)
     const ol = /^( *)(\d+)\. (.*)$/.exec(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel)}</h${h[1]!.length}>`) }
-    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel), '')
-    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel), ` value="${ol[2]}"`)
-    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel) : '<br>'}</div>`) }
+    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle)}</h${h[1]!.length}>`) }
+    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle), '')
+    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle), ` value="${ol[2]}"`)
+    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle) : '<br>'}</div>`) }
   }
   closeList(); return out.join('')
 }

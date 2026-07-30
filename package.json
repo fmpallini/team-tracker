@@ -1,6 +1,6 @@
 {
   "name": "team-tracker",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "homepage": "https://fmpallini.github.io/team-tracker/",
   "repository": "fmpallini/team-tracker",
   "private": true,
@@ -17,7 +17,7 @@
     "@eslint/js": "^10.0.1",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"

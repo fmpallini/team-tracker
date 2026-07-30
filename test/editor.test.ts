@@ -94,6 +94,83 @@ describe('ref click', () => {
     expect(hooks.refs).toEqual([{ kind: 'person', id: 'abc-1' }])
     editor.destroy()
   })
+
+  test('plain click passes secondary: false', () => {
+    const secondaryFlags: boolean[] = []
+    const editor = createEditor({
+      onChange() {}, onAtTrigger() {}, onSlashTrigger() {},
+      onRefClick(_target, opts) { secondaryFlags.push(opts.secondary) },
+    }, 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('ver @[Ana](person:abc-1)')
+
+    const refEl = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    refEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    expect(secondaryFlags).toEqual([false])
+    editor.destroy()
+  })
+
+  test('ctrl-click and meta-click pass secondary: true', () => {
+    const secondaryFlags: boolean[] = []
+    const editor = createEditor({
+      onChange() {}, onAtTrigger() {}, onSlashTrigger() {},
+      onRefClick(_target, opts) { secondaryFlags.push(opts.secondary) },
+    }, 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('ver @[Ana](person:abc-1)')
+
+    const refEl = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    refEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }))
+    refEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+
+    expect(secondaryFlags).toEqual([true, true])
+    editor.destroy()
+  })
+
+  test('middle-click (auxclick, button 1) passes secondary: true and is prevented', () => {
+    const secondaryFlags: boolean[] = []
+    const editor = createEditor({
+      onChange() {}, onAtTrigger() {}, onSlashTrigger() {},
+      onRefClick(_target, opts) { secondaryFlags.push(opts.secondary) },
+    }, 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('ver @[Ana](person:abc-1)')
+
+    const refEl = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    const auxEvent = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    const prevented = !refEl.dispatchEvent(auxEvent)
+
+    expect(secondaryFlags).toEqual([true])
+    expect(prevented).toBe(true)
+    editor.destroy()
+  })
+
+  test('middle-mousedown on a ref chip is prevented (suppresses browser autoscroll)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('ver @[Ana](person:abc-1)')
+
+    const refEl = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    const downEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 1 })
+    const prevented = !refEl.dispatchEvent(downEvent)
+
+    expect(prevented).toBe(true)
+    editor.destroy()
+  })
+
+  test('auxclick with a non-middle button does not fire onRefClick', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('ver @[Ana](person:abc-1)')
+
+    const refEl = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    refEl.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 2 }))
+
+    expect(hooks.refs).toEqual([])
+    editor.destroy()
+  })
 })
 
 describe('@ trigger', () => {

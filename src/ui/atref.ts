@@ -9,9 +9,11 @@ import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from 
 import { REF_KINDS } from '../core/refs'
 import { addDaysIso } from '../core/date'
 import type { Store } from '../core/store'
+import type { Loc } from '../core/types'
 import type { PaneManager } from './panes'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -343,26 +345,42 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * `paneIdx` keeps "chip navigates within the same pane" correct regardless
  * of which pane had focus before the click. Duplicate-open handling (focus
  * the other pane instead) is inherited for free from `PaneManager.openInPane`
- * -> `openLoc`.
+ * -> `openLoc`. When `store.doc.prefs.openRefsInSecondaryPane` is on, or the
+ * click carried a Ctrl/Meta/middle-click modifier, navigation instead
+ * targets the *other* pane (splitting the view if needed) via
+ * `PaneManager.openInSecondaryPane` — falling back to the click's own pane
+ * if the target module is already open in the other pane.
  */
-export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 1, locale: Locale, teamId: string): (target: RefInfo['target']) => void {
-  return (target) => {
+export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 1, locale: Locale, teamId: string): (target: RefInfo['target'], opts: { secondary: boolean }) => void {
+  return (target, opts) => {
+    const openSecondary = store.doc.prefs.openRefsInSecondaryPane || opts.secondary
+    const open = (loc: Loc): 0 | 1 => {
+      if (openSecondary) return pm.openInSecondaryPane(paneIdx, loc)
+      pm.openInPane(paneIdx, loc)
+      return paneIdx
+    }
+
     if (target.kind === 'day') {
-      pm.openInPane(paneIdx, { teamId, ref: { kind: 'daily', date: target.date } })
+      open({ teamId, ref: { kind: 'daily', date: target.date } })
       return
     }
 
     if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
       const moduleKind = REF_KINDS[target.kind].moduleKind
-      pm.openInPane(paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } })
-      // Best-effort scroll to the specific card, mirroring search-ui.ts's
-      // commit() — no toast if the item was deleted (decision 7: with
-      // auto-unlink-on-delete this is a defensive fallback for edge cases
-      // outside the app's own control, e.g. a hand-edited .tmv or an import
-      // merge, not the common path).
+      const landedIdx = open({ teamId, ref: { kind: moduleKind, itemId: target.id } })
+      // Scroll to and flash-highlight the specific card, mirroring
+      // search-ui.ts's commit() exactly (same dispatch-then-highlight
+      // sequence, so a milestone/risk row collapsed in the kanban gets
+      // expanded before the anchor lookup runs) — no toast if the item was
+      // deleted (decision 7: with auto-unlink-on-delete this is a
+      // defensive fallback for edge cases outside the app's own control,
+      // e.g. a hand-edited .tmv or an import merge, not the common path).
       requestAnimationFrame(() => {
-        const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
-        paneEl?.querySelector(`[data-item-id="${target.id}"]`)?.scrollIntoView({ block: 'center' })
+        const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined
+        if (!paneEl) return
+        dispatchSearchFocusItem(paneEl, target.id)
+        const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${target.id}"]`))
+        applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
       })
       return
     }
@@ -376,7 +394,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
     // No toast on a dangling person ref either — same reasoning as above,
     // and consistent with the other 3 kinds instead of the other way around.
     if (!group) return
-    pm.openInPane(paneIdx, { teamId, ref: { kind: 'person', personId: target.id, group } })
+    open({ teamId, ref: { kind: 'person', personId: target.id, group } })
   }
 }
 

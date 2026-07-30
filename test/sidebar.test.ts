@@ -4,13 +4,15 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
-import type { PaneManager } from '../src/ui/panes'
+import { createPaneManager, type PaneManager } from '../src/ui/panes'
+import { renderActionItems } from '../src/modules/action-items'
 
 function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: Loc) => void>> } {
   return {
     openInPane: () => {},
     openBothPanes: () => {},
     openInFocused: vi.fn<(loc: Loc) => void>(),
+    openInSecondaryPane: () => 0,
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},
@@ -503,14 +505,13 @@ describe('due badge', () => {
     expect(document.querySelector('.tt-due-btn.tt-due-empty')).not.toBeNull()
   })
 
-  test('shows the total overdue+due-soon count and the overdue color when any item is overdue', () => {
+  test('becomes visible (no count of its own — each team already shows one) once any team has a due item', () => {
     const { store } = setup()
     addTeam(store, 'Alpha')
     addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
     const btn = document.querySelector('.tt-due-btn')!
     expect(btn.classList.contains('tt-due-empty')).toBe(false)
-    expect(btn.classList.contains('has-overdue')).toBe(true)
-    expect(btn.querySelector('.tt-due-badge')!.textContent).toBe('1')
+    expect(btn.querySelector('.tt-due-badge')).toBeNull()
   })
 
   test('per-team badge appears next to a team row only when that team has due items', () => {
@@ -521,6 +522,14 @@ describe('due badge', () => {
     const rows = items()
     expect(rows[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
     expect(rows[1]!.querySelector('.tt-team-due-badge')).toBeNull()
+  })
+
+  test('per-team badge has a tooltip explaining what hovering/clicking it does', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    const badge = items()[0]!.querySelector('.tt-team-due-badge') as HTMLElement
+    expect(badge.title).toBe('View the due dates for this team')
   })
 })
 
@@ -559,6 +568,80 @@ describe('due list modal', () => {
     const row = document.querySelector('.tt-due-row') as HTMLElement
     row.click()
     expect(selectTeam).toHaveBeenCalledWith('Beta')
+  })
+})
+
+describe('SidebarHandle.openDuePanel()', () => {
+  test('opens the real, unfiltered, global due panel (used by the Ctrl+K palette\'s "Due" entry)', () => {
+    const { store, sidebar } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-02' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+    sidebar.openDuePanel()
+
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
+    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(2)
+  })
+})
+
+describe('per-team due badge (sidebar list)', () => {
+  test('clicking it opens a panel scoped to just that team, without selecting the team', () => {
+    const { store, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+    const badge = items()[0]!.querySelector('.tt-team-due-badge') as HTMLElement
+    badge.click()
+
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
+  })
+
+  test('clicking a due row inside the filtered panel still jumps to it (switches team + opens the item)', () => {
+    const { store, pm, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+    ;(items()[0]!.querySelector('.tt-team-due-badge') as HTMLElement).click()
+    ;(document.querySelector('.tt-due-row') as HTMLElement).click()
+
+    expect(selectTeam).toHaveBeenCalledWith('Alpha')
+    expect(pm.openInFocused).toHaveBeenCalledWith({ teamId: 'Alpha', ref: { kind: 'actions', itemId: 'a1' } })
+  })
+})
+
+describe('team switcher dropdown due badge', () => {
+  function toggleBtn(): HTMLButtonElement {
+    return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
+  }
+  function openSwitcher(): void {
+    toggleBtn().click() // collapse the sidebar so the header pill appears
+    ;(document.querySelector('.tt-header-team-indicator') as HTMLElement).click()
+  }
+
+  test('clicking a team\'s badge opens its filtered panel, closes the dropdown, and does not switch teams', () => {
+    const { store, selectTeam } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+    openSwitcher()
+    const badge = document.querySelector('.tt-team-switcher-item .tt-team-due-badge') as HTMLElement
+    badge.click()
+
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
+    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
   })
 })
 
@@ -688,4 +771,119 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
   function toggleBtn(): HTMLButtonElement {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
   }
+
+  describe('due counters', () => {
+    function summary(): HTMLElement {
+      return document.querySelector('.tt-header-due-summary') as HTMLElement
+    }
+
+    test('shows the active team\'s own due count inside the pill', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(indicator().querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+    })
+
+    test('the global summary is hidden when only the active team has due items', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(summary().classList.contains('visible')).toBe(false)
+    })
+
+    test('the global summary shows the total from OTHER teams and opens the unfiltered panel', () => {
+      const { store, selectTeam } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(summary().classList.contains('visible')).toBe(true)
+
+      summary().click()
+      expect(selectTeam).not.toHaveBeenCalled()
+      expect(document.querySelectorAll('.tt-due-row')).toHaveLength(1)
+      expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
+    })
+
+    test('clicking the pill\'s own due badge opens the filtered panel for the active team, not the switcher', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      ;(indicator().querySelector('.tt-team-due-badge') as HTMLElement).click()
+
+      expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
+      expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due · Alpha')
+    })
+
+    test('the pill\'s own badge shows only the active team\'s count, and the global summary\'s click still reaches every team\'s items', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      addActionItem(store, 'Alpha', { id: 'a2', dueDate: '2000-01-02' })
+      addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(indicator().querySelector('.tt-team-due-badge')?.textContent).toBe('2')
+      expect(summary().classList.contains('visible')).toBe(true)
+
+      summary().click()
+      expect(document.querySelectorAll('.tt-due-row')).toHaveLength(3)
+      expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
+    })
+  })
+})
+
+describe('due list modal - card highlight (real pane, mirrors search-ui.ts commit())', () => {
+  const originalRAF = window.requestAnimationFrame
+  const originalScrollIntoView = Element.prototype.scrollIntoView
+
+  afterEach(() => {
+    window.requestAnimationFrame = originalRAF
+    Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
+  test('clicking a due-list row flashes the target card, same as a search-result click', () => {
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('en-US')
+    const store = createStore(doc)
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'en-US')
+    pm.registerModule('actions', renderActionItems)
+    const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
+    mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
+
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'overdue-1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.click()
+
+    if (!raf) throw new Error('due-row click did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const card = document.querySelector('[data-item-id="overdue-1"]')
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
 })

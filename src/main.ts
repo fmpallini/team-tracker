@@ -22,7 +22,7 @@ import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, resetSessionKey } from './core/crypto'
-import { writeFile, forceWrite, readCurrent, downloadFallback } from './core/fs'
+import { writeFile, forceWrite, readCurrent, downloadFallback, sameEntry } from './core/fs'
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
@@ -62,6 +62,27 @@ interface AppController {
 }
 
 let app: AppController | null = null
+
+// showStartScreen's onOpen callback is typed `=> void` — this adapts
+// onDocumentOpened's Promise<void> to that shape without leaving its
+// rejection unhandled.
+function openDocument(session: FileSession, doc: Doc, password: string): void {
+  onDocumentOpened(session, doc, password).catch((e: unknown) => console.error(e))
+}
+
+/**
+ * Shared by `closeFile` and `onDocumentOpened`'s already-open-elsewhere swap:
+ * saves (if dirty and writable), waits out the save controller, tears down
+ * this document's listeners, and resets the password-derived session key so
+ * it can't leak into whichever document opens next. Does not touch `app` or
+ * navigate — callers own both.
+ */
+async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose'>): Promise<void> {
+  if (a.store.dirty && !a.store.readOnly) await a.saveCtl.saveNow({ explicit: true })
+  await a.saveCtl.flush()
+  a.dispose()
+  resetSessionKey()
+}
 
 function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
@@ -196,7 +217,28 @@ function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl:
   }
 }
 
-function onDocumentOpened(session: FileSession, doc: Doc, password: string): void {
+async function onDocumentOpened(session: FileSession, doc: Doc, password: string): Promise<void> {
+  // A second file can be opened while one is already open — e.g. the File
+  // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
+  // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
+  // same window/tab instead of opening a new one. Without this, `app` would
+  // just be overwritten below: the previous session's save-controller
+  // interval, its Ctrl+S/beforeunload/visibilitychange listeners, and its
+  // cross-tab write lock would all keep running orphaned, and any of its
+  // unsaved edits would never be saved before the swap.
+  if (app) {
+    const prev = app
+    // Re-launching the file that's already open (e.g. double-clicking the
+    // same .tmv again while it's the focused window) must not blow away
+    // in-memory state with whatever's on disk.
+    if (await sameEntry(prev.session, session)) {
+      toast(t(prev.store.doc.prefs.locale, 'already_open_toast'))
+      return
+    }
+    await teardownApp(prev)
+    app = null
+  }
+
   const shell = createShell(doc.prefs.locale)
   shell.applyPrefs(doc.prefs)
   const promoBtn = promoHeaderButton(doc.prefs.locale)
@@ -249,7 +291,11 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
   // never get another renderAll() to correct it. Re-render now that every
   // module is registered.
   pm.renderAll()
-  const palette = createPalette(store, pm)
+  // sidebarHandle isn't declared until mountSidebar() runs later in this
+  // function — safe to reference here because this arrow function only ever
+  // executes later (Ctrl+K or the app-name click), by which point
+  // mountSidebar() has already returned it.
+  const palette = createPalette(store, pm, () => sidebarHandle.openDuePanel())
   shell.onAppNameClick(() => palette.open())
   disposers.push(mountSearch(shell, store, pm, selectTeam))
 
@@ -451,16 +497,9 @@ function onDocumentOpened(session: FileSession, doc: Doc, password: string): voi
     if (closing || store.readOnly) return
     closing = true
     ;(async () => {
-      if (store.dirty) await saveCtl.saveNow({ explicit: true })
-      await saveCtl.flush()
-      dispose()
+      await teardownApp({ store, saveCtl, dispose })
       app = null
-      // crypto.ts's session key cache is keyed by password alone, with no
-      // notion of *which* document it belongs to — must not survive past
-      // this document's lifetime, or opening/creating a different file
-      // under the same password would silently inherit this one's salt.
-      resetSessionKey()
-      showStartScreen(store.doc.prefs.locale, onDocumentOpened)
+      showStartScreen(store.doc.prefs.locale, openDocument)
     })().catch((e) => {
       console.error(e)
       closing = false
@@ -606,7 +645,7 @@ async function runUpdateCheck(): Promise<void> {
   document.body.appendChild(banner)
 }
 
-showStartScreen(detectBrowserLocale(), onDocumentOpened)
+showStartScreen(detectBrowserLocale(), openDocument)
 
 void runUpdateCheck()
 setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)

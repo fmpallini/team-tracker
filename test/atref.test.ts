@@ -3,9 +3,26 @@ import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelR
 import type { RefCandidate } from '../src/core/search'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import type { PaneManager } from '../src/ui/panes'
+import { createShell, type Shell } from '../src/ui/shell'
+import { createPaneManager, type PaneManager } from '../src/ui/panes'
+import { renderActionItems } from '../src/modules/action-items'
 import type { Loc } from '../src/core/types'
 import { formatDateWithWeekday, t, type Locale } from '../src/core/i18n'
+
+// jsdom does not implement matchMedia; createShell() needs it to watch the
+// OS theme preference (same stub as test/search-expand-highlight.test.ts).
+function stubMatchMedia(): void {
+  window.matchMedia = ((query: string): MediaQueryList => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
 
 function makeHooks(): EditorHooks {
   return {
@@ -329,13 +346,14 @@ describe('attachAtAutocomplete', () => {
 })
 
 describe('makeRefClickHandler', () => {
-  function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
-    const calls: { idx: 0 | 1; loc: Loc }[] = []
+  function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] } {
+    const calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] = []
     return {
       calls,
       openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
       openBothPanes: () => {},
       openInFocused: () => { throw new Error('onRefClick must navigate the editor\'s own pane via openInPane, not openInFocused') },
+      openInSecondaryPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc, secondary: true }); return idx === 0 ? 1 : 0 },
       toggleSplit: () => {},
       renderAll: () => {},
       registerModule: () => {},
@@ -364,7 +382,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'person', id: 'stk-1' })
+    handler({ kind: 'person', id: 'stk-1' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } } }])
   })
@@ -374,7 +392,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'person', id: 'mem-1' })
+    handler({ kind: 'person', id: 'mem-1' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } } }])
   })
@@ -384,7 +402,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'person', id: 'missing' })
+    handler({ kind: 'person', id: 'missing' }, { secondary: false })
 
     expect(pm.calls).toEqual([])
     expect(document.querySelector('.tt-toast')).toBeNull()
@@ -395,7 +413,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'day', date: '2026-07-02' })
+    handler({ kind: 'day', date: '2026-07-02' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } } }])
   })
@@ -411,7 +429,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 1, 'pt-BR', 'T1')
 
-    handler({ kind: 'day', date: '2026-07-02' })
+    handler({ kind: 'day', date: '2026-07-02' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } } }])
   })
@@ -442,7 +460,7 @@ describe('makeRefClickHandler', () => {
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
     // Click a person chip referencing team A's Alice
-    handler({ kind: 'person', id: 'alice-t1' })
+    handler({ kind: 'person', id: 'alice-t1' }, { secondary: false })
 
     // Should resolve against team A, finding alice-t1 in stakeholders
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'alice-t1', group: 'stakeholders' } } }])
@@ -467,7 +485,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'action', id: 'a1' })
+    handler({ kind: 'action', id: 'a1' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } } }])
   })
@@ -477,7 +495,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'milestone', id: 'm1' })
+    handler({ kind: 'milestone', id: 'm1' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'milestones', itemId: 'm1' } } }])
   })
@@ -487,7 +505,7 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    handler({ kind: 'risk', id: 'r1' })
+    handler({ kind: 'risk', id: 'r1' }, { secondary: false })
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'risks', itemId: 'r1' } } }])
   })
@@ -497,8 +515,127 @@ describe('makeRefClickHandler', () => {
     const pm = fakePM()
     const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
 
-    expect(() => handler({ kind: 'action', id: 'missing' })).not.toThrow()
+    expect(() => handler({ kind: 'action', id: 'missing' }, { secondary: false })).not.toThrow()
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'missing' } } }])
+  })
+
+  test('prefs.openRefsInSecondaryPane = true routes a plain click through openInSecondaryPane', () => {
+    const store = setupStore()
+    store.update((d) => { d.prefs.openRefsInSecondaryPane = true })
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'person', id: 'stk-1' }, { secondary: false })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }, secondary: true }])
+  })
+
+  test('prefs.openRefsInSecondaryPane = false + opts.secondary = true still routes through openInSecondaryPane', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'person', id: 'stk-1' }, { secondary: true })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }, secondary: true }])
+  })
+
+  test('prefs off + no modifier -> openInPane (unchanged default)', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'person', id: 'stk-1' }, { secondary: false })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } } }])
+  })
+
+  test('day target respects the OR-routing too', () => {
+    const store = setupStore()
+    store.update((d) => { d.prefs.openRefsInSecondaryPane = true })
+    const pm = fakePM()
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+
+    handler({ kind: 'day', date: '2026-07-02' }, { secondary: false })
+
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } }, secondary: true }])
+  })
+})
+
+describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts commit())', () => {
+  const originalRAF = window.requestAnimationFrame
+  const originalScrollIntoView = Element.prototype.scrollIntoView
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    window.requestAnimationFrame = originalRAF
+    Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
+  test('clicking an @-mention action-item chip flashes the target card, same as a search-result click', () => {
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({
+      id: 'T1', name: 'Team 1', emoji: '🚀',
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [], risks: [], dailyNotes: {},
+    })
+    doc.nav.activeTeamId = 'T1'
+    const store = createStore(doc)
+    const shell: Shell = createShell('pt-BR')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'pt-BR')
+    pm.registerModule('actions', renderActionItems)
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+    handler({ kind: 'action', id: 'a1' }, { secondary: false })
+
+    if (!raf) throw new Error('ref click handler did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const card = document.querySelector('[data-item-id="a1"]')
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
+
+  test('when routed to the secondary pane, the highlight flash targets that pane\'s body, not the click\'s own pane', () => {
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({
+      id: 'T1', name: 'Team 1', emoji: '🚀',
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [], risks: [], dailyNotes: {},
+    })
+    doc.nav.activeTeamId = 'T1'
+    const store = createStore(doc)
+    const shell: Shell = createShell('pt-BR')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'pt-BR')
+    pm.registerModule('actions', renderActionItems)
+    pm.registerModule('daily', () => {})
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    // Click originates in pane 0 (the daily notes editor); secondary routing
+    // must open the action item in pane 1 and flash *that* pane's card.
+    const handler = makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')
+    handler({ kind: 'action', id: 'a1' }, { secondary: true })
+
+    if (!raf) throw new Error('ref click handler did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const paneBodies = document.querySelectorAll('.tt-pane-body')
+    const cardInPane1 = paneBodies[1]!.querySelector('[data-item-id="a1"]')
+    expect(cardInPane1).not.toBeNull()
+    expect(cardInPane1!.classList.contains('tt-search-target-flash')).toBe(true)
   })
 })
 

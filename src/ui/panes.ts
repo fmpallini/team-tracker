@@ -35,6 +35,18 @@ export interface PaneManager {
    */
   openBothPanes(target0: Loc, target1: Loc, focusedPane: 0 | 1): void
   openInFocused(loc: Loc): void
+  /**
+   * Opens `target` in whichever pane is *not* `fromIdx` — the pane that
+   * doesn't host the click that triggered this navigation (an @-ref chip
+   * click, per the Task decision to always keep the source pane's content
+   * untouched) — turning split view on first if it's currently off. If
+   * `target` conflicts with `fromIdx`'s own current Loc (the chip's target
+   * module is already the one open in the pane hosting the click), there is
+   * no useful secondary-pane outcome: navigates `fromIdx` itself instead,
+   * without touching split state. Returns the pane index the target
+   * actually landed in.
+   */
+  openInSecondaryPane(fromIdx: 0 | 1, target: Loc): 0 | 1
   toggleSplit(): void
   renderAll(): void
   registerModule(kind: ModuleRef['kind'], render: ModuleRenderer): void
@@ -468,6 +480,24 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane(store.doc.nav.focusedPane, target)
   }
 
+  function openInSecondaryPane(fromIdx: 0 | 1, target: Loc): 0 | 1 {
+    const sourceLoc = currentLoc(store.doc.nav.panes[fromIdx])
+    if (sourceLoc && locsConflict(target, sourceLoc)) {
+      openInPane(fromIdx, target)
+      return fromIdx
+    }
+    if (!effectiveSplit()) {
+      store.updateNav((d) => {
+        d.nav.split = true
+        if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = true
+      })
+      spaceHideSplit = false
+    }
+    const toIdx = otherPaneIdx(fromIdx)
+    openInPane(toIdx, target)
+    return toIdx
+  }
+
   // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
   // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
   // put it back on the left instead of leaving pane 0 and pane 1 showing an
@@ -745,6 +775,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     openInPane,
     openBothPanes,
     openInFocused,
+    openInSecondaryPane,
     toggleSplit,
     renderAll,
     registerModule(kind, render) {

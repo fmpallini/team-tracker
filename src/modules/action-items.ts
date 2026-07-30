@@ -364,7 +364,12 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
     const card = el(
       'div',
-      { class: `tt-kanban-card color-${item.color} status-${item.status}`, draggable: 'true', 'data-item-id': item.id },
+      {
+        class: `tt-kanban-card color-${item.color} status-${item.status}`,
+        draggable: 'true',
+        'data-item-id': item.id,
+        title: t(lc, 'kanban_card_context_hint'),
+      },
       editBtn, titleEl, metaEl
     )
     card.addEventListener('dblclick', () => openEditModal(item))

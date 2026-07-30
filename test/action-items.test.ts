@@ -9,6 +9,7 @@ function fakePM(): PaneManager {
     openInPane: () => {},
     openBothPanes: () => {},
     openInFocused: () => {},
+    openInSecondaryPane: () => 0,
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},

@@ -5,16 +5,15 @@ import type { PaneManager } from './panes'
 import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam } from '../core/nav'
-import { t, todayIso, formatDate, type Locale } from '../core/i18n'
-import { collectDueItems, type DueBuckets, type DueItem } from '../core/due'
-import { diffDays } from '../core/date'
+import { t, todayIso, type Locale } from '../core/i18n'
+import { collectDueItems, type DueBuckets } from '../core/due'
 import { createEmptyTeam } from '../core/document'
-import { KIND_ICON } from '../core/search'
-import { REF_KINDS } from '../core/refs'
 import { el, bindOutsideDismiss } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { openDuePanel } from './due-panel'
+import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -48,6 +47,8 @@ export interface SidebarHandle {
    * so a resize alone never marks the file dirty.
    */
   setSpaceConstrained(hidden: boolean): void
+  /** Opens the global (all-teams) due-dates panel — used by the Ctrl+K palette's "Due" entry (src/ui/palette.ts). */
+  openDuePanel(): void
 }
 
 export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): SidebarHandle {
@@ -102,6 +103,15 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // (openTeamSwitcher() below) — with the sidebar's own team list hidden,
   // this pill is the only way left to change teams without a hotkey.
   const headerTeamIndicatorLabel = el('span', { class: 'tt-header-team-indicator-label' })
+  const headerTeamIndicatorDueBadge = el('span', {
+    class: 'tt-team-due-badge',
+    onclick: (e: Event) => {
+      e.stopPropagation()
+      const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
+      if (!team) return
+      openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
+    },
+  })
   const headerTeamIndicatorCaret = el('span', { class: 'tt-header-team-indicator-caret', 'aria-hidden': 'true' })
   headerTeamIndicatorCaret.innerHTML =
     '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
@@ -109,15 +119,39 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     'button',
     { class: 'tt-header-team-indicator', type: 'button', onclick: () => toggleTeamSwitcher() },
     headerTeamIndicatorLabel,
+    headerTeamIndicatorDueBadge,
     headerTeamIndicatorCaret
   )
+  const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, '⏰')
+  const headerDueSummary = el(
+    'button',
+    {
+      class: 'tt-header-due-summary', type: 'button',
+      onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+    },
+    headerDueSummaryIcon
+  )
+  const headerTeamIndicatorGroup = el('div', { class: 'tt-header-team-indicator-group' }, headerDueSummary, headerTeamIndicator)
 
   function renderHeaderTeamIndicator(): void {
     const collapsed = effectivelyCollapsed()
     const team = store.doc.teams.find((tm) => tm.id === store.doc.nav.activeTeamId)
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
     headerTeamIndicator.title = t(locale(), 'team_switch_title')
+    headerTeamIndicatorDueBadge.title = t(locale(), 'due_team_badge_title')
+    headerDueSummary.title = t(locale(), 'due_badge_title')
     if (team) headerTeamIndicatorLabel.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
+
+    const teamDueCounts = teamDueCountsMap(dueBuckets())
+    const ownCount = team ? teamDueCounts.get(team.id) ?? 0 : 0
+    headerTeamIndicatorDueBadge.textContent = ownCount > 0 ? String(ownCount) : ''
+
+    let otherCount = 0
+    for (const [tid, count] of teamDueCounts) {
+      if (tid !== team?.id) otherCount += count
+    }
+    headerDueSummary.classList.toggle('visible', collapsed && otherCount > 0)
+
     // The pill only exists while the sidebar is hidden — if a resize or the
     // manual toggle just brought the sidebar back, a switcher left open
     // would float over nothing, anchored to a button that's no longer shown.
@@ -189,10 +223,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     if (store.doc.teams.length === 0) return
     switcherTeams = store.doc.teams
     const buckets = dueBuckets()
-    const teamDueCounts = new Map<string, number>()
-    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
-      teamDueCounts.set(it.loc.teamId, (teamDueCounts.get(it.loc.teamId) ?? 0) + 1)
-    }
+    const teamDueCounts = teamDueCountsMap(buckets)
     switcherSelected = Math.max(0, switcherTeams.findIndex((tm) => tm.id === store.doc.nav.activeTeamId))
     switcherListEl = el('div', { class: 'tt-team-switcher-list' })
     switcherTeams.forEach((team, index) => {
@@ -211,7 +242,24 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         el('span', { class: 'tt-team-num' }, String(index + 1)),
         el('span', { class: 'tt-team-emoji' }, team.emoji),
         el('span', { class: 'tt-team-name' }, team.name),
-        ...(dueCount > 0 ? [el('span', { class: 'tt-team-due-badge' }, String(dueCount))] : [])
+        ...(dueCount > 0
+          ? [
+              el(
+                'button',
+                {
+                  class: 'tt-team-due-badge',
+                  type: 'button',
+                  title: t(locale(), 'due_team_badge_title'),
+                  onclick: (e: Event) => {
+                    e.stopPropagation()
+                    closeTeamSwitcher()
+                    openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
+                  },
+                },
+                String(dueCount)
+              ),
+            ]
+          : [])
       )
       switcherListEl!.appendChild(row)
     })
@@ -248,11 +296,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     '➕'
   )
 
-  const dueBadgeEl = el('span', { class: 'tt-due-badge' })
   const dueBtn = el(
     'button',
-    { class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'), onclick: () => openDueModal() },
-    '⏰', dueBadgeEl
+    {
+      class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'),
+      onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+    },
+    '⏰'
   )
 
   /**
@@ -270,59 +320,38 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     return dueCache.buckets
   }
 
-  function relLabel(dateIso: string): string {
-    const today = todayIso()
-    if (dateIso < today) return t(locale(), 'due_overdue_by', { days: String(diffDays(today, dateIso)) })
-    return t(locale(), 'due_in_days', { days: String(diffDays(dateIso, today)) })
-  }
-
-  function renderDueRow(item: DueItem, closeModal: () => void): HTMLElement {
-    const icon = KIND_ICON[REF_KINDS[item.kind].moduleKind]
-    return el(
-      'div',
-      {
-        class: 'tt-due-row',
-        onclick: () => {
-          closeModal()
-          if (item.loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(item.loc.teamId)
-          pm.openInFocused(item.loc)
-        },
-      },
-      el('span', { class: 'tt-due-row-icon' }, icon),
-      el('span', { class: 'tt-due-row-title' }, item.title),
-      el('span', { class: 'tt-due-row-team' }, item.teamName),
-      el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale())} · ${relLabel(item.date)}`)
-    )
-  }
-
-  function openDueModal(): void {
-    const buckets = dueBuckets()
-    let handle: ModalHandle | null = null
-    const closeModal = (): void => { handle?.close() }
-    const sections: HTMLElement[] = []
-    if (buckets.overdue.length + buckets.dueSoon.length === 0) {
-      sections.push(el('p', { class: 'tt-modal-message' }, t(locale(), 'due_empty')))
-    } else {
-      if (buckets.overdue.length > 0) {
-        sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_overdue')))
-        sections.push(...buckets.overdue.map((it) => renderDueRow(it, closeModal)))
-      }
-      if (buckets.dueSoon.length > 0) {
-        sections.push(el('div', { class: 'tt-due-section-heading' }, t(locale(), 'due_section_due_soon')))
-        sections.push(...buckets.dueSoon.map((it) => renderDueRow(it, closeModal)))
-      }
+  function teamDueCountsMap(buckets: DueBuckets): Map<string, number> {
+    const counts = new Map<string, number>()
+    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
+      counts.set(it.loc.teamId, (counts.get(it.loc.teamId) ?? 0) + 1)
     }
-    const body = el('div', { class: 'tt-due-list' }, ...sections)
-    const closeBtn: ModalButton = { label: t(locale(), 'ok'), primary: true, onClick: closeModal }
-    handle = showModal({ title: t(locale(), 'due_panel_title'), body, buttons: [closeBtn] })
+    return counts
   }
 
+  function onOpenItem(loc: Loc): void {
+    if (loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(loc.teamId)
+    pm.openInFocused(loc)
+    // Scroll to and flash-highlight the specific card, mirroring
+    // search-ui.ts's commit() / atref.ts's makeRefClickHandler — a due item
+    // always carries an itemId (action or milestone, see core/due.ts).
+    const itemId = 'itemId' in loc.ref ? loc.ref.itemId : undefined
+    if (!itemId) return
+    const paneIdx = store.doc.nav.focusedPane
+    requestAnimationFrame(() => {
+      const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
+      if (!paneEl) return
+      dispatchSearchFocusItem(paneEl, itemId)
+      const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
+      applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
+    })
+  }
+
+  // Only toggles visibility — each team's own count already shows next to
+  // its name in the list below, so this button doesn't need to repeat it;
+  // it's just the way to reach the all-teams panel once any team has items.
   function renderDueBadge(buckets: DueBuckets): void {
     const total = buckets.overdue.length + buckets.dueSoon.length
-    dueBadgeEl.textContent = total > 0 ? String(total) : ''
     dueBtn.classList.toggle('tt-due-empty', total === 0)
-    dueBtn.classList.toggle('has-overdue', buckets.overdue.length > 0)
-    dueBtn.classList.toggle('has-due-soon', buckets.overdue.length === 0 && buckets.dueSoon.length > 0)
   }
 
   shell.sidebar.innerHTML = ''
@@ -331,7 +360,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // Lives in the header, not the sidebar itself, so collapsing the sidebar
   // frees its full width instead of reserving room for the toggle.
   shell.headerLeft.prepend(collapseBtn)
-  shell.headerCenter.appendChild(headerTeamIndicator)
+  shell.headerCenter.appendChild(headerTeamIndicatorGroup)
   renderCollapseState()
 
   function clearDragOverClasses(): void {
@@ -408,10 +437,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     renderCollapseState()
     const buckets = dueBuckets()
     renderDueBadge(buckets)
-    const teamDueCounts = new Map<string, number>()
-    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
-      teamDueCounts.set(it.loc.teamId, (teamDueCounts.get(it.loc.teamId) ?? 0) + 1)
-    }
+    const teamDueCounts = teamDueCountsMap(buckets)
     store.doc.teams.forEach((team, index) => {
       const isActive = store.doc.nav.activeTeamId === team.id
       const item = el('div', {
@@ -424,7 +450,21 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const emojiEl = el('span', { class: 'tt-team-emoji' }, team.emoji)
       const nameEl = el('span', { class: 'tt-team-name' }, team.name)
       const dueCount = teamDueCounts.get(team.id) ?? 0
-      const teamDueBadgeEl = dueCount > 0 ? el('span', { class: 'tt-team-due-badge' }, String(dueCount)) : null
+      const teamDueBadgeEl = dueCount > 0
+        ? el(
+            'button',
+            {
+              class: 'tt-team-due-badge',
+              type: 'button',
+              title: t(locale(), 'due_team_badge_title'),
+              onclick: (e: Event) => {
+                e.stopPropagation()
+                openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
+              },
+            },
+            String(dueCount)
+          )
+        : null
       const editBtn = el(
         'button',
         {
@@ -603,5 +643,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   store.onMutate(() => render())
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
 
-  return { setSpaceConstrained }
+  return {
+    setSpaceConstrained,
+    openDuePanel: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+  }
 }
