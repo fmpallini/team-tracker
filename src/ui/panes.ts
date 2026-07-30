@@ -3,7 +3,7 @@ import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Loc, ModuleRef, PaneState, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
-import { t, todayIso, formatDate, type Locale, type MsgKey } from '../core/i18n'
+import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
 import { el } from './dom'
 import { toast } from './modal'
@@ -99,7 +99,7 @@ export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[
 function titleFor(store: Store, loc: Loc, locale: Locale): string {
   switch (loc.ref.kind) {
     case 'daily':
-      return `${t(locale, 'module_daily')} · ${formatDate(loc.ref.date, locale)}`
+      return `${t(locale, 'module_daily')} · ${formatDateWithWeekday(loc.ref.date, locale)}`
     case 'general':
       return t(locale, 'module_general_notes')
     case 'person': {

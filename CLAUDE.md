@@ -19,6 +19,8 @@ npm run typecheck   # tsc --noEmit (strict)
 npm run lint        # eslint src test
 ```
 
+Default to the Bash tool (Git Bash) for shell commands in this repo — the `rtk` token-filtering hook only matches the Bash tool, not PowerShell. Use the PowerShell tool only for Windows-native tasks the Bash tool can't do (registry access, `icacls`, native exe calls that need `cmd.exe`/pwsh semantics).
+
 Zero runtime dependencies is a hard constraint — `esbuild`, `typescript`, `vitest`, `jsdom` are dev-only. Do not add runtime deps.
 
 ## Build outputs (scripts/build.mjs)

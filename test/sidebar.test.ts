@@ -441,6 +441,43 @@ test('delete team owning the current entry falls back to the last remaining Loc'
   expect(store.doc.nav.panes[0]).toEqual({ history: [locT2a], index: 0 })
 })
 
+test('delete team resyncs both panes without landing on the same module twice for the new active team', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  const locBRisks: Loc = { teamId: 'Beta', ref: { kind: 'risks' } }
+  const locAActions: Loc = { teamId: 'Alpha', ref: { kind: 'actions' } }
+  const locAMilestones: Loc = { teamId: 'Alpha', ref: { kind: 'milestones' } }
+  store.update((d) => {
+    d.nav.activeTeamId = 'Alpha'
+    d.nav.split = true
+    d.nav.teamSplit = { Alpha: true, Beta: true }
+    d.nav.panes = [
+      // Both panes independently visited Beta's risks module at some earlier
+      // point, then moved on to Alpha (the team about to be deleted) — each
+      // pane's own history has no other Beta entry to fall back to.
+      { history: [locBRisks, locAActions], index: 1 },
+      { history: [locBRisks, locAMilestones], index: 1 },
+    ]
+  })
+
+  const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement // Alpha
+  editBtn.click()
+  clickByText('Delete')
+  clickByText('Delete')
+
+  expect(store.doc.nav.activeTeamId).toBe('Beta')
+  const pane0 = store.doc.nav.panes[0]!
+  const pane1 = store.doc.nav.panes[1]!
+  const cur0 = pane0.history[pane0.index]!
+  const cur1 = pane1.history[pane1.index]!
+  // Both panes are visible (split stayed on, per Beta's remembered layout) —
+  // they must not both resolve to the same module kind for Beta.
+  expect(cur0.teamId).toBe('Beta')
+  expect(cur1.teamId).toBe('Beta')
+  expect(cur0.ref.kind).not.toBe(cur1.ref.kind)
+})
+
 test('drag and drop reorders the teams array', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')
@@ -883,6 +920,42 @@ describe('due list modal - card highlight (real pane, mirrors search-ui.ts commi
     ;(raf as FrameRequestCallback)(0)
 
     const card = document.querySelector('[data-item-id="overdue-1"]')
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
+
+  test('clicking a due-list row from a non-active team switches the active team first, then flashes the target card', () => {
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('en-US')
+    const store = createStore(doc)
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'en-US')
+    pm.registerModule('actions', renderActionItems)
+    const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
+    mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
+
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    addActionItem(store, 'Beta', { id: 'beta-overdue-1', dueDate: '2000-01-01' })
+    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.click()
+
+    expect(selectTeam).toHaveBeenCalledWith('Beta')
+    expect(store.doc.nav.activeTeamId).toBe('Beta')
+
+    if (!raf) throw new Error('due-row click did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const card = document.querySelector('[data-item-id="beta-overdue-1"]')
     expect(card).not.toBeNull()
     expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
   })

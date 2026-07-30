@@ -75,6 +75,7 @@ export function mountSearch(
     type: 'text',
     class: 'tt-input tt-search-input',
     placeholder: t(localeNow(), 'search_placeholder'),
+    autocomplete: 'off',
   }) as HTMLInputElement
 
   const checkbox = el('input', { type: 'checkbox' }) as HTMLInputElement
