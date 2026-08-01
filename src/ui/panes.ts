@@ -568,7 +568,10 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   function setSplitSpaceConstrained(hidden: boolean): void {
     if (spaceHideSplit === hidden) return
     spaceHideSplit = hidden
-    layout()
+    // Un-hiding makes pane 1 visible again; it was skipped by renderAll()
+    // for as long as it was hidden, so its content needs a real render now.
+    if (!hidden) renderAll()
+    else layout()
   }
 
   function toggleMenu(idx: 0 | 1): void {
@@ -771,10 +774,20 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     renderer(container, loc, ctx)
   }
 
+  /**
+   * Pane 1 is skipped entirely while it isn't visible (unsplit, or split
+   * force-hidden by the responsive layout) — layout() has already set
+   * `display: none` on it, so rendering into it is pure wasted work, and
+   * single-pane is the common case. Every path that makes pane 1 visible
+   * again must call renderAll() so its skipped-while-hidden DOM is rebuilt:
+   * toggleSplit() already does, and setSplitSpaceConstrained() below was
+   * changed to do the same.
+   */
   function renderAll(): void {
     layout()
     renderBar(0)
     renderBody(0)
+    if (!effectiveSplit()) return
     renderBar(1)
     renderBody(1)
   }

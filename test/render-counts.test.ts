@@ -98,6 +98,10 @@ test('CHARACTERIZATION: editing one team patches its own pane in place and leave
     d.teams.push(emptyTeam('t1', 'Alpha'))
     d.nav.activeTeamId = 't1'
   })
+  // Pane 1 must be actually visible (split) for this test to mean anything —
+  // renderAll() now skips rendering a hidden pane 1 entirely (see panes.ts),
+  // so without this the kanban below would never be there to check.
+  store.updateNav((d) => { d.nav.split = true })
   pm.openBothPanes(
     { teamId: 't1', ref: { kind: 'daily', date: todayIso() } },
     { teamId: 't1', ref: { kind: 'actions' } },

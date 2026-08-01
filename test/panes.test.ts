@@ -801,3 +801,44 @@ test('before dispose(), an outside click still closes the module menu', () => {
   document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   expect(document.querySelector('.tt-pane-menu')).toBeNull()
 })
+
+test('renderAll skips the hidden pane, and re-renders it when split turns on', () => {
+  const { store, pm } = setup()
+  addTeam(store, 't1')
+  // Ensure single-pane view.
+  if (store.doc.nav.split) pm.toggleSplit()
+  expect(store.doc.nav.split).toBe(false)
+
+  const body1 = document.querySelectorAll('.tt-pane-body')[1] as HTMLElement
+  const marker = document.createElement('span')
+  marker.id = 'hidden-pane-marker'
+  body1.appendChild(marker)
+
+  pm.renderAll()
+  // Pane 1 is hidden — its body must not have been wiped.
+  expect(document.getElementById('hidden-pane-marker')).not.toBeNull()
+
+  pm.toggleSplit()
+  // Now visible — it gets a real render, which clears the marker.
+  expect(store.doc.nav.split).toBe(true)
+  expect(document.getElementById('hidden-pane-marker')).toBeNull()
+})
+
+test('un-hiding a space-constrained split re-renders pane 1', () => {
+  const { store, pm } = setup()
+  addTeam(store, 't1')
+  if (!store.doc.nav.split) pm.toggleSplit()
+  expect(store.doc.nav.split).toBe(true)
+
+  pm.setSplitSpaceConstrained(true) // narrow window — split force-hidden
+  const body1 = document.querySelectorAll('.tt-pane-body')[1] as HTMLElement
+  const marker = document.createElement('span')
+  marker.id = 'constrained-marker'
+  body1.appendChild(marker)
+
+  pm.renderAll() // pane 1 hidden by the space constraint — skipped
+  expect(document.getElementById('constrained-marker')).not.toBeNull()
+
+  pm.setSplitSpaceConstrained(false) // window widened — pane 1 visible again
+  expect(document.getElementById('constrained-marker')).toBeNull()
+})
