@@ -49,6 +49,12 @@ export interface SidebarHandle {
   setSpaceConstrained(hidden: boolean): void
   /** Opens the global (all-teams) due-dates panel — used by the Ctrl+K palette's "Due" entry (src/ui/palette.ts). */
   openDuePanel(): void
+  /**
+   * Tears down the store subscriptions and the document-level add-team
+   * listener. Without this, every close-file → open-file cycle leaked a
+   * listener pinning the closed document's store and detached shell DOM.
+   */
+  dispose(): void
 }
 
 export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): SidebarHandle {
@@ -633,7 +639,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   render()
-  store.subscribe(() => {
+  const unsubscribeContent = store.subscribe(() => {
     dueCache = null // content changed — due data may have too
     render()
   })
@@ -654,11 +660,22 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // but NOT onMutate() listeners — so it's the store.subscribe() render
   // above, not this onMutate() one, that keeps the sidebar in sync after a
   // reload. Don't collapse these two registrations into just onMutate().
-  store.onMutate(() => render())
-  document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
+  const unsubscribeMutate = store.onMutate(() => render())
+  const onAddTeamRequest = (): void => openAddModal()
+  document.addEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
 
   return {
     setSpaceConstrained,
     openDuePanel: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+    /**
+     * Tears down the store subscriptions and the document-level add-team
+     * listener. Without this, every close-file → open-file cycle leaked a
+     * listener pinning the closed document's store and detached shell DOM.
+     */
+    dispose(): void {
+      unsubscribeContent()
+      unsubscribeMutate()
+      document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
+    },
   }
 }

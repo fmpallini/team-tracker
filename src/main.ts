@@ -526,6 +526,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
 
   const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
+  disposers.push(() => sidebarHandle.dispose())
   disposers.push(
     setupResponsiveLayout(shell.root, {
       setSplitSpaceHidden: (hidden) => pm.setSplitSpaceConstrained(hidden),
