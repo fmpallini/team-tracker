@@ -985,6 +985,7 @@ describe('dispose()', () => {
     document.body.appendChild(shell.root)
     const pm = fakePM()
     const handle = mountSidebar(shell, store, pm, { selectTeam: () => {}, renderPanes: () => {} })
+    lastSidebarHandle = handle
     return { store, handle }
   }
 
