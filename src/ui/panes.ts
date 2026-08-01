@@ -322,21 +322,58 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   paneEls[0].addEventListener('click', () => setFocusedPane(0), true)
   paneEls[1].addEventListener('click', () => setFocusedPane(1), true)
 
+  // Set only while a drag is in flight, so dispose() (see PaneManager.dispose
+  // below) can tear down a drag's document-level listeners and pending frame
+  // if it runs mid-drag. Without this, the self-removing mousemove/mouseup
+  // listeners added below would survive dispose() until the next mouseup
+  // anywhere on the page — the same class of leak Tasks 2 and 3 fixed for
+  // this object's other listeners.
+  let dragCleanup: (() => void) | null = null
+
   const dividerEl = el('div', { class: 'tt-pane-divider' })
   dividerEl.addEventListener('mousedown', (downEvt) => {
     downEvt.preventDefault()
-    function onMove(ev: MouseEvent): void {
+    // The raw mousemove stream fires far faster than the screen refreshes, and
+    // each event did a getBoundingClientRect() read followed by a style write
+    // — a forced synchronous layout per event. Coalesce into one write per
+    // animation frame instead: store the latest clientX, and let a single
+    // pending frame apply whichever position was most recent.
+    let pendingX: number | null = null
+    let frame: number | null = null
+
+    function applyPending(): void {
+      frame = null
+      if (pendingX === null) return
       const rect = gridEl.getBoundingClientRect()
-      const raw = rect.width > 0 ? ((ev.clientX - rect.left) / rect.width) * 100 : splitPct
+      const raw = rect.width > 0 ? ((pendingX - rect.left) / rect.width) * 100 : splitPct
+      pendingX = null
       splitPct = Math.min(SPLIT_MAX_PCT, Math.max(SPLIT_MIN_PCT, raw))
       gridEl.style.gridTemplateColumns = `${splitPct}fr 6px ${100 - splitPct}fr`
+    }
+
+    function onMove(ev: MouseEvent): void {
+      pendingX = ev.clientX
+      if (frame === null) frame = requestAnimationFrame(applyPending)
     }
     function onUp(): void {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      dragCleanup = null
+      // Flush whatever the last frame hasn't applied yet, so the divider
+      // always lands exactly where the pointer was released.
+      if (frame !== null) {
+        cancelAnimationFrame(frame)
+        applyPending()
+      }
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    dragCleanup = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = null
+    }
   })
 
   const gridEl = el('div', { class: 'tt-panes-grid' }, paneEls[0], dividerEl, paneEls[1])
@@ -805,6 +842,9 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     setSplitSpaceConstrained,
     dispose(): void {
       document.removeEventListener('click', onDocumentClick)
+      // Tear down an in-flight divider drag, if any — see dragCleanup above.
+      dragCleanup?.()
+      dragCleanup = null
     },
   }
 
