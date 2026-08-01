@@ -291,6 +291,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // never get another renderAll() to correct it. Re-render now that every
   // module is registered.
   pm.renderAll()
+  disposers.push(() => pm.dispose())
   // sidebarHandle isn't declared until mountSidebar() runs later in this
   // function — safe to reference here because this arrow function only ever
   // executes later (Ctrl+K or the app-name click), by which point

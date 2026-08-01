@@ -17,6 +17,7 @@ function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: 
     renderAll: () => {},
     registerModule: () => {},
     setSplitSpaceConstrained: () => {},
+    dispose: () => {},
   }
 }
 

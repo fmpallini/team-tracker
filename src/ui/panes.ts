@@ -58,6 +58,13 @@ export interface PaneManager {
    * file dirty.
    */
   setSplitSpaceConstrained(hidden: boolean): void
+  /**
+   * Tears down every document-level listener `createPaneManager` registered.
+   * Must be called when the document this pane manager belongs to is closed
+   * (main.ts's `closeFile()`), or each close-file → open-file cycle leaks a
+   * listener pinning the closed document's store, Doc, and detached DOM.
+   */
+  dispose(): void
 }
 
 /** Same item list feeds both the pane module dropdown and the Ctrl+K palette. */
@@ -354,7 +361,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   shell.panesRoot.append(gridEl, noTeamsEl)
 
   // Closes any open module dropdown when clicking outside of it.
-  document.addEventListener('click', (e) => {
+  const onDocumentClick = (e: MouseEvent): void => {
     if (!menuOpen[0] && !menuOpen[1]) return
     const target = e.target as HTMLElement
     if (target.closest('.tt-pane-modules-btn') || target.closest('.tt-pane-menu')) return
@@ -364,7 +371,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     personSubOpen[1] = false
     renderBar(0)
     renderBar(1)
-  })
+  }
+  document.addEventListener('click', onDocumentClick)
 
   function setFocusedPane(idx: 0 | 1): void {
     if (store.doc.nav.focusedPane === idx) return
@@ -782,6 +790,9 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       modules.set(kind, render)
     },
     setSplitSpaceConstrained,
+    dispose(): void {
+      document.removeEventListener('click', onDocumentClick)
+    },
   }
 
   renderAll()

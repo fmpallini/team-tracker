@@ -358,6 +358,7 @@ describe('makeRefClickHandler', () => {
       renderAll: () => {},
       registerModule: () => {},
       setSplitSpaceConstrained: () => {},
+      dispose: () => {},
     }
   }
 

@@ -771,3 +771,33 @@ test('buildModuleItems prefixes every entry with its module icon (daily, person,
   expect(items[0]!.label.startsWith(KIND_ICON.daily)).toBe(true)
   expect(items).toContainEqual({ label: `${KIND_ICON.person} Carla`, ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
 })
+
+test('dispose() removes the document click listener that closes the module menu', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  // Open pane 0's module dropdown.
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  pm.dispose()
+
+  // With the listener removed, an outside click no longer closes the menu.
+  document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+})
+
+test('before dispose(), an outside click still closes the module menu', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+})
