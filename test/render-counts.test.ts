@@ -92,7 +92,7 @@ test('CHARACTERIZATION: a nav-only change still repaints the sidebar active high
   expect(active[0]!.textContent).toContain('Beta')
 })
 
-test('CHARACTERIZATION: editing one team does not lose the other pane content', () => {
+test('CHARACTERIZATION: editing one team patches its own pane in place and leaves the other pane\'s DOM untouched', () => {
   const { store, pm } = setup()
   store.update((d) => {
     d.teams.push(emptyTeam('t1', 'Alpha'))
@@ -105,7 +105,17 @@ test('CHARACTERIZATION: editing one team does not lose the other pane content', 
   )
   const bodies = document.querySelectorAll('.tt-pane-body')
   expect(bodies.length).toBe(2)
-  expect(bodies[1]!.querySelector('.tt-kanban')).not.toBeNull()
+  const kanbanBefore = bodies[1]!.querySelector('.tt-kanban')
+  expect(kanbanBefore).not.toBeNull()
+
+  // Marker in the OTHER pane (pane 0, daily notes) — same technique as the
+  // sidebar test above. It survives only if pane 0's container is never
+  // torn down (bodies[0] IS the `container` renderDailyNotes was given;
+  // panes.ts's renderBody() does `container.innerHTML = ''` on a full
+  // re-render, which would take the marker with it).
+  const marker = document.createElement('span')
+  marker.id = 'pane0-marker'
+  bodies[0]!.appendChild(marker)
 
   store.update((d) => {
     const tm = d.teams.find((t) => t.id === 't1')!
@@ -114,5 +124,17 @@ test('CHARACTERIZATION: editing one team does not lose the other pane content', 
       dueDate: null, assignee: '', color: 'ledger', order: 0,
     })
   })
+
+  // Pane 0 was not torn down by this content update: the marker survives.
+  expect(document.getElementById('pane0-marker')).not.toBeNull()
+  expect(marker.isConnected).toBe(true)
+
+  // Pane 1 was patched in place (action-items.ts's own store.subscribe
+  // re-renders only its column bodies), not torn down and rebuilt via
+  // panes.ts's renderBody() — the `.tt-kanban` root captured before the
+  // update is still the *same* DOM node afterward, not merely an element
+  // matching the same selector. A full teardown-and-rebuild would still
+  // pass a plain "1 card" count assertion, so identity is load-bearing here.
+  expect(bodies[1]!.querySelector('.tt-kanban')).toBe(kanbanBefore)
   expect(bodies[1]!.querySelectorAll('.tt-kanban-card').length).toBe(1)
 })
