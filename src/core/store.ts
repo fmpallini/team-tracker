@@ -1,5 +1,8 @@
 import type { Doc } from './types'
 
+/** Which mutation channel fired — `update()` is 'content', `updateNav()` is 'nav'. */
+export type MutationKind = 'content' | 'nav'
+
 export interface Store {
   readonly doc: Doc
   readonly dirty: boolean
@@ -24,7 +27,7 @@ export interface Store {
    * snapshot-then-try/catch isolation so a throwing listener can't block the
    * others or corrupt the set while iterating.
    */
-  onMutate(fn: () => void): () => void
+  onMutate(fn: (kind: MutationKind) => void): () => void
   onDirty(fn: (dirty: boolean) => void): void
   markSaved(): void
   /**
@@ -62,7 +65,7 @@ export function createStore(initialDoc: Doc): Store {
   let dirty = false
   let roState: ReadOnlyState = { kind: 'writable' }
   const subscribers = new Set<() => void>()
-  const mutationListeners = new Set<() => void>()
+  const mutationListeners = new Set<(kind: MutationKind) => void>()
   const dirtyCallbacks = new Set<(dirty: boolean) => void>()
   const blockedCallbacks = new Set<() => void>()
 
@@ -73,8 +76,8 @@ export function createStore(initialDoc: Doc): Store {
     }
   }
 
-  const notifyMutate = () => {
-    for (const fn of Array.from(mutationListeners)) { try { fn() } catch (e) { console.error(e) } }
+  const notifyMutate = (kind: MutationKind) => {
+    for (const fn of Array.from(mutationListeners)) { try { fn(kind) } catch (e) { console.error(e) } }
   }
 
   const warnBlocked = () => {
@@ -101,12 +104,12 @@ export function createStore(initialDoc: Doc): Store {
       fn(doc)
       setDirty(true)
       for (const fn of Array.from(subscribers)) { try { fn() } catch (e) { console.error(e) } }
-      notifyMutate()
+      notifyMutate('content')
     },
     updateNav(fn: (d: Doc) => void): void {
       fn(doc)
       setDirty(true)
-      notifyMutate()
+      notifyMutate('nav')
     },
     subscribe(fn: () => void): () => void {
       subscribers.add(fn)
@@ -114,7 +117,7 @@ export function createStore(initialDoc: Doc): Store {
         subscribers.delete(fn)
       }
     },
-    onMutate(fn: () => void): () => void {
+    onMutate(fn: (kind: MutationKind) => void): () => void {
       mutationListeners.add(fn)
       return () => {
         mutationListeners.delete(fn)

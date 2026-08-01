@@ -138,3 +138,63 @@ test('CHARACTERIZATION: editing one team patches its own pane in place and leave
   expect(bodies[1]!.querySelector('.tt-kanban')).toBe(kanbanBefore)
   expect(bodies[1]!.querySelectorAll('.tt-kanban-card').length).toBe(1)
 })
+
+test('sidebar renders exactly once per content update', () => {
+  const { store, shell, pm } = setup()
+  mountSidebar(shell, store, pm, { selectTeam: () => {}, renderPanes: () => {} })
+  store.update((d) => { d.teams.push(emptyTeam('t1', 'Alpha')) })
+
+  const listEl = shell.sidebar.querySelector('.tt-team-list')!
+
+  // Count childList RECORDS that removed nodes, not observer callback
+  // invocations: MutationObserver batches every mutation in a microtask into a
+  // single callback, so counting callbacks would report 1 whether the sidebar
+  // rendered once or twice — a test that passes vacuously. Each render() opens
+  // with `listEl.innerHTML = ''`, so one clearing record == one render.
+  let clears = 0
+  const observer = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === 'childList' && r.removedNodes.length > 0) clears++
+    }
+  })
+  observer.observe(listEl, { childList: true })
+
+  store.update((d) => { d.teams.push(emptyTeam('t2', 'Beta')) })
+  // MutationObserver delivers asynchronously; flush the microtask queue.
+  return Promise.resolve().then(() => {
+    observer.takeRecords().forEach((r) => {
+      if (r.type === 'childList' && r.removedNodes.length > 0) clears++
+    })
+    observer.disconnect()
+    expect(clears).toBe(1)
+    expect(listEl.querySelectorAll('.tt-team-item').length).toBe(2)
+  })
+})
+
+test('the sidebar still renders exactly once for a nav-only change', () => {
+  const { store, shell, pm } = setup()
+  mountSidebar(shell, store, pm, { selectTeam: () => {}, renderPanes: () => {} })
+  store.update((d) => {
+    d.teams.push(emptyTeam('t1', 'Alpha'))
+    d.teams.push(emptyTeam('t2', 'Beta'))
+  })
+
+  const listEl = shell.sidebar.querySelector('.tt-team-list')!
+  let clears = 0
+  const observer = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === 'childList' && r.removedNodes.length > 0) clears++
+    }
+  })
+  observer.observe(listEl, { childList: true })
+
+  store.updateNav((d) => { d.nav.activeTeamId = 't2' })
+  return Promise.resolve().then(() => {
+    observer.takeRecords().forEach((r) => {
+      if (r.type === 'childList' && r.removedNodes.length > 0) clears++
+    })
+    observer.disconnect()
+    expect(clears).toBe(1)
+    expect(listEl.querySelectorAll('.tt-team-item.active')[0]!.textContent).toContain('Beta')
+  })
+})

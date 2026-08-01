@@ -154,6 +154,15 @@ test('throwing onMutate listener does not block others', () => {
   expect(called).toBe(true)
 })
 
+test('onMutate receives the mutation kind', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const kinds: string[] = []
+  s.onMutate((kind) => kinds.push(kind))
+  s.update(() => {})
+  s.updateNav(() => {})
+  expect(kinds).toEqual(['content', 'nav'])
+})
+
 test('setReadOnly({ silent: true }) suppresses onBlockedUpdate without burning the one-shot warning', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   const warned: number[] = []

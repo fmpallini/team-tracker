@@ -645,22 +645,18 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   })
   // Nav-only changes (store.updateNav — team switch, Alt+1..9, pane history)
   // don't fire subscribe() above, but do need the active-team highlight to
-  // update. onMutate() fires on both update() and updateNav(); re-running
-  // render() an extra time on a content change (already covered by
-  // subscribe() above) is a harmless idempotent DOM rebuild — cheaper than
-  // hand-rolling a second nav-only event channel, and it's exactly the
-  // "generalize the mechanism" fix core/save-controller.ts already made for
-  // its own dirty-guard (see that file's comment on onMutate()). Content
-  // changes must NOT reset dueCache here too, or every pane navigation would
-  // force a full due-items rescan for no reason — that stays only in the
-  // subscribe() callback above.
+  // update. Content changes are already fully covered by subscribe(), so this
+  // listener filters on kind — registering it unconditionally rebuilt the
+  // whole team list twice on every single content edit.
   //
   // Load-bearing detail: store.replaceDoc() (used by the conflict-modal
   // reload path in main.ts's onReload handler) fires subscribe() listeners
   // but NOT onMutate() listeners — so it's the store.subscribe() render
   // above, not this onMutate() one, that keeps the sidebar in sync after a
   // reload. Don't collapse these two registrations into just onMutate().
-  const unsubscribeMutate = store.onMutate(() => render())
+  const unsubscribeMutate = store.onMutate((kind) => {
+    if (kind === 'nav') render()
+  })
   const onAddTeamRequest = (): void => openAddModal()
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
 
