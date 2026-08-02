@@ -104,6 +104,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
   function renderTagChips(tagNames: Partial<Record<ActionItem['color'], string>>): void {
     tagChipsEl.innerHTML = ''
+    // Marks the whole strip while a filter is on, so the CSS can dim the
+    // chips that aren't the active one — the selected chip alone carrying a
+    // border was easy to miss on a board that looks half-empty as a result.
+    tagChipsEl.classList.toggle('filtering', activeTagFilter !== null)
     for (const c of COLORS) {
       const custom = tagNames[c] ?? null
       const chip = el(
@@ -114,6 +118,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           // (.tt-kanban-color-chip) — blank until named, name shown inside once it is.
           class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}` + (activeTagFilter === c ? ' selected' : ''),
           'aria-label': custom ?? suggestedTagName(c),
+          'aria-pressed': activeTagFilter === c ? 'true' : 'false',
           onclick: () => {
             activeTagFilter = activeTagFilter === c ? null : c
             renderAll()
