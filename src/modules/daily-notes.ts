@@ -9,6 +9,7 @@ import { createRichEditorBundle } from '../ui/rich-editor'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
+import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
 
 /**
@@ -130,7 +131,7 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
         if (!tm) return
         if (md.trim() === '') delete tm.dailyNotes[date]
         else tm.dailyNotes[date] = md
-      })
+      }, { teamId, sections: ['notes'] })
     },
     getTeam: () => findTeam(ctx, teamId),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'daily' || tpl.scope === 'any'),
@@ -142,7 +143,12 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
   // elsewhere (this same note, the milestones module in the other split
   // pane, etc.) — refresh only the calendar; touching the editor here would
   // clobber the user's live caret position.
-  const unsubscribe = ctx.store.subscribe(() => {
+  // The calendar marks show has-note tint, milestone flags, and action-item
+  // due dates, so it genuinely needs all three sections (plus 'teams', since
+  // a rename/delete/reorder can invalidate any pane).
+  const WATCHED: readonly Section[] = ['notes', 'milestones', 'actions', 'teams']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (!scopeAffects(scope, teamId, WATCHED)) return
     rebuildCalendar()
   })
 

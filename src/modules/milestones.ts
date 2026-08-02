@@ -14,6 +14,7 @@ import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
+import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
@@ -187,7 +188,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
           const found = tm?.milestones.find((mm) => mm.id === m.id)
           if (!found) return
           found.followup = md.trim() === '' ? '' : md
-        })
+        }, { teamId, sections: ['milestones'] })
       },
       getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
@@ -204,7 +205,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       if (!tm) return
       unlinkRefsInTeam(tm, 'milestone', [id])
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
-    })
+    }, { teamId, sections: ['milestones'] })
   }
 
   function requestDelete(m: Milestone): void {
@@ -337,7 +338,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
           if (found) found.date = iso
-        })
+        }, { teamId, sections: ['milestones'] })
       },
     })
     datePicker.root.classList.add('tt-milestone-date-input')
@@ -350,7 +351,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
           if (found) found.title = value
-        })
+        }, { teamId, sections: ['milestones'] })
       },
     })
 
@@ -361,7 +362,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
           if (found) found.done = checked
-        })
+        }, { teamId, sections: ['milestones'] })
       },
     })
 
@@ -431,7 +432,7 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
       tm.milestones.push({ id: newId, date: todayIso(), title: '', done: false, followup: '' })
-    })
+    }, { teamId, sections: ['milestones'] })
   }
 
   const addBtn = el(
@@ -478,7 +479,9 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   // this field's own edit (if any) commits and would have triggered a
   // rebuild anyway. (The SVG itself never holds focus, so it's always safe
   // to rebuild — renderAll rebuilds both together for simplicity.)
-  const unsubscribe = ctx.store.subscribe(() => {
+  const WATCHED: readonly Section[] = ['milestones', 'teams']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretInput()
     if (active) {
       active.addEventListener('blur', () => renderAll(), { once: true })

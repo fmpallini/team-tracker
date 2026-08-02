@@ -9,6 +9,7 @@ import type { ModuleCtx } from '../ui/panes'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
+import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
 
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -56,7 +57,7 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
         const p = tm?.[group].find((pp) => pp.id === personId)
         if (!p) return
         p.notes = md.trim() === '' ? '' : md
-      })
+      }, { teamId, sections: ['people', 'notes'] })
     },
     getTeam: () => findTeam(),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),
@@ -72,7 +73,9 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
   // split), which this module must detect and degrade to a placeholder
   // rather than keep showing/editing a ghost record.
   let torn = false
-  const unsubscribe = ctx.store.subscribe(() => {
+  const WATCHED: readonly Section[] = ['people', 'notes', 'teams']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (!scopeAffects(scope, teamId, WATCHED)) return
     if (torn) return
     if (findPerson()) return
     torn = true

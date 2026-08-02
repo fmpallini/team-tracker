@@ -9,6 +9,7 @@ import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '..
 import { el } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
+import { scopeAffects, type Section } from '../core/scope'
 
 /** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -195,7 +196,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
             const siblings = tm[group].filter((p) => p.parentId === parentId)
             const order = siblings.length === 0 ? 0 : Math.max(...siblings.map((p) => p.order)) + 1
             tm[group].push({ id: crypto.randomUUID(), name, role, parentId, order, notes: '' })
-          })
+          }, { teamId, sections: ['people'] })
         },
       })
     }
@@ -212,7 +213,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
             if (!p) return
             p.name = name
             p.role = role
-          })
+          }, { teamId, sections: ['people'] })
         },
       })
     }
@@ -252,7 +253,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
                   if (!tm) return
                   unlinkRefsInTeam(tm, 'person', [person.id])
                   tm[group] = deletePerson(tm[group], person.id)
-                })
+                }, { teamId, sections: ['people'] })
               },
             })
           },
@@ -312,7 +313,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
           moveInTree(tm[group], srcId, person.id, pos)
-        })
+        }, { teamId, sections: ['people'] })
       })
       box.addEventListener('dragend', () => {
         draggedId = null
@@ -358,7 +359,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         moveToRoot(tm[group], srcId)
-      })
+      }, { teamId, sections: ['people'] })
     })
 
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
@@ -383,7 +384,9 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     // The tree has no caret/focus state worth preserving (unlike the
     // daily-notes editor) — a full rebuild on every store change is simplest
     // and correct.
-    const unsubscribe = ctx.store.subscribe(() => {
+    const WATCHED: readonly Section[] = ['people', 'teams']
+    const unsubscribe = ctx.store.subscribe((scope) => {
+      if (!scopeAffects(scope, teamId, WATCHED)) return
       renderAll()
     })
 

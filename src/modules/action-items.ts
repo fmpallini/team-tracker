@@ -12,6 +12,7 @@ import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import type { ModuleCtx } from '../ui/panes'
+import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
@@ -141,7 +142,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       if (!tm) return
       unlinkRefsInTeam(tm, 'action', [id])
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
-    })
+    }, { teamId, sections: ['actions'] })
   }
 
   function requestDelete(item: ActionItem): void {
@@ -173,7 +174,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           const removedIds = tm.actionItems.filter((i) => i.status === status).map((i) => i.id)
           unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
-        })
+        }, { teamId, sections: ['actions'] })
       },
     })
   }
@@ -283,7 +284,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           found.assignee = assignee
           found.color = selectedColor
         }
-      })
+      }, { teamId, sections: ['actions'] })
       closeModal()
     }
 
@@ -331,7 +332,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
             else nextTags[c] = value
           }
           target.actionTagNames = nextTags
-        })
+        }, { teamId, sections: ['actions'] })
         handle.close()
       },
     }
@@ -415,7 +416,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         moveCard(tm.actionItems, srcId, item.status, item.id, pos)
-      })
+      }, { teamId, sections: ['actions'] })
     })
     card.addEventListener('dragend', () => {
       draggedId = null
@@ -540,7 +541,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         moveCard(tm.actionItems, srcId, status, null, 'after')
-      })
+      }, { teamId, sections: ['actions'] })
     })
   }
   STATUSES.forEach((s) => wireColumnDrop(cols[s].bodyEl, s, cols[s].zoneEl))
@@ -578,7 +579,12 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
   renderAll()
 
-  const unsubscribe = ctx.store.subscribe(() => {
+  // The board reflects this team's action items only. Anything else — a daily
+  // note keystroke in the other pane, another team's edits — used to rebuild
+  // every card here for nothing.
+  const WATCHED: readonly Section[] = ['actions', 'teams']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (!scopeAffects(scope, teamId, WATCHED)) return
     renderAll()
   })
 

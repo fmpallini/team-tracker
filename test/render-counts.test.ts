@@ -202,3 +202,61 @@ test('the sidebar still renders exactly once for a nav-only change', () => {
     expect(listEl.querySelectorAll('.tt-team-item.active')[0]!.textContent).toContain('Beta')
   })
 })
+
+test('a scoped notes edit does not rebuild the kanban board in the other pane', () => {
+  const { store, pm } = setup()
+  store.update((d) => {
+    d.teams.push(emptyTeam('t1', 'Alpha'))
+    d.nav.activeTeamId = 't1'
+  })
+  store.update((d) => {
+    const tm = d.teams.find((t) => t.id === 't1')!
+    tm.actionItems.push({
+      id: 'a1', summary: 'Card', notes: '', status: 'todo',
+      dueDate: null, assignee: '', color: 'ledger', order: 0,
+    })
+  })
+  // Pane 1 must be visible (split) for the kanban board to render at all —
+  // renderAll() skips a hidden pane 1 entirely (see panes.ts), same reason
+  // the earlier "editing one team patches its own pane" test needs this too.
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openBothPanes(
+    { teamId: 't1', ref: { kind: 'daily', date: todayIso() } },
+    { teamId: 't1', ref: { kind: 'actions' } },
+    0
+  )
+
+  const card = document.querySelector('.tt-kanban-card') as HTMLElement
+  expect(card).not.toBeNull()
+
+  // A daily-note edit, scoped to 'notes'.
+  store.update((d) => {
+    const tm = d.teams.find((t) => t.id === 't1')!
+    tm.dailyNotes[todayIso()] = 'typed something'
+  }, { teamId: 't1', sections: ['notes'] })
+
+  // The very same card element must still be in the DOM — not a rebuilt clone.
+  expect(card.isConnected).toBe(true)
+})
+
+test('an actions edit still rebuilds the kanban board', () => {
+  const { store, pm } = setup()
+  store.update((d) => {
+    d.teams.push(emptyTeam('t1', 'Alpha'))
+    d.nav.activeTeamId = 't1'
+  })
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openBothPanes(
+    { teamId: 't1', ref: { kind: 'daily', date: todayIso() } },
+    { teamId: 't1', ref: { kind: 'actions' } },
+    0
+  )
+  store.update((d) => {
+    const tm = d.teams.find((t) => t.id === 't1')!
+    tm.actionItems.push({
+      id: 'a1', summary: 'Card', notes: '', status: 'todo',
+      dueDate: null, assignee: '', color: 'ledger', order: 0,
+    })
+  }, { teamId: 't1', sections: ['actions'] })
+  expect(document.querySelectorAll('.tt-kanban-card').length).toBe(1)
+})
