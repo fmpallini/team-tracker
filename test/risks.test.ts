@@ -2,7 +2,6 @@ import {
   renderRisks,
   computeExposure,
   exposureLevel,
-  exposureColor,
   nextExposureSort,
   sortRisksForDisplay,
   moveRisk,
@@ -105,22 +104,25 @@ afterEach(() => {
 })
 
 describe('pure helpers', () => {
-  describe('computeExposure / exposureLevel / exposureColor', () => {
-    const cases: { chance: 1 | 2 | 3; impact: 1 | 2 | 3; exposure: number; level: 'low' | 'medium' | 'high'; color: string }[] = [
-      { chance: 1, impact: 1, exposure: 1, level: 'low', color: '#16a34a' },
-      { chance: 1, impact: 2, exposure: 2, level: 'low', color: '#16a34a' },
-      { chance: 2, impact: 1, exposure: 2, level: 'low', color: '#16a34a' },
-      { chance: 1, impact: 3, exposure: 3, level: 'medium', color: '#ca8a04' },
-      { chance: 3, impact: 1, exposure: 3, level: 'medium', color: '#ca8a04' },
-      { chance: 2, impact: 2, exposure: 4, level: 'medium', color: '#ca8a04' },
-      { chance: 2, impact: 3, exposure: 6, level: 'high', color: '#dc2626' },
-      { chance: 3, impact: 2, exposure: 6, level: 'high', color: '#dc2626' },
-      { chance: 3, impact: 3, exposure: 9, level: 'high', color: '#dc2626' },
+  describe('computeExposure / exposureLevel', () => {
+    const cases: { chance: 1 | 2 | 3; impact: 1 | 2 | 3; exposure: number; level: 'low' | 'medium' | 'high' }[] = [
+      { chance: 1, impact: 1, exposure: 1, level: 'low' },
+      { chance: 1, impact: 2, exposure: 2, level: 'low' },
+      { chance: 2, impact: 1, exposure: 2, level: 'low' },
+      { chance: 1, impact: 3, exposure: 3, level: 'medium' },
+      { chance: 3, impact: 1, exposure: 3, level: 'medium' },
+      { chance: 2, impact: 2, exposure: 4, level: 'medium' },
+      { chance: 2, impact: 3, exposure: 6, level: 'high' },
+      { chance: 3, impact: 2, exposure: 6, level: 'high' },
+      { chance: 3, impact: 3, exposure: 9, level: 'high' },
     ]
-    test.each(cases)('chance=$chance impact=$impact -> exposure=$exposure ($level, $color)', ({ chance, impact, exposure, level, color }) => {
+    // The stamp's color is no longer computed in JS — the level class the
+    // badge carries resolves `--exposure-{level}` in styles.css, so a palette
+    // switch reaches it. The level→class mapping is what's asserted here; the
+    // rendering tests below assert the class actually lands on the badge.
+    test.each(cases)('chance=$chance impact=$impact -> exposure=$exposure ($level)', ({ chance, impact, exposure, level }) => {
       expect(computeExposure(chance, impact)).toBe(exposure)
       expect(exposureLevel(exposure)).toBe(level)
-      expect(exposureColor(exposure)).toBe(color)
     })
   })
 
@@ -226,7 +228,59 @@ describe('renderRisks', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
-    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team)')
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team) · Row menu (Enter or Space)')
+  })
+
+  // Regression for the accessibility gap the row actions used to have: they
+  // are `tabindex="-1"` *and* used to rest at `opacity: 0`, so there was no
+  // pointer-free route to expand/close/delete at all. The row is now a Tab
+  // stop that opens the same menu the right-click does.
+  describe('keyboard route to the row actions', () => {
+    test('the row is focusable', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
+      expect(row.getAttribute('tabindex')).toBe('0')
+    })
+
+    test.each(['Enter', ' '])('%s on the row opens the context menu', (key) => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
+
+      row.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+    })
+
+    // The guard that keeps Enter meaning "commit and blur" in the title input
+    // and Space meaning "open the dropdown" in a select.
+    test('the same keys inside a row field do not open the menu', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const titleInput = container.querySelector('.tt-risk-title-input') as HTMLInputElement
+      titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      const select = container.querySelector('.tt-risk-chance-select') as HTMLSelectElement
+      select.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+
+      expect(document.querySelector('.tt-context-menu')).toBeNull()
+    })
+  })
+
+  test('the chance/impact/plan selects carry their column name as an accessible label', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    for (const [cls, label] of [
+      ['.tt-risk-chance-select', 'Chance'],
+      ['.tt-risk-impact-select', 'Impact'],
+      ['.tt-risk-plan-select', 'Plan'],
+    ] as const) {
+      expect((container.querySelector(cls) as HTMLElement).getAttribute('aria-label')).toBe(label)
+    }
   })
 
   test('"+ Risk" appends a risk with default fields and focuses its title input', () => {
@@ -284,6 +338,26 @@ describe('renderRisks', () => {
 
     expect(badge().textContent).toBe('9')
     expect(badge().classList.contains('tt-risk-exposure-high')).toBe(true)
+  })
+
+  // The stored value stays the bare number; only the visible label gained the
+  // word, so nothing on screen leaves the reader guessing whether 3 is high
+  // chance or high confidence.
+  test('chance/impact options are labelled while still storing 1/2/3', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    for (const cls of ['.tt-risk-chance-select', '.tt-risk-impact-select']) {
+      const select = container.querySelector(cls) as HTMLSelectElement
+      expect([...select.options].map((o) => o.value)).toEqual(['1', '2', '3'])
+      expect([...select.options].map((o) => o.textContent)).toEqual(['1 · Low', '2 · Medium', '3 · High'])
+    }
+
+    const chanceSelect = container.querySelector('.tt-risk-chance-select') as HTMLSelectElement
+    chanceSelect.value = '3'
+    chanceSelect.dispatchEvent(new Event('change'))
+    expect(store.doc.teams[0]!.risks[0]!.chance).toBe(3)
   })
 
   test('changing the plan select persists the RiskPlan value', () => {

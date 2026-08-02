@@ -35,6 +35,10 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
   ['Alt+← / Alt+→', 'help_global_history'],
   ['F11 / ⛶', 'help_global_fullscreen'],
+  // The row actions are deliberately not Tab stops (see the row builders in
+  // modules/risks.ts and modules/milestones.ts), so this is the only keyboard
+  // route to them — which makes documenting it the whole point.
+  ['Enter / Espaço', 'help_global_row_menu'],
 ]
 
 function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {

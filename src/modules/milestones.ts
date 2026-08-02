@@ -27,9 +27,25 @@ import { el, blurOnEnter } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
-/** Minimum horizontal distance (px) between two neighboring milestone dots. */
-const MIN_GAP = 24
-const TIMELINE_HEIGHT = 90
+/**
+ * Minimum horizontal distance (px) between two neighboring milestone dots.
+ *
+ * This used to be 24 — a dot-radius-scale number, which is what it looks like
+ * it should be, and which is why the labels overprinted. A dot is 12px wide;
+ * the *label* under it is up to 16 characters (see truncateTitle) at 9px,
+ * around 90px, and the date above it around 55px. Two milestones 24px apart
+ * therefore cleared each other's circles and printed their text straight
+ * through each other — three same-day milestones rendered as
+ * "Auth cutBetarewith GA release".
+ *
+ * Titles are staggered across two rows (see renderTimeline), so the binding
+ * constraint is between *same-row* neighbors, which are two dots apart —
+ * hence half a title's width. The date labels all share one row, so their
+ * full ~55px is the real floor, and that is what this value is.
+ */
+const MIN_LABEL_GAP = 64
+/** Tall enough for a date label above the axis and two staggered title rows below it. */
+const TIMELINE_HEIGHT = 104
 const CIRCLE_R = 6
 /** Left/right margin reserved so the first/last circle's stroke never clips against the SVG edge. */
 const H_PADDING = 24
@@ -242,7 +258,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const drawWidth = Math.max(containerWidth - H_PADDING * 2, 1)
     const layout = computeTimelineLayout(
       sorted.map((m) => ({ id: m.id, date: m.date })),
-      MIN_GAP,
+      MIN_LABEL_GAP,
       drawWidth,
       today
     )
@@ -275,9 +291,14 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       svg.appendChild(todayLine)
     }
 
-    for (const m of sorted) {
+    sorted.forEach((m, i) => {
       const cx = H_PADDING + layout.x[m.id]!
       const overdue = m.date < today && !m.done
+      // Titles alternate between a near and a far row. Two labels that would
+      // have collided are now on different rows, which doubles the label
+      // density a given width can carry — and lets MIN_LABEL_GAP be set from
+      // the date labels (one row, ~55px) rather than the wider titles.
+      const titleY = midY + (i % 2 === 0 ? 22 : 38)
 
       // "Filled when done" reads as a solid dot once complete; the two
       // not-done states (--muted / --accent from the brief) are rendered as
@@ -312,13 +333,26 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       dateText.textContent = formatDate(m.date, lc)
       svg.appendChild(dateText)
 
+      // Leader line from the dot down to its title — without it, a title on
+      // the far row is ambiguous about which dot it belongs to.
+      const leader = document.createElementNS(SVG_NS, 'line')
+      leader.setAttribute('x1', String(cx))
+      leader.setAttribute('x2', String(cx))
+      leader.setAttribute('y1', String(midY + CIRCLE_R + 2))
+      leader.setAttribute('y2', String(titleY - 8))
+      leader.setAttribute('class', 'tt-milestone-leader')
+      svg.appendChild(leader)
+
       const label = document.createElementNS(SVG_NS, 'text')
       label.setAttribute('x', String(cx))
-      label.setAttribute('y', String(midY + 24))
+      label.setAttribute('y', String(titleY))
       label.setAttribute('class', 'tt-milestone-title-label')
+      // Truncated to 16 characters; the dot's own <title> a few lines up
+      // carries the full text. Deliberately not repeated here — an SVG
+      // <title> child would fold into this element's textContent.
       label.textContent = truncateTitle(m.title)
       svg.appendChild(label)
-    }
+    })
 
     timelineEl.appendChild(svg)
   }
@@ -370,8 +404,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     })
 
     // tabindex="-1": Tab should move cleanly between the row's data fields
-    // (date/title/done) like a spreadsheet, not stop on every hover-revealed
-    // icon button in between — still reachable by click/hover.
+    // (date/title/done) like a spreadsheet, not stop on every icon button in
+    // between. Same pairing as src/modules/risks.ts: the buttons now rest
+    // visible-but-quiet instead of fully transparent, and the row is a single
+    // Tab stop whose Enter/Space opens the context menu — so "reachable by
+    // click/hover" is no longer the *only* way to reach them.
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
@@ -388,16 +425,31 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       'div',
       {
         class: 'tt-milestone-row',
+        tabindex: '0',
         'data-milestone-id': m.id,
         'data-item-id': m.id,
-        title: t(lc, 'milestone_row_context_hint'),
+        title: `${t(lc, 'milestone_row_context_hint')} · ${t(lc, 'risk_row_menu_hint')}`,
       },
       datePicker.root, titleInput, doneCheckbox, expandBtn, deleteBtn
     )
+    // Left-edge state mark, mirroring the timeline dots' own three-way
+    // vocabulary (done / overdue / upcoming) rather than inventing a second
+    // one — the list is the half you actually edit, and it encoded none of it.
+    row.classList.add(m.done ? 'tt-milestone-state-done' : m.date < todayIso() ? 'tt-milestone-state-overdue' : 'tt-milestone-state-future')
     if (m.done) row.classList.add('tt-milestone-done-row')
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
+    // See the identical handler in src/modules/risks.ts for why this is
+    // guarded on `e.target === row`.
+    row.addEventListener('keydown', (e) => {
+      const ev = e as KeyboardEvent
+      if (ev.target !== row) return
+      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      ev.preventDefault()
+      const rect = row.getBoundingClientRect()
+      openRowContextMenu(m.id, rect.left + 16, rect.bottom)
     })
     return row
   }

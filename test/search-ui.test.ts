@@ -424,3 +424,21 @@ test('does not accumulate document-level listeners across repeated open/close cy
 
   addSpy.mockRestore()
 })
+
+// The search box used to sit live and typeable above the "No teams yet"
+// screen, where it could never return a result.
+test('the search input is disabled while the document has no teams, and enables on the first one', () => {
+  const store = buildStore([], null)
+  const { shell, input } = mount(store, fakePM())
+  const wrap = shell.headerLeft.querySelector('.tt-search-wrap') as HTMLElement
+
+  expect(input.disabled).toBe(true)
+  expect(wrap.classList.contains('tt-search-disabled')).toBe(true)
+
+  store.update((d) => {
+    d.teams.push({ ...oneNoteTeam })
+  })
+
+  expect(input.disabled).toBe(false)
+  expect(wrap.classList.contains('tt-search-disabled')).toBe(false)
+})

@@ -40,15 +40,13 @@ export function exposureLevel(exposure: number): ExposureLevel {
   return 'low'
 }
 
-const EXPOSURE_COLORS: Record<ExposureLevel, string> = {
-  low: '#16a34a',
-  medium: '#ca8a04',
-  high: '#dc2626',
-}
-
-export function exposureColor(exposure: number): string {
-  return EXPOSURE_COLORS[exposureLevel(exposure)]
-}
+// The stamp's color used to be three literal hex values (#16a34a/#ca8a04/
+// #dc2626) assigned through `exposureBadge.style.color`. That made the app's
+// signature mark the only thing on screen ignoring the palette picker — and,
+// being an inline style, the one thing no palette block could have overridden
+// anyway. The `.tt-risk-exposure-{level}` class the badge already carries now
+// drives the color from `--exposure-{level}` in styles.css, so the stamp
+// follows the theme like everything else.
 
 export type ExposureSort = 'none' | 'desc' | 'asc'
 
@@ -93,6 +91,13 @@ export function moveRisk(risks: Risk[], draggedId: string, targetId: string, pos
   const insertAt = position === 'before' ? targetIdx : targetIdx + 1
   sorted.splice(insertAt, 0, dragged)
   sorted.forEach((r, i) => { r.order = i })
+}
+
+const LEVEL_OPTIONS = [1, 2, 3] as const
+const LEVEL_KEYS: Record<1 | 2 | 3, MsgKey> = {
+  1: 'risk_level_1',
+  2: 'risk_level_2',
+  3: 'risk_level_3',
 }
 
 const PLAN_OPTIONS: RiskPlan[] = ['mitigate', 'transfer', 'eliminate', 'accept']
@@ -178,9 +183,15 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     renderAll()
   }
 
-  function buildSelect(className: string, options: { value: string; label: string }[], selected: string, onChange: (value: string) => void): HTMLSelectElement {
+  function buildSelect(className: string, columnKey: MsgKey, options: { value: string; label: string }[], selected: string, onChange: (value: string) => void): HTMLSelectElement {
     const select = el('select', {
       class: className,
+      // These selects had no accessible name at all — the column header was
+      // the only thing identifying them, and on a narrow row that header is
+      // hidden entirely (see the container query in styles.css). The name
+      // travels with the control instead.
+      'aria-label': t(lc, columnKey),
+      title: t(lc, columnKey),
       onchange: (e: Event) => onChange((e.target as HTMLSelectElement).value),
     })
     for (const opt of options) {
@@ -233,15 +244,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       },
     })
 
-    const numberOptions = [1, 2, 3].map((n) => ({ value: String(n), label: String(n) }))
-    const chanceSelect = buildSelect('tt-risk-chance-select', numberOptions, String(r.chance), (value) => {
+    // Labelled, not bare 1/2/3: the stored value is still the number, but
+    // nothing on screen said whether 3 meant high chance or high confidence.
+    // The dropdown is the one place with room for the word, so it carries it.
+    const numberOptions = LEVEL_OPTIONS.map((n) => ({ value: String(n), label: t(lc, LEVEL_KEYS[n]) }))
+    const chanceSelect = buildSelect('tt-risk-chance-select', 'risk_col_chance', numberOptions, String(r.chance), (value) => {
       ctx.store.update((d) => {
         const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
         if (found) found.chance = Number(value) as 1 | 2 | 3
       }, { teamId, sections: ['risks'] })
     })
 
-    const impactSelect = buildSelect('tt-risk-impact-select', numberOptions, String(r.impact), (value) => {
+    const impactSelect = buildSelect('tt-risk-impact-select', 'risk_col_impact', numberOptions, String(r.impact), (value) => {
       ctx.store.update((d) => {
         const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
         if (found) found.impact = Number(value) as 1 | 2 | 3
@@ -253,7 +267,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       { class: `tt-risk-exposure-badge tt-risk-exposure-${exposureLevel(exposure)}` },
       String(exposure)
     )
-    exposureBadge.style.color = exposureColor(exposure)
     // The badge's own width stays intrinsic (small circle) — this wrapping
     // cell is what carries the 4.5rem column width shared with the header,
     // so the stamp can be a true circle without losing header alignment.
@@ -261,6 +274,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     const planSelect = buildSelect(
       'tt-risk-plan-select',
+      'risk_col_plan',
       PLAN_OPTIONS.map((p) => ({ value: p, label: t(lc, PLAN_KEYS[p]) })),
       r.plan,
       (value) => {
@@ -272,8 +286,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     )
 
     // tabindex="-1": Tab should move cleanly between the row's data fields
-    // (title/chance/impact/plan) like a spreadsheet, not stop on every
-    // hover-revealed icon button in between — still reachable by click/hover.
+    // (title/chance/impact/plan) like a spreadsheet, not stop on every icon
+    // button in between. That decision stands — but combined with the old
+    // `opacity: 0` resting state it left *no* route to these actions without
+    // a pointer. The buttons now rest visible-but-quiet (styles.css), and the
+    // row itself is a single Tab stop that opens the same context menu on
+    // Enter/Space, so every action has a keyboard path.
     const expanded = expandable.isExpanded(r.id)
     const expandBtn = el(
       'button',
@@ -293,22 +311,52 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       '🗑'
     )
 
+    // Narrow-row scaffolding, inert until the container query in styles.css
+    // turns it on (see `.tt-risks` container-type). `lineBreak` is a
+    // zero-height 100%-basis flex item — the standard way to force a wrap at
+    // a chosen point — and the three mini-labels stand in for the column
+    // header, which the same query hides. All four are display:none at full
+    // width, so the wide row is byte-for-byte the layout it always was.
+    const metaLabel = (which: 'chance' | 'impact' | 'plan', key: MsgKey): HTMLElement =>
+      el('span', { class: `tt-risk-meta-label tt-risk-meta-${which}`, 'aria-hidden': 'true' }, t(lc, key))
+    const lineBreak = el('span', { class: 'tt-risk-linebreak', 'aria-hidden': 'true' })
+
     const row = el(
       'div',
       {
         class: 'tt-risk-row',
         draggable: sortMode === 'none' ? 'true' : 'false',
+        tabindex: '0',
         'data-risk-id': r.id,
         'data-item-id': r.id,
-        title: t(lc, 'risk_row_context_hint'),
+        title: `${t(lc, 'risk_row_context_hint')} · ${t(lc, 'risk_row_menu_hint')}`,
       },
-      titleInput, chanceSelect, impactSelect, exposureCell, planSelect, expandBtn, closeBtn, deleteBtn
+      titleInput,
+      metaLabel('chance', 'risk_col_chance'), chanceSelect,
+      metaLabel('impact', 'risk_col_impact'), impactSelect,
+      exposureCell,
+      metaLabel('plan', 'risk_col_plan'), planSelect,
+      lineBreak,
+      expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
 
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
+
+    // Keyboard equivalent of the right-click menu. Guarded on `e.target ===
+    // row` so Enter inside the title input still means "commit and blur"
+    // (blurOnEnter) and Space inside a select still opens the dropdown —
+    // only a keypress on the row itself counts.
+    row.addEventListener('keydown', (e) => {
+      const ev = e as KeyboardEvent
+      if (ev.target !== row) return
+      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      ev.preventDefault()
+      const rect = row.getBoundingClientRect()
+      openRowContextMenu(r.id, rect.left + 16, rect.bottom)
     })
 
     // Drag reorder only makes sense against the manual `order` sequence — a

@@ -101,6 +101,15 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --panel:#23103a; --border:#3d1f5c; --brass:#ff3fa4; --danger:#ff5757; --ok:#39ffb0;
   --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff5757; --card-plum:#b06bff; --card-ledger:#a48fc4;
 }
+/* Risk exposure stamp colors. Declared once, in terms of the semantic tokens
+   every palette block above already defines — custom properties resolve at
+   the element that uses them, so `var(--ok)` here picks up whichever palette
+   is active without needing a triple per palette. Previously these were three
+   literal hex values set inline from src/modules/risks.ts, which made the
+   signature stamp the only element in the app that ignored the palette
+   picker. */
+:root { --exposure-low: var(--ok); --exposure-medium: var(--brass); --exposure-high: var(--danger); }
+
 /* Display face (brand, headings, team/person names) stays serif regardless
    of the body font preference below — brand identity, not body copy. */
 :root { --font-display: "Sitka Text", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
@@ -282,6 +291,10 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--danger) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
+/* Fallback mode (no File System Access API — every save is a download). The
+   mark replaces a sticky toast that used to sit over the app for the whole
+   session; the pill's tooltip carries the full sentence. */
+.tt-save-pill-fallback-mark { font-family: var(--font-data); opacity: .7; margin-left: .1rem; }
 .tt-save-pill-clickable { cursor: pointer; }
 .tt-save-pill-clickable:hover { filter: brightness(0.95); }
 [data-theme="dark"] .tt-save-pill-clickable:hover { filter: brightness(1.15); }
@@ -440,12 +453,16 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Panes */
 .tt-panes-grid { display: grid; grid-template-columns: 1fr; height: 100%; min-height: 0; }
-.tt-no-teams { height: 100%; display: flex; align-items: center; justify-content: center; }
+/* Sat at 38% of the height rather than dead centre: a lone block centred in
+   an empty 900px canvas reads as a placeholder waiting for content, while the
+   same block set high reads as the start of something. */
+.tt-no-teams { height: 100%; display: flex; align-items: flex-start; justify-content: center; padding-top: 20vh; }
 .tt-no-teams .tt-pane-cta {
   display: flex; flex-direction: column; align-items: center; gap: 1rem;
   text-align: center; max-width: 28em; padding: 2rem;
 }
 .tt-no-teams .tt-pane-cta p { color: var(--muted); font-size: 1.05rem; }
+.tt-no-teams .tt-no-teams-hint { font-size: .88rem; opacity: .8; margin-top: -.25rem; }
 .tt-pane {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
   border: 2px solid var(--border);
@@ -498,6 +515,10 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Header search */
 .tt-search-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
+/* No teams yet — nothing to search. Dimmed rather than hidden so the header
+   doesn't reflow the moment the first team is created. */
+.tt-search-wrap.tt-search-disabled { opacity: .45; }
+.tt-search-wrap.tt-search-disabled .tt-search-input { cursor: not-allowed; }
 .tt-search-input-box { position: relative; width: 100%; max-width: 360px; min-width: 60px; }
 .tt-search-input { width: 100%; height: 2.25rem; box-sizing: border-box; padding-right: 1.8rem; }
 .tt-search-clear-btn {
@@ -693,7 +714,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-people-tree { flex: 1; padding: 1rem; }
 .tt-people-empty { color: var(--muted); padding: .5rem; }
 
+/* Centered: an org chart reads as one structure hanging off its root, and
+   the root belongs in the middle of it. (Start-anchoring was tried and
+   reverted — it buys room to grow leftward at the cost of the shape the
+   chart is supposed to have.) */
 .tt-org-root { display: flex; gap: 2rem; justify-content: center; overflow-x: auto; height: 100%; }
+/* While a card is being dragged, every other card shows it is a target.
+   Previously the drop bands only appeared once the pointer was already over
+   one specific card, so the nesting affordance was invisible to anyone who
+   didn't already know the tree could be rearranged. */
+.tt-people-dragging .tt-org-box { outline: 1px dashed rgba(var(--accent-rgb), .55); outline-offset: 2px; }
+.tt-people-dragging .tt-org-box-dragging { outline: none; opacity: .5; }
 .tt-org-node { display: flex; flex-direction: column; align-items: center; position: relative; }
 .tt-org-box {
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
@@ -779,9 +810,28 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-card.color-rust { border-left-color: var(--card-rust); }
 .tt-kanban-card.color-plum { border-left-color: var(--card-plum); }
 .tt-kanban-card.color-ledger { border-left-color: var(--card-ledger); }
-.tt-kanban-card-title { font-family: var(--font-display); font-weight: 600; font-size: 1rem; line-height: 1.25; margin-bottom: .3rem; padding-right: 1.3rem; }
-.tt-kanban-card-meta { display: flex; gap: .6rem; font-size: .72rem; color: var(--muted); font-family: var(--font-data); }
+/* Body face, not the display serif. A card title is body copy — setting it
+   in the brand serif at 1rem took "Migrate auth service to new token format"
+   to three lines and ~90px of height, so a split pane showed five cards where
+   it could show eight. The serif still does brand work on the column headings
+   above, where it costs no rows. Two-line clamp with the full text on the
+   card's own `title` attribute, so nothing is lost, only folded. */
+.tt-kanban-card-title {
+  font-weight: 600; font-size: .9rem; line-height: 1.35; margin-bottom: .3rem; padding-right: 1.3rem;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tt-kanban-card-meta { display: flex; gap: .55rem; align-items: center; font-size: .7rem; color: var(--muted); font-family: var(--font-data); }
 .tt-kanban-card-due.overdue { color: var(--danger); font-weight: 700; }
+/* The tag was plain muted text, indistinguishable from the assignee beside
+   it. A hairline outline in the card's own color ties it to the left edge
+   stripe without adding a second filled block to the card. */
+.tt-kanban-card-tag { border: 1px solid currentColor; border-radius: 2px; padding: 0 .25rem; opacity: .85; }
+.tt-kanban-card.color-slate .tt-kanban-card-tag { color: var(--card-slate); }
+.tt-kanban-card.color-brass .tt-kanban-card-tag { color: var(--card-brass); }
+.tt-kanban-card.color-sage .tt-kanban-card-tag { color: var(--card-sage); }
+.tt-kanban-card.color-rust .tt-kanban-card-tag { color: var(--card-rust); }
+.tt-kanban-card.color-plum .tt-kanban-card-tag { color: var(--card-plum); }
+.tt-kanban-card.color-ledger .tt-kanban-card-tag { color: var(--card-ledger); }
 .tt-kanban-card.status-cancelled { opacity: .65; }
 .tt-kanban-card.status-cancelled .tt-kanban-card-title { text-decoration: line-through; }
 .tt-kanban-edit-btn { position: absolute; top: .3rem; right: .35rem; opacity: 0; border: none; background: transparent; font-size: .78rem; padding: .05rem .25rem; cursor: pointer; }
@@ -843,7 +893,11 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .35; filter: saturate(.35); }
 .tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .75; filter: none; }
-.tt-kanban-card-tag { font-size: .7rem; color: var(--muted); }
+/* Open cards this tag would filter to. Spaced with the chip's own `gap`
+   rather than a left margin, so an unnamed swatch — where the count is the
+   only child — still centers it instead of pushing it off-axis. */
+.tt-kanban-tag-chip { gap: .3rem; }
+.tt-kanban-tag-chip-count { font-family: var(--font-data); font-size: .64rem; opacity: .8; }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
@@ -853,16 +907,28 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
 .tt-milestone-dot { stroke-width: 2; }
 .tt-milestone-date-label, .tt-milestone-title-label { font-size: 9px; fill: var(--fg); text-anchor: middle; }
+.tt-milestone-date-label { font-family: var(--font-data); }
 .tt-milestone-title-label { fill: var(--muted); }
+/* Connects a dot to its title on the far stagger row. Hairline and border-
+   colored: it's a pointer, not a mark of its own. */
+.tt-milestone-leader { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-toolbar { flex: none; display: flex; align-items: center; }
 .tt-milestone-expand-all-btn { margin-left: auto; }
 .tt-milestone-list { display: flex; flex-direction: column; gap: .2rem; }
 .tt-milestone-empty { color: var(--muted); padding: .5rem; }
-.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; border: 1px solid var(--border); }
+.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; border: 1px solid var(--border); border-left-width: 3px; border-left-color: transparent; }
 .tt-milestone-row:hover { background: rgba(var(--accent-rgb), .08); }
+/* State edge, in the timeline dots' own vocabulary: filled accent = done,
+   muted = overdue, hollow accent = upcoming. The list is the half you edit
+   and it encoded none of this; borrowing the timeline's three treatments
+   rather than inventing a fourth means there's no new legend to learn. */
+.tt-milestone-row.tt-milestone-state-done { border-left-color: var(--accent); }
+.tt-milestone-row.tt-milestone-state-overdue { border-left-color: var(--muted); }
+.tt-milestone-row.tt-milestone-state-future { border-left-color: rgba(var(--accent-rgb), .45); }
 .tt-milestone-date-input { font-family: var(--font-data); flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
-.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: 0; flex: none; padding: .15rem .45rem; font-size: 1.3rem; line-height: 1; border: none; background: transparent; }
+/* Resting .38 rather than 0 — see the matching note on the risk row buttons. */
+.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: .38; flex: none; padding: .15rem .45rem; font-size: 1.3rem; line-height: 1; border: none; background: transparent; }
 .tt-milestone-row:hover .tt-milestone-expand-btn, .tt-milestone-expand-btn:focus,
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
@@ -871,7 +937,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
 
 /* Risks module */
-.tt-risks { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
+/* container-type: inline-size makes the risk rows respond to the *pane's*
+   width rather than the window's — the whole problem was that a full-width
+   window still leaves this module 596px when it's in a split pane. */
+.tt-risks { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; container-type: inline-size; }
 .tt-risk-toolbar { flex: none; display: flex; align-items: center; }
 .tt-risk-expand-all-btn { margin-left: auto; }
 .tt-risk-header-row, .tt-risk-row {
@@ -880,9 +949,20 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-row {
   font-size: .8rem; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border);
 }
-.tt-risk-header-title, .tt-risk-title-input { flex: 1; min-width: 0; }
+/* min-width floor, not 0: with five fixed columns and three action slots
+   claiming ~490px, `flex: 1` correctly handed the title whatever was left —
+   which in a 596px split pane was 84px, rendering "Single vendor dependency
+   for payments" as "Single ve". Below the floor the row overflows and
+   `.tt-risks`' own `overflow: auto` scrolls it, which is honest; a
+   nine-character title is not. */
+.tt-risk-header-title, .tt-risk-title-input { flex: 1; min-width: 12rem; }
+/* Narrow-row scaffolding — inert (and invisible) until the container query
+   below turns it on. */
+.tt-risk-meta-label, .tt-risk-linebreak { display: none; }
+/* 6.5rem, not the old 3.5rem: the options carry a word now ("2 · Medium",
+   "3 · Alto") rather than a bare digit, and 3.5rem clipped them to "2 · ┣". */
 .tt-risk-header-chance, .tt-risk-chance-select,
-.tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 3.5rem; }
+.tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 6.5rem; }
 .tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
@@ -929,14 +1009,77 @@ select option { background: var(--bg); color: var(--fg); }
   box-shadow: 0 0 0 1px currentColor inset;
   transform: rotate(-4deg);
 }
-.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: 0; border: none; background: transparent; font-size: 1.3rem; line-height: 1; }
+/* The level class carries the color; `currentColor` above turns it into the
+   border, the inset ring and the numeral in one go. Listed after the base
+   rule so the closed-risk override below (which mutes every stamp) still
+   wins on specificity where it should. */
+.tt-risk-exposure-low { color: var(--exposure-low); }
+.tt-risk-exposure-medium { color: var(--exposure-medium); }
+.tt-risk-exposure-high { color: var(--exposure-high); }
+/* Resting .38, not 0. Fully transparent plus tabindex="-1" (see the row
+   builders) meant these actions were invisible without a pointer *and*
+   skipped by Tab — no route at all. The header already reserves their width
+   with three blank spacers, so hiding them bought no layout, only mystery. */
+.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: .38; border: none; background: transparent; font-size: 1.3rem; line-height: 1; }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-close-btn:focus,
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }
 .tt-risk-row.tt-risk-row-expanded .tt-risk-expand-btn { opacity: 1; }
+/* The row is one Tab stop that opens the context menu on Enter/Space, so it
+   needs a focus ring of its own — inset, since rows sit flush against each
+   other and an outset ring would be clipped by the neighbour. */
+.tt-risk-row:focus-visible, .tt-milestone-row:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
+}
 .tt-risk-followup-row { padding: 0 0 .5rem .4rem; }
 .tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
 .tt-risk-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
+
+/* Narrow pane: the five-column row genuinely cannot hold a readable title
+   and every control at once, so the controls fold onto a second line rather
+   than squeezing the title to nothing. Nothing is hidden and nothing moves
+   behind an extra click — chance, impact and plan stay real, focusable
+   controls in DOM order, which is why this is a wrap rather than a popover.
+   `order` is only set here; at full width every child sits at the default 0
+   and the row is exactly the table it always was. */
+/* Threshold sits above the width at which the single-line row would start
+   overflowing (fixed columns ~34rem + the title's 12rem floor), so the wrap
+   takes over before a horizontal scrollbar ever appears. */
+@container (max-width: 50rem) {
+  .tt-risk-row { flex-wrap: wrap; row-gap: .35rem; }
+  /* The column header can't span two lines' worth of controls, and the
+     mini-labels below replace it. */
+  .tt-risk-header-row { display: none; }
+
+  .tt-risk-row .tt-risk-title-input { order: 0; flex: 1 1 8rem; min-width: 6rem; }
+  .tt-risk-row .tt-risk-exposure-cell { order: 1; width: 2.6rem; }
+  .tt-risk-row .tt-risk-expand-btn { order: 2; }
+  .tt-risk-row .tt-risk-close-btn { order: 3; }
+  .tt-risk-row .tt-risk-delete-btn { order: 4; }
+
+  /* Zero-height, 100% basis: forces every later item onto a fresh line. */
+  .tt-risk-row .tt-risk-linebreak { display: block; order: 5; flex: 0 0 100%; height: 0; margin: 0; }
+
+  /* Each label is glued to the select it names by its own `order`. Explicit
+     classes rather than :nth-of-type — the row's other spans (the exposure
+     cell, the line break) share the element type and would shift the count. */
+  .tt-risk-row .tt-risk-meta-label {
+    display: inline; flex: none;
+    font-size: .7rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+  }
+  /* width: auto on the second line — the fixed column widths exist to align
+     with the header, and the header is hidden here. */
+  .tt-risk-row .tt-risk-chance-select,
+  .tt-risk-row .tt-risk-impact-select,
+  .tt-risk-row .tt-risk-plan-select { width: auto; min-width: 0; }
+  .tt-risk-row .tt-risk-meta-chance { order: 6; }
+  .tt-risk-row .tt-risk-chance-select { order: 7; }
+  .tt-risk-row .tt-risk-meta-impact { order: 8; }
+  .tt-risk-row .tt-risk-impact-select { order: 9; }
+  .tt-risk-row .tt-risk-meta-plan { order: 10; }
+  .tt-risk-row .tt-risk-plan-select { order: 11; }
+}
 
 .tt-risks-closed { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
 .tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; }
@@ -973,7 +1116,22 @@ select option { background: var(--bg); color: var(--fg); }
 /* Fixed (not max-) height: keeps the dialog a constant size across every
    tab instead of shrinking to whichever tab has the least content, while
    overflow-y still scrolls any tab whose content exceeds it. */
-.tt-prefs-content { display: flex; flex-direction: column; gap: 1rem; height: 55vh; overflow-y: auto; }
+/* The fixed height is deliberate (see above) but gave no sign that more
+   content existed below it — at 900px viewport the General tab ended
+   mid-field, showing "Warn about due dates within (days)" with its input
+   below the fold, which reads as a broken field rather than a scroll region.
+   A background-attachment: local gradient pair is the pure-CSS way to show a
+   fade only while there is actually something to scroll to: the two `local`
+   layers (matching the panel background) sit over the two `scroll` shadow
+   layers and slide away from them as the content moves. */
+.tt-prefs-content {
+  display: flex; flex-direction: column; gap: 1rem; height: 55vh; overflow-y: auto;
+  background:
+    linear-gradient(var(--bg) 40%, rgba(0, 0, 0, 0)) top / 100% 2rem no-repeat local,
+    linear-gradient(rgba(0, 0, 0, 0), var(--bg) 60%) bottom / 100% 2rem no-repeat local,
+    linear-gradient(to bottom, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) top / 100% 1.1rem no-repeat scroll,
+    linear-gradient(to top, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) bottom / 100% 1.1rem no-repeat scroll;
+}
 .tt-prefs-field { display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-field-label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-checkbox-label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; color: var(--muted); }

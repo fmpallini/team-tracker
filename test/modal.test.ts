@@ -193,3 +193,16 @@ test('toast auto-dismisses after timeout unless sticky', () => {
     vi.useRealTimers()
   }
 })
+
+// A sticky fallback notice plus one transient message was already enough to
+// wall off the lower-right corner of a note editor, and the stack had no
+// upper bound at all.
+test('the toast stack keeps at most three, dropping the oldest first', () => {
+  toast('one', { sticky: true })
+  toast('two', { sticky: true })
+  toast('three', { sticky: true })
+  toast('four', { sticky: true })
+
+  const texts = [...document.querySelectorAll('.tt-toast')].map((n) => n.textContent)
+  expect(texts).toEqual(['two', 'three', 'four'])
+})

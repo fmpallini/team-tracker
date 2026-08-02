@@ -79,13 +79,15 @@ describe('save indicator pill', () => {
     expect(shell.root.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('saved')
   })
 
-  test('dirty/error states keep showing the last-saved time alongside their label', () => {
+  test('dirty/error states keep showing the last-saved time, and dirty names what the time means', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
     const shell = setup()
     shell.setSaveState('saved')
+    // Not "Unsaved · 2:32 PM": the middot reads as "unsaved *since* 2:32",
+    // when 2:32 is in fact the last successful save.
     shell.setSaveState('dirty')
-    expect(pillText(shell)).toBe('Unsaved · 2:32 PM')
+    expect(pillText(shell)).toBe('Unsaved — last saved 2:32 PM')
     shell.setSaveState('error')
     expect(pillText(shell)).toBe('Save error · 2:32 PM')
   })
@@ -142,7 +144,7 @@ describe('save indicator pill', () => {
     vi.setSystemTime(new Date(2026, 6, 20, 9, 5))
     const shell = setup()
     shell.setSaveState('dirty')
-    expect(pillText(shell)).toBe('Unsaved · 9:05 AM')
+    expect(pillText(shell)).toBe('Unsaved — last saved 9:05 AM')
   })
 
   test('applyPrefs/setFallbackHint re-renders do not re-stamp the timestamp, but do reformat it for the new locale', () => {

@@ -649,6 +649,64 @@ describe('renderActionItems — tag display and filter', () => {
     expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
   })
 
+  test('an unnamed chip shows its count too — the swatch carries the number, just not a name', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [
+        item({ id: 'a', color: 'rust', status: 'todo' }),
+        item({ id: 'b', color: 'slate', status: 'todo' }),
+        item({ id: 'c', color: 'slate', status: 'wip' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    // slate has no name but two open cards — the count is exactly what tells
+    // you whether clicking the swatch is worth the trip.
+    const slateChip = chipByColor(container, '.tt-kanban-tag-chip', 'slate')
+    expect(slateChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('2')
+    expect(slateChip.textContent?.trim()).toBe('2') // count only, no name
+
+    const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
+    expect(rustChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('1')
+    expect(rustChip.textContent?.trim()).toBe('Blocked1')
+  })
+
+  // An unnamed color is still a perfectly good thing to filter by — the
+  // swatch identifies it. Naming lives behind the "Edit tags" button only.
+  test('an unnamed chip filters by its color like any other, and does not open Edit tags', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [item({ id: 'a', color: 'rust' }), item({ id: 'b', color: 'slate' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    chipByColor(container, '.tt-kanban-tag-chip', 'slate').click()
+
+    expect(document.querySelector('.tt-kanban-color-name-rows')).toBeNull()
+    expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['b'])
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(true)
+  })
+
+  test('named chips carry the number of open cards they would filter to', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [
+        item({ id: 'a', color: 'rust', status: 'todo' }),
+        item({ id: 'b', color: 'rust', status: 'wip' }),
+        // Done and cancelled cards are deliberately not counted: a chip
+        // reading "Blocked 3" where one is already done answers nothing.
+        item({ id: 'c', color: 'rust', status: 'done' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
+    expect(rustChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('2')
+  })
+
   test('creating a card whose color differs from the active filter clears the filter, so the new card is guaranteed visible', () => {
     const team = makeTeam({ actionItems: [item({ id: 'old', color: 'slate' })] })
     const { container, store, pm, loc } = setup(team)

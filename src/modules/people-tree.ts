@@ -289,6 +289,15 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         // The root drop zone only helps someone nested — a root person has
         // nowhere higher to go, so don't flash an inert target at them.
         if (person.parentId !== null) rootDropEl.classList.add('active')
+        // Marks the tree so every *other* card shows it can be dropped onto
+        // (styles.css). Nothing previously said the tree was a tree: the
+        // drop bands only appeared once you were already dragging over one
+        // specific card, so the whole nesting affordance was invisible to
+        // anyone who didn't already know it existed. Toggling a class on an
+        // ancestor is safe here — unlike revealing rootDropEl, it changes no
+        // layout, so Chrome won't cancel the drag.
+        treeEl.classList.add('tt-people-dragging')
+        box.classList.add('tt-org-box-dragging')
         const dt = (e as DragEvent).dataTransfer
         if (dt) {
           dt.setData('text/plain', person.id)
@@ -311,6 +320,12 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       box.addEventListener('drop', (e) => {
         e.preventDefault()
         clearDropClasses()
+        // Cleared eagerly, not left to dragend: the store update below
+        // rebuilds the tree and can detach the drag source before its own
+        // dragend fires, which would leave the tree stuck in drag styling.
+        // treeEl itself survives the rebuild (only its innerHTML is wiped),
+        // so its class would persist.
+        treeEl.classList.remove('tt-people-dragging')
         const srcId = draggedId
         draggedId = null
         if (srcId === null || srcId === person.id) return
@@ -328,6 +343,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         draggedId = null
         clearDropClasses()
         rootDropEl.classList.remove('active', 'drag-over')
+        treeEl.classList.remove('tt-people-dragging')
+        box.classList.remove('tt-org-box-dragging')
       })
 
       return box
@@ -361,6 +378,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       // Hide eagerly: the store update rebuilds the tree, which can detach
       // the drag source before its `dragend` (the usual hider) ever fires.
       rootDropEl.classList.remove('active', 'drag-over')
+      treeEl.classList.remove('tt-people-dragging')
       const srcId = draggedId
       draggedId = null
       if (srcId === null) return
@@ -376,7 +394,11 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       treeEl.innerHTML = ''
       const roots = childrenOf(people(), null)
       if (roots.length === 0) {
-        treeEl.appendChild(el('div', { class: 'tt-people-empty' }, t(lc, 'pane_empty')))
+        // Group-specific invitation, not `pane_empty` — that string means "no
+        // module is open", which is actively false here: the module is open,
+        // it just has nothing in it yet.
+        const emptyKey = group === 'members' ? 'people_empty_members' : 'people_empty_stakeholders'
+        treeEl.appendChild(el('div', { class: 'tt-people-empty' }, t(lc, emptyKey)))
         return
       }
       roots.forEach((r) => treeEl.appendChild(renderNode(r)))

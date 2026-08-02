@@ -102,7 +102,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
-  function renderTagChips(tagNames: Partial<Record<ActionItem['color'], string>>): void {
+  function renderTagChips(tagNames: Partial<Record<ActionItem['color'], string>>, counts: Record<ActionItem['color'], number>): void {
     tagChipsEl.innerHTML = ''
     // Marks the whole strip while a filter is on, so the CSS can dim the
     // chips that aren't the active one — the selected chip alone carrying a
@@ -110,6 +110,20 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     tagChipsEl.classList.toggle('filtering', activeTagFilter !== null)
     for (const c of COLORS) {
       const custom = tagNames[c] ?? null
+      // Every chip filters, named or not — an unnamed color is still a
+      // perfectly good thing to filter by, identified by the swatch itself.
+      // Naming happens in one place only: the "Edit tags" button. (A previous
+      // pass made unnamed chips open that modal instead of filtering; it cost
+      // the filter and was reverted.) Unnamed chips stay bare swatches with
+      // the suggested name in `aria-label`.
+      const children: (Node | string)[] = custom !== null ? [custom] : []
+      // Every chip carries how many open cards it would filter to, named or
+      // not — the count is what makes the strip worth its row of vertical
+      // space, and an unnamed color needs it most: the swatch alone says
+      // nothing about whether clicking it is worth the trip.
+      if (counts[c] > 0) {
+        children.push(el('span', { class: 'tt-kanban-tag-chip-count' }, String(counts[c])))
+      }
       const chip = el(
         'button',
         {
@@ -124,7 +138,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
             renderAll()
           },
         },
-        custom
+        ...children
       )
       tagChipsEl.appendChild(chip)
     }
@@ -364,7 +378,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
       '✎'
     )
-    const titleEl = el('div', { class: 'tt-kanban-card-title' }, item.summary)
+    // The title is clamped to two lines (styles.css) so cards stay dense in a
+    // split pane; its own tooltip carries the untruncated summary.
+    const titleEl = el('div', { class: 'tt-kanban-card-title', title: item.summary }, item.summary)
     const metaChildren: (Node | string)[] = []
     if (item.dueDate) {
       metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, today) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
@@ -574,9 +590,16 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const today = todayIso()
     const tagNames = tm?.actionTagNames ?? {}
     updateDatalist(tm)
-    renderTagChips(tagNames)
     const byStatus: Record<ActionItem['status'], ActionItem[]> = { todo: [], wip: [], done: [], cancelled: [] }
-    for (const it of tm?.actionItems ?? []) byStatus[it.status].push(it)
+    // Counts feed the filter chips. Only the two live columns count: a chip
+    // reading "Urgent 7" where six of those are already done would be
+    // answering a question nobody asked.
+    const counts: Record<ActionItem['color'], number> = { slate: 0, brass: 0, sage: 0, rust: 0, plum: 0, ledger: 0 }
+    for (const it of tm?.actionItems ?? []) {
+      byStatus[it.status].push(it)
+      if (it.status === 'todo' || it.status === 'wip') counts[it.color]++
+    }
+    renderTagChips(tagNames, counts)
     for (const s of STATUSES) {
       const group = byStatus[s].sort((a, b) => a.order - b.order)
       const visible = activeTagFilter === null ? group : group.filter((i) => i.color === activeTagFilter)

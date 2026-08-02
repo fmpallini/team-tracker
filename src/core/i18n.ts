@@ -7,6 +7,12 @@ const pt = {
   app_name: 'Team Tracker',
   save_saved: 'Salvo',
   save_dirty: 'Não salvo',
+  // Separate from `save_dirty` because the pill appends the last-save time
+  // with a middot in every other state ("Salvo · 17:11"). The same
+  // construction next to "Não salvo" reads as *unsaved since* 17:11 — the
+  // reassuring number delivered as an alarming one — so the dirty state
+  // names what the timestamp refers to instead.
+  save_dirty_since: 'Não salvo — último salvamento {time}',
   save_saving: 'Salvando…',
   save_error: 'Erro ao salvar',
   save_fallback_hint: 'Ctrl+S para baixar o arquivo',
@@ -152,7 +158,16 @@ const pt = {
   risk_col_impact: 'Impacto',
   risk_col_exposure: 'Exposição',
   risk_col_plan: 'Plano',
+  // Chance and impact are stored as bare 1-3. Nothing on screen said whether
+  // 3 meant "high chance" or "high confidence", so the words live in the
+  // option labels — the one place there is always room for them.
+  risk_level_1: '1 · Baixo',
+  risk_level_2: '2 · Médio',
+  risk_level_3: '3 · Alto',
   risk_sort_exposure_title: 'Ordenar por exposição',
+  /** Opens the chance/impact/plan popover the exposure stamp folds into on a narrow row — see renderRow in src/modules/risks.ts. */
+  risk_exposure_edit_title: 'Editar chance, impacto e plano',
+  risk_row_menu_hint: 'Menu da linha (Enter ou Espaço)',
   risk_plan_mitigate: 'Mitigar',
   risk_plan_transfer: 'Transferir',
   risk_plan_eliminate: 'Eliminar',
@@ -176,6 +191,10 @@ const pt = {
   pane_no_team: 'Selecione um time',
   empty_no_teams_title: '👋 Nenhum time ainda. Crie o primeiro para começar.',
   empty_no_teams_btn: '➕ Criar primeiro time',
+  // The only screen where the app gets to say what it is — it used to spend
+  // that moment saying only that it was empty. Names what a team holds, in
+  // the order the module list shows them.
+  empty_no_teams_hint: 'Cada time guarda notas diárias, pessoas, itens de ação, marcos e riscos.',
   toast_focus_other: 'Já aberto no outro painel — focando nele',
   toast_person_not_found: 'Pessoa não encontrada',
   palette_placeholder: 'Buscar módulo, pessoa, item de ação, marco ou risco…',
@@ -229,6 +248,7 @@ const pt = {
   help_global_search_all_teams: 'Buscar em todos os times',
   help_global_history: 'Voltar / avançar no histórico do painel',
   help_global_fullscreen: 'Tela cheia',
+  help_global_row_menu: 'Menu da linha focada (riscos, marcos) — mesmas ações do clique direito',
   help_global_shortcuts_heading: 'Atalhos globais',
   risk_close_title: 'Concluir risco',
   risk_reopen_title: 'Reabrir risco',
@@ -237,6 +257,12 @@ const pt = {
   about_github_link: 'Código-fonte no GitHub ↗',
   person_box_hint: 'Duplo clique para abrir as notas da pessoa',
   person_root_drop_hint: '⬆️ Solte aqui para mover ao nível principal',
+  // An empty tree used to borrow `pane_empty` ("Nenhum módulo aberto"), which
+  // told the user the opposite of what was true — the module *is* open. Each
+  // group gets its own invitation instead, and the members copy carries the
+  // drag-to-nest hint, since nothing else on screen says the tree is a tree.
+  people_empty_members: 'Nenhum membro ainda. Adicione o primeiro e arraste pessoas umas sobre as outras para montar a hierarquia.',
+  people_empty_stakeholders: 'Nenhum stakeholder ainda. Adicione as pessoas de fora do time que se importam com o que ele entrega.',
   editor_copy_formatted_title: 'Copiar formatado',
   editor_copy_plain_title: 'Copiar sem formatação',
   pane_print_title: 'Imprimir este módulo',
@@ -413,6 +439,7 @@ const en: Record<MsgKey, string> = {
   app_name: 'Team Tracker',
   save_saved: 'Saved',
   save_dirty: 'Unsaved',
+  save_dirty_since: 'Unsaved — last saved {time}',
   save_saving: 'Saving…',
   save_error: 'Save error',
   save_fallback_hint: 'Ctrl+S to download the file',
@@ -557,7 +584,12 @@ const en: Record<MsgKey, string> = {
   risk_col_impact: 'Impact',
   risk_col_exposure: 'Exposure',
   risk_col_plan: 'Plan',
+  risk_level_1: '1 · Low',
+  risk_level_2: '2 · Medium',
+  risk_level_3: '3 · High',
   risk_sort_exposure_title: 'Sort by exposure',
+  risk_exposure_edit_title: 'Edit chance, impact and plan',
+  risk_row_menu_hint: 'Row menu (Enter or Space)',
   risk_plan_mitigate: 'Mitigate',
   risk_plan_transfer: 'Transfer',
   risk_plan_eliminate: 'Eliminate',
@@ -581,6 +613,7 @@ const en: Record<MsgKey, string> = {
   pane_no_team: 'Select a team',
   empty_no_teams_title: '👋 No teams yet. Create your first one to get started.',
   empty_no_teams_btn: '➕ Create first team',
+  empty_no_teams_hint: 'Every team holds daily notes, people, action items, milestones and risks.',
   toast_focus_other: 'Already open in the other pane — focusing it',
   toast_person_not_found: 'Person not found',
   palette_placeholder: 'Search module, person, action item, milestone or risk…',
@@ -634,6 +667,7 @@ const en: Record<MsgKey, string> = {
   help_global_search_all_teams: 'Search across all teams',
   help_global_history: 'Back / forward through pane history',
   help_global_fullscreen: 'Fullscreen',
+  help_global_row_menu: 'Menu for the focused row (risks, milestones) — same actions as right-click',
   help_global_shortcuts_heading: 'Global shortcuts',
   risk_close_title: 'Close risk',
   risk_reopen_title: 'Reopen risk',
@@ -642,6 +676,8 @@ const en: Record<MsgKey, string> = {
   about_github_link: 'Source code on GitHub ↗',
   person_box_hint: 'Double-click to open person notes',
   person_root_drop_hint: '⬆️ Drop here to move to the top level',
+  people_empty_members: 'No members yet. Add the first one, then drag people onto each other to build the reporting line.',
+  people_empty_stakeholders: 'No stakeholders yet. Add the people outside the team who care what it ships.',
   editor_copy_formatted_title: 'Copy formatted',
   editor_copy_plain_title: 'Copy plain text',
   pane_print_title: 'Print this module',

@@ -103,6 +103,11 @@ export function createShell(locale: Locale): Shell {
   savePillIcon.innerHTML =
     '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75V8.25L10.25 9.75"/></svg>'
   const savePillText = el('span', { class: 'tt-save-pill-text' })
+  // Shown only in fallback mode (no File System Access API), where every save
+  // is a download the user must trigger. Hidden by default; renderSaveIndicator
+  // flips it from `fallbackHint`.
+  const savePillFallbackMark = el('span', { class: 'tt-save-pill-fallback-mark', 'aria-hidden': 'true' }, '⤓')
+  savePillFallbackMark.hidden = true
   let saveRequestHandler: (() => void) | null = null
   const saveIndicator = el(
     'span',
@@ -113,7 +118,8 @@ export function createShell(locale: Locale): Shell {
       },
     },
     savePillIcon,
-    savePillText
+    savePillText,
+    savePillFallbackMark
   )
 
   const fullscreenBtn = el(
@@ -177,13 +183,24 @@ export function createShell(locale: Locale): Shell {
   function renderSaveIndicator(): void {
     const label = t(currentLocale, SAVE_STATE_KEY[currentState])
     const time = lastSavedAt ? formatHHMM(lastSavedAt.h, lastSavedAt.m, currentLocale) : null
-    savePillText.textContent = currentState !== 'saving' && time ? `${label} · ${time}` : label
+    // `label · time` is right for 'saved' ("Saved · 5:11 PM") and 'error', but
+    // reads wrong for 'dirty': the timestamp is the last *successful* save,
+    // and joining it to "Unsaved" with a middot makes it look like the moment
+    // things went wrong. The dirty state names what the time refers to.
+    if (currentState === 'saving' || !time) savePillText.textContent = label
+    else if (currentState === 'dirty') savePillText.textContent = t(currentLocale, 'save_dirty_since', { time })
+    else savePillText.textContent = `${label} · ${time}`
     savePillIcon.classList.toggle('tt-save-pill-spin', currentState === 'saving')
     let title = label
     if (currentState === 'dirty' && fallbackHint) {
       title += ` — ${t(currentLocale, 'save_fallback_hint')}`
     }
     saveIndicator.title = title
+    // Fallback mode is permanent for the life of the file, so it belongs on
+    // the pill rather than in a sticky toast — and it needs to be legible
+    // without a hover, hence the mark rather than tooltip-only.
+    savePillFallbackMark.hidden = !fallbackHint
+    saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
     saveIndicator.dataset.state = currentState
     saveIndicator.classList.toggle('tt-save-pill-clickable', currentState === 'dirty' || currentState === 'error')
   }
