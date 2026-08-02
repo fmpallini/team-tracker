@@ -116,12 +116,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       // pass made unnamed chips open that modal instead of filtering; it cost
       // the filter and was reverted.) Unnamed chips stay bare swatches with
       // the suggested name in `aria-label`.
-      const named = custom !== null
-      const children: (Node | string)[] = named ? [custom] : []
-      // Named chips also carry how many cards they'd filter to — the strip
-      // already costs a row of vertical space; this is what pays for it. A
-      // bare swatch has no room for it.
-      if (named && counts[c] > 0) {
+      const children: (Node | string)[] = custom !== null ? [custom] : []
+      // Every chip carries how many open cards it would filter to, named or
+      // not — the count is what makes the strip worth its row of vertical
+      // space, and an unnamed color needs it most: the swatch alone says
+      // nothing about whether clicking it is worth the trip.
+      if (counts[c] > 0) {
         children.push(el('span', { class: 'tt-kanban-tag-chip-count' }, String(counts[c])))
       }
       const chip = el(

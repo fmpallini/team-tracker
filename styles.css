@@ -893,8 +893,11 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .35; filter: saturate(.35); }
 .tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .75; filter: none; }
-/* Cards this tag would filter to (open columns only). */
-.tt-kanban-tag-chip-count { font-family: var(--font-data); font-size: .64rem; opacity: .8; margin-left: .3rem; }
+/* Open cards this tag would filter to. Spaced with the chip's own `gap`
+   rather than a left margin, so an unnamed swatch — where the count is the
+   only child — still centers it instead of pushing it off-axis. */
+.tt-kanban-tag-chip { gap: .3rem; }
+.tt-kanban-tag-chip-count { font-family: var(--font-data); font-size: .64rem; opacity: .8; }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }

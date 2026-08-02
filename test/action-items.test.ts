@@ -649,7 +649,7 @@ describe('renderActionItems — tag display and filter', () => {
     expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
   })
 
-  test('an unnamed chip stays a bare swatch — no count, even when it has cards to filter', () => {
+  test('an unnamed chip shows its count too — the swatch carries the number, just not a name', () => {
     const team = makeTeam({
       actionTagNames: { rust: 'Blocked' },
       actionItems: [
@@ -661,15 +661,15 @@ describe('renderActionItems — tag display and filter', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    // slate has two open cards but no name — the swatch carries neither the
-    // name nor the count; a bare square has no room for a number to belong to.
+    // slate has no name but two open cards — the count is exactly what tells
+    // you whether clicking the swatch is worth the trip.
     const slateChip = chipByColor(container, '.tt-kanban-tag-chip', 'slate')
-    expect(slateChip.querySelector('.tt-kanban-tag-chip-count')).toBeNull()
-    expect(slateChip.textContent?.trim()).toBe('')
+    expect(slateChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('2')
+    expect(slateChip.textContent?.trim()).toBe('2') // count only, no name
 
-    // ...while the named one still shows its count.
     const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
     expect(rustChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('1')
+    expect(rustChip.textContent?.trim()).toBe('Blocked1')
   })
 
   // An unnamed color is still a perfectly good thing to filter by — the
