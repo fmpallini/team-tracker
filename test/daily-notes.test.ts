@@ -16,6 +16,7 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
     renderAll: () => {},
     registerModule: () => {},
     setSplitSpaceConstrained: () => {},
+    dispose: () => {},
   }
 }
 
@@ -241,7 +242,7 @@ describe('renderDailyNotes', () => {
     expect(saved).toContain('Meeting')
   })
 
-  test('double render unsubscribes the previous store listener (calendar rebuild count does not grow)', () => {
+  test('double render leaves the live container intact under a subsequent store mutation', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
 
@@ -250,12 +251,14 @@ describe('renderDailyNotes', () => {
     render(container, loc, store, pm)
 
     const before = container.querySelectorAll('.tt-calendar').length
-    // Any store mutation triggers subscribers; if the first instance's
-    // listener were still attached, this would rebuild (and re-append) the
-    // calendar twice into the (single, current) calendarSlot — but a leaked
-    // listener from a disposed instance would throw (its calendarSlot/ctx
-    // still reference the old, detached DOM) rather than silently duplicate,
-    // so simply not throwing here is the meaningful assertion.
+    // NOTE: this does NOT detect a dropped unsubscribe(), despite what an
+    // earlier version of this comment claimed. A leaked listener from a
+    // disposed instance re-renders into its own *detached* DOM, so it neither
+    // throws nor changes the live container's node counts — deleting the
+    // unsubscribe() line leaves this test green. What it does pin is that the
+    // surviving instance stays coherent across a re-mount. The actual leak
+    // detection lives in test/lifecycle.test.ts, which counts net-live store
+    // subscriptions (the only place the leak is observable).
     expect(() => store.update((d) => { d.teams[0]!.dailyNotes['2026-07-11'] = 'x' })).not.toThrow()
     expect(container.querySelectorAll('.tt-calendar').length).toBe(before)
   })

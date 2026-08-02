@@ -1,14 +1,18 @@
 // src/ui/panes.ts — central navigation hub; every module open goes through here.
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
-import type { Loc, ModuleRef, PaneState, Team } from '../core/types'
+import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
+import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
 import { el } from './dom'
 import { toast } from './modal'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
+// Runtime dependency in one direction only: modules/lifecycle.ts imports
+// ModuleCtx/ModuleRenderer from here as *types*, which are erased at build.
+import { disposeContainer } from '../modules/lifecycle'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
 
@@ -58,6 +62,13 @@ export interface PaneManager {
    * file dirty.
    */
   setSplitSpaceConstrained(hidden: boolean): void
+  /**
+   * Tears down every document-level listener `createPaneManager` registered.
+   * Must be called when the document this pane manager belongs to is closed
+   * (main.ts's `closeFile()`), or each close-file → open-file cycle leaks a
+   * listener pinning the closed document's store, Doc, and detached DOM.
+   */
+  dispose(): void
 }
 
 /** Same item list feeds both the pane module dropdown and the Ctrl+K palette. */
@@ -165,30 +176,23 @@ function otherPaneIdx(idx: 0 | 1): 0 | 1 {
 }
 
 /**
- * Per-store invalidation hook for `unsplitStashValid` (declared inside
- * `createPaneManager`, see `toggleSplit` below). `stepPaneHistory` just below
- * is intentionally a free function, not a `PaneManager` method — see its own
- * docstring — so main.ts's global Alt+ArrowLeft/Right hotkey
- * (`navigateFocusedHistory`) can drive pane-0 history directly, without
- * reaching into `createPaneManager`'s closure. That means it's also the one
- * real-navigation site that can't set the closure-local `unsplitStashValid`
- * flag directly. A `WeakMap` keyed by the `Store` instance gives it a narrow
- * way back in — one entry per `PaneManager`, replaced (not accumulated) if a
- * store ever gets a new one, and GC'd along with the store — without
- * widening the `PaneManager` interface just for this.
+ * One `PaneLayout` per `PaneManager`, keyed by Store so the module-level free
+ * functions below (which main.ts and sidebar.ts call without a PaneManager in
+ * hand) can reach the same transient layout state. Replaced — not
+ * accumulated — if a store ever gets a second manager, and GC'd with the store.
  */
-const unsplitStashInvalidators = new WeakMap<Store, () => void>()
+const layoutsByStore = new WeakMap<Store, PaneLayout>()
 
 /**
- * Invalidates `store`'s stashed pane-0 content (see `unsplitStashInvalidators`
- * above) from outside `createPaneManager`'s closure — e.g. sidebar.ts's
+ * Invalidates `store`'s stashed pane-0 content (see `layoutsByStore` above)
+ * from outside `createPaneManager`'s closure — e.g. sidebar.ts's
  * `deleteTeam`, which prunes `d.nav.panes[*].history` directly rather than
  * through `openInPane`/`stepPaneHistory`, so it would otherwise leave a stash
  * referencing the deleted team's history restorable by a later re-split.
  * No-op if `store` has no registered `PaneManager` yet.
  */
 export function invalidateUnsplitStash(store: Store): void {
-  unsplitStashInvalidators.get(store)?.()
+  layoutsByStore.get(store)?.invalidateStash()
 }
 
 /**
@@ -201,17 +205,12 @@ export function invalidateUnsplitStash(store: Store): void {
  * `createPaneManager`'s internals.
  */
 export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean {
-  const nav = store.doc.nav
-  const other = currentLoc(nav.panes[otherPaneIdx(idx)])
-  const result = navigateHistory(nav.panes[idx], dir, other)
-  if (!result) return false
-  store.updateNav((d) => {
-    d.nav.panes[idx] = result
-    d.nav.focusedPane = idx
-  })
-  // Real navigation into pane 0 — see unsplitStashInvalidators above.
-  if (idx === 0) invalidateUnsplitStash(store)
-  return true
+  const owned = layoutsByStore.get(store)
+  if (owned) return owned.stepHistory(idx, dir)
+  // No PaneManager for this store yet (unit tests drive the free function
+  // directly): fall back to a throwaway controller. Its stash starts empty,
+  // which is exactly right for a store that has no live layout.
+  return createPaneLayout(store).stepHistory(idx, dir)
 }
 
 /** Convenience wrapper: steps the currently focused pane's history and re-renders. */
@@ -289,6 +288,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
   // not part of Doc, so it never persists and never marks the file dirty.
   let spaceHideSplit = false
+  // `layout$` (not `layout`, which is this closure's own render function
+  // below) owns the transient un-split-stash / history-stepping policy —
+  // see src/core/pane-layout.ts.
+  const layout$ = createPaneLayout(store)
+  layoutsByStore.set(store, layout$)
 
   function effectiveSplit(): boolean {
     return store.doc.nav.split && !spaceHideSplit
@@ -315,21 +319,63 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   paneEls[0].addEventListener('click', () => setFocusedPane(0), true)
   paneEls[1].addEventListener('click', () => setFocusedPane(1), true)
 
+  // Set only while a drag is in flight, so dispose() (see PaneManager.dispose
+  // below) can tear down a drag's document-level listeners and pending frame
+  // if it runs mid-drag. Without this, the self-removing mousemove/mouseup
+  // listeners added below would survive dispose() until the next mouseup
+  // anywhere on the page — the same class of leak Tasks 2 and 3 fixed for
+  // this object's other listeners.
+  let dragCleanup: (() => void) | null = null
+
   const dividerEl = el('div', { class: 'tt-pane-divider' })
   dividerEl.addEventListener('mousedown', (downEvt) => {
     downEvt.preventDefault()
-    function onMove(ev: MouseEvent): void {
+    // The raw mousemove stream fires far faster than the screen refreshes, and
+    // each event did a getBoundingClientRect() read followed by a style write
+    // — a forced synchronous layout per event. Coalesce into one write per
+    // animation frame instead: store the latest clientX, and let a single
+    // pending frame apply whichever position was most recent.
+    let pendingX: number | null = null
+    let frame: number | null = null
+
+    function applyPending(): void {
+      frame = null
+      if (pendingX === null) return
       const rect = gridEl.getBoundingClientRect()
-      const raw = rect.width > 0 ? ((ev.clientX - rect.left) / rect.width) * 100 : splitPct
+      const raw = rect.width > 0 ? ((pendingX - rect.left) / rect.width) * 100 : splitPct
+      pendingX = null
       splitPct = Math.min(SPLIT_MAX_PCT, Math.max(SPLIT_MIN_PCT, raw))
       gridEl.style.gridTemplateColumns = `${splitPct}fr 6px ${100 - splitPct}fr`
     }
-    function onUp(): void {
+
+    function onMove(ev: MouseEvent): void {
+      pendingX = ev.clientX
+      if (frame === null) frame = requestAnimationFrame(applyPending)
+    }
+    function unbind(): void {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
+    function onUp(): void {
+      unbind()
+      dragCleanup = null
+      // Flush whatever the last frame hasn't applied yet, so the divider
+      // always lands exactly where the pointer was released.
+      if (frame !== null) {
+        cancelAnimationFrame(frame)
+        applyPending()
+      }
+    }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    // Only the unbinding is shared with onUp: a normal mouseup flushes the
+    // pending frame (the divider lands where the pointer was released), while
+    // dispose() mid-drag deliberately drops it — the pane grid is going away.
+    dragCleanup = () => {
+      unbind()
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = null
+    }
   })
 
   const gridEl = el('div', { class: 'tt-panes-grid' }, paneEls[0], dividerEl, paneEls[1])
@@ -354,7 +400,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   shell.panesRoot.append(gridEl, noTeamsEl)
 
   // Closes any open module dropdown when clicking outside of it.
-  document.addEventListener('click', (e) => {
+  const onDocumentClick = (e: MouseEvent): void => {
     if (!menuOpen[0] && !menuOpen[1]) return
     const target = e.target as HTMLElement
     if (target.closest('.tt-pane-modules-btn') || target.closest('.tt-pane-menu')) return
@@ -364,7 +410,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     personSubOpen[1] = false
     renderBar(0)
     renderBar(1)
-  })
+  }
+  document.addEventListener('click', onDocumentClick)
 
   function setFocusedPane(idx: 0 | 1): void {
     if (store.doc.nav.focusedPane === idx) return
@@ -401,7 +448,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function goHistory(idx: 0 | 1, dir: -1 | 1): void {
-    if (!stepPaneHistory(store, idx, dir)) return
+    if (!layout$.stepHistory(idx, dir)) return
     renderAll()
   }
 
@@ -452,8 +499,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[idx] = result.pane
       d.nav.focusedPane = idx
     })
-    // Real navigation into pane 0 — see unsplitStash/unsplitStashValid below.
-    if (idx === 0) unsplitStashValid = false
+    // Real navigation into pane 0 — see core/pane-layout.ts.
+    if (idx === 0) layout$.noteRealNavigation(0)
     renderAll()
   }
 
@@ -471,8 +518,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.focusedPane = focusedPane
     })
     // Always a real (programmatic) navigation into pane 0 — see
-    // unsplitStash/unsplitStashValid below.
-    unsplitStashValid = false
+    // core/pane-layout.ts.
+    layout$.invalidateStash()
     renderAll()
   }
 
@@ -498,61 +545,19 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     return toIdx
   }
 
-  // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
-  // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
-  // put it back on the left instead of leaving pane 0 and pane 1 showing an
-  // identical duplicate. Never persisted, like `spaceHideSplit` — losing it
-  // on reload is fine, it's a same-session UX nicety, not app state.
-  let unsplitStash: PaneState | null = null
-  // Explicit instead of relying on `d.nav.panes[0] === d.nav.panes[1]`
-  // object-identity (which happens to hold because store.updateNav mutates
-  // in place) — any real navigation while unsplit invalidates the stash.
-  // Cleared directly by openInPane/openBothPanes below (idx 0 writes) and,
-  // for stepPaneHistory, via the unsplitStashInvalidators WeakMap registered
-  // just below (see that WeakMap's own comment for why).
-  let unsplitStashValid = false
-  unsplitStashInvalidators.set(store, () => { unsplitStashValid = false })
-
   /**
    * Toggles against the *effective* (visible) split state, not the raw
    * persisted `nav.split` — when the responsive layout (responsive.ts) has
    * force-hidden the split view because the window is narrow, clicking this
    * button means "show it anyway" and must also clear that transient
    * override, or the click would appear to do nothing. See
-   * PaneManager.setSplitSpaceConstrained.
+   * PaneManager.setSplitSpaceConstrained. The un-split stash (pulling pane
+   * 1's content into pane 0, and restoring it on re-split) lives in
+   * core/pane-layout.ts — see `layout$.applyToggleSplit`.
    */
   function toggleSplit(): void {
     const wasVisible = effectiveSplit()
-    store.updateNav((d) => {
-      d.nav.split = !wasVisible
-      // Un-splitting hides pane 1 (layout() never hides pane 0) — leaving
-      // focus stuck there would silently misdirect every focused-pane action
-      // (Ctrl+K palette picks, Alt+arrow history, team hotkeys) at a pane the
-      // user can no longer see. If pane 1 was the focused (visible-to-the-
-      // user) pane, pull its content into pane 0 first so closing split
-      // keeps what the user was looking at instead of reverting to pane 0's
-      // stale content — stashing pane 0's own content first so re-splitting
-      // can restore it instead of leaving both panes showing pane 1's old
-      // content twice.
-      if (!d.nav.split) {
-        if (d.nav.focusedPane === 1) {
-          unsplitStash = d.nav.panes[0]
-          unsplitStashValid = true
-          d.nav.panes[0] = d.nav.panes[1]
-        } else {
-          unsplitStash = null
-          unsplitStashValid = false
-        }
-        d.nav.focusedPane = 0
-      } else if (unsplitStashValid && unsplitStash) {
-        d.nav.panes[0] = unsplitStash
-        unsplitStash = null
-        unsplitStashValid = false
-      }
-      // Remembers this choice per team so switching back to it later (see
-      // main.ts's selectTeam) restores split/single view as last left it.
-      if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split
-    })
+    layout$.applyToggleSplit(wasVisible)
     if (wasVisible === false) spaceHideSplit = false
     renderAll()
   }
@@ -560,7 +565,10 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   function setSplitSpaceConstrained(hidden: boolean): void {
     if (spaceHideSplit === hidden) return
     spaceHideSplit = hidden
-    layout()
+    // Un-hiding makes pane 1 visible again; it was skipped by renderAll()
+    // for as long as it was hidden, so its content needs a real render now.
+    if (!hidden) renderAll()
+    else layout()
   }
 
   function toggleMenu(idx: 0 | 1): void {
@@ -763,10 +771,31 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     renderer(container, loc, ctx)
   }
 
+  /**
+   * Pane 1 is skipped entirely while it isn't visible (unsplit, or split
+   * force-hidden by the responsive layout) — layout() has already set
+   * `display: none` on it, so rendering into it is pure wasted work, and
+   * single-pane is the common case. Every path that makes pane 1 visible
+   * again must call renderAll() so its skipped-while-hidden DOM is rebuilt:
+   * toggleSplit() already does, and setSplitSpaceConstrained() below was
+   * changed to do the same.
+   *
+   * Skipping the render is only half the saving: the module instance already
+   * mounted in pane 1 keeps its own store.subscribe() alive and would go on
+   * re-rendering into a `display: none` container on every mutation — and a
+   * module's own renderAll() (rebuilding every rich-editor bundle) is the
+   * expensive part, not this function. So the hidden pane's instance is
+   * disposed outright; the rebuild-on-becoming-visible above is what makes
+   * that safe.
+   */
   function renderAll(): void {
     layout()
     renderBar(0)
     renderBody(0)
+    if (!effectiveSplit()) {
+      disposeContainer(bodyEls[1])
+      return
+    }
     renderBar(1)
     renderBody(1)
   }
@@ -782,6 +811,20 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       modules.set(kind, render)
     },
     setSplitSpaceConstrained,
+    dispose(): void {
+      document.removeEventListener('click', onDocumentClick)
+      // Tear down an in-flight divider drag, if any — see dragCleanup above.
+      dragCleanup?.()
+      dragCleanup = null
+      // The mounted modules' own teardowns. Their store subscriptions die with
+      // the document anyway, but ui/atref.ts's and ui/template-picker.ts's
+      // dropdowns append to document.body and hold a capturing document
+      // 'mousedown' listener while open — closing the file with one open would
+      // otherwise strand the overlay on top of the start screen, which only
+      // clears #app.
+      disposeContainer(bodyEls[0])
+      disposeContainer(bodyEls[1])
+    },
   }
 
   renderAll()

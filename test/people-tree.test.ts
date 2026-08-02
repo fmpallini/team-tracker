@@ -25,6 +25,7 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
     renderAll: () => {},
     registerModule: () => {},
     setSplitSpaceConstrained: () => {},
+    dispose: () => {},
   }
 }
 

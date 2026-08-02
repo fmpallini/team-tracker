@@ -16,6 +16,7 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
     renderAll: () => {},
     registerModule: () => {},
     setSplitSpaceConstrained: () => {},
+    dispose: () => {},
   }
 }
 
@@ -180,7 +181,10 @@ describe('renderPersonNotes', () => {
     expect(document.querySelectorAll('.tt-atref-dropdown')).toHaveLength(1)
   })
 
-  test('double render unsubscribes the previous store listener (no throw, no leaked "not found" flip)', () => {
+  // Not a leak test: a leaked listener re-renders into detached DOM, so it is
+  // invisible from here. See test/lifecycle.test.ts for the subscription-count
+  // test that actually catches a dropped unsubscribe().
+  test('double render leaves the live container intact under a subsequent store mutation', () => {
     const team = makeTeam()
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }

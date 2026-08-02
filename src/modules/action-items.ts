@@ -12,14 +12,13 @@ import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import type { ModuleCtx } from '../ui/panes'
+import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -74,10 +73,7 @@ export function moveCard(items: ActionItem[], draggedId: string, status: ActionI
 
 // --- renderer ---------------------------------------------------------------
 
-export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'actions') return // registered only for 'actions'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
@@ -108,6 +104,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
   function renderTagChips(tagNames: Partial<Record<ActionItem['color'], string>>): void {
     tagChipsEl.innerHTML = ''
+    // Marks the whole strip while a filter is on, so the CSS can dim the
+    // chips that aren't the active one — the selected chip alone carrying a
+    // border was easy to miss on a board that looks half-empty as a result.
+    tagChipsEl.classList.toggle('filtering', activeTagFilter !== null)
     for (const c of COLORS) {
       const custom = tagNames[c] ?? null
       const chip = el(
@@ -118,6 +118,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           // (.tt-kanban-color-chip) — blank until named, name shown inside once it is.
           class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}` + (activeTagFilter === c ? ' selected' : ''),
           'aria-label': custom ?? suggestedTagName(c),
+          'aria-pressed': activeTagFilter === c ? 'true' : 'false',
           onclick: () => {
             activeTagFilter = activeTagFilter === c ? null : c
             renderAll()
@@ -141,7 +142,13 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       if (!tm) return
       unlinkRefsInTeam(tm, 'action', [id])
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
-    })
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, milestones,
+      // risks — see refs.ts), not just 'actions'. Team-only scoping is the
+      // narrowest scope that's still correct, and it won't rot if
+      // unlinkRefsInTeam's reach changes later — refs never cross teams
+      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
+    }, { teamId })
   }
 
   function requestDelete(item: ActionItem): void {
@@ -173,7 +180,9 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           const removedIds = tm.actionItems.filter((i) => i.status === status).map((i) => i.id)
           unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
-        })
+          // No `sections` — same unlinkRefsInTeam cross-section rationale as
+          // removeItem() above.
+        }, { teamId })
       },
     })
   }
@@ -283,7 +292,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           found.assignee = assignee
           found.color = selectedColor
         }
-      })
+        // Unscoped beyond the team: `summary` is the label @[…](action:id)
+        // mentions resolve through live — see the note at people-tree.ts's
+        // rename site.
+      }, { teamId })
       closeModal()
     }
 
@@ -331,7 +343,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
             else nextTags[c] = value
           }
           target.actionTagNames = nextTags
-        })
+        }, { teamId, sections: ['actions'] })
         handle.close()
       },
     }
@@ -415,7 +427,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         moveCard(tm.actionItems, srcId, item.status, item.id, pos)
-      })
+      }, { teamId, sections: ['actions'] })
     })
     card.addEventListener('dragend', () => {
       draggedId = null
@@ -540,7 +552,7 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         moveCard(tm.actionItems, srcId, status, null, 'after')
-      })
+      }, { teamId, sections: ['actions'] })
     })
   }
   STATUSES.forEach((s) => wireColumnDrop(cols[s].bodyEl, s, cols[s].zoneEl))
@@ -578,7 +590,14 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   }
   renderAll()
 
-  const unsubscribe = ctx.store.subscribe(() => {
+  // The board reflects this team's action items only. Anything else — a daily
+  // note keystroke in the other pane, another team's edits — used to rebuild
+  // every card here for nothing. 'people' is included because
+  // updateDatalist() below reads stakeholders/members for the assignee
+  // autocomplete, so a person rename/add/delete must also refresh this pane.
+  const WATCHED: readonly Section[] = ['actions', 'teams', 'people']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (!scopeAffects(scope, teamId, WATCHED)) return
     renderAll()
   })
 
@@ -593,8 +612,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
   container.appendChild(kanbanRootEl)
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     disposeOpenBundle()
-  })
-}
+  }
+})

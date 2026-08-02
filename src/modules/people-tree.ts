@@ -1,7 +1,7 @@
 // src/modules/people-tree.ts — Task 19: one parameterized renderer for both
 // the 'stakeholders' and 'members' modules. Each renders the group's people
-// as a drag-and-droppable hierarchy (parentId/order), mirroring the
-// disposal/store.subscribe discipline established by src/modules/daily-notes.ts.
+// as a drag-and-droppable hierarchy (parentId/order), following the
+// disposal/store.subscribe discipline documented in src/modules/lifecycle.ts.
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
@@ -9,9 +9,8 @@ import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '..
 import { el } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { scopeAffects, type Section } from '../core/scope'
+import { withDisposal } from './lifecycle'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -129,10 +128,7 @@ export function deletePerson(people: Person[], id: string): Person[] {
 // --- renderer ---------------------------------------------------------------
 
 export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRenderer {
-  return function renderTree(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-    disposers.get(container)?.()
-    disposers.delete(container)
-
+  return withDisposal(function renderTree(container: HTMLElement, loc: Loc, ctx: ModuleCtx) {
     if (loc.ref.kind !== group) return // registered only for this group's kind; defensive
     const teamId = loc.teamId
     const lc = ctx.locale
@@ -195,7 +191,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
             const siblings = tm[group].filter((p) => p.parentId === parentId)
             const order = siblings.length === 0 ? 0 : Math.max(...siblings.map((p) => p.order)) + 1
             tm[group].push({ id: crypto.randomUUID(), name, role, parentId, order, notes: '' })
-          })
+          }, { teamId, sections: ['people'] })
         },
       })
     }
@@ -212,7 +208,15 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
             if (!p) return
             p.name = name
             p.role = role
-          })
+            // Deliberately unscoped beyond the team: `name` is the label every
+            // @[…](person:id) mention in this team resolves through at render
+            // time (ui/atref.ts's makeRefLabelResolver reads the store live, so
+            // the label in the stored markdown is never authoritative). A pane
+            // showing a mention of this person in a *different* section would
+            // otherwise keep painting the old name until something else forced
+            // it to re-render. Enumerating the mention-bearing sections here
+            // would need hand-syncing with refs.ts forever.
+          }, { teamId })
         },
       })
     }
@@ -252,7 +256,13 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
                   if (!tm) return
                   unlinkRefsInTeam(tm, 'person', [person.id])
                   tm[group] = deletePerson(tm[group], person.id)
-                })
+                  // No `sections`: unlinkRefsInTeam rewrites @mentions across
+                  // every content-bearing section of this team (notes,
+                  // actions, milestones, risks — see refs.ts), not just
+                  // 'people'. Team-only scoping is the narrowest scope that's
+                  // still correct and won't rot if unlinkRefsInTeam's reach
+                  // changes later.
+                }, { teamId })
               },
             })
           },
@@ -312,7 +322,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
           moveInTree(tm[group], srcId, person.id, pos)
-        })
+        }, { teamId, sections: ['people'] })
       })
       box.addEventListener('dragend', () => {
         draggedId = null
@@ -358,7 +368,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         moveToRoot(tm[group], srcId)
-      })
+      }, { teamId, sections: ['people'] })
     })
 
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
@@ -383,14 +393,16 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     // The tree has no caret/focus state worth preserving (unlike the
     // daily-notes editor) — a full rebuild on every store change is simplest
     // and correct.
-    const unsubscribe = ctx.store.subscribe(() => {
+    const WATCHED: readonly Section[] = ['people', 'teams']
+    const unsubscribe = ctx.store.subscribe((scope) => {
+      if (!scopeAffects(scope, teamId, WATCHED)) return
       renderAll()
     })
 
     container.appendChild(el('div', { class: 'tt-people' }, toolbar, rootDropEl, treeEl))
 
-    disposers.set(container, () => {
+    return () => {
       unsubscribe()
-    })
-  }
+    }
+  })
 }

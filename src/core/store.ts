@@ -1,4 +1,8 @@
 import type { Doc } from './types'
+import type { ChangeScope } from './scope'
+
+/** Which mutation channel fired — `update()` is 'content', `updateNav()` is 'nav'. */
+export type MutationKind = 'content' | 'nav'
 
 export interface Store {
   readonly doc: Doc
@@ -9,9 +13,23 @@ export interface Store {
    * below); `updateNav()` stays open so a read-only viewer can still browse.
    */
   readonly readOnly: boolean
-  update(fn: (d: Doc) => void): void
+  /**
+   * Monotonic mutation counter. Consumers that cache derived data (e.g.
+   * core/search.ts's index) compare it to decide whether their cache is
+   * stale — the Doc is mutated in place, so object identity can't tell them.
+   */
+  readonly rev: number
+  /**
+   * `scope` describes what changed so subscribers can skip irrelevant
+   * re-renders (see core/scope.ts). Omitting it means "everything changed",
+   * which is the pre-scoping behavior — every existing call site is therefore
+   * unaffected until it deliberately opts in. Never narrow a scope you are
+   * not certain about: a too-narrow scope shows stale UI, a too-wide one only
+   * costs a redundant render.
+   */
+  update(fn: (d: Doc) => void, scope?: ChangeScope): void
   updateNav(fn: (d: Doc) => void): void
-  subscribe(fn: () => void): () => void
+  subscribe(fn: (scope: ChangeScope | null) => void): () => void
   /**
    * Fires synchronously on EVERY mutation — both `update()` and `updateNav()`
    * — unlike `subscribe()`, which `updateNav()` intentionally bypasses (nav
@@ -24,7 +42,7 @@ export interface Store {
    * snapshot-then-try/catch isolation so a throwing listener can't block the
    * others or corrupt the set while iterating.
    */
-  onMutate(fn: () => void): () => void
+  onMutate(fn: (kind: MutationKind) => void): () => void
   onDirty(fn: (dirty: boolean) => void): void
   markSaved(): void
   /**
@@ -60,9 +78,10 @@ type ReadOnlyState =
 export function createStore(initialDoc: Doc): Store {
   let doc = initialDoc
   let dirty = false
+  let rev = 0
   let roState: ReadOnlyState = { kind: 'writable' }
-  const subscribers = new Set<() => void>()
-  const mutationListeners = new Set<() => void>()
+  const subscribers = new Set<(scope: ChangeScope | null) => void>()
+  const mutationListeners = new Set<(kind: MutationKind) => void>()
   const dirtyCallbacks = new Set<(dirty: boolean) => void>()
   const blockedCallbacks = new Set<() => void>()
 
@@ -73,8 +92,8 @@ export function createStore(initialDoc: Doc): Store {
     }
   }
 
-  const notifyMutate = () => {
-    for (const fn of Array.from(mutationListeners)) { try { fn() } catch (e) { console.error(e) } }
+  const notifyMutate = (kind: MutationKind) => {
+    for (const fn of Array.from(mutationListeners)) { try { fn(kind) } catch (e) { console.error(e) } }
   }
 
   const warnBlocked = () => {
@@ -93,28 +112,34 @@ export function createStore(initialDoc: Doc): Store {
     get readOnly() {
       return roState.kind !== 'writable'
     },
-    update(fn: (d: Doc) => void): void {
+    get rev() {
+      return rev
+    },
+    update(fn: (d: Doc) => void, scope?: ChangeScope): void {
       if (roState.kind !== 'writable') {
         warnBlocked()
         return
       }
+      rev++
       fn(doc)
       setDirty(true)
-      for (const fn of Array.from(subscribers)) { try { fn() } catch (e) { console.error(e) } }
-      notifyMutate()
+      const s = scope ?? null
+      for (const listener of Array.from(subscribers)) { try { listener(s) } catch (e) { console.error(e) } }
+      notifyMutate('content')
     },
     updateNav(fn: (d: Doc) => void): void {
+      rev++
       fn(doc)
       setDirty(true)
-      notifyMutate()
+      notifyMutate('nav')
     },
-    subscribe(fn: () => void): () => void {
+    subscribe(fn: (scope: ChangeScope | null) => void): () => void {
       subscribers.add(fn)
       return () => {
         subscribers.delete(fn)
       }
     },
-    onMutate(fn: () => void): () => void {
+    onMutate(fn: (kind: MutationKind) => void): () => void {
       mutationListeners.add(fn)
       return () => {
         mutationListeners.delete(fn)
@@ -127,9 +152,10 @@ export function createStore(initialDoc: Doc): Store {
       setDirty(false)
     },
     replaceDoc(newDoc: Doc): void {
+      rev++
       doc = newDoc
       setDirty(false)
-      for (const fn of Array.from(subscribers)) { try { fn() } catch (e) { console.error(e) } }
+      for (const fn of Array.from(subscribers)) { try { fn(null) } catch (e) { console.error(e) } }
     },
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
       if (!ro) {

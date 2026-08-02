@@ -1,5 +1,6 @@
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import type { ChangeScope } from '../src/core/scope'
 
 test('update notifies and marks dirty', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
@@ -154,6 +155,15 @@ test('throwing onMutate listener does not block others', () => {
   expect(called).toBe(true)
 })
 
+test('onMutate receives the mutation kind', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const kinds: string[] = []
+  s.onMutate((kind) => kinds.push(kind))
+  s.update(() => {})
+  s.updateNav(() => {})
+  expect(kinds).toEqual(['content', 'nav'])
+})
+
 test('setReadOnly({ silent: true }) suppresses onBlockedUpdate without burning the one-shot warning', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   const warned: number[] = []
@@ -173,4 +183,42 @@ test('setReadOnly({ silent: true }) suppresses onBlockedUpdate without burning t
   // And repeated blocked updates after that still only warn once.
   s.update(() => {})
   expect(warned).toEqual([1])
+})
+
+test('update() forwards its scope to subscribers, defaulting to null', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const seen: (ChangeScope | null)[] = []
+  s.subscribe((scope) => seen.push(scope))
+
+  s.update(() => {})
+  s.update(() => {}, { teamId: 't1', sections: ['actions'] })
+
+  expect(seen).toEqual([null, { teamId: 't1', sections: ['actions'] }])
+})
+
+test('replaceDoc notifies subscribers with a null scope (everything changed)', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const seen: (ChangeScope | null)[] = []
+  s.subscribe((scope) => seen.push(scope))
+  s.replaceDoc(createEmptyDocument('en-US'))
+  expect(seen).toEqual([null])
+})
+
+test('rev increments on every mutation channel', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const start = s.rev
+  s.update(() => {})
+  expect(s.rev).toBe(start + 1)
+  s.updateNav(() => {})
+  expect(s.rev).toBe(start + 2)
+  s.replaceDoc(createEmptyDocument('en-US'))
+  expect(s.rev).toBe(start + 3)
+})
+
+test('rev does not increment for a blocked (read-only) update', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  s.setReadOnly(true)
+  const start = s.rev
+  s.update(() => {})
+  expect(s.rev).toBe(start)
 })

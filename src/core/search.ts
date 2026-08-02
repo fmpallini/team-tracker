@@ -107,6 +107,78 @@ function collectCandidates(team: Team, doc: Doc): Candidate[] {
   return out
 }
 
+/** A candidate with its markdown stripped and normalized once, ready to match against. */
+interface PreparedCandidate {
+  ref: ModuleRef
+  title: string
+  stripped: string
+  normalized: string
+}
+
+export interface SearchIndex {
+  search(query: string, scopeTeamId: string | null): SearchResult[]
+}
+
+/**
+ * A `searchDocument` that prepares each team's candidates once per document
+ * revision instead of once per keystroke. `stripMd` runs seven regexes per
+ * line and `normalize` does an NFD pass plus a regex — repeating both across
+ * every note in every team on each of a fast typist's keystrokes was the
+ * single largest source of repeated allocation in the app.
+ *
+ * Keyed by `getRev()` rather than by object identity, because the store
+ * mutates the Doc in place: the same `Team` object is both the before and the
+ * after of an edit, so identity can never signal staleness.
+ */
+export function createSearchIndex(getDoc: () => Doc, getRev: () => number): SearchIndex {
+  let cachedRev = -1
+  let cache = new Map<string, PreparedCandidate[]>()
+
+  function preparedFor(team: Team, doc: Doc): PreparedCandidate[] {
+    const rev = getRev()
+    if (rev !== cachedRev) {
+      cache = new Map()
+      cachedRev = rev
+    }
+    const hit = cache.get(team.id)
+    if (hit) return hit
+    const prepared = collectCandidates(team, doc).map((c): PreparedCandidate => {
+      const stripped = stripMd(c.raw)
+      return { ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) }
+    })
+    cache.set(team.id, prepared)
+    return prepared
+  }
+
+  return {
+    search(query: string, scopeTeamId: string | null): SearchResult[] {
+      const trimmedQuery = query.trim()
+      if (!trimmedQuery) return []
+      const terms = normalize(trimmedQuery).split(/\s+/).filter(Boolean)
+      if (terms.length === 0) return []
+
+      const doc = getDoc()
+      const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
+      const results: SearchResult[] = []
+
+      for (const team of teams) {
+        for (const candidate of preparedFor(team, doc)) {
+          if (!allTermsMatch(candidate.normalized, terms)) continue
+          results.push({
+            loc: { teamId: team.id, ref: candidate.ref },
+            moduleKind: candidate.ref.kind,
+            title: candidate.title,
+            snippet: makeSnippet(candidate.stripped, candidate.normalized, terms),
+            teamName: team.name,
+          })
+          if (results.length >= RESULT_LIMIT) return results
+        }
+      }
+      return results
+    },
+  }
+}
+
 export function searchDocument(doc: Doc, query: string, scopeTeamId: string | null): SearchResult[] {
   const trimmedQuery = query.trim()
   if (!trimmedQuery) return []

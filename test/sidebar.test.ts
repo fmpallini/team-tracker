@@ -1,4 +1,4 @@
-import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from '../src/ui/sidebar'
+import { mountSidebar, ADD_TEAM_REQUEST_EVENT, type SidebarHandle } from '../src/ui/sidebar'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -17,6 +17,7 @@ function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: 
     renderAll: () => {},
     registerModule: () => {},
     setSplitSpaceConstrained: () => {},
+    dispose: () => {},
   }
 }
 
@@ -34,6 +35,13 @@ function stubMatchMedia(): void {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia
 }
+
+// mountSidebar's document-level ADD_TEAM_REQUEST_EVENT listener (and its
+// store subscriptions) would otherwise accumulate across every setup() call
+// in this file — dispose() (this task) lets the top-level afterEach() below
+// tear down each test's sidebar before the next one mounts, so listener
+// counts stay exact instead of "at least N" from prior tests' leftovers.
+let lastSidebarHandle: SidebarHandle | undefined
 
 function setup(): {
   shell: Shell
@@ -55,6 +63,7 @@ function setup(): {
   })
   const renderPanes = vi.fn()
   const sidebar = mountSidebar(shell, store, pm, { selectTeam, renderPanes })
+  lastSidebarHandle = sidebar
   return { shell, store, pm, selectTeam, renderPanes, sidebar }
 }
 
@@ -78,6 +87,8 @@ function clickByText(text: string): void {
 }
 
 afterEach(() => {
+  lastSidebarHandle?.dispose()
+  lastSidebarHandle = undefined
   document.body.innerHTML = ''
 })
 
@@ -497,10 +508,10 @@ test('drag and drop reorders the teams array', () => {
 })
 
 test('tt-add-team-request event opens the add-team modal (Task 3 empty-state CTA)', () => {
-  // Note: mountSidebar's document-level ADD_TEAM_REQUEST_EVENT listener is
-  // never torn down between `setup()` calls within a test file, so earlier
-  // tests' stale listeners also fire here — hence asserting "at least one"
-  // modal opened rather than an exact count.
+  // Note: asserts "at least one" modal opened rather than an exact count.
+  // afterEach now disposes the last mounted sidebar, but a test that calls
+  // setup() more than once still leaves the earlier mounts' document-level
+  // ADD_TEAM_REQUEST_EVENT listeners live for the rest of that test.
   setup()
   expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
@@ -903,7 +914,7 @@ describe('due list modal - card highlight (real pane, mirrors search-ui.ts commi
     const pm = createPaneManager(shell, store, 'en-US')
     pm.registerModule('actions', renderActionItems)
     const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
-    mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
+    lastSidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
 
     addTeam(store, 'Alpha')
     addActionItem(store, 'Alpha', { id: 'overdue-1', dueDate: '2000-01-01' })
@@ -935,7 +946,7 @@ describe('due list modal - card highlight (real pane, mirrors search-ui.ts commi
     const pm = createPaneManager(shell, store, 'en-US')
     pm.registerModule('actions', renderActionItems)
     const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
-    mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
+    lastSidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
 
     addTeam(store, 'Alpha')
     addTeam(store, 'Beta')
@@ -958,5 +969,68 @@ describe('due list modal - card highlight (real pane, mirrors search-ui.ts commi
     const card = document.querySelector('[data-item-id="beta-overdue-1"]')
     expect(card).not.toBeNull()
     expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
+})
+
+describe('dispose()', () => {
+  // setup() already calls mountSidebar internally, so these tests build
+  // their own store/shell/pm and mount once — mirroring what setup() does —
+  // rather than mounting a second handle on top of setup()'s.
+  function mountFresh(): { store: Store; handle: ReturnType<typeof mountSidebar> } {
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    const doc = createEmptyDocument('en-US')
+    const store = createStore(doc)
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = fakePM()
+    const handle = mountSidebar(shell, store, pm, { selectTeam: () => {}, renderPanes: () => {} })
+    lastSidebarHandle = handle
+    return { store, handle }
+  }
+
+  test('dispose() stops the sidebar re-rendering and unhooks the add-team event', () => {
+    const { store, handle } = mountFresh()
+    addTeam(store, 'Alpha')
+    expect(items().length).toBe(1)
+
+    handle.dispose()
+
+    // Store mutations no longer repaint the sidebar.
+    addTeam(store, 'Beta')
+    expect(items().length).toBe(1)
+
+    // The document-level add-team request no longer opens the modal.
+    document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT))
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('before dispose(), the add-team event opens the modal', () => {
+    mountFresh()
+    document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT))
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+  })
+
+  test('dispose() while the team switcher is open closes it and drops its document keydown listener', () => {
+    // The switcher owns document-level listeners that only openTeamSwitcher /
+    // closeTeamSwitcher manage, so they are invisible to the store-subscription
+    // teardown above — disposing mid-open used to leak them along with the
+    // dropdown element itself.
+    const { store, handle } = mountFresh()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    ;(document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement).click()
+    ;(document.querySelector('.tt-header-team-indicator') as HTMLElement).click()
+    expect(document.querySelector('.tt-team-switcher-dropdown')).not.toBeNull()
+
+    handle.dispose()
+
+    expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
+    // The keydown listener is capture-phase on document; if it survived, this
+    // ArrowDown would still run its handler against the now-detached list.
+    expect(() => document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+    )).not.toThrow()
+    expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
   })
 })

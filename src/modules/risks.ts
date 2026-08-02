@@ -12,6 +12,7 @@ import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import type { ModuleCtx } from '../ui/panes'
+import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
@@ -21,9 +22,7 @@ import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -106,10 +105,7 @@ const PLAN_KEYS: Record<RiskPlan, MsgKey> = {
 
 // --- renderer ---------------------------------------------------------------
 
-export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'risks') return // registered only for 'risks'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
@@ -142,7 +138,12 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       if (!tm) return
       unlinkRefsInTeam(tm, 'risk', [id])
       tm.risks = tm.risks.filter((r) => r.id !== id)
-    })
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, actions,
+      // milestones — see refs.ts), not just 'risks'. Team-only scoping is
+      // the narrowest scope that's still correct and won't rot if
+      // unlinkRefsInTeam's reach changes later.
+    }, { teamId })
   }
 
   function setClosed(id: string, closed: boolean): void {
@@ -150,7 +151,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
     ctx.store.update((d) => {
       const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
       if (found) found.closed = closed
-    })
+    }, { teamId, sections: ['risks'] })
   }
 
   function requestDelete(r: Risk): void {
@@ -200,7 +201,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
           const found = tm?.risks.find((rr) => rr.id === r.id)
           if (!found) return
           found.followup = md.trim() === '' ? '' : md
-        })
+        }, { teamId, sections: ['risks'] })
       },
       getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
@@ -225,7 +226,10 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
           if (found) found.title = value
-        })
+          // Unscoped beyond the team: `title` is the label @[…](risk:id)
+          // mentions resolve through live — see the note at people-tree.ts's
+          // rename site.
+        }, { teamId })
       },
     })
 
@@ -234,14 +238,14 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       ctx.store.update((d) => {
         const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
         if (found) found.chance = Number(value) as 1 | 2 | 3
-      })
+      }, { teamId, sections: ['risks'] })
     })
 
     const impactSelect = buildSelect('tt-risk-impact-select', numberOptions, String(r.impact), (value) => {
       ctx.store.update((d) => {
         const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
         if (found) found.impact = Number(value) as 1 | 2 | 3
-      })
+      }, { teamId, sections: ['risks'] })
     })
 
     const exposureBadge = el(
@@ -263,7 +267,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
           if (found) found.plan = value as RiskPlan
-        })
+        }, { teamId, sections: ['risks'] })
       }
     )
 
@@ -340,7 +344,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
           moveRisk(tm.risks, srcId, r.id, pos)
-        })
+        }, { teamId, sections: ['risks'] })
       })
       row.addEventListener('dragend', () => {
         draggedId = null
@@ -439,7 +443,7 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       if (!tm) return
       const maxOrder = tm.risks.length === 0 ? -1 : Math.max(...tm.risks.map((r) => r.order))
       tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: maxOrder + 1, closed: false })
-    })
+    }, { teamId, sections: ['risks'] })
   }
 
   const addBtn = el(
@@ -491,7 +495,9 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   // and defer it to the field's next blur — nothing is lost, since blur is
   // exactly when this field's own edit (if any) commits and would have
   // triggered a rebuild anyway.
-  const unsubscribe = ctx.store.subscribe(() => {
+  const WATCHED: readonly Section[] = ['risks', 'teams']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretElement()
     if (active) {
       active.addEventListener('blur', () => renderAll(), { once: true })
@@ -513,9 +519,9 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     expandable.disposeAll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
-  })
-}
+  }
+})

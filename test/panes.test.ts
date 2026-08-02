@@ -771,3 +771,165 @@ test('buildModuleItems prefixes every entry with its module icon (daily, person,
   expect(items[0]!.label.startsWith(KIND_ICON.daily)).toBe(true)
   expect(items).toContainEqual({ label: `${KIND_ICON.person} Carla`, ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
 })
+
+test('dispose() removes the document click listener that closes the module menu', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  // Open pane 0's module dropdown.
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  pm.dispose()
+
+  // With the listener removed, an outside click no longer closes the menu.
+  document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+})
+
+test('before dispose(), an outside click still closes the module menu', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+})
+
+test('renderAll skips the hidden pane, and re-renders it when split turns on', () => {
+  const { store, pm } = setup()
+  addTeam(store, 't1')
+  // Ensure single-pane view.
+  if (store.doc.nav.split) pm.toggleSplit()
+  expect(store.doc.nav.split).toBe(false)
+
+  const body1 = document.querySelectorAll('.tt-pane-body')[1] as HTMLElement
+  const marker = document.createElement('span')
+  marker.id = 'hidden-pane-marker'
+  body1.appendChild(marker)
+
+  pm.renderAll()
+  // Pane 1 is hidden — its body must not have been wiped.
+  expect(document.getElementById('hidden-pane-marker')).not.toBeNull()
+
+  pm.toggleSplit()
+  // Now visible — it gets a real render, which clears the marker.
+  expect(store.doc.nav.split).toBe(true)
+  expect(document.getElementById('hidden-pane-marker')).toBeNull()
+})
+
+test('un-hiding a space-constrained split re-renders pane 1', () => {
+  const { store, pm } = setup()
+  addTeam(store, 't1')
+  if (!store.doc.nav.split) pm.toggleSplit()
+  expect(store.doc.nav.split).toBe(true)
+
+  pm.setSplitSpaceConstrained(true) // narrow window — split force-hidden
+  const body1 = document.querySelectorAll('.tt-pane-body')[1] as HTMLElement
+  const marker = document.createElement('span')
+  marker.id = 'constrained-marker'
+  body1.appendChild(marker)
+
+  pm.renderAll() // pane 1 hidden by the space constraint — skipped
+  expect(document.getElementById('constrained-marker')).not.toBeNull()
+
+  pm.setSplitSpaceConstrained(false) // window widened — pane 1 visible again
+  expect(document.getElementById('constrained-marker')).toBeNull()
+})
+
+test('divider drag coalesces mousemoves into one style write per animation frame', () => {
+  const { store, pm } = setup()
+  addTeam(store, 't1')
+  if (!store.doc.nav.split) pm.toggleSplit()
+
+  const frames: FrameRequestCallback[] = []
+  const realRaf = window.requestAnimationFrame
+  window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+    frames.push(cb)
+    return frames.length
+  }) as typeof window.requestAnimationFrame
+
+  try {
+    const grid = document.querySelector('.tt-panes-grid') as HTMLElement
+    // jsdom has no layout: give the grid a non-zero width so the percentage math runs.
+    grid.getBoundingClientRect = () => ({ left: 0, width: 1000, top: 0, height: 500,
+      right: 1000, bottom: 500, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+
+    const divider = document.querySelector('.tt-pane-divider') as HTMLElement
+    divider.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+
+    const before = grid.style.gridTemplateColumns
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 300 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 400 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 600 }))
+
+    // Three moves, zero frames run yet: the style must not have been touched.
+    expect(grid.style.gridTemplateColumns).toBe(before)
+    expect(frames.length).toBe(1) // one frame requested, not three
+
+    frames.forEach((cb) => cb(0))
+    // The frame applies the LAST position: 600/1000 = 60%.
+    expect(grid.style.gridTemplateColumns).toBe('60fr 6px 40fr')
+
+    document.dispatchEvent(new MouseEvent('mouseup'))
+  } finally {
+    window.requestAnimationFrame = realRaf
+  }
+})
+
+test('dispose() during an in-flight divider drag tears down its listeners and pending frame', () => {
+  const { store, pm } = setup()
+  addTeam(store, 't1')
+  if (!store.doc.nav.split) pm.toggleSplit()
+
+  const frames: FrameRequestCallback[] = []
+  let canceledFrame: number | null = null
+  const realRaf = window.requestAnimationFrame
+  const realCaf = window.cancelAnimationFrame
+  window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+    frames.push(cb)
+    return frames.length
+  }) as typeof window.requestAnimationFrame
+  window.cancelAnimationFrame = ((id: number): void => {
+    canceledFrame = id
+  }) as typeof window.cancelAnimationFrame
+
+  try {
+    const grid = document.querySelector('.tt-panes-grid') as HTMLElement
+    grid.getBoundingClientRect = () => ({ left: 0, width: 1000, top: 0, height: 500,
+      right: 1000, bottom: 500, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+
+    const divider = document.querySelector('.tt-pane-divider') as HTMLElement
+    divider.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 300 }))
+    // A frame is now pending (not yet run): confirms the drag is genuinely in flight.
+    expect(frames.length).toBe(1)
+
+    const before = grid.style.gridTemplateColumns
+
+    pm.dispose()
+
+    // dispose() canceled the pending frame — same id requestAnimationFrame returned.
+    expect(canceledFrame).toBe(1)
+
+    // The document-level mousemove/mouseup listeners were removed too: a
+    // mousemove fired anywhere on the page after dispose() must be inert,
+    // not a leftover write into a torn-down PaneManager's grid element.
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 999 }))
+    expect(grid.style.gridTemplateColumns).toBe(before)
+
+    // A stray mouseup elsewhere on the page (the scenario the leak protects
+    // against) must not throw or resurrect any state.
+    expect(() => document.dispatchEvent(new MouseEvent('mouseup'))).not.toThrow()
+    expect(grid.style.gridTemplateColumns).toBe(before)
+  } finally {
+    window.requestAnimationFrame = realRaf
+    window.cancelAnimationFrame = realCaf
+  }
+})

@@ -11,13 +11,9 @@ import type { ModuleCtx } from '../ui/panes'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
+import { withDisposal } from './lifecycle'
 
-const disposers = new WeakMap<HTMLElement, () => void>()
-
-export function renderGeneralNotes(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'general') return // registered only for 'general'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
@@ -44,7 +40,7 @@ export function renderGeneralNotes(container: HTMLElement, loc: Loc, ctx: Module
 
   container.appendChild(editor.root)
 
-  disposers.set(container, () => {
+  return () => {
     bundle.dispose()
-  })
-}
+  }
+})

@@ -49,6 +49,12 @@ export interface SidebarHandle {
   setSpaceConstrained(hidden: boolean): void
   /** Opens the global (all-teams) due-dates panel — used by the Ctrl+K palette's "Due" entry (src/ui/palette.ts). */
   openDuePanel(): void
+  /**
+   * Tears down the store subscriptions and the document-level add-team
+   * listener. Without this, every close-file → open-file cycle leaked a
+   * listener pinning the closed document's store and detached shell DOM.
+   */
+  dispose(): void
 }
 
 export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, actions: SidebarActions): SidebarHandle {
@@ -633,32 +639,44 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   render()
-  store.subscribe(() => {
+  const unsubscribeContent = store.subscribe(() => {
     dueCache = null // content changed — due data may have too
     render()
   })
   // Nav-only changes (store.updateNav — team switch, Alt+1..9, pane history)
   // don't fire subscribe() above, but do need the active-team highlight to
-  // update. onMutate() fires on both update() and updateNav(); re-running
-  // render() an extra time on a content change (already covered by
-  // subscribe() above) is a harmless idempotent DOM rebuild — cheaper than
-  // hand-rolling a second nav-only event channel, and it's exactly the
-  // "generalize the mechanism" fix core/save-controller.ts already made for
-  // its own dirty-guard (see that file's comment on onMutate()). Content
-  // changes must NOT reset dueCache here too, or every pane navigation would
-  // force a full due-items rescan for no reason — that stays only in the
-  // subscribe() callback above.
+  // update. Content changes are already fully covered by subscribe(), so this
+  // listener filters on kind — registering it unconditionally rebuilt the
+  // whole team list twice on every single content edit.
   //
   // Load-bearing detail: store.replaceDoc() (used by the conflict-modal
   // reload path in main.ts's onReload handler) fires subscribe() listeners
   // but NOT onMutate() listeners — so it's the store.subscribe() render
   // above, not this onMutate() one, that keeps the sidebar in sync after a
   // reload. Don't collapse these two registrations into just onMutate().
-  store.onMutate(() => render())
-  document.addEventListener(ADD_TEAM_REQUEST_EVENT, () => openAddModal())
+  const unsubscribeMutate = store.onMutate((kind) => {
+    if (kind === 'nav') render()
+  })
+  const onAddTeamRequest = (): void => openAddModal()
+  document.addEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
 
   return {
     setSpaceConstrained,
     openDuePanel: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
+    /**
+     * Tears down the store subscriptions and the document-level add-team
+     * listener. Without this, every close-file → open-file cycle leaked a
+     * listener pinning the closed document's store and detached shell DOM.
+     */
+    dispose(): void {
+      // The team switcher manages its own document-level 'keydown' + dismiss
+      // listeners across open/close, so they are invisible to the store
+      // teardown below — disposing while it happens to be open would leak
+      // them along with the dropdown element. No-op when it's already shut.
+      closeTeamSwitcher()
+      unsubscribeContent()
+      unsubscribeMutate()
+      document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
+    },
   }
 }
