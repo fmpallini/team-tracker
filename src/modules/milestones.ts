@@ -351,7 +351,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
           if (found) found.title = value
-        }, { teamId, sections: ['milestones'] })
+          // Unscoped beyond the team: `title` is the label @[…](milestone:id)
+          // mentions resolve through live — see the note at people-tree.ts's
+          // rename site.
+        }, { teamId })
       },
     })
 

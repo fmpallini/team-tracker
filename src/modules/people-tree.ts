@@ -208,7 +208,15 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
             if (!p) return
             p.name = name
             p.role = role
-          }, { teamId, sections: ['people'] })
+            // Deliberately unscoped beyond the team: `name` is the label every
+            // @[…](person:id) mention in this team resolves through at render
+            // time (ui/atref.ts's makeRefLabelResolver reads the store live, so
+            // the label in the stored markdown is never authoritative). A pane
+            // showing a mention of this person in a *different* section would
+            // otherwise keep painting the old name until something else forced
+            // it to re-render. Enumerating the mention-bearing sections here
+            // would need hand-syncing with refs.ts forever.
+          }, { teamId })
         },
       })
     }

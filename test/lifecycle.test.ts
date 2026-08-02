@@ -1,6 +1,8 @@
 import { withDisposal } from '../src/modules/lifecycle'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { createShell } from '../src/ui/shell'
+import { createPaneManager } from '../src/ui/panes'
 import { renderDailyNotes } from '../src/modules/daily-notes'
 import { renderGeneralNotes } from '../src/modules/general-notes'
 import { renderPeopleTree } from '../src/modules/people-tree'
@@ -102,6 +104,16 @@ test('a throwing teardown does not prevent the new mount, and is surfaced', () =
 // it — a leak is a *store-side* fact, so it has to be observed store-side.
 // ---------------------------------------------------------------------------
 
+// jsdom has no matchMedia; createShell() watches the OS theme preference.
+function stubMatchMedia(): void {
+  window.matchMedia = ((query: string): MediaQueryList => ({
+    matches: false, media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {},
+    addEventListener: () => {}, removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
+
 function fakePM(): PaneManager {
   return {
     openInPane: () => {},
@@ -186,6 +198,61 @@ for (const { name, render, ref, subscribes } of RENDERERS) {
     container.remove()
   })
 }
+
+test('an unsplit (hidden) pane 1 holds no live module instance, and regains one when re-split', () => {
+  // renderAll() skips the hidden pane, but a *mounted* instance would keep its
+  // own store.subscribe() alive and go on re-rendering into a display:none
+  // container on every mutation — the expensive half of the work Task 5 set
+  // out to skip. It is disposed instead; toggleSplit() rebuilds it.
+  const { store, liveSubscriptions } = countingStore()
+  document.body.innerHTML = ''
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const pm = createPaneManager(shell, store, 'en-US')
+  pm.registerModule('risks', renderRisks)
+  pm.registerModule('milestones', renderMilestones)
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openBothPanes(
+    { teamId: 'T1', ref: { kind: 'risks' } },
+    { teamId: 'T1', ref: { kind: 'milestones' } },
+    0
+  )
+  expect(liveSubscriptions()).toBe(2)
+
+  pm.toggleSplit()
+  expect(liveSubscriptions()).toBe(1)
+
+  pm.toggleSplit()
+  expect(liveSubscriptions()).toBe(2)
+})
+
+test('pm.dispose() tears down the modules mounted in both panes', () => {
+  // Their subscriptions die with the document anyway, but atref/template-picker
+  // dropdowns append to document.body and hold a capturing document listener
+  // while open — closing the file with one open must not strand it.
+  const { store, liveSubscriptions } = countingStore()
+  document.body.innerHTML = ''
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const pm = createPaneManager(shell, store, 'en-US')
+  pm.registerModule('risks', renderRisks)
+  pm.registerModule('milestones', renderMilestones)
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openBothPanes(
+    { teamId: 'T1', ref: { kind: 'risks' } },
+    { teamId: 'T1', ref: { kind: 'milestones' } },
+    0
+  )
+  expect(liveSubscriptions()).toBe(2)
+
+  pm.dispose()
+
+  expect(liveSubscriptions()).toBe(0)
+  expect(() => pm.dispose()).not.toThrow() // idempotent
+  expect(liveSubscriptions()).toBe(0)
+})
 
 test('switching modules within one container disposes the outgoing module, not just same-module re-renders', () => {
   // ui/panes.ts reuses the same body element across module switches, so the

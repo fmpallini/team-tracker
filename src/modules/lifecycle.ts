@@ -47,16 +47,27 @@ export function withDisposal(
   render: (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => (() => void) | void
 ): ModuleRenderer {
   return (container: HTMLElement, loc: Loc, ctx: ModuleCtx): void => {
-    const previous = teardowns.get(container)
-    teardowns.delete(container)
-    if (previous) {
-      try {
-        previous()
-      } catch (e) {
-        console.error(e)
-      }
-    }
+    disposeContainer(container)
     const teardown = render(container, loc, ctx)
     if (teardown) teardowns.set(container, teardown)
+  }
+}
+
+/**
+ * Tears down whatever is mounted in `container` without mounting anything in
+ * its place — for callers that own a container but no longer want a module in
+ * it (ui/panes.ts on dispose, and when a pane goes hidden). Idempotent: the
+ * entry is dropped before the teardown runs, so a second call is a no-op even
+ * if the first one threw.
+ */
+export function disposeContainer(container: HTMLElement): void {
+  const teardown = teardowns.get(container)
+  teardowns.delete(container)
+  if (teardown) {
+    try {
+      teardown()
+    } catch (e) {
+      console.error(e)
+    }
   }
 }

@@ -287,7 +287,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           found.assignee = assignee
           found.color = selectedColor
         }
-      }, { teamId, sections: ['actions'] })
+        // Unscoped beyond the team: `summary` is the label @[…](action:id)
+        // mentions resolve through live — see the note at people-tree.ts's
+        // rename site.
+      }, { teamId })
       closeModal()
     }
 

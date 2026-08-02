@@ -10,6 +10,9 @@ import { el } from './dom'
 import { toast } from './modal'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
+// Runtime dependency in one direction only: modules/lifecycle.ts imports
+// ModuleCtx/ModuleRenderer from here as *types*, which are erased at build.
+import { disposeContainer } from '../modules/lifecycle'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
 
@@ -776,12 +779,23 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
    * again must call renderAll() so its skipped-while-hidden DOM is rebuilt:
    * toggleSplit() already does, and setSplitSpaceConstrained() below was
    * changed to do the same.
+   *
+   * Skipping the render is only half the saving: the module instance already
+   * mounted in pane 1 keeps its own store.subscribe() alive and would go on
+   * re-rendering into a `display: none` container on every mutation — and a
+   * module's own renderAll() (rebuilding every rich-editor bundle) is the
+   * expensive part, not this function. So the hidden pane's instance is
+   * disposed outright; the rebuild-on-becoming-visible above is what makes
+   * that safe.
    */
   function renderAll(): void {
     layout()
     renderBar(0)
     renderBody(0)
-    if (!effectiveSplit()) return
+    if (!effectiveSplit()) {
+      disposeContainer(bodyEls[1])
+      return
+    }
     renderBar(1)
     renderBody(1)
   }
@@ -802,6 +816,14 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       // Tear down an in-flight divider drag, if any — see dragCleanup above.
       dragCleanup?.()
       dragCleanup = null
+      // The mounted modules' own teardowns. Their store subscriptions die with
+      // the document anyway, but ui/atref.ts's and ui/template-picker.ts's
+      // dropdowns append to document.body and hold a capturing document
+      // 'mousedown' listener while open — closing the file with one open would
+      // otherwise strand the overlay on top of the start screen, which only
+      // clears #app.
+      disposeContainer(bodyEls[0])
+      disposeContainer(bodyEls[1])
     },
   }
 

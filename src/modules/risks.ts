@@ -226,7 +226,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
           if (found) found.title = value
-        }, { teamId, sections: ['risks'] })
+          // Unscoped beyond the team: `title` is the label @[…](risk:id)
+          // mentions resolve through live — see the note at people-tree.ts's
+          // rename site.
+        }, { teamId })
       },
     })
 
