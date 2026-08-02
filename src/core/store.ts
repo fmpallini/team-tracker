@@ -1,4 +1,5 @@
 import type { Doc } from './types'
+import type { ChangeScope } from './scope'
 
 /** Which mutation channel fired — `update()` is 'content', `updateNav()` is 'nav'. */
 export type MutationKind = 'content' | 'nav'
@@ -12,9 +13,17 @@ export interface Store {
    * below); `updateNav()` stays open so a read-only viewer can still browse.
    */
   readonly readOnly: boolean
-  update(fn: (d: Doc) => void): void
+  /**
+   * `scope` describes what changed so subscribers can skip irrelevant
+   * re-renders (see core/scope.ts). Omitting it means "everything changed",
+   * which is the pre-scoping behavior — every existing call site is therefore
+   * unaffected until it deliberately opts in. Never narrow a scope you are
+   * not certain about: a too-narrow scope shows stale UI, a too-wide one only
+   * costs a redundant render.
+   */
+  update(fn: (d: Doc) => void, scope?: ChangeScope): void
   updateNav(fn: (d: Doc) => void): void
-  subscribe(fn: () => void): () => void
+  subscribe(fn: (scope: ChangeScope | null) => void): () => void
   /**
    * Fires synchronously on EVERY mutation — both `update()` and `updateNav()`
    * — unlike `subscribe()`, which `updateNav()` intentionally bypasses (nav
@@ -64,7 +73,7 @@ export function createStore(initialDoc: Doc): Store {
   let doc = initialDoc
   let dirty = false
   let roState: ReadOnlyState = { kind: 'writable' }
-  const subscribers = new Set<() => void>()
+  const subscribers = new Set<(scope: ChangeScope | null) => void>()
   const mutationListeners = new Set<(kind: MutationKind) => void>()
   const dirtyCallbacks = new Set<(dirty: boolean) => void>()
   const blockedCallbacks = new Set<() => void>()
@@ -96,14 +105,15 @@ export function createStore(initialDoc: Doc): Store {
     get readOnly() {
       return roState.kind !== 'writable'
     },
-    update(fn: (d: Doc) => void): void {
+    update(fn: (d: Doc) => void, scope?: ChangeScope): void {
       if (roState.kind !== 'writable') {
         warnBlocked()
         return
       }
       fn(doc)
       setDirty(true)
-      for (const fn of Array.from(subscribers)) { try { fn() } catch (e) { console.error(e) } }
+      const s = scope ?? null
+      for (const listener of Array.from(subscribers)) { try { listener(s) } catch (e) { console.error(e) } }
       notifyMutate('content')
     },
     updateNav(fn: (d: Doc) => void): void {
@@ -111,7 +121,7 @@ export function createStore(initialDoc: Doc): Store {
       setDirty(true)
       notifyMutate('nav')
     },
-    subscribe(fn: () => void): () => void {
+    subscribe(fn: (scope: ChangeScope | null) => void): () => void {
       subscribers.add(fn)
       return () => {
         subscribers.delete(fn)
@@ -132,7 +142,7 @@ export function createStore(initialDoc: Doc): Store {
     replaceDoc(newDoc: Doc): void {
       doc = newDoc
       setDirty(false)
-      for (const fn of Array.from(subscribers)) { try { fn() } catch (e) { console.error(e) } }
+      for (const fn of Array.from(subscribers)) { try { fn(null) } catch (e) { console.error(e) } }
     },
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
       if (!ro) {
