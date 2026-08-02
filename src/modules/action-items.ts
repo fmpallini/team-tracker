@@ -142,7 +142,13 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
       if (!tm) return
       unlinkRefsInTeam(tm, 'action', [id])
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
-    }, { teamId, sections: ['actions'] })
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, milestones,
+      // risks — see refs.ts), not just 'actions'. Team-only scoping is the
+      // narrowest scope that's still correct, and it won't rot if
+      // unlinkRefsInTeam's reach changes later — refs never cross teams
+      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
+    }, { teamId })
   }
 
   function requestDelete(item: ActionItem): void {
@@ -174,7 +180,9 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
           const removedIds = tm.actionItems.filter((i) => i.status === status).map((i) => i.id)
           unlinkRefsInTeam(tm, 'action', removedIds)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
-        }, { teamId, sections: ['actions'] })
+          // No `sections` — same unlinkRefsInTeam cross-section rationale as
+          // removeItem() above.
+        }, { teamId })
       },
     })
   }
@@ -581,8 +589,10 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   // The board reflects this team's action items only. Anything else — a daily
   // note keystroke in the other pane, another team's edits — used to rebuild
-  // every card here for nothing.
-  const WATCHED: readonly Section[] = ['actions', 'teams']
+  // every card here for nothing. 'people' is included because
+  // updateDatalist() below reads stakeholders/members for the assignee
+  // autocomplete, so a person rename/add/delete must also refresh this pane.
+  const WATCHED: readonly Section[] = ['actions', 'teams', 'people']
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     renderAll()

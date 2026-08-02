@@ -205,7 +205,12 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
       if (!tm) return
       unlinkRefsInTeam(tm, 'milestone', [id])
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
-    }, { teamId, sections: ['milestones'] })
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, actions, risks
+      // — see refs.ts), not just 'milestones'. Team-only scoping is the
+      // narrowest scope that's still correct and won't rot if
+      // unlinkRefsInTeam's reach changes later.
+    }, { teamId })
   }
 
   function requestDelete(m: Milestone): void {

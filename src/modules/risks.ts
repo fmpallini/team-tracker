@@ -143,7 +143,12 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
       if (!tm) return
       unlinkRefsInTeam(tm, 'risk', [id])
       tm.risks = tm.risks.filter((r) => r.id !== id)
-    }, { teamId, sections: ['risks'] })
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, actions,
+      // milestones — see refs.ts), not just 'risks'. Team-only scoping is
+      // the narrowest scope that's still correct and won't rot if
+      // unlinkRefsInTeam's reach changes later.
+    }, { teamId })
   }
 
   function setClosed(id: string, closed: boolean): void {

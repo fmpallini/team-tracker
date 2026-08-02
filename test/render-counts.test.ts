@@ -5,6 +5,7 @@ import { createPaneManager, type PaneManager } from '../src/ui/panes'
 import { mountSidebar } from '../src/ui/sidebar'
 import { renderActionItems } from '../src/modules/action-items'
 import { renderDailyNotes } from '../src/modules/daily-notes'
+import { renderMilestones } from '../src/modules/milestones'
 import { todayIso } from '../src/core/i18n'
 import type { Team } from '../src/core/types'
 
@@ -259,4 +260,62 @@ test('an actions edit still rebuilds the kanban board', () => {
     })
   }, { teamId: 't1', sections: ['actions'] })
   expect(document.querySelectorAll('.tt-kanban-card').length).toBe(1)
+})
+
+// Regression test for the "Important" review finding: unlinkRefsInTeam()
+// (src/core/refs.ts) rewrites @mentions across every content-bearing section
+// of a team, not just the section the deleted item lives in. A delete scoped
+// to only its own section (e.g. { teamId, sections: ['actions'] }) leaves a
+// currently-open pane in a *different* section — one displaying a stale
+// @mention of the just-deleted item — un-rerendered, so it keeps showing a
+// live ref chip pointing at nothing. The fix drops `sections` from these five
+// delete call sites entirely (team-only scoping), which this test exercises
+// end to end through the real module code (not a hand-rolled store.update)
+// so a future re-narrowing of any of these five sites would be caught here.
+test('deleting an item refreshes a stale mention chip in a different-section pane', () => {
+  const { store, pm } = setup()
+  pm.registerModule('milestones', renderMilestones)
+  store.update((d) => {
+    const t1 = emptyTeam('t1', 'Alpha')
+    t1.actionItems.push({
+      id: 'a1', summary: 'Card', notes: '', status: 'todo',
+      dueDate: null, assignee: '', color: 'ledger', order: 0,
+    })
+    t1.milestones.push({
+      id: 'm1', date: todayIso(), title: 'Launch', done: false,
+      followup: 'See @[Card](action:a1) for details',
+    })
+    d.teams.push(t1)
+    d.nav.activeTeamId = 't1'
+  })
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openBothPanes(
+    { teamId: 't1', ref: { kind: 'actions' } },
+    { teamId: 't1', ref: { kind: 'milestones' } },
+    0
+  )
+
+  const bodies = document.querySelectorAll('.tt-pane-body')
+
+  // Expand the milestone's follow-up editor in pane 1 so its rendered HTML
+  // (built from the raw markdown via mdToHtml) is actually in the DOM.
+  const expandBtn = bodies[1]!.querySelector('.tt-milestone-expand-btn') as HTMLButtonElement
+  expandBtn.click()
+  expect(bodies[1]!.querySelector('a.ref[data-ref="action:a1"]')).not.toBeNull()
+
+  // Delete the action item from pane 0 via the real UI flow: dblclick opens
+  // the edit modal, its Delete button opens the confirm-delete modal, and
+  // that modal's own Delete button fires the actual removeItem() call site.
+  const card = bodies[0]!.querySelector('.tt-kanban-card') as HTMLElement
+  card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  const findDeleteBtn = (): HTMLButtonElement =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Delete')!
+  findDeleteBtn().click() // closes edit modal, opens confirm-delete
+  findDeleteBtn().click() // confirms — removeItem() fires store.update()
+
+  // unlinkRefsInTeam() rewrote m1.followup's raw text back to plain "Card"
+  // (no ref markup at all) as part of the same store.update(). The other
+  // pane must have re-rendered to pick that up — a live ref chip pointing at
+  // the now-deleted action item must not still be in the DOM.
+  expect(document.querySelector('a.ref[data-ref="action:a1"]')).toBeNull()
 })

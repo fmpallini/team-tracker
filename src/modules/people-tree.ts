@@ -253,7 +253,13 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
                   if (!tm) return
                   unlinkRefsInTeam(tm, 'person', [person.id])
                   tm[group] = deletePerson(tm[group], person.id)
-                }, { teamId, sections: ['people'] })
+                  // No `sections`: unlinkRefsInTeam rewrites @mentions across
+                  // every content-bearing section of this team (notes,
+                  // actions, milestones, risks — see refs.ts), not just
+                  // 'people'. Team-only scoping is the narrowest scope that's
+                  // still correct and won't rot if unlinkRefsInTeam's reach
+                  // changes later.
+                }, { teamId })
               },
             })
           },
