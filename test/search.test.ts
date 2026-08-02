@@ -1,6 +1,6 @@
-import { searchDocument, normalize, teamRefCandidates, KIND_ICON } from '../src/core/search'
+import { searchDocument, normalize, teamRefCandidates, KIND_ICON, createSearchIndex } from '../src/core/search'
 import { createEmptyDocument } from '../src/core/document'
-import type { Team } from '../src/core/types'
+import type { Doc, Team } from '../src/core/types'
 
 const team = (id: string, name: string): Team => ({ id, name, emoji: '🧭', stakeholders: [], members: [],
   actionItems: [], milestones: [], risks: [], dailyNotes: {} })
@@ -89,4 +89,59 @@ test('KIND_ICON has an entry for every moduleKind used by search results', () =>
   const results = searchDocument(d, 'orcamento', null)
   expect(results.length).toBeGreaterThan(0)
   for (const r of results) expect(KIND_ICON[r.moduleKind]).toBeTruthy()
+})
+
+function teamWithNote(id: string, name: string, note: string): Team {
+  return {
+    id, name, emoji: '🚀',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-08-01': note },
+  }
+}
+
+test('the index returns the same results as searchDocument', () => {
+  const doc: Doc = createEmptyDocument('en-US')
+  doc.teams.push(teamWithNote('t1', 'Alpha', 'deploy the **release** today'))
+  const rev = 0
+  const index = createSearchIndex(() => doc, () => rev)
+
+  const first = index.search('release', null)
+  expect(first.length).toBe(1)
+  expect(first[0]!.snippet).toContain('release')
+})
+
+test('repeat searches at the same rev reuse the cache', () => {
+  const doc: Doc = createEmptyDocument('en-US')
+  doc.teams.push(teamWithNote('t1', 'Alpha', 'alpha note'))
+  const rev = 0
+  const index = createSearchIndex(() => doc, () => rev)
+
+  expect(index.search('alpha', null).length).toBe(1)
+  // Mutate the doc WITHOUT bumping rev: a cached index must not see it.
+  doc.teams[0]!.dailyNotes['2026-08-01'] = 'beta note'
+  expect(index.search('beta', null).length).toBe(0)
+})
+
+test('bumping rev invalidates the cache', () => {
+  const doc: Doc = createEmptyDocument('en-US')
+  doc.teams.push(teamWithNote('t1', 'Alpha', 'alpha note'))
+  let rev = 0
+  const index = createSearchIndex(() => doc, () => rev)
+
+  expect(index.search('alpha', null).length).toBe(1)
+  doc.teams[0]!.dailyNotes['2026-08-01'] = 'beta note'
+  rev = 1
+  expect(index.search('beta', null).length).toBe(1)
+  expect(index.search('alpha', null).length).toBe(0)
+})
+
+test('team scoping still applies through the index', () => {
+  const doc: Doc = createEmptyDocument('en-US')
+  doc.teams.push(teamWithNote('t1', 'Alpha', 'shared word'))
+  doc.teams.push(teamWithNote('t2', 'Beta', 'shared word'))
+  const index = createSearchIndex(() => doc, () => 0)
+
+  expect(index.search('shared', null).length).toBe(2)
+  expect(index.search('shared', 't1').length).toBe(1)
+  expect(index.search('shared', 't1')[0]!.teamName).toBe('Alpha')
 })

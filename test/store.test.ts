@@ -203,3 +203,22 @@ test('replaceDoc notifies subscribers with a null scope (everything changed)', (
   s.replaceDoc(createEmptyDocument('en-US'))
   expect(seen).toEqual([null])
 })
+
+test('rev increments on every mutation channel', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const start = s.rev
+  s.update(() => {})
+  expect(s.rev).toBe(start + 1)
+  s.updateNav(() => {})
+  expect(s.rev).toBe(start + 2)
+  s.replaceDoc(createEmptyDocument('en-US'))
+  expect(s.rev).toBe(start + 3)
+})
+
+test('rev does not increment for a blocked (read-only) update', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  s.setReadOnly(true)
+  const start = s.rev
+  s.update(() => {})
+  expect(s.rev).toBe(start)
+})

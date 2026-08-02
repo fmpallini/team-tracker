@@ -5,7 +5,7 @@ import type { Shell } from './shell'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
-import { searchDocument, normalize, KIND_ICON, type SearchResult } from '../core/search'
+import { createSearchIndex, normalize, KIND_ICON, type SearchResult } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
@@ -61,6 +61,7 @@ export function mountSearch(
   pm: PaneManager,
   switchTeam: (teamId: string) => void
 ): () => void {
+  const index = createSearchIndex(() => store.doc, () => store.rev)
   let allTeams = false
   let results: SearchResult[] = []
   let selected = 0
@@ -173,7 +174,7 @@ export function mountSearch(
       return
     }
     const scope = allTeams ? null : store.doc.nav.activeTeamId
-    results = searchDocument(store.doc, q, scope)
+    results = index.search(q, scope)
     selected = 0
     renderList()
     openDropdown()

@@ -14,6 +14,12 @@ export interface Store {
    */
   readonly readOnly: boolean
   /**
+   * Monotonic mutation counter. Consumers that cache derived data (e.g.
+   * core/search.ts's index) compare it to decide whether their cache is
+   * stale — the Doc is mutated in place, so object identity can't tell them.
+   */
+  readonly rev: number
+  /**
    * `scope` describes what changed so subscribers can skip irrelevant
    * re-renders (see core/scope.ts). Omitting it means "everything changed",
    * which is the pre-scoping behavior — every existing call site is therefore
@@ -72,6 +78,7 @@ type ReadOnlyState =
 export function createStore(initialDoc: Doc): Store {
   let doc = initialDoc
   let dirty = false
+  let rev = 0
   let roState: ReadOnlyState = { kind: 'writable' }
   const subscribers = new Set<(scope: ChangeScope | null) => void>()
   const mutationListeners = new Set<(kind: MutationKind) => void>()
@@ -105,11 +112,15 @@ export function createStore(initialDoc: Doc): Store {
     get readOnly() {
       return roState.kind !== 'writable'
     },
+    get rev() {
+      return rev
+    },
     update(fn: (d: Doc) => void, scope?: ChangeScope): void {
       if (roState.kind !== 'writable') {
         warnBlocked()
         return
       }
+      rev++
       fn(doc)
       setDirty(true)
       const s = scope ?? null
@@ -117,6 +128,7 @@ export function createStore(initialDoc: Doc): Store {
       notifyMutate('content')
     },
     updateNav(fn: (d: Doc) => void): void {
+      rev++
       fn(doc)
       setDirty(true)
       notifyMutate('nav')
@@ -140,6 +152,7 @@ export function createStore(initialDoc: Doc): Store {
       setDirty(false)
     },
     replaceDoc(newDoc: Doc): void {
+      rev++
       doc = newDoc
       setDirty(false)
       for (const fn of Array.from(subscribers)) { try { fn(null) } catch (e) { console.error(e) } }
