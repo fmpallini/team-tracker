@@ -349,9 +349,12 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       pendingX = ev.clientX
       if (frame === null) frame = requestAnimationFrame(applyPending)
     }
-    function onUp(): void {
+    function unbind(): void {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+    }
+    function onUp(): void {
+      unbind()
       dragCleanup = null
       // Flush whatever the last frame hasn't applied yet, so the divider
       // always lands exactly where the pointer was released.
@@ -362,9 +365,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    // Only the unbinding is shared with onUp: a normal mouseup flushes the
+    // pending frame (the divider lands where the pointer was released), while
+    // dispose() mid-drag deliberately drops it — the pane grid is going away.
     dragCleanup = () => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
+      unbind()
       if (frame !== null) cancelAnimationFrame(frame)
       frame = null
     }

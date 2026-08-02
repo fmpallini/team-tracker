@@ -669,6 +669,11 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
      * listener pinning the closed document's store and detached shell DOM.
      */
     dispose(): void {
+      // The team switcher manages its own document-level 'keydown' + dismiss
+      // listeners across open/close, so they are invisible to the store
+      // teardown below — disposing while it happens to be open would leak
+      // them along with the dropdown element. No-op when it's already shut.
+      closeTeamSwitcher()
       unsubscribeContent()
       unsubscribeMutate()
       document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)

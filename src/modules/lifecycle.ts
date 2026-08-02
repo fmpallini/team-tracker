@@ -18,6 +18,18 @@ import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
  * A WeakMap (rather than a DOM data-attribute or a property stashed on the
  * element) keeps this bookkeeping off the container itself and lets the
  * container be garbage-collected normally once panes.ts drops it.
+ *
+ * ONE map shared by every module, not one per module — and that is a
+ * deliberate behavior change, not merely deduplication. ui/panes.ts reuses the
+ * same body element across module switches, so a daily-notes -> risks switch
+ * mounts the second module into the container the first is still registered
+ * against. With per-module maps each renderer could only see its own entry and
+ * the outgoing module's instance leaked; with one map the outgoing instance is
+ * disposed. This is safe because each teardown closes only over its own
+ * instance state (its `unsubscribe`, its own editor bundle, its own listener
+ * refs) and never over anything the incoming module needs. Pinned by
+ * test/lifecycle.test.ts's "switching modules within one container disposes the
+ * outgoing module" test.
  */
 const teardowns = new WeakMap<HTMLElement, () => void>()
 

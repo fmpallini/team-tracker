@@ -508,10 +508,10 @@ test('drag and drop reorders the teams array', () => {
 })
 
 test('tt-add-team-request event opens the add-team modal (Task 3 empty-state CTA)', () => {
-  // Note: mountSidebar's document-level ADD_TEAM_REQUEST_EVENT listener is
-  // never torn down between `setup()` calls within a test file, so earlier
-  // tests' stale listeners also fire here — hence asserting "at least one"
-  // modal opened rather than an exact count.
+  // Note: asserts "at least one" modal opened rather than an exact count.
+  // afterEach now disposes the last mounted sidebar, but a test that calls
+  // setup() more than once still leaves the earlier mounts' document-level
+  // ADD_TEAM_REQUEST_EVENT listeners live for the rest of that test.
   setup()
   expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
@@ -1009,5 +1009,28 @@ describe('dispose()', () => {
     mountFresh()
     document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT))
     expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+  })
+
+  test('dispose() while the team switcher is open closes it and drops its document keydown listener', () => {
+    // The switcher owns document-level listeners that only openTeamSwitcher /
+    // closeTeamSwitcher manage, so they are invisible to the store-subscription
+    // teardown above — disposing mid-open used to leak them along with the
+    // dropdown element itself.
+    const { store, handle } = mountFresh()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    ;(document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement).click()
+    ;(document.querySelector('.tt-header-team-indicator') as HTMLElement).click()
+    expect(document.querySelector('.tt-team-switcher-dropdown')).not.toBeNull()
+
+    handle.dispose()
+
+    expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
+    // The keydown listener is capture-phase on document; if it survived, this
+    // ArrowDown would still run its handler against the now-detached list.
+    expect(() => document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+    )).not.toThrow()
+    expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
   })
 })

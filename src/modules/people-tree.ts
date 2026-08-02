@@ -1,7 +1,7 @@
 // src/modules/people-tree.ts — Task 19: one parameterized renderer for both
 // the 'stakeholders' and 'members' modules. Each renders the group's people
-// as a drag-and-droppable hierarchy (parentId/order), mirroring the
-// disposal/store.subscribe discipline established by src/modules/daily-notes.ts.
+// as a drag-and-droppable hierarchy (parentId/order), following the
+// disposal/store.subscribe discipline documented in src/modules/lifecycle.ts.
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
