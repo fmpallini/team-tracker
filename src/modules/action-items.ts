@@ -18,9 +18,7 @@ import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -75,10 +73,7 @@ export function moveCard(items: ActionItem[], draggedId: string, status: ActionI
 
 // --- renderer ---------------------------------------------------------------
 
-export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'actions') return // registered only for 'actions'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
@@ -609,8 +604,8 @@ export function renderActionItems(container: HTMLElement, loc: Loc, ctx: ModuleC
   const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
   container.appendChild(kanbanRootEl)
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     disposeOpenBundle()
-  })
-}
+  }
+})

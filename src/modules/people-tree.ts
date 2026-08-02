@@ -10,9 +10,7 @@ import { el } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -130,10 +128,7 @@ export function deletePerson(people: Person[], id: string): Person[] {
 // --- renderer ---------------------------------------------------------------
 
 export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRenderer {
-  return function renderTree(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-    disposers.get(container)?.()
-    disposers.delete(container)
-
+  return withDisposal(function renderTree(container: HTMLElement, loc: Loc, ctx: ModuleCtx) {
     if (loc.ref.kind !== group) return // registered only for this group's kind; defensive
     const teamId = loc.teamId
     const lc = ctx.locale
@@ -398,8 +393,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
     container.appendChild(el('div', { class: 'tt-people' }, toolbar, rootDropEl, treeEl))
 
-    disposers.set(container, () => {
+    return () => {
       unsubscribe()
-    })
-  }
+    }
+  })
 }

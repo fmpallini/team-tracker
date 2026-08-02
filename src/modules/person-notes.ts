@@ -11,17 +11,13 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
-
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 function personLabel(p: Person): string {
   return p.role ? `${p.name} — ${p.role}` : p.name
 }
 
-export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'person') return // registered only for 'person'; defensive
   const { personId, group } = loc.ref
   const teamId = loc.teamId
@@ -42,7 +38,6 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
   const person = findPerson()
   if (!person) {
     showNotFound()
-    disposers.set(container, () => {})
     return
   }
 
@@ -86,8 +81,8 @@ export function renderPersonNotes(container: HTMLElement, loc: Loc, ctx: ModuleC
 
   container.appendChild(el('div', { class: 'tt-person-notes' }, headerEl, editor.root))
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     bundle.dispose()
-  })
-}
+  }
+})

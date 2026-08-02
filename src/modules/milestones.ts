@@ -24,9 +24,7 @@ import { createDatePicker } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /** Minimum horizontal distance (px) between two neighboring milestone dots. */
@@ -145,10 +143,7 @@ export function computeTimelineLayout(
 
 // --- renderer ---------------------------------------------------------------
 
-export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'milestones') return // registered only for 'milestones'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
@@ -508,9 +503,9 @@ export function renderMilestones(container: HTMLElement, loc: Loc, ctx: ModuleCt
   container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
   renderAll()
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     expandable.disposeAll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
-  })
-}
+  }
+})

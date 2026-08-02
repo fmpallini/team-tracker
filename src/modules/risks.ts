@@ -22,9 +22,7 @@ import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
-
-/** Per-container disposers — see the extensive comment on the same pattern in src/modules/daily-notes.ts. */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -107,10 +105,7 @@ const PLAN_KEYS: Record<RiskPlan, MsgKey> = {
 
 // --- renderer ---------------------------------------------------------------
 
-export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'risks') return // registered only for 'risks'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
@@ -521,9 +516,9 @@ export function renderRisks(container: HTMLElement, loc: Loc, ctx: ModuleCtx): v
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     expandable.disposeAll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
-  })
-}
+  }
+})

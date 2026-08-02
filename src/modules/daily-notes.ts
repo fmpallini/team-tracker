@@ -11,34 +11,13 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
-
-/**
- * Per-container disposers for the previous instance mounted into that
- * container. `renderDailyNotes` (like every module renderer) can be invoked
- * repeatedly on the *same* container element — src/ui/panes.ts's
- * `renderBody` clears the container's DOM children before re-invoking the
- * renderer, but that clear does *not* reach the document-level listeners and
- * document.body-appended overlays that src/ui/atref.ts's and
- * src/ui/template-picker.ts's dropdowns attach when open (they're not
- * descendants of `container`). Without explicit disposal those would leak a
- * live document 'mousedown' listener plus an orphaned dropdown element every
- * time the user re-opens the same daily-notes pane. A WeakMap (rather than a
- * DOM data-attribute or a property stashed on the element) keeps this
- * strictly internal bookkeeping off the container itself and lets the
- * container be garbage-collected normally once panes.ts drops it.
- */
-const disposers = new WeakMap<HTMLElement, () => void>()
+import { withDisposal } from './lifecycle'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
 }
 
-export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCtx): void {
-  // Tear down whatever this container previously hosted (see comment on
-  // `disposers` above) before mounting a new instance into it.
-  disposers.get(container)?.()
-  disposers.delete(container)
-
+export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'daily') return // registered only for 'daily'; defensive
   const date = loc.ref.date
   const teamId = loc.teamId
@@ -160,8 +139,8 @@ export function renderDailyNotes(container: HTMLElement, loc: Loc, ctx: ModuleCt
   )
   container.appendChild(layout)
 
-  disposers.set(container, () => {
+  return () => {
     unsubscribe()
     bundle.dispose()
-  })
-}
+  }
+})
