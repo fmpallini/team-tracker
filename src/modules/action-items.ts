@@ -110,33 +110,30 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     tagChipsEl.classList.toggle('filtering', activeTagFilter !== null)
     for (const c of COLORS) {
       const custom = tagNames[c] ?? null
-      // A chip with no name used to render as a bare colored square — no
-      // text, the name only in `aria-label`. Sighted users saw three swatches
-      // that looked like a rendering failure and gave no clue what filtering
-      // by "green" would do. Unnamed chips now carry the suggested name in
-      // italic at reduced weight: visibly a placeholder, but legible, and
-      // clicking one opens Edit tags rather than applying a mystery filter.
-      const unnamed = custom === null
-      const children: (Node | string)[] = [unnamed ? suggestedTagName(c) : custom]
+      // Every chip filters, named or not — an unnamed color is still a
+      // perfectly good thing to filter by, identified by the swatch itself.
+      // Naming happens in one place only: the "Edit tags" button. (A previous
+      // pass made unnamed chips open that modal instead of filtering; it cost
+      // the filter and was reverted.) Unnamed chips stay bare swatches with
+      // the suggested name in `aria-label`.
+      const named = custom !== null
+      const children: (Node | string)[] = named ? [custom] : []
       // Named chips also carry how many cards they'd filter to — the strip
-      // already costs a row of vertical space; this is what pays for it.
-      if (!unnamed && counts[c] > 0) {
+      // already costs a row of vertical space; this is what pays for it. A
+      // bare swatch has no room for it.
+      if (named && counts[c] > 0) {
         children.push(el('span', { class: 'tt-kanban-tag-chip-count' }, String(counts[c])))
       }
       const chip = el(
         'button',
         {
           type: 'button',
-          class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}`
-            + (activeTagFilter === c ? ' selected' : '')
-            + (unnamed ? ' unnamed' : ''),
+          // Same square swatch pattern as the color picker in the card modal
+          // (.tt-kanban-color-chip) — blank until named, name shown inside once it is.
+          class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}` + (activeTagFilter === c ? ' selected' : ''),
           'aria-label': custom ?? suggestedTagName(c),
           'aria-pressed': activeTagFilter === c ? 'true' : 'false',
           onclick: () => {
-            if (unnamed) {
-              openEditTagsModal(c)
-              return
-            }
             activeTagFilter = activeTagFilter === c ? null : c
             renderAll()
           },
@@ -332,8 +329,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     summaryInput.focus()
   }
 
-  /** `focusColor` scrolls that color's row into focus on open — the path taken when an unnamed filter chip is clicked, so naming it is one click rather than a hunt. */
-  function openEditTagsModal(focusColor?: ActionItem['color']): void {
+  function openEditTagsModal(): void {
     const tm = findTeam()
     if (!tm) return
     const inputs = new Map<ActionItem['color'], HTMLInputElement>()
@@ -366,7 +362,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       },
     }
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_edit_tags_title'), body, buttons: [cancelBtn, saveBtn] })
-    if (focusColor) inputs.get(focusColor)?.focus()
   }
 
   function emptyEl(): HTMLElement {

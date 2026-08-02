@@ -714,11 +714,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-people-tree { flex: 1; padding: 1rem; }
 .tt-people-empty { color: var(--muted); padding: .5rem; }
 
-/* Anchored to the start, not centered: a hierarchy that begins in the middle
-   of the pane has nowhere to grow leftward, and every person added re-centers
-   the whole chart under the reader. align-items: flex-start keeps the root
-   row at the top instead of stretching it down an empty pane. */
-.tt-org-root { display: flex; gap: 2rem; justify-content: flex-start; align-items: flex-start; overflow-x: auto; height: 100%; }
+/* Centered: an org chart reads as one structure hanging off its root, and
+   the root belongs in the middle of it. (Start-anchoring was tried and
+   reverted — it buys room to grow leftward at the cost of the shape the
+   chart is supposed to have.) */
+.tt-org-root { display: flex; gap: 2rem; justify-content: center; overflow-x: auto; height: 100%; }
 /* While a card is being dragged, every other card shows it is a target.
    Previously the drop bands only appeared once the pointer was already over
    one specific card, so the nesting affordance was invisible to anyone who
@@ -893,20 +893,6 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .35; filter: saturate(.35); }
 .tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .75; filter: none; }
-/* Unnamed color: an invitation to name it, not a filter. Hollow rather than
-   filled (the color survives as the border and the text) so it reads as
-   "not set up yet" beside the solid chips of the tags that are. */
-.tt-kanban-tag-chip.unnamed {
-  background: transparent; font-style: italic; font-weight: 500; text-shadow: none;
-  border-style: dashed; border-color: currentColor; opacity: .75;
-}
-.tt-kanban-tag-chip.unnamed.color-slate { color: var(--card-slate); }
-.tt-kanban-tag-chip.unnamed.color-brass { color: var(--card-brass); }
-.tt-kanban-tag-chip.unnamed.color-sage { color: var(--card-sage); }
-.tt-kanban-tag-chip.unnamed.color-rust { color: var(--card-rust); }
-.tt-kanban-tag-chip.unnamed.color-plum { color: var(--card-plum); }
-.tt-kanban-tag-chip.unnamed.color-ledger { color: var(--card-ledger); }
-.tt-kanban-tag-chip.unnamed:hover { opacity: 1; }
 /* Cards this tag would filter to (open columns only). */
 .tt-kanban-tag-chip-count { font-family: var(--font-data); font-size: .64rem; opacity: .8; margin-left: .3rem; }
 
