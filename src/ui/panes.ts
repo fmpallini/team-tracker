@@ -1,8 +1,9 @@
 // src/ui/panes.ts — central navigation hub; every module open goes through here.
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
-import type { Loc, ModuleRef, PaneState, Team } from '../core/types'
+import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
+import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON } from '../core/search'
 import { el } from './dom'
@@ -172,30 +173,23 @@ function otherPaneIdx(idx: 0 | 1): 0 | 1 {
 }
 
 /**
- * Per-store invalidation hook for `unsplitStashValid` (declared inside
- * `createPaneManager`, see `toggleSplit` below). `stepPaneHistory` just below
- * is intentionally a free function, not a `PaneManager` method — see its own
- * docstring — so main.ts's global Alt+ArrowLeft/Right hotkey
- * (`navigateFocusedHistory`) can drive pane-0 history directly, without
- * reaching into `createPaneManager`'s closure. That means it's also the one
- * real-navigation site that can't set the closure-local `unsplitStashValid`
- * flag directly. A `WeakMap` keyed by the `Store` instance gives it a narrow
- * way back in — one entry per `PaneManager`, replaced (not accumulated) if a
- * store ever gets a new one, and GC'd along with the store — without
- * widening the `PaneManager` interface just for this.
+ * One `PaneLayout` per `PaneManager`, keyed by Store so the module-level free
+ * functions below (which main.ts and sidebar.ts call without a PaneManager in
+ * hand) can reach the same transient layout state. Replaced — not
+ * accumulated — if a store ever gets a second manager, and GC'd with the store.
  */
-const unsplitStashInvalidators = new WeakMap<Store, () => void>()
+const layoutsByStore = new WeakMap<Store, PaneLayout>()
 
 /**
- * Invalidates `store`'s stashed pane-0 content (see `unsplitStashInvalidators`
- * above) from outside `createPaneManager`'s closure — e.g. sidebar.ts's
+ * Invalidates `store`'s stashed pane-0 content (see `layoutsByStore` above)
+ * from outside `createPaneManager`'s closure — e.g. sidebar.ts's
  * `deleteTeam`, which prunes `d.nav.panes[*].history` directly rather than
  * through `openInPane`/`stepPaneHistory`, so it would otherwise leave a stash
  * referencing the deleted team's history restorable by a later re-split.
  * No-op if `store` has no registered `PaneManager` yet.
  */
 export function invalidateUnsplitStash(store: Store): void {
-  unsplitStashInvalidators.get(store)?.()
+  layoutsByStore.get(store)?.invalidateStash()
 }
 
 /**
@@ -208,17 +202,12 @@ export function invalidateUnsplitStash(store: Store): void {
  * `createPaneManager`'s internals.
  */
 export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean {
-  const nav = store.doc.nav
-  const other = currentLoc(nav.panes[otherPaneIdx(idx)])
-  const result = navigateHistory(nav.panes[idx], dir, other)
-  if (!result) return false
-  store.updateNav((d) => {
-    d.nav.panes[idx] = result
-    d.nav.focusedPane = idx
-  })
-  // Real navigation into pane 0 — see unsplitStashInvalidators above.
-  if (idx === 0) invalidateUnsplitStash(store)
-  return true
+  const owned = layoutsByStore.get(store)
+  if (owned) return owned.stepHistory(idx, dir)
+  // No PaneManager for this store yet (unit tests drive the free function
+  // directly): fall back to a throwaway controller. Its stash starts empty,
+  // which is exactly right for a store that has no live layout.
+  return createPaneLayout(store).stepHistory(idx, dir)
 }
 
 /** Convenience wrapper: steps the currently focused pane's history and re-renders. */
@@ -296,6 +285,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
   // not part of Doc, so it never persists and never marks the file dirty.
   let spaceHideSplit = false
+  // `layout$` (not `layout`, which is this closure's own render function
+  // below) owns the transient un-split-stash / history-stepping policy —
+  // see src/core/pane-layout.ts.
+  const layout$ = createPaneLayout(store)
+  layoutsByStore.set(store, layout$)
 
   function effectiveSplit(): boolean {
     return store.doc.nav.split && !spaceHideSplit
@@ -446,7 +440,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function goHistory(idx: 0 | 1, dir: -1 | 1): void {
-    if (!stepPaneHistory(store, idx, dir)) return
+    if (!layout$.stepHistory(idx, dir)) return
     renderAll()
   }
 
@@ -497,8 +491,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.panes[idx] = result.pane
       d.nav.focusedPane = idx
     })
-    // Real navigation into pane 0 — see unsplitStash/unsplitStashValid below.
-    if (idx === 0) unsplitStashValid = false
+    // Real navigation into pane 0 — see core/pane-layout.ts.
+    if (idx === 0) layout$.noteRealNavigation(0)
     renderAll()
   }
 
@@ -516,8 +510,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       d.nav.focusedPane = focusedPane
     })
     // Always a real (programmatic) navigation into pane 0 — see
-    // unsplitStash/unsplitStashValid below.
-    unsplitStashValid = false
+    // core/pane-layout.ts.
+    layout$.invalidateStash()
     renderAll()
   }
 
@@ -543,61 +537,19 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     return toIdx
   }
 
-  // Set by toggleSplit when un-splitting pulls pane 1's content into pane 0
-  // (see below) — holds pane 0's pre-pull PaneState so a later re-split can
-  // put it back on the left instead of leaving pane 0 and pane 1 showing an
-  // identical duplicate. Never persisted, like `spaceHideSplit` — losing it
-  // on reload is fine, it's a same-session UX nicety, not app state.
-  let unsplitStash: PaneState | null = null
-  // Explicit instead of relying on `d.nav.panes[0] === d.nav.panes[1]`
-  // object-identity (which happens to hold because store.updateNav mutates
-  // in place) — any real navigation while unsplit invalidates the stash.
-  // Cleared directly by openInPane/openBothPanes below (idx 0 writes) and,
-  // for stepPaneHistory, via the unsplitStashInvalidators WeakMap registered
-  // just below (see that WeakMap's own comment for why).
-  let unsplitStashValid = false
-  unsplitStashInvalidators.set(store, () => { unsplitStashValid = false })
-
   /**
    * Toggles against the *effective* (visible) split state, not the raw
    * persisted `nav.split` — when the responsive layout (responsive.ts) has
    * force-hidden the split view because the window is narrow, clicking this
    * button means "show it anyway" and must also clear that transient
    * override, or the click would appear to do nothing. See
-   * PaneManager.setSplitSpaceConstrained.
+   * PaneManager.setSplitSpaceConstrained. The un-split stash (pulling pane
+   * 1's content into pane 0, and restoring it on re-split) lives in
+   * core/pane-layout.ts — see `layout$.applyToggleSplit`.
    */
   function toggleSplit(): void {
     const wasVisible = effectiveSplit()
-    store.updateNav((d) => {
-      d.nav.split = !wasVisible
-      // Un-splitting hides pane 1 (layout() never hides pane 0) — leaving
-      // focus stuck there would silently misdirect every focused-pane action
-      // (Ctrl+K palette picks, Alt+arrow history, team hotkeys) at a pane the
-      // user can no longer see. If pane 1 was the focused (visible-to-the-
-      // user) pane, pull its content into pane 0 first so closing split
-      // keeps what the user was looking at instead of reverting to pane 0's
-      // stale content — stashing pane 0's own content first so re-splitting
-      // can restore it instead of leaving both panes showing pane 1's old
-      // content twice.
-      if (!d.nav.split) {
-        if (d.nav.focusedPane === 1) {
-          unsplitStash = d.nav.panes[0]
-          unsplitStashValid = true
-          d.nav.panes[0] = d.nav.panes[1]
-        } else {
-          unsplitStash = null
-          unsplitStashValid = false
-        }
-        d.nav.focusedPane = 0
-      } else if (unsplitStashValid && unsplitStash) {
-        d.nav.panes[0] = unsplitStash
-        unsplitStash = null
-        unsplitStashValid = false
-      }
-      // Remembers this choice per team so switching back to it later (see
-      // main.ts's selectTeam) restores split/single view as last left it.
-      if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = d.nav.split
-    })
+    layout$.applyToggleSplit(wasVisible)
     if (wasVisible === false) spaceHideSplit = false
     renderAll()
   }
