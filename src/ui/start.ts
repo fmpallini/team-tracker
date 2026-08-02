@@ -150,7 +150,11 @@ export function showStartScreen(
       const doc = createEmptyDocument(locale)
       const bytes = await encryptDocument(doc, password)
       downloadFallback(SUGGESTED_NAME, bytes)
-      toast(t(locale, 'fallback_notice'), { sticky: true })
+      // Not sticky: this announces the download that just happened. The
+      // *ongoing* fact that this browser has no direct file access is a mode,
+      // not an event, and lives on the save pill (shell.setFallbackHint) —
+      // a sticky toast here outlived the start screen and sat over the app.
+      toast(t(locale, 'fallback_notice'))
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
       onOpen(session, doc, password)
     }
@@ -163,7 +167,11 @@ export function showStartScreen(
     onchange: () => {
       const file = fileInput.files?.[0]
       if (!file) return
-      toast(t(locale, 'fallback_notice'), { sticky: true })
+      // Not sticky: this announces the download that just happened. The
+      // *ongoing* fact that this browser has no direct file access is a mode,
+      // not an event, and lives on the save pill (shell.setFallbackHint) —
+      // a sticky toast here outlived the start screen and sat over the app.
+      toast(t(locale, 'fallback_notice'))
       handleOpenFallbackFile(file)
         .catch(reportUnexpected)
         .finally(() => {

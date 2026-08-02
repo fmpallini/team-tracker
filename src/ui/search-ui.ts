@@ -114,11 +114,24 @@ export function mountSearch(
     clearBtn.title = t(lc, 'search_clear_title')
     if (open) renderList()
   })
+  // Nothing to search until a team exists, and an input that can't return a
+  // result shouldn't invite typing — the first-run screen showed a live
+  // search box above an empty canvas. Driven by onMutate rather than
+  // subscribe() so creating the first team (a content mutation) and any
+  // later team delete both reach it.
+  function syncEnabled(): void {
+    const empty = store.doc.teams.length === 0
+    input.disabled = empty
+    wrap.classList.toggle('tt-search-disabled', empty)
+  }
+
   const listEl = el('div', { class: 'tt-search-list' })
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
   const inputBox = el('div', { class: 'tt-search-input-box' }, input, clearBtn)
   const wrap = el('div', { class: 'tt-search-wrap' }, inputBox, dropdown)
   shell.headerLeft.appendChild(wrap)
+  syncEnabled()
+  const unsubscribeMutate = store.onMutate(() => syncEnabled())
 
   function currentTerms(): string[] {
     return normalize(input.value.trim()).split(/\s+/).filter(Boolean)
@@ -298,6 +311,7 @@ export function mountSearch(
   return function disposeSearch(): void {
     if (debounceTimer !== null) clearTimeout(debounceTimer)
     unsubscribeLocale()
+    unsubscribeMutate()
     document.removeEventListener('keydown', onDocKeydown)
     document.removeEventListener('mousedown', onDocMousedown)
     wrap.remove()

@@ -251,6 +251,21 @@ describe('renderPeopleTree', () => {
     expect(container.querySelector('.tt-people-empty')).not.toBeNull()
   })
 
+  // Regression: the empty tree used to render `pane_empty` ("No module open"),
+  // which contradicted the pane bar, the "+ Person" button next to it, and the
+  // fact that the module was plainly open.
+  test('the empty placeholder is group-specific and never says "No module open"', () => {
+    for (const [group, expected] of [
+      ['members', 'No members yet. Add the first one, then drag people onto each other to build the reporting line.'],
+      ['stakeholders', 'No stakeholders yet. Add the people outside the team who care what it ships.'],
+    ] as const) {
+      const team = makeTeam()
+      const { container, store, pm, loc } = setup(team, group)
+      render(container, loc, store, pm, group)
+      expect(container.querySelector('.tt-people-empty')!.textContent).toBe(expected)
+    }
+  })
+
   test('"+ Person" adds a root person via a modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team, 'members')

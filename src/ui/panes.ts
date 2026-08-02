@@ -394,7 +394,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       onclick: () => document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT)),
     }
   )
-  const noTeamsEl = el('div', { class: 'tt-no-teams' }, el('div', { class: 'tt-pane-cta' }, noTeamsTitleEl, noTeamsBtn))
+  // Below the button, not above it: the button stays the single primary
+  // action, and the hint answers the question the empty screen otherwise
+  // leaves hanging — what is a team, and what am I about to get?
+  const noTeamsHintEl = el('p', { class: 'tt-no-teams-hint' })
+  const noTeamsEl = el('div', { class: 'tt-no-teams' }, el('div', { class: 'tt-pane-cta' }, noTeamsTitleEl, noTeamsBtn, noTeamsHintEl))
 
   shell.panesRoot.innerHTML = ''
   shell.panesRoot.append(gridEl, noTeamsEl)
@@ -430,6 +434,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     if (!hasTeams) {
       noTeamsTitleEl.textContent = t(lc, 'empty_no_teams_title')
       noTeamsBtn.textContent = t(lc, 'empty_no_teams_btn')
+      noTeamsHintEl.textContent = t(lc, 'empty_no_teams_hint')
     }
     const split = effectiveSplit()
     gridEl.dataset.split = String(split)

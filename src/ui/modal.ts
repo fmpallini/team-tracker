@@ -223,6 +223,15 @@ interface ToastOptions {
   action?: ToastAction
 }
 
+/**
+ * Most toasts a user will ever see at once. Two was already enough to cover
+ * the lower-right corner of a note editor — a sticky fallback notice with a
+ * transient one stacked under it — and the stack has no upper bound of its
+ * own, so a burst could wall off that corner indefinitely. Oldest goes first:
+ * the newest message is the one the user is looking for.
+ */
+const MAX_TOASTS = 3
+
 let toastStack: HTMLElement | null = null
 
 function getToastStack(): HTMLElement {
@@ -249,6 +258,12 @@ export function toast(msg: string, opts?: ToastOptions): void {
   // then this bubbles to run the action before removing the node.
   node.addEventListener('click', dismiss)
   stack.appendChild(node)
+  // Trim from the top (oldest) — including sticky ones, which is the point:
+  // a sticky toast that has been on screen through three later messages has
+  // said what it had to say.
+  while (stack.childElementCount > MAX_TOASTS) {
+    stack.firstElementChild?.remove()
+  }
   if (!opts?.sticky) {
     setTimeout(dismiss, 4000)
   }

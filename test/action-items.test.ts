@@ -636,7 +636,10 @@ describe('renderActionItems — tag display and filter', () => {
     expect(cardB.querySelector('.tt-kanban-card-tag')).toBeNull()
   })
 
-  test('renders one filter chip per color; only custom-named colors show visible text, unnamed ones stay blank with an aria-label', () => {
+  // An unnamed color used to render as a bare swatch with its name only in
+  // `aria-label` — three blank squares that read as a rendering failure and
+  // gave no clue what filtering by "green" would do.
+  test('unnamed filter chips show their suggested name as a placeholder rather than rendering blank', () => {
     const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -645,12 +648,49 @@ describe('renderActionItems — tag display and filter', () => {
     const slateChip = chipByColor(container, '.tt-kanban-tag-chip', 'slate')
     expect(rustChip.classList.contains('tt-kanban-color-chip')).toBe(true) // same square swatch pattern as the modal's color picker
     expect(rustChip.textContent?.trim()).toBe('Blocked')
-    expect(slateChip.textContent?.trim()).toBe('')
-    expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
+    expect(rustChip.classList.contains('unnamed')).toBe(false)
+
+    expect(slateChip.textContent?.trim()).toBe('In Review') // slate's suggested starter name, shown not just announced
+    expect(slateChip.classList.contains('unnamed')).toBe(true)
+    expect(slateChip.getAttribute('aria-label')).toBe('In Review')
+  })
+
+  test('clicking an unnamed chip opens Edit tags focused on that color instead of applying a mystery filter', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [item({ id: 'a', color: 'rust' }), item({ id: 'b', color: 'slate' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    chipByColor(container, '.tt-kanban-tag-chip', 'slate').click()
+
+    expect(document.querySelector('.tt-kanban-color-name-rows')).not.toBeNull()
+    // No filter was applied — both cards are still on the board.
+    expect(cards(container)).toHaveLength(2)
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(false)
+  })
+
+  test('named chips carry the number of open cards they would filter to', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [
+        item({ id: 'a', color: 'rust', status: 'todo' }),
+        item({ id: 'b', color: 'rust', status: 'wip' }),
+        // Done and cancelled cards are deliberately not counted: a chip
+        // reading "Blocked 3" where one is already done answers nothing.
+        item({ id: 'c', color: 'rust', status: 'done' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
+    expect(rustChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('2')
   })
 
   test('creating a card whose color differs from the active filter clears the filter, so the new card is guaranteed visible', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'old', color: 'slate' })] })
+    const team = makeTeam({ actionTagNames: { slate: 'In Review' }, actionItems: [item({ id: 'old', color: 'slate' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
@@ -667,7 +707,7 @@ describe('renderActionItems — tag display and filter', () => {
   })
 
   test('creating a card whose color matches the active filter leaves the filter in place', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'old', color: 'slate' })] })
+    const team = makeTeam({ actionTagNames: { slate: 'In Review' }, actionItems: [item({ id: 'old', color: 'slate' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
@@ -684,6 +724,8 @@ describe('renderActionItems — tag display and filter', () => {
 
   test('clicking a chip filters cards to that color across all columns; clicking again clears it', () => {
     const team = makeTeam({
+      // Named: only named tags filter — an unnamed chip opens Edit tags.
+      actionTagNames: { rust: 'Blocked', slate: 'In Review' },
       actionItems: [
         item({ id: 'rust-1', color: 'rust', status: 'todo' }),
         item({ id: 'slate-1', color: 'slate', status: 'todo' }),
@@ -713,6 +755,7 @@ describe('renderActionItems — tag display and filter', () => {
 
   test('the Done/Cancelled zone-label counts stay unfiltered while a tag filter is active', () => {
     const team = makeTeam({
+      actionTagNames: { rust: 'Blocked', slate: 'In Review' },
       actionItems: [
         item({ id: 'd1', color: 'rust', status: 'done' }),
         item({ id: 'd2', color: 'slate', status: 'done' }),

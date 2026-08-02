@@ -454,7 +454,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
           await writeFile(session, bytes)
         } else {
           downloadFallback(session.name, bytes)
-          toast(t(store.doc.prefs.locale, 'fallback_notice'), { sticky: true })
+          // Not sticky — see the matching note in src/ui/start.ts.
+          toast(t(store.doc.prefs.locale, 'fallback_notice'))
         }
         if (app) app.password = newPw
         store.markSaved()

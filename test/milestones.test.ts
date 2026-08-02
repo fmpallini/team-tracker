@@ -270,6 +270,46 @@ describe('renderMilestones', () => {
     expect(label.textContent).toBe(`${'A very long milestone title indeed'.slice(0, 16)}…`)
   })
 
+  // Regression: three same-day milestones used to print their labels through
+  // each other ("Auth cutBetarewith GA release") because the minimum gap was
+  // sized against the dots (24px) rather than the labels under them.
+  test('title labels alternate between two rows so neighbours never share a baseline', () => {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'a', date: '2026-08-02', title: 'Auth cutover complete' }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'Beta with 3 pilots' }),
+        milestone({ id: 'c', date: '2026-08-02', title: 'GA release' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const ys = [...container.querySelectorAll('.tt-milestone-title-label')].map((n) => Number(n.getAttribute('y')))
+    expect(ys).toHaveLength(3)
+    expect(ys[0]).not.toBe(ys[1])
+    expect(ys[1]).not.toBe(ys[2])
+    expect(ys[0]).toBe(ys[2]) // alternating, so every other one shares a row
+
+    // ...and each dot keeps a leader line down to its own label.
+    expect(container.querySelectorAll('.tt-milestone-leader')).toHaveLength(3)
+  })
+
+  test('same-day milestones are spread far enough apart for their date labels to clear', () => {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'a', date: '2026-08-02', title: 'A' }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'B' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const xs = [...container.querySelectorAll('.tt-milestone-dot')].map((n) => Number(n.getAttribute('cx')))
+    // A dd/mm/yyyy label at 9px is roughly 55px wide; anything under that
+    // overprints its neighbour.
+    expect(Math.abs(xs[1]! - xs[0]!)).toBeGreaterThanOrEqual(56)
+  })
+
   test('circle classes/fill: done is filled solid, overdue-and-not-done is muted, future-and-not-done is accent', () => {
     const team = makeTeam({
       milestones: [
@@ -533,7 +573,40 @@ describe('renderMilestones', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
-    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team)')
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team) · Row menu (Enter or Space)')
+  })
+
+  // The timeline already distinguished done / overdue / upcoming through dot
+  // fill and stroke; the list rendered every row identically. Same three
+  // states, same vocabulary, now on the half you actually edit.
+  test('each row carries a state class matching the timeline dot vocabulary', () => {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'done', date: '2020-01-01', done: true }),
+        milestone({ id: 'late', date: '2020-01-02', done: false }),
+        milestone({ id: 'soon', date: '2099-01-01', done: false }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const stateOf = (id: string): string[] =>
+      [...(container.querySelector(`[data-milestone-id="${id}"]`) as HTMLElement).classList]
+        .filter((c) => c.startsWith('tt-milestone-state-'))
+
+    expect(stateOf('done')).toEqual(['tt-milestone-state-done'])
+    expect(stateOf('late')).toEqual(['tt-milestone-state-overdue'])
+    expect(stateOf('soon')).toEqual(['tt-milestone-state-future'])
+  })
+
+  test('Enter on a milestone row opens the context menu', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
+    expect(row.getAttribute('tabindex')).toBe('0')
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(document.querySelector('.tt-context-menu')).not.toBeNull()
   })
 
   test('a defensive no-op when loc.ref.kind is not "milestones"', () => {
