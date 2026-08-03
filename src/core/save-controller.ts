@@ -12,7 +12,7 @@ import { toast } from '../ui/modal'
 export interface SaveController {
   /**
    * `opts.explicit` marks a save as user-initiated (Ctrl+S, "Save as…" retry)
-   * as opposed to a best-effort automatic trigger (nav change, tab hidden,
+   * as opposed to a best-effort automatic trigger (tab hidden, window blurred,
    * auto-save interval). In fallback mode (no FS handle) only explicit saves
    * are allowed to trigger a `downloadFallback()` — see Task 25 fix #7.
    */
@@ -138,9 +138,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   async function doSave(explicit: boolean): Promise<void> {
     if (deps.store.readOnly) return
     // Fallback mode (no FS handle): a silent "save" is actually a file
-    // download the user must notice and keep. Automatic triggers (nav,
-    // visibilitychange, the — normally-unarmed — interval) must never fire
-    // one; only an explicit user action (Ctrl+S, "Save as…" retry) may.
+    // download the user must notice and keep. Automatic triggers
+    // (visibilitychange, window blur, the — normally-unarmed — interval) must
+    // never fire one; only an explicit user action (Ctrl+S, "Save as…" retry) may.
     if (!deps.session.handle && !explicit) return
     deps.shell.setSaveState('saving')
     let bytes: Uint8Array
@@ -209,8 +209,8 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
 
   function saveNow(opts?: { explicit?: boolean }): Promise<void> {
     // Fix #2: read-only tabs (lost the cross-tab write lock) never write,
-    // full stop — this is the single choke point every trigger (nav,
-    // visibility, Ctrl+S, the auto-save interval) funnels through.
+    // full stop — this is the single choke point every trigger (visibility,
+    // window blur, Ctrl+S, the auto-save interval) funnels through.
     if (deps.store.readOnly) return Promise.resolve()
     // Fix #5: don't even queue an attempt while the conflict modal is open —
     // the auto-save interval firing every few minutes shouldn't pile up
@@ -244,7 +244,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   async function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
     // Fix #3: wait out any in-flight save (and its trailing rounds) first,
     // then hold the same `saving` gate across `fn` so a reentrant
-    // `saveNow()` — from a nav change, the auto-save interval, etc. — can
+    // `saveNow()` — from the auto-save interval, a blur/visibility save, etc. — can
     // only queue a trailing round instead of writing in parallel with `fn`.
     //
     // Task 25 re-review item #3: `await flush()` alone isn't a sound mutual

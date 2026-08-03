@@ -26,6 +26,7 @@ import { writeFile, forceWrite, readCurrent, downloadFallback, sameEntry } from 
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
+import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
@@ -394,6 +395,10 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
+
+  // The handler above only sees tab switches — minimize and OS-level app
+  // switches keep the page 'visible'. See src/core/blur-save.ts.
+  disposers.push(installBlurSave({ save: () => void saveCtl.saveNow(), hasFocus: () => document.hasFocus() }))
 
   // A confirmed-reliable save can't be awaited here — browsers don't allow
   // async work to block unload — so this leans on Chrome's native "leave
