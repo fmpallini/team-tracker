@@ -236,7 +236,9 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 .55rem; cursor: pointer;
 }
-.tt-app-name:hover, .tt-app-name:focus-visible { border-color: var(--accent); color: var(--accent); }
+.tt-app-name:hover:not(:disabled), .tt-app-name:focus-visible:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+/* Matches .tt-search-disabled: no team means nothing for the palette to open. */
+.tt-app-name:disabled { opacity: .45; cursor: not-allowed; }
 
 .tt-body { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
 

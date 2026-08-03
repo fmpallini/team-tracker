@@ -92,6 +92,11 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
 
   function open(): void {
     if (overlay) return
+    // Every module row commits into the active team, so with no team the
+    // palette can only list rows that no-op on Enter. Same rule the search bar
+    // applies (src/ui/search-ui.ts syncEnabled) — the header button is disabled
+    // to match, and this guard also covers the Ctrl+K path.
+    if (store.doc.teams.length === 0) return
     const teamId = store.doc.nav.activeTeamId
     const team = teamId ? store.doc.teams.find((tm) => tm.id === teamId) ?? null : null
     const moduleRows: PaletteRow[] = buildModuleItems(team, locale()).map((item) => ({

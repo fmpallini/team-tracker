@@ -58,6 +58,23 @@ test('the app name is a clickable button that fires the registered onAppNameClic
   expect(cb).toHaveBeenCalledOnce()
 })
 
+test('setAppNameEnabled(false) disables the button so no click reaches the palette', () => {
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const cb = vi.fn()
+  shell.onAppNameClick(cb)
+  const btn = shell.headerLeft.querySelector('.tt-app-name') as HTMLButtonElement
+
+  shell.setAppNameEnabled(false)
+  btn.click()
+  expect(cb).not.toHaveBeenCalled()
+
+  shell.setAppNameEnabled(true)
+  btn.click()
+  expect(cb).toHaveBeenCalledOnce()
+})
+
 test('shell header has a 🔒 close-file button that fires the registered onCloseFile callback', () => {
   stubMatchMedia()
   const shell = createShell('en-US')

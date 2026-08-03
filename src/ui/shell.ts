@@ -32,6 +32,12 @@ export interface Shell {
   onHelp(cb: () => void): void
   /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+K). */
   onAppNameClick(cb: () => void): void
+  /**
+   * Enables/disables the "Team Tracker" title button. Mirrors the search bar's
+   * empty-document state (src/ui/search-ui.ts): with no team there is nothing
+   * the palette can open, so the button shouldn't invite a click.
+   */
+  setAppNameEnabled(enabled: boolean): void
   /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Alt+L). */
   onCloseFile(cb: () => void): void
   /** Registers the click handler for the save-state pill — clicking it while a save is pending ('dirty'/'error') triggers an explicit save, same as Ctrl+S. */
@@ -255,6 +261,10 @@ export function createShell(locale: Locale): Shell {
     appNameHandler = cb
   }
 
+  function setAppNameEnabled(enabled: boolean): void {
+    appNameBtn.disabled = !enabled
+  }
+
   function onCloseFile(cb: () => void): void {
     closeFileHandler = cb
   }
@@ -269,5 +279,5 @@ export function createShell(locale: Locale): Shell {
 
   setSaveState('saved')
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, onCloseFile, onSaveRequest, setHeaderCompactSpaceHidden }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, setHeaderCompactSpaceHidden }
 }

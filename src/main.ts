@@ -298,6 +298,11 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // mountSidebar() has already returned it.
   const palette = createPalette(store, pm, () => sidebarHandle.openDuePanel())
   shell.onAppNameClick(() => palette.open())
+  // Same empty-document rule as the search bar (src/ui/search-ui.ts): driven by
+  // onMutate so creating the first team and deleting the last one both reach it.
+  const syncAppName = (): void => shell.setAppNameEnabled(store.doc.teams.length > 0)
+  syncAppName()
+  disposers.push(store.onMutate(syncAppName))
   disposers.push(mountSearch(shell, store, pm, selectTeam))
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
