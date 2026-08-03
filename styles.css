@@ -120,7 +120,7 @@ html[data-font=serif] body { font-family: Georgia, 'Times New Roman', serif; }
 html[data-font=mono] body { font-family: Consolas, 'Cascadia Mono', monospace; }
 html[data-font=classic] body { font-family: Constantia, Cambria, 'Times New Roman', serif; }
 html[data-font=rounded] body { font-family: Candara, Corbel, sans-serif; }
-html[data-size=S] { font-size: 14px; } html[data-size=M] { font-size: 16px; } html[data-size=L] { font-size: 18px; }
+html[data-size=XS] { font-size: 12px; } html[data-size=S] { font-size: 13.5px; } html[data-size=M] { font-size: 15px; } html[data-size=L] { font-size: 16.5px; } html[data-size=XL] { font-size: 18px; }
 
 body { background: var(--bg); color: var(--fg); }
 

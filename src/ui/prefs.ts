@@ -103,10 +103,15 @@ const FONT_OPTIONS: readonly { value: Prefs['font']; key: MsgKey; preview: strin
   { value: 'rounded', key: 'prefs_font_rounded', preview: 'Candara, Corbel, sans-serif' },
 ]
 
-const SIZE_OPTIONS: readonly { value: 'S' | 'M' | 'L'; key: MsgKey }[] = [
-  { value: 'S', key: 'prefs_size_s' },
-  { value: 'M', key: 'prefs_size_m' },
-  { value: 'L', key: 'prefs_size_l' },
+// Five evenly-spaced steps, 12px → 18px (styles.css html[data-size=…] holds
+// the same values). `sizePreview` renders each label at its own size — the
+// same "show, don't describe" approach FONT_OPTIONS uses for font stacks.
+const SIZE_OPTIONS: readonly { value: Prefs['fontSize']; key: MsgKey; sizePreview: string }[] = [
+  { value: 'XS', key: 'prefs_size_xs', sizePreview: '12px' },
+  { value: 'S', key: 'prefs_size_s', sizePreview: '13.5px' },
+  { value: 'M', key: 'prefs_size_m', sizePreview: '15px' },
+  { value: 'L', key: 'prefs_size_l', sizePreview: '16.5px' },
+  { value: 'XL', key: 'prefs_size_xl', sizePreview: '18px' },
 ]
 
 const SCOPE_OPTIONS: readonly { value: Template['scope']; key: MsgKey }[] = [
@@ -126,7 +131,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   function radioField(
     name: string,
     labelKey: MsgKey,
-    options: readonly { value: string; key: MsgKey; preview?: string; swatch?: string }[],
+    options: readonly { value: string; key: MsgKey; preview?: string; swatch?: string; sizePreview?: string }[],
     current: string,
     onChange: (value: string) => void
   ): HTMLElement {
@@ -141,9 +146,15 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           checked: opt.value === current,
           onchange: () => onChange(opt.value),
         })
+        // `sizePreview` is an absolute px value on purpose: the modal is
+        // already rendered at the *current* preference's root size, so a
+        // relative unit would scale every option with it and the five steps
+        // would look identical to each other at any setting.
         const text = opt.preview
           ? el('span', { class: 'tt-prefs-radio-preview', style: `font-family:${opt.preview}` }, t(locale, opt.key))
-          : t(locale, opt.key)
+          : opt.sizePreview
+            ? el('span', { class: 'tt-prefs-radio-preview', style: `font-size:${opt.sizePreview}` }, t(locale, opt.key))
+            : t(locale, opt.key)
         const swatch = opt.swatch ? el('span', { class: 'tt-prefs-radio-swatch', style: `background:${opt.swatch}` }) : null
         return el('label', { class: 'tt-prefs-radio' }, input, swatch, text)
       })
@@ -190,7 +201,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const sizeField = radioField('tt-prefs-size', 'prefs_size_label', SIZE_OPTIONS, prefs.fontSize, (value) => {
       store.update((d) => {
-        d.prefs.fontSize = value as 'S' | 'M' | 'L'
+        d.prefs.fontSize = value as Prefs['fontSize']
       })
       shell.applyPrefs(store.doc.prefs)
     })
