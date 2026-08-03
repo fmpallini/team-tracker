@@ -4,7 +4,14 @@ export interface Prefs {
   theme: 'light' | 'dark' | 'system'
   locale: 'pt-BR' | 'en-US'
   font: 'system' | 'serif' | 'mono' | 'classic' | 'rounded'
-  fontSize: 'S' | 'M' | 'L'
+  // Five evenly-spaced steps, 12px → 18px in 1.5px increments (styles.css
+  // html[data-size=…]). No schema bump / migration: the union only widened,
+  // so the S/M/L a pre-existing document persisted is still a valid value.
+  // Those three do land on new px values (S 14→13.5, M 16→15, L 18→16.5) —
+  // an even scale over a range that now starts at 12 can't also keep the old
+  // trio pinned. Accepted deliberately: everyone stays within one step of
+  // where they were, and re-picking is one click in prefs.
+  fontSize: 'XS' | 'S' | 'M' | 'L' | 'XL'
   autoSaveMin: number
   palette: PaletteId
   dueSoonDays: number

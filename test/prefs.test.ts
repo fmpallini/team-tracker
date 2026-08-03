@@ -131,6 +131,25 @@ test('font field offers 5 options (including classic/rounded) and each label pre
   expect(preview.style.fontFamily).toContain('Georgia')
 })
 
+test('size field offers 5 evenly-spaced steps and previews each label at its own px size', () => {
+  const { store, shell, appCtl } = setup()
+  const applySpy = vi.spyOn(shell, 'applyPrefs')
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const values = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="tt-prefs-size"]')).map((r) => r.value)
+  expect(values).toEqual(['XS', 'S', 'M', 'L', 'XL'])
+
+  radio('tt-prefs-size', 'XL').click()
+  expect(store.doc.prefs.fontSize).toBe('XL')
+  expect(applySpy).toHaveBeenCalledWith(store.doc.prefs)
+
+  // Absolute px, not a relative unit: the modal itself renders at the current
+  // preference's root size, so relative previews would all look the same.
+  const previewOf = (value: string): string =>
+    (radio('tt-prefs-size', value).closest('label')?.querySelector('.tt-prefs-radio-preview') as HTMLElement).style.fontSize
+  expect(['XS', 'S', 'M', 'L', 'XL'].map(previewOf)).toEqual(['12px', '13.5px', '15px', '16.5px', '18px'])
+})
+
 test('palette field defaults to ledger, offers 8 swatched options, and updates store.prefs + shell on change', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')

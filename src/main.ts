@@ -26,6 +26,7 @@ import { writeFile, forceWrite, readCurrent, downloadFallback, sameEntry } from 
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
+import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
@@ -298,6 +299,11 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // mountSidebar() has already returned it.
   const palette = createPalette(store, pm, () => sidebarHandle.openDuePanel())
   shell.onAppNameClick(() => palette.open())
+  // Same empty-document rule as the search bar (src/ui/search-ui.ts): driven by
+  // onMutate so creating the first team and deleting the last one both reach it.
+  const syncAppName = (): void => shell.setAppNameEnabled(store.doc.teams.length > 0)
+  syncAppName()
+  disposers.push(store.onMutate(syncAppName))
   disposers.push(mountSearch(shell, store, pm, selectTeam))
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
@@ -389,6 +395,10 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
+
+  // The handler above only sees tab switches — minimize and OS-level app
+  // switches keep the page 'visible'. See src/core/blur-save.ts.
+  disposers.push(installBlurSave({ save: () => void saveCtl.saveNow(), hasFocus: () => document.hasFocus() }))
 
   // A confirmed-reliable save can't be awaited here — browsers don't allow
   // async work to block unload — so this leans on Chrome's native "leave

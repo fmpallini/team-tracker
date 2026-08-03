@@ -96,6 +96,18 @@ test('typing a query that does not match "due" filters the Due entry out', () =>
   expect(labels.some((l) => l?.includes('Due'))).toBe(false)
 })
 
+test('does not open at all when the document has no team', () => {
+  const { store, palette } = setup(() => {})
+  store.update((d) => {
+    d.teams.length = 0
+    d.nav.activeTeamId = null
+  })
+
+  palette.open()
+
+  expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+})
+
 test('without onOpenDue, no Due entry appears', () => {
   const { palette } = setup()
   palette.open()

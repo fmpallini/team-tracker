@@ -120,7 +120,7 @@ html[data-font=serif] body { font-family: Georgia, 'Times New Roman', serif; }
 html[data-font=mono] body { font-family: Consolas, 'Cascadia Mono', monospace; }
 html[data-font=classic] body { font-family: Constantia, Cambria, 'Times New Roman', serif; }
 html[data-font=rounded] body { font-family: Candara, Corbel, sans-serif; }
-html[data-size=S] { font-size: 14px; } html[data-size=M] { font-size: 16px; } html[data-size=L] { font-size: 18px; }
+html[data-size=XS] { font-size: 12px; } html[data-size=S] { font-size: 13.5px; } html[data-size=M] { font-size: 15px; } html[data-size=L] { font-size: 16.5px; } html[data-size=XL] { font-size: 18px; }
 
 body { background: var(--bg); color: var(--fg); }
 
@@ -236,7 +236,9 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 .55rem; cursor: pointer;
 }
-.tt-app-name:hover, .tt-app-name:focus-visible { border-color: var(--accent); color: var(--accent); }
+.tt-app-name:hover:not(:disabled), .tt-app-name:focus-visible:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+/* Matches .tt-search-disabled: no team means nothing for the palette to open. */
+.tt-app-name:disabled { opacity: .45; cursor: not-allowed; }
 
 .tt-body { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
 
