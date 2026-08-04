@@ -14,6 +14,7 @@ import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
+import { createPasswordMeter } from './password-meter'
 
 export interface PrefsAppCtl {
   changePassword(newPw: string | null): Promise<void>
@@ -530,11 +531,18 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   function renderSecurity(container: HTMLElement): void {
     container.innerHTML = ''
     const readOnly = appCtl.isReadOnly()
+    const isPlain = appCtl.currentPassword() === null
 
-    const currentInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
     const newInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password', autocomplete: 'new-password', minlength: 4, disabled: readOnly })
     const confirmInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password-confirm', autocomplete: 'new-password', minlength: 4, disabled: readOnly })
     const errorEl = el('div', { class: 'tt-field-error' })
+    const meter = createPasswordMeter(locale)
+    newInput.addEventListener('input', () => meter.update(newInput.value))
+
+    const currentInput = isPlain
+      ? null
+      : el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
+
     // Task 25 re-review item #2 (UX bonus): static at render time — this tab
     // is rebuilt from scratch every time it's selected (see `renderActiveTab`
     // switch above), which is enough to reflect a read-only state acquired
@@ -543,17 +551,23 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       errorEl.textContent = t(locale, 'prefs_security_readonly_hint')
     }
 
-    function submit(): void {
-      const current = currentInput.value
+    function submitChangeOrSet(): void {
       const next = newInput.value
       const confirm = confirmInput.value
-      if (current === '' || next === '' || confirm === '') {
+      if (next === '' || confirm === '') {
         errorEl.textContent = t(locale, 'prefs_security_password_required')
         return
       }
-      if (current !== appCtl.currentPassword()) {
-        errorEl.textContent = t(locale, 'prefs_security_wrong_current')
-        return
+      if (!isPlain) {
+        const current = currentInput!.value
+        if (current === '') {
+          errorEl.textContent = t(locale, 'prefs_security_password_required')
+          return
+        }
+        if (current !== appCtl.currentPassword()) {
+          errorEl.textContent = t(locale, 'prefs_security_wrong_current')
+          return
+        }
       }
       if (next.length < 4) {
         errorEl.textContent = t(locale, 'password_too_short')
@@ -567,9 +581,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       appCtl
         .changePassword(next)
         .then(() => {
-          currentInput.value = ''
+          if (currentInput) currentInput.value = ''
           newInput.value = ''
           confirmInput.value = ''
+          meter.update('')
           toast(t(locale, 'prefs_security_success_toast'))
         })
         .catch(() => {
@@ -579,21 +594,68 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const submitBtn = el(
       'button',
-      { class: 'tt-btn tt-btn-primary', type: 'button', disabled: readOnly, onclick: () => submit() },
-      t(locale, 'prefs_security_submit_btn')
+      { class: 'tt-btn tt-btn-primary', type: 'button', disabled: readOnly, onclick: () => submitChangeOrSet() },
+      t(locale, isPlain ? 'prefs_security_set_password_btn' : 'prefs_security_submit_btn')
     )
 
-    container.append(
-      el(
-        'div',
-        { class: 'tt-prefs-security-form' },
-        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), currentInput),
-        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_new_label'), newInput),
-        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_confirm_label'), confirmInput),
-        errorEl,
-        submitBtn
+    const formChildren: (Node | string | null)[] = [
+      isPlain ? el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_security_plain_notice')) : null,
+      currentInput ? el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), currentInput) : null,
+      el('label', { class: 'tt-field' }, t(locale, isPlain ? 'prefs_security_set_password_label' : 'prefs_security_new_label'), newInput),
+      meter.el,
+      el('label', { class: 'tt-field' }, t(locale, 'prefs_security_confirm_label'), confirmInput),
+      errorEl,
+      submitBtn,
+    ]
+    container.append(el('div', { class: 'tt-prefs-security-form' }, ...formChildren))
+
+    if (!isPlain) {
+      const migrateBtn = el(
+        'button',
+        {
+          class: 'tt-btn',
+          type: 'button',
+          disabled: readOnly,
+          onclick: () => openMigrateToPlainConfirm(),
+        },
+        t(locale, 'prefs_security_migrate_plain_btn')
       )
-    )
+      container.append(migrateBtn)
+    }
+
+    function openMigrateToPlainConfirm(): void {
+      const confirmInputEl = el('input', { type: 'password', class: 'tt-input', autocomplete: 'current-password' })
+      const confirmErrorEl = el('div', { class: 'tt-field-error' })
+      const body = el(
+        'div',
+        {},
+        el('p', { class: 'tt-modal-message' }, t(locale, 'create_plain_hint')),
+        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), confirmInputEl),
+        confirmErrorEl
+      )
+      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+      const confirmBtn: ModalButton = {
+        label: t(locale, 'prefs_security_migrate_plain_btn'),
+        primary: true,
+        onClick: () => {
+          if (confirmInputEl.value !== appCtl.currentPassword()) {
+            confirmErrorEl.textContent = t(locale, 'prefs_security_wrong_current')
+            return
+          }
+          appCtl
+            .changePassword(null)
+            .then(() => {
+              inner.close()
+              toast(t(locale, 'prefs_security_success_toast'))
+              renderActiveTab()
+            })
+            .catch(() => {
+              toast(t(locale, 'prefs_security_failure_toast'), { sticky: true })
+            })
+        },
+      }
+      const inner: ModalHandle = showModal({ title: t(locale, 'prefs_security_migrate_plain_confirm_title'), body, buttons: [cancelBtn, confirmBtn] })
+    }
   }
 
   // --- Tab 5: Dados (export/import) ---------------------------------------

@@ -32,7 +32,7 @@ interface Setup {
   shell: Shell
   appCtl: PrefsAppCtl
   changePassword: ReturnType<typeof vi.fn>
-  currentPassword: ReturnType<typeof vi.fn>
+  currentPassword: ReturnType<typeof vi.fn<() => string | null>>
 }
 
 function setup(): Setup {
@@ -488,6 +488,78 @@ test('security tab: read-only tab (appCtl.isReadOnly() true) disables the submit
   // behavior) — changePassword must never even be attempted.
   submitBtn.click()
   expect(changePassword).not.toHaveBeenCalled()
+})
+
+test('security tab: encrypted file shows a "Migrate to password-less" button', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Migrate to password-less')
+  expect(btn).toBeDefined()
+})
+
+test('security tab: migrate-to-plain asks for the current password, calls changePassword(null) on success', async () => {
+  const { store, shell, appCtl, changePassword } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  clickByText('Migrate to password-less')
+
+  // Two overlays are now stacked (the Preferences modal underneath, the
+  // confirm sub-modal on top), both with a `.tt-modal-title` — grab the last
+  // one in document order, same pattern the cleanup tests below use.
+  const titles = document.querySelectorAll('.tt-modal-title')
+  expect(titles[titles.length - 1]?.textContent).toBe('Migrate to a password-less file?')
+  // The confirm sub-modal is now the topmost overlay — the existing
+  // clickByText helper already scopes its lookup to the last
+  // .tt-modal-overlay (see its definition below), so calling it again with
+  // the same label correctly hits the sub-modal's confirm button, not the
+  // Security tab's original button underneath it.
+  const pwInput = document.querySelectorAll('.tt-modal-dialog')[1]!.querySelector('input') as HTMLInputElement
+  pwInput.value = 'wrongpw'
+  clickByText('Migrate to password-less')
+
+  expect(changePassword).not.toHaveBeenCalled()
+
+  pwInput.value = 'oldpw'
+  clickByText('Migrate to password-less')
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(changePassword).toHaveBeenCalledWith(null)
+})
+
+test('security tab: plain file shows no current-password field, submit label is "Set password", calls changePassword(newPw)', async () => {
+  const { store, shell, appCtl, changePassword } = setup()
+  appCtl.currentPassword = () => null
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+
+  expect(document.querySelector('input[name="tt-prefs-current-password"]')).toBeNull()
+  expect(document.querySelector('.tt-prefs-security-form')?.textContent).toContain('This file is not password-protected')
+
+  const next = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  next.value = 'brandnewpw'
+  confirm.value = 'brandnewpw'
+  clickByText('Set password')
+
+  expect(changePassword).toHaveBeenCalledWith('brandnewpw')
+})
+
+test('security tab: plain file has no "migrate to password-less" button', () => {
+  const { store, shell, appCtl } = setup()
+  appCtl.currentPassword = () => null
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Migrate to password-less')
+  expect(btn).toBeUndefined()
+})
+
+test('security tab: new-password field renders a strength meter for both encrypted and plain files', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  expect(document.querySelector('.tt-pwmeter')).not.toBeNull()
 })
 
 test('about tab shows app name, versions, and file info from appCtl', () => {
