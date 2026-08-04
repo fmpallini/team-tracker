@@ -1215,3 +1215,13 @@ select option { background: var(--bg); color: var(--fg); }
   font-family: var(--font-data); font-size: .85rem; background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: .5rem; overflow-x: auto; white-space: pre;
 }
+
+/* Password strength meter */
+.tt-pwmeter { display: flex; align-items: center; gap: .5rem; margin-top: .25rem; font-size: .85em; }
+.tt-pwmeter-bar { display: flex; gap: 3px; flex: none; }
+.tt-pwmeter-seg { width: 1.5rem; height: 4px; border-radius: 2px; background: var(--border); }
+.tt-pwmeter-seg-filled.tt-pwmeter-weak { background: var(--danger); }
+.tt-pwmeter-seg-filled.tt-pwmeter-fair { background: var(--brass); }
+.tt-pwmeter-seg-filled.tt-pwmeter-good,
+.tt-pwmeter-seg-filled.tt-pwmeter-strong { background: var(--ok); }
+.tt-pwmeter-label { color: var(--muted); }
