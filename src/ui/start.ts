@@ -89,8 +89,9 @@ export function showStartScreen(
 
   async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string } | null> {
     for (;;) {
-      const password = await promptPassword(locale, { title: t(locale, 'open_file') })
-      if (password === null) return null
+      const result = await promptPassword(locale, { title: t(locale, 'open_file') })
+      if (result === null) return null
+      const password = 'password' in result ? result.password : ''
       try {
         const doc = await decryptDocument(bytes, password)
         return { doc, password }
@@ -138,15 +139,17 @@ export function showStartScreen(
     if (supportsFsApi) {
       const session = await pickCreate(SUGGESTED_NAME)
       if (!session) return
-      const password = await promptPassword(locale, { confirm: true, title: t(locale, 'create_file') })
-      if (password === null) return
+      const result = await promptPassword(locale, { confirm: true, title: t(locale, 'create_file') })
+      if (result === null) return
+      const password = 'password' in result ? result.password : ''
       const doc = createEmptyDocument(locale)
       const bytes = await encryptDocument(doc, password)
       await writeFile(session, bytes)
       onOpen(session, doc, password)
     } else {
-      const password = await promptPassword(locale, { confirm: true, title: t(locale, 'create_file') })
-      if (password === null) return
+      const result = await promptPassword(locale, { confirm: true, title: t(locale, 'create_file') })
+      if (result === null) return
+      const password = 'password' in result ? result.password : ''
       const doc = createEmptyDocument(locale)
       const bytes = await encryptDocument(doc, password)
       downloadFallback(SUGGESTED_NAME, bytes)
