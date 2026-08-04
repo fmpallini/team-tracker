@@ -16,8 +16,8 @@ import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 
 export interface PrefsAppCtl {
-  changePassword(newPw: string): Promise<void>
-  currentPassword(): string
+  changePassword(newPw: string | null): Promise<void>
+  currentPassword(): string | null
   /**
    * Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
    * submit button and show an explanatory hint when this tab has lost the

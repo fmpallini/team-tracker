@@ -21,7 +21,7 @@ import { renderActionItems } from './modules/action-items'
 import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
-import { encryptDocument, decryptDocument, resetSessionKey } from './core/crypto'
+import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
 import { writeFile, forceWrite, readCurrent, downloadFallback, sameEntry } from './core/fs'
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
@@ -45,7 +45,7 @@ if (__PWA__) initInstallCapture()
 interface AppController {
   store: Store
   session: FileSession
-  password: string
+  password: string | null
   shell: Shell
   pm: PaneManager
   saveCtl: SaveController
@@ -67,7 +67,7 @@ let app: AppController | null = null
 // showStartScreen's onOpen callback is typed `=> void` — this adapts
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
-function openDocument(session: FileSession, doc: Doc, password: string): void {
+function openDocument(session: FileSession, doc: Doc, password: string | null): void {
   onDocumentOpened(session, doc, password).catch((e: unknown) => console.error(e))
 }
 
@@ -218,7 +218,7 @@ function setupTabLock(session: FileSession, store: Store, shell: Shell, saveCtl:
   }
 }
 
-async function onDocumentOpened(session: FileSession, doc: Doc, password: string): Promise<void> {
+async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null): Promise<void> {
   // A second file can be opened while one is already open — e.g. the File
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
@@ -331,7 +331,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         onReload: async () => {
           try {
             const bytes = await readCurrent(session)
-            const reloaded = await decryptDocument(bytes, app ? app.password : password)
+            const currentPw = app ? app.password : password
+            const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
+            if (!reloaded) throw new Error('expected a plain file, got something else on reload')
             store.replaceDoc(reloaded)
             pm.renderAll()
             shell.setSaveState('saved')
@@ -345,7 +347,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         },
         onOverwrite: async () => {
           try {
-            const bytes = await encryptDocument(store.doc, app ? app.password : password)
+            const currentPw = app ? app.password : password
+            const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
             await forceWrite(session, bytes)
             store.markSaved()
             shell.setSaveState('saved')
@@ -456,10 +459,10 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     // could still be read-write when `changePassword` is invoked but lose the
     // lock while waiting out an in-flight save, and `fn` is exactly the
     // window that needs to stay guarded once it actually starts writing.
-    async changePassword(newPw: string): Promise<void> {
+    async changePassword(newPw: string | null): Promise<void> {
       await saveCtl.runExclusive(async () => {
         if (store.readOnly) throw new Error('read-only')
-        const bytes = await encryptDocument(store.doc, newPw)
+        const bytes = newPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, newPw)
         if (session.handle) {
           await writeFile(session, bytes)
         } else {
@@ -473,7 +476,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         shell.setTitle(session.name, false)
       })
     },
-    currentPassword(): string {
+    currentPassword(): string | null {
       return app ? app.password : password
     },
     // Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
