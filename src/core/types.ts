@@ -16,6 +16,8 @@ export interface Prefs {
   palette: PaletteId
   dueSoonDays: number
   openRefsInSecondaryPane: boolean
+  dailyBackupEnabled: boolean
+  backupHandleId: string | null
 }
 export interface Person {
   id: string; name: string; role: string
