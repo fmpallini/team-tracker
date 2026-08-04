@@ -16,6 +16,7 @@ vi.mock('../src/core/fs', () => fsMocks)
 
 const cryptoMocks = vi.hoisted(() => ({
   encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
+  serializePlain: vi.fn(() => new Uint8Array([7, 7, 7])),
 }))
 vi.mock('../src/core/crypto', () => cryptoMocks)
 
@@ -59,6 +60,7 @@ beforeEach(() => {
   fsMocks.pickCreate.mockReset()
   fsMocks.supportsFsApi = true
   cryptoMocks.encryptDocument.mockReset().mockImplementation(async () => new Uint8Array([1, 2, 3]))
+  cryptoMocks.serializePlain.mockReset().mockReturnValue(new Uint8Array([7, 7, 7]))
   modalMocks.toast.mockReset()
 })
 
@@ -76,6 +78,23 @@ test('saveNow is a no-op when the store is clean', async () => {
   expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).not.toHaveBeenCalled()
   expect(setSaveStateSpy).not.toHaveBeenCalled()
+})
+
+test('a null getPassword() (plain/password-less file) writes serializePlain bytes, never calls encryptDocument', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const session = makeSession()
+  const ctl = createSaveController({
+    store, session, getPassword: () => null, shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+
+  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc)
+  expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
+  expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([7, 7, 7]))
+  expect(store.dirty).toBe(false)
 })
 
 test('saveNow happy path: encrypts, writes, marks saved, and updates title', async () => {

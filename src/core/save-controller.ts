@@ -3,7 +3,7 @@
 // writer at a time and a graceful path for every failure mode.
 import type { Store } from './store'
 import type { Prefs } from './types'
-import { encryptDocument } from './crypto'
+import { encryptDocument, serializePlain } from './crypto'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
@@ -35,7 +35,7 @@ export interface SaveController {
 export interface SaveControllerDeps {
   store: Store
   session: FileSession
-  getPassword(): string
+  getPassword(): string | null
   shell: Shell
   locale(): Locale
   /** Opens the conflict modal (ui/conflict.ts) — wired by main.ts. */
@@ -145,7 +145,8 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     deps.shell.setSaveState('saving')
     let bytes: Uint8Array
     try {
-      bytes = await encryptDocument(deps.store.doc, deps.getPassword())
+      const password = deps.getPassword()
+      bytes = password === null ? serializePlain(deps.store.doc) : await encryptDocument(deps.store.doc, password)
     } catch (e) {
       console.error(e)
       reportWriteError()
