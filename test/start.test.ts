@@ -25,6 +25,8 @@ const cryptoMocks = vi.hoisted(() => {
     CorruptFileError,
     decryptDocument: vi.fn(),
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
+    serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
+    parsePlain: vi.fn(() => null as unknown),
   }
 })
 vi.mock('../src/core/crypto', () => cryptoMocks)
@@ -46,6 +48,8 @@ beforeEach(() => {
   idbMocks.idbGet.mockReset().mockImplementation(async () => undefined)
   cryptoMocks.decryptDocument.mockReset()
   cryptoMocks.encryptDocument.mockReset().mockImplementation(async () => new Uint8Array([1, 2, 3]))
+  cryptoMocks.serializePlain.mockReset().mockReturnValue(new Uint8Array([9, 9, 9]))
+  cryptoMocks.parsePlain.mockReset().mockReturnValue(null)
 })
 
 function clickByText(text: string): void {
@@ -96,7 +100,7 @@ test('file handling launch: consumes launchQueue file, decrypts, and calls onOpe
   const doc = createEmptyDocument('en-US')
   cryptoMocks.decryptDocument.mockResolvedValue(doc)
 
-  let opened: [FileSession, Doc, string] | null = null
+  let opened: [FileSession, Doc, string | null] | null = null
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
@@ -138,7 +142,7 @@ test('open flow: wrong password loops until correct, then calls onOpen', async (
   const doc = createEmptyDocument('en-US')
   cryptoMocks.decryptDocument.mockRejectedValueOnce(new cryptoMocks.WrongPasswordError()).mockResolvedValueOnce(doc)
 
-  let opened: [FileSession, Doc, string] | null = null
+  let opened: [FileSession, Doc, string | null] | null = null
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
@@ -212,10 +216,68 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
 
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, expect.any(Uint8Array))
   expect(onOpen).toHaveBeenCalledTimes(1)
-  const [openedSession, openedDoc, openedPw] = onOpen.mock.calls[0] as [FileSession, Doc, string]
+  const [openedSession, openedDoc, openedPw] = onOpen.mock.calls[0] as [FileSession, Doc, string | null]
   expect(openedSession).toBe(session)
   expect(openedDoc.schemaVersion).toBe(SCHEMA_VERSION)
   expect(openedPw).toBe('sekret')
+})
+
+test('create flow: "Use without password" writes serializePlain bytes and calls onOpen with password null', async () => {
+  const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.tmv', lastModified: 1 }
+  fsMocks.pickCreate.mockResolvedValue(session)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('✨ Create new…')
+  await flush()
+
+  clickByText('Use without password')
+  await flush()
+  await flush()
+
+  expect(cryptoMocks.serializePlain).toHaveBeenCalledTimes(1)
+  expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
+  expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([9, 9, 9]))
+  expect(onOpen).toHaveBeenCalledTimes(1)
+  const [, openedDoc, openedPw] = onOpen.mock.calls[0] as [FileSession, Doc, string | null]
+  expect(openedDoc.schemaVersion).toBe(SCHEMA_VERSION)
+  expect(openedPw).toBeNull()
+})
+
+test('open flow: a plain file opens directly, no password prompt at all', async () => {
+  const session: FileSession = { handle: null, name: 'plain.tmv', lastModified: 1 }
+  const bytes = new Uint8Array([9])
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes })
+  const plainDoc = createEmptyDocument('en-US')
+  cryptoMocks.parsePlain.mockReturnValue(plainDoc)
+
+  let opened: [FileSession, Doc, string | null] | null = null
+  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  expect(document.querySelector('input[name="tt-password"]')).toBeNull()
+  expect(opened).not.toBeNull()
+  expect(opened![1]).toEqual(plainDoc)
+  expect(opened![2]).toBeNull()
+  expect(cryptoMocks.decryptDocument).not.toHaveBeenCalled()
+})
+
+test('open flow: a non-plain file (parsePlain returns null) still goes through the password prompt', async () => {
+  const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
+  cryptoMocks.parsePlain.mockReturnValue(null)
+  const doc = createEmptyDocument('en-US')
+  cryptoMocks.decryptDocument.mockResolvedValue(doc)
+
+  showStartScreen('en-US', vi.fn())
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  expect(document.querySelector('input[name="tt-password"]')).not.toBeNull()
 })
 
 test('fallback mode (no FS API): open uses hidden file input', async () => {

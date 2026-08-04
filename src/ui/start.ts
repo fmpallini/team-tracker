@@ -14,7 +14,7 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet } from '../core/idb'
-import { decryptDocument, encryptDocument, WrongPasswordError, CorruptFileError } from '../core/crypto'
+import { decryptDocument, encryptDocument, serializePlain, parsePlain, WrongPasswordError, CorruptFileError } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
 
@@ -72,7 +72,7 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
 
 export function showStartScreen(
   locale: Locale,
-  onOpen: (session: FileSession, doc: Doc, password: string) => void
+  onOpen: (session: FileSession, doc: Doc, password: string | null) => void
 ): void {
   const container = document.getElementById('app') ?? document.body
   container.innerHTML = ''
@@ -91,7 +91,8 @@ export function showStartScreen(
     for (;;) {
       const result = await promptPassword(locale, { title: t(locale, 'open_file') })
       if (result === null) return null
-      const password = 'password' in result ? result.password : ''
+      // allowPlain is never set for this prompt, so result is always {password}.
+      const password = (result as { password: string }).password
       try {
         const doc = await decryptDocument(bytes, password)
         return { doc, password }
@@ -115,10 +116,29 @@ export function showStartScreen(
 
   // Shared by every "get a {session, bytes} pair, then decrypt it" open
   // route (picker, reopen-last, File Handling API launch) — they differ only
-  // in how the pair is obtained.
+  // in how the pair is obtained. A plain (password-less) file is sniffed
+  // first so it can open directly, without ever prompting for a password.
   async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
     const result = await fetchResult()
     if (!result) return
+    let plainDoc: Doc | null
+    try {
+      plainDoc = parsePlain(result.bytes)
+    } catch (e) {
+      if (e instanceof CorruptFileError) {
+        showErrorModal(locale, t(locale, 'err_corrupt_file'))
+        return
+      }
+      if (e instanceof SchemaTooNewError) {
+        showErrorModal(locale, t(locale, 'err_schema_too_new'))
+        return
+      }
+      throw e
+    }
+    if (plainDoc) {
+      onOpen(result.session, plainDoc, null)
+      return
+    }
     const outcome = await decryptLoop(result.bytes)
     if (outcome) onOpen(result.session, outcome.doc, outcome.password)
   }
@@ -131,6 +151,24 @@ export function showStartScreen(
     const buf = await file.arrayBuffer()
     const bytes = new Uint8Array(buf)
     const session: FileSession = { handle: null, name: file.name, lastModified: file.lastModified }
+    let plainDoc: Doc | null
+    try {
+      plainDoc = parsePlain(bytes)
+    } catch (e) {
+      if (e instanceof CorruptFileError) {
+        showErrorModal(locale, t(locale, 'err_corrupt_file'))
+        return
+      }
+      if (e instanceof SchemaTooNewError) {
+        showErrorModal(locale, t(locale, 'err_schema_too_new'))
+        return
+      }
+      throw e
+    }
+    if (plainDoc) {
+      onOpen(session, plainDoc, null)
+      return
+    }
     const outcome = await decryptLoop(bytes)
     if (outcome) onOpen(session, outcome.doc, outcome.password)
   }
@@ -139,19 +177,17 @@ export function showStartScreen(
     if (supportsFsApi) {
       const session = await pickCreate(SUGGESTED_NAME)
       if (!session) return
-      const result = await promptPassword(locale, { confirm: true, title: t(locale, 'create_file') })
+      const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
-      const password = 'password' in result ? result.password : ''
       const doc = createEmptyDocument(locale)
-      const bytes = await encryptDocument(doc, password)
+      const bytes = 'plain' in result ? serializePlain(doc) : await encryptDocument(doc, result.password)
       await writeFile(session, bytes)
-      onOpen(session, doc, password)
+      onOpen(session, doc, 'plain' in result ? null : result.password)
     } else {
-      const result = await promptPassword(locale, { confirm: true, title: t(locale, 'create_file') })
+      const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
-      const password = 'password' in result ? result.password : ''
       const doc = createEmptyDocument(locale)
-      const bytes = await encryptDocument(doc, password)
+      const bytes = 'plain' in result ? serializePlain(doc) : await encryptDocument(doc, result.password)
       downloadFallback(SUGGESTED_NAME, bytes)
       // Not sticky: this announces the download that just happened. The
       // *ongoing* fact that this browser has no direct file access is a mode,
@@ -159,7 +195,7 @@ export function showStartScreen(
       // a sticky toast here outlived the start screen and sat over the app.
       toast(t(locale, 'fallback_notice'))
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
-      onOpen(session, doc, password)
+      onOpen(session, doc, 'plain' in result ? null : result.password)
     }
   }
 
