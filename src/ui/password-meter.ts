@@ -31,7 +31,8 @@ export function createPasswordMeter(locale: Locale): PasswordMeter {
     const filled = STRENGTH_SEGMENTS[strength]
     segments.forEach((seg, i) => {
       seg.classList.toggle('tt-pwmeter-seg-filled', i < filled)
-      seg.classList.toggle(`tt-pwmeter-${strength}`, i < filled)
+      seg.classList.remove('tt-pwmeter-weak', 'tt-pwmeter-fair', 'tt-pwmeter-good', 'tt-pwmeter-strong')
+      if (i < filled) seg.classList.add(`tt-pwmeter-${strength}`)
     })
     label.textContent = t(locale, STRENGTH_KEY[strength])
   }
