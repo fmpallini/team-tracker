@@ -264,6 +264,7 @@ const pt = {
   about_github_link: 'Código-fonte no GitHub ↗',
   person_box_hint: 'Duplo clique para abrir as notas da pessoa',
   person_root_drop_hint: '⬆️ Solte aqui para mover ao nível principal',
+  backup_write_failed_toast: 'Falha ao gravar o backup diário — verifique o local do arquivo .bck',
   // An empty tree used to borrow `pane_empty` ("Nenhum módulo aberto"), which
   // told the user the opposite of what was true — the module *is* open. Each
   // group gets its own invitation instead, and the members copy carries the
@@ -695,6 +696,7 @@ const en: Record<MsgKey, string> = {
   risks_closed_heading: 'Closed risks ({count})',
   milestone_followup_toggle_title: 'Expand/collapse follow-up',
   about_github_link: 'Source code on GitHub ↗',
+  backup_write_failed_toast: 'Daily backup failed — check the .bck file\'s location',
   person_box_hint: 'Double-click to open person notes',
   person_root_drop_hint: '⬆️ Drop here to move to the top level',
   people_empty_members: 'No members yet. Add the first one, then drag people onto each other to build the reporting line.',
