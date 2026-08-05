@@ -31,6 +31,8 @@ export interface PrefsAppCtl {
   isReadOnly(): boolean
   /** Whether the current session has a real FS-API file handle (not fallback/download mode) — gates the daily-backup toggle, which needs "same folder as the original" to mean something. */
   hasFileHandle(): boolean
+  /** The primary file's handle, when one exists — passed as `startIn` to the backup-file picker so it defaults to the same folder. */
+  fileHandle(): FileSystemFileHandle | null
   fileName: string
   fileSchemaVersion: number
 }
@@ -289,7 +291,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
         // handle under 'lastHandle', which would repoint "reopen last" at the
         // empty .bck file instead of the user's .tmv.
-        pickCreateBackup(suggested)
+        pickCreateBackup(suggested, appCtl.fileHandle() ?? undefined)
           .then((session) => {
             if (!session) {
               backupCheckbox.checked = false

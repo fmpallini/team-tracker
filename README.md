@@ -208,10 +208,11 @@ the same with the local `app.html` and the installed PWA:
 As a second, independent line of defense against file corruption (distinct
 from a cloud provider's version history, which covers *losing* the file —
 this covers the file on disk becoming unreadable), Settings → General offers
-"Maintain daily backup file". Once enabled, the app keeps a `.bck` file
-alongside the original, refreshed at most once every 24 hours (and
-immediately after any password change), containing the same bytes as the
-primary file. To recover from it, just rename it from `.bck` to `.tmv` and
+"Maintain daily backup file". Once enabled, the app keeps a `.bck` file —
+wherever you chose to save it (the picker defaults to the same folder as
+the original) — refreshed at most once every 24 hours (and immediately
+after any password change), containing the same bytes as the primary
+file. To recover from it, just rename it from `.bck` to `.tmv` and
 open it normally — it uses the exact same format as the file it was copied
 from, encrypted or plain.
 

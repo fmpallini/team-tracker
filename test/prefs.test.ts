@@ -54,6 +54,7 @@ function setup(): Setup {
     currentPassword,
     isReadOnly: () => false,
     hasFileHandle: () => true,
+    fileHandle: () => null,
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
   }
@@ -239,10 +240,26 @@ test('general tab: enabling daily backup with no existing handle opens the save 
   await Promise.resolve()
   await Promise.resolve()
 
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck')
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', undefined)
   expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
   expect(store.doc.prefs.backupHandleId).not.toBeNull()
+})
+
+test('general tab: enabling daily backup opens the picker in the primary file\'s folder (startIn)', async () => {
+  const { store, shell, appCtl } = setup()
+  const primaryHandle = {} as unknown as FileSystemFileHandle
+  appCtl.fileHandle = () => primaryHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
 })
 
 test('general tab: canceling the save picker leaves the pref off', async () => {

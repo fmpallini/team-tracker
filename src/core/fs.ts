@@ -68,12 +68,17 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
  *    fixed on the write side, see `core/backup-controller.ts`);
  *  - the picker filter is `.bck`, not `.tmv`.
  * Unregistered MIME type keeps the filter to .bck — see `pickOpen` above.
+ *
+ * `startIn`, when given the primary file's handle, opens the picker in that
+ * file's folder by default — the user can still navigate elsewhere, so this
+ * is a starting point, not a guarantee (see `prefs_backup_hint`'s wording).
  */
-export async function pickCreateBackup(suggestedName: string): Promise<FileSession | null> {
+export async function pickCreateBackup(suggestedName: string, startIn?: FileSystemHandle): Promise<FileSession | null> {
   try {
     const handle = await window.showSaveFilePicker({
       suggestedName,
       types: [{ description: 'Team Tracker Backup', accept: { 'application/vnd.teamtracker.bck': ['.bck'] } }],
+      startIn,
     })
     const { lastModified } = await readHandle(handle)
     return { handle, name: handle.name, lastModified }

@@ -498,6 +498,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     hasFileHandle(): boolean {
       return session.handle !== null
     },
+    fileHandle(): FileSystemFileHandle | null {
+      return session.handle
+    },
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
   }

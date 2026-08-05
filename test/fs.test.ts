@@ -140,3 +140,20 @@ test('pickCreateBackup returns null when the user cancels the picker', async () 
   stubSaveFilePicker(abort)
   expect(await pickCreateBackup('team-tracker.bck')).toBeNull()
 })
+
+test('pickCreateBackup passes the given handle through as startIn, so the picker opens in that folder', async () => {
+  const { handle } = mockHandle(1000)
+  const picker = stubSaveFilePicker(handle)
+  const primaryHandle = {} as unknown as FileSystemFileHandle
+  await pickCreateBackup('team-tracker.bck', primaryHandle)
+  const opts = picker.mock.calls[0]![0]!
+  expect(opts.startIn).toBe(primaryHandle)
+})
+
+test('pickCreateBackup omits startIn when no handle is given', async () => {
+  const { handle } = mockHandle(1000)
+  const picker = stubSaveFilePicker(handle)
+  await pickCreateBackup('team-tracker.bck')
+  const opts = picker.mock.calls[0]![0]!
+  expect(opts.startIn).toBeUndefined()
+})
