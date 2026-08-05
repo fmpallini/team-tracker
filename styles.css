@@ -1135,6 +1135,7 @@ select option { background: var(--bg); color: var(--fg); }
     linear-gradient(to top, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) bottom / 100% 1.1rem no-repeat scroll;
 }
 .tt-prefs-field { display: flex; flex-direction: column; gap: .35rem; }
+.tt-prefs-backup-change-btn { align-self: flex-start; }
 .tt-prefs-field-label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-checkbox-label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; color: var(--muted); }
 .tt-prefs-radio-row { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -1215,3 +1216,13 @@ select option { background: var(--bg); color: var(--fg); }
   font-family: var(--font-data); font-size: .85rem; background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: .5rem; overflow-x: auto; white-space: pre;
 }
+
+/* Password strength meter */
+.tt-pwmeter { display: flex; align-items: center; gap: .5rem; margin-top: .25rem; font-size: .85em; }
+.tt-pwmeter-bar { display: flex; gap: 3px; flex: none; }
+.tt-pwmeter-seg { width: 1.5rem; height: 4px; border-radius: 2px; background: var(--border); }
+.tt-pwmeter-seg-filled.tt-pwmeter-weak { background: var(--danger); }
+.tt-pwmeter-seg-filled.tt-pwmeter-fair { background: var(--brass); }
+.tt-pwmeter-seg-filled.tt-pwmeter-good,
+.tt-pwmeter-seg-filled.tt-pwmeter-strong { background: var(--ok); }
+.tt-pwmeter-label { color: var(--muted); }

@@ -1,5 +1,5 @@
-import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError } from '../src/core/crypto'
-import { createEmptyDocument } from '../src/core/document'
+import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain } from '../src/core/crypto'
+import { createEmptyDocument, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
 
 test('round-trip', async () => {
   const doc = createEmptyDocument('pt-BR')
@@ -206,3 +206,49 @@ test('a wrong-password attempt racing a correct one does not poison the cache fo
   expect(results[1]).toEqual({ status: 'fulfilled', value: doc })
   resetSessionKey()
 }, 20000)
+
+// --- Plain (password-less) file format ---
+
+test('serializePlain/parsePlain round-trip', () => {
+  const doc = createEmptyDocument('pt-BR')
+  const bytes = serializePlain(doc)
+  expect(parsePlain(bytes)).toEqual(doc)
+})
+
+test('serializePlain output starts with the ASCII TMV-PLAIN tag, human-readable', () => {
+  const doc = createEmptyDocument('en-US')
+  const bytes = serializePlain(doc)
+  const text = new TextDecoder().decode(bytes)
+  expect(text.startsWith('TMV-PLAIN\n')).toBe(true)
+  expect(JSON.parse(text.slice('TMV-PLAIN\n'.length))).toEqual(doc)
+})
+
+test('parsePlain returns null for encrypted-file bytes (no tag match)', async () => {
+  const bytes = await encryptDocument(createEmptyDocument('pt-BR'), 'pw')
+  expect(parsePlain(bytes)).toBeNull()
+})
+
+test('parsePlain returns null for garbage/empty bytes', () => {
+  expect(parsePlain(new Uint8Array(0))).toBeNull()
+  expect(parsePlain(new TextEncoder().encode('not a tmv file'))).toBeNull()
+})
+
+test('parsePlain throws CorruptFileError when the tag matches but the JSON body is broken', () => {
+  const bytes = new TextEncoder().encode('TMV-PLAIN\n{not valid json')
+  expect(() => parsePlain(bytes)).toThrow(CorruptFileError)
+})
+
+test('parsePlain runs migrate() on an old-schema plain payload', () => {
+  const oldDoc = { ...createEmptyDocument('en-US'), schemaVersion: 1 }
+  delete (oldDoc.nav as any).teamSplit
+  const bytes = new TextEncoder().encode('TMV-PLAIN\n' + JSON.stringify(oldDoc))
+  const parsed = parsePlain(bytes)
+  expect(parsed?.schemaVersion).toBe(SCHEMA_VERSION)
+  expect(parsed?.nav.teamSplit).toEqual({})
+})
+
+test('parsePlain rejects a plain file claiming a newer schema than this build supports', () => {
+  const futureDoc = { ...createEmptyDocument('en-US'), schemaVersion: SCHEMA_VERSION + 1 }
+  const bytes = new TextEncoder().encode('TMV-PLAIN\n' + JSON.stringify(futureDoc))
+  expect(() => parsePlain(bytes)).toThrow(SchemaTooNewError)
+})

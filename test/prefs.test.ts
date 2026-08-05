@@ -8,10 +8,13 @@ import { buildExport } from '../src/core/team-export'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
 
+const fsMocks = vi.hoisted(() => ({ pickCreateBackup: vi.fn() }))
 vi.mock('../src/core/fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/fs')>()
-  return { ...actual, downloadFallback: vi.fn() }
+  return { ...actual, downloadFallback: vi.fn(), pickCreateBackup: fsMocks.pickCreateBackup }
 })
+const idbMocks = vi.hoisted(() => ({ idbSet: vi.fn(async () => {}) }))
+vi.mock('../src/core/idb', () => idbMocks)
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
 function stubMatchMedia(): void {
@@ -32,12 +35,14 @@ interface Setup {
   shell: Shell
   appCtl: PrefsAppCtl
   changePassword: ReturnType<typeof vi.fn>
-  currentPassword: ReturnType<typeof vi.fn>
+  currentPassword: ReturnType<typeof vi.fn<() => string | null>>
 }
 
 function setup(): Setup {
   document.body.innerHTML = ''
   stubMatchMedia()
+  fsMocks.pickCreateBackup.mockReset()
+  idbMocks.idbSet.mockReset().mockResolvedValue(undefined)
   const doc = createEmptyDocument('en-US')
   const store = createStore(doc)
   const shell = createShell('en-US')
@@ -48,6 +53,8 @@ function setup(): Setup {
     changePassword,
     currentPassword,
     isReadOnly: () => false,
+    hasFileHandle: () => true,
+    fileHandle: () => null,
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
   }
@@ -220,6 +227,150 @@ test('the "open refs in secondary pane" checkbox reflects and updates the pref',
   checkbox.dispatchEvent(new Event('change', { bubbles: true }))
 
   expect(store.doc.prefs.openRefsInSecondaryPane).toBe(true)
+})
+
+test('general tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', undefined)
+  expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+  expect(store.doc.prefs.backupHandleId).not.toBeNull()
+})
+
+test('general tab: enabling daily backup opens the picker in the primary file\'s folder (startIn)', async () => {
+  const { store, shell, appCtl } = setup()
+  const primaryHandle = {} as unknown as FileSystemFileHandle
+  appCtl.fileHandle = () => primaryHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
+})
+
+test('general tab: canceling the save picker leaves the pref off', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreateBackup.mockResolvedValue(null)
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+})
+
+test('general tab: re-enabling with an existing backupHandleId skips the picker', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.backupHandleId = 'already-set' })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+
+  expect(fsMocks.pickCreateBackup).not.toHaveBeenCalled()
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+})
+
+test('general tab: no "Change backup location" button when no backup target exists yet', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
+})
+
+test('general tab: "Change backup location" button appears once a backup target exists, even while disabled', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'existing' })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
+})
+
+test('general tab: "Change backup location" re-opens the picker without a disable/enable round trip, and re-enables the pref', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'old-id' })
+  const primaryHandle = {} as unknown as FileSystemFileHandle
+  appCtl.fileHandle = () => primaryHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  // `.click()` is a no-op on a genuinely `disabled` element (matches real
+  // browser behavior) — dispatchEvent bypasses that, same workaround the
+  // checkbox tests above use, since `supportsFsApi` (and so `backupAvailable`)
+  // is false under jsdom regardless of what `hasFileHandle()` returns.
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  changeBtn.dispatchEvent(new Event('click'))
+  // Flush the whole microtask queue (not just N `Promise.resolve()` ticks) —
+  // `backupCheckbox.checked = true` runs in an extra `.then()` layered on
+  // top of `pickAndStoreBackupTarget`'s own picker→idbSet→store.update
+  // chain, and its exact tick depth isn't worth pinning down by hand.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
+  expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
+  expect(store.doc.prefs.backupHandleId).not.toBe('old-id')
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  expect(checkbox.checked).toBe(true)
+})
+
+test('general tab: canceling "Change backup location" leaves the existing target and pref state untouched', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
+  fsMocks.pickCreateBackup.mockResolvedValue(null)
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  changeBtn.dispatchEvent(new Event('click'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(store.doc.prefs.backupHandleId).toBe('old-id')
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+})
+
+test('general tab: disabling the pref does not clear the stored handle id', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = false
+  checkbox.dispatchEvent(new Event('change'))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBe('existing')
+})
+
+test('general tab: checkbox is disabled with a hint when hasFileHandle() is false', () => {
+  const { store, shell, appCtl } = setup()
+  appCtl.hasFileHandle = () => false
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  expect(checkbox.disabled).toBe(true)
+  expect(document.querySelector('.tt-prefs-backup-disabled-hint')?.textContent).toBe(
+    'Unavailable: this browser has no direct file access, or this file has not been saved to disk yet.'
+  )
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
@@ -488,6 +639,121 @@ test('security tab: read-only tab (appCtl.isReadOnly() true) disables the submit
   // behavior) — changePassword must never even be attempted.
   submitBtn.click()
   expect(changePassword).not.toHaveBeenCalled()
+})
+
+test('security tab: encrypted file shows a "Migrate to password-less" button', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Migrate to password-less')
+  expect(btn).toBeDefined()
+})
+
+test('security tab: migrate-to-plain asks for the current password, calls changePassword(null) on success', async () => {
+  const { store, shell, appCtl, changePassword } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  clickByText('Migrate to password-less')
+
+  // Two overlays are now stacked (the Preferences modal underneath, the
+  // confirm sub-modal on top), both with a `.tt-modal-title` — grab the last
+  // one in document order, same pattern the cleanup tests below use.
+  const titles = document.querySelectorAll('.tt-modal-title')
+  expect(titles[titles.length - 1]?.textContent).toBe('Migrate to a password-less file?')
+  // The confirm sub-modal is now the topmost overlay — the existing
+  // clickByText helper already scopes its lookup to the last
+  // .tt-modal-overlay (see its definition below), so calling it again with
+  // the same label correctly hits the sub-modal's confirm button, not the
+  // Security tab's original button underneath it.
+  const pwInput = document.querySelectorAll('.tt-modal-dialog')[1]!.querySelector('input') as HTMLInputElement
+  pwInput.value = 'wrongpw'
+  clickByText('Migrate to password-less')
+
+  expect(changePassword).not.toHaveBeenCalled()
+
+  pwInput.value = 'oldpw'
+  clickByText('Migrate to password-less')
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(changePassword).toHaveBeenCalledWith(null)
+})
+
+test('security tab: plain file shows no current-password field, submit label is "Set password", calls changePassword(newPw)', async () => {
+  const { store, shell, appCtl, changePassword } = setup()
+  appCtl.currentPassword = () => null
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+
+  expect(document.querySelector('input[name="tt-prefs-current-password"]')).toBeNull()
+  expect(document.querySelector('.tt-prefs-security-form')?.textContent).toContain('This file is not password-protected')
+
+  const next = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  next.value = 'brandnewpw'
+  confirm.value = 'brandnewpw'
+  clickByText('Set password')
+
+  expect(changePassword).toHaveBeenCalledWith('brandnewpw')
+})
+
+// `isPlain` is captured once at render time; "Set password" invalidates it. If
+// the tab isn't rebuilt, a second change in the same modal session takes the
+// plain-file branch — no current-password field, and the `if (!isPlain)`
+// verification block skipped entirely, silently bypassing the check that is
+// supposed to gate every password change on an already-encrypted file.
+test('security tab: after "Set password" succeeds the tab re-renders as an encrypted file (no stale plain state)', async () => {
+  const { store, shell, appCtl } = setup()
+  let pw: string | null = null
+  appCtl.currentPassword = () => pw
+  // Mirrors main.ts: the in-memory password flips before changePassword resolves.
+  const changePassword = vi.fn(async (newPw: string | null) => {
+    pw = newPw
+  })
+  appCtl.changePassword = changePassword
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+
+  const next = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  next.value = 'brandnewpw'
+  confirm.value = 'brandnewpw'
+  clickByText('Set password')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(changePassword).toHaveBeenCalledWith('brandnewpw')
+  // Tab rebuilt with the encrypted-file UI.
+  const current = document.querySelector('input[name="tt-prefs-current-password"]') as HTMLInputElement | null
+  expect(current).not.toBeNull()
+  expect(document.querySelector('.tt-prefs-security-form')?.textContent).not.toContain('This file is not password-protected')
+  expect(Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Migrate to password-less')).toBeDefined()
+
+  // And the current-password check really gates a second change now.
+  const next2 = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm2 = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  current!.value = 'not-the-password'
+  next2.value = 'thirdpassword'
+  confirm2.value = 'thirdpassword'
+  clickByText('Change password')
+
+  expect(document.querySelector('.tt-field-error')?.textContent).toBe('Current password is incorrect')
+  expect(changePassword).toHaveBeenCalledTimes(1)
+})
+
+test('security tab: plain file has no "migrate to password-less" button', () => {
+  const { store, shell, appCtl } = setup()
+  appCtl.currentPassword = () => null
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Migrate to password-less')
+  expect(btn).toBeUndefined()
+})
+
+test('security tab: new-password field renders a strength meter for both encrypted and plain files', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+  expect(document.querySelector('.tt-pwmeter')).not.toBeNull()
 })
 
 test('about tab shows app name, versions, and file info from appCtl', () => {

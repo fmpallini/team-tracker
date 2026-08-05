@@ -1,6 +1,7 @@
 // src/ui/modal.ts
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
+import { createPasswordMeter } from './password-meter'
 
 export interface ModalButton {
   label: string
@@ -128,11 +129,14 @@ export function confirmDelete(locale: Locale, opts: {
   const handle: ModalHandle = showModal({ title: opts.title, body, buttons: [cancelBtn, confirmBtn] })
 }
 
-export function promptPassword(locale: Locale, opts: { confirm?: boolean; title: string }): Promise<string | null> {
+export function promptPassword(
+  locale: Locale,
+  opts: { confirm?: boolean; allowPlain?: boolean; title: string }
+): Promise<{ password: string } | { plain: true } | null> {
   return new Promise((resolve) => {
     let settled = false
 
-    function finish(value: string | null): void {
+    function finish(value: { password: string } | { plain: true } | null): void {
       if (settled) return
       settled = true
       document.removeEventListener('keydown', onEsc)
@@ -151,12 +155,18 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
       : null
     const errorEl = el('div', { class: 'tt-field-error' })
 
+    const meter = opts.confirm ? createPasswordMeter(locale) : null
+
+    const plainHint = opts.allowPlain ? el('p', { class: 'tt-password-plain-hint' }, t(locale, 'create_plain_hint')) : null
+
     const body = el(
       'form',
       { class: 'tt-password-form', onsubmit: (e: Event) => e.preventDefault() },
       el('label', { class: 'tt-field' }, t(locale, 'password'), pwInput),
+      meter ? meter.el : null,
       confirmInput ? el('label', { class: 'tt-field' }, t(locale, 'password_confirm'), confirmInput) : null,
-      errorEl
+      errorEl,
+      plainHint
     )
 
     const cancelBtn: ModalButton = {
@@ -167,9 +177,19 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
       },
     }
     const okBtn: ModalButton = { label: t(locale, 'ok'), primary: true, onClick: () => trySubmit() }
+    const plainBtn: ModalButton | null = opts.allowPlain
+      ? {
+          label: t(locale, 'create_plain_btn'),
+          onClick: () => {
+            finish({ plain: true })
+            close()
+          },
+        }
+      : null
 
-    const { close, buttonEls } = renderDialog({ title: opts.title, body, buttons: [cancelBtn, okBtn] })
-    const okEl = buttonEls[1]!
+    const buttons = plainBtn ? [cancelBtn, plainBtn, okBtn] : [cancelBtn, okBtn]
+    const { close, buttonEls } = renderDialog({ title: opts.title, body, buttons })
+    const okEl = buttonEls[buttonEls.length - 1]!
     okEl.disabled = true
 
     function updateOkEnabled(): void {
@@ -187,7 +207,7 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
         return
       }
       const value = pwInput.value
-      finish(value)
+      finish({ password: value })
       close()
     }
 
@@ -202,7 +222,10 @@ export function promptPassword(locale: Locale, opts: { confirm?: boolean; title:
       if (e.key === 'Escape') finish(null)
     }
 
-    pwInput.addEventListener('input', updateOkEnabled)
+    pwInput.addEventListener('input', () => {
+      updateOkEnabled()
+      meter?.update(pwInput.value)
+    })
     pwInput.addEventListener('keydown', onFieldKeydown)
     confirmInput?.addEventListener('input', updateOkEnabled)
     confirmInput?.addEventListener('keydown', onFieldKeydown)

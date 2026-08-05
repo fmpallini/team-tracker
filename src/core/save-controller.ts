@@ -3,10 +3,11 @@
 // writer at a time and a graceful path for every failure mode.
 import type { Store } from './store'
 import type { Prefs } from './types'
-import { encryptDocument } from './crypto'
+import { encryptDocument, serializePlain } from './crypto'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
+import type { BackupController } from './backup-controller'
 import { toast } from '../ui/modal'
 
 export interface SaveController {
@@ -35,7 +36,7 @@ export interface SaveController {
 export interface SaveControllerDeps {
   store: Store
   session: FileSession
-  getPassword(): string
+  getPassword(): string | null
   shell: Shell
   locale(): Locale
   /** Opens the conflict modal (ui/conflict.ts) — wired by main.ts. */
@@ -48,6 +49,8 @@ export interface SaveControllerDeps {
    * doesn't stack a second modal on top of the first.
    */
   isConflictOpen?(): boolean
+  /** Mirrors every successful save to the daily .bck file, if the user has enabled it. Optional — plumbed in only by main.ts, not required by every caller/test. */
+  backupCtl?: BackupController
 }
 
 export function createSaveController(deps: SaveControllerDeps): SaveController {
@@ -145,7 +148,8 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     deps.shell.setSaveState('saving')
     let bytes: Uint8Array
     try {
-      bytes = await encryptDocument(deps.store.doc, deps.getPassword())
+      const password = deps.getPassword()
+      bytes = password === null ? serializePlain(deps.store.doc) : await encryptDocument(deps.store.doc, password)
     } catch (e) {
       console.error(e)
       reportWriteError()
@@ -174,6 +178,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       reportWriteError()
       return
     }
+    await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
     deps.shell.setSaveState('saved')
     deps.shell.setTitle(deps.session.name, false)

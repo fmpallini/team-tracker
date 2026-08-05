@@ -6,6 +6,7 @@ test('createEmptyDocument shape', () => {
   expect(d.prefs).toEqual({
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
     autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
+    dailyBackupEnabled: false, backupHandleId: null,
   })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
@@ -163,6 +164,28 @@ describe('v7 → v8 migration (open refs in secondary pane)', () => {
     d.prefs.openRefsInSecondaryPane = true
     const doc = migrate(d)
     expect(doc.prefs.openRefsInSecondaryPane).toBe(true)
+  })
+})
+
+describe('v8 → v9 migration (daily backup prefs)', () => {
+  it('defaults dailyBackupEnabled to false and backupHandleId to null when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 8
+    delete d.prefs.dailyBackupEnabled
+    delete d.prefs.backupHandleId
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.prefs.dailyBackupEnabled).toBe(false)
+    expect(doc.prefs.backupHandleId).toBeNull()
+  })
+  it('leaves existing values untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 8
+    d.prefs.dailyBackupEnabled = true
+    d.prefs.backupHandleId = 'abc-123'
+    const doc = migrate(d)
+    expect(doc.prefs.dailyBackupEnabled).toBe(true)
+    expect(doc.prefs.backupHandleId).toBe('abc-123')
   })
 })
 

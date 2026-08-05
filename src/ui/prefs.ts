@@ -12,12 +12,14 @@ import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
-import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
+import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup } from '../core/fs'
+import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
+import { createPasswordMeter } from './password-meter'
 
 export interface PrefsAppCtl {
-  changePassword(newPw: string): Promise<void>
-  currentPassword(): string
+  changePassword(newPw: string | null): Promise<void>
+  currentPassword(): string | null
   /**
    * Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
    * submit button and show an explanatory hint when this tab has lost the
@@ -27,6 +29,10 @@ export interface PrefsAppCtl {
    * to that same guard.
    */
   isReadOnly(): boolean
+  /** Whether the current session has a real FS-API file handle (not fallback/download mode) — gates the daily-backup toggle, which needs "same folder as the original" to mean something. */
+  hasFileHandle(): boolean
+  /** The primary file's handle, when one exists — passed as `startIn` to the backup-file picker so it defaults to the same folder. */
+  fileHandle(): FileSystemFileHandle | null
   fileName: string
   fileSchemaVersion: number
 }
@@ -265,7 +271,95 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
     )
 
-    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField)
+    const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
+
+    // Shared by the checkbox's first-time-enable path and the "Change
+    // location" button: runs the .bck picker, and on a real pick (not a
+    // cancel/error) persists the new handle and turns the pref on. Resolves
+    // true iff a new handle was actually picked and stored, so callers can
+    // tell a genuine pick apart from a cancel/error without duplicating the
+    // picker/idbSet/store.update sequence.
+    function pickAndStoreBackupTarget(): Promise<boolean> {
+      const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
+      // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
+      // handle under 'lastHandle', which would repoint "reopen last" at the
+      // empty .bck file instead of the user's .tmv.
+      return pickCreateBackup(suggested, appCtl.fileHandle() ?? undefined)
+        .then((session) => {
+          if (!session) return false
+          const id = crypto.randomUUID()
+          return idbSet(id, session.handle).then(() => {
+            store.update((d) => {
+              d.prefs.dailyBackupEnabled = true
+              d.prefs.backupHandleId = id
+            })
+            return true
+          })
+        })
+        .catch((err: unknown) => {
+          console.error(err)
+          return false
+        })
+    }
+
+    const backupCheckbox = el('input', {
+      type: 'checkbox',
+      class: 'tt-prefs-backup-checkbox',
+      checked: prefs.dailyBackupEnabled,
+      disabled: !backupAvailable,
+      onchange: (e: Event) => {
+        const checked = (e.target as HTMLInputElement).checked
+        if (!checked) {
+          store.update((d) => { d.prefs.dailyBackupEnabled = false })
+          return
+        }
+        if (store.doc.prefs.backupHandleId) {
+          store.update((d) => { d.prefs.dailyBackupEnabled = true })
+          return
+        }
+        // `pickAndStoreBackupTarget` never rejects (its own `.catch` already
+        // swallows and logs), but the linter can't see that from here.
+        pickAndStoreBackupTarget()
+          .then((picked) => {
+            if (!picked) backupCheckbox.checked = false
+          })
+          .catch(() => {})
+      },
+    })
+    // Re-picking without a disable/enable round trip: disabling deliberately
+    // keeps `backupHandleId` (so re-enabling resumes the same file), which
+    // means there'd otherwise be no way to point the backup somewhere else
+    // short of disabling, re-enabling, and hoping the picker doesn't skip
+    // itself. Only shown once a target exists — for the first-time pick, the
+    // checkbox itself already opens the picker.
+    const changeBackupBtn = prefs.backupHandleId
+      ? el(
+          'button',
+          {
+            class: 'tt-btn tt-prefs-backup-change-btn',
+            type: 'button',
+            disabled: !backupAvailable,
+            onclick: () => {
+              pickAndStoreBackupTarget()
+                .then((picked) => {
+                  if (picked) backupCheckbox.checked = true
+                })
+                .catch(() => {})
+            },
+          },
+          t(locale, 'prefs_backup_change_btn')
+        )
+      : null
+    const backupField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
+      backupAvailable ? null : el('p', { class: 'tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint')),
+      changeBackupBtn
+    )
+
+    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField, backupField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------
@@ -530,11 +624,18 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   function renderSecurity(container: HTMLElement): void {
     container.innerHTML = ''
     const readOnly = appCtl.isReadOnly()
+    const isPlain = appCtl.currentPassword() === null
 
-    const currentInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
     const newInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password', autocomplete: 'new-password', minlength: 4, disabled: readOnly })
     const confirmInput = el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-new-password-confirm', autocomplete: 'new-password', minlength: 4, disabled: readOnly })
     const errorEl = el('div', { class: 'tt-field-error' })
+    const meter = createPasswordMeter(locale)
+    newInput.addEventListener('input', () => meter.update(newInput.value))
+
+    const currentInput = isPlain
+      ? null
+      : el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
+
     // Task 25 re-review item #2 (UX bonus): static at render time — this tab
     // is rebuilt from scratch every time it's selected (see `renderActiveTab`
     // switch above), which is enough to reflect a read-only state acquired
@@ -543,17 +644,23 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       errorEl.textContent = t(locale, 'prefs_security_readonly_hint')
     }
 
-    function submit(): void {
-      const current = currentInput.value
+    function submitChangeOrSet(): void {
       const next = newInput.value
       const confirm = confirmInput.value
-      if (current === '' || next === '' || confirm === '') {
+      if (next === '' || confirm === '') {
         errorEl.textContent = t(locale, 'prefs_security_password_required')
         return
       }
-      if (current !== appCtl.currentPassword()) {
-        errorEl.textContent = t(locale, 'prefs_security_wrong_current')
-        return
+      if (!isPlain) {
+        const current = currentInput!.value
+        if (current === '') {
+          errorEl.textContent = t(locale, 'prefs_security_password_required')
+          return
+        }
+        if (current !== appCtl.currentPassword()) {
+          errorEl.textContent = t(locale, 'prefs_security_wrong_current')
+          return
+        }
       }
       if (next.length < 4) {
         errorEl.textContent = t(locale, 'password_too_short')
@@ -567,10 +674,17 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       appCtl
         .changePassword(next)
         .then(() => {
-          currentInput.value = ''
+          if (currentInput) currentInput.value = ''
           newInput.value = ''
           confirmInput.value = ''
+          meter.update('')
           toast(t(locale, 'prefs_security_success_toast'))
+          // `isPlain` was captured at render time; "Set password" on a plain
+          // file just invalidated it. Rebuild the tab (same as the
+          // migrate-to-plain path below) so a second change in this same modal
+          // session goes through the current-password check instead of the
+          // now-stale plain-file branch that skips it.
+          renderActiveTab()
         })
         .catch(() => {
           toast(t(locale, 'prefs_security_failure_toast'), { sticky: true })
@@ -579,21 +693,68 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const submitBtn = el(
       'button',
-      { class: 'tt-btn tt-btn-primary', type: 'button', disabled: readOnly, onclick: () => submit() },
-      t(locale, 'prefs_security_submit_btn')
+      { class: 'tt-btn tt-btn-primary', type: 'button', disabled: readOnly, onclick: () => submitChangeOrSet() },
+      t(locale, isPlain ? 'prefs_security_set_password_btn' : 'prefs_security_submit_btn')
     )
 
-    container.append(
-      el(
-        'div',
-        { class: 'tt-prefs-security-form' },
-        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), currentInput),
-        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_new_label'), newInput),
-        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_confirm_label'), confirmInput),
-        errorEl,
-        submitBtn
+    const formChildren: (Node | string | null)[] = [
+      isPlain ? el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_security_plain_notice')) : null,
+      currentInput ? el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), currentInput) : null,
+      el('label', { class: 'tt-field' }, t(locale, isPlain ? 'prefs_security_set_password_label' : 'prefs_security_new_label'), newInput),
+      meter.el,
+      el('label', { class: 'tt-field' }, t(locale, 'prefs_security_confirm_label'), confirmInput),
+      errorEl,
+      submitBtn,
+    ]
+    container.append(el('div', { class: 'tt-prefs-security-form' }, ...formChildren))
+
+    if (!isPlain) {
+      const migrateBtn = el(
+        'button',
+        {
+          class: 'tt-btn',
+          type: 'button',
+          disabled: readOnly,
+          onclick: () => openMigrateToPlainConfirm(),
+        },
+        t(locale, 'prefs_security_migrate_plain_btn')
       )
-    )
+      container.append(migrateBtn)
+    }
+
+    function openMigrateToPlainConfirm(): void {
+      const confirmInputEl = el('input', { type: 'password', class: 'tt-input', autocomplete: 'current-password' })
+      const confirmErrorEl = el('div', { class: 'tt-field-error' })
+      const body = el(
+        'div',
+        {},
+        el('p', { class: 'tt-modal-message' }, t(locale, 'create_plain_hint')),
+        el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), confirmInputEl),
+        confirmErrorEl
+      )
+      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+      const confirmBtn: ModalButton = {
+        label: t(locale, 'prefs_security_migrate_plain_btn'),
+        primary: true,
+        onClick: () => {
+          if (confirmInputEl.value !== appCtl.currentPassword()) {
+            confirmErrorEl.textContent = t(locale, 'prefs_security_wrong_current')
+            return
+          }
+          appCtl
+            .changePassword(null)
+            .then(() => {
+              inner.close()
+              toast(t(locale, 'prefs_security_success_toast'))
+              renderActiveTab()
+            })
+            .catch(() => {
+              toast(t(locale, 'prefs_security_failure_toast'), { sticky: true })
+            })
+        },
+      }
+      const inner: ModalHandle = showModal({ title: t(locale, 'prefs_security_migrate_plain_confirm_title'), body, buttons: [cancelBtn, confirmBtn] })
+    }
   }
 
   // --- Tab 5: Dados (export/import) ---------------------------------------

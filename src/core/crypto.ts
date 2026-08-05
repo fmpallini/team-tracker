@@ -9,6 +9,9 @@ const FORMAT_VERSION = 1
 const ITERATIONS = 600_000
 const KCV_PLAIN = new Uint8Array(16)
 
+const PLAIN_TAG = 'TMV-PLAIN\n'
+const PLAIN_TAG_BYTES = new TextEncoder().encode(PLAIN_TAG)
+
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password.normalize('NFC')), 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
@@ -87,4 +90,29 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
   catch { throw new CorruptFileError() }
   try { return migrate(JSON.parse(new TextDecoder().decode(plain))) }
   catch (e) { if (e instanceof Error && e.constructor.name !== 'SyntaxError') throw e; throw new CorruptFileError() }
+}
+
+export function serializePlain(doc: Doc): Uint8Array {
+  return new TextEncoder().encode(PLAIN_TAG + JSON.stringify(doc))
+}
+
+/**
+ * Returns null (not a plain file) rather than throwing when the tag doesn't
+ * match — callers fall through to decryptDocument for the encrypted path.
+ * Only throws once we're committed to "this is a plain file, but a corrupt
+ * one" (bad JSON) or "a plain file from a newer, unsupported schema".
+ */
+export function parsePlain(bytes: Uint8Array): Doc | null {
+  if (bytes.length < PLAIN_TAG_BYTES.length) return null
+  for (let i = 0; i < PLAIN_TAG_BYTES.length; i++) {
+    if (bytes[i] !== PLAIN_TAG_BYTES[i]) return null
+  }
+  const json = new TextDecoder().decode(bytes.slice(PLAIN_TAG_BYTES.length))
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    throw new CorruptFileError()
+  }
+  return migrate(parsed)
 }

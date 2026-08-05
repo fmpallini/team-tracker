@@ -24,6 +24,8 @@ interface SaveFilePickerOptions {
   suggestedName?: string
   types?: Array<{ description?: string; accept: Record<string, string[]> }>
   excludeAcceptAllOption?: boolean
+  /** A file/directory handle to open the picker in the same folder as. */
+  startIn?: FileSystemHandle
 }
 
 interface Window {
