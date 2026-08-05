@@ -7,6 +7,7 @@ import { encryptDocument, serializePlain } from './crypto'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
+import type { BackupController } from './backup-controller'
 import { toast } from '../ui/modal'
 
 export interface SaveController {
@@ -48,6 +49,8 @@ export interface SaveControllerDeps {
    * doesn't stack a second modal on top of the first.
    */
   isConflictOpen?(): boolean
+  /** Mirrors every successful save to the daily .bck file, if the user has enabled it. Optional — plumbed in only by main.ts, not required by every caller/test. */
+  backupCtl?: BackupController
 }
 
 export function createSaveController(deps: SaveControllerDeps): SaveController {
@@ -175,6 +178,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       reportWriteError()
       return
     }
+    await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
     deps.shell.setSaveState('saved')
     deps.shell.setTitle(deps.session.name, false)

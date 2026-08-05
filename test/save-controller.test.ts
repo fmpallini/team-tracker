@@ -593,3 +593,46 @@ test('conflict guard: a second ExternalChangeError does not call onExternalChang
   expect(onExternalChange).toHaveBeenCalledTimes(1)
   expect(store.dirty).toBe(true)
 })
+
+test('a successful save calls backupCtl.maybeWriteBackup with the same bytes just written', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const session = makeSession()
+  const backupCtl = { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}) }
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
+  })
+
+  await ctl.saveNow()
+
+  expect(backupCtl.maybeWriteBackup).toHaveBeenCalledWith(expect.any(Uint8Array))
+})
+
+test('backupCtl is optional — a save with none configured does not throw', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const session = makeSession()
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await expect(ctl.saveNow()).resolves.toBeUndefined()
+})
+
+test('a failed write does not call backupCtl.maybeWriteBackup', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const session = makeSession()
+  fsMocks.writeFile.mockImplementation(async () => { throw new Error('disk full') })
+  const backupCtl = { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}) }
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
+  })
+
+  await ctl.saveNow()
+
+  expect(backupCtl.maybeWriteBackup).not.toHaveBeenCalled()
+})
