@@ -474,7 +474,12 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
           // Not sticky — see the matching note in src/ui/start.ts.
           toast(t(store.doc.prefs.locale, 'fallback_notice'))
         }
-        await backupCtl.writeBackupNow(bytes)
+        // Belt-and-braces: `writeBackupNow` is contractually non-throwing, but
+        // this is the one call site where an escaped rejection would be
+        // actively harmful — the primary file is already written under the new
+        // password, so bailing here would leave `app.password` holding the old
+        // one while the user is told the change failed.
+        await backupCtl.writeBackupNow(bytes).catch((e: unknown) => console.error(e))
         if (app) app.password = newPw
         store.markSaved()
         shell.setSaveState('saved')
