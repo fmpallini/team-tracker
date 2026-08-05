@@ -3,7 +3,7 @@
 // docs/superpowers/specs/2026-08-04-passwordless-teamfile-design.md.
 import type { Store } from './store'
 import { idbGet } from './idb'
-import { forceWrite, type FileSession } from './fs'
+import type { FileSession } from './fs'
 import { toast } from '../ui/modal'
 import { t } from './i18n'
 
@@ -31,12 +31,22 @@ export function createBackupController(deps: { store: Store }): BackupController
     return cachedSession
   }
 
+  // Write backup bytes without the side effect of setting 'lastHandle' in IndexedDB.
+  // fs.ts's forceWrite() also calls idbSet('lastHandle', handle), which would
+  // clobber the primary file's "reopen last" pointer. This helper does the same
+  // write, minus that side effect — backup writes must not affect the primary file.
+  async function writeBackupBytes(handle: FileSystemFileHandle, bytes: Uint8Array): Promise<void> {
+    const writable = await handle.createWritable()
+    await writable.write(bytes as BufferSource)
+    await writable.close()
+  }
+
   async function writeBackupNow(bytes: Uint8Array): Promise<void> {
     if (!deps.store.doc.prefs.dailyBackupEnabled) return
     const session = await getSession()
     if (!session) return
     try {
-      await forceWrite(session, bytes)
+      await writeBackupBytes(session.handle as FileSystemFileHandle, bytes)
       lastBackupAt = Date.now()
     } catch (e) {
       console.error(e)
