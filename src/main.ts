@@ -22,11 +22,12 @@ import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
-import { writeFile, forceWrite, readCurrent, downloadFallback, sameEntry } from './core/fs'
+import { forceWrite, readCurrent, sameEntry } from './core/fs'
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController } from './core/backup-controller'
+import { createChangePassword } from './core/change-password'
 import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
@@ -429,63 +430,25 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   const releaseTabLock = setupTabLock(session, store, shell, saveCtl)
   disposers.push(releaseTabLock)
 
-  // Task 24: preferences modal wiring. `changePassword` re-encrypts the
-  // current in-memory document under the new password and persists it via
-  // the same writeFile/downloadFallback split used by the create flow in
-  // src/ui/start.ts. It isn't a regular dirty-driven save, so it doesn't go
-  // through `saveCtl.saveNow()` — but (Task 25 fix #3) it does run inside
-  // `saveCtl.runExclusive()` so it can't interleave with one, and mirrors
-  // its post-write bookkeeping — `markSaved()` so the just-written state
-  // isn't re-saved as if still dirty, plus the save indicator/title — since
-  // the disk file is now fully in sync with `store.doc` under the new key.
+  // Task 24: preferences modal wiring. `changePassword` itself lives in
+  // core/change-password.ts (extracted so its concurrency-sensitive logic —
+  // Task 25 fix #3, re-review item #2 — is unit testable outside this
+  // monolithic entrypoint); this just wires main.ts's own state into it.
   // `currentPassword` and `fileSchemaVersion` read live from `app`/`store`
   // (not the closed-over `password`/`doc` params) so they stay correct after
   // a password change.
-  const prefsAppCtl: PrefsAppCtl = {
-    // Task 25 fix #3: previously bypassed `saveCtl` entirely, so it could run
-    // concurrently with an auto/nav-triggered save — two writers racing the
-    // same file handle — and, worse, could lose the race after `app.password`
-    // was already updated: the file on disk would stay encrypted under the
-    // *old* password while the UI (and every subsequent save) believed the
-    // new one was in effect. `runExclusive` waits out any in-flight save
-    // (plus its trailing rounds) first, then holds the same lock while this
-    // reads `store.doc` and writes, so no other save can interleave. The doc
-    // read and the write both happen inside `fn` so they see a single,
-    // consistent snapshot; `app.password`/`markSaved()` only flip after the
-    // write actually lands.
-    //
-    // Task 25 re-review item #2: `runExclusive` alone kept this from
-    // interleaving with a save, but it never checked `store.readOnly` — a
-    // read-only tab (lost the cross-tab lock) could still successfully
-    // rewrite the file under a new password, the one write path every other
-    // trigger (`saveNow`/`doSave`) explicitly guards against. The check has
-    // to run *inside* `runExclusive`'s `fn`, not before calling it: the tab
-    // could still be read-write when `changePassword` is invoked but lose the
-    // lock while waiting out an in-flight save, and `fn` is exactly the
-    // window that needs to stay guarded once it actually starts writing.
-    async changePassword(newPw: string | null): Promise<void> {
-      await saveCtl.runExclusive(async () => {
-        if (store.readOnly) throw new Error('read-only')
-        const bytes = newPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, newPw)
-        if (session.handle) {
-          await writeFile(session, bytes)
-        } else {
-          downloadFallback(session.name, bytes)
-          // Not sticky — see the matching note in src/ui/start.ts.
-          toast(t(store.doc.prefs.locale, 'fallback_notice'))
-        }
-        // Belt-and-braces: `writeBackupNow` is contractually non-throwing, but
-        // this is the one call site where an escaped rejection would be
-        // actively harmful — the primary file is already written under the new
-        // password, so bailing here would leave `app.password` holding the old
-        // one while the user is told the change failed.
-        await backupCtl.writeBackupNow(bytes).catch((e: unknown) => console.error(e))
-        if (app) app.password = newPw
-        store.markSaved()
-        shell.setSaveState('saved')
-        shell.setTitle(session.name, false)
-      })
+  const changePassword = createChangePassword({
+    store,
+    session,
+    shell,
+    backupCtl,
+    runExclusive: (fn) => saveCtl.runExclusive(fn),
+    setPassword: (newPw) => {
+      if (app) app.password = newPw
     },
+  })
+  const prefsAppCtl: PrefsAppCtl = {
+    changePassword,
     currentPassword(): string | null {
       return app ? app.password : password
     },

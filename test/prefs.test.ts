@@ -276,6 +276,27 @@ test('general tab: canceling the save picker leaves the pref off', async () => {
   expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
 })
 
+test('general tab: a rejecting save picker (e.g. permission denied) leaves the pref off, same as a cancel', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreateBackup.mockRejectedValue(new Error('not allowed'))
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  // One extra tick versus the plain-cancel test: the rejection has to pass
+  // through pickAndStoreBackupTarget's own `.catch` before the checkbox's
+  // outer `.then` sees `picked === false`.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBeNull()
+  expect(checkbox.checked).toBe(false)
+  expect(consoleErrorSpy).toHaveBeenCalled()
+  consoleErrorSpy.mockRestore()
+})
+
 test('general tab: re-enabling with an existing backupHandleId skips the picker', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.backupHandleId = 'already-set' })

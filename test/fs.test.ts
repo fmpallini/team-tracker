@@ -141,6 +141,13 @@ test('pickCreateBackup returns null when the user cancels the picker', async () 
   expect(await pickCreateBackup('team-tracker.bck')).toBeNull()
 })
 
+test('pickCreateBackup rethrows a non-cancel error (e.g. permission denied) instead of swallowing it as a cancel', async () => {
+  const denied = new Error('not allowed')
+  denied.name = 'NotAllowedError'
+  stubSaveFilePicker(denied)
+  await expect(pickCreateBackup('team-tracker.bck')).rejects.toThrow('not allowed')
+})
+
 test('pickCreateBackup passes the given handle through as startIn, so the picker opens in that folder', async () => {
   const { handle } = mockHandle(1000)
   const picker = stubSaveFilePicker(handle)
