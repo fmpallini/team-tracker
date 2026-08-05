@@ -12,7 +12,7 @@ import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
-import { supportsFsApi, pickSaveJson, downloadFallback, pickCreate } from '../core/fs'
+import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup } from '../core/fs'
 import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
@@ -286,7 +286,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           return
         }
         const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
-        pickCreate(suggested)
+        // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
+        // handle under 'lastHandle', which would repoint "reopen last" at the
+        // empty .bck file instead of the user's .tmv.
+        pickCreateBackup(suggested)
           .then((session) => {
             if (!session) {
               backupCheckbox.checked = false

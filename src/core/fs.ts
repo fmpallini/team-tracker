@@ -59,6 +59,31 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
 }
 
 /**
+ * Save-picker for the daily `.bck` mirror file. Deliberately NOT `pickCreate`:
+ *  - it must not touch the `'lastHandle'` IndexedDB key, which is the primary
+ *    file's "reopen last" pointer — pointing it at a freshly created, empty
+ *    `.bck` would make the next launch try to open a 0-byte file and report a
+ *    bogus "corrupt file" error instead of opening the user's real `.tmv`
+ *    (same class of bug the `forceWrite`/`writeBackupBytes` split already
+ *    fixed on the write side, see `core/backup-controller.ts`);
+ *  - the picker filter is `.bck`, not `.tmv`.
+ * Unregistered MIME type keeps the filter to .bck — see `pickOpen` above.
+ */
+export async function pickCreateBackup(suggestedName: string): Promise<FileSession | null> {
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [{ description: 'Team Tracker Backup', accept: { 'application/vnd.teamtracker.bck': ['.bck'] } }],
+    })
+    const { lastModified } = await readHandle(handle)
+    return { handle, name: handle.name, lastModified }
+  } catch (e) {
+    if (isAbortError(e)) return null
+    throw e
+  }
+}
+
+/**
  * Shared by `reopenLast` (handle pulled from IndexedDB) and the File Handling
  * API launch path (handle handed in by the OS/browser on `.tmv` double-click,
  * see `pwa/manifest.json`'s `file_handlers` and `ui/start.ts`'s

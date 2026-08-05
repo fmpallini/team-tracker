@@ -8,10 +8,10 @@ import { buildExport } from '../src/core/team-export'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
 
-const fsMocks = vi.hoisted(() => ({ pickCreate: vi.fn() }))
+const fsMocks = vi.hoisted(() => ({ pickCreateBackup: vi.fn() }))
 vi.mock('../src/core/fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/fs')>()
-  return { ...actual, downloadFallback: vi.fn(), pickCreate: fsMocks.pickCreate }
+  return { ...actual, downloadFallback: vi.fn(), pickCreateBackup: fsMocks.pickCreateBackup }
 })
 const idbMocks = vi.hoisted(() => ({ idbSet: vi.fn(async () => {}) }))
 vi.mock('../src/core/idb', () => idbMocks)
@@ -41,7 +41,7 @@ interface Setup {
 function setup(): Setup {
   document.body.innerHTML = ''
   stubMatchMedia()
-  fsMocks.pickCreate.mockReset()
+  fsMocks.pickCreateBackup.mockReset()
   idbMocks.idbSet.mockReset().mockResolvedValue(undefined)
   const doc = createEmptyDocument('en-US')
   const store = createStore(doc)
@@ -230,7 +230,7 @@ test('the "open refs in secondary pane" checkbox reflects and updates the pref',
 
 test('general tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
   const { store, shell, appCtl } = setup()
-  fsMocks.pickCreate.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
   openPrefs(store, shell, 'en-US', appCtl)
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
@@ -239,7 +239,7 @@ test('general tab: enabling daily backup with no existing handle opens the save 
   await Promise.resolve()
   await Promise.resolve()
 
-  expect(fsMocks.pickCreate).toHaveBeenCalledWith('team-tracker.bck')
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck')
   expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
   expect(store.doc.prefs.backupHandleId).not.toBeNull()
@@ -247,7 +247,7 @@ test('general tab: enabling daily backup with no existing handle opens the save 
 
 test('general tab: canceling the save picker leaves the pref off', async () => {
   const { store, shell, appCtl } = setup()
-  fsMocks.pickCreate.mockResolvedValue(null)
+  fsMocks.pickCreateBackup.mockResolvedValue(null)
   openPrefs(store, shell, 'en-US', appCtl)
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
@@ -269,7 +269,7 @@ test('general tab: re-enabling with an existing backupHandleId skips the picker'
   checkbox.dispatchEvent(new Event('change'))
   await Promise.resolve()
 
-  expect(fsMocks.pickCreate).not.toHaveBeenCalled()
+  expect(fsMocks.pickCreateBackup).not.toHaveBeenCalled()
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
 })
 
