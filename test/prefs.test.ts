@@ -290,6 +290,64 @@ test('general tab: re-enabling with an existing backupHandleId skips the picker'
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
 })
 
+test('general tab: no "Change backup location" button when no backup target exists yet', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
+})
+
+test('general tab: "Change backup location" button appears once a backup target exists, even while disabled', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'existing' })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
+})
+
+test('general tab: "Change backup location" re-opens the picker without a disable/enable round trip, and re-enables the pref', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'old-id' })
+  const primaryHandle = {} as unknown as FileSystemFileHandle
+  appCtl.fileHandle = () => primaryHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  // `.click()` is a no-op on a genuinely `disabled` element (matches real
+  // browser behavior) — dispatchEvent bypasses that, same workaround the
+  // checkbox tests above use, since `supportsFsApi` (and so `backupAvailable`)
+  // is false under jsdom regardless of what `hasFileHandle()` returns.
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  changeBtn.dispatchEvent(new Event('click'))
+  // Flush the whole microtask queue (not just N `Promise.resolve()` ticks) —
+  // `backupCheckbox.checked = true` runs in an extra `.then()` layered on
+  // top of `pickAndStoreBackupTarget`'s own picker→idbSet→store.update
+  // chain, and its exact tick depth isn't worth pinning down by hand.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
+  expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
+  expect(store.doc.prefs.backupHandleId).not.toBe('old-id')
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  expect(checkbox.checked).toBe(true)
+})
+
+test('general tab: canceling "Change backup location" leaves the existing target and pref state untouched', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
+  fsMocks.pickCreateBackup.mockResolvedValue(null)
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  changeBtn.dispatchEvent(new Event('click'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(store.doc.prefs.backupHandleId).toBe('old-id')
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+})
+
 test('general tab: disabling the pref does not clear the stored handle id', () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })

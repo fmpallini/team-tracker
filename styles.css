@@ -1135,6 +1135,7 @@ select option { background: var(--bg); color: var(--fg); }
     linear-gradient(to top, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) bottom / 100% 1.1rem no-repeat scroll;
 }
 .tt-prefs-field { display: flex; flex-direction: column; gap: .35rem; }
+.tt-prefs-backup-change-btn { align-self: flex-start; }
 .tt-prefs-field-label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .35rem; }
 .tt-prefs-checkbox-label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; color: var(--muted); }
 .tt-prefs-radio-row { display: flex; flex-wrap: wrap; gap: .5rem; }

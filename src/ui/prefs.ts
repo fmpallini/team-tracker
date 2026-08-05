@@ -272,6 +272,36 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     )
 
     const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
+
+    // Shared by the checkbox's first-time-enable path and the "Change
+    // location" button: runs the .bck picker, and on a real pick (not a
+    // cancel/error) persists the new handle and turns the pref on. Resolves
+    // true iff a new handle was actually picked and stored, so callers can
+    // tell a genuine pick apart from a cancel/error without duplicating the
+    // picker/idbSet/store.update sequence.
+    function pickAndStoreBackupTarget(): Promise<boolean> {
+      const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
+      // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
+      // handle under 'lastHandle', which would repoint "reopen last" at the
+      // empty .bck file instead of the user's .tmv.
+      return pickCreateBackup(suggested, appCtl.fileHandle() ?? undefined)
+        .then((session) => {
+          if (!session) return false
+          const id = crypto.randomUUID()
+          return idbSet(id, session.handle).then(() => {
+            store.update((d) => {
+              d.prefs.dailyBackupEnabled = true
+              d.prefs.backupHandleId = id
+            })
+            return true
+          })
+        })
+        .catch((err: unknown) => {
+          console.error(err)
+          return false
+        })
+    }
+
     const backupCheckbox = el('input', {
       type: 'checkbox',
       class: 'tt-prefs-backup-checkbox',
@@ -287,36 +317,46 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           store.update((d) => { d.prefs.dailyBackupEnabled = true })
           return
         }
-        const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
-        // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
-        // handle under 'lastHandle', which would repoint "reopen last" at the
-        // empty .bck file instead of the user's .tmv.
-        pickCreateBackup(suggested, appCtl.fileHandle() ?? undefined)
-          .then((session) => {
-            if (!session) {
-              backupCheckbox.checked = false
-              return
-            }
-            const id = crypto.randomUUID()
-            return idbSet(id, session.handle).then(() => {
-              store.update((d) => {
-                d.prefs.dailyBackupEnabled = true
-                d.prefs.backupHandleId = id
-              })
-            })
+        // `pickAndStoreBackupTarget` never rejects (its own `.catch` already
+        // swallows and logs), but the linter can't see that from here.
+        pickAndStoreBackupTarget()
+          .then((picked) => {
+            if (!picked) backupCheckbox.checked = false
           })
-          .catch((err: unknown) => {
-            console.error(err)
-            backupCheckbox.checked = false
-          })
+          .catch(() => {})
       },
     })
+    // Re-picking without a disable/enable round trip: disabling deliberately
+    // keeps `backupHandleId` (so re-enabling resumes the same file), which
+    // means there'd otherwise be no way to point the backup somewhere else
+    // short of disabling, re-enabling, and hoping the picker doesn't skip
+    // itself. Only shown once a target exists — for the first-time pick, the
+    // checkbox itself already opens the picker.
+    const changeBackupBtn = prefs.backupHandleId
+      ? el(
+          'button',
+          {
+            class: 'tt-btn tt-prefs-backup-change-btn',
+            type: 'button',
+            disabled: !backupAvailable,
+            onclick: () => {
+              pickAndStoreBackupTarget()
+                .then((picked) => {
+                  if (picked) backupCheckbox.checked = true
+                })
+                .catch(() => {})
+            },
+          },
+          t(locale, 'prefs_backup_change_btn')
+        )
+      : null
     const backupField = el(
       'div',
       { class: 'tt-prefs-field' },
       el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
       el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
-      backupAvailable ? null : el('p', { class: 'tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint'))
+      backupAvailable ? null : el('p', { class: 'tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint')),
+      changeBackupBtn
     )
 
     container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField, backupField)
