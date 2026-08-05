@@ -37,8 +37,11 @@ your machine. Team Tracker doesn't:
 - 🗄️ **A single `.tmv` file** you keep wherever you want — copy it, back it up,
   put it in your own cloud sync, put it on a USB stick. There is no vendor
   storing it for you.
-- 🔒 **End-to-end encryption (AES-256)** — even if that file sits in a cloud
-  backup, it's only ever decrypted on your device, with your password.
+- 🔒 **Encryption is the default, and optional** — a `.tmv` file is normally
+  AES-256, decrypted only on your device with your password; you can also
+  create (or later migrate to) a password-less plain-text file if you'd
+  rather skip that overhead, at the cost of anyone with file access being
+  able to read it.
 - 🪶 **Tiny** — the entire app is a single HTML file under 170 KB
   (as of v1.2), smaller than most web pages' hero image.
 - 🖥️ **Desktop-only by design** — built for keyboard and large screens
@@ -177,6 +180,12 @@ file and are responsible for backing it up** — losing the file, or forgetting
 its password, means the data is unrecoverable. See the next section for the
 recommended way to keep it backed up.
 
+Team Tracker also supports password-less files (chosen at creation, or via
+Settings → Security's "Migrate to password-less") for cases where you don't
+need the encryption — the trade-off is anyone with access to the file,
+including automated scanning by a cloud backup provider, can read it as
+plain text.
+
 ## Backing up your team file
 
 Team Tracker has no backup service of its own — and doesn't need one. Keep
@@ -193,6 +202,18 @@ the same with the local `app.html` and the installed PWA:
 - **Version history for free** — most providers keep previous versions of a
   synced file for a while (Google Drive keeps them for ~30 days), so you can
   also recover an earlier state by downloading an older version of the file.
+
+### Daily backup file (`.bck`)
+
+As a second, independent line of defense against file corruption (distinct
+from a cloud provider's version history, which covers *losing* the file —
+this covers the file on disk becoming unreadable), Settings → General offers
+"Maintain daily backup file". Once enabled, the app keeps a `.bck` file
+alongside the original, refreshed at most once every 24 hours (and
+immediately after any password change), containing the same bytes as the
+primary file. To recover from it, just rename it from `.bck` to `.tmv` and
+open it normally — it uses the exact same format as the file it was copied
+from, encrypted or plain.
 
 ## FAQ
 
@@ -234,6 +255,19 @@ it. Use a password manager.
 Team Tracker has no backup service — if the file's gone and you never synced
 it anywhere, the data is gone too. See [Backing up your team
 file](#backing-up-your-team-file).
+
+**Can I skip the password entirely?**
+Yes — choose "Use without password" when creating a file, or migrate an
+existing encrypted file via Settings → Security → "Migrate to
+password-less". The trade-off: the file is then stored as plain,
+unencrypted text, readable by anyone with access to it (including automated
+scanning by a cloud backup provider). You can set a password on a
+password-less file at any time from the same tab.
+
+**What's the `.bck` file next to my `.tmv` file?**
+An optional daily backup (see [Daily backup file](#daily-backup-file-bck)),
+enabled per-file in Settings → General. It's a plain copy of your file at
+its last backup point — rename it to `.tmv` to open it like any other file.
 
 **Is there version history or an undo for past edits?**
 Not inside the app. Whatever version history your cloud sync provider offers
