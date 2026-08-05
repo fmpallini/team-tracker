@@ -490,6 +490,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     isReadOnly(): boolean {
       return store.readOnly
     },
+    hasFileHandle(): boolean {
+      return session.handle !== null
+    },
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
   }

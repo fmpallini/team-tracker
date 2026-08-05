@@ -12,7 +12,8 @@ import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type
 import { builtinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
-import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
+import { supportsFsApi, pickSaveJson, downloadFallback, pickCreate } from '../core/fs'
+import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 
@@ -28,6 +29,8 @@ export interface PrefsAppCtl {
    * to that same guard.
    */
   isReadOnly(): boolean
+  /** Whether the current session has a real FS-API file handle (not fallback/download mode) — gates the daily-backup toggle, which needs "same folder as the original" to mean something. */
+  hasFileHandle(): boolean
   fileName: string
   fileSchemaVersion: number
 }
@@ -266,7 +269,52 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
     )
 
-    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField)
+    const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
+    const backupCheckbox = el('input', {
+      type: 'checkbox',
+      class: 'tt-prefs-backup-checkbox',
+      checked: prefs.dailyBackupEnabled,
+      disabled: !backupAvailable,
+      onchange: (e: Event) => {
+        const checked = (e.target as HTMLInputElement).checked
+        if (!checked) {
+          store.update((d) => { d.prefs.dailyBackupEnabled = false })
+          return
+        }
+        if (store.doc.prefs.backupHandleId) {
+          store.update((d) => { d.prefs.dailyBackupEnabled = true })
+          return
+        }
+        const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
+        pickCreate(suggested)
+          .then((session) => {
+            if (!session) {
+              backupCheckbox.checked = false
+              return
+            }
+            const id = crypto.randomUUID()
+            return idbSet(id, session.handle).then(() => {
+              store.update((d) => {
+                d.prefs.dailyBackupEnabled = true
+                d.prefs.backupHandleId = id
+              })
+            })
+          })
+          .catch((err: unknown) => {
+            console.error(err)
+            backupCheckbox.checked = false
+          })
+      },
+    })
+    const backupField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
+      backupAvailable ? null : el('p', { class: 'tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint'))
+    )
+
+    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField, backupField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------

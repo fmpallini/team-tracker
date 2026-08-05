@@ -8,10 +8,13 @@ import { buildExport } from '../src/core/team-export'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
 
+const fsMocks = vi.hoisted(() => ({ pickCreate: vi.fn() }))
 vi.mock('../src/core/fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/fs')>()
-  return { ...actual, downloadFallback: vi.fn() }
+  return { ...actual, downloadFallback: vi.fn(), pickCreate: fsMocks.pickCreate }
 })
+const idbMocks = vi.hoisted(() => ({ idbSet: vi.fn(async () => {}) }))
+vi.mock('../src/core/idb', () => idbMocks)
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
 function stubMatchMedia(): void {
@@ -38,6 +41,8 @@ interface Setup {
 function setup(): Setup {
   document.body.innerHTML = ''
   stubMatchMedia()
+  fsMocks.pickCreate.mockReset()
+  idbMocks.idbSet.mockReset().mockResolvedValue(undefined)
   const doc = createEmptyDocument('en-US')
   const store = createStore(doc)
   const shell = createShell('en-US')
@@ -48,6 +53,7 @@ function setup(): Setup {
     changePassword,
     currentPassword,
     isReadOnly: () => false,
+    hasFileHandle: () => true,
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
   }
@@ -220,6 +226,76 @@ test('the "open refs in secondary pane" checkbox reflects and updates the pref',
   checkbox.dispatchEvent(new Event('change', { bubbles: true }))
 
   expect(store.doc.prefs.openRefsInSecondaryPane).toBe(true)
+})
+
+test('general tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreate.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(fsMocks.pickCreate).toHaveBeenCalledWith('team-tracker.bck')
+  expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+  expect(store.doc.prefs.backupHandleId).not.toBeNull()
+})
+
+test('general tab: canceling the save picker leaves the pref off', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreate.mockResolvedValue(null)
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+})
+
+test('general tab: re-enabling with an existing backupHandleId skips the picker', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.backupHandleId = 'already-set' })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+
+  expect(fsMocks.pickCreate).not.toHaveBeenCalled()
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+})
+
+test('general tab: disabling the pref does not clear the stored handle id', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = false
+  checkbox.dispatchEvent(new Event('change'))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBe('existing')
+})
+
+test('general tab: checkbox is disabled with a hint when hasFileHandle() is false', () => {
+  const { store, shell, appCtl } = setup()
+  appCtl.hasFileHandle = () => false
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  expect(checkbox.disabled).toBe(true)
+  expect(document.querySelector('.tt-prefs-backup-disabled-hint')?.textContent).toBe(
+    'Unavailable: this browser has no direct file access, or this file has not been saved to disk yet.'
+  )
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
