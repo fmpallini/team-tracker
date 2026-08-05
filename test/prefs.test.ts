@@ -622,6 +622,49 @@ test('security tab: plain file shows no current-password field, submit label is 
   expect(changePassword).toHaveBeenCalledWith('brandnewpw')
 })
 
+// `isPlain` is captured once at render time; "Set password" invalidates it. If
+// the tab isn't rebuilt, a second change in the same modal session takes the
+// plain-file branch — no current-password field, and the `if (!isPlain)`
+// verification block skipped entirely, silently bypassing the check that is
+// supposed to gate every password change on an already-encrypted file.
+test('security tab: after "Set password" succeeds the tab re-renders as an encrypted file (no stale plain state)', async () => {
+  const { store, shell, appCtl } = setup()
+  let pw: string | null = null
+  appCtl.currentPassword = () => pw
+  // Mirrors main.ts: the in-memory password flips before changePassword resolves.
+  const changePassword = vi.fn(async (newPw: string | null) => {
+    pw = newPw
+  })
+  appCtl.changePassword = changePassword
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Security')
+
+  const next = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  next.value = 'brandnewpw'
+  confirm.value = 'brandnewpw'
+  clickByText('Set password')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(changePassword).toHaveBeenCalledWith('brandnewpw')
+  // Tab rebuilt with the encrypted-file UI.
+  const current = document.querySelector('input[name="tt-prefs-current-password"]') as HTMLInputElement | null
+  expect(current).not.toBeNull()
+  expect(document.querySelector('.tt-prefs-security-form')?.textContent).not.toContain('This file is not password-protected')
+  expect(Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Migrate to password-less')).toBeDefined()
+
+  // And the current-password check really gates a second change now.
+  const next2 = document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement
+  const confirm2 = document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement
+  current!.value = 'not-the-password'
+  next2.value = 'thirdpassword'
+  confirm2.value = 'thirdpassword'
+  clickByText('Change password')
+
+  expect(document.querySelector('.tt-field-error')?.textContent).toBe('Current password is incorrect')
+  expect(changePassword).toHaveBeenCalledTimes(1)
+})
+
 test('security tab: plain file has no "migrate to password-less" button', () => {
   const { store, shell, appCtl } = setup()
   appCtl.currentPassword = () => null

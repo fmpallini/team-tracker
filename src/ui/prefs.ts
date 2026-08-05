@@ -637,6 +637,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           confirmInput.value = ''
           meter.update('')
           toast(t(locale, 'prefs_security_success_toast'))
+          // `isPlain` was captured at render time; "Set password" on a plain
+          // file just invalidated it. Rebuild the tab (same as the
+          // migrate-to-plain path below) so a second change in this same modal
+          // session goes through the current-password check instead of the
+          // now-stale plain-file branch that skips it.
+          renderActiveTab()
         })
         .catch(() => {
           toast(t(locale, 'prefs_security_failure_toast'), { sticky: true })
