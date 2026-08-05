@@ -23,6 +23,13 @@ Default to the Bash tool (Git Bash) for shell commands in this repo — the `rtk
 
 Zero runtime dependencies is a hard constraint — `esbuild`, `typescript`, `vitest`, `jsdom` are dev-only. Do not add runtime deps.
 
+## E2E tests (Playwright, `npm run test:e2e`)
+
+`e2e/*.spec.ts` are Playwright specs (not vitest's — excluded from `vitest.config.ts`, not typechecked/linted by `npm run typecheck`/`npm run lint` since `tsconfig.json` only includes `src`/`test`). `npm run test:e2e` builds first, then runs against `dist/`. Chromium-only (`playwright.config.ts`'s sole project) — that's this app's userbase.
+
+- `smoke.spec.ts` — loads `dist/app.html` via `file://`, like a real double-click. Chromium treats file:// as an *insecure* context, so `window.showOpenFilePicker` throws there and OPFS isn't available either — `e2e/opfs-shim.ts`'s `forceFallbackMode` removes the pickers before load so the app takes its real download-fallback path instead, same as any browser without the File System Access API.
+- `fs-api.spec.ts` / `tab-lock.spec.ts` — served over `http://localhost` instead (`playwright.config.ts`'s `webServer`, backed by the zero-dep `e2e/static-server.mjs`), which Chromium treats as a *secure* context. `e2e/opfs-shim.ts`'s `installOpfsPickerShim` monkey-patches `showOpenFilePicker`/`showSaveFilePicker` to hand back real Origin Private File System (`navigator.storage.getDirectory()`) handles instead of invoking the native OS picker Playwright can't drive — same real `FileSystemFileHandle` interface the app uses in production, just sourced from sandboxed storage instead of a user click. This is what makes the real create → encrypt → write → close → reopen → decrypt round trip, the daily-backup mirror, and (via two `page`s in one `context`, sharing the same real Web Locks/`BroadcastChannel`/IndexedDB) the cross-tab single-writer handoff all testable headlessly.
+
 ## Build outputs (scripts/build.mjs)
 
 Two variants are bundled from the same `src/main.ts` entry, differing only in the esbuild defines `__APP_VERSION__` (from package.json version) and `__PWA__`:

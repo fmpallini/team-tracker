@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { forceFallbackMode } from './opfs-shim'
 
 // Runs against the self-contained dist/app.html build (`npm run build`),
 // loaded via file:// exactly like a real user would open it.
@@ -27,15 +28,15 @@ test.describe('start screen', () => {
 })
 
 // Chromium exposes `window.showOpenFilePicker` unconditionally, so the app's
-// feature detection (src/core/fs.ts supportsFsApi) sends it down the native
-// file-picker path — which Playwright cannot drive. Firefox never implements
-// the File System Access API, so it takes the app's own fallback path
-// (hidden <input type="file"> + anchor-click download), which automates
-// cleanly. Restrict the full create/open flow to firefox for that reason.
+// feature detection (src/core/fs.ts supportsFsApi) would otherwise send it
+// down the native file-picker path — which Playwright cannot drive.
+// forceFallbackMode removes the pickers before load so the app takes its own
+// download-fallback path instead (hidden <input type="file"> + anchor-click
+// download), which Playwright automates cleanly via
+// `page.on('filechooser')` / `page.waitForEvent('download')`.
 test.describe('create → main shell (fallback flow)', () => {
-  test.skip(({ browserName }) => browserName !== 'firefox', 'exercises the no-FS-Access-API fallback path')
-
   test('create a new doc, land on the main shell, open the command palette', async ({ page }) => {
+    await forceFallbackMode(page)
     await page.goto(APP_URL)
 
     const downloadPromise = page.waitForEvent('download')
@@ -52,6 +53,15 @@ test.describe('create → main shell (fallback flow)', () => {
 
     await expect(page.locator('.tt-shell')).toBeVisible()
     await expect(page.locator('.tt-sidebar')).toBeVisible()
+
+    // A brand-new doc has zero teams — the command palette (like the header
+    // search/title button) is deliberately disabled in that state (nothing
+    // for it to open), so Ctrl+K is a no-op until a team exists.
+    await page.getByRole('button', { name: /Create first team/ }).click()
+    const teamDialog = page.getByRole('dialog')
+    await teamDialog.locator('input[name="tt-team-name"]').fill('Smoke Test Team')
+    await teamDialog.getByRole('button', { name: 'OK' }).click()
+    await expect(teamDialog).toBeHidden()
 
     await page.keyboard.press('Control+k')
     await expect(page.locator('.tt-palette-overlay')).toBeVisible()
