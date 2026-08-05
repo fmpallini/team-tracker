@@ -22,10 +22,12 @@ const closeMock = vi.fn(async () => {})
 const fakeWritable = { write: writeMock, close: closeMock }
 
 const createWritableMock = vi.fn(async () => fakeWritable)
+const queryPermissionMock = vi.fn(async (): Promise<PermissionState> => 'granted')
 
 const fakeHandle = {
   name: 'team.bck',
   createWritable: createWritableMock,
+  queryPermission: queryPermissionMock,
 } as unknown as FileSystemFileHandle
 
 beforeEach(() => {
@@ -34,6 +36,7 @@ beforeEach(() => {
   writeMock.mockReset()
   closeMock.mockReset()
   createWritableMock.mockReset().mockResolvedValue(fakeWritable)
+  queryPermissionMock.mockReset().mockResolvedValue('granted')
   modalMocks.toast.mockReset()
 })
 
@@ -165,5 +168,34 @@ describe('backup-controller', () => {
     const ctl = createBackupController({ store })
     await expect(ctl.maybeWriteBackup(new Uint8Array([1]))).resolves.toBeUndefined()
     expect(writeMock).not.toHaveBeenCalled()
+  })
+
+  // A handle restored from IndexedDB doesn't carry its read-write grant across
+  // browser sessions; without the queryPermission check the first backup write
+  // of each new session would fail inside createWritable() with an opaque
+  // NotAllowedError, every save, for the rest of the session.
+  test('a non-granted permission on the restored handle is a clean no-op (no write attempted)', async () => {
+    queryPermissionMock.mockResolvedValue('prompt')
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBeUndefined()
+    expect(queryPermissionMock).toHaveBeenCalledWith({ mode: 'readwrite' })
+    expect(createWritableMock).not.toHaveBeenCalled()
+    expect(writeMock).not.toHaveBeenCalled()
+    // Clean no-op, not an error path: no failure toast.
+    expect(modalMocks.toast).not.toHaveBeenCalled()
+  })
+
+  test('a denied permission blocks maybeWriteBackup too, and recovers once re-granted', async () => {
+    queryPermissionMock.mockResolvedValue('denied')
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    expect(writeMock).not.toHaveBeenCalled()
+    // The elapsed-time clock only advances on an actual write, so the next
+    // attempt still runs — and succeeds once the grant is back.
+    queryPermissionMock.mockResolvedValue('granted')
+    await ctl.maybeWriteBackup(new Uint8Array([2]))
+    expect(writeMock).toHaveBeenCalledTimes(1)
   })
 })
