@@ -26,6 +26,7 @@ import { writeFile, forceWrite, readCurrent, downloadFallback, sameEntry } from 
 import { toast } from './ui/modal'
 import { el } from './ui/dom'
 import { createSaveController, type SaveController } from './core/save-controller'
+import { createBackupController } from './core/backup-controller'
 import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
@@ -313,6 +314,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // chosen action (successfully or not) settles.
   let conflictOpen = false
 
+  const backupCtl = createBackupController({ store })
+
   // Task 25: save orchestration. `getPassword`/`onExternalChange` read live
   // state (never the closed-over `password`/`doc` params) so they stay
   // correct across password changes and re-renders.
@@ -323,6 +326,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     shell,
     locale: () => store.doc.prefs.locale,
     isConflictOpen: () => conflictOpen,
+    backupCtl,
     onExternalChange: () => {
       if (conflictOpen) return
       conflictOpen = true
@@ -470,6 +474,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
           // Not sticky — see the matching note in src/ui/start.ts.
           toast(t(store.doc.prefs.locale, 'fallback_notice'))
         }
+        await backupCtl.writeBackupNow(bytes)
         if (app) app.password = newPw
         store.markSaved()
         shell.setSaveState('saved')
