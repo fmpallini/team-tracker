@@ -26,6 +26,37 @@ describe('PWA variant', () => {
     expect(banner.querySelector('.tt-update-banner-hint')).toBeNull()
   })
 
+  it('disables the reload button while a modal is open, and re-enables once it closes', async () => {
+    const banner = showUpdateNotice(LOCALE, '9.9.9', vi.fn(), vi.fn(), { pwa: true })
+    document.body.appendChild(banner)
+    const btn = banner.querySelector<HTMLButtonElement>('.tt-update-banner-action')!
+    expect(btn.disabled).toBe(false)
+
+    const overlay = document.createElement('div')
+    overlay.className = 'tt-modal-overlay'
+    document.body.appendChild(overlay)
+    await Promise.resolve()
+    expect(btn.disabled).toBe(true)
+
+    overlay.remove()
+    await Promise.resolve()
+    expect(btn.disabled).toBe(false)
+  })
+
+  it('ignores a click on the reload button while a modal is open', () => {
+    const onReload = vi.fn().mockResolvedValue(undefined)
+    const banner = showUpdateNotice(LOCALE, '9.9.9', onReload, vi.fn(), { pwa: true })
+    document.body.appendChild(banner)
+    const btn = banner.querySelector<HTMLButtonElement>('.tt-update-banner-action')!
+
+    const overlay = document.createElement('div')
+    overlay.className = 'tt-modal-overlay'
+    document.body.appendChild(overlay)
+    btn.click()
+
+    expect(onReload).not.toHaveBeenCalled()
+  })
+
   it('disables the reload button while onReload is pending and re-enables if it resolves without navigating', async () => {
     let resolvePending: () => void
     const pending = new Promise<void>((r) => { resolvePending = r })

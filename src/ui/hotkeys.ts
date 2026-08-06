@@ -3,9 +3,10 @@ const EDITABLE_SELECTOR = 'input,textarea,select,[contenteditable="true"]'
 
 /**
  * True while a modal dialog is open (see the `.tt-modal-overlay` class in
- * modal.ts). Shared by both guards below.
+ * modal.ts). Shared by both guards below, and by update-notice.ts to keep
+ * the relaunch-for-update button non-clickable behind an open modal.
  */
-function blockedByModal(): boolean {
+export function blockedByModal(): boolean {
   return document.querySelector('.tt-modal-overlay') !== null
 }
 
