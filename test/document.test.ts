@@ -6,7 +6,7 @@ test('createEmptyDocument shape', () => {
   expect(d.prefs).toEqual({
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
     autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
-    dailyBackupEnabled: false, backupHandleId: null,
+    dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
   })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
@@ -186,6 +186,24 @@ describe('v8 → v9 migration (daily backup prefs)', () => {
     const doc = migrate(d)
     expect(doc.prefs.dailyBackupEnabled).toBe(true)
     expect(doc.prefs.backupHandleId).toBe('abc-123')
+  })
+})
+
+describe('v9 → v10 migration (backup frequency)', () => {
+  it('defaults backupFrequency to "daily" when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 9
+    delete d.prefs.backupFrequency
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.prefs.backupFrequency).toBe('daily')
+  })
+  it('leaves an existing backupFrequency untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 9
+    d.prefs.backupFrequency = 'hourly'
+    const doc = migrate(d)
+    expect(doc.prefs.backupFrequency).toBe('hourly')
   })
 })
 

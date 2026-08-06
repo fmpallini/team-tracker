@@ -6,12 +6,13 @@ import { idbGet } from './idb'
 import { toast } from '../ui/modal'
 import { t } from './i18n'
 
-const DAY_MS = 24 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
 
 export interface BackupController {
   /** Writes now and resets the elapsed-time clock. Never rejects. No-op if the pref is off, no handle is stored yet, or the stored handle's write permission has lapsed. */
   writeBackupNow(bytes: Uint8Array): Promise<void>
-  /** Writes only if >=24h have elapsed since the last backup write this session (or none yet). */
+  /** Writes only if the interval implied by `prefs.backupFrequency` ('daily' => 24h, 'hourly' => 1h) has elapsed since the last backup write this session (or none yet). */
   maybeWriteBackup(bytes: Uint8Array): Promise<void>
 }
 
@@ -83,7 +84,8 @@ export function createBackupController(deps: { store: Store }): BackupController
 
   async function maybeWriteBackup(bytes: Uint8Array): Promise<void> {
     if (!deps.store.doc.prefs.dailyBackupEnabled) return
-    if (Date.now() - lastBackupAt < DAY_MS) return
+    const intervalMs = deps.store.doc.prefs.backupFrequency === 'hourly' ? HOUR_MS : DAY_MS
+    if (Date.now() - lastBackupAt < intervalMs) return
     await writeBackupNow(bytes)
   }
 

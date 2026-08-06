@@ -62,10 +62,11 @@ export function onLocaleChanged(cb: () => void): () => void {
   }
 }
 
-type TabId = 'general' | 'templates' | 'tags' | 'security' | 'data' | 'about'
+type TabId = 'general' | 'advanced' | 'templates' | 'tags' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
+  { id: 'advanced', key: 'prefs_tab_advanced' },
   { id: 'templates', key: 'prefs_tab_templates' },
   { id: 'tags', key: 'prefs_tab_tags' },
   { id: 'security', key: 'prefs_tab_security' },
@@ -120,6 +121,11 @@ const SIZE_OPTIONS: readonly { value: Prefs['fontSize']; key: MsgKey; sizePrevie
   { value: 'XL', key: 'prefs_size_xl', sizePreview: '18px' },
 ]
 
+const FREQUENCY_OPTIONS: readonly { value: Prefs['backupFrequency']; key: MsgKey }[] = [
+  { value: 'daily', key: 'prefs_backup_frequency_daily' },
+  { value: 'hourly', key: 'prefs_backup_frequency_hourly' },
+]
+
 const SCOPE_OPTIONS: readonly { value: Template['scope']; key: MsgKey }[] = [
   { value: 'personal', key: 'prefs_templates_scope_personal' },
   { value: 'daily', key: 'prefs_templates_scope_daily' },
@@ -139,7 +145,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     labelKey: MsgKey,
     options: readonly { value: string; key: MsgKey; preview?: string; swatch?: string; sizePreview?: string }[],
     current: string,
-    onChange: (value: string) => void
+    onChange: (value: string) => void,
+    disabled = false
   ): HTMLElement {
     const row = el(
       'div',
@@ -150,6 +157,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           name,
           value: opt.value,
           checked: opt.value === current,
+          disabled,
           onchange: () => onChange(opt.value),
         })
         // `sizePreview` is an absolute px value on purpose: the modal is
@@ -212,27 +220,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       shell.applyPrefs(store.doc.prefs)
     })
 
-    const autoSaveInput = el('input', {
-      type: 'number',
-      class: 'tt-input tt-prefs-autosave-input',
-      min: '1',
-      max: '60',
-      value: String(prefs.autoSaveMin),
-      onchange: (e: Event) => {
-        const raw = Number((e.target as HTMLInputElement).value)
-        const clamped = Math.min(60, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.autoSaveMin))
-        ;(e.target as HTMLInputElement).value = String(clamped)
-        store.update((d) => {
-          d.prefs.autoSaveMin = clamped
-        })
-      },
-    })
-    const autoSaveField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput)
-    )
-
     const dueSoonInput = el('input', {
       type: 'number',
       class: 'tt-input tt-prefs-due-soon-input',
@@ -269,6 +256,35 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       'div',
       { class: 'tt-prefs-field' },
       el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
+    )
+
+    container.append(themeField, paletteField, localeField, fontField, sizeField, dueSoonField, openRefsSecondaryField)
+  }
+
+  // --- Tab 1b: Avançado (autosave, backup) ---------------------------------
+  function renderAdvanced(container: HTMLElement): void {
+    container.innerHTML = ''
+    const prefs = store.doc.prefs
+
+    const autoSaveInput = el('input', {
+      type: 'number',
+      class: 'tt-input tt-prefs-autosave-input',
+      min: '1',
+      max: '60',
+      value: String(prefs.autoSaveMin),
+      onchange: (e: Event) => {
+        const raw = Number((e.target as HTMLInputElement).value)
+        const clamped = Math.min(60, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.autoSaveMin))
+        ;(e.target as HTMLInputElement).value = String(clamped)
+        store.update((d) => {
+          d.prefs.autoSaveMin = clamped
+        })
+      },
+    })
+    const autoSaveField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput)
     )
 
     const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
@@ -350,16 +366,31 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           t(locale, 'prefs_backup_change_btn')
         )
       : null
+
+    const frequencyField = radioField(
+      'tt-prefs-backup-frequency',
+      'prefs_backup_frequency_label',
+      FREQUENCY_OPTIONS,
+      prefs.backupFrequency,
+      (value) => {
+        store.update((d) => {
+          d.prefs.backupFrequency = value as Prefs['backupFrequency']
+        })
+      },
+      !backupAvailable
+    )
+
     const backupField = el(
       'div',
       { class: 'tt-prefs-field' },
       el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
       el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
       backupAvailable ? null : el('p', { class: 'tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint')),
-      changeBackupBtn
+      changeBackupBtn,
+      frequencyField
     )
 
-    container.append(themeField, paletteField, localeField, fontField, sizeField, autoSaveField, dueSoonField, openRefsSecondaryField, backupField)
+    container.append(autoSaveField, backupField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------
@@ -1003,6 +1034,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     switch (activeTab) {
       case 'general':
         renderGeneral(contentEl)
+        return
+      case 'advanced':
+        renderAdvanced(contentEl)
         return
       case 'templates':
         renderTemplates(contentEl)

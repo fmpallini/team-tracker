@@ -71,6 +71,7 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
     await createEncryptedDoc(page, PASSWORD)
 
     await page.click('.tt-btn-settings')
+    await page.getByRole('button', { name: 'Advanced' }).click()
     const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
     await expect(backupCheckbox).toBeEnabled()
     await backupCheckbox.check()

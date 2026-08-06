@@ -157,7 +157,7 @@ describe('save indicator pill', () => {
     // still the original 14:32 save, not re-stamped to 15:00, still 12h (locale unchanged)
     expect(pillText(shell)).toBe('Saved · 2:32 PM')
     shell.applyPrefs({
-      locale: 'pt-BR', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null,
+      locale: 'pt-BR', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
     })
     // same underlying 14:32 save, now shown in pt-BR's 24h convention
     expect(pillText(shell)).toBe('Salvo · 14:32')

@@ -121,6 +121,45 @@ describe('backup-controller', () => {
     }
   })
 
+  test('maybeWriteBackup skips a second call within 1h when backupFrequency is "hourly"', async () => {
+    const store = storeWithBackup(true)
+    store.update((d) => { d.prefs.backupFrequency = 'hourly' })
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    await ctl.maybeWriteBackup(new Uint8Array([2]))
+    expect(writeMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('maybeWriteBackup writes again once >=1h has elapsed when backupFrequency is "hourly"', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = storeWithBackup(true)
+      store.update((d) => { d.prefs.backupFrequency = 'hourly' })
+      const ctl = createBackupController({ store })
+      await ctl.maybeWriteBackup(new Uint8Array([1]))
+      vi.advanceTimersByTime(60 * 60 * 1000)
+      await ctl.maybeWriteBackup(new Uint8Array([2]))
+      expect(writeMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('maybeWriteBackup with "hourly" still skips before a full hour has elapsed (30min is too soon)', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = storeWithBackup(true)
+      store.update((d) => { d.prefs.backupFrequency = 'hourly' })
+      const ctl = createBackupController({ store })
+      await ctl.maybeWriteBackup(new Uint8Array([1]))
+      vi.advanceTimersByTime(30 * 60 * 1000)
+      await ctl.maybeWriteBackup(new Uint8Array([2]))
+      expect(writeMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('maybeWriteBackup no-ops when the pref is off, regardless of elapsed time', async () => {
     const store = storeWithBackup(false)
     const ctl = createBackupController({ store })
