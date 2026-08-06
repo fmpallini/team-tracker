@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { forceFallbackMode } from './opfs-shim'
+import { blockUpdateCheck } from './helpers'
 
 // Runs against the self-contained dist/app.html build (`npm run build`),
 // loaded via file:// exactly like a real user would open it.
@@ -15,6 +16,7 @@ test.describe('start screen', () => {
       if (msg.type() === 'error') consoleErrors.push(msg.text())
     })
     page.on('pageerror', (err) => consoleErrors.push(err.message))
+    await blockUpdateCheck(page)
 
     await page.goto(APP_URL)
 
@@ -37,6 +39,7 @@ test.describe('start screen', () => {
 test.describe('create → main shell (fallback flow)', () => {
   test('create a new doc, land on the main shell, open the command palette', async ({ page }) => {
     await forceFallbackMode(page)
+    await blockUpdateCheck(page)
     await page.goto(APP_URL)
 
     const downloadPromise = page.waitForEvent('download')

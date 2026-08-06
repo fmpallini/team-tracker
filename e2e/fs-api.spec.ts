@@ -6,13 +6,14 @@
 import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile } from './opfs-shim'
-import { createEncryptedDoc } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck } from './helpers'
 
 test.describe('real File System Access API (served over http for OPFS)', () => {
   const PASSWORD = 'e2e-roundtrip-password'
 
   test('create with a password, close, reopen last — full real encrypt/write/read/decrypt round trip', async ({ page }) => {
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
 
     await createEncryptedDoc(page, PASSWORD)
@@ -45,6 +46,7 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
 
   test('a wrong password on reopen is rejected, and the correct one still works right after', async ({ page }) => {
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
     await page.click('.tt-btn-close-file')
@@ -64,6 +66,7 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
 
   test('daily backup mirrors a real, independently-readable second file on save', async ({ page }) => {
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 

@@ -7,7 +7,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck } from './helpers'
 
 async function openSecurityTab(page: Page): Promise<void> {
   await page.click('.tt-btn-settings')
@@ -25,6 +25,7 @@ test.describe('password change round trip', () => {
     const OLD = 'e2e-old-password'
     const NEW = 'e2e-new-password'
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, OLD)
 
@@ -50,6 +51,7 @@ test.describe('password change round trip', () => {
   test('encrypted -> password-less: reopens with no password prompt at all', async ({ page }) => {
     const PASSWORD = 'e2e-migrate-password'
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
@@ -70,6 +72,7 @@ test.describe('password change round trip', () => {
   test('password-less -> encrypted: reopening now requires the new password', async ({ page }) => {
     const PASSWORD = 'e2e-set-password'
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
 
     await page.getByRole('button', { name: /Create new/ }).click()

@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile, writeOpfsFile } from './opfs-shim'
-import { createEncryptedDoc } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck } from './helpers'
 
 async function addTeam(page: import('@playwright/test').Page, name: string): Promise<void> {
   await page.getByRole('button', { name: /Create first team/ }).click()
@@ -23,6 +23,7 @@ test.describe('external file change conflict', () => {
 
   test('Overwrite writes the in-memory doc over the externally-changed file', async ({ page }) => {
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
@@ -49,6 +50,7 @@ test.describe('external file change conflict', () => {
 
   test('Reload discards local edits and re-reads the file from disk', async ({ page }) => {
     await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 

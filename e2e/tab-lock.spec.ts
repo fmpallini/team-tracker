@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck } from './helpers'
 
 test.describe('cross-tab single-writer lock', () => {
   const PASSWORD = 'e2e-tab-lock-password'
@@ -16,6 +16,7 @@ test.describe('cross-tab single-writer lock', () => {
   test('a second tab opening the same file goes read-only; "Take control" hands write access back', async ({ page: pageA, context }) => {
     // Context-level (not page-level): applies to pageB too, opened below.
     await installOpfsPickerShim(context)
+    await blockUpdateCheck(context)
 
     await pageA.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(pageA, PASSWORD)
