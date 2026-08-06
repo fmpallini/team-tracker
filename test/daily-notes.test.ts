@@ -71,8 +71,11 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/** Picks from the current-month grid — the last `.tt-calendar-grid` in DOM order (the previous-month grid, if any, comes first). */
 function dayButtonFor(container: HTMLElement, day: number): HTMLButtonElement {
-  const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+  const grids = container.querySelectorAll<HTMLElement>('.tt-calendar-grid')
+  const currentGrid = grids[grids.length - 1]!
+  const buttons = Array.from(currentGrid.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
   const found = buttons.find((b) => (b.firstChild?.textContent ?? '') === String(day))
   if (!found) throw new Error(`no day button found for day ${day}`)
   return found

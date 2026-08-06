@@ -27,6 +27,8 @@ export function createCalendar(opts: {
   locale: Locale
   marks: CalendarMarks
   onPick(dateIso: string): void
+  /** Also render a non-navigable grid for the month before the displayed one, stacked above it (Task: daily-notes two-month view). */
+  showPrevMonth?: boolean
 }): HTMLElement {
   const initial = parseIso(opts.selected)
   let viewYear = initial.y
@@ -34,8 +36,8 @@ export function createCalendar(opts: {
 
   const root = el('div', { class: 'tt-calendar' })
 
-  function monthLabel(): string {
-    return `${t(opts.locale, `calendar_month_${viewMonth}` as 'calendar_month_1')} ${viewYear}`
+  function monthLabel(year: number, month: number): string {
+    return `${t(opts.locale, `calendar_month_${month}` as 'calendar_month_1')} ${year}`
   }
 
   function goPrevMonth(): void {
@@ -50,9 +52,7 @@ export function createCalendar(opts: {
     render()
   }
 
-  function render(): void {
-    root.innerHTML = ''
-
+  function buildHeader(label: string): HTMLElement {
     const prevBtn = el(
       'button',
       { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_prev_month_title'), onclick: goPrevMonth },
@@ -63,22 +63,27 @@ export function createCalendar(opts: {
       { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_next_month_title'), onclick: goNextMonth },
       '›'
     )
-    const header = el(
+    return el(
       'div',
       { class: 'tt-calendar-header' },
       prevBtn,
-      el('span', { class: 'tt-calendar-month-label' }, monthLabel()),
+      el('span', { class: 'tt-calendar-month-label' }, label),
       nextBtn
     )
+  }
 
+  function buildWeekdaysRow(): HTMLElement {
     const weekdaysRow = el('div', { class: 'tt-calendar-weekdays' })
     for (let dow = 0; dow < 7; dow++) {
       weekdaysRow.appendChild(el('span', { class: 'tt-calendar-weekday' }, t(opts.locale, `calendar_weekday_${dow}` as 'calendar_weekday_0')))
     }
+    return weekdaysRow
+  }
 
+  function buildGrid(year: number, month: number): HTMLElement {
     const grid = el('div', { class: 'tt-calendar-grid' })
-    const firstDow = new Date(viewYear, viewMonth - 1, 1).getDay()
-    const daysInMonth = new Date(viewYear, viewMonth, 0).getDate()
+    const firstDow = new Date(year, month - 1, 1).getDay()
+    const daysInMonth = new Date(year, month, 0).getDate()
     const today = todayIso()
 
     for (let i = 0; i < firstDow; i++) {
@@ -86,7 +91,7 @@ export function createCalendar(opts: {
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
-      const iso = `${viewYear}-${pad2(viewMonth)}-${pad2(day)}`
+      const iso = `${year}-${pad2(month)}-${pad2(day)}`
       const classes = ['tt-calendar-day']
       if (iso === today) classes.push('tt-calendar-day-today')
       if (iso === opts.selected) classes.push('tt-calendar-day-selected')
@@ -111,7 +116,33 @@ export function createCalendar(opts: {
       grid.appendChild(dayBtn)
     }
 
-    root.append(header, weekdaysRow, grid)
+    return grid
+  }
+
+  function render(): void {
+    root.innerHTML = ''
+
+    const header = buildHeader(monthLabel(viewYear, viewMonth))
+    const weekdaysRow = buildWeekdaysRow()
+    const grid = buildGrid(viewYear, viewMonth)
+
+    if (opts.showPrevMonth) {
+      let prevMonth = viewMonth - 1
+      let prevYear = viewYear
+      if (prevMonth < 1) { prevMonth = 12; prevYear -= 1 }
+
+      const prevHeader = buildHeader(monthLabel(prevYear, prevMonth))
+      const prevWeekdaysRow = buildWeekdaysRow()
+      const prevGrid = buildGrid(prevYear, prevMonth)
+
+      root.append(
+        prevHeader, prevWeekdaysRow, prevGrid,
+        el('div', { class: 'tt-calendar-divider' }),
+        header, weekdaysRow, grid
+      )
+    } else {
+      root.append(header, weekdaysRow, grid)
+    }
   }
 
   render()

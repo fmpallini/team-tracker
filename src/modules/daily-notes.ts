@@ -61,6 +61,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
         selected: date,
         locale: lc,
         marks: buildMarks(),
+        showPrevMonth: true,
         onPick: (pickedDate) => {
           ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: pickedDate } })
         },

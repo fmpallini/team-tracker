@@ -245,9 +245,13 @@ test('daily-notes calendar click in each split pane sets that pane\'s own day, i
   pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } })
 
   function clickDay(paneIdx: 0 | 1, day: string): void {
-    const btn = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(`[data-pane-idx="${paneIdx}"] .tt-calendar-day:not(.tt-calendar-day-blank)`)
-    ).find((b) => b.firstChild?.textContent === day)
+    // Only the last `.tt-calendar-grid` in the pane is the current month —
+    // showPrevMonth stacks a read-and-click-able previous-month grid above it.
+    const grids = document.querySelectorAll<HTMLElement>(`[data-pane-idx="${paneIdx}"] .tt-calendar-grid`)
+    const currentGrid = grids[grids.length - 1]
+    if (!currentGrid) throw new Error(`no calendar grid found in pane ${paneIdx}`)
+    const btn = Array.from(currentGrid.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+      .find((b) => b.firstChild?.textContent === day)
     if (!btn) throw new Error(`day "${day}" not found in pane ${paneIdx}`)
     btn.click()
   }

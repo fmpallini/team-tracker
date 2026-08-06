@@ -699,6 +699,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
 .tt-calendar-check { position: absolute; bottom: -2px; right: -2px; font-size: .6rem; line-height: 1; }
+.tt-calendar-divider { border-top: 1px solid var(--border); margin: 1rem 0; }
 
 /* People tree module (stakeholders / members) — org-chart layout */
 .tt-people { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
