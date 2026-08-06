@@ -82,6 +82,26 @@ export async function readOpfsFile(page: Page, name: string): Promise<number[]> 
   }, name)
 }
 
+/**
+ * Writes raw bytes to an OPFS file directly, bypassing the app entirely —
+ * for simulating another program/tab modifying the file on disk (e.g. a sync
+ * client), independent of anything the app under test wrote. Real OPFS write
+ * updates the file's `lastModified`, so this alone is enough to trigger
+ * `src/core/fs.ts`'s `writeFile` external-change check.
+ */
+export async function writeOpfsFile(page: Page, name: string, bytes: number[]): Promise<void> {
+  await page.evaluate(
+    async ({ n, b }) => {
+      const root = await navigator.storage.getDirectory()
+      const handle = await root.getFileHandle(n, { create: true })
+      const writable = await handle.createWritable()
+      await writable.write(new Uint8Array(b))
+      await writable.close()
+    },
+    { n: name, b: bytes }
+  )
+}
+
 /** Whether an OPFS file with this name currently exists. */
 export async function opfsFileExists(page: Page, name: string): Promise<boolean> {
   return page.evaluate(async (n) => {
