@@ -1,4 +1,4 @@
-import { pad2, addDaysIso, diffDays, formatHHMM, nowHHMM } from '../src/core/date'
+import { pad2, addDaysIso, diffDays, formatHHMM, nowHHMM, isWithinTwoMonthWindow } from '../src/core/date'
 
 describe('pad2', () => {
   test('pads single digits, leaves two-plus digits alone', () => {
@@ -60,5 +60,31 @@ describe('nowHHMM', () => {
     vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
     expect(nowHHMM('pt-BR')).toBe('14:32')
     expect(nowHHMM('en-US')).toBe('2:32 PM')
+  })
+})
+
+describe('isWithinTwoMonthWindow', () => {
+  test('same month as anchor -> true', () => {
+    expect(isWithinTwoMonthWindow('2026-07-01', '2026-07-31')).toBe(true)
+  })
+
+  test('exactly one month before anchor -> true', () => {
+    expect(isWithinTwoMonthWindow('2026-07-15', '2026-06-01')).toBe(true)
+  })
+
+  test('one month after anchor -> false', () => {
+    expect(isWithinTwoMonthWindow('2026-07-15', '2026-08-01')).toBe(false)
+  })
+
+  test('two months before anchor -> false', () => {
+    expect(isWithinTwoMonthWindow('2026-07-15', '2026-05-15')).toBe(false)
+  })
+
+  test('handles year rollover: December is "one month before" a January anchor', () => {
+    expect(isWithinTwoMonthWindow('2026-01-10', '2025-12-25')).toBe(true)
+  })
+
+  test('same year/month, different day -> true regardless of day', () => {
+    expect(isWithinTwoMonthWindow('2026-07-01', '2026-07-31')).toBe(true)
   })
 })
