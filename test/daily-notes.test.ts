@@ -266,3 +266,52 @@ describe('renderDailyNotes', () => {
     expect(container.querySelectorAll('.tt-calendar').length).toBe(before)
   })
 })
+
+describe('two-month calendar anchor persistence', () => {
+  function monthLabels(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('.tt-calendar-month-label')).map((e) => e.textContent ?? '')
+  }
+
+  test('picking a day already visible in the previous-month grid does not recenter the displayed months', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    render(container, loc, store, pm, 0)
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+
+    // Simulates what src/ui/panes.ts's renderBody does after pm.openInPane:
+    // clears the container's DOM, then tears down and remounts
+    // renderDailyNotes with the newly picked date, on the same store/pane —
+    // real production remount semantics (withDisposal runs on every
+    // renderDailyNotes call), just without the full PaneManager.
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-10' } }, store, pm, 0)
+
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+  })
+
+  test('opening a day outside the displayed window recenters the pair around it', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    render(container, loc, store, pm, 0)
+
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-10-05' } }, store, pm, 0)
+
+    expect(monthLabels(container)).toEqual(['September 2026', 'October 2026'])
+  })
+
+  test('each pane tracks its own anchor independently', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    const container2 = document.createElement('div')
+    document.body.appendChild(container2)
+
+    render(container, loc, store, pm, 0)
+    render(container2, { teamId: team.id, ref: { kind: 'daily', date: '2026-03-01' } }, store, pm, 1)
+
+    // Pane 0 re-anchors around July, unaffected by pane 1's March anchor.
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-20' } }, store, pm, 0)
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+  })
+})
