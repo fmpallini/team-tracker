@@ -6,6 +6,7 @@ import { t } from '../core/i18n'
 import { el } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
+import { selectableRowProps } from './select-list'
 
 export interface Editor {
   root: HTMLElement
@@ -440,35 +441,51 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * 📋 toolbar action: opens the template picker at the current caret (or at
-   * the end of the document if the editor has no live selection yet, e.g.
-   * right after mount) rather than only on a typed "/" — same
-   * SLASH_TRIGGER_EVENT entry point src/ui/template-picker.ts already
-   * listens on for the keyboard trigger.
+   * Resolves a Range at the current caret if one lives inside the editor,
+   * else falls back to the end of the last block (or the editor itself if
+   * empty) and moves the live selection there. Shared by toolbar actions
+   * that need an insertion point when the editor may not have focus yet —
+   * every toolbar-button click calls editorEl.focus() right before its
+   * action runs, which some engines resolve to a collapsed selection
+   * anchored on editorEl itself rather than a descendant block; that
+   * container can never be resolved to a block by the caret/block-walk
+   * helpers, so it's treated the same as "no usable selection".
    */
-  function openTemplatePicker(): void {
+  function caretOrEndRange(): Range {
     const sel = window.getSelection()
     const live = sel && sel.rangeCount > 0 && sel.isCollapsed ? sel.getRangeAt(0) : null
-    let range: Range
-    // `live.startContainer === editorEl` (rather than a descendant block)
-    // happens whenever focus() just moved onto the editor with no prior
-    // selection inside it — including every toolbar-button click, since the
-    // toolbar wrapper calls editorEl.focus() right before this action runs,
-    // which some engines resolve to a collapsed selection anchored on
-    // editorEl itself. That container can never be resolved to a block by
-    // template-picker's (or the editor's own) block-walk, so treat it the
-    // same as "no usable selection" and fall back to the end of the last
-    // block instead of the end of editorEl itself.
     if (live && editorEl.contains(live.startContainer) && live.startContainer !== editorEl) {
-      range = live.cloneRange()
-    } else {
-      range = document.createRange()
-      const lastBlock = editorEl.lastElementChild
-      range.selectNodeContents(lastBlock ?? editorEl)
-      range.collapse(false)
-      if (sel) { sel.removeAllRanges(); sel.addRange(range) }
+      return live.cloneRange()
     }
+    const range = document.createRange()
+    const lastBlock = editorEl.lastElementChild
+    range.selectNodeContents(lastBlock ?? editorEl)
+    range.collapse(false)
+    if (sel) { sel.removeAllRanges(); sel.addRange(range) }
+    return range
+  }
+
+  /**
+   * 📋 toolbar action: opens the template picker at the current caret (or at
+   * the end of the document if the editor has no live selection yet) rather
+   * than only on a typed "/" — same SLASH_TRIGGER_EVENT entry point
+   * src/ui/template-picker.ts already listens on for the keyboard trigger.
+   */
+  function openTemplatePicker(): void {
+    const range = caretOrEndRange()
     editorEl.dispatchEvent(new CustomEvent(SLASH_TRIGGER_EVENT, { detail: range, bubbles: true }))
+  }
+
+  /**
+   * @ toolbar action: inserts "@" at the current caret (or at the end of the
+   * document if the editor has no live selection yet) via the same
+   * execCommand('insertText', ...) path real typing takes, so the native
+   * 'input' event this fires drives checkTriggers() to open the @
+   * autocomplete exactly as if the user had typed it themselves.
+   */
+  function insertAtTrigger(): void {
+    caretOrEndRange()
+    exec('insertText', '@')
   }
 
   /**
@@ -538,6 +555,74 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     } else {
       copyViaTextarea(text)
     }
+  }
+
+  /** Copies the editor's current content to the clipboard as its raw markdown source (the same text the field is stored as). */
+  function copyMarkdown(): void {
+    const text = htmlToMd(editorEl)
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
+    } else {
+      copyViaTextarea(text)
+    }
+  }
+
+  // --- copy-options menu (🗐 toolbar button) --------------------------------
+  // A static 3-item dropdown (plain / formatted / markdown), anchored to the
+  // toolbar button rather than the caret — reuses the atref/template-picker
+  // dropdown's visual styling (.tt-atref-dropdown/-list/-item) and row
+  // mechanics (select-list.ts's selectableRowProps) but not their caret-Range
+  // anchoring or keyboard nav, since there's nothing to type or filter here.
+
+  let copyMenuEl: HTMLElement | null = null
+
+  function closeCopyMenu(): void {
+    if (!copyMenuEl) return
+    copyMenuEl.remove()
+    copyMenuEl = null
+    document.removeEventListener('mousedown', onCopyMenuDocMousedown, true)
+    document.removeEventListener('keydown', onCopyMenuKeydown, true)
+  }
+
+  function onCopyMenuDocMousedown(e: MouseEvent): void {
+    if (copyMenuEl?.contains(e.target as Node)) return
+    closeCopyMenu()
+  }
+
+  function onCopyMenuKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') { e.preventDefault(); closeCopyMenu() }
+  }
+
+  function openCopyMenu(anchor: HTMLElement): void {
+    closeCopyMenu()
+    const options: [string, () => void][] = [
+      [t(locale, 'editor_copy_option_plain'), copyPlain],
+      [t(locale, 'editor_copy_option_formatted'), copyFormatted],
+      [t(locale, 'editor_copy_option_markdown'), copyMarkdown],
+    ]
+    const listEl = el(
+      'div',
+      { class: 'tt-atref-list' },
+      ...options.map(([label, action]) =>
+        el(
+          'div',
+          selectableRowProps({
+            class: 'tt-atref-item',
+            selected: false,
+            onCommit: () => { action(); closeCopyMenu() },
+            onHover: () => {},
+          }),
+          label
+        )
+      )
+    )
+    copyMenuEl = el('div', { class: 'tt-atref-dropdown' }, listEl)
+    document.body.appendChild(copyMenuEl)
+    const rect = anchor.getBoundingClientRect()
+    copyMenuEl.style.left = `${rect.left}px`
+    copyMenuEl.style.top = `${rect.bottom}px`
+    document.addEventListener('mousedown', onCopyMenuDocMousedown, true)
+    document.addEventListener('keydown', onCopyMenuKeydown, true)
   }
 
   // --- event handlers --------------------------------------------------------
@@ -685,8 +770,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   // --- toolbar -----------------------------------------------------------
 
-  function toolbarButton(glyph: string, title: string, action: () => void, extraClass?: string): HTMLButtonElement {
-    return el(
+  function toolbarButton(glyph: string, title: string, action: (btn: HTMLButtonElement) => void, extraClass?: string): HTMLButtonElement {
+    const btn: HTMLButtonElement = el(
       'button',
       {
         class: extraClass ? `tt-btn tt-editor-btn ${extraClass}` : 'tt-btn tt-editor-btn',
@@ -695,11 +780,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         onmousedown: (e: Event) => e.preventDefault(),
         onclick: () => {
           editorEl.focus()
-          action()
+          action(btn)
         },
       },
       glyph
     )
+    return btn
   }
 
   const toolbar = el(
@@ -717,8 +803,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => exec('formatBlock', '<p>')),
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => exec('removeFormat')),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
-    toolbarButton('🗐', t(locale, 'editor_copy_formatted_title'), () => copyFormatted()),
-    toolbarButton('📃', t(locale, 'editor_copy_plain_title'), () => copyPlain()),
+    toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
+    toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )
@@ -749,6 +835,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       clearTimeout(changeTimer)
       changeTimer = null
     }
+    closeCopyMenu()
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)

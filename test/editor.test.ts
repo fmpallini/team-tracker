@@ -607,21 +607,62 @@ describe('toolbar', () => {
     return Array.from(editor.root.querySelectorAll('button')).find((b) => b.title === title) as HTMLButtonElement
   }
 
-  test('copy-formatted button falls back to selection + execCommand when the async Clipboard API is unavailable (e.g. jsdom, older browsers)', () => {
+  function openCopyMenu(editor: Editor): void {
+    toolbarButton(editor, t('en-US', 'editor_copy_options_title')).click()
+  }
+
+  function pickCopyOption(label: string): void {
+    const item = Array.from(document.querySelectorAll('.tt-atref-item')).find((el) => el.textContent === label) as HTMLElement
+    item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  }
+
+  test('copy button opens a menu with plain/formatted/markdown options, closed on Escape', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+
+    openCopyMenu(editor)
+
+    const labels = Array.from(document.querySelectorAll('.tt-atref-item')).map((el) => el.textContent)
+    expect(labels).toEqual([
+      t('en-US', 'editor_copy_option_plain'),
+      t('en-US', 'editor_copy_option_formatted'),
+      t('en-US', 'editor_copy_option_markdown'),
+    ])
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    editor.destroy()
+  })
+
+  test('copy button opens a menu closed by an outside click', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+
+    openCopyMenu(editor)
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
+
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    editor.destroy()
+  })
+
+  test('"Copy formatted" falls back to selection + execCommand when the async Clipboard API is unavailable (e.g. jsdom, older browsers)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('**bold** text')
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
 
-    toolbarButton(editor, t('en-US', 'editor_copy_formatted_title')).click()
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
 
     expect(execSpy).toHaveBeenCalledWith('copy', false, undefined)
     const sel = window.getSelection()!
     expect(sel.rangeCount).toBe(0) // selection cleared after copying, so it doesn't visually linger
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull() // menu closes after picking
     editor.destroy()
   })
 
-  test('copy-formatted button writes plain HTML via the async Clipboard API when available, with no background styling anywhere in it', async () => {
+  test('"Copy formatted" writes plain HTML via the async Clipboard API when available, with no background styling anywhere in it', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('**bold** text')
@@ -645,7 +686,8 @@ describe('toolbar', () => {
     }
     vi.stubGlobal('Blob', SpyBlob)
 
-    toolbarButton(editor, t('en-US', 'editor_copy_formatted_title')).click()
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
     await Promise.resolve() // let the write() promise settle
 
     expect(write).toHaveBeenCalledOnce()
@@ -659,30 +701,59 @@ describe('toolbar', () => {
     vi.unstubAllGlobals()
   })
 
-  test('copy-plain button copies textContent via the Clipboard API when available', () => {
+  test('"Copy plain text" copies textContent via the Clipboard API when available', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('**bold** text')
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    toolbarButton(editor, t('en-US', 'editor_copy_plain_title')).click()
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_copy_option_plain'))
 
     expect(writeText).toHaveBeenCalledWith('bold text')
     editor.destroy()
     Reflect.deleteProperty(navigator, 'clipboard')
   })
 
-  test('copy-plain button falls back to a hidden textarea + execCommand when the Clipboard API is unavailable', () => {
+  test('"Copy plain text" falls back to a hidden textarea + execCommand when the Clipboard API is unavailable', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('plain content')
     Reflect.deleteProperty(navigator, 'clipboard')
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
 
-    toolbarButton(editor, t('en-US', 'editor_copy_plain_title')).click()
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_copy_option_plain'))
 
     expect(execSpy).toHaveBeenCalledWith('copy', false, undefined)
+    editor.destroy()
+  })
+
+  test('"Copy as markdown" copies the raw markdown source via the Clipboard API when available', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('**bold** text')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+
+    expect(writeText).toHaveBeenCalledWith('**bold** text')
+    editor.destroy()
+    Reflect.deleteProperty(navigator, 'clipboard')
+  })
+
+  test('@ button inserts "@" at the caret via execCommand, same path real typing takes', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('hello')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    toolbarButton(editor, t('en-US', 'editor_insert_ref_title')).click()
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, '@')
     editor.destroy()
   })
 
