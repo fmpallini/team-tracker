@@ -16,6 +16,18 @@ pass_and_exit() {
 
 BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
 
+# Diff against origin/dev — the commits this push is actually about to land
+# on the shared branch, not the whole history of dev. Only meaningful for
+# pushes to dev (the only branch anyone pushes to directly — main only ever
+# changes via a reviewed PR); computed once here, reused by the deterministic
+# test-coverage gate below and the AI gates further down.
+PUSH_DIFF_FILES=""
+PUSH_DIFF_ADDED=""
+if [ "$BRANCH" = "dev" ] && git rev-parse "origin/dev" &>/dev/null; then
+  PUSH_DIFF_FILES=$(git diff --name-only --diff-filter=ACMR "origin/dev..HEAD" 2>/dev/null || true)
+  PUSH_DIFF_ADDED=$(git diff --name-only --diff-filter=A "origin/dev..HEAD" 2>/dev/null || true)
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Pre-push quality gate"
@@ -47,7 +59,51 @@ else
   gate_fail "Tests" "fix failing tests then push again"
 fi
 
-# 4. Security audit
+# 4. Test coverage sanity — enforces CLAUDE.md's "every src module gets a
+# matching test/*.test.ts" convention for *new* files (hard fail; the
+# convention is real and near-100% today, so a new file skipping it is a
+# mistake, not a style choice). Modified-but-not-new files only get a
+# non-blocking nudge, since not every edit needs a new assertion and this
+# hook can't judge that — the AI Test Coverage gate below does the deeper,
+# judgment-based check (including whether e2e/*.spec.ts should be touched).
+gate_run "Test coverage sanity"
+if [ "$BRANCH" != "dev" ]; then
+  gate_warn "Test coverage sanity — skipped (only enforced on pushes to dev)"
+elif [ -z "$PUSH_DIFF_FILES" ]; then
+  gate_ok "Test coverage sanity (no diff against origin/dev)"
+else
+  MISSING=""
+  UNCOVERED=""
+  while IFS= read -r f; do
+    case "$f" in
+      src/*.ts) ;;
+      *) continue ;;
+    esac
+    case "$f" in
+      src/core/types.ts|src/main.ts|*.d.ts) continue ;;
+    esac
+    base=$(basename "$f" .ts)
+    test_file="test/${base}.test.ts"
+    if [ ! -f "$test_file" ]; then
+      if printf '%s\n' "$PUSH_DIFF_ADDED" | grep -qxF "$f"; then
+        MISSING="$MISSING\n  $f  (expected $test_file)"
+      fi
+    elif ! printf '%s\n' "$PUSH_DIFF_FILES" | grep -qxF "$test_file"; then
+      UNCOVERED="$UNCOVERED\n  $f  ($test_file not touched in this push)"
+    fi
+  done <<< "$PUSH_DIFF_FILES"
+
+  if [ -n "$MISSING" ]; then
+    gate_fail "Test coverage sanity" "new src file(s) with no matching test/*.test.ts:$MISSING"
+  else
+    gate_ok "Test coverage sanity"
+    if [ -n "$UNCOVERED" ]; then
+      gate_warn "Test coverage sanity — modified without touching their test file (confirm this is intentional):$UNCOVERED"
+    fi
+  fi
+fi
+
+# 5. Security audit
 gate_run "Security audit"
 AUDIT_OUT=$(npm audit --json 2>/dev/null || true)
 HIGH_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
@@ -74,7 +130,7 @@ else
   gate_ok "Security audit"
 fi
 
-# 5. Outdated packages (advisory only, non-blocking)
+# 6. Outdated packages (advisory only, non-blocking)
 gate_run "Outdated packages"
 OUTDATED=$(npm outdated --json 2>/dev/null || true)
 if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ]; then
@@ -203,5 +259,13 @@ run_ai_gate "Security" \
 
 run_ai_gate "Bug Hunt" \
   "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections, and lifecycle leaks (listeners, timers, or subscriptions that survive a dispose/teardown path). If the diff changes a function's signature or behavior contract, check its call sites for callers the change breaks. $AI_REVIEW_RULES"
+
+# This is the judgment-based complement to the deterministic "Test coverage
+# sanity" gate above: that gate only checks a matching test/*.test.ts *file*
+# exists and was touched; it can't tell whether the touched test actually
+# exercises the new/changed behavior, or whether a change should have gotten
+# e2e coverage too.
+run_ai_gate "Test Coverage" \
+  "Review this git diff for test coverage gaps. Project convention (CLAUDE.md): every src/ module has a matching test/*.test.ts (jsdom, vitest). Separately, e2e/*.spec.ts (Playwright, Chromium-only) covers cross-cutting flows that jsdom can't exercise for real — File System Access/OPFS save-load round trips, cross-tab single-writer locking (Web Locks/BroadcastChannel), external-change conflict handling, password-change round trips (see e2e/smoke.spec.ts, e2e/fs-api.spec.ts, e2e/tab-lock.spec.ts). For each behavior change in the diff: read the relevant test/*.test.ts (read the actual file, not just check it was touched) and confirm it exercises the new/changed code path, not merely pre-existing ones. If the change touches one of the cross-cutting flows above, check whether e2e/*.spec.ts needed an update and got one. Do not flag: pure refactors with behavior already covered by unchanged tests, CSS/i18n-only changes, comment/doc changes, or changes to the test files themselves. $AI_REVIEW_RULES"
 
 pass_and_exit "All gates passed. Pushing..."

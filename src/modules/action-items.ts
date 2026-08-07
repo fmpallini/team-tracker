@@ -231,7 +231,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const editor = richBundle.editor
     openBundle = { richBundle, datePicker }
 
-    const colorRow = el('div', { class: 'tt-kanban-color-row' })
+    const colorRow = el('div', { class: 'tt-kanban-color-row tt-kanban-tag-chips filtering' })
     function paintSelectedColor(): void {
       colorRow.querySelectorAll('.tt-kanban-color-chip').forEach((chip) => {
         chip.classList.toggle('selected', chip.getAttribute('data-color') === selectedColor)
@@ -243,7 +243,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         const custom = customTagName(c)
         colorRow.appendChild(
           el('button', {
-            type: 'button', class: `tt-kanban-color-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? suggestedTagName(c),
+            type: 'button', class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? suggestedTagName(c),
             onclick: () => { selectedColor = c; paintSelectedColor() },
           }, custom)
         )

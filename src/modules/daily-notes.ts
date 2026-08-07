@@ -7,9 +7,10 @@ import { t, todayIso } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
-import { nowHHMM } from '../core/date'
+import { nowHHMM, isWithinTwoMonthWindow } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
+import type { Store } from '../core/store'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 
@@ -17,11 +18,47 @@ function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
 }
 
+/**
+ * Per-store, per-pane "which month pair the two-month calendar is anchored
+ * to". `withDisposal` (lifecycle.ts) tears down and rebuilds
+ * `renderDailyNotes`'s whole closure on every pane navigation — including a
+ * pick on this very calendar — so this can't live in a local variable; it
+ * has to survive the remount. Keyed by Store (main.ts's onDocumentOpened
+ * creates a fresh one per file open, mirroring panes.ts's layoutsByStore)
+ * so it never leaks state from a previously-closed document.
+ *
+ * Keyed by pane index only, not (pane, team): switching teams in a pane
+ * carries over the previous team's anchor. Accepted tradeoff, not an
+ * oversight — the opened date is always still visible in one of the two
+ * grids either way, so the worst case is a one-month visual offset.
+ */
+const calendarAnchorByPane = new WeakMap<Store, Map<0 | 1, string>>()
+
+/**
+ * Reuses the pane's previous anchor if `date` is already visible under it
+ * (see isWithinTwoMonthWindow), so picking a date already shown in either
+ * grid doesn't re-center the pair — only the highlighted day moves. Falls
+ * back to `date` itself (today's behavior) the first time a pane opens, or
+ * whenever the newly-opened date falls outside the currently displayed pair.
+ */
+function resolveCalendarAnchor(store: Store, paneIdx: 0 | 1, date: string): string {
+  let panes = calendarAnchorByPane.get(store)
+  if (!panes) {
+    panes = new Map()
+    calendarAnchorByPane.set(store, panes)
+  }
+  const prevAnchor = panes.get(paneIdx)
+  const anchor = prevAnchor && isWithinTwoMonthWindow(prevAnchor, date) ? prevAnchor : date
+  panes.set(paneIdx, anchor)
+  return anchor
+}
+
 export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'daily') return // registered only for 'daily'; defensive
   const date = loc.ref.date
   const teamId = loc.teamId
   const lc = ctx.locale
+  let anchor = resolveCalendarAnchor(ctx.store, ctx.paneIdx, date)
 
   function buildMarks(): CalendarMarks {
     const team = findTeam(ctx, teamId)
@@ -59,10 +96,16 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     calendarSlot.appendChild(
       createCalendar({
         selected: date,
+        anchor,
         locale: lc,
         marks: buildMarks(),
+        showPrevMonth: true,
         onPick: (pickedDate) => {
           ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: pickedDate } })
+        },
+        onViewChange: (a) => {
+          anchor = a
+          calendarAnchorByPane.get(ctx.store)?.set(ctx.paneIdx, a)
         },
       })
     )

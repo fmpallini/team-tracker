@@ -93,7 +93,7 @@ test('renders 4 tabs, defaulting to Geral/General', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['General', 'Templates', 'Tags', 'Security', 'Data', 'About'])
+  expect(tabs).toEqual(['General', 'Advanced', 'Templates', 'Tags', 'Security', 'Data', 'About'])
   expect(document.querySelector('.tt-prefs-tab-btn.active')?.textContent).toBe('General')
   expect(document.querySelector('input[name="tt-prefs-theme"][value="system"]')).not.toBeNull()
 })
@@ -180,6 +180,7 @@ test('palette field defaults to ledger, offers 8 swatched options, and updates s
 test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const input = document.querySelector('.tt-prefs-autosave-input') as HTMLInputElement
   input.value = '15'
@@ -229,10 +230,11 @@ test('the "open refs in secondary pane" checkbox reflects and updates the pref',
   expect(store.doc.prefs.openRefsInSecondaryPane).toBe(true)
 })
 
-test('general tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
+test('advanced tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
   const { store, shell, appCtl } = setup()
   fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   checkbox.checked = true
@@ -246,12 +248,13 @@ test('general tab: enabling daily backup with no existing handle opens the save 
   expect(store.doc.prefs.backupHandleId).not.toBeNull()
 })
 
-test('general tab: enabling daily backup opens the picker in the primary file\'s folder (startIn)', async () => {
+test('advanced tab: enabling daily backup opens the picker in the primary file\'s folder (startIn)', async () => {
   const { store, shell, appCtl } = setup()
   const primaryHandle = {} as unknown as FileSystemFileHandle
   appCtl.fileHandle = () => primaryHandle
   fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   checkbox.checked = true
@@ -262,10 +265,11 @@ test('general tab: enabling daily backup opens the picker in the primary file\'s
   expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
 })
 
-test('general tab: canceling the save picker leaves the pref off', async () => {
+test('advanced tab: canceling the save picker leaves the pref off', async () => {
   const { store, shell, appCtl } = setup()
   fsMocks.pickCreateBackup.mockResolvedValue(null)
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   checkbox.checked = true
@@ -276,10 +280,33 @@ test('general tab: canceling the save picker leaves the pref off', async () => {
   expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
 })
 
-test('general tab: re-enabling with an existing backupHandleId skips the picker', async () => {
+test('advanced tab: a rejecting save picker (e.g. permission denied) leaves the pref off, same as a cancel', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreateBackup.mockRejectedValue(new Error('not allowed'))
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  // One extra tick versus the plain-cancel test: the rejection has to pass
+  // through pickAndStoreBackupTarget's own `.catch` before the checkbox's
+  // outer `.then` sees `picked === false`.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBeNull()
+  expect(checkbox.checked).toBe(false)
+  expect(consoleErrorSpy).toHaveBeenCalled()
+  consoleErrorSpy.mockRestore()
+})
+
+test('advanced tab: re-enabling with an existing backupHandleId skips the picker', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.backupHandleId = 'already-set' })
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   checkbox.checked = true
@@ -290,28 +317,31 @@ test('general tab: re-enabling with an existing backupHandleId skips the picker'
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
 })
 
-test('general tab: no "Change backup location" button when no backup target exists yet', () => {
+test('advanced tab: no "Change backup location" button when no backup target exists yet', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
 })
 
-test('general tab: "Change backup location" button appears once a backup target exists, even while disabled', () => {
+test('advanced tab: "Change backup location" button appears once a backup target exists, even while disabled', () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'existing' })
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
 })
 
-test('general tab: "Change backup location" re-opens the picker without a disable/enable round trip, and re-enables the pref', async () => {
+test('advanced tab: "Change backup location" re-opens the picker without a disable/enable round trip, and re-enables the pref', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'old-id' })
   const primaryHandle = {} as unknown as FileSystemFileHandle
   appCtl.fileHandle = () => primaryHandle
   fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   // `.click()` is a no-op on a genuinely `disabled` element (matches real
   // browser behavior) — dispatchEvent bypasses that, same workaround the
@@ -333,11 +363,12 @@ test('general tab: "Change backup location" re-opens the picker without a disabl
   expect(checkbox.checked).toBe(true)
 })
 
-test('general tab: canceling "Change backup location" leaves the existing target and pref state untouched', async () => {
+test('advanced tab: canceling "Change backup location" leaves the existing target and pref state untouched', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
   fsMocks.pickCreateBackup.mockResolvedValue(null)
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
   changeBtn.dispatchEvent(new Event('click'))
@@ -348,10 +379,11 @@ test('general tab: canceling "Change backup location" leaves the existing target
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
 })
 
-test('general tab: disabling the pref does not clear the stored handle id', () => {
+test('advanced tab: disabling the pref does not clear the stored handle id', () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   checkbox.checked = false
@@ -361,16 +393,33 @@ test('general tab: disabling the pref does not clear the stored handle id', () =
   expect(store.doc.prefs.backupHandleId).toBe('existing')
 })
 
-test('general tab: checkbox is disabled with a hint when hasFileHandle() is false', () => {
+test('advanced tab: checkbox is disabled with a hint when hasFileHandle() is false', () => {
   const { store, shell, appCtl } = setup()
   appCtl.hasFileHandle = () => false
   openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
 
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   expect(checkbox.disabled).toBe(true)
   expect(document.querySelector('.tt-prefs-backup-disabled-hint')?.textContent).toBe(
     'Unavailable: this browser has no direct file access, or this file has not been saved to disk yet.'
   )
+})
+
+test('advanced tab: backup frequency defaults to Daily and updates the pref when changed to Hourly', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
+
+  expect(radio('tt-prefs-backup-frequency', 'daily').checked).toBe(true)
+  // `.click()` is a no-op here: `backupAvailable` (and so the radios'
+  // `disabled` state) is always false under jsdom (no File System Access
+  // API), same reason the backup-checkbox tests above dispatch 'change'
+  // directly instead of clicking.
+  const hourly = radio('tt-prefs-backup-frequency', 'hourly')
+  hourly.checked = true
+  hourly.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.backupFrequency).toBe('hourly')
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
@@ -389,7 +438,7 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   // tab labels should now read in Portuguese.
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['Geral', 'Templates', 'Tags', 'Segurança', 'Dados', 'Sobre'])
+  expect(tabs).toEqual(['Geral', 'Avançado', 'Templates', 'Tags', 'Segurança', 'Dados', 'Sobre'])
 })
 
 test('templates tab lists the 5 builtins with scope badges', () => {

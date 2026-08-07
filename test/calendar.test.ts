@@ -132,6 +132,89 @@ describe('createCalendar month navigation', () => {
   })
 })
 
+describe('createCalendar showPrevMonth', () => {
+  /** Month labels in DOM order: [0] = previous-month header, [1] = current-month header. */
+  function monthLabels(root: HTMLElement): string[] {
+    return Array.from(root.querySelectorAll('.tt-calendar-month-label')).map((e) => e.textContent ?? '')
+  }
+  /** Nav buttons in DOM order. In showPrevMonth mode (the only mode this describe block uses) all nav buttons live on the top/previous-month header — the bottom/current-month header has none: [0]=‹ [1]=›. (Single-month mode has its own nav buttons, covered by the separate 'createCalendar month navigation' describe block above.) */
+  function navBtns(root: HTMLElement): HTMLButtonElement[] {
+    return Array.from(root.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn'))
+  }
+
+  test('renders a single header/weekday-row/grid by default', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {} })
+    expect(root.querySelectorAll('.tt-calendar-header')).toHaveLength(1)
+    expect(root.querySelectorAll('.tt-calendar-weekdays')).toHaveLength(1)
+    expect(root.querySelectorAll('.tt-calendar-grid')).toHaveLength(1)
+  })
+
+  test('renders a labeled previous-month header/weekdays/grid above the current one', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+
+    expect(monthLabels(root)).toEqual(['June 2026', 'July 2026'])
+    expect(root.querySelectorAll('.tt-calendar-header')).toHaveLength(2)
+    expect(root.querySelectorAll('.tt-calendar-weekdays')).toHaveLength(2)
+    expect(root.querySelectorAll('.tt-calendar-weekday')).toHaveLength(14)
+
+    const grids = root.querySelectorAll('.tt-calendar-grid')
+    expect(grids).toHaveLength(2)
+    const juneDays = new Date(2026, 6, 0).getDate() // June 2026 -> 30
+    expect(grids[0]!.querySelectorAll('.tt-calendar-day:not(.tt-calendar-day-blank)')).toHaveLength(juneDays)
+  })
+
+  test('defaults the displayed month pair to selected when anchor is omitted', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+    expect(monthLabels(root)).toEqual(['June 2026', 'July 2026'])
+  })
+
+  test('anchor controls the displayed month pair independently of selected', () => {
+    const root = createCalendar({
+      selected: '2026-06-10', anchor: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true,
+    })
+    expect(monthLabels(root)).toEqual(['June 2026', 'July 2026'])
+
+    const topGrid = root.querySelectorAll('.tt-calendar-grid')[0]!
+    const selectedBtn = Array.from(topGrid.querySelectorAll('.tt-calendar-day')).find((b) =>
+      b.classList.contains('tt-calendar-day-selected')
+    )
+    expect(selectedBtn?.firstChild?.textContent).toBe('10')
+  })
+
+  test('previous-month header wraps to December of the prior year from January', () => {
+    const root = createCalendar({ selected: '2026-01-10', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+    expect(monthLabels(root)).toEqual(['December 2025', 'January 2026'])
+  })
+
+  test('nav arrows appear only on the previous-month (top) header', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+    const headers = root.querySelectorAll('.tt-calendar-header')
+    expect(headers).toHaveLength(2)
+    expect(headers[0]!.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(2)
+    expect(headers[1]!.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(0)
+  })
+
+  test('navigating › (the only nav arrows, on the top header) shifts both labels', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+    navBtns(root)[1]!.click() // top header's ›
+
+    expect(monthLabels(root)).toEqual(['July 2026', 'August 2026'])
+  })
+
+  test('clicking a day in the previous-month grid invokes onPick with that day\'s ISO date', () => {
+    const picks: string[] = []
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: (d) => picks.push(d), showPrevMonth: true })
+
+    const prevGrid = root.querySelectorAll('.tt-calendar-grid')[0]!
+    const dayBtn = Array.from(prevGrid.querySelectorAll('.tt-calendar-day:not(.tt-calendar-day-blank)')).find(
+      (b) => (b.firstChild?.textContent ?? '') === '10'
+    ) as HTMLButtonElement
+    dayBtn.click()
+
+    expect(picks).toEqual(['2026-06-10'])
+  })
+})
+
 describe('createCalendar onPick', () => {
   test('clicking a day invokes onPick with that day\'s ISO date', () => {
     const picks: string[] = []

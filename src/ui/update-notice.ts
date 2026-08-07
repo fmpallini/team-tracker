@@ -7,6 +7,7 @@
 // page, since a static file:// build can't self-update.
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
+import { blockedByModal } from './hotkeys'
 
 export interface UpdateNoticeOpts {
   pwa?: boolean
@@ -32,6 +33,22 @@ export function showUpdateNotice(
     onDismiss(latestVersion)
   }
 
+  // Reload writes/saves state (see onReload callers), so it must not be
+  // reachable while a modal (e.g. an action-item editor, the due-date
+  // picker) is open on top of it — the modal owns unsaved input right now.
+  let reloading = false
+  function syncReloadDisabled(): void {
+    actionBtn.disabled = reloading || blockedByModal()
+  }
+  // Any modal open/close anywhere mutates document.body's direct children
+  // (see modal.ts), same as this banner's own mount/unmount — bail out once
+  // the banner itself is gone rather than tracking removal separately.
+  function onBodyMutation(): void {
+    if (!banner.isConnected) { modalObserver.disconnect(); return }
+    syncReloadDisabled()
+  }
+  const modalObserver = new MutationObserver(onBodyMutation)
+
   const actionBtn: HTMLButtonElement = pwa
     ? el(
         'button',
@@ -39,11 +56,14 @@ export function showUpdateNotice(
           class: 'tt-btn tt-update-banner-action',
           type: 'button',
           onclick: () => {
-            actionBtn.disabled = true
+            if (blockedByModal()) return
+            reloading = true
+            syncReloadDisabled()
             void onReload().finally(() => {
               // Only reachable if onReload resolved without navigating away
               // (the save failed and the caller aborted the reload).
-              actionBtn.disabled = false
+              reloading = false
+              syncReloadDisabled()
             })
           },
         },
@@ -90,5 +110,11 @@ export function showUpdateNotice(
     // guess why "Reload now" isn't offered here.
     pwa ? null : el('p', { class: 'tt-update-banner-hint' }, t(locale, 'update_notice_standalone_hint'))
   )
+
+  if (pwa) {
+    modalObserver.observe(document.body, { childList: true })
+    syncReloadDisabled()
+  }
+
   return banner
 }

@@ -40,6 +40,77 @@ test('br inside block becomes newline', () => {
   expect(htmlToMd(div)).toBe('line1\nline2')
 })
 
+test('br nested inside inline formatting (bolding a multi-line selection) still becomes newline', () => {
+  const div = document.createElement('div')
+  div.innerHTML = '<div><b>line1<br>line2</b></div>'
+  expect(htmlToMd(div)).toBe('**line1**\n**line2**')
+  expect(htmlToPlainText(div)).toBe('line1\nline2')
+})
+
+describe('nested <br> inside inline formatting — stress cases', () => {
+  test('italic, underline and strike all split the same way as bold', () => {
+    expect(htmlToMd(elWith('<i>l1<br>l2</i>'))).toBe('*l1*\n*l2*')
+    expect(htmlToMd(elWith('<u>l1<br>l2</u>'))).toBe('<u>l1</u>\n<u>l2</u>')
+    expect(htmlToMd(elWith('<s>l1<br>l2</s>'))).toBe('~~l1~~\n~~l2~~')
+  })
+
+  test('text before/after the formatted run attaches to the first/last line, not lost', () => {
+    const div = elWith('pre<b>l1<br>l2</b>post')
+    expect(htmlToMd(div)).toBe('pre**l1**\n**l2**post')
+    expect(htmlToPlainText(div)).toBe('prel1\nl2post')
+  })
+
+  test('doubled <br> inside the wrapper preserves the blank line between formatted lines', () => {
+    const div = elWith('<b>a<br><br>b</b>')
+    expect(htmlToMd(div)).toBe('**a**\n\n**b**')
+    expect(htmlToPlainText(div)).toBe('a\n\nb')
+  })
+
+  test('trailing <br> inside the wrapper produces no extra empty line, matching a direct-child trailing br', () => {
+    expect(htmlToMd(elWith('<b>a<br></b>'))).toBe('**a**')
+    expect(htmlToMd(elWith('a<br>'))).toBe('a')
+  })
+
+  test('doubly-nested formatting (bold+italic across lines) round-trips through both marker sets', () => {
+    const div = elWith('<b><i>l1<br>l2</i></b>')
+    expect(htmlToMd(div)).toBe('***l1***\n***l2***')
+    expect(htmlToPlainText(div)).toBe('l1\nl2')
+  })
+
+  test('a multi-line bold run inside a list item keeps the item on one bullet with an internal newline', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li><b>l1<br>l2</b></li></ul>'
+    expect(htmlToMd(div)).toBe('- **l1**\n**l2**')
+    expect(htmlToPlainText(div)).toBe('l1\nl2')
+  })
+
+  test('splitting never mutates the live editor DOM the nodes came from', () => {
+    const div = elWith('pre<b>l1<br>l2</b>post')
+    const before = div.innerHTML
+    htmlToMd(div)
+    htmlToPlainText(div)
+    expect(div.innerHTML).toBe(before)
+  })
+
+  test('is idempotent through a save/reload round trip (md -> html -> md stays stable)', () => {
+    const div = elWith('pre<b>l1<br>l2</b>post')
+    const md = htmlToMd(div)
+    const reloaded = document.createElement('div')
+    // mdToHtml has no multi-line-bold syntax to re-parse (** doesn't span
+    // lines), so the reload renders each markdown line as its own <div> —
+    // the round trip is expected to flatten to that, not resurrect the
+    // original nested <b>. What matters is it's stable from here on.
+    reloaded.innerHTML = mdToHtml(md)
+    expect(htmlToMd(reloaded)).toBe(md)
+  })
+})
+
+function elWith(html: string): HTMLDivElement {
+  const div = document.createElement('div')
+  div.innerHTML = `<div>${html}</div>`
+  return div
+}
+
 test('ordered list numbers preserved', () => {
   const md = '3. a\n5. b'
   expect(roundTrip(md)).toBe(md)

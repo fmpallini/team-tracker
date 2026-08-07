@@ -18,6 +18,7 @@ export interface Prefs {
   openRefsInSecondaryPane: boolean
   dailyBackupEnabled: boolean
   backupHandleId: string | null
+  backupFrequency: 'daily' | 'hourly'
 }
 export interface Person {
   id: string; name: string; role: string

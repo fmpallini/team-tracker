@@ -16,11 +16,13 @@ git config core.hooksPath .githooks
 | Lint (`eslint src test`) | Yes | flat config, type-checked rules — see `eslint.config.mjs` |
 | TypeCheck (`tsc --noEmit`) | Yes | |
 | Tests (`vitest run`) | Yes | |
+| Test coverage sanity | Yes (new files only) | dev pushes only — see below |
 | Security audit (`npm audit`) | Yes (high/critical only) | moderate = advisory |
 | Outdated packages | No | advisory only |
 | AI: Simplify | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
 | AI: Security review | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
 | AI: Bug hunt | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
+| AI: Test Coverage | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
 
 `eslint.config.mjs`'s highest-value rules are `@typescript-eslint/no-floating-promises`
 and `no-misused-promises` — the save/lock/dispose code in `save-controller.ts` and
@@ -29,12 +31,27 @@ rejection slips through. `no-unnecessary-type-assertion` is turned off project-w
 (cosmetic, not a bug signal); a few test-only rules (`require-await`, `no-base-to-string`)
 are relaxed for mocks/stubs that intentionally don't need the rigor.
 
-Deliberately not ported from other projects' hooks:
+### Test coverage sanity (deterministic, Phase 1)
 
-- **E2E** — no browser-driven end-to-end suite; `test/` is jsdom-only unit/integration tests.
-- **New-file coverage check** — `CLAUDE.md` says every `src` module gets a matching
-  `test/*.test.ts`, but it's not 1:1 today (`dom.ts`, `idb.ts`, `palette.ts`,
-  `fs-api.d.ts` have none) — a blocking gate here would false-positive on those.
+`CLAUDE.md`'s "every `src` module gets a matching `test/*.test.ts`" convention is
+now effectively 1:1 (the historical exceptions — `dom.ts`, `idb.ts`, `palette.ts` —
+all got tests since); the only files exempt today are `src/core/types.ts`
+(type-only), `src/main.ts` (wiring, covered by e2e instead), and `*.d.ts` ambient
+declarations. Scoped to the diff against `origin/dev` on pushes to `dev`:
+
+- A **new** `src/**/*.ts` file with no matching `test/<name>.test.ts` **fails the
+  push** — the convention is real, so this is a mistake, not a style choice.
+- A **modified** `src/**/*.ts` file whose matching test file exists but wasn't
+  touched in the same push only gets a **warning** — not every edit needs a new
+  assertion, and this gate can't tell the difference.
+
+Whether an existing test actually exercises the *new* behavior (as opposed to
+merely existing) is a judgment call this gate can't make — that's what the AI
+Test Coverage gate below is for.
+
+No browser-driven e2e coverage check runs deterministically here — "does this
+change need e2e" is also judgment-based, folded into the AI Test Coverage gate
+instead of a separate hard rule.
 
 ## AI gates
 
@@ -63,6 +80,12 @@ The Security gate is told to weigh `src/core/crypto.ts`, `src/core/store.ts`,
 and `src/core/fs.ts` more heavily than the rest of the diff — the app's whole
 value proposition rests on the password never leaving the browser and the
 `.tmv` format being sound.
+
+The Test Coverage gate is told to actually open the relevant `test/*.test.ts`
+(not just confirm it was touched) and check it exercises the new/changed code
+path, and to check whether a change to a cross-cutting flow (FS Access/OPFS
+round trips, cross-tab locking, external-change conflicts, password-change)
+should have touched `e2e/*.spec.ts` and didn't.
 
 ## Requirements
 

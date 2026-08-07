@@ -45,3 +45,24 @@ export function nowHHMM(locale: Locale): string {
   const now = new Date()
   return formatHHMM(now.getHours(), now.getMinutes(), locale)
 }
+
+/** `{ year, month }` (month is 1-12) parsed from an ISO date "YYYY-MM-DD"; ignores the day. */
+export function yearMonthOf(iso: string): { year: number; month: number } {
+  const [year, month] = iso.split('-').map(Number) as [number, number]
+  return { year, month }
+}
+
+/**
+ * True when `candidateIso`'s month is the same as `anchorIso`'s, or exactly
+ * one calendar month before it (handles year rollover: a January anchor's
+ * "one month before" is the prior December). Used by the daily-notes
+ * two-month calendar (src/modules/daily-notes.ts) to decide whether opening
+ * a new date should shift the displayed month pair or leave it as-is because
+ * the date is already visible in one of the two currently-shown grids.
+ */
+export function isWithinTwoMonthWindow(anchorIso: string, candidateIso: string): boolean {
+  const a = yearMonthOf(anchorIso)
+  const c = yearMonthOf(candidateIso)
+  const diffMonths = (c.year - a.year) * 12 + (c.month - a.month)
+  return diffMonths === 0 || diffMonths === -1
+}

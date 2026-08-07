@@ -2,14 +2,14 @@ import type { ActionItem, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 9
+export const SCHEMA_VERSION = 10
 
 export class SchemaTooNewError extends Error {}
 
 export function createEmptyDocument(locale: Locale): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily' },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false },
@@ -103,6 +103,10 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
       prefs.dailyBackupEnabled = prefs.dailyBackupEnabled ?? false
       prefs.backupHandleId = prefs.backupHandleId ?? null
     }
+  },
+  9: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs) prefs.backupFrequency = prefs.backupFrequency ?? 'daily'
   },
 }
 

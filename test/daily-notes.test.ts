@@ -71,8 +71,11 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/** Picks from the current-month grid — the last `.tt-calendar-grid` in DOM order (the previous-month grid, if any, comes first). */
 function dayButtonFor(container: HTMLElement, day: number): HTMLButtonElement {
-  const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
+  const grids = container.querySelectorAll<HTMLElement>('.tt-calendar-grid')
+  const currentGrid = grids[grids.length - 1]!
+  const buttons = Array.from(currentGrid.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
   const found = buttons.find((b) => (b.firstChild?.textContent ?? '') === String(day))
   if (!found) throw new Error(`no day button found for day ${day}`)
   return found
@@ -261,5 +264,88 @@ describe('renderDailyNotes', () => {
     // subscriptions (the only place the leak is observable).
     expect(() => store.update((d) => { d.teams[0]!.dailyNotes['2026-07-11'] = 'x' })).not.toThrow()
     expect(container.querySelectorAll('.tt-calendar').length).toBe(before)
+  })
+})
+
+describe('two-month calendar anchor persistence', () => {
+  function monthLabels(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('.tt-calendar-month-label')).map((e) => e.textContent ?? '')
+  }
+
+  test('picking a day already visible in the previous-month grid does not recenter the displayed months', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    render(container, loc, store, pm, 0)
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+
+    // Simulates what src/ui/panes.ts's renderBody does after pm.openInPane:
+    // clears the container's DOM, then tears down and remounts
+    // renderDailyNotes with the newly picked date, on the same store/pane —
+    // real production remount semantics (withDisposal runs on every
+    // renderDailyNotes call), just without the full PaneManager.
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-10' } }, store, pm, 0)
+
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+  })
+
+  test('opening a day outside the displayed window recenters the pair around it', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    render(container, loc, store, pm, 0)
+
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-10-05' } }, store, pm, 0)
+
+    expect(monthLabels(container)).toEqual(['September 2026', 'October 2026'])
+  })
+
+  test('each pane tracks its own anchor independently', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    const container2 = document.createElement('div')
+    document.body.appendChild(container2)
+
+    render(container, loc, store, pm, 0)
+    render(container2, { teamId: team.id, ref: { kind: 'daily', date: '2026-03-01' } }, store, pm, 1)
+
+    // Pane 0 re-anchors around July, unaffected by pane 1's March anchor.
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-20' } }, store, pm, 0)
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+  })
+
+  test('anchors are per-document: a second store does not inherit the first store\'s anchor', () => {
+    const a = setup(makeTeam(), '2026-07-15')
+    render(a.container, a.loc, a.store, a.pm, 0)
+    const b = setup(makeTeam(), '2026-06-10')
+    render(b.container, b.loc, b.store, b.pm, 0)
+    expect(monthLabels(b.container)).toEqual(['May 2026', 'June 2026'])
+  })
+
+  test('manual month navigation (top header\'s ‹) updates the persisted anchor, so a subsequent pick in the newly-visible window does not jump the pair back', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    render(container, loc, store, pm, 0)
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+
+    // Click the top header's ‹ — in two-month mode this is the only header
+    // with nav arrows (see src/ui/calendar.ts). View becomes May/June.
+    const topHeader = container.querySelectorAll('.tt-calendar-header')[0]!
+    const prevBtn = topHeader.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')[0]!
+    prevBtn.click()
+    expect(monthLabels(container)).toEqual(['May 2026', 'June 2026'])
+
+    // Pick June 10, now shown in the bottom grid.
+    dayButtonFor(container, 10).click()
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-06-10' } } }])
+
+    // Simulate the real remount (src/ui/panes.ts's renderBody) with the picked date.
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-10' } }, store, pm, 0)
+
+    // Must stay on May/June — not jump back to June/July, which is what
+    // would happen if the arrow-nav never updated the persisted anchor.
+    expect(monthLabels(container)).toEqual(['May 2026', 'June 2026'])
   })
 })
