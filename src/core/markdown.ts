@@ -171,10 +171,34 @@ function blockToMdNodes(nodes: Node[]): string {
   return segmentsToLines(nodes, inlineMd)
 }
 
-// An <li>'s direct <ul>/<ol> children — its nested sub-list, rendered
-// separately from the item's own text by both renderListMd and renderListText.
+// An <li>'s nested <ul>/<ol> sub-list(s), rendered separately from the
+// item's own text by both renderListMd and renderListText. Not necessarily a
+// *direct* child — real contenteditable editing at deep nesting (Chrome
+// restructuring on Enter/Backspace merges inside a multi-level list) can
+// land the sub-list a level or two down, wrapped in a stray <div>/<p>. This
+// walks through any such wrapper, stopping (without descending further) as
+// soon as it finds a ul/ol, so a sub-list one wrapper deep is still found as
+// this item's own nested list rather than silently flattened into its text.
 function nestedListsOf(li: HTMLElement): HTMLElement[] {
-  return Array.from(li.querySelectorAll(':scope > ul, :scope > ol')) as HTMLElement[]
+  const found: HTMLElement[] = []
+  const search = (node: Element) => {
+    Array.from(node.children).forEach(child => {
+      if (child.tagName.toLowerCase() === 'ul' || child.tagName.toLowerCase() === 'ol') found.push(child as HTMLElement)
+      else search(child)
+    })
+  }
+  search(li)
+  return found
+}
+
+// An <li>'s own content nodes with every nested <ul>/<ol> (however deep,
+// however wrapped) stripped out — what's left is exactly what belongs on
+// this item's own line. Works on a deep clone so stripping never touches
+// the live editor DOM the nodes came from.
+function liOwnContentNodes(li: HTMLElement): Node[] {
+  const clone = li.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('ul, ol').forEach(list => list.remove())
+  return Array.from(clone.childNodes)
 }
 
 // Splits a block element's children at <br> boundaries and joins each
@@ -195,7 +219,7 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
     const nestedLists = nestedListsOf(child)
-    const text = blockToMdNodes(Array.from(child.childNodes).filter(n => !nestedLists.includes(n as HTMLElement)))
+    const text = blockToMdNodes(liOwnContentNodes(child))
     if (tag === 'ol') {
       const v = child.getAttribute('value')
       i = v ? Number(v) : i + 1
@@ -231,7 +255,7 @@ function renderListText(list: HTMLElement, out: string[]): void {
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
     const nestedLists = nestedListsOf(child)
-    out.push(blockToTextNodes(Array.from(child.childNodes).filter(n => !nestedLists.includes(n as HTMLElement))))
+    out.push(blockToTextNodes(liOwnContentNodes(child)))
     nestedLists.forEach(nested => renderListText(nested, out))
   })
 }

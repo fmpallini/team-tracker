@@ -111,6 +111,51 @@ function elWith(html: string): HTMLDivElement {
   return div
 }
 
+describe('nested list not a direct <li> child — stress cases', () => {
+  // Real contenteditable editing at deep nesting (Chrome restructuring on
+  // Enter/Backspace merges inside a multi-level list) can land a sub-list a
+  // level or two down inside its <li>, wrapped in a stray <div>, instead of
+  // as a direct child. nestedListsOf's old `:scope > ul, :scope > ol` check
+  // missed that, so the whole sub-list silently flattened into the parent
+  // item's own text with no bullets/numbers/newlines — losing all ordering
+  // and hierarchy for that branch.
+  test('ol nested inside a wrapper div still renders as a proper indented sub-list', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ol><li><div>A<ol><li>A1</li><li>A2</li></ol></div></li><li>B</li></ol>'
+    expect(htmlToMd(div)).toBe('1. A\n  1. A1\n  2. A2\n2. B')
+    expect(htmlToPlainText(div)).toBe('A\nA1\nA2\nB')
+  })
+
+  test('4 levels deep, each wrapped in a div, multiple siblings per level', () => {
+    const div = document.createElement('div')
+    div.innerHTML =
+      '<ol>' +
+        '<li><div>A<ol>' +
+          '<li><div>A1</div></li>' +
+          '<li><div>A2<ol>' +
+            '<li><div>A2a</div></li>' +
+            '<li><div>A2b<ol>' +
+              '<li><div>A2b-i</div></li>' +
+              '<li><div>A2b-ii</div></li>' +
+            '</ol></div></li>' +
+          '</ol></div></li>' +
+        '</ol></div></li>' +
+        '<li><div>B<ol><li><div>B1</div></li></ol></div></li>' +
+      '</ol>'
+    expect(htmlToMd(div)).toBe(
+      '1. A\n' +
+      '  1. A1\n' +
+      '  2. A2\n' +
+      '    1. A2a\n' +
+      '    2. A2b\n' +
+      '      1. A2b-i\n' +
+      '      2. A2b-ii\n' +
+      '2. B\n' +
+      '  1. B1'
+    )
+  })
+})
+
 test('ordered list numbers preserved', () => {
   const md = '3. a\n5. b'
   expect(roundTrip(md)).toBe(md)
