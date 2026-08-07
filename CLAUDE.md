@@ -62,6 +62,16 @@ Tests define `__PWA__: false` in `vitest.config.ts`, so the service-worker branc
 - `dev → main` PRs are merged with a **merge commit** (`gh pr merge --merge`), never squash. A merge commit's parents include `dev`'s actual tip, so `dev` is immediately an ancestor of `main` again — no separate "sync dev back" step needed, and `dev`'s ahead-count never drifts. (Squash was the original convention here and was abandoned: it mints a brand-new commit hash on `main` untethered from `dev`'s commits, so `dev` accumulates a permanently-growing "ahead" count that no amount of merging `main` back into `dev` can resolve — git compares commit ancestry, not diff content. If `main`/`dev` ever visibly diverge again — GitHub showing `dev` N commits ahead with 0 behind — suspect a squash-merged PR and check `git rev-list --count origin/main..origin/dev`.)
 - No worktrees. All dev work happens directly on `dev` in this single checkout — don't create git worktrees or feature branches for tasks here, even when a skill suggests it.
 
+## Changelog
+
+`CHANGELOG.md` is the source of truth for GitHub release notes — `.github/workflows/release.yml` extracts the section matching the pushed tag's version and uses it via `--notes-file` instead of `--generate-notes` (falls back to auto-generated PR-title notes only if no matching entry exists, so a missed update degrades instead of blocking a release).
+
+- **When**: add or update the `## [X.Y.Z]` entry in the same commit/PR that bumps `version` in `package.json` — whether that's a dedicated `chore: bump version` commit or bundled into a feature commit. The version in the header must match `package.json` exactly (the extraction is a literal string match on `## [<version>]`).
+- **Where**: newest entry at the top, directly under the header block. Format is [Keep a Changelog](https://keepachangelog.com/)-flavored: `### Added` / `### Changed` / `### Fixed` subsections; omit any subsection with nothing in it.
+- **Audience**: this file is read by end users on the GitHub releases page, not developers reading a diff. Describe what changed *for the person using the app* — the symptom fixed or the capability added — not the implementation. "Copying notes as plain text lost nested-list indentation" not "`htmlToPlainText`'s list renderer now indents 2 spaces per depth level." Skip anything with no user-visible effect (dependency bumps, CI tweaks, internal refactors, test-only changes) — if a whole release is like that, write one line: `_No user-facing changes — internal cleanup only._` instead of empty subsections.
+- **Multi-PR releases**: when a `dev → main` release PR bundles several feature commits (this project's convention — see Git workflow above), write one changelog entry per user-facing feature/fix bundled in, not one per commit.
+- Do not backfill or rewrite entries for already-tagged releases except to fix a factual error — treat published entries as immutable history, same as the git tag they describe.
+
 ## Conventions
 
 - i18n: two locales, `pt-BR` and `en-US`, via `t(locale, key)` in `core/i18n.ts`. All user-visible strings go through `t()`; add keys for both locales.
