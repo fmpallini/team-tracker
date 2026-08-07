@@ -29,8 +29,10 @@ export function createCalendar(opts: {
   onPick(dateIso: string): void
   /** Also render a non-navigable grid for the month before the displayed one, stacked above it (Task: daily-notes two-month view). */
   showPrevMonth?: boolean
+  /** ISO date whose month seeds the displayed pair; defaults to `selected`. Lets a caller keep the same two months on screen across a re-mount even when `selected` moves to a different (but still visible) month — see daily-notes.ts's calendarAnchorByPane. */
+  anchor?: string
 }): HTMLElement {
-  const initial = parseIso(opts.selected)
+  const initial = parseIso(opts.anchor ?? opts.selected)
   let viewYear = initial.y
   let viewMonth = initial.m // 1-12
 

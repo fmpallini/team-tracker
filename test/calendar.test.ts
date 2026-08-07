@@ -163,6 +163,24 @@ describe('createCalendar showPrevMonth', () => {
     expect(grids[0]!.querySelectorAll('.tt-calendar-day:not(.tt-calendar-day-blank)')).toHaveLength(juneDays)
   })
 
+  test('defaults the displayed month pair to selected when anchor is omitted', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+    expect(monthLabels(root)).toEqual(['June 2026', 'July 2026'])
+  })
+
+  test('anchor controls the displayed month pair independently of selected', () => {
+    const root = createCalendar({
+      selected: '2026-06-10', anchor: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true,
+    })
+    expect(monthLabels(root)).toEqual(['June 2026', 'July 2026'])
+
+    const topGrid = root.querySelectorAll('.tt-calendar-grid')[0]!
+    const selectedBtn = Array.from(topGrid.querySelectorAll('.tt-calendar-day')).find((b) =>
+      b.classList.contains('tt-calendar-day-selected')
+    )
+    expect(selectedBtn?.firstChild?.textContent).toBe('10')
+  })
+
   test('previous-month header wraps to December of the prior year from January', () => {
     const root = createCalendar({ selected: '2026-01-10', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
     expect(monthLabels(root)).toEqual(['December 2025', 'January 2026'])
