@@ -129,18 +129,42 @@ function inlineMd(node: Node): string {
   }
 }
 
-// Splits `nodes` at <br> boundaries into segments, renders each node with
-// `render`, and joins segments with '\n' — shared by blockToMdNodes (markdown
-// output) and blockToTextNodes (plain-text output), which differ only in
-// which renderer they pass.
-function segmentsToLines(nodes: Node[], render: (n: Node) => string): string {
+// Splits `nodes` at <br> boundaries into per-line node arrays. A <br>
+// doesn't have to be a direct child of `nodes` to mark a line boundary —
+// bolding/italicizing a multi-line selection makes the browser wrap the
+// whole run (including the <br>) in a single <b>/<i> etc. — so this recurses
+// into any child that still contains a <br>, splitting it into per-line
+// clones of that same wrapper (an empty resulting line is dropped, matching
+// a trailing top-level <br> producing no extra empty segment). Deep-clones
+// `nodes` up front so moving pieces into new per-line wrappers never
+// detaches anything from the live editor DOM.
+function segmentsToLineNodes(nodes: Node[]): Node[][] {
   const segments: Node[][] = [[]]
-  nodes.forEach(child => {
-    if (child instanceof HTMLElement && child.tagName.toLowerCase() === 'br') segments.push([])
-    else segments[segments.length - 1]!.push(child)
+  nodes.map(n => n.cloneNode(true)).forEach(node => {
+    if (node instanceof HTMLElement && node.tagName.toLowerCase() === 'br') {
+      segments.push([])
+    } else if (node instanceof HTMLElement && node.querySelector('br')) {
+      segmentsToLineNodes(Array.from(node.childNodes)).forEach((sub, i) => {
+        if (i > 0) segments.push([])
+        if (sub.length > 0) {
+          const wrapper = node.cloneNode(false) as HTMLElement
+          sub.forEach(n => wrapper.appendChild(n))
+          segments[segments.length - 1]!.push(wrapper)
+        }
+      })
+    } else {
+      segments[segments.length - 1]!.push(node)
+    }
   })
   if (segments.length > 1 && segments[segments.length - 1]!.length === 0) segments.pop()
-  return segments.map(seg => seg.map(render).join('')).join('\n')
+  return segments
+}
+
+// Renders each <br>-split line with `render` and joins with '\n' — shared by
+// blockToMdNodes (markdown output) and blockToTextNodes (plain-text output),
+// which differ only in which renderer they pass.
+function segmentsToLines(nodes: Node[], render: (n: Node) => string): string {
+  return segmentsToLineNodes(nodes).map(seg => seg.map(render).join('')).join('\n')
 }
 
 function blockToMdNodes(nodes: Node[]): string {
