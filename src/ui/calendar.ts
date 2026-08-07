@@ -54,17 +54,21 @@ export function createCalendar(opts: {
     render()
   }
 
-  function buildHeader(label: string): HTMLElement {
-    const prevBtn = el(
-      'button',
-      { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_prev_month_title'), onclick: goPrevMonth },
-      '‹'
-    )
-    const nextBtn = el(
-      'button',
-      { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_next_month_title'), onclick: goNextMonth },
-      '›'
-    )
+  function buildHeader(label: string, withNav: boolean): HTMLElement {
+    const prevBtn = withNav
+      ? el(
+          'button',
+          { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_prev_month_title'), onclick: goPrevMonth },
+          '‹'
+        )
+      : null
+    const nextBtn = withNav
+      ? el(
+          'button',
+          { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_next_month_title'), onclick: goNextMonth },
+          '›'
+        )
+      : null
     return el(
       'div',
       { class: 'tt-calendar-header' },
@@ -124,7 +128,7 @@ export function createCalendar(opts: {
   function render(): void {
     root.innerHTML = ''
 
-    const header = buildHeader(monthLabel(viewYear, viewMonth))
+    const header = buildHeader(monthLabel(viewYear, viewMonth), !opts.showPrevMonth)
     const weekdaysRow = buildWeekdaysRow()
     const grid = buildGrid(viewYear, viewMonth)
 
@@ -133,7 +137,7 @@ export function createCalendar(opts: {
       let prevYear = viewYear
       if (prevMonth < 1) { prevMonth = 12; prevYear -= 1 }
 
-      const prevHeader = buildHeader(monthLabel(prevYear, prevMonth))
+      const prevHeader = buildHeader(monthLabel(prevYear, prevMonth), true)
       const prevWeekdaysRow = buildWeekdaysRow()
       const prevGrid = buildGrid(prevYear, prevMonth)
 

@@ -186,16 +186,17 @@ describe('createCalendar showPrevMonth', () => {
     expect(monthLabels(root)).toEqual(['December 2025', 'January 2026'])
   })
 
-  test('navigating › from the current-month header shifts both labels', () => {
+  test('nav arrows appear only on the previous-month (top) header', () => {
     const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
-    navBtns(root)[3]!.click() // current month's ›
-
-    expect(monthLabels(root)).toEqual(['July 2026', 'August 2026'])
+    const headers = root.querySelectorAll('.tt-calendar-header')
+    expect(headers).toHaveLength(2)
+    expect(headers[0]!.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(2)
+    expect(headers[1]!.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(0)
   })
 
-  test('navigating › from the previous-month header shifts both labels the same way', () => {
+  test('navigating › (the only nav arrows, on the top header) shifts both labels', () => {
     const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
-    navBtns(root)[1]!.click() // previous month's ›
+    navBtns(root)[1]!.click() // top header's ›
 
     expect(monthLabels(root)).toEqual(['July 2026', 'August 2026'])
   })
