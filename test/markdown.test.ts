@@ -123,7 +123,7 @@ describe('nested list not a direct <li> child — stress cases', () => {
     const div = document.createElement('div')
     div.innerHTML = '<ol><li><div>A<ol><li>A1</li><li>A2</li></ol></div></li><li>B</li></ol>'
     expect(htmlToMd(div)).toBe('1. A\n  1. A1\n  2. A2\n2. B')
-    expect(htmlToPlainText(div)).toBe('A\nA1\nA2\nB')
+    expect(htmlToPlainText(div)).toBe('A\n  A1\n  A2\nB')
   })
 
   test('4 levels deep, each wrapped in a div, multiple siblings per level', () => {
@@ -311,11 +311,17 @@ test('a nested level that switches marker type mid-level round-trips without dro
 test('htmlToPlainText keeps every item when a nested level switches marker type mid-level', () => {
   const div = document.createElement('div')
   div.innerHTML = mdToHtml('- a\n  - b\n  1. c')
-  expect(htmlToPlainText(div)).toBe('a\nb\nc')
+  expect(htmlToPlainText(div)).toBe('a\n  b\n  c')
 })
 
 test('htmlToPlainText keeps nested list item text on its own line', () => {
   const div = document.createElement('div')
   div.innerHTML = mdToHtml('- a\n  - a1\n- b')
-  expect(htmlToPlainText(div)).toBe('a\na1\nb')
+  expect(htmlToPlainText(div)).toBe('a\n  a1\nb')
+})
+
+test('htmlToPlainText indents 2 spaces per nesting level (mirrors markdown\'s indent convention)', () => {
+  const div = document.createElement('div')
+  div.innerHTML = mdToHtml('- a\n  - b\n    - c\n      - d')
+  expect(htmlToPlainText(div)).toBe('a\n  b\n    c\n      d')
 })

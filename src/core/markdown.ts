@@ -250,13 +250,17 @@ function blockToText(node: HTMLElement): string {
 
 // Text-only counterpart to renderListMd: walks nested <ul>/<ol> recursively
 // so copy-as-plain-text doesn't run sub-bullet text together with its
-// parent's.
-function renderListText(list: HTMLElement, out: string[]): void {
+// parent's, indenting 2 spaces per depth level (same convention as
+// renderListMd's markdown indent) so nesting survives the copy instead of
+// flattening every level to the same column.
+function renderListText(list: HTMLElement, out: string[], depth = 0): void {
+  const prefix = '  '.repeat(depth)
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
     const nestedLists = nestedListsOf(child)
-    out.push(blockToTextNodes(liOwnContentNodes(child)))
-    nestedLists.forEach(nested => renderListText(nested, out))
+    const text = blockToTextNodes(liOwnContentNodes(child))
+    out.push(text.split('\n').map(line => prefix + line).join('\n'))
+    nestedLists.forEach(nested => renderListText(nested, out, depth + 1))
   })
 }
 
