@@ -314,4 +314,38 @@ describe('two-month calendar anchor persistence', () => {
     render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-20' } }, store, pm, 0)
     expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
   })
+
+  test('anchors are per-document: a second store does not inherit the first store\'s anchor', () => {
+    const a = setup(makeTeam(), '2026-07-15')
+    render(a.container, a.loc, a.store, a.pm, 0)
+    const b = setup(makeTeam(), '2026-06-10')
+    render(b.container, b.loc, b.store, b.pm, 0)
+    expect(monthLabels(b.container)).toEqual(['May 2026', 'June 2026'])
+  })
+
+  test('manual month navigation (top header\'s ‹) updates the persisted anchor, so a subsequent pick in the newly-visible window does not jump the pair back', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-15')
+    render(container, loc, store, pm, 0)
+    expect(monthLabels(container)).toEqual(['June 2026', 'July 2026'])
+
+    // Click the top header's ‹ — in two-month mode this is the only header
+    // with nav arrows (see src/ui/calendar.ts). View becomes May/June.
+    const topHeader = container.querySelectorAll('.tt-calendar-header')[0]!
+    const prevBtn = topHeader.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')[0]!
+    prevBtn.click()
+    expect(monthLabels(container)).toEqual(['May 2026', 'June 2026'])
+
+    // Pick June 10, now shown in the bottom grid.
+    dayButtonFor(container, 10).click()
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-06-10' } } }])
+
+    // Simulate the real remount (src/ui/panes.ts's renderBody) with the picked date.
+    container.innerHTML = ''
+    render(container, { teamId: team.id, ref: { kind: 'daily', date: '2026-06-10' } }, store, pm, 0)
+
+    // Must stay on May/June — not jump back to June/July, which is what
+    // would happen if the arrow-nav never updated the persisted anchor.
+    expect(monthLabels(container)).toEqual(['May 2026', 'June 2026'])
+  })
 })

@@ -137,7 +137,7 @@ describe('createCalendar showPrevMonth', () => {
   function monthLabels(root: HTMLElement): string[] {
     return Array.from(root.querySelectorAll('.tt-calendar-month-label')).map((e) => e.textContent ?? '')
   }
-  /** Nav buttons in DOM order: [0]=prev‹ [1]=prev› [2]=current‹ [3]=current› */
+  /** Nav buttons in DOM order. In showPrevMonth mode (the only mode this describe block uses) all nav buttons live on the top/previous-month header — the bottom/current-month header has none: [0]=‹ [1]=›. (Single-month mode has its own nav buttons, covered by the separate 'createCalendar month navigation' describe block above.) */
   function navBtns(root: HTMLElement): HTMLButtonElement[] {
     return Array.from(root.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn'))
   }

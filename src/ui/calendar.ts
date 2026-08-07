@@ -1,7 +1,8 @@
 // src/ui/calendar.ts — mini month calendar used by src/modules/daily-notes.ts
 // (Task 18) to pick a day. Self-contained: owns its own "currently displayed
-// month" state (initialized from `opts.selected`) and re-renders its own DOM
-// in place on month navigation. The caller rebuilds a fresh instance (see
+// month" state (initialized from `opts.anchor ?? opts.selected`) and
+// re-renders its own DOM in place on month navigation. The caller rebuilds a
+// fresh instance (see
 // daily-notes.ts's rebuildCalendar) whenever the underlying marks change —
 // this module has no external "refresh" hook by design (matches the fixed
 // `createCalendar(opts): HTMLElement` contract).
@@ -31,6 +32,8 @@ export function createCalendar(opts: {
   showPrevMonth?: boolean
   /** ISO date whose month seeds the displayed pair; defaults to `selected`. Lets a caller keep the same two months on screen across a re-mount even when `selected` moves to a different (but still visible) month — see daily-notes.ts's calendarAnchorByPane. */
   anchor?: string
+  /** Fired when the user moves the displayed month via the nav arrows (goPrevMonth/goNextMonth), carrying the new displayed month as an ISO date (day component is arbitrary, e.g. "-01"). Lets a caller keep its own anchor tracking (e.g. daily-notes.ts's calendarAnchorByPane) in sync with manual navigation, not just picks. */
+  onViewChange?(anchorIso: string): void
 }): HTMLElement {
   const initial = parseIso(opts.anchor ?? opts.selected)
   let viewYear = initial.y
@@ -46,12 +49,14 @@ export function createCalendar(opts: {
     viewMonth -= 1
     if (viewMonth < 1) { viewMonth = 12; viewYear -= 1 }
     render()
+    opts.onViewChange?.(`${viewYear}-${pad2(viewMonth)}-01`)
   }
 
   function goNextMonth(): void {
     viewMonth += 1
     if (viewMonth > 12) { viewMonth = 1; viewYear += 1 }
     render()
+    opts.onViewChange?.(`${viewYear}-${pad2(viewMonth)}-01`)
   }
 
   function buildHeader(label: string, withNav: boolean): HTMLElement {

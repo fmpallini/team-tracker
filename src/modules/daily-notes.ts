@@ -26,6 +26,11 @@ function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
  * has to survive the remount. Keyed by Store (main.ts's onDocumentOpened
  * creates a fresh one per file open, mirroring panes.ts's layoutsByStore)
  * so it never leaks state from a previously-closed document.
+ *
+ * Keyed by pane index only, not (pane, team): switching teams in a pane
+ * carries over the previous team's anchor. Accepted tradeoff, not an
+ * oversight — the opened date is always still visible in one of the two
+ * grids either way, so the worst case is a one-month visual offset.
  */
 const calendarAnchorByPane = new WeakMap<Store, Map<0 | 1, string>>()
 
@@ -53,7 +58,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   const date = loc.ref.date
   const teamId = loc.teamId
   const lc = ctx.locale
-  const anchor = resolveCalendarAnchor(ctx.store, ctx.paneIdx, date)
+  let anchor = resolveCalendarAnchor(ctx.store, ctx.paneIdx, date)
 
   function buildMarks(): CalendarMarks {
     const team = findTeam(ctx, teamId)
@@ -97,6 +102,10 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
         showPrevMonth: true,
         onPick: (pickedDate) => {
           ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: pickedDate } })
+        },
+        onViewChange: (a) => {
+          anchor = a
+          calendarAnchorByPane.get(ctx.store)?.set(ctx.paneIdx, a)
         },
       })
     )
