@@ -1,4 +1,4 @@
-import { showContextMenu } from '../src/ui/context-menu'
+import { showContextMenu, closeAnyContextMenu } from '../src/ui/context-menu'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -36,6 +36,26 @@ test('clicking outside the menu closes it without calling onClick', () => {
 test('Escape closes the menu', () => {
   showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  expect(document.querySelector('.tt-context-menu')).toBeNull()
+})
+
+test('closeAnyContextMenu closes an open menu and removes its document listeners (the file-close leak main.ts guards against)', () => {
+  showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
+  expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+  const addSpy = vi.spyOn(document, 'addEventListener')
+  const removeSpy = vi.spyOn(document, 'removeEventListener')
+
+  closeAnyContextMenu()
+
+  expect(document.querySelector('.tt-context-menu')).toBeNull()
+  expect(removeSpy.mock.calls.length).toBeGreaterThanOrEqual(2) // bindOutsideDismiss's mousedown + keydown
+  expect(addSpy).not.toHaveBeenCalled()
+  addSpy.mockRestore()
+  removeSpy.mockRestore()
+})
+
+test('closeAnyContextMenu is a no-op when nothing is open', () => {
+  expect(() => closeAnyContextMenu()).not.toThrow()
   expect(document.querySelector('.tt-context-menu')).toBeNull()
 })
 

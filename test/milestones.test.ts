@@ -796,4 +796,40 @@ describe('deferred rebuild while a field is focused', () => {
     input.dispatchEvent(new FocusEvent('blur'))
     expect(rows(container)).toHaveLength(2)
   })
+
+  test('tearing down the module while a row\'s date-picker popover is open closes the popover instead of stranding it', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({})] }))
+    render(container, loc, store, pm)
+
+    const dateInput = rows(container)[0]!.querySelector('.tt-date-picker-input') as HTMLInputElement
+    dateInput.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(document.querySelector('.tt-date-picker-popover')).not.toBeNull()
+
+    // Re-rendering into the same container is how withDisposal (modules/
+    // lifecycle.ts) tears down the previously-mounted instance — the same
+    // path a real module switch, team switch, or file close takes. The
+    // popover lives in document.body, not inside `container`, so nothing
+    // about this re-render's own DOM rebuild would touch it on its own.
+    render(container, loc, store, pm)
+
+    expect(document.querySelector('.tt-date-picker-popover')).toBeNull()
+  })
+
+  test('rebuilding the row list while a date-picker popover is open (e.g. a store change from another pane) closes it instead of stranding it', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a' })] }))
+    render(container, loc, store, pm)
+
+    const dateInput = rows(container)[0]!.querySelector('.tt-date-picker-input') as HTMLInputElement
+    dateInput.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(document.querySelector('.tt-date-picker-popover')).not.toBeNull()
+
+    // A milestones-scoped store.update from elsewhere (not this row's own
+    // date field) triggers renderAll()'s full rebuild — focusedCaretInput()
+    // only defers for the row's *text/date inputs*, not for focus that has
+    // already moved into the popover's own calendar buttons.
+    document.querySelector<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)')?.focus()
+    store.update((d) => { d.teams[0]!.milestones.push(milestone({ id: 'b', date: '2026-02-01', title: 'Launch' })) }, { teamId: 'T1', sections: ['milestones'] })
+
+    expect(document.querySelector('.tt-date-picker-popover')).toBeNull()
+  })
 })

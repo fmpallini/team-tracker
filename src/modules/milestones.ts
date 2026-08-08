@@ -20,7 +20,7 @@ import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
-import { createDatePicker } from '../ui/date-picker'
+import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
@@ -179,6 +179,20 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
   const expandable = new ExpandableRowsController()
+
+  // Each row's date-picker owns a popover appended to document.body, outside
+  // `container` — a plain listEl.innerHTML='' rebuild (renderList below)
+  // discards the row but not that popover if it happened to be open,
+  // stranding it (and its two document-level dismiss listeners) exactly like
+  // ui/context-menu.ts's/ui/backlinks-panel.ts's module-singleton popovers
+  // used to across a file close. Tracked here so every rebuild — and the
+  // module's own final teardown — can call destroy() on the previous batch
+  // first, same shape as `expandable`'s disposeAll() above.
+  let liveDatePickers: DatePickerHandle[] = []
+  function disposeDatePickers(): void {
+    for (const dp of liveDatePickers) dp.destroy()
+    liveDatePickers = []
+  }
 
   function toggleExpand(id: string): void {
     expandable.toggle(id)
@@ -379,6 +393,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       },
     })
     datePicker.root.classList.add('tt-milestone-date-input')
+    liveDatePickers.push(datePicker)
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-milestone-title-input tt-input', placeholder: t(lc, 'milestone_title_placeholder'), value: m.title,
@@ -487,6 +502,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   function renderAll(): void {
     expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
+    disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
     renderTimeline()
     renderList()
   }
@@ -597,6 +613,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     deferredEl?.removeEventListener('blur', onDeferredBlur)
     deferredEl = null
     expandable.disposeAll()
+    disposeDatePickers()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

@@ -282,7 +282,7 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   pm.openBothPanes(target0, target1, rememberedSplit ? 1 : 0)
 }
 
-export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager {
+export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager & { searchIndex: SearchIndex } {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
   const personSubOpen: [boolean, boolean] = [false, false]
@@ -816,7 +816,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     renderBody(1)
   }
 
-  const pm: PaneManager = {
+  // Exposes searchIndex beyond the PaneManager interface (which module tests'
+  // fakePM()s implement without it) so main.ts can hand this same instance to
+  // mountSearch instead of it building a second, independent one — see
+  // ui/search-ui.ts's mountSearch doc comment.
+  const pm = {
     openInPane,
     openBothPanes,
     openInFocused,
@@ -842,7 +846,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       disposeContainer(bodyEls[0])
       disposeContainer(bodyEls[1])
     },
-  }
+    searchIndex,
+  } satisfies PaneManager & { searchIndex: SearchIndex }
 
   renderAll()
   return pm

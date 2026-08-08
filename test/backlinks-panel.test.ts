@@ -1,6 +1,14 @@
-import { createBacklinksChip } from '../src/ui/backlinks-panel'
+import { createBacklinksChip, closeAnyBacklinksPanel } from '../src/ui/backlinks-panel'
 import type { Backlink } from '../src/core/search'
 import type { Loc } from '../src/core/types'
+
+beforeEach(() => {
+  // closeCurrent is module-level (see backlinks-panel.ts) and outlives any
+  // one test — a panel left open by a previous test (e.g. an assertion
+  // failure before its own cleanup ran) would otherwise leak its two
+  // document listeners into this test's own listener-count assertions.
+  closeAnyBacklinksPanel()
+})
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -66,6 +74,28 @@ test('outside click and Escape both close the panel', () => {
   expect(document.querySelector('.tt-backlinks-panel')).toBeNull()
 })
 
+test('closeAnyBacklinksPanel closes an open panel and removes its document listeners (the file-close leak main.ts guards against)', () => {
+  const chip = createBacklinksChip([bl()], 'en-US', () => {})!
+  document.body.appendChild(chip)
+  chip.click()
+  expect(document.querySelector('.tt-backlinks-panel')).not.toBeNull()
+  const addSpy = vi.spyOn(document, 'addEventListener')
+  const removeSpy = vi.spyOn(document, 'removeEventListener')
+
+  closeAnyBacklinksPanel()
+
+  expect(document.querySelector('.tt-backlinks-panel')).toBeNull()
+  expect(removeSpy.mock.calls.length).toBeGreaterThanOrEqual(2) // bindOutsideDismiss's mousedown + keydown
+  expect(addSpy).not.toHaveBeenCalled()
+  addSpy.mockRestore()
+  removeSpy.mockRestore()
+})
+
+test('closeAnyBacklinksPanel is a no-op when nothing is open', () => {
+  expect(() => closeAnyBacklinksPanel()).not.toThrow()
+  expect(document.querySelector('.tt-backlinks-panel')).toBeNull()
+})
+
 test('opening a second chip\'s panel closes the first', () => {
   const chipA = createBacklinksChip([bl()], 'en-US', () => {})!
   const chipB = createBacklinksChip([bl({ moduleKind: 'risks' })], 'en-US', () => {})!
@@ -104,4 +134,22 @@ test('clamps to the viewport when the panel would open off the right/bottom edge
     Object.defineProperty(window, 'innerWidth', { value: originalInnerWidth, configurable: true })
     Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
   }
+})
+
+test('stress: 300 open/close cycles leave no accumulated document listeners or stray panel DOM nodes', () => {
+  const chip = createBacklinksChip([bl()], 'en-US', () => {})!
+  document.body.appendChild(chip)
+  const addSpy = vi.spyOn(document, 'addEventListener')
+  const removeSpy = vi.spyOn(document, 'removeEventListener')
+  const netDocumentListeners = (): number => addSpy.mock.calls.length - removeSpy.mock.calls.length
+
+  for (let i = 0; i < 300; i++) {
+    chip.click() // open
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) // close
+    expect(document.querySelectorAll('.tt-backlinks-panel'), `stray panel at cycle ${i}`).toHaveLength(0)
+    expect(netDocumentListeners(), `leaked document listener at cycle ${i}`).toBe(0)
+  }
+
+  addSpy.mockRestore()
+  removeSpy.mockRestore()
 })

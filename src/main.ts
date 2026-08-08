@@ -30,6 +30,8 @@ import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
+import { closeAnyContextMenu } from './ui/context-menu'
+import { closeAnyBacklinksPanel } from './ui/backlinks-panel'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { flushAllEditors } from './ui/editor'
@@ -91,6 +93,15 @@ async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose
   if (a.store.dirty && !a.store.readOnly) await a.saveCtl.saveNow({ explicit: true })
   await a.saveCtl.flush()
   a.dispose()
+  // Both are module-level singletons (one popover open at a time, app-wide —
+  // see their own files) rather than anything a.dispose()'s per-document
+  // teardown owns. Left open across a file close, either would keep this
+  // document's store/pm reachable via its onClick/onNavigate closures, pinned
+  // by two capturing `document` listeners that would otherwise only get torn
+  // down the next time that same popover type happens to open again —
+  // possibly in a much later, unrelated document, or never.
+  closeAnyContextMenu()
+  closeAnyBacklinksPanel()
   resetSessionKey()
 }
 
@@ -189,7 +200,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   const syncAppName = (): void => shell.setAppNameEnabled(store.doc.teams.length > 0)
   syncAppName()
   disposers.push(store.onMutate(syncAppName))
-  disposers.push(mountSearch(shell, store, pm, selectTeam))
+  disposers.push(mountSearch(shell, store, pm, selectTeam, pm.searchIndex))
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
   // the first — e.g. a trailing save round (fix #1) or the auto-save
