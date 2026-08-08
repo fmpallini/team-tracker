@@ -229,3 +229,61 @@ describe('scope-driven cache invalidation', () => {
     expect(index.search('rewritten', 't2').length).toBe(0) // t2 still cached
   })
 })
+
+import { collectBacklinks } from '../src/core/search'
+
+function backlinksFixture(): Doc {
+  const d = createEmptyDocument('en-US')
+  const t1 = team('t1', 'Alpha')
+  t1.dailyNotes['2026-08-04'] = 'Started @[Migrate billing job](action:a1), needs review'
+  t1.generalNotes = 'Vendor call notes, unrelated to @[Migrate billing job](action:a1) too'
+  t1.members.push({ id: 'p1', name: 'Ana', role: 'Dev', parentId: null, order: 0, notes: 'Flagged @[Migrate billing job](action:a1) as blocking her sprint' })
+  t1.actionItems.push({ id: 'a1', summary: 'Migrate billing job', status: 'todo', color: 'ledger', dueDate: null, assignee: '', order: 0, notes: '' })
+  t1.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Beta', done: false, followup: 'Depends on @[Migrate billing job](action:a1) landing before Q3' })
+  t1.risks.push({ id: 'r1', title: 'Queue backlog', chance: 2, impact: 2, plan: 'mitigate', followup: 'no mention here', order: 0, closed: false })
+  d.teams.push(t1)
+  return d
+}
+
+describe('collectBacklinks', () => {
+  test('finds mentions across all 4 non-general note fields plus general notes', () => {
+    const doc = backlinksFixture()
+    const team = doc.teams[0]!
+    const results = collectBacklinks(team, doc, 'action', 'a1')
+    expect(results).toHaveLength(4)
+    expect(results.map((r) => r.moduleKind).sort()).toEqual(['daily', 'general', 'milestones', 'person'])
+  })
+
+  test('a field with two mentions of the same target yields two entries', () => {
+    const doc = backlinksFixture()
+    const team = doc.teams[0]!
+    team.dailyNotes['2026-08-04'] += ' — see also @[Migrate billing job](action:a1) again'
+    const results = collectBacklinks(team, doc, 'action', 'a1')
+    expect(results.filter((r) => r.moduleKind === 'daily')).toHaveLength(2)
+  })
+
+  test('no matches returns an empty array', () => {
+    const doc = backlinksFixture()
+    const team = doc.teams[0]!
+    expect(collectBacklinks(team, doc, 'risk', 'r1')).toEqual([])
+  })
+
+  test('snippet is markdown-stripped and the matched mention reads as its label', () => {
+    const doc = backlinksFixture()
+    const team = doc.teams[0]!
+    const [hit] = collectBacklinks(team, doc, 'action', 'a1').filter((r) => r.moduleKind === 'person')
+    expect(hit!.snippet).toContain('Migrate billing job')
+    expect(hit!.snippet).not.toContain('@[')
+    expect(hit!.title).toBe('Ana')
+    expect(hit!.loc).toEqual({ teamId: 't1', ref: { kind: 'person', personId: 'p1', group: 'members' } })
+  })
+
+  test('day-kind target keys by ISO date string, not an item id', () => {
+    const doc = backlinksFixture()
+    const team = doc.teams[0]!
+    team.risks[0]!.followup = 'Follow up on @[Aug 4](day:2026-08-04)'
+    const results = collectBacklinks(team, doc, 'day', '2026-08-04')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.moduleKind).toBe('risks')
+  })
+})

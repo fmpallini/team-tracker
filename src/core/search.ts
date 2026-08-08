@@ -1,6 +1,7 @@
 import type { Doc, ModuleRef, Team } from './types'
 import type { ChangeScope, Section } from './scope'
 import { formatDate, t } from './i18n'
+import { refPattern, type RefKind } from './refs'
 
 export interface SearchResult {
   loc: { teamId: string; ref: ModuleRef }
@@ -104,6 +105,76 @@ function collectCandidates(team: Team, doc: Doc): Candidate[] {
   }
   for (const risk of team.risks) {
     out.push({ raw: `${risk.title}\n${risk.followup}`, title: risk.title, ref: { kind: 'risks', itemId: risk.id } })
+  }
+  return out
+}
+
+/**
+ * Sections whose mutations can add/remove a backlink match or change a
+ * backlink's displayed title/snippet — the fields collectCandidates scans,
+ * minus 'teams'/'prefs' (a rename or locale change going stale here is the
+ * same acceptable class of staleness createSearchIndex already accepts for
+ * its own cache). Modules that render a backlinks chip/badge widen their own
+ * store.subscribe WATCHED list with this (see Tasks 5-9).
+ */
+export const BACKLINK_SECTIONS: readonly Section[] = ['notes', 'people', 'actions', 'milestones', 'risks']
+
+/**
+ * Source kinds collectCandidates ever produces for its `ref` field — a
+ * narrower subset of ModuleRef['kind'] than KIND_ICON's domain (excludes
+ * 'stakeholders'/'members', which are whole-list pane views, never a single
+ * free-text field a mention can live in).
+ */
+export type BacklinkSourceKind = 'daily' | 'general' | 'person' | 'actions' | 'milestones' | 'risks'
+
+export interface Backlink {
+  /** Where the mention lives — the free-text field's own location, not the target's. */
+  loc: { teamId: string; ref: ModuleRef }
+  moduleKind: BacklinkSourceKind
+  /** The source item's display title (e.g. the mentioning person's name, or the mentioning daily note's formatted date). */
+  title: string
+  /** Plain-text excerpt around the mention, markdown-stripped. */
+  snippet: string
+}
+
+/** Same trim shape as makeSnippet above, but anchored at a known raw-text match span instead of a search term. */
+function backlinkSnippet(raw: string, matchIndex: number, matchLen: number): string {
+  const start = Math.max(0, matchIndex - SNIPPET_RADIUS)
+  const end = Math.min(raw.length, matchIndex + matchLen + SNIPPET_RADIUS)
+  let out = stripMd(raw.slice(start, end)).trim()
+  if (start > 0) out = `…${out}`
+  if (end < raw.length) out = `${out}…`
+  return out
+}
+
+/**
+ * Every mention of `kind:targetId` across `team`'s free-text fields (the
+ * same 6-field enumeration collectCandidates uses for search), one Backlink
+ * per mention — a field mentioning the same target twice yields two
+ * entries. Matches against each candidate's *raw* text: stripMd would
+ * already have collapsed `@[label](kind:id)` down to `label`, destroying
+ * the id being matched. The returned snippet is stripped afterward, from a
+ * raw-text window around the match — day-kind targets key by the ISO date
+ * string (refPattern's day target format), not an item id.
+ */
+export function collectBacklinks(team: Team, doc: Doc, kind: RefKind, targetId: string): Backlink[] {
+  const re = refPattern(kind)
+  const prefixLen = kind.length + 1
+  const out: Backlink[] = []
+  for (const candidate of collectCandidates(team, doc)) {
+    re.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(candidate.raw))) {
+      if (m[2]!.slice(prefixLen) !== targetId) continue
+      out.push({
+        loc: { teamId: team.id, ref: candidate.ref },
+        // collectCandidates never emits 'stakeholders'/'members' as a ref
+        // kind — see BacklinkSourceKind's own doc comment.
+        moduleKind: candidate.ref.kind as BacklinkSourceKind,
+        title: candidate.title,
+        snippet: backlinkSnippet(candidate.raw, m.index, m[0].length),
+      })
+    }
   }
   return out
 }
