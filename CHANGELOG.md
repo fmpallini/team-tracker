@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.0] - 2026-08-08
+
+### Added
+- People, days, action items, milestones, and risks now show a small "↩ N" badge whenever something else mentions them, so you can see what's pointing at a note or card without hunting for it. Click the badge to see every reference, grouped by where it comes from, and jump straight there.
+
 ## [2.0.5] - 2026-08-07
 
 ### Fixed
