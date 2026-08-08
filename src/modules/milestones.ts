@@ -25,6 +25,9 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { createBacklinksChip } from '../ui/backlinks-panel'
+import { navigateToLoc } from '../ui/atref'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /**
@@ -409,6 +412,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // visible-but-quiet instead of fully transparent, and the row is a single
     // Tab stop whose Enter/Space opens the context menu — so "reachable by
     // click/hover" is no longer the *only* way to reach them.
+    const team = findTeam()
+    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'milestone', m.id) : []
+    const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
@@ -430,7 +437,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         'data-item-id': m.id,
         title: `${t(lc, 'milestone_row_context_hint')} · ${t(lc, 'risk_row_menu_hint')}`,
       },
-      datePicker.root, titleInput, doneCheckbox, expandBtn, deleteBtn
+      datePicker.root, titleInput, doneCheckbox, backlinksChip, expandBtn, deleteBtn
     )
     // Left-edge state mark, mirroring the timeline dots' own three-way
     // vocabulary (done / overdue / upcoming) rather than inventing a second
@@ -550,7 +557,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     active.addEventListener('blur', onDeferredBlur, { once: true })
   }
 
-  const WATCHED: readonly Section[] = ['milestones', 'teams']
+  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretInput()
