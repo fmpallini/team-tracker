@@ -1,4 +1,4 @@
-import { scopeAffects } from '../src/core/scope'
+import { scopeAffects, scopeTouchesSections } from '../src/core/scope'
 
 test('a null/undefined scope always affects everything', () => {
   expect(scopeAffects(null, 't1', ['actions'])).toBe(true)
@@ -31,4 +31,20 @@ test('a section-only scope (no teamId) applies across teams', () => {
 
 test('a listener watching several sections matches if any one intersects', () => {
   expect(scopeAffects({ sections: ['milestones'] }, 't1', ['actions', 'milestones'])).toBe(true)
+})
+
+describe('scopeTouchesSections (cross-team listeners)', () => {
+  test('ignores teamId — a single team changing still concerns a cross-team listener', () => {
+    expect(scopeTouchesSections({ teamId: 'other', sections: ['actions'] }, ['actions'])).toBe(true)
+  })
+
+  test('still filters on sections', () => {
+    expect(scopeTouchesSections({ teamId: 't1', sections: ['notes'] }, ['actions', 'teams'])).toBe(false)
+  })
+
+  test('absent scope or absent sections means yes', () => {
+    expect(scopeTouchesSections(null, ['teams'])).toBe(true)
+    expect(scopeTouchesSections(undefined, ['teams'])).toBe(true)
+    expect(scopeTouchesSections({ teamId: 't1' }, ['teams'])).toBe(true)
+  })
 })

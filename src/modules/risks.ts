@@ -543,12 +543,27 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // and defer it to the field's next blur — nothing is lost, since blur is
   // exactly when this field's own edit (if any) commits and would have
   // triggered a rebuild anyway.
+  // Only ever ONE deferral armed at a time. Arming per skipped mutation stacks
+  // a listener each time on the same focused element, so a field held focused
+  // across N mutations fired N full renderAll() rebuilds on a single blur.
+  let deferredEl: HTMLElement | null = null
+  function onDeferredBlur(): void {
+    deferredEl = null
+    renderAll()
+  }
+  function deferRebuildUntilBlur(active: HTMLElement): void {
+    if (deferredEl === active) return
+    deferredEl?.removeEventListener('blur', onDeferredBlur)
+    deferredEl = active
+    active.addEventListener('blur', onDeferredBlur, { once: true })
+  }
+
   const WATCHED: readonly Section[] = ['risks', 'teams']
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretElement()
     if (active) {
-      active.addEventListener('blur', () => renderAll(), { once: true })
+      deferRebuildUntilBlur(active)
       return
     }
     renderAll()
@@ -569,6 +584,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   return () => {
     unsubscribe()
+    // An armed deferral would otherwise rebuild a torn-down module on the
+    // field's next blur.
+    deferredEl?.removeEventListener('blur', onDeferredBlur)
+    deferredEl = null
     expandable.disposeAll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }

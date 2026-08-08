@@ -114,6 +114,40 @@ export function leadingIndentLen(text: string): number {
   return n
 }
 
+/**
+ * Every editor currently alive, so `flushAllEditors()` can reach them.
+ * Entries are added at construction and removed by `destroy()`.
+ *
+ * A registry rather than a walk of the pane tree because editors also live
+ * outside it — action-items.ts mounts one inside its card modal — and those
+ * hold exactly the same unsaved keystrokes. Module-level state is safe here
+ * because membership is tied to construct/destroy, and closing a file destroys
+ * every module (and so every editor) it mounted.
+ */
+const liveEditors = new Set<{ flush(): void }>()
+
+/**
+ * Commits every live editor's pending debounced change into the store *now*.
+ *
+ * For callers about to persist the document from outside the editing flow —
+ * saving on tab-hide/unload, or saving right before tearing the document down.
+ * Without it, a save firing within CHANGE_DEBOUNCE_MS of a keystroke writes a
+ * document that does not yet contain it, and on the teardown paths that
+ * document is the last one written.
+ *
+ * Non-destructive: editors keep working afterwards, so it is safe on paths
+ * (tab-hide) where the user comes back to a live session.
+ */
+export function flushAllEditors(): void {
+  for (const ed of Array.from(liveEditors)) {
+    try {
+      ed.flush()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+}
+
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: 'true' })
 
@@ -124,6 +158,38 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       changeTimer = null
       hooks.onChange()
     }, CHANGE_DEBOUNCE_MS)
+  }
+
+  /**
+   * Cancels a pending debounced change WITHOUT running it — for `setMd()`,
+   * where the pending change belongs to a document that is being replaced (see
+   * its own comment). Every other teardown path wants `flushChange()` instead:
+   * dropping there loses the user's last keystrokes outright.
+   */
+  function cancelChange(): void {
+    if (changeTimer === null) return
+    clearTimeout(changeTimer)
+    changeTimer = null
+  }
+
+  /**
+   * Runs a pending debounced change NOW instead of waiting out the remaining
+   * debounce. `destroy()` calls this because teardown is not a reason to
+   * discard an edit: ui/panes.ts tears a module down on every pane/module/team
+   * switch, so a switch landing inside the CHANGE_DEBOUNCE_MS window after a
+   * keystroke used to drop those characters silently — they never reached the
+   * store, so they were never saved either.
+   *
+   * Safe to call after ui/panes.ts's `container.innerHTML = ''`: that detaches
+   * `editorEl` but leaves its subtree intact, and `hooks.onChange()` reads the
+   * markdown back off `editorEl` itself (see rich-editor.ts), not off the DOM
+   * it used to be mounted in.
+   */
+  function flushChange(): void {
+    if (changeTimer === null) return
+    clearTimeout(changeTimer)
+    changeTimer = null
+    hooks.onChange()
   }
 
   function exec(cmd: string, value?: string): void {
@@ -818,11 +884,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function setMd(md: string): void {
     // A programmatic load can land within the debounce window of a prior
     // keystroke; without cancelling, the stale timer would fire onChange
-    // against the newly-loaded document and falsely mark it dirty.
-    if (changeTimer !== null) {
-      clearTimeout(changeTimer)
-      changeTimer = null
-    }
+    // against the newly-loaded document and falsely mark it dirty. Cancel,
+    // not flush — unlike destroy(), the pending change here belongs to
+    // content that is being replaced outright.
+    cancelChange()
     editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
   }
 
@@ -831,16 +896,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function destroy(): void {
-    if (changeTimer !== null) {
-      clearTimeout(changeTimer)
-      changeTimer = null
-    }
+    liveEditors.delete(registryEntry)
+    // Flush, don't drop — see flushChange(). Runs before the listeners come
+    // off so ordering matches a normal debounce firing.
+    flushChange()
     closeCopyMenu()
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
     editorEl.removeEventListener('click', onClick)
+    editorEl.removeEventListener('auxclick', onAuxClick)
+    editorEl.removeEventListener('mousedown', onMouseDownForRef)
   }
+
+  const registryEntry = { flush: flushChange }
+  liveEditors.add(registryEntry)
 
   return { root, getMd, setMd, focus, destroy }
 }

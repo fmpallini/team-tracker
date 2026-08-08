@@ -132,6 +132,11 @@ export function mountSearch(
   shell.headerLeft.appendChild(wrap)
   syncEnabled()
   const unsubscribeMutate = store.onMutate(() => syncEnabled())
+  // Feeds the index the *scope* of each content change so it can drop only the
+  // affected team's prepared candidates. Without this it still stays correct —
+  // it notices store.rev moved and clears everything — but every edit in any
+  // one team re-prepared every other team on the next search.
+  const unsubscribeInvalidate = store.subscribe((scope) => index.invalidate(scope))
 
   function currentTerms(): string[] {
     return normalize(input.value.trim()).split(/\s+/).filter(Boolean)
@@ -312,6 +317,7 @@ export function mountSearch(
     if (debounceTimer !== null) clearTimeout(debounceTimer)
     unsubscribeLocale()
     unsubscribeMutate()
+    unsubscribeInvalidate()
     document.removeEventListener('keydown', onDocKeydown)
     document.removeEventListener('mousedown', onDocMousedown)
     wrap.remove()

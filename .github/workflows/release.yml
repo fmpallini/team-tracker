@@ -52,15 +52,51 @@ jobs:
             staging/team-tracker-${{ steps.assets.outputs.version }}.html
             dist/pwa/**
 
+      # Prefer the human/AI-written entry in CHANGELOG.md (user-facing prose)
+      # over GitHub's auto-generated PR-title list. Extracts the section
+      # between this version's "## [x.y.z]" header and the next "## [" one.
+      # Falls back to --generate-notes if the file or entry is missing, so a
+      # forgotten changelog update never blocks a release.
+      - name: Extract changelog section
+        id: notes
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.assets.outputs.version }}"
+          touch CHANGELOG.md
+          awk -v target="## [${VERSION}]" '
+            index($0, target) == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { lines[++n] = $0 }
+            END {
+              start=1; while (start<=n && lines[start]=="") start++
+              end=n; while (end>=start && lines[end]=="") end--
+              for (i=start; i<=end; i++) print lines[i]
+            }
+          ' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            staging/team-tracker-${{ steps.assets.outputs.version }}.html \
-            staging/checksums.txt \
-            --generate-notes \
-            --title "${{ github.ref_name }}"
+          if [ "${{ steps.notes.outputs.found }}" = "true" ]; then
+            gh release create "${{ github.ref_name }}" \
+              staging/team-tracker-${{ steps.assets.outputs.version }}.html \
+              staging/checksums.txt \
+              --notes-file notes.md \
+              --title "${{ github.ref_name }}"
+          else
+            echo "::warning::No CHANGELOG.md entry for ${{ steps.assets.outputs.version }} — falling back to auto-generated notes."
+            gh release create "${{ github.ref_name }}" \
+              staging/team-tracker-${{ steps.assets.outputs.version }}.html \
+              staging/checksums.txt \
+              --generate-notes \
+              --title "${{ github.ref_name }}"
+          fi
 
       # deploy-pages deploys this exact build (not a rebuild) so the live
       # Pages site is provably the same bytes just attested above, not a

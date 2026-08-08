@@ -163,3 +163,43 @@ describe('save indicator pill', () => {
     expect(pillText(shell)).toBe('Salvo · 14:32')
   })
 })
+
+// The shell's OS-theme listener lives on a matchMedia MediaQueryList, which
+// outlives any one document. Left attached, it kept the whole shell — and via
+// createShell's shared closure scope, its entire DOM tree — reachable for the
+// life of the tab, so every close-file → open-file cycle retained a previous
+// UI. Measured at ~340 nodes / ~140 listeners per cycle before the fix; see
+// e2e/leak.spec.ts, which guards the end-to-end behavior.
+describe('dispose', () => {
+  function trackedMatchMedia(): { added: number; removed: number } {
+    const counts = { added: 0, removed: 0 }
+    window.matchMedia = ((query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => { counts.added++ },
+      removeEventListener: () => { counts.removed++ },
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    return counts
+  }
+
+  test('removes the matchMedia listener it registered', () => {
+    const counts = trackedMatchMedia()
+    const shell = createShell('en-US')
+    expect(counts.added).toBe(1)
+    expect(counts.removed).toBe(0)
+
+    shell.dispose()
+    expect(counts.removed).toBe(1)
+  })
+
+  test('repeated create/dispose cycles leave no listener attached', () => {
+    const counts = trackedMatchMedia()
+    for (let i = 0; i < 5; i++) createShell('en-US').dispose()
+    expect(counts.added).toBe(5)
+    expect(counts.removed).toBe(5)
+  })
+})
