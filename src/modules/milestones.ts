@@ -414,7 +414,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // click/hover" is no longer the *only* way to reach them.
     const team = findTeam()
     const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'milestone', m.id) : []
+    // A fixed-width slot even when there's no chip: `createBacklinksChip`
+    // returns null for zero backlinks and `el()` skips null children
+    // entirely, which would shrink `.tt-milestone-title-input`'s `flex: 1`
+    // column on chip-less rows relative to rows that do have one.
     const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      ?? el('span', { class: 'tt-backlinks-chip-slot' })
 
     const expandBtn = el(
       'button',
@@ -557,6 +562,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     active.addEventListener('blur', onDeferredBlur, { once: true })
   }
 
+  // Every milestone's backlinks chip must react to a mention of it
+  // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
+  // a person's notes, an action item or risk follow-up — not just edits to
+  // milestones themselves, so the watch list is that full set (plus
+  // 'teams', since a rename/delete/reorder can invalidate any pane).
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return

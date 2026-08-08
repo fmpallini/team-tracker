@@ -178,8 +178,11 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   // pane, etc.) — refresh only the calendar; touching the editor here would
   // clobber the user's live caret position.
   // The calendar marks show has-note tint, milestone flags, and action-item
-  // due dates, so it genuinely needs all three sections (plus 'teams', since
-  // a rename/delete/reorder can invalidate any pane).
+  // due dates, so that alone would need 'notes'/'milestones'/'actions' (plus
+  // 'teams', since a rename/delete/reorder can invalidate any pane). The
+  // remaining BACKLINK_SECTIONS entries ('people', 'risks') are watched too,
+  // for rebuildBadge() below: the day's backlinks chip must react to a
+  // mention of this date appearing/disappearing in any of those sections.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return

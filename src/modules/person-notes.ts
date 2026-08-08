@@ -76,6 +76,12 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   // split), which this module must detect and degrade to a placeholder
   // rather than keep showing/editing a ghost record.
   let torn = false
+  // This person's backlinks chip must react to a mention of them
+  // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily
+  // note, another person's notes, an action item, milestone or risk
+  // follow-up — not just edits to people themselves, so the watch list is
+  // that full set (plus 'teams', for the person-deleted-out-from-under-us
+  // check above).
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return

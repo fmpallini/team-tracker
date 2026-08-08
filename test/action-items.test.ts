@@ -341,6 +341,23 @@ describe('renderActionItems — board', () => {
     render(container, loc, store, pm)
     expect(container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')).toBeNull()
   })
+
+  test('a store update scoped only to "risks" still rebuilds the board and reveals the new chip — proves the widened WATCHED list (not a same-section update) drives the rebuild', () => {
+    const team = makeTeam()
+    team.actionItems.push(item({ id: 'a1', summary: 'Ship it' }))
+    team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')).toBeNull()
+
+    store.update((d) => {
+      const risk = d.teams[0]!.risks.find((r) => r.id === 'r1')!
+      risk.followup = '@[Ship it](action:a1)'
+    }, { teamId: 'T1', sections: ['risks'] })
+
+    const chip = container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')
+    expect(chip?.textContent).toBe('↩ 1')
+  })
 })
 
 describe('renderActionItems — edit modal', () => {

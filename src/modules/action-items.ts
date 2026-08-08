@@ -620,11 +620,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
   renderAll()
 
-  // The board reflects this team's action items only. Anything else — a daily
-  // note keystroke in the other pane, another team's edits — used to rebuild
-  // every card here for nothing. 'people' is included because
-  // updateDatalist() below reads stakeholders/members for the assignee
-  // autocomplete, so a person rename/add/delete must also refresh this pane.
+  // Every card's backlinks chip must react to a mention of it
+  // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
+  // a person's notes, a milestone or risk follow-up — not just edits to
+  // actions themselves, so the watch list is that full set rather than just
+  // 'actions'. 'people' also feeds updateDatalist() below, which reads
+  // stakeholders/members for the assignee autocomplete.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return

@@ -418,3 +418,18 @@ test('clicking the chip and then a backlink row navigates via the pane manager',
   document.querySelector<HTMLElement>('.tt-backlinks-row')!.click()
   expect(pm.calls).toContainEqual({ idx: 0, loc: { teamId: 'T1', ref: { kind: 'risks', itemId: 'r1' } } })
 })
+
+test('a store update scoped only to "risks" live-updates the chip via rebuildBadge() — proves the widened WATCHED list (not just initial render) drives this', () => {
+  const team = makeTeam()
+  team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false })
+  const { container, store, pm, loc } = setup(team, '2026-08-04')
+  render(container, loc, store, pm)
+  expect(container.querySelector('.tt-backlinks-chip')).toBeNull()
+
+  store.update((d) => {
+    const risk = d.teams[0]!.risks.find((r) => r.id === 'r1')!
+    risk.followup = 'See @[Aug 4](day:2026-08-04)'
+  }, { teamId: 'T1', sections: ['risks'] })
+
+  expect(container.querySelector('.tt-backlinks-chip')?.textContent).toBe('↩ 1')
+})

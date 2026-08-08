@@ -80,8 +80,8 @@ function showBacklinksPanel(anchor: HTMLElement, backlinks: Backlink[], locale: 
 export function createBacklinksChip(backlinks: Backlink[], locale: Locale, onNavigate: (loc: Loc, opts: { secondary: boolean }) => void): HTMLElement | null {
   if (backlinks.length === 0) return null
   const chip = el(
-    'span',
-    { class: 'tt-backlinks-chip', title: t(locale, 'backlinks_badge_title', { count: String(backlinks.length) }) },
+    'button',
+    { class: 'tt-backlinks-chip', type: 'button', tabindex: '-1', title: t(locale, 'backlinks_badge_title', { count: String(backlinks.length) }) },
     `↩ ${backlinks.length}`
   )
   chip.addEventListener('click', (e) => {
