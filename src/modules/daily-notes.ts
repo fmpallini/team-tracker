@@ -13,7 +13,7 @@ import { scopeAffects, type Section } from '../core/scope'
 import type { Store } from '../core/store'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
-import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 
@@ -148,8 +148,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   const badgeSlot = el('div', { class: 'tt-daily-badge-slot' })
   function rebuildBadge(): void {
     badgeSlot.innerHTML = ''
-    const team = findTeam(ctx, teamId)
-    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'day', date) : []
+    const backlinks = ctx.searchIndex.backlinks(teamId, 'day', date)
     const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
     if (chip) badgeSlot.appendChild(chip)
   }

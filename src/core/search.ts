@@ -147,38 +147,6 @@ function backlinkSnippet(raw: string, matchIndex: number, matchLen: number): str
   return out
 }
 
-/**
- * Every mention of `kind:targetId` across `team`'s free-text fields (the
- * same 6-field enumeration collectCandidates uses for search), one Backlink
- * per mention — a field mentioning the same target twice yields two
- * entries. Matches against each candidate's *raw* text: stripMd would
- * already have collapsed `@[label](kind:id)` down to `label`, destroying
- * the id being matched. The returned snippet is stripped afterward, from a
- * raw-text window around the match — day-kind targets key by the ISO date
- * string (refPattern's day target format), not an item id.
- */
-export function collectBacklinks(team: Team, doc: Doc, kind: RefKind, targetId: string): Backlink[] {
-  const re = refPattern(kind)
-  const prefixLen = kind.length + 1
-  const out: Backlink[] = []
-  for (const candidate of collectCandidates(team, doc)) {
-    re.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = re.exec(candidate.raw))) {
-      if (m[2]!.slice(prefixLen) !== targetId) continue
-      out.push({
-        loc: { teamId: team.id, ref: candidate.ref },
-        // collectCandidates never emits 'stakeholders'/'members' as a ref
-        // kind — see BacklinkSourceKind's own doc comment.
-        moduleKind: candidate.ref.kind as BacklinkSourceKind,
-        title: candidate.title,
-        snippet: backlinkSnippet(candidate.raw, m.index, m[0].length),
-      })
-    }
-  }
-  return out
-}
-
 /** A candidate with its markdown stripped and normalized once, ready to match against. */
 interface PreparedCandidate {
   ref: ModuleRef
@@ -187,8 +155,21 @@ interface PreparedCandidate {
   normalized: string
 }
 
+/** One team's cached prep: search's candidate list plus backlinks' reverse index, built together in one pass — see `indexFor` below. */
+interface TeamIndex {
+  candidates: PreparedCandidate[]
+  /** Keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
+  backlinksByRef: Map<string, Backlink[]>
+}
+
 export interface SearchIndex {
   search(query: string, scopeTeamId: string | null): SearchResult[]
+  /**
+   * Every mention of `kind:targetId` in `teamId`'s free-text fields, served
+   * from this index's own per-team cache instead of re-walking every field
+   * on each call. Empty array if `teamId` doesn't exist in the current doc.
+   */
+  backlinks(teamId: string, kind: RefKind, targetId: string): Backlink[]
   /**
    * Drops exactly the cached candidates a `store.update()` described by
    * `scope` could have invalidated — see `createSearchIndex`. Wire this to
@@ -224,7 +205,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   // cache is dropped on the next search rather than trusted: an unexplained
   // change could have touched anything.
   let knownRev = -1
-  const cache = new Map<string, PreparedCandidate[]>()
+  const cache = new Map<string, TeamIndex>()
 
   function syncRev(): void {
     const rev = getRev()
@@ -233,15 +214,38 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
     knownRev = rev
   }
 
-  function preparedFor(team: Team, doc: Doc): PreparedCandidate[] {
+  // Builds both the search-side (stripped/normalized) and backlinks-side
+  // (raw-text mention scan) views of a team's candidates in one pass over
+  // collectCandidates — the same 6-field walk `search()` already paid for,
+  // now shared with `backlinks()` instead of that walk repeating per call.
+  function indexFor(team: Team, doc: Doc): TeamIndex {
     const hit = cache.get(team.id)
     if (hit) return hit
-    const prepared = collectCandidates(team, doc).map((c): PreparedCandidate => {
+    const candidates: PreparedCandidate[] = []
+    const backlinksByRef = new Map<string, Backlink[]>()
+    const mentionPattern = refPattern()
+    for (const c of collectCandidates(team, doc)) {
       const stripped = stripMd(c.raw)
-      return { ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) }
-    })
-    cache.set(team.id, prepared)
-    return prepared
+      candidates.push({ ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) })
+
+      mentionPattern.lastIndex = 0
+      let m: RegExpExecArray | null
+      while ((m = mentionPattern.exec(c.raw))) {
+        const key = m[2]! // "kind:target" — same key shape backlinks() looks up by.
+        const bl: Backlink = {
+          loc: { teamId: team.id, ref: c.ref },
+          moduleKind: c.ref.kind as BacklinkSourceKind,
+          title: c.title,
+          snippet: backlinkSnippet(c.raw, m.index, m[0].length),
+        }
+        const list = backlinksByRef.get(key)
+        if (list) list.push(bl)
+        else backlinksByRef.set(key, [bl])
+      }
+    }
+    const teamIndex: TeamIndex = { candidates, backlinksByRef }
+    cache.set(team.id, teamIndex)
+    return teamIndex
   }
 
   return {
@@ -274,7 +278,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       const results: SearchResult[] = []
 
       for (const team of teams) {
-        for (const candidate of preparedFor(team, doc)) {
+        for (const candidate of indexFor(team, doc).candidates) {
           if (!allTermsMatch(candidate.normalized, terms)) continue
           results.push({
             loc: { teamId: team.id, ref: candidate.ref },
@@ -287,6 +291,14 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
         }
       }
       return results
+    },
+
+    backlinks(teamId: string, kind: RefKind, targetId: string): Backlink[] {
+      syncRev()
+      const doc = getDoc()
+      const team = doc.teams.find((tm) => tm.id === teamId)
+      if (!team) return []
+      return indexFor(team, doc).backlinksByRef.get(`${kind}:${targetId}`) ?? []
     },
   }
 }

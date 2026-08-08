@@ -5,7 +5,7 @@ import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
-import { teamRefCandidates, KIND_ICON } from '../core/search'
+import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { toast } from './modal'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
@@ -21,6 +21,8 @@ export interface ModuleCtx {
   pm: PaneManager
   paneIdx: 0 | 1
   locale: Locale
+  /** One instance per document, shared by every module's backlinks-chip lookups — see createPaneManager's own construction of it below. */
+  searchIndex: SearchIndex
 }
 
 export interface PaneManager {
@@ -293,6 +295,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // see src/core/pane-layout.ts.
   const layout$ = createPaneLayout(store)
   layoutsByStore.set(store, layout$)
+
+  // One SearchIndex per document, shared by every module's backlinks-chip
+  // lookups instead of each one re-walking the team's free-text fields from
+  // scratch on every render. Wired to store.subscribe() so a scoped
+  // store.update() drops only the affected team's cache entry rather than
+  // clearing every team's — a document-level listener in the same category
+  // dispose() below already tears down for other concerns.
+  const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+  const unsubscribeSearchIndex = store.subscribe((scope) => searchIndex.invalidate(scope))
 
   function effectiveSplit(): boolean {
     return store.doc.nav.split && !spaceHideSplit
@@ -772,7 +783,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       container.appendChild(el('div', { class: 'tt-pane-placeholder' }, t(lc, 'module_placeholder')))
       return
     }
-    const ctx: ModuleCtx = { store, pm, paneIdx: idx, locale: lc }
+    const ctx: ModuleCtx = { store, pm, paneIdx: idx, locale: lc, searchIndex }
     renderer(container, loc, ctx)
   }
 
@@ -818,6 +829,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     setSplitSpaceConstrained,
     dispose(): void {
       document.removeEventListener('click', onDocumentClick)
+      unsubscribeSearchIndex()
       // Tear down an in-flight divider drag, if any — see dragCleanup above.
       dragCleanup?.()
       dragCleanup = null

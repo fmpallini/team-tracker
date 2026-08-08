@@ -10,6 +10,7 @@ import {
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { unlinkRefsInTeam } from '../src/core/refs'
+import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Person, Team } from '../src/core/types'
 
@@ -54,7 +55,8 @@ function setup(team: Team, group: 'stakeholders' | 'members' = 'members'): { con
 }
 
 function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager, group: 'stakeholders' | 'members', paneIdx: 0 | 1 = 0): void {
-  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US' }
+  const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex }
   renderPeopleTree(group)(container, loc, ctx)
 }
 

@@ -25,7 +25,7 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
 import { withDisposal } from './lifecycle'
-import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 
@@ -412,8 +412,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // visible-but-quiet instead of fully transparent, and the row is a single
     // Tab stop whose Enter/Space opens the context menu — so "reachable by
     // click/hover" is no longer the *only* way to reach them.
-    const team = findTeam()
-    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'milestone', m.id) : []
+    const backlinks = ctx.searchIndex.backlinks(teamId, 'milestone', m.id)
     // A fixed-width slot even when there's no chip: `createBacklinksChip`
     // returns null for zero backlinks and `el()` skips null children
     // entirely, which would shrink `.tt-milestone-title-input`'s `flex: 1`

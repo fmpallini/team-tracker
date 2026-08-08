@@ -1,6 +1,7 @@
 import { withDisposal } from '../src/modules/lifecycle'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { createSearchIndex } from '../src/core/search'
 import { createShell } from '../src/ui/shell'
 import { createPaneManager } from '../src/ui/panes'
 import { renderDailyNotes } from '../src/modules/daily-notes'
@@ -185,7 +186,8 @@ for (const { name, render, ref, subscribes } of RENDERERS) {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const loc: Loc = { teamId: 'T1', ref }
-    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US' }
+    const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex }
 
     // Three mounts, mirroring panes.ts's renderBody (which clears the
     // container's children before re-invoking the renderer).
@@ -204,6 +206,11 @@ test('an unsplit (hidden) pane 1 holds no live module instance, and regains one 
   // own store.subscribe() alive and go on re-rendering into a display:none
   // container on every mutation — the expensive half of the work Task 5 set
   // out to skip. It is disposed instead; toggleSplit() rebuilds it.
+  //
+  // createPaneManager itself now also holds one store.subscribe of its own
+  // (the shared backlinks SearchIndex — see panes.ts's `unsubscribeSearchIndex`)
+  // for as long as it exists, so every count below carries a constant +1 on
+  // top of however many modules are currently mounted.
   const { store, liveSubscriptions } = countingStore()
   document.body.innerHTML = ''
   stubMatchMedia()
@@ -218,13 +225,13 @@ test('an unsplit (hidden) pane 1 holds no live module instance, and regains one 
     { teamId: 'T1', ref: { kind: 'milestones' } },
     0
   )
-  expect(liveSubscriptions()).toBe(2)
+  expect(liveSubscriptions()).toBe(3) // 2 modules + pm's own index subscription
 
   pm.toggleSplit()
-  expect(liveSubscriptions()).toBe(1)
+  expect(liveSubscriptions()).toBe(2) // 1 module + pm's own index subscription
 
   pm.toggleSplit()
-  expect(liveSubscriptions()).toBe(2)
+  expect(liveSubscriptions()).toBe(3)
 })
 
 test('pm.dispose() tears down the modules mounted in both panes', () => {
@@ -245,10 +252,12 @@ test('pm.dispose() tears down the modules mounted in both panes', () => {
     { teamId: 'T1', ref: { kind: 'milestones' } },
     0
   )
-  expect(liveSubscriptions()).toBe(2)
+  expect(liveSubscriptions()).toBe(3) // 2 modules + pm's own index subscription
 
   pm.dispose()
 
+  // Zero, not one: dispose() must tear down pm's own index subscription too,
+  // not just the mounted modules' — this is what actually proves that.
   expect(liveSubscriptions()).toBe(0)
   expect(() => pm.dispose()).not.toThrow() // idempotent
   expect(liveSubscriptions()).toBe(0)
@@ -263,7 +272,8 @@ test('switching modules within one container disposes the outgoing module, not j
   const { store, liveSubscriptions } = countingStore()
   const container = document.createElement('div')
   document.body.appendChild(container)
-  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US' }
+  const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex }
 
   container.innerHTML = ''
   renderDailyNotes(container, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-10' } }, ctx)

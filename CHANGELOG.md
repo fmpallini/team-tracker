@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.1] - 2026-08-08
+
+### Changed
+- The "↩ N" backlink badges (added in 2.1.0) now load noticeably faster on teams with large boards or lots of notes — they used to be recomputed from scratch for every card on every render.
+
 ## [2.1.0] - 2026-08-08
 
 ### Added
