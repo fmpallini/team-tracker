@@ -55,6 +55,19 @@ export interface Shell {
    * that actually needs guaranteed room.
    */
   setHeaderCompactSpaceHidden(hidden: boolean): void
+  /**
+   * Releases the OS-theme `matchMedia` listener this shell registered.
+   *
+   * Load-bearing, not hygiene: `matchMedia`'s MediaQueryList outlives any one
+   * document, so a shell that never unregisters stays reachable from it
+   * forever — and because that handler shares `createShell`'s closure scope
+   * with `setSaveState`/`applyPrefs`/etc., which capture `root`, keeping it
+   * alive pins the shell's *entire DOM tree*. Every close-file → open-file
+   * cycle then retained a whole previous UI (~340 nodes, ~140 listeners
+   * measured in e2e/leak.spec.ts). main.ts calls this from its per-document
+   * `disposers`.
+   */
+  dispose(): void
 }
 
 const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
@@ -169,9 +182,10 @@ export function createShell(locale: Locale): Shell {
     document.documentElement.dataset.theme = resolveTheme(theme)
   }
 
-  mq.addEventListener('change', () => {
+  const onSystemThemeChange = (): void => {
     if (currentTheme === 'system') applyTheme('system')
-  })
+  }
+  mq.addEventListener('change', onSystemThemeChange)
 
   let currentState: SaveState = 'saved'
   let fallbackHint = false
@@ -279,5 +293,9 @@ export function createShell(locale: Locale): Shell {
 
   setSaveState('saved')
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, setHeaderCompactSpaceHidden }
+  function dispose(): void {
+    mq.removeEventListener('change', onSystemThemeChange)
+  }
+
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, setHeaderCompactSpaceHidden, dispose }
 }

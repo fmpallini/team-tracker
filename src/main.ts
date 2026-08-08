@@ -155,6 +155,11 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     document.body.appendChild(shell.root)
   }
 
+  // Releases the shell's OS-theme matchMedia listener. That listener lives on
+  // an object outliving the document, so leaving it attached kept this whole
+  // shell (and its DOM) reachable for the life of the tab — see Shell.dispose.
+  disposers.push(() => shell.dispose())
+
   const store = createStore(doc)
   const pm = createPaneManager(shell, store, doc.prefs.locale)
   pm.registerModule('daily', renderDailyNotes)

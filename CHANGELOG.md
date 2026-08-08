@@ -10,6 +10,8 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - **Your last few keystrokes could be lost.** Typing into a note and then immediately switching module, team, or pane — within a fraction of a second — discarded whatever you had just typed. It never reached the file, so saving didn't help.
 - **The same loss on closing.** Closing the file, closing the browser tab, or switching away from the tab right after typing saved a version of your notes that was missing those last keystrokes. Closing the tab also failed to warn you about unsaved changes in that moment.
 
+- **Memory grew every time you closed and reopened a file.** Each close/reopen left the previous window's interface behind in memory instead of releasing it, so a long session that opened several files kept getting heavier. Closing a file now frees it properly.
+
 ### Changed
 - Typing is noticeably smoother, especially with several teams: the sidebar no longer rebuilds itself on every keystroke, and searching no longer re-scans teams you haven't touched.
 - Editing a risk or milestone title no longer causes a stutter when you click away from the field.
