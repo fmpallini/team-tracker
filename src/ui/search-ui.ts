@@ -5,7 +5,7 @@ import type { Shell } from './shell'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
-import { createSearchIndex, normalize, KIND_ICON, type SearchResult } from '../core/search'
+import { normalize, KIND_ICON, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed } from './hotkeys'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
@@ -54,14 +54,26 @@ function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms
   if (pos < snippet.length) container.appendChild(document.createTextNode(snippet.slice(pos)))
 }
 
-/** Returns a dispose function that removes the document-level listeners and the header DOM — registered with main.ts's per-document disposers so a close-file → reopen cycle doesn't accumulate listeners (each pinning its closed document's store and DOM). */
+/**
+ * Returns a dispose function that removes the document-level listeners and
+ * the header DOM — registered with main.ts's per-document disposers so a
+ * close-file → reopen cycle doesn't accumulate listeners (each pinning its
+ * closed document's store and DOM).
+ *
+ * `index` is owned by the caller (main.ts passes `pm.searchIndex`, the same
+ * instance ui/panes.ts already builds and keeps invalidated for the
+ * backlinks chips) rather than built here — a second independent
+ * `SearchIndex` would duplicate every team's cached candidates/backlinks and
+ * its own store.subscribe just to stay in sync with the one panes.ts already
+ * maintains.
+ */
 export function mountSearch(
   shell: Shell,
   store: Store,
   pm: PaneManager,
-  switchTeam: (teamId: string) => void
+  switchTeam: (teamId: string) => void,
+  index: SearchIndex
 ): () => void {
-  const index = createSearchIndex(() => store.doc, () => store.rev)
   let allTeams = false
   let results: SearchResult[] = []
   let selected = 0
@@ -132,11 +144,6 @@ export function mountSearch(
   shell.headerLeft.appendChild(wrap)
   syncEnabled()
   const unsubscribeMutate = store.onMutate(() => syncEnabled())
-  // Feeds the index the *scope* of each content change so it can drop only the
-  // affected team's prepared candidates. Without this it still stays correct —
-  // it notices store.rev moved and clears everything — but every edit in any
-  // one team re-prepared every other team on the next search.
-  const unsubscribeInvalidate = store.subscribe((scope) => index.invalidate(scope))
 
   function currentTerms(): string[] {
     return normalize(input.value.trim()).split(/\s+/).filter(Boolean)
@@ -317,7 +324,6 @@ export function mountSearch(
     if (debounceTimer !== null) clearTimeout(debounceTimer)
     unsubscribeLocale()
     unsubscribeMutate()
-    unsubscribeInvalidate()
     document.removeEventListener('keydown', onDocKeydown)
     document.removeEventListener('mousedown', onDocMousedown)
     wrap.remove()

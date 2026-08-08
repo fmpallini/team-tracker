@@ -2,6 +2,7 @@ import { mountSearch } from '../src/ui/search-ui'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { createSearchIndex, type SearchIndex } from '../src/core/search'
 import type { PaneManager } from '../src/ui/panes'
 import type { Loc, Team } from '../src/core/types'
 
@@ -46,12 +47,13 @@ function fakePM(): PaneManager & { calls: Loc[] } {
 function mount(
   store: Store,
   pm: PaneManager,
-  switchTeam: (teamId: string) => void = () => {}
+  switchTeam: (teamId: string) => void = () => {},
+  index: SearchIndex = createSearchIndex(() => store.doc, () => store.rev)
 ): { shell: Shell; input: HTMLInputElement } {
   stubMatchMedia()
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  mountSearch(shell, store, pm, switchTeam)
+  mountSearch(shell, store, pm, switchTeam, index)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
   return { shell, input }
 }
@@ -403,7 +405,7 @@ test('does not accumulate document-level listeners across repeated open/close cy
   document.body.appendChild(shell.root)
 
   const addSpy = vi.spyOn(document, 'addEventListener')
-  mountSearch(shell, store, fakePM(), () => {})
+  mountSearch(shell, store, fakePM(), () => {}, createSearchIndex(() => store.doc, () => store.rev))
   const countAfterMount = addSpy.mock.calls.length
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
 
@@ -423,6 +425,32 @@ test('does not accumulate document-level listeners across repeated open/close cy
   expect(isOpen()).toBe(false)
 
   addSpy.mockRestore()
+})
+
+test('search queries are delegated to the injected SearchIndex instead of one built internally', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const searchCalls: [string, string | null][] = []
+  const mockIndex: SearchIndex = {
+    search: (q, scope) => { searchCalls.push([q, scope]); return [] },
+    backlinks: () => [],
+    invalidate: () => {},
+  }
+  const { input } = mount(store, fakePM(), () => {}, mockIndex)
+
+  type(input, 'alpha')
+  vi.advanceTimersByTime(200)
+
+  expect(searchCalls).toEqual([['alpha', 'T1']])
+})
+
+test('mountSearch registers no store.subscribe of its own — invalidation is owned by whoever built the injected SearchIndex', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const subscribeSpy = vi.spyOn(store, 'subscribe')
+  const index = createSearchIndex(() => store.doc, () => store.rev)
+
+  mount(store, fakePM(), () => {}, index)
+
+  expect(subscribeSpy).not.toHaveBeenCalled()
 })
 
 // The search box used to sit live and typeable above the "No teams yet"

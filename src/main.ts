@@ -189,7 +189,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   const syncAppName = (): void => shell.setAppNameEnabled(store.doc.teams.length > 0)
   syncAppName()
   disposers.push(store.onMutate(syncAppName))
-  disposers.push(mountSearch(shell, store, pm, selectTeam))
+  disposers.push(mountSearch(shell, store, pm, selectTeam, pm.searchIndex))
 
   // Task 25 fix #5: guards against a second conflict modal stacking on top of
   // the first — e.g. a trailing save round (fix #1) or the auto-save

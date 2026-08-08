@@ -40,7 +40,7 @@ function setup(team: Team): { shell: Shell; store: Store; input: HTMLInputElemen
   document.body.appendChild(shell.root)
   const pm = createPaneManager(shell, store, 'en-US')
   pm.registerModule('milestones', renderMilestones)
-  mountSearch(shell, store, pm, () => {})
+  mountSearch(shell, store, pm, () => {}, pm.searchIndex)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
   return { shell, store, input }
 }
@@ -142,7 +142,7 @@ test('a search result matching only an action item\'s notes (modal-only field) s
   document.body.appendChild(shell.root)
   const pm = createPaneManager(shell, store, 'en-US')
   pm.registerModule('actions', renderActionItems)
-  mountSearch(shell, store, pm, () => {})
+  mountSearch(shell, store, pm, () => {}, pm.searchIndex)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
 
   const raf = search(input, 'blocked-on-xyz-vendor')

@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.2] - 2026-08-08
+
+### Changed
+- The header search box no longer keeps its own separate copy of the search cache alongside the one already built for backlink badges — one shared cache instead of two doing the same work.
+
 ## [2.1.1] - 2026-08-08
 
 ### Changed
