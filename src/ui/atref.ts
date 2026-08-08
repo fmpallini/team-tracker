@@ -332,6 +332,41 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 }
 
 /**
+ * Navigates to `loc` from pane `paneIdx`, honoring the secondary-pane
+ * pref/modifier — `store.doc.prefs.openRefsInSecondaryPane` or
+ * `opts.secondary` (Ctrl/Meta/middle-click) routes through
+ * `pm.openInSecondaryPane` instead of `pm.openInPane`, splitting the view if
+ * needed — and, for an actions/milestones/risks `loc`, scrolling to and
+ * flash-highlighting the specific card afterward (same dispatch-then-
+ * highlight sequence as search-ui.ts's commit()). Shared by
+ * makeRefClickHandler below (forward @ref clicks) and
+ * src/ui/backlinks-panel.ts (backlink row clicks), so both share one
+ * implementation of "open this Loc, honoring the pref/modifier."
+ */
+export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc: Loc, opts: { secondary: boolean }): void {
+  const openSecondary = store.doc.prefs.openRefsInSecondaryPane || opts.secondary
+  let landedIdx: 0 | 1
+  if (openSecondary) {
+    landedIdx = pm.openInSecondaryPane(paneIdx, loc)
+  } else {
+    pm.openInPane(paneIdx, loc)
+    landedIdx = paneIdx
+  }
+
+  const { ref } = loc
+  if (ref.kind !== 'actions' && ref.kind !== 'milestones' && ref.kind !== 'risks') return
+  const itemId = ref.itemId
+  if (!itemId) return
+  requestAnimationFrame(() => {
+    const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined
+    if (!paneEl) return
+    dispatchSearchFocusItem(paneEl, itemId)
+    const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
+    applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
+  })
+}
+
+/**
  * App-level `EditorHooks.onRefClick` handler shared by every module renderer
  * that mounts an editor (Tasks 18/19): navigates to the referenced person
  * (searched in the owning team's stakeholders/members) or day, in the pane
@@ -345,43 +380,18 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * `paneIdx` keeps "chip navigates within the same pane" correct regardless
  * of which pane had focus before the click. Duplicate-open handling (focus
  * the other pane instead) is inherited for free from `PaneManager.openInPane`
- * -> `openLoc`. When `store.doc.prefs.openRefsInSecondaryPane` is on, or the
- * click carried a Ctrl/Meta/middle-click modifier, navigation instead
- * targets the *other* pane (splitting the view if needed) via
- * `PaneManager.openInSecondaryPane` — falling back to the click's own pane
- * if the target module is already open in the other pane.
+ * -> `openLoc`. Pref/modifier routing and item-highlight are `navigateToLoc`'s.
  */
 export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 1, locale: Locale, teamId: string): (target: RefInfo['target'], opts: { secondary: boolean }) => void {
   return (target, opts) => {
-    const openSecondary = store.doc.prefs.openRefsInSecondaryPane || opts.secondary
-    const open = (loc: Loc): 0 | 1 => {
-      if (openSecondary) return pm.openInSecondaryPane(paneIdx, loc)
-      pm.openInPane(paneIdx, loc)
-      return paneIdx
-    }
-
     if (target.kind === 'day') {
-      open({ teamId, ref: { kind: 'daily', date: target.date } })
+      navigateToLoc(store, pm, paneIdx, { teamId, ref: { kind: 'daily', date: target.date } }, opts)
       return
     }
 
     if (target.kind === 'action' || target.kind === 'milestone' || target.kind === 'risk') {
       const moduleKind = REF_KINDS[target.kind].moduleKind
-      const landedIdx = open({ teamId, ref: { kind: moduleKind, itemId: target.id } })
-      // Scroll to and flash-highlight the specific card, mirroring
-      // search-ui.ts's commit() exactly (same dispatch-then-highlight
-      // sequence, so a milestone/risk row collapsed in the kanban gets
-      // expanded before the anchor lookup runs) — no toast if the item was
-      // deleted (decision 7: with auto-unlink-on-delete this is a
-      // defensive fallback for edge cases outside the app's own control,
-      // e.g. a hand-edited .tmv or an import merge, not the common path).
-      requestAnimationFrame(() => {
-        const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined
-        if (!paneEl) return
-        dispatchSearchFocusItem(paneEl, target.id)
-        const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${target.id}"]`))
-        applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
-      })
+      navigateToLoc(store, pm, paneIdx, { teamId, ref: { kind: moduleKind, itemId: target.id } }, opts)
       return
     }
 
@@ -394,7 +404,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
     // No toast on a dangling person ref either — same reasoning as above,
     // and consistent with the other 3 kinds instead of the other way around.
     if (!group) return
-    open({ teamId, ref: { kind: 'person', personId: target.id, group } })
+    navigateToLoc(store, pm, paneIdx, { teamId, ref: { kind: 'person', personId: target.id, group } }, opts)
   }
 }
 

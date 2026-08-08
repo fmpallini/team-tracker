@@ -13,6 +13,9 @@ import { scopeAffects, type Section } from '../core/scope'
 import type { Store } from '../core/store'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { createBacklinksChip } from '../ui/backlinks-panel'
+import { navigateToLoc } from '../ui/atref'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
@@ -142,7 +145,16 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     },
     '📅'
   )
-  calendarCol.append(toggleBtn, calendarSlot)
+  const badgeSlot = el('div', { class: 'tt-daily-badge-slot' })
+  function rebuildBadge(): void {
+    badgeSlot.innerHTML = ''
+    const team = findTeam(ctx, teamId)
+    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'day', date) : []
+    const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    if (chip) badgeSlot.appendChild(chip)
+  }
+  rebuildBadge()
+  calendarCol.append(toggleBtn, badgeSlot, calendarSlot)
 
   const bundle = createRichEditorBundle({
     store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
@@ -166,12 +178,16 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   // pane, etc.) — refresh only the calendar; touching the editor here would
   // clobber the user's live caret position.
   // The calendar marks show has-note tint, milestone flags, and action-item
-  // due dates, so it genuinely needs all three sections (plus 'teams', since
-  // a rename/delete/reorder can invalidate any pane).
-  const WATCHED: readonly Section[] = ['notes', 'milestones', 'actions', 'teams']
+  // due dates, so that alone would need 'notes'/'milestones'/'actions' (plus
+  // 'teams', since a rename/delete/reorder can invalidate any pane). The
+  // remaining BACKLINK_SECTIONS entries ('people', 'risks') are watched too,
+  // for rebuildBadge() below: the day's backlinks chip must react to a
+  // mention of this date appearing/disappearing in any of those sections.
+  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     rebuildCalendar()
+    rebuildBadge()
   })
 
   const layout = el(

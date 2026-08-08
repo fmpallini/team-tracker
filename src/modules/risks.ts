@@ -23,6 +23,9 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { createBacklinksChip } from '../ui/backlinks-panel'
+import { navigateToLoc } from '../ui/atref'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -292,6 +295,15 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // a pointer. The buttons now rest visible-but-quiet (styles.css), and the
     // row itself is a single Tab stop that opens the same context menu on
     // Enter/Space, so every action has a keyboard path.
+    const team = findTeam()
+    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'risk', r.id) : []
+    // A fixed-width slot even when there's no chip: `createBacklinksChip`
+    // returns null for zero backlinks and `el()` skips null children
+    // entirely, which would collapse this column on chip-less rows and
+    // misalign chance/impact/exposure/plan against rows that do have one.
+    const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      ?? el('span', { class: 'tt-backlinks-chip-slot' })
+
     const expanded = expandable.isExpanded(r.id)
     const expandBtn = el(
       'button',
@@ -337,7 +349,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       exposureCell,
       metaLabel('plan', 'risk_col_plan'), planSelect,
       lineBreak,
-      expandBtn, closeBtn, deleteBtn
+      backlinksChip, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
 
@@ -440,11 +452,13 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     el('span', { class: 'tt-risk-header-impact' }, t(lc, 'risk_col_impact')),
     exposureHeaderBtn,
     el('span', { class: 'tt-risk-header-plan' }, t(lc, 'risk_col_plan')),
-    // Three blank spacers matching the row's three hover-revealed icon
-    // buttons (expand/close/delete) 1:1 — a text label here ("Follow-up")
-    // was both cramped and, since it only ever matched one of the three
-    // buttons, the reason the header and row columns drifted out of
-    // alignment (2 header slots vs. 3 row buttons).
+    // Four blank spacers matching the row's four trailing elements 1:1 — the
+    // backlinks chip slot plus the three hover-revealed icon buttons
+    // (expand/close/delete). A text label here ("Follow-up") was both
+    // cramped and, since it only ever matched one of them, the reason the
+    // header and row columns drifted out of alignment (2 header slots vs. 3
+    // row buttons, before the chip made it 3 vs. 4).
+    el('span', { class: 'tt-risk-header-spacer' }),
     el('span', { class: 'tt-risk-header-spacer' }),
     el('span', { class: 'tt-risk-header-spacer' }),
     el('span', { class: 'tt-risk-header-spacer' })
@@ -558,7 +572,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     active.addEventListener('blur', onDeferredBlur, { once: true })
   }
 
-  const WATCHED: readonly Section[] = ['risks', 'teams']
+  // Every risk's backlinks chip must react to a mention of it
+  // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
+  // a person's notes, an action item or milestone follow-up — not just
+  // edits to risks themselves, so the watch list is that full set (plus
+  // 'teams', since a rename/delete/reorder can invalidate any pane).
+  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretElement()

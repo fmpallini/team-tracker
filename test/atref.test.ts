@@ -1,5 +1,5 @@
 import { createEditor, type Editor, type EditorHooks } from '../src/ui/editor'
-import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, type AtItem } from '../src/ui/atref'
+import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, navigateToLoc, type AtItem } from '../src/ui/atref'
 import type { RefCandidate } from '../src/core/search'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -637,6 +637,72 @@ describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts 
     const cardInPane1 = paneBodies[1]!.querySelector('[data-item-id="a1"]')
     expect(cardInPane1).not.toBeNull()
     expect(cardInPane1!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
+})
+
+describe('navigateToLoc', () => {
+  function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] } {
+    const calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] = []
+    return {
+      calls,
+      openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
+      openBothPanes: () => {},
+      openInFocused: () => { throw new Error('navigateToLoc must use openInPane, not openInFocused') },
+      openInSecondaryPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc, secondary: true }); return idx === 0 ? 1 : 0 },
+      toggleSplit: () => {},
+      renderAll: () => {},
+      registerModule: () => {},
+      setSplitSpaceConstrained: () => {},
+      dispose: () => {},
+    }
+  }
+
+  function setupStore(): Store {
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({ id: 'T1', name: 'Team 1', emoji: '🚀', stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {} })
+    return createStore(doc)
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  test('plain navigation -> openInPane on the same pane', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'person', personId: 'p1', group: 'members' } }, { secondary: false })
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'p1', group: 'members' } } }])
+  })
+
+  test('opts.secondary -> openInSecondaryPane', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-08-04' } }, { secondary: true })
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-08-04' } }, secondary: true }])
+  })
+
+  test('prefs.openRefsInSecondaryPane routes even without the modifier', () => {
+    const store = setupStore()
+    store.update((d) => { d.prefs.openRefsInSecondaryPane = true })
+    const pm = fakePM()
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'general' } }, { secondary: false })
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'general' } }, secondary: true }])
+  })
+
+  test('actions/milestones/risks target -> schedules highlight; day/person/general do not', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    let raf: FrameRequestCallback | null = null
+    const originalRAF = window.requestAnimationFrame
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-08-04' } }, { secondary: false })
+    expect(raf).toBeNull()
+
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } }, { secondary: false })
+    expect(raf).not.toBeNull()
+
+    window.requestAnimationFrame = originalRAF
   })
 })
 

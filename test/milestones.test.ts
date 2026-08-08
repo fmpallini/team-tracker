@@ -259,6 +259,24 @@ describe('renderMilestones', () => {
     expect(titles).toEqual(['A', 'C', 'B'])
   })
 
+  test('a backlink chip renders before the expand button when another field mentions this milestone', () => {
+    const team = makeTeam()
+    team.milestones.push(milestone({ id: 'm1', title: 'Beta' }))
+    team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: 'Blocks @[Beta](milestone:m1)', order: 0, closed: false })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const chip = container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip')
+    expect(chip?.textContent).toBe('↩ 1')
+  })
+
+  test('no chip when nothing mentions this milestone', () => {
+    const team = makeTeam()
+    team.milestones.push(milestone({ id: 'm1', title: 'Beta' }))
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip')).toBeNull()
+  })
+
   test('renders one SVG circle per milestone, with a <title> carrying the full text', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A very long milestone title indeed' })] })
     const { container, store, pm, loc } = setup(team)

@@ -782,3 +782,21 @@ describe('deferred rebuild while a field is focused', () => {
     expect(titles(container)).toEqual(['First', 'Second'])
   })
 })
+
+test('a backlink chip renders before the expand button when another field mentions this risk', () => {
+  const team = makeTeam()
+  team.risks.push(risk({ id: 'r1', title: 'Backlog' }))
+  team.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Beta', done: false, followup: 'Watch @[Backlog](risk:r1)' })
+  const { container, store, pm, loc } = setup(team)
+  render(container, loc, store, pm)
+  const chip = container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')
+  expect(chip?.textContent).toBe('↩ 1')
+})
+
+test('no chip when nothing mentions this risk', () => {
+  const team = makeTeam()
+  team.risks.push(risk({ id: 'r1', title: 'Backlog' }))
+  const { container, store, pm, loc } = setup(team)
+  render(container, loc, store, pm)
+  expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')).toBeNull()
+})

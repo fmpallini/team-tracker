@@ -323,6 +323,41 @@ describe('renderActionItems — board', () => {
     const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
     expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
   })
+
+  test('a backlink chip renders in the card meta row when another field mentions this action item', () => {
+    const team = makeTeam()
+    team.actionItems.push(item({ id: 'a1', summary: 'Ship it' }))
+    team.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Beta', done: false, followup: 'Depends on @[Ship it](action:a1)' })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const chip = container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')
+    expect(chip?.textContent).toBe('↩ 1')
+  })
+
+  test('no chip when nothing mentions this action item', () => {
+    const team = makeTeam()
+    team.actionItems.push(item({ id: 'a1', summary: 'Ship it' }))
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')).toBeNull()
+  })
+
+  test('a store update scoped only to "risks" still rebuilds the board and reveals the new chip — proves the widened WATCHED list (not a same-section update) drives the rebuild', () => {
+    const team = makeTeam()
+    team.actionItems.push(item({ id: 'a1', summary: 'Ship it' }))
+    team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')).toBeNull()
+
+    store.update((d) => {
+      const risk = d.teams[0]!.risks.find((r) => r.id === 'r1')!
+      risk.followup = '@[Ship it](action:a1)'
+    }, { teamId: 'T1', sections: ['risks'] })
+
+    const chip = container.querySelector('[data-item-id="a1"] .tt-backlinks-chip')
+    expect(chip?.textContent).toBe('↩ 1')
+  })
 })
 
 describe('renderActionItems — edit modal', () => {

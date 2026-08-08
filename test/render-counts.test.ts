@@ -204,7 +204,7 @@ test('the sidebar still renders exactly once for a nav-only change', () => {
   })
 })
 
-test('a scoped notes edit does not rebuild the kanban board in the other pane', () => {
+test('a scoped edit outside the kanban board\'s watched sections does not rebuild it in the other pane', () => {
   const { store, pm } = setup()
   store.update((d) => {
     d.teams.push(emptyTeam('t1', 'Alpha'))
@@ -230,11 +230,18 @@ test('a scoped notes edit does not rebuild the kanban board in the other pane', 
   const card = document.querySelector('.tt-kanban-card') as HTMLElement
   expect(card).not.toBeNull()
 
-  // A daily-note edit, scoped to 'notes'.
+  // Was originally a 'notes'-scoped daily-note edit, but Task 7 (commit
+  // e552962) intentionally widened action-items.ts's WATCHED to
+  // ['teams', ...BACKLINK_SECTIONS] — and BACKLINK_SECTIONS includes 'notes',
+  // since an action item's backlinks chip must stay accurate when a daily
+  // note starts/stops @-mentioning it. So a 'notes'-scoped edit legitimately
+  // rebuilds the board now; that's no longer a valid case for this test.
+  // 'templates' is not in BACKLINK_SECTIONS, so it still exercises the
+  // invariant this test exists to check: a section the board doesn't watch
+  // must not trigger a rebuild.
   store.update((d) => {
-    const tm = d.teams.find((t) => t.id === 't1')!
-    tm.dailyNotes[todayIso()] = 'typed something'
-  }, { teamId: 't1', sections: ['notes'] })
+    d.templates.push({ id: 'tpl1', name: 'Standup', scope: 'any', body: 'Notes' })
+  }, { teamId: 't1', sections: ['templates'] })
 
   // The very same card element must still be in the DOM — not a rebuilt clone.
   expect(card.isConnected).toBe(true)

@@ -18,6 +18,9 @@ import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
+import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { createBacklinksChip } from '../ui/backlinks-panel'
+import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
 
 // Display order: red, yellow, blue (the three with a suggested default name
@@ -388,6 +391,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
     const customName = tagNames[item.color] ?? null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
+    const team = findTeam()
+    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'action', item.id) : []
+    const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    if (chip) metaChildren.push(chip)
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
 
     const card = el(
@@ -613,12 +620,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
   renderAll()
 
-  // The board reflects this team's action items only. Anything else — a daily
-  // note keystroke in the other pane, another team's edits — used to rebuild
-  // every card here for nothing. 'people' is included because
-  // updateDatalist() below reads stakeholders/members for the assignee
-  // autocomplete, so a person rename/add/delete must also refresh this pane.
-  const WATCHED: readonly Section[] = ['actions', 'teams', 'people']
+  // Every card's backlinks chip must react to a mention of it
+  // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
+  // a person's notes, a milestone or risk follow-up — not just edits to
+  // actions themselves, so the watch list is that full set rather than just
+  // 'actions'. 'people' also feeds updateDatalist() below, which reads
+  // stakeholders/members for the assignee autocomplete.
+  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     renderAll()

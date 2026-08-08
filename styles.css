@@ -625,6 +625,31 @@ body { background: var(--bg); color: var(--fg); }
 .tt-context-menu-item:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-context-menu-item.danger { color: var(--danger); }
 
+/* Backlinks badge/chip + popover (references pointing at a person/day/action/milestone/risk) */
+.tt-backlinks-chip {
+  display: inline-flex; align-items: center; justify-content: center; font-size: .7rem;
+  height: 1.2rem; line-height: 1.2rem; padding: 0 .4rem; border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), .4); background: rgba(var(--accent-rgb), .12); color: var(--fg);
+  cursor: pointer; flex: none;
+  /* Now a real <button> (keyboard/AT path) rather than a bare span — the
+     rules above already pin border/background/color/cursor, but a <button>
+     also needs its default font reset so it doesn't fall back to the
+     platform UI font. */
+  font-family: inherit;
+}
+.tt-backlinks-chip:hover { background: rgba(var(--accent-rgb), .22); }
+.tt-backlinks-panel {
+  position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  min-width: 240px; max-width: 360px; max-height: 320px; overflow-y: auto; padding: .25rem;
+}
+.tt-backlinks-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.tt-backlinks-row { padding: .35rem .6rem; border-radius: 4px; cursor: pointer; }
+.tt-backlinks-row:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-backlinks-row-title { font-size: .85rem; font-weight: 600; }
+.tt-backlinks-row-snippet { font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+.tt-backlinks-empty { padding: .4rem .6rem; color: var(--muted); font-size: .85rem; }
+
 /* Emoji picker popup (team emoji fields) */
 .tt-emoji-popup {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
@@ -660,6 +685,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-calendar-col.tt-daily-collapsed { width: auto; }
 .tt-daily-calendar-col.tt-daily-collapsed .tt-daily-calendar-slot { display: none; }
 .tt-daily-calendar-toggle { align-self: flex-start; margin: .4rem; }
+.tt-daily-badge-slot { align-self: flex-start; margin: 0 .4rem .4rem; }
 .tt-daily-calendar-slot { padding: 0 .5rem .5rem; }
 .tt-daily-calendar-actions { display: flex; padding: 0 .1rem; margin-top: .5rem; }
 .tt-daily-calendar-today-btn { flex: 1; font-size: .8rem; padding: .3rem .4rem; }
@@ -846,6 +872,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-card.color-rust .tt-kanban-card-tag { color: var(--card-rust); }
 .tt-kanban-card.color-plum .tt-kanban-card-tag { color: var(--card-plum); }
 .tt-kanban-card.color-ledger .tt-kanban-card-tag { color: var(--card-ledger); }
+.tt-kanban-card-meta .tt-backlinks-chip { margin-left: auto; }
 .tt-kanban-card.status-cancelled { opacity: .65; }
 .tt-kanban-card.status-cancelled .tt-kanban-card-title { text-decoration: line-through; }
 .tt-kanban-edit-btn { position: absolute; top: .3rem; right: .35rem; opacity: 0; border: none; background: transparent; font-size: .78rem; padding: .05rem .25rem; cursor: pointer; }
@@ -950,6 +977,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row.tt-milestone-state-future { border-left-color: rgba(var(--accent-rgb), .45); }
 .tt-milestone-date-input { font-family: var(--font-data); flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
+/* Fixed-width slot for the backlinks chip (or its placeholder, when the row
+   has no mentions) — same reasoning as the risk row's equivalent rule:
+   without `flex: none` the chip-less rows hand the freed space to
+   `.tt-milestone-title-input`'s `flex: 1`, shifting the title width row to
+   row depending on whether it has a mention. */
+.tt-milestone-row .tt-backlinks-chip, .tt-milestone-row .tt-backlinks-chip-slot { flex: none; width: 2.6rem; text-align: center; }
 /* Resting .38 rather than 0 — see the matching note on the risk row buttons. */
 .tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: .38; flex: none; padding: .15rem .45rem; font-size: 1.3rem; line-height: 1; border: none; background: transparent; }
 .tt-milestone-row:hover .tt-milestone-expand-btn, .tt-milestone-expand-btn:focus,
@@ -989,6 +1022,13 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
+/* The chip (or its placeholder, when the row has no mentions) is a fixed-
+   width column like the header spacers above it — without `flex: none` it
+   sizes to its own content and, on rows where it's absent, `.tt-risk-header-
+   title, .tt-risk-title-input`'s `flex: 1` eats the freed space, shrinking
+   that row's title relative to every other row and misaligning the columns
+   after it against the header. */
+.tt-risk-row .tt-backlinks-chip, .tt-risk-row .tt-backlinks-chip-slot { flex: none; width: 2.6rem; text-align: center; }
 .tt-risk-header-exposure {
   display: flex; align-items: center; justify-content: center; gap: .1rem;
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
@@ -1076,13 +1116,18 @@ select option { background: var(--bg); color: var(--fg); }
   .tt-risk-header-row { display: none; }
 
   .tt-risk-row .tt-risk-title-input { order: 0; flex: 1 1 8rem; min-width: 6rem; }
-  .tt-risk-row .tt-risk-exposure-cell { order: 1; width: 2.6rem; }
-  .tt-risk-row .tt-risk-expand-btn { order: 2; }
-  .tt-risk-row .tt-risk-close-btn { order: 3; }
-  .tt-risk-row .tt-risk-delete-btn { order: 4; }
+  /* Backlinks chip (or its placeholder slot) sits right before the exposure
+     stamp, same relative position as at full width — without this it falls
+     back to the default order: 0 and renders inline with the title on the
+     first line, ahead of everything else. */
+  .tt-risk-row .tt-backlinks-chip, .tt-risk-row .tt-backlinks-chip-slot { order: 1; }
+  .tt-risk-row .tt-risk-exposure-cell { order: 2; width: 2.6rem; }
+  .tt-risk-row .tt-risk-expand-btn { order: 3; }
+  .tt-risk-row .tt-risk-close-btn { order: 4; }
+  .tt-risk-row .tt-risk-delete-btn { order: 5; }
 
   /* Zero-height, 100% basis: forces every later item onto a fresh line. */
-  .tt-risk-row .tt-risk-linebreak { display: block; order: 5; flex: 0 0 100%; height: 0; margin: 0; }
+  .tt-risk-row .tt-risk-linebreak { display: block; order: 6; flex: 0 0 100%; height: 0; margin: 0; }
 
   /* Each label is glued to the select it names by its own `order`. Explicit
      classes rather than :nth-of-type — the row's other spans (the exposure
@@ -1096,12 +1141,12 @@ select option { background: var(--bg); color: var(--fg); }
   .tt-risk-row .tt-risk-chance-select,
   .tt-risk-row .tt-risk-impact-select,
   .tt-risk-row .tt-risk-plan-select { width: auto; min-width: 0; }
-  .tt-risk-row .tt-risk-meta-chance { order: 6; }
-  .tt-risk-row .tt-risk-chance-select { order: 7; }
-  .tt-risk-row .tt-risk-meta-impact { order: 8; }
-  .tt-risk-row .tt-risk-impact-select { order: 9; }
-  .tt-risk-row .tt-risk-meta-plan { order: 10; }
-  .tt-risk-row .tt-risk-plan-select { order: 11; }
+  .tt-risk-row .tt-risk-meta-chance { order: 7; }
+  .tt-risk-row .tt-risk-chance-select { order: 8; }
+  .tt-risk-row .tt-risk-meta-impact { order: 9; }
+  .tt-risk-row .tt-risk-impact-select { order: 10; }
+  .tt-risk-row .tt-risk-meta-plan { order: 11; }
+  .tt-risk-row .tt-risk-plan-select { order: 12; }
 }
 
 .tt-risks-closed { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
@@ -1117,6 +1162,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-person-header {
   flex: none; padding: .5rem .75rem; font-weight: 700; font-family: var(--font-display); font-size: 1.05rem;
   background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
 }
 .tt-person-notes .tt-editor { flex: 1; }
 
