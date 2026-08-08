@@ -679,6 +679,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-calendar-col.tt-daily-collapsed { width: auto; }
 .tt-daily-calendar-col.tt-daily-collapsed .tt-daily-calendar-slot { display: none; }
 .tt-daily-calendar-toggle { align-self: flex-start; margin: .4rem; }
+.tt-daily-badge-slot { align-self: flex-start; margin: 0 .4rem .4rem; }
 .tt-daily-calendar-slot { padding: 0 .5rem .5rem; }
 .tt-daily-calendar-actions { display: flex; padding: 0 .1rem; margin-top: .5rem; }
 .tt-daily-calendar-today-btn { flex: 1; font-size: .8rem; padding: .3rem .4rem; }
