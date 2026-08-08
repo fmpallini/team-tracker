@@ -67,6 +67,20 @@ function showBacklinksPanel(anchor: HTMLElement, backlinks: Backlink[], locale: 
   panel.style.left = `${rect.left}px`
   panel.style.top = `${rect.bottom}px`
   document.body.appendChild(panel)
+
+  // Clamp to the viewport — a chip docked near the pane's right/bottom edge
+  // (the common case: kanban cards, milestone/risk rows) would otherwise
+  // open partly or fully off-screen.
+  const VIEWPORT_MARGIN = 8
+  const panelRect = panel.getBoundingClientRect()
+  if (panelRect.right > window.innerWidth - VIEWPORT_MARGIN) {
+    panel.style.left = `${Math.max(VIEWPORT_MARGIN, window.innerWidth - VIEWPORT_MARGIN - panelRect.width)}px`
+  }
+  if (panelRect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
+    // Flip above the anchor when there's no room below it.
+    panel.style.top = `${Math.max(VIEWPORT_MARGIN, rect.top - panelRect.height)}px`
+  }
+
   const unbind = bindOutsideDismiss((target) => !panel.contains(target), close)
   closeCurrent = close
 }

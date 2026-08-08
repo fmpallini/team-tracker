@@ -74,3 +74,34 @@ test('opening a second chip\'s panel closes the first', () => {
   chipB.click()
   expect(document.querySelectorAll('.tt-backlinks-panel')).toHaveLength(1)
 })
+
+test('clamps to the viewport when the panel would open off the right/bottom edge', () => {
+  const originalGetRect = Element.prototype.getBoundingClientRect
+  const originalInnerWidth = window.innerWidth
+  const originalInnerHeight = window.innerHeight
+  Object.defineProperty(window, 'innerWidth', { value: 800, configurable: true })
+  Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true })
+  Element.prototype.getBoundingClientRect = function (this: HTMLElement): DOMRect {
+    const base = { x: 0, y: 0, toJSON: () => ({}) }
+    if (this.classList.contains('tt-backlinks-chip')) {
+      return { ...base, left: 780, right: 800, top: 580, bottom: 600, width: 20, height: 20 } as DOMRect
+    }
+    if (this.classList.contains('tt-backlinks-panel')) {
+      return { ...base, left: 780, right: 1080, top: 600, bottom: 900, width: 300, height: 300 } as DOMRect
+    }
+    return originalGetRect.call(this)
+  }
+
+  try {
+    const chip = createBacklinksChip([bl()], 'en-US', () => {})!
+    document.body.appendChild(chip)
+    chip.click()
+    const panel = document.querySelector<HTMLElement>('.tt-backlinks-panel')!
+    expect(parseFloat(panel.style.left)).toBeLessThanOrEqual(800 - 8 - 300)
+    expect(parseFloat(panel.style.top)).toBeLessThanOrEqual(580 - 300)
+  } finally {
+    Element.prototype.getBoundingClientRect = originalGetRect
+    Object.defineProperty(window, 'innerWidth', { value: originalInnerWidth, configurable: true })
+    Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
+  }
+})

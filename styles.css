@@ -627,9 +627,10 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Backlinks badge/chip + popover (references pointing at a person/day/action/milestone/risk) */
 .tt-backlinks-chip {
-  display: inline-flex; align-items: center; font-size: .7rem; padding: .05rem .4rem; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center; font-size: .7rem;
+  height: 1.2rem; line-height: 1.2rem; padding: 0 .4rem; border-radius: 999px;
   border: 1px solid rgba(var(--accent-rgb), .4); background: rgba(var(--accent-rgb), .12); color: var(--fg);
-  cursor: pointer; flex: none; line-height: 1.4;
+  cursor: pointer; flex: none;
   /* Now a real <button> (keyboard/AT path) rather than a bare span — the
      rules above already pin border/background/color/cursor, but a <button>
      also needs its default font reset so it doesn't fall back to the
