@@ -86,6 +86,21 @@ function showBacklinksPanel(anchor: HTMLElement, backlinks: Backlink[], locale: 
 }
 
 /**
+ * Closes whatever backlinks panel is currently open, if any — a no-op
+ * otherwise. `panel` itself lives only in whichever document is open when
+ * it's shown, but this function and `closeCurrent` are module-level and
+ * outlive any one document, so main.ts's teardownApp calls this on every
+ * file close: an open panel's `onNavigate` closure (passed in by whichever
+ * module rendered its chip) captures that document's store/pm, and its two
+ * capturing `document` listeners (bindOutsideDismiss) would otherwise pin
+ * all of it in memory until the next backlinks chip click anywhere in the
+ * app — which might be in a much later, unrelated document, or never.
+ */
+export function closeAnyBacklinksPanel(): void {
+  closeCurrent?.()
+}
+
+/**
  * A small "↩ N" pill, or null when `backlinks` is empty — callers skip
  * appending it in that case (the app's zero-count convention, matching how
  * the due-badge and search elsewhere render nothing rather than a zero).

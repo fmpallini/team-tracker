@@ -376,4 +376,67 @@ test.describe('resource growth over a long session', () => {
     expect(perCycleNodes, 'DOM nodes retained per close/reopen').toBeLessThan(40)
     expect(perCycleListeners, 'JS event listeners retained per close/reopen').toBeLessThan(6)
   })
+
+  test('closing the file while a context menu is open does not strand the popover or its listeners', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, 'leak-probe-password')
+
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('Runtime.enable')
+
+    await addTeam(page, 'Alpha')
+    await switchModule(page, /Risks/i)
+    await page.locator('.tt-risk-add-btn').click()
+
+    // context-menu.ts (and backlinks-panel.ts, same shape) is a module-level
+    // popover singleton, not owned by any pane/module the pane tree's own
+    // disposal (modules/lifecycle.ts's disposeContainer) tears down — it
+    // lives in document.body, a sibling of #app. Closing a file only clears
+    // #app, so an open one would otherwise float on top of the start screen
+    // forever, its two document-level listeners pinning the closed
+    // document's store/pm via item.onClick closures until the next
+    // showContextMenu() call anywhere in the app — see main.ts's
+    // teardownApp, which now closes it explicitly.
+    const samples: Counters[] = []
+    for (let i = 0; i < 8; i++) {
+      await page.locator('.tt-risk-row').first().click({ button: 'right' })
+      await expect(page.locator('.tt-context-menu')).toBeVisible()
+
+      // The close-file *button* itself is an outside click, which would
+      // close the menu via its own normal bindOutsideDismiss mousedown
+      // handler before teardownApp ever runs — masking exactly the bug this
+      // test exists to catch. The keyboard shortcut fires no mousedown, so
+      // the menu is still genuinely open at the moment of teardown.
+      await page.keyboard.press('Control+Alt+l')
+      await expect(page.locator('.tt-start-screen')).toBeVisible()
+      await expect(page.locator('.tt-context-menu')).toHaveCount(0)
+
+      await page.getByRole('button', { name: /Reopen last/ }).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.locator('input[name="tt-password"]').fill('leak-probe-password')
+      await dialog.getByRole('button', { name: 'OK' }).click()
+      await expect(page.locator('.tt-shell')).toBeVisible()
+      await switchModule(page, /Risks/i)
+
+      if (i >= 2) samples.push(await measure(cdp))
+    }
+
+    const first = samples[0]!
+    const last = samples[samples.length - 1]!
+    const perCycleNodes = perCycleGrowth(samples, 'nodes')
+    const perCycleListeners = perCycleGrowth(samples, 'listeners')
+
+    console.log(
+      `[leak/context-menu-stranding] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
+      `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB`
+    )
+    console.log('[leak/context-menu-stranding] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
+
+    expect(perCycleNodes, 'DOM nodes retained per cycle').toBeLessThan(40)
+    expect(perCycleListeners, 'JS event listeners retained per cycle').toBeLessThan(6)
+  })
 })

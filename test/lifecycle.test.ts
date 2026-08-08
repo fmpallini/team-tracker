@@ -201,6 +201,67 @@ for (const { name, render, ref, subscribes } of RENDERERS) {
   })
 }
 
+// ---------------------------------------------------------------------------
+// Stress: the tests above catch a leak that grows every iteration (3 mounts
+// -> count already off after 3). They can't catch one that only fires every
+// Kth cycle, or one where a small per-cycle allocation elsewhere (DOM nodes,
+// closures pinned by a WeakMap-keyed-by-live-object) keeps growing even
+// though the *subscription count* itself looks stable. Sampling at every
+// step across a much longer run over every real renderer catches both.
+// ---------------------------------------------------------------------------
+
+test('stress: 200 mount/unmount cycles across every module leave a constant subscription count at every step, not just at the end', () => {
+  const STRESS_CYCLES = 200
+  for (const { name, render, ref, subscribes } of RENDERERS) {
+    const { store, liveSubscriptions } = countingStore()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const loc: Loc = { teamId: 'T1', ref }
+    const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex }
+    const expected = subscribes ? 1 : 0
+
+    for (let i = 0; i < STRESS_CYCLES; i++) {
+      container.innerHTML = ''
+      render(container, loc, ctx)
+      // Sampled every cycle (not just at the end) — a leak that only shows up
+      // after e.g. 150 iterations would otherwise pass silently.
+      expect(liveSubscriptions(), `${name}: leaked at cycle ${i}`).toBe(expected)
+    }
+    container.remove()
+  }
+})
+
+test('stress: 200 rounds of real openInPane module switching (risks <-> milestones, both panes split) leave a constant subscription count throughout', () => {
+  const STRESS_CYCLES = 200
+  const { store, liveSubscriptions } = countingStore()
+  document.body.innerHTML = ''
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const pm = createPaneManager(shell, store, 'en-US')
+  pm.registerModule('risks', renderRisks)
+  pm.registerModule('milestones', renderMilestones)
+  pm.registerModule('daily', renderDailyNotes)
+  store.updateNav((d) => { d.nav.split = true })
+  pm.openBothPanes(
+    { teamId: 'T1', ref: { kind: 'risks' } },
+    { teamId: 'T1', ref: { kind: 'milestones' } },
+    0
+  )
+  const baseline = liveSubscriptions() // 2 modules + pm's own index subscription
+  expect(baseline).toBe(3)
+
+  for (let i = 0; i < STRESS_CYCLES; i++) {
+    const next = i % 2 === 0 ? { kind: 'daily' as const, date: '2026-07-10' } : { kind: 'risks' as const }
+    pm.openInPane(0, { teamId: 'T1', ref: next })
+    expect(liveSubscriptions(), `leaked at cycle ${i}`).toBe(baseline)
+  }
+
+  pm.dispose()
+  expect(liveSubscriptions()).toBe(0)
+})
+
 test('an unsplit (hidden) pane 1 holds no live module instance, and regains one when re-split', () => {
   // renderAll() skips the hidden pane, but a *mounted* instance would keep its
   // own store.subscribe() alive and go on re-rendering into a display:none

@@ -343,6 +343,26 @@ describe('attachAtAutocomplete', () => {
     expect(chip.textContent).toBe('@Ana Sales RH')
     expect(picks).toEqual([{ kind: 'person', id: 'ana-id', name: 'Ana [Sales] (RH)' }])
   })
+
+  test('stress: 300 open/close cycles leave no accumulated document listeners or stray dropdown DOM nodes', () => {
+    const { editorEl } = setup()
+    const addSpy = vi.spyOn(document, 'addEventListener')
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    const netDocumentListeners = (): number => addSpy.mock.calls.length - removeSpy.mock.calls.length
+
+    for (let i = 0; i < 300; i++) {
+      setBlockText(editorEl, '@')
+      fireInput(editorEl) // open()
+      setBlockText(editorEl, '@An')
+      fireInput(editorEl)
+      fireKey(editorEl, 'Escape') // close()
+      expect(document.querySelectorAll('.tt-atref-dropdown'), `stray dropdown at cycle ${i}`).toHaveLength(0)
+      expect(netDocumentListeners(), `leaked document listener at cycle ${i}`).toBe(0)
+    }
+
+    addSpy.mockRestore()
+    removeSpy.mockRestore()
+  })
 })
 
 describe('makeRefClickHandler', () => {

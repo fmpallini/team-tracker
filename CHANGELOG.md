@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.3] - 2026-08-08
+
+### Fixed
+- Closing a file (or switching to a different module) with a right-click card menu, a "↩ N" backlinks panel, or a milestone's date popover still open left it floating on screen — sometimes stranded on top of the start screen — and pinned that file's data in memory until you happened to open the same kind of popover again.
+
 ## [2.1.2] - 2026-08-08
 
 ### Changed
