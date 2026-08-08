@@ -625,6 +625,25 @@ body { background: var(--bg); color: var(--fg); }
 .tt-context-menu-item:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-context-menu-item.danger { color: var(--danger); }
 
+/* Backlinks badge/chip + popover (references pointing at a person/day/action/milestone/risk) */
+.tt-backlinks-chip {
+  display: inline-flex; align-items: center; font-size: .7rem; padding: .05rem .4rem; border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), .4); background: rgba(var(--accent-rgb), .12); color: var(--fg);
+  cursor: pointer; flex: none; line-height: 1.4;
+}
+.tt-backlinks-chip:hover { background: rgba(var(--accent-rgb), .22); }
+.tt-backlinks-panel {
+  position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  min-width: 240px; max-width: 360px; max-height: 320px; overflow-y: auto; padding: .25rem;
+}
+.tt-backlinks-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.tt-backlinks-row { padding: .35rem .6rem; border-radius: 4px; cursor: pointer; }
+.tt-backlinks-row:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-backlinks-row-title { font-size: .85rem; font-weight: 600; }
+.tt-backlinks-row-snippet { font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+.tt-backlinks-empty { padding: .4rem .6rem; color: var(--muted); font-size: .85rem; }
+
 /* Emoji picker popup (team emoji fields) */
 .tt-emoji-popup {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
