@@ -23,6 +23,9 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { createBacklinksChip } from '../ui/backlinks-panel'
+import { navigateToLoc } from '../ui/atref'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -292,6 +295,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // a pointer. The buttons now rest visible-but-quiet (styles.css), and the
     // row itself is a single Tab stop that opens the same context menu on
     // Enter/Space, so every action has a keyboard path.
+    const team = findTeam()
+    const backlinks = team ? collectBacklinks(team, ctx.store.doc, 'risk', r.id) : []
+    const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+
     const expanded = expandable.isExpanded(r.id)
     const expandBtn = el(
       'button',
@@ -337,7 +344,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       exposureCell,
       metaLabel('plan', 'risk_col_plan'), planSelect,
       lineBreak,
-      expandBtn, closeBtn, deleteBtn
+      backlinksChip, expandBtn, closeBtn, deleteBtn
     )
     if (expanded) row.classList.add('tt-risk-row-expanded')
 
@@ -558,7 +565,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     active.addEventListener('blur', onDeferredBlur, { once: true })
   }
 
-  const WATCHED: readonly Section[] = ['risks', 'teams']
+  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretElement()
