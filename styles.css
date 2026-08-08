@@ -866,6 +866,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-card.color-rust .tt-kanban-card-tag { color: var(--card-rust); }
 .tt-kanban-card.color-plum .tt-kanban-card-tag { color: var(--card-plum); }
 .tt-kanban-card.color-ledger .tt-kanban-card-tag { color: var(--card-ledger); }
+.tt-kanban-card-meta .tt-backlinks-chip { margin-left: auto; }
 .tt-kanban-card.status-cancelled { opacity: .65; }
 .tt-kanban-card.status-cancelled .tt-kanban-card-title { text-decoration: line-through; }
 .tt-kanban-edit-btn { position: absolute; top: .3rem; right: .35rem; opacity: 0; border: none; background: transparent; font-size: .78rem; padding: .05rem .25rem; cursor: pointer; }
