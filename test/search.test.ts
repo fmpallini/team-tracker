@@ -230,7 +230,8 @@ describe('scope-driven cache invalidation', () => {
   })
 })
 
-import { collectBacklinks } from '../src/core/search'
+import { backlinksFor } from '../src/core/search'
+import { createStore } from '../src/core/store'
 
 function backlinksFixture(): Doc {
   const d = createEmptyDocument('en-US')
@@ -245,33 +246,43 @@ function backlinksFixture(): Doc {
   return d
 }
 
-describe('collectBacklinks', () => {
+// backlinksFor is the cached, Store-backed reverse lookup for @-mentions:
+// every mention of kind:targetId across a team's free-text fields, sourced
+// from the same rev-keyed per-team cache createSearchIndex builds for
+// search(), instead of re-walking every note field on every call.
+describe('backlinksFor', () => {
   test('finds mentions across all 4 non-general note fields plus general notes', () => {
     const doc = backlinksFixture()
-    const team = doc.teams[0]!
-    const results = collectBacklinks(team, doc, 'action', 'a1')
+    const store = createStore(doc)
+    const results = backlinksFor(store, 't1', 'action', 'a1')
     expect(results).toHaveLength(4)
     expect(results.map((r) => r.moduleKind).sort()).toEqual(['daily', 'general', 'milestones', 'person'])
   })
 
   test('a field with two mentions of the same target yields two entries', () => {
     const doc = backlinksFixture()
-    const team = doc.teams[0]!
-    team.dailyNotes['2026-08-04'] += ' — see also @[Migrate billing job](action:a1) again'
-    const results = collectBacklinks(team, doc, 'action', 'a1')
+    doc.teams[0]!.dailyNotes['2026-08-04'] += ' — see also @[Migrate billing job](action:a1) again'
+    const store = createStore(doc)
+    const results = backlinksFor(store, 't1', 'action', 'a1')
     expect(results.filter((r) => r.moduleKind === 'daily')).toHaveLength(2)
   })
 
   test('no matches returns an empty array', () => {
     const doc = backlinksFixture()
-    const team = doc.teams[0]!
-    expect(collectBacklinks(team, doc, 'risk', 'r1')).toEqual([])
+    const store = createStore(doc)
+    expect(backlinksFor(store, 't1', 'risk', 'r1')).toEqual([])
+  })
+
+  test('an unknown teamId returns an empty array', () => {
+    const doc = backlinksFixture()
+    const store = createStore(doc)
+    expect(backlinksFor(store, 'nope', 'action', 'a1')).toEqual([])
   })
 
   test('snippet is markdown-stripped and the matched mention reads as its label', () => {
     const doc = backlinksFixture()
-    const team = doc.teams[0]!
-    const [hit] = collectBacklinks(team, doc, 'action', 'a1').filter((r) => r.moduleKind === 'person')
+    const store = createStore(doc)
+    const [hit] = backlinksFor(store, 't1', 'action', 'a1').filter((r) => r.moduleKind === 'person')
     expect(hit!.snippet).toContain('Migrate billing job')
     expect(hit!.snippet).not.toContain('@[')
     expect(hit!.title).toBe('Ana')
@@ -280,10 +291,41 @@ describe('collectBacklinks', () => {
 
   test('day-kind target keys by ISO date string, not an item id', () => {
     const doc = backlinksFixture()
-    const team = doc.teams[0]!
-    team.risks[0]!.followup = 'Follow up on @[Aug 4](day:2026-08-04)'
-    const results = collectBacklinks(team, doc, 'day', '2026-08-04')
+    doc.teams[0]!.risks[0]!.followup = 'Follow up on @[Aug 4](day:2026-08-04)'
+    const store = createStore(doc)
+    const results = backlinksFor(store, 't1', 'day', '2026-08-04')
     expect(results).toHaveLength(1)
     expect(results[0]!.moduleKind).toBe('risks')
+  })
+
+  test('repeated lookups at the same rev reuse the cache instead of re-scanning the team', () => {
+    const doc = backlinksFixture()
+    const store = createStore(doc)
+    expect(backlinksFor(store, 't1', 'action', 'a1')).toHaveLength(4)
+    // Mutate the doc WITHOUT going through store.update() (so rev doesn't
+    // move): a cached lookup must not see it, same contract as
+    // createSearchIndex's own "repeat searches at the same rev" test above.
+    doc.teams[0]!.dailyNotes['2026-08-04'] = 'no mention now'
+    expect(backlinksFor(store, 't1', 'action', 'a1')).toHaveLength(4)
+  })
+
+  test('a store.update() bumping rev refreshes the backlinks result', () => {
+    const doc = backlinksFixture()
+    const store = createStore(doc)
+    expect(backlinksFor(store, 't1', 'action', 'a1')).toHaveLength(4)
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-08-04'] = 'no mention now'
+    }, { teamId: 't1', sections: ['notes'] })
+    expect(backlinksFor(store, 't1', 'action', 'a1')).toHaveLength(3)
+  })
+
+  test('two different stores get independent caches', () => {
+    const doc1 = backlinksFixture()
+    const doc2 = backlinksFixture()
+    doc2.teams[0]!.dailyNotes['2026-08-04'] = 'no mention here'
+    const store1 = createStore(doc1)
+    const store2 = createStore(doc2)
+    expect(backlinksFor(store1, 't1', 'action', 'a1')).toHaveLength(4)
+    expect(backlinksFor(store2, 't1', 'action', 'a1')).toHaveLength(3)
   })
 })

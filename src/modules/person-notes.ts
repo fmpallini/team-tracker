@@ -12,7 +12,7 @@ import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
-import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { backlinksFor, BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 
@@ -44,7 +44,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     return
   }
 
-  const initialBacklinks = collectBacklinks(findTeam()!, ctx.store.doc, 'person', personId)
+  const initialBacklinks = backlinksFor(ctx.store, teamId, 'person', personId)
   const headerLabelEl = el('span', {}, personLabel(person))
   const headerBadgeSlot = el('div', {})
   const initialChip = createBacklinksChip(initialBacklinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
@@ -95,7 +95,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
       return
     }
     headerBadgeSlot.innerHTML = ''
-    const chip = createBacklinksChip(collectBacklinks(findTeam()!, ctx.store.doc, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const chip = createBacklinksChip(backlinksFor(ctx.store, teamId, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
     if (chip) headerBadgeSlot.appendChild(chip)
   })
 
