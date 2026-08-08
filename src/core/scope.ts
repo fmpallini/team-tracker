@@ -45,6 +45,23 @@ export function scopeAffects(
 ): boolean {
   if (!scope) return true
   if (scope.teamId !== undefined && scope.teamId !== teamId) return false
+  return scopeTouchesSections(scope, sections)
+}
+
+/**
+ * The section half of `scopeAffects`, for listeners that span *every* team and
+ * so have no `teamId` to match against — the sidebar's team list and due
+ * badges above all, which aggregate across the whole document.
+ *
+ * Deliberately ignores `scope.teamId`: "only team X changed" is still a change
+ * this kind of listener has to react to. Same conservative contract as
+ * `scopeAffects` otherwise — an absent scope or absent `sections` means yes.
+ */
+export function scopeTouchesSections(
+  scope: ChangeScope | null | undefined,
+  sections: readonly Section[]
+): boolean {
+  if (!scope) return true
   if (scope.sections === undefined) return true
   return scope.sections.some((s) => sections.includes(s))
 }

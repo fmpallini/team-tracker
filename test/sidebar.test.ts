@@ -1034,3 +1034,73 @@ describe('dispose()', () => {
     expect(document.querySelector('.tt-team-switcher-dropdown')).toBeNull()
   })
 })
+
+// The sidebar shows team rows + due badges only, so it has no business
+// rebuilding on a daily-note keystroke — which is the single hottest mutation
+// in the app. It used to: the content subscription was unscoped, so every
+// debounced keystroke dropped the due cache and re-created every team row.
+describe('content subscription is scoped to what the sidebar displays', () => {
+  function teamRowIdentities(): HTMLElement[] {
+    return items()
+  }
+
+  test('a notes-only change does not rebuild the team rows', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    const before = teamRowIdentities()[0]!
+
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-08-01'] = 'typing…' }, { teamId: 'Alpha', sections: ['notes'] })
+
+    // Same DOM node, i.e. render() never ran.
+    expect(teamRowIdentities()[0]).toBe(before)
+  })
+
+  test('a people/risks-only change does not rebuild either', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    const before = teamRowIdentities()[0]!
+
+    store.update((d) => { d.teams[0]!.risks.push({ id: 'r1', title: 'R', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: 0, closed: false }) }, { teamId: 'Alpha', sections: ['risks'] })
+
+    expect(teamRowIdentities()[0]).toBe(before)
+  })
+
+  test('an actions change DOES rebuild — due badges depend on it', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    const before = teamRowIdentities()[0]!
+
+    store.update((d) => {
+      d.teams[0]!.actionItems.push({
+        id: 'a1', summary: 'Ship', status: 'todo', notes: '', assignee: '',
+        dueDate: todayIso(), color: 'ledger', order: 0,
+      })
+    }, { teamId: 'Alpha', sections: ['actions'] })
+
+    expect(teamRowIdentities()[0]).not.toBe(before)
+    expect(teamRowIdentities()[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+  })
+
+  test('a milestones change DOES rebuild — due badges depend on it too', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    const before = teamRowIdentities()[0]!
+
+    store.update((d) => {
+      d.teams[0]!.milestones.push({ id: 'm1', date: todayIso(), title: 'GA', done: false, followup: '' })
+    }, { teamId: 'Alpha', sections: ['milestones'] })
+
+    expect(teamRowIdentities()[0]).not.toBe(before)
+  })
+
+  test('an unscoped change (team rename, prefs) still rebuilds', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    const before = teamRowIdentities()[0]!
+
+    store.update((d) => { d.teams[0]!.name = 'Renamed' })
+
+    expect(teamRowIdentities()[0]).not.toBe(before)
+    expect(teamRowIdentities()[0]!.textContent).toContain('Renamed')
+  })
+})

@@ -1,4 +1,5 @@
 import type { Doc, ModuleRef, Team } from './types'
+import type { ChangeScope, Section } from './scope'
 import { formatDate, t } from './i18n'
 
 export interface SearchResult {
@@ -117,7 +118,21 @@ interface PreparedCandidate {
 
 export interface SearchIndex {
   search(query: string, scopeTeamId: string | null): SearchResult[]
+  /**
+   * Drops exactly the cached candidates a `store.update()` described by
+   * `scope` could have invalidated — see `createSearchIndex`. Wire this to
+   * `store.subscribe`, whose callback receives that scope.
+   */
+  invalidate(scope: ChangeScope | null | undefined): void
 }
+
+/**
+ * Sections `collectCandidates` actually reads. 'templates' is the only one
+ * absent — a template edit can't change any searchable text. ('teams' is in:
+ * a rename changes `teamName` on every result. 'prefs' is in: the locale
+ * formats daily-note titles.)
+ */
+const SEARCHABLE: readonly Section[] = ['notes', 'people', 'actions', 'milestones', 'risks', 'teams', 'prefs']
 
 /**
  * A `searchDocument` that prepares each team's candidates once per document
@@ -131,15 +146,23 @@ export interface SearchIndex {
  * after of an edit, so identity can never signal staleness.
  */
 export function createSearchIndex(getDoc: () => Doc, getRev: () => number): SearchIndex {
-  let cachedRev = -1
-  let cache = new Map<string, PreparedCandidate[]>()
+  // The revision this cache has been *told about* — via invalidate(), which
+  // rides store.subscribe() and knows which team changed. A rev that moves
+  // without a matching invalidate() is a change nobody described (store.
+  // updateNav() bumps rev but deliberately bypasses subscribe()), so the whole
+  // cache is dropped on the next search rather than trusted: an unexplained
+  // change could have touched anything.
+  let knownRev = -1
+  const cache = new Map<string, PreparedCandidate[]>()
+
+  function syncRev(): void {
+    const rev = getRev()
+    if (rev === knownRev) return
+    cache.clear()
+    knownRev = rev
+  }
 
   function preparedFor(team: Team, doc: Doc): PreparedCandidate[] {
-    const rev = getRev()
-    if (rev !== cachedRev) {
-      cache = new Map()
-      cachedRev = rev
-    }
     const hit = cache.get(team.id)
     if (hit) return hit
     const prepared = collectCandidates(team, doc).map((c): PreparedCandidate => {
@@ -151,7 +174,25 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   }
 
   return {
+    invalidate(scope: ChangeScope | null | undefined): void {
+      // Whatever this scope describes, we've now accounted for the revision
+      // it produced — so syncRev() won't also blanket-clear on the next
+      // search. Read before the early return below, or a non-searchable
+      // change (a template edit) would leave knownRev stale and trigger a
+      // full clear anyway.
+      knownRev = getRev()
+      if (!scope || scope.teamId === undefined) {
+        // No team named — "could be any/all teams" (this is also what
+        // store.replaceDoc() sends). Nothing narrower is safe.
+        cache.clear()
+        return
+      }
+      if (scope.sections !== undefined && !scope.sections.some((s) => SEARCHABLE.includes(s))) return
+      cache.delete(scope.teamId)
+    },
+
     search(query: string, scopeTeamId: string | null): SearchResult[] {
+      syncRev()
       const trimmedQuery = query.trim()
       if (!trimmedQuery) return []
       const terms = normalize(trimmedQuery).split(/\s+/).filter(Boolean)

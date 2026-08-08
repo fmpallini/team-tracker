@@ -7,6 +7,7 @@ import type { Loc, Team } from '../core/types'
 import { lastLocForTeam, locsConflict } from '../core/nav'
 import { t, todayIso, type Locale } from '../core/i18n'
 import { collectDueItems, type DueBuckets } from '../core/due'
+import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam } from '../core/document'
 import { el, bindOutsideDismiss } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
@@ -639,8 +640,30 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   render()
-  const unsubscribeContent = store.subscribe(() => {
-    dueCache = null // content changed — due data may have too
+  /**
+   * Everything the sidebar actually displays, as sections. Cross-team by
+   * nature (the due badges aggregate over every team), so this filters with
+   * `scopeTouchesSections` rather than `scopeAffects` — "only team X changed"
+   * still moves X's badge and possibly the global one.
+   *
+   * - 'teams'      — name, emoji, order, add/delete
+   * - 'actions'    — due dates + status feed collectDueItems()
+   * - 'milestones' — dates + done feed collectDueItems()
+   * - 'prefs'      — locale (every title string) and dueSoonDays (the cutoff).
+   *                  ui/prefs.ts passes no scope at all today, so this is
+   *                  belt-and-braces against it gaining one later.
+   *
+   * Deliberately absent: 'notes', 'people', 'risks', 'templates' — none of
+   * them reach the sidebar, and 'notes' is the hot one: every debounced daily-
+   * note keystroke used to drop the due cache and rebuild every team row.
+   * `nav.sidebarCollapsed` is NOT covered here and must not be — it travels
+   * via updateNav(), which bypasses subscribe() entirely and is handled by
+   * the onMutate listener below.
+   */
+  const WATCHED: readonly Section[] = ['teams', 'actions', 'milestones', 'prefs']
+  const unsubscribeContent = store.subscribe((scope) => {
+    if (!scopeTouchesSections(scope, WATCHED)) return
+    dueCache = null // watched content changed — due data may have too
     render()
   })
   // Nav-only changes (store.updateNav — team switch, Alt+1..9, pane history)

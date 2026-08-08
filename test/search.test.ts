@@ -145,3 +145,87 @@ test('team scoping still applies through the index', () => {
   expect(index.search('shared', 't1').length).toBe(1)
   expect(index.search('shared', 't1')[0]!.teamName).toBe('Alpha')
 })
+
+describe('scope-driven cache invalidation', () => {
+  function twoTeams(): Doc {
+    const doc: Doc = createEmptyDocument('en-US')
+    doc.teams.push(teamWithNote('t1', 'Alpha', 'alpha original'))
+    doc.teams.push(teamWithNote('t2', 'Beta', 'beta original'))
+    return doc
+  }
+
+  test('a scoped change to one team leaves the other team cached', () => {
+    const doc = twoTeams()
+    let rev = 0
+    const index = createSearchIndex(() => doc, () => rev)
+
+    expect(index.search('original', null).length).toBe(2)
+
+    // t1 edited; t2 untouched. Only t1's cache entry may be dropped.
+    doc.teams[0]!.dailyNotes['2026-08-01'] = 'alpha rewritten'
+    doc.teams[1]!.dailyNotes['2026-08-01'] = 'beta rewritten' // simulates a stale cache
+    rev = 1
+    index.invalidate({ teamId: 't1', sections: ['notes'] })
+
+    // t1 re-prepared: sees the new text.
+    expect(index.search('rewritten', 't1').length).toBe(1)
+    // t2 still served from cache: does NOT see its (untold) change.
+    expect(index.search('rewritten', 't2').length).toBe(0)
+  })
+
+  test('a scope with no teamId clears everything', () => {
+    const doc = twoTeams()
+    let rev = 0
+    const index = createSearchIndex(() => doc, () => rev)
+    expect(index.search('original', null).length).toBe(2)
+
+    doc.teams[0]!.dailyNotes['2026-08-01'] = 'alpha rewritten'
+    doc.teams[1]!.dailyNotes['2026-08-01'] = 'beta rewritten'
+    rev = 1
+    index.invalidate({ sections: ['notes'] })
+
+    expect(index.search('rewritten', null).length).toBe(2)
+  })
+
+  test('a change touching no searchable section drops nothing', () => {
+    const doc = twoTeams()
+    let rev = 0
+    const index = createSearchIndex(() => doc, () => rev)
+    expect(index.search('original', null).length).toBe(2)
+
+    doc.teams[0]!.dailyNotes['2026-08-01'] = 'alpha rewritten'
+    rev = 1
+    index.invalidate({ teamId: 't1', sections: ['templates'] })
+
+    expect(index.search('rewritten', null).length).toBe(0)
+  })
+
+  test('a rev bump nobody explained still clears everything (updateNav backstop)', () => {
+    const doc = twoTeams()
+    let rev = 0
+    const index = createSearchIndex(() => doc, () => rev)
+    expect(index.search('original', null).length).toBe(2)
+
+    doc.teams[0]!.dailyNotes['2026-08-01'] = 'alpha rewritten'
+    doc.teams[1]!.dailyNotes['2026-08-01'] = 'beta rewritten'
+    rev = 1 // moved with no invalidate() call — e.g. store.updateNav()
+
+    expect(index.search('rewritten', null).length).toBe(2)
+  })
+
+  test('several scoped invalidations between searches do not trigger the backstop', () => {
+    const doc = twoTeams()
+    let rev = 0
+    const index = createSearchIndex(() => doc, () => rev)
+    expect(index.search('original', null).length).toBe(2)
+
+    doc.teams[0]!.dailyNotes['2026-08-01'] = 'alpha rewritten'
+    rev = 1
+    index.invalidate({ teamId: 't1', sections: ['notes'] })
+    rev = 2
+    index.invalidate({ teamId: 't1', sections: ['notes'] })
+
+    doc.teams[1]!.dailyNotes['2026-08-01'] = 'beta rewritten' // untold change
+    expect(index.search('rewritten', 't2').length).toBe(0) // t2 still cached
+  })
+})

@@ -114,6 +114,40 @@ export function leadingIndentLen(text: string): number {
   return n
 }
 
+/**
+ * Every editor currently alive, so `flushAllEditors()` can reach them.
+ * Entries are added at construction and removed by `destroy()`.
+ *
+ * A registry rather than a walk of the pane tree because editors also live
+ * outside it — action-items.ts mounts one inside its card modal — and those
+ * hold exactly the same unsaved keystrokes. Module-level state is safe here
+ * because membership is tied to construct/destroy, and closing a file destroys
+ * every module (and so every editor) it mounted.
+ */
+const liveEditors = new Set<{ flush(): void }>()
+
+/**
+ * Commits every live editor's pending debounced change into the store *now*.
+ *
+ * For callers about to persist the document from outside the editing flow —
+ * saving on tab-hide/unload, or saving right before tearing the document down.
+ * Without it, a save firing within CHANGE_DEBOUNCE_MS of a keystroke writes a
+ * document that does not yet contain it, and on the teardown paths that
+ * document is the last one written.
+ *
+ * Non-destructive: editors keep working afterwards, so it is safe on paths
+ * (tab-hide) where the user comes back to a live session.
+ */
+export function flushAllEditors(): void {
+  for (const ed of Array.from(liveEditors)) {
+    try {
+      ed.flush()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+}
+
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: 'true' })
 
@@ -862,6 +896,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function destroy(): void {
+    liveEditors.delete(registryEntry)
     // Flush, don't drop — see flushChange(). Runs before the listeners come
     // off so ordering matches a normal debounce firing.
     flushChange()
@@ -873,6 +908,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('auxclick', onAuxClick)
     editorEl.removeEventListener('mousedown', onMouseDownForRef)
   }
+
+  const registryEntry = { flush: flushChange }
+  liveEditors.add(registryEntry)
 
   return { root, getMd, setMd, focus, destroy }
 }

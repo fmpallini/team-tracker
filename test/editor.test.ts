@@ -1,4 +1,4 @@
-import { createEditor, detectInlinePattern, detectBlockPrefix, leadingIndentLen, type Editor, type EditorHooks } from '../src/ui/editor'
+import { createEditor, flushAllEditors, detectInlinePattern, detectBlockPrefix, leadingIndentLen, type Editor, type EditorHooks } from '../src/ui/editor'
 import type { RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 
@@ -928,5 +928,65 @@ describe('resolveRefLabel hook', () => {
     const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
     expect(chip.textContent).toBe('@Stale Title')
     editor.destroy()
+  })
+})
+
+// flushAllEditors() backs main.ts's save-then-teardown paths (close-file,
+// tab-hide, beforeunload). Those save the document from outside the editing
+// flow, so without it a save firing within CHANGE_DEBOUNCE_MS of a keystroke
+// persists a document that doesn't contain it yet — and on close-file that is
+// the last write the document ever gets.
+describe('flushAllEditors', () => {
+  test('commits a pending change on every live editor', () => {
+    vi.useFakeTimers()
+    try {
+      const hooksA = makeHooks()
+      const hooksB = makeHooks()
+      const a = createEditor(hooksA, 'en-US')
+      const b = createEditor(hooksB, 'en-US')
+
+      a.root.querySelector('.editor')!.dispatchEvent(new Event('input', { bubbles: true }))
+      b.root.querySelector('.editor')!.dispatchEvent(new Event('input', { bubbles: true }))
+      expect(hooksA.changes).toBe(0) // still inside the debounce
+
+      flushAllEditors()
+      expect(hooksA.changes).toBe(1)
+      expect(hooksB.changes).toBe(1)
+
+      // The timer was consumed, not left to fire a second time.
+      vi.advanceTimersByTime(1000)
+      expect(hooksA.changes).toBe(1)
+      expect(hooksB.changes).toBe(1)
+
+      a.destroy()
+      b.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('a destroyed editor is no longer flushed', () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const ed = createEditor(hooks, 'en-US')
+      ed.root.querySelector('.editor')!.dispatchEvent(new Event('input', { bubbles: true }))
+
+      ed.destroy() // flushes once on the way out
+      expect(hooks.changes).toBe(1)
+
+      flushAllEditors()
+      expect(hooks.changes).toBe(1) // not flushed again
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('flushing with nothing pending is a no-op', () => {
+    const hooks = makeHooks()
+    const ed = createEditor(hooks, 'en-US')
+    flushAllEditors()
+    expect(hooks.changes).toBe(0)
+    ed.destroy()
   })
 })

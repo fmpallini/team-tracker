@@ -32,6 +32,7 @@ import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
+import { flushAllEditors } from './ui/editor'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
 import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
 import { waitForActivation } from './core/sw-ready'
@@ -81,6 +82,12 @@ function openDocument(session: FileSession, doc: Doc, password: string | null): 
  * navigate — callers own both.
  */
 async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose'>): Promise<void> {
+  // BEFORE the dirty check, not after: a debounced editor change still in
+  // flight hasn't reached the store yet, so both `store.dirty` and whatever
+  // `saveNow()` serializes would miss it. `a.dispose()` below flushes it
+  // eventually — but only after the save has already run, i.e. into a document
+  // nobody writes again.
+  flushAllEditors()
   if (a.store.dirty && !a.store.readOnly) await a.saveCtl.saveNow({ explicit: true })
   await a.saveCtl.flush()
   a.dispose()
@@ -270,7 +277,14 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   )
 
   const onVisibilityChange = (): void => {
-    if (document.visibilityState === 'hidden' && store.dirty) void saveCtl.saveNow()
+    if (document.visibilityState !== 'hidden') return
+    // Commit an in-flight debounced editor change before testing `dirty` —
+    // hiding the tab within CHANGE_DEBOUNCE_MS of a keystroke would otherwise
+    // save a document that doesn't have it yet. Unlike teardownApp's flush,
+    // this one must not tear the panes down (the tab is still alive and the
+    // user is coming back to it), so it goes through the editors directly.
+    flushAllEditors()
+    if (store.dirty) void saveCtl.saveNow()
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
@@ -289,6 +303,10 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // (600k-iteration PBKDF2 on every save, see crypto.ts) needs to finish
   // before the page can be torn down.
   const onBeforeUnload = (e: BeforeUnloadEvent): void => {
+    // Same reason as onVisibilityChange above: without this, closing the tab
+    // within CHANGE_DEBOUNCE_MS of a keystroke both skips the "leave site?"
+    // prompt (store.dirty is still false) and saves a document missing it.
+    flushAllEditors()
     if (store.dirty) {
       void saveCtl.saveNow()
       e.preventDefault()
