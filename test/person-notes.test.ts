@@ -208,4 +208,20 @@ describe('renderPersonNotes', () => {
 
     expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } } }])
   })
+
+  test('a backlink chip renders in the header when another field mentions this person', () => {
+    const team = makeTeam()
+    team.actionItems.push({ id: 'a1', summary: 'Ship it', status: 'todo', color: 'ledger', dueDate: null, assignee: '', order: 0, notes: 'Blocked on @[Carla](person:stk-1)' })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-backlinks-chip')?.textContent).toBe('↩ 1')
+  })
+
+  test('no chip when nothing mentions this person', () => {
+    const { container, store, pm } = setup(makeTeam())
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-backlinks-chip')).toBeNull()
+  })
 })

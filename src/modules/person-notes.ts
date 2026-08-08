@@ -12,6 +12,9 @@ import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { collectBacklinks, BACKLINK_SECTIONS } from '../core/search'
+import { createBacklinksChip } from '../ui/backlinks-panel'
+import { navigateToLoc } from '../ui/atref'
 
 function personLabel(p: Person): string {
   return p.role ? `${p.name} — ${p.role}` : p.name
@@ -41,7 +44,12 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     return
   }
 
-  const headerEl = el('div', { class: 'tt-person-header' }, personLabel(person))
+  const initialBacklinks = collectBacklinks(findTeam()!, ctx.store.doc, 'person', personId)
+  const headerLabelEl = el('span', {}, personLabel(person))
+  const headerBadgeSlot = el('div', {})
+  const initialChip = createBacklinksChip(initialBacklinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+  if (initialChip) headerBadgeSlot.appendChild(initialChip)
+  const headerEl = el('div', { class: 'tt-person-header' }, headerLabelEl, headerBadgeSlot)
 
   const bundle = createRichEditorBundle({
     store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
@@ -68,15 +76,21 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   // split), which this module must detect and degrade to a placeholder
   // rather than keep showing/editing a ghost record.
   let torn = false
-  const WATCHED: readonly Section[] = ['people', 'notes', 'teams']
+  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     if (torn) return
-    if (findPerson()) return
-    torn = true
-    unsubscribe()
-    bundle.dispose()
-    showNotFound()
+    const currentPerson = findPerson()
+    if (!currentPerson) {
+      torn = true
+      unsubscribe()
+      bundle.dispose()
+      showNotFound()
+      return
+    }
+    headerBadgeSlot.innerHTML = ''
+    const chip = createBacklinksChip(collectBacklinks(findTeam()!, ctx.store.doc, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    if (chip) headerBadgeSlot.appendChild(chip)
   })
 
   container.appendChild(el('div', { class: 'tt-person-notes' }, headerEl, editor.root))
