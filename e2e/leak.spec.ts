@@ -146,6 +146,96 @@ async function quiesce(page: Page): Promise<void> {
   await expect(page.locator('.tt-pane-menu')).toHaveCount(0)
 }
 
+/**
+ * Every overlay surface the navigation cycle never reaches: modals, popups,
+ * pickers, context menus, and the expandable follow-up editors.
+ *
+ * These are the likeliest place for a leak to hide — each one appends to
+ * document.body (not into a pane), and several register capturing
+ * document-level listeners while open, so nothing in the pane manager's
+ * teardown covers them. Opening and closing each one N times must cost the
+ * same as once.
+ */
+async function overlayCycle(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog')
+
+  // Preferences: the largest modal in the app, and the one with tabs that each
+  // build their own DOM (including the password strength meter).
+  await page.locator('.tt-btn-settings').click()
+  await expect(dialog).toBeVisible()
+  for (const tab of ['Advanced', 'Templates', 'Tags', 'Security', 'Data', 'About']) {
+    await dialog.locator('.tt-prefs-tab-btn', { hasText: tab }).first().click()
+  }
+  await dialog.getByRole('button', { name: 'OK' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  // Help modal.
+  await page.locator('.tt-btn-help').click()
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  // Team edit modal — carries an emoji picker bound to its input.
+  await page.locator('.tt-team-item').first().hover()
+  await page.locator('.tt-team-edit-btn').first().click()
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  // Not covered here: the due-dates panel. Its trigger is hidden unless the
+  // document actually has overdue/due-soon items, and seeding those would stop
+  // this cycle netting to zero — which is the property the whole measurement
+  // rests on. It stays a known gap rather than a distorted cycle.
+
+  // In-editor dropdowns: the @ref autocomplete and the '/' template picker
+  // both append to document.body and hold a capturing document listener while
+  // open — exactly what modules/lifecycle.ts's disposal exists for.
+  await switchModule(page, /Daily/i)
+  const editor = page.locator('.tt-pane[data-pane-idx="0"] .editor').first()
+  await editor.click()
+  await editor.fill('')
+  await page.keyboard.type('@')
+  await page.keyboard.press('Escape')
+  await page.keyboard.type('/')
+  await page.keyboard.press('Escape')
+  await editor.fill('')
+
+  // Risks: add a row, expand its follow-up (mounts a whole rich-editor bundle
+  // via ExpandableRowsController), collapse it, open the row context menu,
+  // then delete the row so the cycle nets to zero.
+  await switchModule(page, /Risks/i)
+  await page.locator('.tt-risk-add-btn').click()
+  await page.locator('.tt-risk-expand-btn').first().click()
+  await expect(page.locator('.tt-risk-followup-row .editor')).toHaveCount(1)
+  await page.locator('.tt-risk-expand-btn').first().click()
+  await page.locator('.tt-risk-row').first().click({ button: 'right' })
+  await page.keyboard.press('Escape')
+  await page.locator('.tt-risk-delete-btn').first().click()
+  await expect(page.locator('.tt-risk-row')).toHaveCount(0)
+
+  // Milestones: same shape, plus its own date picker.
+  await switchModule(page, /Milestones/i)
+  await page.locator('.tt-milestone-add-btn').click()
+  await page.locator('.tt-milestone-expand-btn').first().click()
+  await expect(page.locator('.tt-milestone-followup-row .editor')).toHaveCount(1)
+  await page.locator('.tt-milestone-expand-btn').first().click()
+  await page.locator('.tt-milestone-delete-btn').first().click()
+  await expect(page.locator('.tt-milestone-row')).toHaveCount(0)
+
+  // Action items: the card modal hosts its own rich editor and date picker —
+  // the one editor that lives outside the pane tree entirely.
+  await switchModule(page, /Action items/i)
+  await page.locator('.tt-kanban-add-btn').first().click()
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  // Command palette, actually navigated rather than opened and dismissed.
+  await page.keyboard.press('Control+k')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Escape')
+}
+
 test.describe('resource growth over a long session', () => {
   // Long, serial, and CDP-bound: give it room and keep it off the parallel path.
   test.describe.configure({ mode: 'serial', timeout: 180_000 })
@@ -193,6 +283,45 @@ test.describe('resource growth over a long session', () => {
     // (hundreds of nodes, dozens of listeners).
     expect(perCycleNodes, 'DOM nodes retained per cycle').toBeLessThan(25)
     expect(perCycleListeners, 'JS event listeners retained per cycle').toBeLessThan(5)
+  })
+
+  test('modals, popups and expandable rows release their DOM and listeners', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, 'leak-probe-password')
+
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('Runtime.enable')
+
+    await addTeam(page, 'Alpha')
+
+    const WARMUP = 2
+    const MEASURED = 8
+    const samples: Counters[] = []
+    for (let i = 0; i < WARMUP + MEASURED; i++) {
+      await overlayCycle(page)
+      if (i >= WARMUP) samples.push(await measure(cdp))
+    }
+
+    const first = samples[0]!
+    const last = samples[samples.length - 1]!
+    const perCycleNodes = perCycleGrowth(samples, 'nodes')
+    const perCycleListeners = perCycleGrowth(samples, 'listeners')
+
+    console.log(
+      `[leak/overlays] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
+      `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB`
+    )
+    console.log('[leak/overlays] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
+
+    // An overlay that fails to unmount leaves its whole subtree plus its
+    // document-level listeners behind — tens of nodes and several listeners
+    // per cycle, well clear of these bounds.
+    expect(perCycleNodes, 'DOM nodes retained per overlay cycle').toBeLessThan(25)
+    expect(perCycleListeners, 'JS event listeners retained per overlay cycle').toBeLessThan(5)
   })
 
   test('close-file → reopen cycles release the previous document', async ({ page }) => {
