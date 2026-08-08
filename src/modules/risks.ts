@@ -23,7 +23,7 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter } from '../ui/dom'
 import { withDisposal } from './lifecycle'
-import { backlinksFor, BACKLINK_SECTIONS } from '../core/search'
+import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 
@@ -295,7 +295,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // a pointer. The buttons now rest visible-but-quiet (styles.css), and the
     // row itself is a single Tab stop that opens the same context menu on
     // Enter/Space, so every action has a keyboard path.
-    const backlinks = backlinksFor(ctx.store, teamId, 'risk', r.id)
+    const backlinks = ctx.searchIndex.backlinks(teamId, 'risk', r.id)
     // A fixed-width slot even when there's no chip: `createBacklinksChip`
     // returns null for zero backlinks and `el()` skips null children
     // entirely, which would collapse this column on chip-less rows and

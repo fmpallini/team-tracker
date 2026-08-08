@@ -1,6 +1,5 @@
 import type { Doc, ModuleRef, Team } from './types'
 import type { ChangeScope, Section } from './scope'
-import type { Store } from './store'
 import { formatDate, t } from './i18n'
 import { refPattern, type RefKind } from './refs'
 
@@ -302,35 +301,6 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       return indexFor(team, doc).backlinksByRef.get(`${kind}:${targetId}`) ?? []
     },
   }
-}
-
-// One SearchIndex per Store, created lazily and reused for the document's
-// lifetime — mirrors ui/panes.ts's `layoutsByStore` WeakMap (same "one X per
-// store, GC'd with the store" shape). This is what lets backlinksFor() below
-// serve every backlinks-chip call site off the same rev-cached scan instead
-// of each one re-walking the team's text on every render (the old
-// collectBacklinks did this once per kanban card).
-const sharedIndexByStore = new WeakMap<Store, SearchIndex>()
-
-function sharedIndexFor(store: Store): SearchIndex {
-  let index = sharedIndexByStore.get(store)
-  if (!index) {
-    index = createSearchIndex(() => store.doc, () => store.rev)
-    sharedIndexByStore.set(store, index)
-  }
-  return index
-}
-
-/**
- * Convenience entry point for backlinks-chip call sites: every mention of
- * `kind:targetId` in `teamId`'s free-text fields, through the shared cached
- * index above instead of a fresh full-team scan per call. No explicit
- * invalidation wiring needed — a store.update() bumps `store.rev`, and the
- * index's own `syncRev()` (see createSearchIndex) detects the mismatch and
- * drops its cache before serving the next call.
- */
-export function backlinksFor(store: Store, teamId: string, kind: RefKind, targetId: string): Backlink[] {
-  return sharedIndexFor(store).backlinks(teamId, kind, targetId)
 }
 
 export function searchDocument(doc: Doc, query: string, scopeTeamId: string | null): SearchResult[] {

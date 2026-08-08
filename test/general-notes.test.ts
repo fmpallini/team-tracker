@@ -1,6 +1,7 @@
 import { renderGeneralNotes } from '../src/modules/general-notes'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Team } from '../src/core/types'
 
@@ -42,7 +43,8 @@ function setup(team: Team): { container: HTMLElement; store: Store; pm: ReturnTy
 }
 
 function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager, paneIdx: 0 | 1 = 0): void {
-  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US' }
+  const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex }
   renderGeneralNotes(container, loc, ctx)
 }
 

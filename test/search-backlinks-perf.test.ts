@@ -1,17 +1,18 @@
 // test/search-backlinks-perf.test.ts — regression guard for the cost shape
-// of backlink lookups. Before backlinksFor existed, every chip render (e.g.
-// action-items.ts's renderCard, once per kanban card) re-walked every
-// free-text field in the team from scratch. backlinksFor's shared,
-// rev-cached index must instead pay that per-team scan once and serve
-// repeat lookups from cache, so its cost stays ~flat as the number of
-// lookups grows. The "cold" baseline below reproduces the old cost shape by
-// building a fresh index on every call (no cache reuse across calls) — the
+// of backlink lookups. Every chip render (e.g. action-items.ts's renderCard,
+// once per kanban card) calls SearchIndex.backlinks(). A single document-wide
+// index (ui/panes.ts's createPaneManager builds one and wires it into every
+// module's ModuleCtx) must pay the per-team scan once and serve repeat
+// lookups from cache, so its cost stays ~flat as the number of lookups
+// grows — and a scoped store.update() must drop only the affected team's
+// cache entry, not every team's. The "cold" baseline below reproduces the
+// no-cache-reuse cost shape by building a fresh index on every call — the
 // same scan createSearchIndex does internally, just paid every time instead
-// of once. This is a relative-timing comparison (not an absolute ms
-// budget), so it stays meaningful across slower/faster machines and CI
-// runners: both shapes run back-to-back against the same fixture, and only
-// their ratio is asserted.
-import { createSearchIndex, backlinksFor } from '../src/core/search'
+// of once. These are relative-timing comparisons (not absolute ms budgets),
+// so they stay meaningful across slower/faster machines and CI runners: both
+// shapes run back-to-back against the same fixture, and only their ratio is
+// asserted.
+import { createSearchIndex } from '../src/core/search'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { Doc, Team } from '../src/core/types'
@@ -20,10 +21,9 @@ const DAILY_NOTE_COUNT = 150
 const ACTION_ITEM_COUNT = 150
 const LOOKUP_COUNT = 150
 
-function largeFixture(): Doc {
-  const doc = createEmptyDocument('en-US')
+function buildLargeTeam(id: string, name: string): Team {
   const team: Team = {
-    id: 't1', name: 'Alpha', emoji: '🧭', stakeholders: [], members: [],
+    id, name, emoji: '🧭', stakeholders: [], members: [],
     actionItems: [], milestones: [], risks: [], dailyNotes: {},
   }
   for (let i = 0; i < DAILY_NOTE_COUNT; i++) {
@@ -42,8 +42,20 @@ function largeFixture(): Doc {
   // paths must actually find on every lookup below.
   const lastDate = Object.keys(team.dailyNotes).pop()!
   team.dailyNotes[lastDate] += ' Blocked on @[Task number 0 covering rollout work](action:a0) landing first.'
-  doc.teams.push(team)
+  return team
+}
+
+function largeFixture(): Doc {
+  const doc = createEmptyDocument('en-US')
+  doc.teams.push(buildLargeTeam('t1', 'Alpha'))
   return doc
+}
+
+/** Mirrors the wiring ui/panes.ts's createPaneManager does once per document. */
+function wiredIndex(store: ReturnType<typeof createStore>) {
+  const index = createSearchIndex(() => store.doc, () => store.rev)
+  store.subscribe((scope) => index.invalidate(scope))
+  return index
 }
 
 function timeIt(fn: () => void): number {
@@ -52,12 +64,12 @@ function timeIt(fn: () => void): number {
   return performance.now() - start
 }
 
-test('backlinksFor scales far better than an uncached lookup under repeat calls', () => {
+test('a shared index scales far better than an uncached lookup under repeat calls', () => {
   const doc = largeFixture()
 
   // "Cold" baseline: a fresh SearchIndex (and therefore a fresh per-team
-  // scan) on every single lookup — the cost shape the old per-render
-  // collectBacklinks call had, with no cache to reuse across calls.
+  // scan) on every single lookup — the cost shape a per-render lookup would
+  // have with no cache to reuse across calls.
   const coldMs = timeIt(() => {
     for (let i = 0; i < LOOKUP_COUNT; i++) {
       const index = createSearchIndex(() => doc, () => 0)
@@ -65,16 +77,60 @@ test('backlinksFor scales far better than an uncached lookup under repeat calls'
     }
   })
 
-  // Real usage shape: one Store, one shared cached index behind
-  // backlinksFor — the first call pays the scan, the rest are cache hits.
+  // Real usage shape: one Store, one shared cached index (as wired into
+  // every module's ModuleCtx) — the first call pays the scan, the rest are
+  // cache hits.
   const store = createStore(doc)
+  const index = wiredIndex(store)
   const cachedMs = timeIt(() => {
     for (let i = 0; i < LOOKUP_COUNT; i++) {
-      expect(backlinksFor(store, 't1', 'action', 'a0')).toHaveLength(1)
+      expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
     }
   })
 
   // Generous margin (not a tight bound) so this stays robust on slower CI
   // runners while still catching a regression back to a rebuild-per-call shape.
   expect(cachedMs).toBeLessThan(coldMs / 3)
+})
+
+test('scoped invalidation makes reading an unedited team far cheaper than reading the team being edited', () => {
+  const doc = createEmptyDocument('en-US')
+  doc.teams.push(buildLargeTeam('t1', 'Alpha'), buildLargeTeam('t2', 'Beta'))
+  const store = createStore(doc)
+  const index = wiredIndex(store)
+
+  // Warm both teams' cache entries once before timing either loop.
+  expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
+  expect(index.backlinks('t2', 'action', 'a0')).toHaveLength(1)
+
+  const EDIT_COUNT = 60
+  let toggle = false
+  function editT1(): void {
+    toggle = !toggle
+    store.update((d) => {
+      d.teams[0]!.generalNotes = toggle ? 'noise a' : 'noise b'
+    }, { teamId: 't1', sections: ['notes'] })
+  }
+
+  // Each edit to t1 forces t1's own next lookup to pay a real rebuild —
+  // that's correct, not a regression.
+  const editedTeamMs = timeIt(() => {
+    for (let i = 0; i < EDIT_COUNT; i++) {
+      editT1()
+      expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
+    }
+  })
+
+  // t2 was never touched by any of those edits. With scoped invalidation,
+  // its cache entry survives every one of them — these should all be cache
+  // hits, not full team-text rescans.
+  const untouchedTeamMs = timeIt(() => {
+    for (let i = 0; i < EDIT_COUNT; i++) {
+      editT1()
+      expect(index.backlinks('t2', 'action', 'a0')).toHaveLength(1)
+    }
+  })
+
+  // Generous margin, same reasoning as the test above.
+  expect(untouchedTeamMs).toBeLessThan(editedTeamMs / 3)
 })

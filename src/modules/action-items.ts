@@ -18,7 +18,7 @@ import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el } from '../ui/dom'
-import { backlinksFor, BACKLINK_SECTIONS } from '../core/search'
+import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
@@ -391,7 +391,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
     const customName = tagNames[item.color] ?? null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
-    const backlinks = backlinksFor(ctx.store, teamId, 'action', item.id)
+    const backlinks = ctx.searchIndex.backlinks(teamId, 'action', item.id)
     const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
     if (chip) metaChildren.push(chip)
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)

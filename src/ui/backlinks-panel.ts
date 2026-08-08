@@ -1,5 +1,5 @@
 // src/ui/backlinks-panel.ts — count chip + popover for @-ref backlinks:
-// given the Backlink[] core/search.ts's backlinksFor computes for one
+// given the Backlink[] ModuleCtx.searchIndex.backlinks() computes for one
 // person/day/action/milestone/risk, createBacklinksChip renders a small
 // "↩ N" pill (null when there are none) that opens a grouped-by-source-kind
 // list on click. Popover lifecycle mirrors ui/context-menu.ts (fixed-
