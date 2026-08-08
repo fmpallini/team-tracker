@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.0.4] - 2026-08-07
+
+### Fixed
+- **Your last few keystrokes could be lost.** Typing into a note and then immediately switching module, team, or pane — within a fraction of a second — discarded whatever you had just typed. It never reached the file, so saving didn't help.
+- **The same loss on closing.** Closing the file, closing the browser tab, or switching away from the tab right after typing saved a version of your notes that was missing those last keystrokes. Closing the tab also failed to warn you about unsaved changes in that moment.
+
+### Changed
+- Typing is noticeably smoother, especially with several teams: the sidebar no longer rebuilds itself on every keystroke, and searching no longer re-scans teams you haven't touched.
+- Editing a risk or milestone title no longer causes a stutter when you click away from the field.
+
 ## [2.0.3] - 2026-08-07
 
 ### Fixed
