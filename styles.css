@@ -741,8 +741,14 @@ body { background: var(--bg); color: var(--fg); }
   content: ''; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px;
   background: var(--bg); border: 1px solid var(--border); transform: rotate(8deg);
 }
-.tt-org-name { font-family: var(--font-display); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.tt-org-role { font-size: .85em; font-style: italic; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+/* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
+   (needed for the ellipsis) clips at the padding box, and both the synthesized
+   oblique of the body font — Bahnschrift has no true italic — and the search
+   highlight band (::highlight(tt-search), which paints the font's full
+   ascent..descent, taller than a `normal` line box at this size) spill past a
+   tight content box, so roles rendered visibly shaved on the right and bottom. */
+.tt-org-role { font-size: .85em; font-style: italic; opacity: .75; line-height: 1.4; padding: 0 .15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .tt-org-box.tt-people-drop-before { box-shadow: inset 2px 0 0 0 var(--accent); }
 .tt-org-box.tt-people-drop-after { box-shadow: inset -2px 0 0 0 var(--accent); }
 .tt-org-box.tt-people-drop-child { background: rgba(var(--accent-rgb), .18); }
@@ -755,7 +761,7 @@ body { background: var(--bg); color: var(--fg); }
    horizontal rail; each child draws its own stub up to the rail plus a half-
    width rail segment that merges with its siblings (first/last child drop
    the outward half so the rail doesn't overshoot the outermost children). */
-.tt-org-children { display: flex; gap: 1.5rem; justify-content: center; position: relative; padding-top: 1.5rem; }
+.tt-org-children { --org-gap: 1.5rem; display: flex; gap: var(--org-gap); justify-content: center; position: relative; padding-top: 1.5rem; }
 .tt-org-node > .tt-org-children::before {
   content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 1.5rem;
   border-left: 1px solid var(--border); transform: translateX(-50%);
@@ -765,8 +771,13 @@ body { background: var(--bg); color: var(--fg); }
   content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 1.5rem;
   border-left: 1px solid var(--border); transform: translateX(-50%);
 }
+/* Each segment bleeds half the flex gap outward on both sides so adjacent
+   siblings' segments meet in the middle of the gap. Without the bleed the gap
+   belongs to no child and the rail renders with a hole at every sibling
+   boundary. Keep the bleed at exactly half of --org-gap. */
 .tt-org-children > .tt-org-node::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 0;
+  content: ''; position: absolute; top: 0;
+  left: calc(var(--org-gap) / -2); right: calc(var(--org-gap) / -2); height: 0;
   border-top: 1px solid var(--border);
 }
 .tt-org-children > .tt-org-node:first-child::after { left: 50%; }
@@ -904,8 +915,17 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
-.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
-.tt-milestone-svg { display: block; }
+/* The timeline never scrolls horizontally, at any date distribution. The SVG's
+   pixel width is computed in src/modules/milestones.ts from MIN_LABEL_GAP, so
+   tightly-clustered dates produce a drawing several times wider than the pane
+   (worst in a split pane, which is narrower and — with no ResizeObserver on the
+   module — isn't even re-measured when the splitter moves). The SVG carries a
+   viewBox, so max-width/height:auto scales the whole drawing down to fit
+   instead, preserving proportions. This is the same treatment the print window
+   applies via PRINT_CSS in src/ui/panes.ts; it now just holds on screen too, so
+   the pane and its print preview agree. */
+.tt-milestone-timeline { flex: none; overflow: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.tt-milestone-svg { display: block; max-width: 100%; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
 .tt-milestone-dot { stroke-width: 2; }

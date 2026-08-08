@@ -4,6 +4,13 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.0.5] - 2026-08-07
+
+### Fixed
+- Job titles in the org chart were shaved off along their right edge and underneath, most visibly when a search highlighted one.
+- The org chart's connector lines had a gap between each pair of siblings, so the line joining a set of children read as broken instead of continuous.
+- The milestones timeline needed horizontal scrolling whenever dates were closely clustered, and never adjusted when you resized a split pane. It now always scales to fit the pane's width, matching what its print preview already showed.
+
 ## [2.0.4] - 2026-08-07
 
 ### Fixed
