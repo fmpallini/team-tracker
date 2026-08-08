@@ -736,3 +736,44 @@ describe('row context menu', () => {
     expect(copied[0]!.followup).toBe('blocked by Fix')
   })
 })
+
+// Regression: same stacking bug as risks.ts — the deferred-rebuild path armed
+// a fresh `blur` listener on EVERY skipped mutation, all on the same focused
+// element, so one blur fired N full renderAll() rebuilds.
+describe('deferred rebuild while a field is focused', () => {
+  test('arms exactly one blur listener regardless of how many mutations are skipped', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({})] }))
+    render(container, loc, store, pm)
+
+    const input = container.querySelector<HTMLInputElement>('.tt-milestone-title-input')!
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    let armed = 0
+    const origAdd = input.addEventListener.bind(input)
+    input.addEventListener = ((type: string, ...rest: unknown[]) => {
+      if (type === 'blur') armed++
+      return (origAdd as (t: string, ...a: unknown[]) => void)(type, ...rest)
+    }) as typeof input.addEventListener
+
+    for (let i = 0; i < 20; i++) {
+      store.update((d) => { d.teams[0]!.milestones[0]!.title = `Kickoff ${i}` }, { teamId: 'T1', sections: ['milestones'] })
+    }
+
+    expect(armed).toBe(1)
+  })
+
+  test('the deferred rebuild still runs on blur', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'm1', title: 'Kickoff' })] }))
+    render(container, loc, store, pm)
+
+    const input = container.querySelector<HTMLInputElement>('.tt-milestone-title-input')!
+    input.focus()
+
+    store.update((d) => { d.teams[0]!.milestones.push(milestone({ id: 'm2', title: 'Launch', date: '2026-02-01' })) }, { teamId: 'T1', sections: ['milestones'] })
+    expect(rows(container)).toHaveLength(1)
+
+    input.dispatchEvent(new FocusEvent('blur'))
+    expect(rows(container)).toHaveLength(2)
+  })
+})

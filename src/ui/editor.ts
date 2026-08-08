@@ -126,6 +126,38 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }, CHANGE_DEBOUNCE_MS)
   }
 
+  /**
+   * Cancels a pending debounced change WITHOUT running it — for `setMd()`,
+   * where the pending change belongs to a document that is being replaced (see
+   * its own comment). Every other teardown path wants `flushChange()` instead:
+   * dropping there loses the user's last keystrokes outright.
+   */
+  function cancelChange(): void {
+    if (changeTimer === null) return
+    clearTimeout(changeTimer)
+    changeTimer = null
+  }
+
+  /**
+   * Runs a pending debounced change NOW instead of waiting out the remaining
+   * debounce. `destroy()` calls this because teardown is not a reason to
+   * discard an edit: ui/panes.ts tears a module down on every pane/module/team
+   * switch, so a switch landing inside the CHANGE_DEBOUNCE_MS window after a
+   * keystroke used to drop those characters silently — they never reached the
+   * store, so they were never saved either.
+   *
+   * Safe to call after ui/panes.ts's `container.innerHTML = ''`: that detaches
+   * `editorEl` but leaves its subtree intact, and `hooks.onChange()` reads the
+   * markdown back off `editorEl` itself (see rich-editor.ts), not off the DOM
+   * it used to be mounted in.
+   */
+  function flushChange(): void {
+    if (changeTimer === null) return
+    clearTimeout(changeTimer)
+    changeTimer = null
+    hooks.onChange()
+  }
+
   function exec(cmd: string, value?: string): void {
     document.execCommand(cmd, false, value)
     scheduleChange()
@@ -818,11 +850,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function setMd(md: string): void {
     // A programmatic load can land within the debounce window of a prior
     // keystroke; without cancelling, the stale timer would fire onChange
-    // against the newly-loaded document and falsely mark it dirty.
-    if (changeTimer !== null) {
-      clearTimeout(changeTimer)
-      changeTimer = null
-    }
+    // against the newly-loaded document and falsely mark it dirty. Cancel,
+    // not flush — unlike destroy(), the pending change here belongs to
+    // content that is being replaced outright.
+    cancelChange()
     editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
   }
 
@@ -831,15 +862,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function destroy(): void {
-    if (changeTimer !== null) {
-      clearTimeout(changeTimer)
-      changeTimer = null
-    }
+    // Flush, don't drop — see flushChange(). Runs before the listeners come
+    // off so ordering matches a normal debounce firing.
+    flushChange()
     closeCopyMenu()
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
     editorEl.removeEventListener('click', onClick)
+    editorEl.removeEventListener('auxclick', onAuxClick)
+    editorEl.removeEventListener('mousedown', onMouseDownForRef)
   }
 
   return { root, getMd, setMd, focus, destroy }

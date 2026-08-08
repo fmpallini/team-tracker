@@ -534,12 +534,28 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // this field's own edit (if any) commits and would have triggered a
   // rebuild anyway. (The SVG itself never holds focus, so it's always safe
   // to rebuild — renderAll rebuilds both together for simplicity.)
+  // Only ever ONE deferral armed at a time — see the identical guard in
+  // risks.ts. Arming per skipped mutation stacked a listener each time on the
+  // same focused element, so a field held focused across N mutations fired N
+  // full renderAll() rebuilds on a single blur.
+  let deferredEl: HTMLElement | null = null
+  function onDeferredBlur(): void {
+    deferredEl = null
+    renderAll()
+  }
+  function deferRebuildUntilBlur(active: HTMLElement): void {
+    if (deferredEl === active) return
+    deferredEl?.removeEventListener('blur', onDeferredBlur)
+    deferredEl = active
+    active.addEventListener('blur', onDeferredBlur, { once: true })
+  }
+
   const WATCHED: readonly Section[] = ['milestones', 'teams']
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretInput()
     if (active) {
-      active.addEventListener('blur', () => renderAll(), { once: true })
+      deferRebuildUntilBlur(active)
       return
     }
     renderAll()
@@ -560,6 +576,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   return () => {
     unsubscribe()
+    // An armed deferral would otherwise rebuild a torn-down module on the
+    // field's next blur.
+    deferredEl?.removeEventListener('blur', onDeferredBlur)
+    deferredEl = null
     expandable.disposeAll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }

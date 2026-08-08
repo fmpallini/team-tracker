@@ -349,3 +349,49 @@ describe('two-month calendar anchor persistence', () => {
     expect(monthLabels(container)).toEqual(['May 2026', 'June 2026'])
   })
 })
+
+// Regression: ui/editor.ts's debounced onChange used to be *dropped* on
+// destroy(), so a module/team/pane switch landing inside the 300ms window
+// after a keystroke lost those characters outright — they never reached the
+// store, so they were never saved either. destroy() now flushes instead.
+describe('pending editor changes survive teardown', () => {
+  test('a module switch inside the debounce window still persists the edit', () => {
+    vi.useFakeTimers()
+    try {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+
+      setBlockText(editorEl(container), 'note typed right before switching')
+      fireInput(editorEl(container))
+
+      // Switch 100ms later — inside CHANGE_DEBOUNCE_MS (300ms).
+      vi.advanceTimersByTime(100)
+      render(container, { teamId: 'T1', ref: { kind: 'general' } }, store, pm)
+      vi.advanceTimersByTime(1000)
+
+      expect(store.doc.teams[0]!.dailyNotes['2026-07-10']).toContain('note typed right before switching')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('the flushed edit lands on the day being left, not the one navigated to', () => {
+    vi.useFakeTimers()
+    try {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+
+      setBlockText(editorEl(container), 'typed into 07-10')
+      fireInput(editorEl(container))
+
+      vi.advanceTimersByTime(100)
+      render(container, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-11' } }, store, pm)
+      vi.advanceTimersByTime(1000)
+
+      expect(store.doc.teams[0]!.dailyNotes['2026-07-10']).toContain('typed into 07-10')
+      expect(store.doc.teams[0]!.dailyNotes['2026-07-11']).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

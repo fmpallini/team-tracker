@@ -739,3 +739,46 @@ describe('row context menu', () => {
     expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(1)
   })
 })
+
+// Regression: the deferred-rebuild path used to arm a fresh `blur` listener on
+// EVERY skipped mutation, all on the same focused element — so a field held
+// focused across N mutations fired N full renderAll() rebuilds on one blur.
+describe('deferred rebuild while a field is focused', () => {
+  test('arms exactly one blur listener regardless of how many mutations are skipped', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({})] }))
+    render(container, loc, store, pm)
+
+    const input = container.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    let armed = 0
+    const origAdd = input.addEventListener.bind(input)
+    input.addEventListener = ((type: string, ...rest: unknown[]) => {
+      if (type === 'blur') armed++
+      return (origAdd as (t: string, ...a: unknown[]) => void)(type, ...rest)
+    }) as typeof input.addEventListener
+
+    for (let i = 0; i < 20; i++) {
+      store.update((d) => { d.teams[0]!.risks[0]!.order = i }, { teamId: 'T1', sections: ['risks'] })
+    }
+
+    expect(armed).toBe(1)
+  })
+
+  test('the deferred rebuild still runs on blur', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'r1', title: 'First' })] }))
+    render(container, loc, store, pm)
+
+    const input = container.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+    input.focus()
+
+    // A change made elsewhere while this field holds focus is deferred...
+    store.update((d) => { d.teams[0]!.risks.push(risk({ id: 'r2', title: 'Second', order: 1 })) }, { teamId: 'T1', sections: ['risks'] })
+    expect(titles(container)).toEqual(['First'])
+
+    // ...and lands once the field blurs.
+    input.dispatchEvent(new FocusEvent('blur'))
+    expect(titles(container)).toEqual(['First', 'Second'])
+  })
+})
