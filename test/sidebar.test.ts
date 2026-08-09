@@ -206,7 +206,9 @@ test('a new team is seeded with default names for the urgent/blocked/in-review c
   emojiInput.dispatchEvent(new Event('input'))
   clickByText('OK')
 
-  expect(store.doc.teams[0]!.actionTagNames).toEqual({ rust: 'Urgent', brass: 'Blocked', slate: 'In Review' })
+  expect(store.doc.teams[0]!.actionTagNames).toEqual({
+    rust: 'Process', brass: 'People', slate: 'Financial', sage: 'Technical', plum: 'Operations', ledger: 'Legal',
+  })
 })
 
 test('+ modal requires a name', () => {

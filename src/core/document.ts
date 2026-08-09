@@ -1,4 +1,4 @@
-import type { ActionItem, Doc, Team } from './types'
+import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
@@ -18,19 +18,20 @@ export function createEmptyDocument(locale: Locale): Doc {
 }
 
 /**
- * The three action-item colors (red/yellow/blue) that carry a suggested tag
- * name. Single source for both consumers: `createEmptyTeam` below seeds new
+ * All six action-item colors, each carrying a suggested category tag name.
+ * Single source for both consumers: `createEmptyTeam` below seeds new
  * teams with these names as real, editable data, and the kanban
  * (src/modules/action-items.ts) shows the same names as placeholder
  * fallbacks for teams that cleared one or predate the seeding.
  */
-export const SUGGESTED_TAG_NAME_KEYS: Partial<Record<ActionItem['color'], MsgKey>> = {
-  rust: 'kanban_suggest_urgent', brass: 'kanban_suggest_blocked', slate: 'kanban_suggest_in_review',
+export const SUGGESTED_TAG_NAME_KEYS: Partial<Record<ActionItemColor, MsgKey>> = {
+  rust: 'kanban_suggest_process', brass: 'kanban_suggest_people', slate: 'kanban_suggest_financial',
+  sage: 'kanban_suggest_technical', plum: 'kanban_suggest_operations', ledger: 'kanban_suggest_legal',
 }
 
 export function createEmptyTeam(id: string, name: string, emoji: string, locale: Locale): Team {
-  const actionTagNames: Partial<Record<ActionItem['color'], string>> = {}
-  for (const [color, key] of Object.entries(SUGGESTED_TAG_NAME_KEYS) as [ActionItem['color'], MsgKey][]) {
+  const actionTagNames: Partial<Record<ActionItemColor, string>> = {}
+  for (const [color, key] of Object.entries(SUGGESTED_TAG_NAME_KEYS) as [ActionItemColor, MsgKey][]) {
     actionTagNames[color] = t(locale, key)
   }
   return {
