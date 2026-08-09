@@ -157,7 +157,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
-      unlinkRefsInTeam(tm, 'action', [id])
+      const removed = tm.actionItems.find((i) => i.id === id)
+      unlinkRefsInTeam(tm, 'action', removed ? new Map([[id, removed.summary]]) : new Map())
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, milestones,
@@ -194,8 +195,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         ctx.store.update((d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
           if (!tm) return
-          const removedIds = tm.actionItems.filter((i) => i.status === status).map((i) => i.id)
-          unlinkRefsInTeam(tm, 'action', removedIds)
+          const removedTitles = new Map(tm.actionItems.filter((i) => i.status === status).map((i) => [i.id, i.summary]))
+          unlinkRefsInTeam(tm, 'action', removedTitles)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
           // No `sections` — same unlinkRefsInTeam cross-section rationale as
           // removeItem() above.
@@ -220,7 +221,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const summaryInput = el('input', { type: 'text', class: 'tt-input', value: existing?.summary ?? '' }) as HTMLInputElement
     const datePicker = createDatePicker({ value: existing?.dueDate ?? '', locale: lc, allowClear: true, onChange: () => {} })
     const assigneeInput = el('input', { type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '' }) as HTMLInputElement
-    let selectedColor: ActionItem['color'] = existing?.color ?? 'ledger'
+    // New cards start with no color chosen — the user must pick one
+    // explicitly rather than inheriting whatever chip happens to render
+    // first; editing an existing card keeps its already-assigned color.
+    let selectedColor: ActionItem['color'] | null = existing?.color ?? null
     const errorEl = el('div', { class: 'tt-field-error' })
 
     const richBundle = createRichEditorBundle({
@@ -281,6 +285,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         errorEl.textContent = t(lc, 'kanban_summary_required')
         return
       }
+      if (selectedColor === null) {
+        errorEl.textContent = t(lc, 'kanban_color_required')
+        return
+      }
+      const color = selectedColor // narrow past `null` once, outside the chip onclick closure below that reassigns selectedColor
       const dueDate = datePicker.getValue() === '' ? null : datePicker.getValue()
       const assignee = assigneeInput.value
       const notes = editor.getMd()
@@ -288,7 +297,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       // instant it's created — clear the filter first so store.update()'s
       // synchronous renderAll() (see src/core/store.ts) picks it up already
       // showing everything, rather than needing a second click to find it.
-      if (existing === null && activeTagFilter !== null && activeTagFilter !== selectedColor) {
+      if (existing === null && activeTagFilter !== null && activeTagFilter !== color) {
         activeTagFilter = null
       }
       ctx.store.update((d) => {
@@ -298,7 +307,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           const group = itemsByStatus(tm.actionItems, defaultStatus)
           tm.actionItems.push({
             id: crypto.randomUUID(), summary, notes, status: defaultStatus,
-            dueDate, assignee, color: selectedColor, order: group.length,
+            dueDate, assignee, color, order: group.length,
           })
         } else {
           const found = tm.actionItems.find((i) => i.id === existing.id)
@@ -307,7 +316,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           found.notes = notes
           found.dueDate = dueDate
           found.assignee = assignee
-          found.color = selectedColor
+          found.color = color
         }
         // Unscoped beyond the team: `summary` is the label @[…](action:id)
         // mentions resolve through live — see the note at people-tree.ts's

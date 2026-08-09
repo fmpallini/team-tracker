@@ -11,6 +11,21 @@ test('inline formats round-trip', () => {
   expect(roundTrip(md)).toBe(md)
 })
 
+test('single-tilde unlinked-ref marker renders as a muted span and round-trips', () => {
+  const md = 'blocked by ~Fix bug~ now'
+  const html = mdToHtml(md)
+  expect(html).toContain('<span class="tt-unlinked-ref">Fix bug</span>')
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('double-tilde strike is unaffected by the new single-tilde marker rule', () => {
+  const md = 'a ~~struck~~ and ~marker~ together'
+  const html = mdToHtml(md)
+  expect(html).toContain('<s>struck</s>')
+  expect(html).toContain('<span class="tt-unlinked-ref">marker</span>')
+  expect(roundTrip(md)).toBe(md)
+})
+
 test('headers and lists', () => {
   const md = '# T1\n## T2\n### T3\ntexto\n- um\n- dois\n1. a\n2. b'
   expect(roundTrip(md)).toBe(md)

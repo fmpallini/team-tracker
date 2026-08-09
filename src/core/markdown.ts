@@ -23,6 +23,11 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
   out = out.replace(/~~([^~]+)~~/g, '<s>$1</s>')
+  // Former @-mention left behind by refs.ts's unlink-on-delete — single
+  // tilde, distinct from the double-tilde strike rule just above (which has
+  // already consumed every `~~...~~` pair by this point, so only genuine
+  // single-tilde spans remain to match here).
+  out = out.replace(/~([^~]+)~/g, '<span class="tt-unlinked-ref">$1</span>')
   out = out.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
   return out
 }
@@ -124,6 +129,10 @@ function inlineMd(node: Node): string {
     case 'em': case 'i': return `*${kids()}*`
     case 'u': return `<u>${kids()}</u>`
     case 's': case 'strike': case 'del': return `~~${kids()}~~`
+    // Without this case, the default branch below would unwrap the span and
+    // drop the marker entirely — re-rendering a note through the rich editor
+    // (even untouched) would silently flatten it back to bare text.
+    case 'span': return node.classList.contains('tt-unlinked-ref') ? `~${kids()}~` : kids()
     case 'br': return ''
     default: return kids()
   }

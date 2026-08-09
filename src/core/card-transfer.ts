@@ -55,6 +55,7 @@ function transferBetweenTeams<T extends { id: string }>(
   kind: IdRefKind,
   getList: (t: Team) => T[],
   setList: (t: Team, list: T[]) => void,
+  getTitle: (item: T) => string,
   finish: (to: Team, copy: T) => void
 ): void {
   const from = teams.find((t) => t.id === fromTeamId)
@@ -62,8 +63,9 @@ function transferBetweenTeams<T extends { id: string }>(
   if (!from || !to) return
   const copy = transferInList(from, to, itemId, mode, getList, setList)
   if (!copy) return
+  const title = getTitle(copy) // copy is {...src}, so its title still matches the pre-transfer item
   finish(to, copy)
-  if (mode === 'move') unlinkRefsInTeam(from, kind, [itemId])
+  if (mode === 'move') unlinkRefsInTeam(from, kind, new Map([[itemId, title]]))
 }
 
 export function transferActionItem(
@@ -72,6 +74,7 @@ export function transferActionItem(
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'action',
     (t) => t.actionItems, (t, list) => { t.actionItems = list },
+    (item) => item.summary,
     (to, copy) => {
       copy.notes = stripAllRefs(copy.notes)
       copy.order = to.actionItems.length - 1
@@ -85,6 +88,7 @@ export function transferMilestone(
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'milestone',
     (t) => t.milestones, (t, list) => { t.milestones = list },
+    (item) => item.title,
     (_to, copy) => {
       copy.followup = stripAllRefs(copy.followup)
     }
@@ -97,6 +101,7 @@ export function transferRisk(
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'risk',
     (t) => t.risks, (t, list) => { t.risks = list },
+    (item) => item.title,
     (to, copy) => {
       copy.followup = stripAllRefs(copy.followup)
       copy.order = to.risks.length - 1

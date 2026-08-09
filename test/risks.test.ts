@@ -426,7 +426,7 @@ describe('renderRisks', () => {
 
     const remaining = store.doc.teams[0]!.risks
     expect(remaining.map((r) => r.id)).toEqual(['r2'])
-    expect(remaining[0]!.followup).toBe('related to Vendor delay closely')
+    expect(remaining[0]!.followup).toBe('related to ~Vendor delay~ closely')
   })
 
   test('close button moves risk to the closed section; reopen brings it back', () => {
