@@ -12,7 +12,7 @@ import { applySearchHighlight, dispatchSearchFocusItem } from './search-highligh
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
 
-const DEBOUNCE_MS = 150
+const DEBOUNCE_MS = 300
 
 /**
  * Builds the highlighted snippet DOM. `snippet` and `normalize(snippet)` are

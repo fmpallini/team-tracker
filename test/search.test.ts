@@ -108,6 +108,43 @@ function teamWithNote(id: string, name: string, note: string): Team {
   }
 }
 
+test('ranking: an earlier single-term match outranks a later one', () => {
+  const d = createEmptyDocument('en-US')
+  d.teams.push(
+    teamWithNote('far', 'Far', 'lots of unrelated filler text before the word budget shows up way out here'),
+    teamWithNote('near', 'Near', 'budget review notes for this quarter'),
+  )
+  const r = searchDocument(d, 'budget', null)
+  expect(r.map((x) => x.teamName)).toEqual(['Near', 'Far'])
+})
+
+test('ranking: terms clustered together outrank the same terms scattered apart', () => {
+  const d = createEmptyDocument('en-US')
+  d.teams.push(
+    teamWithNote('scattered', 'Scattered', 'fix the login page today, unrelated filler in between, then handle the budget separately'),
+    teamWithNote('clustered', 'Clustered', 'fix budget line items before the review'),
+  )
+  const r = searchDocument(d, 'fix budget', null)
+  expect(r.map((x) => x.teamName)).toEqual(['Clustered', 'Scattered'])
+})
+
+test('ranking: equal-score hits keep their original insertion order (stable sort)', () => {
+  const d = createEmptyDocument('en-US')
+  d.teams.push(teamWithNote('t1', 'Alpha', 'budget notes here'), teamWithNote('t2', 'Beta', 'budget notes here too'))
+  const r = searchDocument(d, 'budget', null)
+  expect(r.map((x) => x.teamName)).toEqual(['Alpha', 'Beta'])
+})
+
+test('ranking applies through the cached index too, not just searchDocument', () => {
+  const d = createEmptyDocument('en-US')
+  d.teams.push(
+    teamWithNote('far', 'Far', 'lots of unrelated filler text before the word budget shows up way out here'),
+    teamWithNote('near', 'Near', 'budget review notes for this quarter'),
+  )
+  const index = createSearchIndex(() => d, () => 0)
+  expect(index.search('budget', null).map((x) => x.teamName)).toEqual(['Near', 'Far'])
+})
+
 test('the index returns the same results as searchDocument', () => {
   const doc: Doc = createEmptyDocument('en-US')
   doc.teams.push(teamWithNote('t1', 'Alpha', 'deploy the **release** today'))

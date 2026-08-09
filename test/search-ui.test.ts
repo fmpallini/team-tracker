@@ -86,15 +86,15 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-test('debounces the search by 150ms', () => {
+test('debounces the search by 300ms', () => {
   const store = buildStore([oneNoteTeam], 'T1')
   const { input } = mount(store, fakePM())
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(100)
+  vi.advanceTimersByTime(200)
   expect(isOpen()).toBe(false)
 
-  vi.advanceTimersByTime(60)
+  vi.advanceTimersByTime(150)
   expect(isOpen()).toBe(true)
 })
 
@@ -103,11 +103,11 @@ test('clearing the query closes the dropdown', () => {
   const { input } = mount(store, fakePM())
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(isOpen()).toBe(true)
 
   type(input, '')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(isOpen()).toBe(false)
 })
 
@@ -118,7 +118,7 @@ test('clear button appears only with typed text and resets the input + dropdown 
   expect(clearBtn.classList.contains('visible')).toBe(false)
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(clearBtn.classList.contains('visible')).toBe(true)
   expect(isOpen()).toBe(true)
 
@@ -142,7 +142,7 @@ test('renders module icons per kind, in candidate order, and toggles teamName wi
   const { input } = mount(store, fakePM())
 
   type(input, 'widget')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
 
   const icons = Array.from(document.querySelectorAll('.tt-search-row .tt-search-icon')).map((n) => n.textContent)
   expect(icons).toEqual(['📅', '🧑', '✅', '🚩', '⚠️'])
@@ -169,7 +169,7 @@ test('highlights matched terms found via normalize() at the correct position in 
   // the <mark> must wrap the *original*, accented slice ("café"), not some
   // shifted or unaccented substitute.
   type(input, 'cafe')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
 
   const marks = document.querySelectorAll('.tt-search-snippet mark')
   expect(marks).toHaveLength(1)
@@ -191,7 +191,7 @@ test('scopes to the active team by default; the all-teams checkbox widens the se
   const { input } = mount(store, fakePM())
 
   type(input, 'zephyr')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(document.querySelectorAll('.tt-search-row')).toHaveLength(0)
   expect(document.querySelector('.tt-search-empty')).not.toBeNull()
 
@@ -219,7 +219,7 @@ test('Ctrl+Shift+F checks the all-teams box, focuses the search input, and widen
   const { input } = mount(store, fakePM())
 
   type(input, 'zephyr')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(document.querySelectorAll('.tt-search-row')).toHaveLength(0)
 
   input.blur()
@@ -254,7 +254,7 @@ test('arrow keys navigate results with wraparound in both directions; Enter open
   const { input } = mount(store, pm)
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(document.querySelectorAll('.tt-search-row')).toHaveLength(3)
 
   key(input, 'ArrowUp') // selected 0 -> wraps to 2
@@ -270,7 +270,7 @@ test('refocusing the search input with existing text re-runs the search and reop
   const { input } = mount(store, fakePM())
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(isOpen()).toBe(true)
 
   key(input, 'Escape') // closes the dropdown but leaves the typed query
@@ -295,7 +295,7 @@ test('Escape closes the dropdown and keeps focus on the input; a second Escape b
   input.focus()
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(isOpen()).toBe(true)
 
   key(input, 'Escape')
@@ -312,7 +312,7 @@ test('clicking a result opens it via pm.openInFocused and closes the dropdown', 
   const { input } = mount(store, pm)
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
 
   const row = document.querySelector('.tt-search-row') as HTMLElement
   row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
@@ -342,7 +342,7 @@ test('clicking an all-teams result from a different team switches the active tea
   checkbox.dispatchEvent(new Event('change'))
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
 
   const row = document.querySelector('.tt-search-row') as HTMLElement
   row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
@@ -361,7 +361,7 @@ test('clicking an all-teams result from the already-active team does not call sw
   const { input } = mount(store, pm, switchTeam)
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   const row = document.querySelector('.tt-search-row') as HTMLElement
   row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
@@ -380,7 +380,7 @@ test('mouse selection then click commits the result (hover must not rebuild the 
   const { input } = mount(store, pm)
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
 
   const rows = document.querySelectorAll('.tt-search-row')
   expect(rows).toHaveLength(2)
@@ -411,7 +411,7 @@ test('does not accumulate document-level listeners across repeated open/close cy
 
   for (let i = 0; i < 5; i++) {
     type(input, 'alpha')
-    vi.advanceTimersByTime(200)
+    vi.advanceTimersByTime(350)
     key(input, 'Escape')
   }
 
@@ -419,7 +419,7 @@ test('does not accumulate document-level listeners across repeated open/close cy
 
   // Sanity: outside-click-closes still works correctly after many cycles.
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
   expect(isOpen()).toBe(true)
   document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
   expect(isOpen()).toBe(false)
@@ -438,7 +438,7 @@ test('search queries are delegated to the injected SearchIndex instead of one bu
   const { input } = mount(store, fakePM(), () => {}, mockIndex)
 
   type(input, 'alpha')
-  vi.advanceTimersByTime(200)
+  vi.advanceTimersByTime(350)
 
   expect(searchCalls).toEqual([['alpha', 'T1']])
 })
