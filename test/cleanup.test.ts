@@ -75,6 +75,38 @@ test('zero matches across an empty document', () => {
   expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 0, milestones: 0, risks: 0, dailyNotes: 0 })
 })
 
+test('purging a done action item unlinks its @mentions elsewhere in the team', () => {
+  const d = doc([team({
+    actionItems: [item({ id: 'a1', summary: 'Fix bug', status: 'done' })],
+    milestones: [milestone({ id: 'm1', followup: 'blocked by @[Fix bug](action:a1)' })],
+    dailyNotes: { '2026-07-20': 'see @[Fix bug](action:a1)' },
+  })])
+  applyCleanup(d, 30, TODAY)
+  expect(d.teams[0]!.actionItems).toEqual([])
+  expect(d.teams[0]!.milestones[0]!.followup).toBe('blocked by ~Fix bug~')
+  expect(d.teams[0]!.dailyNotes['2026-07-20']).toBe('see ~Fix bug~')
+})
+
+test('purging a done milestone unlinks its @mentions using the milestone\'s current title', () => {
+  const d = doc([team({
+    milestones: [milestone({ id: 'm1', title: 'Ship v2', done: true })],
+    risks: [risk({ id: 'r1', followup: 'tracked by @[Ship v1](milestone:m1)' })], // stale label from before a rename
+  })])
+  applyCleanup(d, 30, TODAY)
+  expect(d.teams[0]!.milestones).toEqual([])
+  expect(d.teams[0]!.risks[0]!.followup).toBe('tracked by ~Ship v2~')
+})
+
+test('purging a closed risk unlinks its @mentions', () => {
+  const d = doc([team({
+    risks: [risk({ id: 'r1', title: 'Vendor lock-in', closed: true })],
+    actionItems: [item({ id: 'a1', notes: 'mitigates @[Vendor lock-in](risk:r1)' })],
+  })])
+  applyCleanup(d, 30, TODAY)
+  expect(d.teams[0]!.risks).toEqual([])
+  expect(d.teams[0]!.actionItems[0]!.notes).toBe('mitigates ~Vendor lock-in~')
+})
+
 test('applies across multiple teams independently', () => {
   const d = doc([
     team({ id: 'A', actionItems: [item({ id: 'a', status: 'done' })] }),

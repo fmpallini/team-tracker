@@ -400,7 +400,7 @@ describe('renderPeopleTree', () => {
 
     const remaining = store.doc.teams[0]!.members
     expect(remaining.map((p) => p.name)).toEqual(['Bruno'])
-    expect(remaining[0]!.notes).toBe('ping Ana about this')
+    expect(remaining[0]!.notes).toBe('ping ~Ana~ about this')
   })
 
   describe('root drop zone', () => {
@@ -460,11 +460,11 @@ test('deleting a person unlinks every reference to them across the team\'s notes
   const store = createStore(doc)
   store.update((d) => {
     const tm = d.teams.find((t) => t.id === 'T1')!
-    unlinkRefsInTeam(tm, 'person', ['carla'])
+    unlinkRefsInTeam(tm, 'person', new Map([['carla', 'Carla']]))
     tm.stakeholders = deletePerson(tm.stakeholders, 'carla')
   })
   const tm = store.doc.teams[0]!
-  expect(tm.members[0]!.notes).toBe('ping Carla')
-  expect(tm.dailyNotes['2026-07-01']).toBe('saw Carla today')
+  expect(tm.members[0]!.notes).toBe('ping ~Carla~')
+  expect(tm.dailyNotes['2026-07-01']).toBe('saw ~Carla~ today')
   expect(tm.stakeholders).toEqual([])
 })

@@ -88,7 +88,9 @@ describe('transferActionItem', () => {
     from.actionItems.push({ id: 'a2', summary: 'Follow up', notes: 'see @[Do thing](action:a1)', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 1 })
     transferActionItem([from, to], 'a1', 'from', 'to', 'move')
     expect(from.actionItems).toHaveLength(1)
-    expect(from.actionItems[0]!.notes).toBe('see Do thing') // ref flattened, not left dangling
+    // Item is truly gone from this team (it now lives only in "to") — same
+    // muted-marker treatment as a delete, not a bare-text strip.
+    expect(from.actionItems[0]!.notes).toBe('see ~Do thing~')
   })
 
   test('no-ops when the item id is not found', () => {
@@ -124,7 +126,7 @@ describe('transferMilestone', () => {
     const to = team({ id: 'to' })
     transferMilestone([from, to], 'm1', 'from', 'to', 'move')
     expect(from.milestones).toHaveLength(0)
-    expect(from.dailyNotes['2026-07-20']).toBe('waiting on Ship') // ref flattened, not left dangling
+    expect(from.dailyNotes['2026-07-20']).toBe('waiting on ~Ship~') // gone from this team — muted marker, same as a delete
   })
 })
 
@@ -156,6 +158,6 @@ describe('transferRisk', () => {
     const to = team({ id: 'to' })
     transferRisk([from, to], 'r1', 'from', 'to', 'move')
     expect(from.risks).toHaveLength(0)
-    expect(from.dailyNotes['2026-07-20']).toBe('tracking Vendor delay') // ref flattened, not left dangling
+    expect(from.dailyNotes['2026-07-20']).toBe('tracking ~Vendor delay~') // gone from this team — muted marker, same as a delete
   })
 })

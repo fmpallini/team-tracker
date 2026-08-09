@@ -30,6 +30,15 @@ test('finds accent-insensitive within team scope', () => {
   expect(r[0]!.snippet).not.toContain('**')
 })
 
+test('a note containing the unlinked-ref marker (~Label~) is matched and its snippet shows the plain label, no tildes', () => {
+  const d = fixture()
+  d.teams[0]!.generalNotes = 'Blocked by ~Fix bug~ from last sprint'
+  const r = searchDocument(d, 'fix bug', 't1')
+  expect(r).toHaveLength(1)
+  expect(r[0]!.snippet).toContain('Fix bug')
+  expect(r[0]!.snippet).not.toContain('~')
+})
+
 test('all-teams scope and AND terms', () => {
   expect(searchDocument(fixture(), 'orcamento', null)).toHaveLength(2)
   expect(searchDocument(fixture(), 'orcamento extra', null)).toHaveLength(1)

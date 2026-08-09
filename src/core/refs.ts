@@ -49,22 +49,50 @@ export function refPattern(kind?: RefKind): RegExp {
   return new RegExp(`@\\[([^\\]]+)\\]\\((${alternatives})\\)`, 'g')
 }
 
-function unlinkWithPattern(text: string, re: RegExp, prefixLen: number, ids: ReadonlySet<string>): string {
-  return text.replace(re, (whole: string, label: string, ref: string) => (ids.has(ref.slice(prefixLen)) ? label : whole))
+// Characters mdToHtml's inline() parser treats specially — sanitized so a
+// title can never reactivate markdown formatting (or spoof another mention)
+// once wrapped as a plain former-reference marker below: `*` (bold/italic),
+// `~` (strike, and our own marker's own delimiter), `<`/`>` (the
+// `&lt;u&gt;`→`<u>` underline escape-hatch), and `@`/`[`/`]`/`(`/`)`
+// (ref-mention syntax — replacing any one of these breaks the combination
+// refPattern() requires, so all five are covered individually rather than
+// trying to match the exact mention shape).
+const MD_SPECIAL_CHARS = /[*~<>@[\]()]/g
+
+function sanitizeForUnlinkMarker(title: string): string {
+  return title.replace(MD_SPECIAL_CHARS, '_')
 }
 
-export function unlinkRefsInText(text: string, kind: IdRefKind, ids: ReadonlySet<string>): string {
-  if (ids.size === 0) return text
-  return unlinkWithPattern(text, refPattern(kind), kind.length + 1, ids)
+// `titles` maps each deleted item's id to its *current* title, not whatever
+// label was typed into the mention at creation time — a mention's stored
+// label goes stale on rename (rendering always resolves the live title
+// instead, so this staleness is normally invisible; see markdown.ts's
+// `inline()`), and this is the one path where that frozen fallback would
+// otherwise leak a pre-rename name into the note as plain text.
+//
+// The replacement is wrapped in single tildes (`~Title~`) — a marker
+// mdToHtml renders as muted italic text (see markdown.ts's `.tt-unlinked-ref`
+// rule) so a note keeps a visual trace that this text used to be a live
+// reference, even though the target is gone and there's nothing left to
+// link to.
+function unlinkWithPattern(text: string, re: RegExp, prefixLen: number, titles: ReadonlyMap<string, string>): string {
+  return text.replace(re, (whole: string, _label: string, ref: string) => {
+    const title = titles.get(ref.slice(prefixLen))
+    return title !== undefined ? `~${sanitizeForUnlinkMarker(title)}~` : whole
+  })
 }
 
-export function unlinkRefsInTeam(team: Team, kind: IdRefKind, ids: string[]): void {
-  if (ids.length === 0) return
-  const idSet = new Set(ids)
+export function unlinkRefsInText(text: string, kind: IdRefKind, titles: ReadonlyMap<string, string>): string {
+  if (titles.size === 0) return text
+  return unlinkWithPattern(text, refPattern(kind), kind.length + 1, titles)
+}
+
+export function unlinkRefsInTeam(team: Team, kind: IdRefKind, titles: ReadonlyMap<string, string>): void {
+  if (titles.size === 0) return
   // One regex compile for the whole team sweep (String.replace resets lastIndex per call).
   const re = refPattern(kind)
   const prefixLen = kind.length + 1
-  const unlink = (text: string): string => unlinkWithPattern(text, re, prefixLen, idSet)
+  const unlink = (text: string): string => unlinkWithPattern(text, re, prefixLen, titles)
   for (const date of Object.keys(team.dailyNotes)) {
     team.dailyNotes[date] = unlink(team.dailyNotes[date]!)
   }

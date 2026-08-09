@@ -399,6 +399,7 @@ describe('renderActionItems — edit modal', () => {
     wipAddBtn.click()
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     summaryInput.value = 'WIP task'
+    ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-sage') as HTMLButtonElement).click()
     clickByTitleOrText(document.body, 'Save')
 
     expect(store.doc.teams[0]!.actionItems[0]!.status).toBe('wip')
@@ -412,6 +413,37 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Save')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-field-error')!.textContent).toBe('Summary is required')
+  })
+
+  test('a new card starts with no color chip pre-selected', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const chips = document.querySelectorAll('.tt-kanban-form .tt-kanban-color-chip')
+    expect(chips.length).toBeGreaterThan(0)
+    expect(Array.from(chips).some((c) => c.classList.contains('selected'))).toBe(false)
+  })
+
+  test('saving a new card without picking a color shows a validation error and does not save', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    summaryInput.value = 'No color yet'
+    clickByTitleOrText(document.body, 'Save')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-field-error')!.textContent).toBe('Select a color')
+  })
+
+  test('editing an existing card keeps its color pre-selected', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', color: 'plum' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    const plumChip = document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-plum')!
+    expect(plumChip.classList.contains('selected')).toBe(true)
   })
 
   test('editing an existing card via dblclick pre-fills fields and Save persists changes', () => {
@@ -479,7 +511,7 @@ describe('renderActionItems — edit modal', () => {
 
     const remaining = store.doc.teams[0]!.actionItems
     expect(remaining.map((i) => i.id)).toEqual(['a2'])
-    expect(remaining[0]!.notes).toBe('see Fix bug for details')
+    expect(remaining[0]!.notes).toBe('see ~Fix bug~ for details')
   })
 
   test('deleting a card whose summary is blank removes it immediately with no confirmation', () => {
@@ -541,7 +573,7 @@ describe('renderActionItems — zone clear-all', () => {
 
     const remaining = store.doc.teams[0]!.actionItems
     expect(remaining.map((i) => i.id)).toEqual(['todo1'])
-    expect(remaining[0]!.notes).toBe('follows up on Done thing')
+    expect(remaining[0]!.notes).toBe('follows up on ~Done thing~')
   })
 })
 

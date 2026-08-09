@@ -231,7 +231,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
-      unlinkRefsInTeam(tm, 'milestone', [id])
+      const removed = tm.milestones.find((m) => m.id === id)
+      unlinkRefsInTeam(tm, 'milestone', removed ? new Map([[id, removed.title]]) : new Map())
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, actions, risks

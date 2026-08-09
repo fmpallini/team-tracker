@@ -254,7 +254,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
                 ctx.store.update((d) => {
                   const tm = d.teams.find((t2) => t2.id === teamId)
                   if (!tm) return
-                  unlinkRefsInTeam(tm, 'person', [person.id])
+                  unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
                   tm[group] = deletePerson(tm[group], person.id)
                   // No `sections`: unlinkRefsInTeam rewrites @mentions across
                   // every content-bearing section of this team (notes,

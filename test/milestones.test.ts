@@ -470,7 +470,7 @@ describe('renderMilestones', () => {
 
     const remaining = store.doc.teams[0]!.milestones
     expect(remaining.map((m) => m.id)).toEqual(['b'])
-    expect(remaining[0]!.followup).toBe('depends on Launch landing first')
+    expect(remaining[0]!.followup).toBe('depends on ~Launch~ landing first')
   })
 
   test('preserves an in-progress title edit (skips rebuild, defers to blur) when the store changes elsewhere while focused', () => {

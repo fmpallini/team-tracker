@@ -20,7 +20,8 @@ export function normalize(s: string): string {
 
 // Strips the basic markdown syntax this app produces so search snippets read
 // as plain text: heading/list/ordered-list markers, bold/italic/strike/underline,
-// and @[label](ref) references (kept as their label).
+// @[label](ref) references (kept as their label), and refs.ts's
+// single-tilde unlinked-reference marker (also kept as its label).
 function stripMd(s: string): string {
   return s
     .split('\n')
@@ -32,6 +33,7 @@ function stripMd(s: string): string {
       l = l.replace(/@\[([^\]]+)\]\([^)]*\)/g, '$1')
       l = l.replace(/\*\*([^*]+)\*\*/g, '$1')
       l = l.replace(/~~([^~]+)~~/g, '$1')
+      l = l.replace(/~([^~]+)~/g, '$1')
       l = l.replace(/<\/?u>/g, '')
       l = l.replace(/\*([^*]+)\*/g, '$1')
       return l

@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.4] - 2026-08-09
+
+### Fixed
+- Deleting a renamed person, action item, milestone, or risk left the *old* pre-rename name behind in every note that mentioned it, instead of its current name.
+- The Data tab's cleanup tool (Prefs → Data → Cleanup) removed done/cancelled/closed items without updating notes that mentioned them, leaving broken-looking references behind.
+- Right-clicking a card near the right or bottom edge of the screen (most often the right pane in split view) could open its actions menu partly or fully off-screen.
+
+### Changed
+- Deleting or purging something that's mentioned elsewhere now leaves a muted, italicized trace of the reference instead of plain, indistinguishable text — a visual cue that it used to link to something.
+- A new action-item card no longer starts with a color/tag already picked for you — choose one before saving.
+
 ## [2.1.3] - 2026-08-08
 
 ### Fixed

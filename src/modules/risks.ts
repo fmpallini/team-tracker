@@ -144,7 +144,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     ctx.store.update((d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
-      unlinkRefsInTeam(tm, 'risk', [id])
+      const removed = tm.risks.find((r) => r.id === id)
+      unlinkRefsInTeam(tm, 'risk', removed ? new Map([[id, removed.title]]) : new Map())
       tm.risks = tm.risks.filter((r) => r.id !== id)
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, actions,
