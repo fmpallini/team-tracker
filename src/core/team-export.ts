@@ -6,7 +6,7 @@
 // teammates so they can skip re-entering the team/people structure, not to
 // carry work content. See docs/superpowers/specs/2026-07-16-team-export-
 // import-design.md and 2026-07-21-shell-layout-export-help-fixes-design.md.
-import type { ActionItem, Person, Team } from './types'
+import type { ActionItemColor, Person, Team } from './types'
 import { SCHEMA_VERSION, SUGGESTED_TAG_NAME_KEYS } from './document'
 import { t, type Locale, type MsgKey } from './i18n'
 
@@ -96,9 +96,9 @@ function remapPersonList(people: ExportedPerson[]): Team['stakeholders'] {
  * detection logic to get wrong.
  */
 /** Same default seeding `createEmptyTeam` (document.ts) gives brand-new teams — an imported team has no action items of its own to carry tag names from, so it starts fresh like any other new team. */
-function defaultActionTagNames(locale: Locale): Partial<Record<ActionItem['color'], string>> {
-  const names: Partial<Record<ActionItem['color'], string>> = {}
-  for (const [color, key] of Object.entries(SUGGESTED_TAG_NAME_KEYS) as [ActionItem['color'], MsgKey][]) {
+function defaultActionTagNames(locale: Locale): Partial<Record<ActionItemColor, string>> {
+  const names: Partial<Record<ActionItemColor, string>> = {}
+  for (const [color, key] of Object.entries(SUGGESTED_TAG_NAME_KEYS) as [ActionItemColor, MsgKey][]) {
     names[color] = t(locale, key)
   }
   return names

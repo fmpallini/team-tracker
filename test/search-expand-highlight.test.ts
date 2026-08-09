@@ -61,7 +61,7 @@ function search(input: HTMLInputElement, query: string): FrameRequestCallback {
   vi.useFakeTimers()
   input.value = query
   input.dispatchEvent(new Event('input', { bubbles: true }))
-  vi.advanceTimersByTime(200) // past the 150ms debounce
+  vi.advanceTimersByTime(350) // past the 300ms debounce
   vi.useRealTimers()
 
   let raf: FrameRequestCallback | null = null

@@ -257,6 +257,15 @@ describe('renderActionItems — board', () => {
     expect(container.querySelectorAll('.tt-kanban-empty')).toHaveLength(4) // todo, wip, done, cancelled
   })
 
+  test('an uncategorized card (color: null) renders with no color-X class', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'u', color: null })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const card = cards(container)[0]!
+    expect(Array.from(card.classList).some((c) => c.startsWith('color-'))).toBe(false)
+  })
+
   test('done/cancelled zone headers show a count', () => {
     const team = makeTeam({
       actionItems: [item({ id: 'd1', status: 'done' }), item({ id: 'd2', status: 'done' }), item({ id: 'c1', status: 'cancelled' })],
@@ -425,7 +434,7 @@ describe('renderActionItems — edit modal', () => {
     expect(Array.from(chips).some((c) => c.classList.contains('selected'))).toBe(false)
   })
 
-  test('saving a new card without picking a color shows a validation error and does not save', () => {
+  test('saving a new card without picking a color saves it uncategorized (color: null)', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -433,8 +442,23 @@ describe('renderActionItems — edit modal', () => {
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     summaryInput.value = 'No color yet'
     clickByTitleOrText(document.body, 'Save')
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
-    expect(document.querySelector('.tt-field-error')!.textContent).toBe('Select a color')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+    expect(store.doc.teams[0]!.actionItems[0]!.color).toBeNull()
+  })
+
+  test('clicking an existing card\'s already-selected color chip again unsets it', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', color: 'rust' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const rustChip = document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-rust') as HTMLButtonElement
+    expect(rustChip.classList.contains('selected')).toBe(true)
+    rustChip.click()
+    expect(rustChip.classList.contains('selected')).toBe(false)
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(store.doc.teams[0]!.actionItems[0]!.color).toBeNull()
   })
 
   test('editing an existing card keeps its color pre-selected', () => {
@@ -621,16 +645,18 @@ describe('renderActionItems — edit tags modal (toolbar)', () => {
     expect(nameRowInput('slate').value).toBe('')
   })
 
-  test('rust/brass/slate suggest a starter name as the placeholder; the rest fall back to the plain color name', () => {
+  test('all six colors suggest a starter category name as the placeholder', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     openTagsModal(container)
-    expect(nameRowInput('rust').placeholder).toBe('Urgent')
-    expect(nameRowInput('brass').placeholder).toBe('Blocked')
-    expect(nameRowInput('slate').placeholder).toBe('In Review')
-    expect(nameRowInput('sage').placeholder).toBe('Sage')
+    expect(nameRowInput('rust').placeholder).toBe('Process')
+    expect(nameRowInput('brass').placeholder).toBe('People')
+    expect(nameRowInput('slate').placeholder).toBe('Financial')
+    expect(nameRowInput('sage').placeholder).toBe('Technical')
+    expect(nameRowInput('plum').placeholder).toBe('Operations')
+    expect(nameRowInput('ledger').placeholder).toBe('Legal')
   })
 
   test('saving writes trimmed, non-empty names into actionTagNames', () => {
@@ -715,7 +741,7 @@ describe('renderActionItems — tag display and filter', () => {
     expect(rustChip.classList.contains('tt-kanban-color-chip')).toBe(true) // same square swatch pattern as the modal's color picker
     expect(rustChip.textContent?.trim()).toBe('Blocked')
     expect(slateChip.textContent?.trim()).toBe('')
-    expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
+    expect(slateChip.getAttribute('aria-label')).toBe('Financial') // slate is one of the suggested starter names
   })
 
   test('an unnamed chip shows its count too — the swatch carries the number, just not a name', () => {
@@ -869,7 +895,7 @@ describe('renderActionItems — color chip labels in the edit modal', () => {
 
     expect(rustChip.textContent?.trim()).toBe('Blocked')
     expect(slateChip.textContent?.trim()).toBe('')
-    expect(slateChip.getAttribute('aria-label')).toBe('In Review') // slate is one of the suggested starter names
+    expect(slateChip.getAttribute('aria-label')).toBe('Financial') // slate is one of the suggested starter names
   })
 })
 

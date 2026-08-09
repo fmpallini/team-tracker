@@ -5,7 +5,7 @@
 // renderAll) is simplest and correct — unlike the old flat-list version,
 // there's no in-progress inline edit whose caret needs preserving across a
 // foreign store update.
-import type { ActionItem, Loc, Team } from '../core/types'
+import type { ActionItem, ActionItemColor, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
@@ -26,8 +26,8 @@ import { withDisposal } from './lifecycle'
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
 // the rest.
-const COLORS: ActionItem['color'][] = ['rust', 'brass', 'slate', 'sage', 'plum', 'ledger']
-const COLOR_KEYS: Record<ActionItem['color'], 'kanban_color_slate' | 'kanban_color_brass' | 'kanban_color_sage' | 'kanban_color_rust' | 'kanban_color_plum' | 'kanban_color_ledger'> = {
+const COLORS: ActionItemColor[] = ['rust', 'brass', 'slate', 'sage', 'plum', 'ledger']
+const COLOR_KEYS: Record<ActionItemColor, 'kanban_color_slate' | 'kanban_color_brass' | 'kanban_color_sage' | 'kanban_color_rust' | 'kanban_color_plum' | 'kanban_color_ledger'> = {
   slate: 'kanban_color_slate', brass: 'kanban_color_brass', sage: 'kanban_color_sage',
   rust: 'kanban_color_rust', plum: 'kanban_color_plum', ledger: 'kanban_color_ledger',
 }
@@ -91,21 +91,21 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   let draggedId: string | null = null
 
-  let activeTagFilter: ActionItem['color'] | null = null
+  let activeTagFilter: ActionItemColor | null = null
 
   /** The team's custom name for `color`, or `null` if none has been assigned yet (see showColorNamer in openEditModal). Unnamed colors render as a bare swatch — no generic fallback text. */
-  function customTagName(color: ActionItem['color']): string | null {
+  function customTagName(color: ActionItemColor): string | null {
     return findTeam()?.actionTagNames?.[color] ?? null
   }
 
   /** A starter-name hint for an unnamed color (see SUGGESTED_TAG_NAME_KEYS), falling back to the plain color name — used for placeholders/aria-labels, never stored. */
-  function suggestedTagName(color: ActionItem['color']): string {
+  function suggestedTagName(color: ActionItemColor): string {
     const key = SUGGESTED_TAG_NAME_KEYS[color]
     return t(lc, key ?? COLOR_KEYS[color])
   }
 
   const tagChipsEl = el('div', { class: 'tt-kanban-tag-chips' })
-  function renderTagChips(tagNames: Partial<Record<ActionItem['color'], string>>, counts: Record<ActionItem['color'], number>): void {
+  function renderTagChips(tagNames: Partial<Record<ActionItemColor, string>>, counts: Record<ActionItemColor, number>): void {
     tagChipsEl.innerHTML = ''
     // Marks the whole strip while a filter is on, so the CSS can dim the
     // chips that aren't the active one — the selected chip alone carrying a
@@ -221,10 +221,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const summaryInput = el('input', { type: 'text', class: 'tt-input', value: existing?.summary ?? '' }) as HTMLInputElement
     const datePicker = createDatePicker({ value: existing?.dueDate ?? '', locale: lc, allowClear: true, onChange: () => {} })
     const assigneeInput = el('input', { type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '' }) as HTMLInputElement
-    // New cards start with no color chosen — the user must pick one
-    // explicitly rather than inheriting whatever chip happens to render
-    // first; editing an existing card keeps its already-assigned color.
-    let selectedColor: ActionItem['color'] | null = existing?.color ?? null
+    // New cards start with no color chosen — the color tag is optional, and
+    // an existing card's color can be unset the same way (see
+    // renderColorChips' onclick toggle below).
+    let selectedColor: ActionItemColor | null = existing?.color ?? null
     const errorEl = el('div', { class: 'tt-field-error' })
 
     const richBundle = createRichEditorBundle({
@@ -251,7 +251,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         colorRow.appendChild(
           el('button', {
             type: 'button', class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? suggestedTagName(c),
-            onclick: () => { selectedColor = c; paintSelectedColor() },
+            // Clicking the already-selected chip again unsets it — the only
+            // way to clear a color back to "none" once one's been picked.
+            onclick: () => { selectedColor = selectedColor === c ? null : c; paintSelectedColor() },
           }, custom)
         )
       }
@@ -285,11 +287,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         errorEl.textContent = t(lc, 'kanban_summary_required')
         return
       }
-      if (selectedColor === null) {
-        errorEl.textContent = t(lc, 'kanban_color_required')
-        return
-      }
-      const color = selectedColor // narrow past `null` once, outside the chip onclick closure below that reassigns selectedColor
+      const color = selectedColor
       const dueDate = datePicker.getValue() === '' ? null : datePicker.getValue()
       const assignee = assigneeInput.value
       const notes = editor.getMd()
@@ -344,7 +342,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function openEditTagsModal(): void {
     const tm = findTeam()
     if (!tm) return
-    const inputs = new Map<ActionItem['color'], HTMLInputElement>()
+    const inputs = new Map<ActionItemColor, HTMLInputElement>()
     const rows = COLORS.map((c) => {
       const input = el('input', {
         type: 'text', class: 'tt-input tt-kanban-color-name-input',
@@ -362,7 +360,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         ctx.store.update((d) => {
           const target = d.teams.find((t2) => t2.id === teamId)
           if (!target) return
-          const nextTags: Partial<Record<ActionItem['color'], string>> = { ...target.actionTagNames }
+          const nextTags: Partial<Record<ActionItemColor, string>> = { ...target.actionTagNames }
           for (const c of COLORS) {
             const value = inputs.get(c)!.value.trim()
             if (value === '') delete nextTags[c]
@@ -384,7 +382,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     openItemContextMenu(ctx, 'action', teamId, itemId, x, y)
   }
 
-  function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItem['color'], string>>): HTMLElement {
+  function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>): HTMLElement {
     const editBtn = el(
       'button',
       { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
@@ -398,7 +396,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, today) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
     }
     if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
-    const customName = tagNames[item.color] ?? null
+    const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const backlinks = ctx.searchIndex.backlinks(teamId, 'action', item.id)
     const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
@@ -408,7 +406,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const card = el(
       'div',
       {
-        class: `tt-kanban-card color-${item.color} status-${item.status}`,
+        // No color-X class when uncategorized — the card falls back to the
+        // base neutral border (styles.css's .tt-kanban-card default).
+        class: `tt-kanban-card status-${item.status}` + (item.color !== null ? ` color-${item.color}` : ''),
         draggable: 'true',
         'data-item-id': item.id,
         title: t(lc, 'kanban_card_context_hint'),
@@ -609,10 +609,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // Counts feed the filter chips. Only the two live columns count: a chip
     // reading "Urgent 7" where six of those are already done would be
     // answering a question nobody asked.
-    const counts: Record<ActionItem['color'], number> = { slate: 0, brass: 0, sage: 0, rust: 0, plum: 0, ledger: 0 }
+    const counts: Record<ActionItemColor, number> = { slate: 0, brass: 0, sage: 0, rust: 0, plum: 0, ledger: 0 }
     for (const it of tm?.actionItems ?? []) {
       byStatus[it.status].push(it)
-      if (it.status === 'todo' || it.status === 'wip') counts[it.color]++
+      if (it.color !== null && (it.status === 'todo' || it.status === 'wip')) counts[it.color]++
     }
     renderTagChips(tagNames, counts)
     for (const s of STATUSES) {

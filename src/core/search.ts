@@ -41,20 +41,22 @@ function stripMd(s: string): string {
     .join('\n')
 }
 
-function allTermsMatch(haystack: string, terms: string[]): boolean {
-  return terms.every(term => haystack.includes(term))
+/** Each term's first-match index in `haystack`, or `null` if any term is missing (replaces the old allTermsMatch boolean — the AND-check and the ranking data below both fall out of the same per-term scan). */
+function termPositions(haystack: string, terms: string[]): number[] | null {
+  const positions: number[] = []
+  for (const term of terms) {
+    const i = haystack.indexOf(term)
+    if (i < 0) return null
+    positions.push(i)
+  }
+  return positions
 }
 
 // `stripped` and `normalized` are index-aligned (normalize preserves character
 // count for the accented Latin text this app handles), so an index found in
 // `normalized` can be used directly to slice the display text in `stripped`.
-function makeSnippet(stripped: string, normalized: string, terms: string[]): string {
-  let idx = -1
-  for (const term of terms) {
-    const i = normalized.indexOf(term)
-    if (i >= 0 && (idx === -1 || i < idx)) idx = i
-  }
-  if (idx < 0) idx = 0
+function makeSnippet(stripped: string, positions: number[]): string {
+  const idx = Math.min(...positions)
   const start = Math.max(0, idx - SNIPPET_RADIUS)
   const end = Math.min(stripped.length, idx + SNIPPET_RADIUS)
   let out = stripped.slice(start, end).trim()
@@ -64,7 +66,7 @@ function makeSnippet(stripped: string, normalized: string, terms: string[]): str
 }
 
 export const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
-  daily: '📅', general: '🗒️', person: '🧑', stakeholders: '👥', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
+  daily: '📅', general: '🗒️', person: '🧑', stakeholders: '🧑‍💼', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
 }
 
 export interface RefCandidate { id: string; title: string }
@@ -162,6 +164,45 @@ interface TeamIndex {
   candidates: PreparedCandidate[]
   /** Keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
   backlinksByRef: Map<string, Backlink[]>
+}
+
+/** A match plus its ranking data — kept separate from the public `SearchResult` so `span`/`minPos` never leak into the UI-facing shape. */
+interface ScoredHit { result: SearchResult; span: number; minPos: number }
+
+/**
+ * Scores one candidate against `terms` (already required to all match, via
+ * `termPositions`), or returns `null` if it doesn't match at all. Two ranking
+ * signals, both cheap to derive from the same position scan:
+ *   - `minPos`: how early the first term hits — an early match beats one
+ *     buried deep in a long note.
+ *   - `span`: how tightly the terms cluster (last term's end minus first
+ *     term's start) — terms found next to each other beat the same terms
+ *     scattered across opposite ends of a note. Degenerates to a constant
+ *     (the one term's length) for single-term queries, so it naturally drops
+ *     out of the sort and `minPos` alone decides.
+ */
+function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: string, terms: string[]): ScoredHit | null {
+  const positions = termPositions(candidate.normalized, terms)
+  if (!positions) return null
+  const minPos = Math.min(...positions)
+  const maxEnd = Math.max(...positions.map((p, i) => p + terms[i]!.length))
+  return {
+    result: {
+      loc: { teamId, ref: candidate.ref },
+      moduleKind: candidate.ref.kind,
+      title: candidate.title,
+      snippet: makeSnippet(candidate.stripped, positions),
+      teamName,
+    },
+    span: maxEnd - minPos,
+    minPos,
+  }
+}
+
+/** Tightest-cluster-first, then earliest-match-first; JS's stable sort keeps same-score hits in `hits`' original (insertion) order as the final tiebreak. */
+function rankAndLimit(hits: ScoredHit[]): SearchResult[] {
+  hits.sort((a, b) => (a.span - b.span) || (a.minPos - b.minPos))
+  return hits.slice(0, RESULT_LIMIT).map((h) => h.result)
 }
 
 export interface SearchIndex {
@@ -277,22 +318,15 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
 
       const doc = getDoc()
       const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
-      const results: SearchResult[] = []
+      const hits: ScoredHit[] = []
 
       for (const team of teams) {
         for (const candidate of indexFor(team, doc).candidates) {
-          if (!allTermsMatch(candidate.normalized, terms)) continue
-          results.push({
-            loc: { teamId: team.id, ref: candidate.ref },
-            moduleKind: candidate.ref.kind,
-            title: candidate.title,
-            snippet: makeSnippet(candidate.stripped, candidate.normalized, terms),
-            teamName: team.name,
-          })
-          if (results.length >= RESULT_LIMIT) return results
+          const hit = scoreCandidate(candidate, team.id, team.name, terms)
+          if (hit) hits.push(hit)
         }
       }
-      return results
+      return rankAndLimit(hits)
     },
 
     backlinks(teamId: string, kind: RefKind, targetId: string): Backlink[] {
@@ -312,22 +346,15 @@ export function searchDocument(doc: Doc, query: string, scopeTeamId: string | nu
   if (terms.length === 0) return []
 
   const teams = scopeTeamId === null ? doc.teams : doc.teams.filter(team => team.id === scopeTeamId)
-  const results: SearchResult[] = []
+  const hits: ScoredHit[] = []
 
   for (const team of teams) {
     for (const candidate of collectCandidates(team, doc)) {
       const stripped = stripMd(candidate.raw)
       const normalized = normalize(stripped)
-      if (!allTermsMatch(normalized, terms)) continue
-      results.push({
-        loc: { teamId: team.id, ref: candidate.ref },
-        moduleKind: candidate.ref.kind,
-        title: candidate.title,
-        snippet: makeSnippet(stripped, normalized, terms),
-        teamName: team.name,
-      })
-      if (results.length >= RESULT_LIMIT) return results
+      const hit = scoreCandidate({ ref: candidate.ref, title: candidate.title, stripped, normalized }, team.id, team.name, terms)
+      if (hit) hits.push(hit)
     }
   }
-  return results
+  return rankAndLimit(hits)
 }

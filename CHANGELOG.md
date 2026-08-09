@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.5] - 2026-08-09
+
+### Changed
+- The six action-item tag colors now suggest category names (Process, People, Financial, Technical, Operations, Legal) instead of the old status-flavored Urgent/Blocked/In Review.
+- An action item's color tag is optional again: a new card starts uncategorized, and you can clear an existing card's color by clicking its already-selected swatch a second time.
+- Stakeholders and members now use different icons (🧑‍💼 vs 👥) instead of sharing one, across the sidebar, search, backlinks, and the command palette.
+- Search results are now ranked instead of shown in an arbitrary order: matches where your search terms sit close together, or appear earlier in the text, are listed first.
+
 ## [2.1.4] - 2026-08-09
 
 ### Fixed

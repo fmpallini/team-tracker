@@ -24,11 +24,15 @@ export interface Person {
   id: string; name: string; role: string
   parentId: string | null; order: number; notes: string
 }
+export type ActionItemColor = 'slate' | 'brass' | 'sage' | 'rust' | 'plum' | 'ledger'
 export interface ActionItem {
   id: string; summary: string; notes: string
   status: 'todo' | 'wip' | 'done' | 'cancelled'
   dueDate: string | null; assignee: string
-  color: 'slate' | 'brass' | 'sage' | 'rust' | 'plum' | 'ledger'
+  // No default: a new card starts uncategorized until the user explicitly
+  // picks a color, and an existing one can be unset back to null (see
+  // src/modules/action-items.ts's openEditModal color-chip toggle).
+  color: ActionItemColor | null
   order: number
 }
 export interface Milestone { id: string; date: string; title: string; done: boolean; followup: string }
@@ -43,7 +47,7 @@ export interface Team {
   stakeholders: Person[]; members: Person[]
   actionItems: ActionItem[]; milestones: Milestone[]; risks: Risk[]
   dailyNotes: Record<string, string>
-  actionTagNames?: Partial<Record<ActionItem['color'], string>>
+  actionTagNames?: Partial<Record<ActionItemColor, string>>
   generalNotes?: string
 }
 export interface Template {

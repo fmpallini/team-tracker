@@ -847,7 +847,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-card {
   position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   padding: .5rem .55rem .45rem; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); cursor: grab;
-  border-left: 8px solid var(--card-ledger);
+  border-left: 8px solid var(--border); /* no color-X class → uncategorized, neutral stripe */
 }
 .tt-kanban-card.color-slate { border-left-color: var(--card-slate); }
 .tt-kanban-card.color-brass { border-left-color: var(--card-brass); }
