@@ -80,7 +80,7 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr'
   prefixLen: number
 }
 
@@ -102,6 +102,9 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
 
   m = /^\d+\.[  ]$/.exec(text)
   if (m) return { type: 'ol', prefixLen: m[0]!.length }
+
+  m = /^(-{3,})[  ]$/.exec(text)
+  if (m) return { type: 'hr', prefixLen: m[0]!.length }
 
   return null
 }

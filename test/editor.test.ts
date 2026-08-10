@@ -897,6 +897,15 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('1. ')).toEqual({ type: 'ol', prefixLen: 3 })
     expect(detectBlockPrefix('12. ')).toEqual({ type: 'ol', prefixLen: 4 })
   })
+  test('detects --- (3+ dashes) with a trailing space as hr', () => {
+    expect(detectBlockPrefix('--- ')).toEqual({ type: 'hr', prefixLen: 4 })
+    expect(detectBlockPrefix('---- ')).toEqual({ type: 'hr', prefixLen: 5 })
+    expect(detectBlockPrefix('----------- ')).toEqual({ type: 'hr', prefixLen: 12 })
+  })
+  test('does not detect hr with fewer than 3 dashes', () => {
+    expect(detectBlockPrefix('-- ')).toBeNull()
+    expect(detectBlockPrefix('- ')).toEqual({ type: 'ul', prefixLen: 2 }) // still a list bullet, unaffected
+  })
   test('does not match mid-block text', () => {
     expect(detectBlockPrefix('# hello')).toBeNull()
     expect(detectBlockPrefix('hello')).toBeNull()
@@ -906,6 +915,10 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('-' + nbsp)).toEqual({ type: 'ul', prefixLen: 2 })
     expect(detectBlockPrefix('1.' + nbsp)).toEqual({ type: 'ol', prefixLen: 3 })
     expect(detectBlockPrefix('#' + nbsp)).toEqual({ type: 'h1', prefixLen: 2 })
+  })
+  test('detects hr prefix with trailing NBSP too', () => {
+    const nbsp = ' '
+    expect(detectBlockPrefix('---' + nbsp)).toEqual({ type: 'hr', prefixLen: 4 })
   })
 })
 
