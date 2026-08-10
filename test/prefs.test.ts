@@ -441,6 +441,23 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   expect(tabs).toEqual(['Geral', 'Avançado', 'Templates', 'Tags', 'Segurança', 'Dados', 'Sobre'])
 })
 
+test('locale radio re-seeds untouched builtin templates and leaves an edited one alone', () => {
+  const { store, shell, appCtl } = setup()
+  // setup() creates the doc with 'en-US', so store.doc.templates start out English.
+  const beforeIds = store.doc.templates.map(t => t.id)
+  store.update((d) => {
+    d.templates[1]!.body = 'hand-edited body' // Feedback (SBI) template, left untouched by the switch
+  })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  radio('tt-prefs-locale', 'pt-BR').click()
+
+  expect(store.doc.templates.map(t => t.id)).toEqual(beforeIds) // same ids/order
+  expect(store.doc.templates[0]!.name).toBe('1:1') // untouched builtin, now Portuguese wording
+  expect(store.doc.templates[0]!.body).toContain('Como está / energia')
+  expect(store.doc.templates[1]!.body).toBe('hand-edited body') // edited one, skipped
+})
+
 test('templates tab lists the 5 builtins with scope badges', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)

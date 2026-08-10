@@ -9,7 +9,7 @@ import type { Prefs, Template } from '../core/types'
 import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
-import { builtinTemplates } from '../core/templates'
+import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup } from '../core/fs'
@@ -197,8 +197,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const localeField = radioField('tt-prefs-locale', 'prefs_locale_label', LOCALE_OPTIONS, prefs.locale, (value) => {
       const newLocale = value as Locale
+      const oldLocale = store.doc.prefs.locale
       store.update((d) => {
         d.prefs.locale = newLocale
+        d.templates = reseedBuiltinTemplates(d.templates, oldLocale, newLocale)
       })
       shell.applyPrefs(store.doc.prefs)
       notifyLocaleChanged()
