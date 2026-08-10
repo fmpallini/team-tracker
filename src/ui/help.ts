@@ -24,6 +24,7 @@ const MD_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['# / ## / ###', 'help_md_headings'],
   ['- texto', 'help_md_ul'],
   ['1. texto', 'help_md_ol'],
+  ['---', 'help_md_hr'],
 ]
 
 const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
