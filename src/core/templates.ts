@@ -68,6 +68,14 @@ export function builtinTemplates(locale: Locale): Template[] {
   }))
 }
 
+export function reseedBuiltinTemplates(templates: Template[], oldLocale: Locale, newLocale: Locale): Template[] {
+  return templates.map((tpl) => {
+    const seed = SEEDS.find((s) => s.name[oldLocale] === tpl.name && s.body[oldLocale] === tpl.body)
+    if (!seed) return tpl
+    return { ...tpl, name: seed.name[newLocale], body: seed.body[newLocale] }
+  })
+}
+
 function replaceAllOccurrences(s: string, search: string, value: string): string {
   return s.split(search).join(value)
 }
