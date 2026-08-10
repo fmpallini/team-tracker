@@ -850,6 +850,58 @@ describe('block-prefix auto-format on typing', () => {
     expect(ol!.querySelectorAll('li')).toHaveLength(1)
     editor.destroy()
   })
+
+  test('pressing Enter on a block containing only "---" converts it to an hr (no trailing space needed)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '---')
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const hr = editorEl.querySelector('hr')
+    expect(hr).not.toBeNull()
+    const next = hr!.nextElementSibling as HTMLElement
+    expect(next.tagName).toBe('DIV')
+    const sel = window.getSelection()!
+    expect(next.contains(sel.anchorNode)).toBe(true)
+    editor.destroy()
+  })
+
+  test('Enter on a block that is not exactly "---" behaves normally (not intercepted)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, 'some text --')
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(editorEl.querySelector('hr')).toBeNull()
+    editor.destroy()
+  })
+
+  test('Enter on "---" inside a list item is not intercepted (converting would produce unrepresentable markup)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<ul><li>---</li></ul>'
+    const li = editorEl.querySelector('li')!
+    const textNode = li.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(editorEl.querySelector('hr')).toBeNull()
+    editor.destroy()
+  })
 })
 
 describe('inline auto-format guards', () => {

@@ -764,6 +764,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      const ctx = currentBlockAndOffset()
+      if (ctx && ctx.block.parentElement === editorEl && ctx.caretOffset === ctx.text.length && /^-{3,}$/.test(ctx.text)) {
+        e.preventDefault()
+        convertBlockToHr(ctx.block)
+        scheduleChange()
+        return
+      }
+    }
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       const listItems = selectedListItems()
