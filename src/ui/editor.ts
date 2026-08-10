@@ -410,6 +410,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
+  /**
+   * Replaces an emptied-out top-level block with `<hr>` followed by a fresh
+   * empty block for the caret — unlike convertBlockToList's <li>, an <hr> is
+   * a void element and can never hold a caret itself.
+   */
+  function convertBlockToHr(block: HTMLElement): void {
+    editorEl.focus()
+    const hr = document.createElement('hr')
+    const next = document.createElement('div')
+    next.appendChild(document.createElement('br'))
+    block.replaceWith(hr, next)
+    const r = document.createRange()
+    r.selectNodeContents(next)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
   function replaceInlineMatch(block: HTMLElement, match: InlineMatch): void {
     const range = rangeForTextOffsets(block, match.start, match.end)
     // If the matched span crosses an element boundary (e.g. a ref chip or
@@ -434,6 +452,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (caretOffset === text.length) {
       const blockMatch = detectBlockPrefix(text)
       if (blockMatch) {
+        if (blockMatch.type === 'hr' && block.parentElement === editorEl) {
+          convertBlockToHr(block)
+          return
+        }
         if ((blockMatch.type === 'ul' || blockMatch.type === 'ol') && block.parentElement === editorEl) {
           convertBlockToList(block, blockMatch.type)
           return

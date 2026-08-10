@@ -803,6 +803,39 @@ describe('block-prefix auto-format on typing', () => {
     editor.destroy()
   })
 
+  test('typing "--- " auto-converts the block to a horizontal rule, with an empty block after it for the caret', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '--- ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const hr = editorEl.querySelector('hr')
+    expect(hr).not.toBeNull()
+    expect(hr!.parentElement).toBe(editorEl)
+    const next = hr!.nextElementSibling as HTMLElement
+    expect(next).not.toBeNull()
+    expect(next.tagName).toBe('DIV')
+    const sel = window.getSelection()!
+    expect(sel.rangeCount).toBe(1)
+    expect(sel.getRangeAt(0).collapsed).toBe(true)
+    expect(next.contains(sel.anchorNode)).toBe(true)
+    editor.destroy()
+  })
+
+  test('editor.getMd() serializes the inserted rule back to "---"', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '--- ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editor.getMd()).toBe('---\n')
+    editor.destroy()
+  })
+
   test('typing "1. " auto-converts the block to an ordered list (built directly, not via the unreliable execCommand path)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
