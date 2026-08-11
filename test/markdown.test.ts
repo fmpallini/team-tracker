@@ -359,3 +359,9 @@ test('a line with only 1-2 dashes is not treated as a rule', () => {
   const md = '--\nnot a rule'
   expect(mdToHtml(md)).not.toContain('<hr>')
 })
+
+test('htmlToPlainText renders an <hr> as "---" (copy without formatting keeps the divider visible instead of a blank line)', () => {
+  const div = document.createElement('div')
+  div.innerHTML = '<div>before</div><hr><div>after</div>'
+  expect(htmlToPlainText(div)).toBe('before\n---\nafter')
+})

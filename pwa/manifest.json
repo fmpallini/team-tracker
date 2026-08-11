@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Team Tracker",
   "short_name": "Team Tracker",
-  "description": "Password-encrypted, single-file team tracker — people, notes, action items, milestones, risks. No server, no account.",
+  "description": "Password-encrypted, single-file team tracker — people, notes, tasks, milestones, risks. No server, no account.",
   "lang": "en-US",
   "version": "__APP_VERSION__",
   "display": "standalone",

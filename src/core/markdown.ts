@@ -284,6 +284,7 @@ export function htmlToPlainText(root: HTMLElement): string {
     }
     const tag = node.tagName.toLowerCase()
     if (tag === 'ul' || tag === 'ol') renderListText(node, out)
+    else if (tag === 'hr') out.push('---')
     else if (/^h[1-3]$/.test(tag) || tag === 'div' || tag === 'p') out.push(blockToText(node))
     else out.push(inlineText(node))
   }

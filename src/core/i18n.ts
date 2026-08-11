@@ -207,7 +207,7 @@ const pt = {
   empty_no_teams_hint: 'Cada time guarda notas diárias, pessoas, tarefas, marcos e riscos.',
   toast_focus_other: 'Já aberto no outro painel — focando nele',
   toast_person_not_found: 'Pessoa não encontrada',
-  palette_placeholder: 'Buscar módulo, pessoa, item de ação, marco ou risco…',
+  palette_placeholder: 'Buscar módulo, pessoa, tarefa, marco ou risco…',
   search_placeholder: '🔍 Buscar…',
   search_all_teams: 'Todos os times',
   search_no_results: 'Nenhum resultado',
