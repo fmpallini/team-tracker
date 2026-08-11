@@ -886,9 +886,9 @@ describe('Data tab (export/import)', () => {
     expect(document.querySelector('.tt-data-team-name')?.textContent).toBe('Engineering')
     const hints = Array.from(document.querySelectorAll('.tt-data-hint')).map((n) => n.textContent)
     expect(hints).toEqual([
-      'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, action items, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
+      'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, tasks, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
       'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
-      'Removes done/cancelled action items, completed milestones, and closed risks, plus old daily notes — across every team in this file. This cannot be undone.',
+      'Removes done/cancelled tasks, completed milestones, and closed risks, plus old daily notes — across every team in this file. This cannot be undone.',
     ])
   })
 
@@ -1010,7 +1010,7 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 action items, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
+        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
       )
 
       clickByText('Clean up data')

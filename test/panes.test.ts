@@ -747,7 +747,7 @@ test('buildModuleItems with no team includes the daily-notes entry, the general-
     { label: `${KIND_ICON.general} General notes`, ref: { kind: 'general' } },
     { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
     { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
-    { label: `${KIND_ICON.actions} Action items`, ref: { kind: 'actions' } },
+    { label: `${KIND_ICON.actions} Tasks`, ref: { kind: 'actions' } },
     { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
     { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
   ])
