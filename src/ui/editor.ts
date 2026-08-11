@@ -452,8 +452,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (caretOffset === text.length) {
       const blockMatch = detectBlockPrefix(text)
       if (blockMatch) {
-        if (blockMatch.type === 'hr' && block.parentElement === editorEl) {
-          convertBlockToHr(block)
+        if (blockMatch.type === 'hr') {
+          // Unlike ul/ol (which fall through to the generic prefix-strip +
+          // applyBlockFormat path below when not top-level, since that path
+          // can still produce a valid nested list), '---' inside a list item
+          // has no valid representation (htmlToMd only reads a list's direct
+          // <li> children) and applyBlockFormat('hr') has no handling for
+          // 'hr' at all (execCommand('formatBlock', false, '<hr>') no-ops).
+          // So always return here, converting only when top-level, and
+          // otherwise leaving the typed "--- " as literal text untouched.
+          if (block.parentElement === editorEl) convertBlockToHr(block)
           return
         }
         if ((blockMatch.type === 'ul' || blockMatch.type === 'ol') && block.parentElement === editorEl) {

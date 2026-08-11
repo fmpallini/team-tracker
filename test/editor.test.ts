@@ -836,6 +836,27 @@ describe('block-prefix auto-format on typing', () => {
     editor.destroy()
   })
 
+  test('typing "--- " inside a list item is not intercepted (converting would produce unrepresentable markup) and the typed text is preserved', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<ul><li>--- </li></ul>'
+    const li = editorEl.querySelector('li')!
+    const textNode = li.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('hr')).toBeNull()
+    expect(li.textContent).toBe('--- ')
+    editor.destroy()
+  })
+
   test('typing "1. " auto-converts the block to an ordered list (built directly, not via the unreliable execCommand path)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
