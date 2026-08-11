@@ -603,6 +603,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function openMenu(idx: 0 | 1): void {
+    const other = otherPaneIdx(idx)
+    if (menuOpen[other]) {
+      closeMenu(other)
+      renderBar(other)
+    }
     const cur = currentLoc(store.doc.nav.panes[idx])
     const rows = paneMenuItems()
     const foundIdx = cur ? rows.findIndex((r) => r.kind === cur.ref.kind) : -1

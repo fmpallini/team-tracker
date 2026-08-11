@@ -504,7 +504,7 @@ body { background: var(--bg); color: var(--fg); }
   background: transparent; color: var(--fg); border: none; text-align: left;
   padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .95rem;
 }
-.tt-pane-menu-item:hover { background: rgba(var(--accent-rgb), .1); }
+.tt-pane-menu-item.selected, .tt-pane-menu-item:hover { background: rgba(var(--accent-rgb), .1); }
 
 /* Command palette */
 .tt-palette-overlay {

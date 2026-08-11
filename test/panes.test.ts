@@ -521,6 +521,22 @@ test('dispose() while a pane menu is open closes it and drops its document keydo
   )).not.toThrow()
 })
 
+test('opening one pane\'s module menu closes the other pane\'s if it was open', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit() // split on
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelectorAll('.tt-pane-menu').length).toBe(1)
+
+  paneBtn(1, 'tt-pane-modules-btn').click()
+  expect(document.querySelectorAll('.tt-pane-menu').length).toBe(1)
+  expect(document.querySelector('[data-pane-idx="0"] .tt-pane-menu')).toBeNull()
+  expect(document.querySelector('[data-pane-idx="1"] .tt-pane-menu')).not.toBeNull()
+})
+
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
