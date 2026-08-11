@@ -8,7 +8,7 @@ import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
-import { createPaneManager, navigateFocusedHistory, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
@@ -455,6 +455,13 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
       closeFile()
+      return
+    }
+    const fKeyMatch = /^F([1-7])$/.exec(e.key)
+    if (fKeyMatch) {
+      if (!hotkeyAllowed(e)) return
+      e.preventDefault()
+      openPaneModuleByIndex(pm, store, Number(fKeyMatch[1]) - 1)
       return
     }
     if (!e.altKey) return

@@ -238,6 +238,21 @@ export function navigateFocusedHistory(pm: PaneManager, store: Store, dir: -1 | 
   }
 }
 
+/**
+ * F1..F7 global hotkey handler (main.ts): jumps the focused pane straight to
+ * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
+ * matching the "F<n>" hint each row shows in the pane's module dropdown.
+ * No-op with no active team or an out-of-range index (index is `e.key`'s
+ * digit minus one, so always 0-6 in practice, but stay defensive since a
+ * caller could pass anything).
+ */
+export function openPaneModuleByIndex(pm: PaneManager, store: Store, index: number): void {
+  const teamId = store.doc.nav.activeTeamId
+  const row = paneMenuItems()[index]
+  if (!teamId || !row) return
+  pm.openInFocused({ teamId, ref: row.ref })
+}
+
 export function teamHasHistory(store: Store, teamId: string): boolean {
   return store.doc.nav.panes.some((p) => p.history.some((loc) => loc.teamId === teamId))
 }
@@ -685,7 +700,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
             },
           }),
         },
-        `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`
+        el('span', { class: 'tt-pane-menu-label' }, `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`),
+        el('span', { class: 'tt-pane-menu-hotkey' }, `F${i + 1}`)
       )
     )
 

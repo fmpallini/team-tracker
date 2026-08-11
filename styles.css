@@ -488,7 +488,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-title-trigger:not(:disabled):hover { background: rgba(var(--accent-rgb), .12); color: var(--accent); }
 .tt-pane-title-trigger:disabled { cursor: not-allowed; opacity: .6; }
 .tt-pane-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-pane-title-chev { font-size: .7rem; opacity: .75; flex: none; }
+.tt-pane-title-chev { font-size: 1.1rem; opacity: .8; flex: none; }
 .tt-pane-body { flex: 1; overflow: auto; min-height: 0; }
 .tt-pane-empty, .tt-pane-placeholder {
   display: flex; align-items: center; justify-content: center; height: 100%;
@@ -503,8 +503,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-menu-item {
   background: transparent; color: var(--fg); border: none; text-align: left;
   padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .95rem;
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
 }
 .tt-pane-menu-item.selected, .tt-pane-menu-item:hover { background: rgba(var(--accent-rgb), .1); }
+.tt-pane-menu-hotkey { font-size: .75rem; opacity: .5; flex: none; }
 
 /* Command palette */
 .tt-palette-overlay {

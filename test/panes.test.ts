@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
@@ -406,7 +406,7 @@ test('opening a module already shown in the other pane focuses that pane for rea
   // 0's wrapper after openInPane's focusOther branch runs.
   paneBtn(0, 'tt-pane-modules-btn').click()
   const milestonesItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
-    .find((b) => b.textContent === `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
+    .find((b) => b.querySelector('.tt-pane-menu-label')?.textContent === `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
   if (!milestonesItem) throw new Error('milestones menu item not found')
   milestonesItem.click()
 
@@ -423,7 +423,7 @@ test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board mo
   paneBtn(0, 'tt-pane-modules-btn').click()
   const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
 
-  expect(items.map((b) => b.textContent)).toEqual([
+  expect(items.map((b) => b.querySelector('.tt-pane-menu-label')?.textContent)).toEqual([
     `${KIND_ICON.daily} ${t('en-US', 'module_daily')}`,
     `${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`,
     `${KIND_ICON.stakeholders} ${t('en-US', 'module_stakeholders')}`,
@@ -434,6 +434,18 @@ test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board mo
   ])
 })
 
+test('pane module dropdown always shows an F1..F7 hotkey hint per row, in order', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const hints = Array.from(document.querySelectorAll<HTMLElement>('[data-pane-idx="0"] .tt-pane-menu-hotkey'))
+
+  expect(hints.map((h) => h.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
+})
+
 test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -441,7 +453,7 @@ test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends
   pm.renderAll()
 
   paneBtn(0, 'tt-pane-modules-btn').click()
-  const selectedLabel = () => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected')?.textContent
+  const selectedLabel = () => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')?.textContent
 
   expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
 
@@ -469,7 +481,7 @@ test('opening the menu highlights the row matching the pane\'s current module', 
   pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
 
   paneBtn(0, 'tt-pane-modules-btn').click()
-  const selected = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected')
+  const selected = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')
   expect(selected?.textContent).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
 })
 
@@ -695,6 +707,32 @@ test('navigateFocusedHistory steps the currently focused pane and re-renders', (
   // No earlier entry exists: a further back-step is a no-op.
   navigateFocusedHistory(pm, store, -1)
   expect(store.doc.nav.panes[0].index).toBe(0)
+})
+
+test('openPaneModuleByIndex opens the row at that position (paneMenuItems order) in the focused pane', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit() // split on
+  store.updateNav((d) => { d.nav.focusedPane = 1 })
+
+  openPaneModuleByIndex(pm, store, 5) // 0=daily,1=general,2=stakeholders,3=members,4=actions,5=milestones
+  expect(currentLoc(store.doc.nav.panes[1])?.ref.kind).toBe('milestones')
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).not.toBe('milestones')
+})
+
+test('openPaneModuleByIndex is a no-op with no active team or an out-of-range index', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const before = currentLoc(store.doc.nav.panes[0])
+
+  openPaneModuleByIndex(pm, store, 99)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(before)
+
+  store.update((d) => { d.nav.activeTeamId = null })
+  openPaneModuleByIndex(pm, store, 0)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(before)
 })
 
 test('shows first-team CTA when doc has no teams, with no pane shell (bars/split) visible', () => {

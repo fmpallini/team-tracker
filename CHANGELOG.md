@@ -14,6 +14,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - The Ctrl+K picker is now called "Fast Switch" throughout the app.
 - The "Action items" module is now called "Tasks" throughout the app.
 - The pane's module switcher moved to the left of the toolbar and now shows the current module's name — click the name to switch modules.
+- The pane module dropdown's ▾ arrow is bigger, and each row shows its F1–F7 shortcut — press F1 through F7 to jump the focused pane straight to a module. Documented in the global shortcuts help screen.
 
 ### Fixed
 - Switching the app's language no longer leaves the `/` template picker showing template names in the language you switched away from.
