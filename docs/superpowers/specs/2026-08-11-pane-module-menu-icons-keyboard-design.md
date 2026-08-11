@@ -99,10 +99,36 @@ render the feature's name to the user change, both locales, in
   - en-US: `Command palette` → `Fast switch`
   - pt-BR: `Paleta de comandos` → `Troca rápida`
 
-`palette_placeholder` (the search input's placeholder text) is unchanged —
-it describes what to type, not the feature's name.
+Also update `palette_placeholder` (the modal's search input placeholder,
+[i18n.ts:210,661](../../../src/core/i18n.ts#L210)) to add the Ctrl+K hint the
+user asked for, on top of its existing "what you can search" text:
+- en-US: `Search module, person, task, milestone or risk…` →
+  `Search module, person, task, milestone or risk… (Ctrl+K)`
+- pt-BR: `Buscar módulo, pessoa, tarefa, marco ou risco…` →
+  `Buscar módulo, pessoa, tarefa, marco ou risco… (Ctrl+K)`
+
+**README.md** — two genuinely user-facing (not internal/architecture) hits,
+in the screenshots table ([README.md:19-20](../../../README.md#L19-L20)):
+- alt text: `Ctrl+K command palette for jumping to any team, person, or item`
+  → `Ctrl+K fast switch for jumping to any team, person, or item`
+- caption: `` `Ctrl+K` command palette `` → `` `Ctrl+K` fast switch ``
+Screenshot filename (`docs/screenshots/command-palette.png`) stays as-is —
+it's a path, not user-facing text.
+
+Everything else that still says "command palette" is internal/developer-
+facing and stays unchanged: `CLAUDE.md`'s and `README.md`'s own architecture
+sections (describe `src/ui/palette.ts` by its code identity, same reasoning
+as the internal-names rule above), code comments (`shell.ts`, `hotkeys.ts`,
+`due-panel.ts`, `palette.ts`, `styles.css`), e2e test descriptions, and every
+already-published `CHANGELOG.md` entry and past `docs/superpowers/
+specs|plans/*.md` file — those are historical records this project's
+convention (see `CLAUDE.md`'s Changelog section) says never to rewrite.
 
 ## Testing
+
+Check `test/palette.test.ts` for any assertion on the exact string value of
+`app_name_button_title`, `help_global_palette`, or `palette_placeholder` and
+update it to match; no new test needed purely for a copy change.
 
 Extend `test/panes.test.ts`:
 - Every rendered `.tt-pane-menu-item`'s `textContent` starts with its
