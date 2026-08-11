@@ -103,7 +103,7 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
   m = /^\d+\.[  ]$/.exec(text)
   if (m) return { type: 'ol', prefixLen: m[0]!.length }
 
-  m = /^(-{3,})[  ]$/.exec(text)
+  m = /^(-{3,})[  ]$/.exec(text)
   if (m) return { type: 'hr', prefixLen: m[0]!.length }
 
   return null

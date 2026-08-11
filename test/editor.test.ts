@@ -1023,7 +1023,7 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('#' + nbsp)).toEqual({ type: 'h1', prefixLen: 2 })
   })
   test('detects hr prefix with trailing NBSP too', () => {
-    const nbsp = ' '
+    const nbsp = ' '
     expect(detectBlockPrefix('---' + nbsp)).toEqual({ type: 'hr', prefixLen: 4 })
   })
 })
