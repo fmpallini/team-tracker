@@ -635,6 +635,26 @@ test('print button is disabled when the pane is empty and enabled once a module 
   expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(false)
 })
 
+test('module title/modules button are merged into one trigger: shows current module name, no separate title span, tracks disabled/title with team state', () => {
+  const { store, pm } = setup()
+
+  // No active team yet: trigger disabled, tooltip explains why, no title span exists separately.
+  const before = paneBtn(0, 'tt-pane-modules-btn')
+  expect(before.disabled).toBe(true)
+  expect(before.title).toBe(t('en-US', 'pane_no_team'))
+  expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
+
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  const after = paneBtn(0, 'tt-pane-modules-btn')
+  expect(after.disabled).toBe(false)
+  expect(after.title).toBe(t('en-US', 'pane_modules_title'))
+  expect(after.textContent).toContain(t('en-US', 'module_risks'))
+  expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
+})
+
 test('print button opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

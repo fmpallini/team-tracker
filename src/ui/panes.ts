@@ -724,19 +724,18 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       },
       '▶'
     )
-    const titleEl = el('span', { class: 'tt-pane-title' }, cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty'))
-
     const teamId = nav.activeTeamId
     const modulesBtn = el(
       'button',
       {
-        class: 'tt-btn tt-pane-modules-btn',
+        class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
         title: t(lc, teamId ? 'pane_modules_title' : 'pane_no_team'),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
-      '▾'
+      el('span', { class: 'tt-pane-title-text' }, cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty')),
+      el('span', { class: 'tt-pane-title-chev' }, '▾')
     )
     const printBtn = el(
       'button',
@@ -760,8 +759,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       '⧉'
     )
 
-    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, titleEl)
-    const right = el('div', { class: 'tt-pane-bar-right' }, modulesBtn, printBtn, splitBtn)
+    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, modulesBtn)
+    const right = el('div', { class: 'tt-pane-bar-right' }, printBtn, splitBtn)
     barEl.append(left, right)
 
     if (menuOpen[idx] && teamId !== null) {
