@@ -80,7 +80,7 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr'
   prefixLen: number
 }
 
@@ -102,6 +102,9 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
 
   m = /^\d+\.[  ]$/.exec(text)
   if (m) return { type: 'ol', prefixLen: m[0]!.length }
+
+  m = /^(-{3,})[  ]$/.exec(text)
+  if (m) return { type: 'hr', prefixLen: m[0]!.length }
 
   return null
 }
@@ -407,6 +410,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
+  /**
+   * Replaces an emptied-out top-level block with `<hr>` followed by a fresh
+   * empty block for the caret — unlike convertBlockToList's <li>, an <hr> is
+   * a void element and can never hold a caret itself.
+   */
+  function convertBlockToHr(block: HTMLElement): void {
+    editorEl.focus()
+    const hr = document.createElement('hr')
+    const next = document.createElement('div')
+    next.appendChild(document.createElement('br'))
+    block.replaceWith(hr, next)
+    const r = document.createRange()
+    r.selectNodeContents(next)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
   function replaceInlineMatch(block: HTMLElement, match: InlineMatch): void {
     const range = rangeForTextOffsets(block, match.start, match.end)
     // If the matched span crosses an element boundary (e.g. a ref chip or
@@ -431,6 +452,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (caretOffset === text.length) {
       const blockMatch = detectBlockPrefix(text)
       if (blockMatch) {
+        if (blockMatch.type === 'hr') {
+          // Unlike ul/ol (which fall through to the generic prefix-strip +
+          // applyBlockFormat path below when not top-level, since that path
+          // can still produce a valid nested list), '---' inside a list item
+          // has no valid representation (htmlToMd only reads a list's direct
+          // <li> children) and applyBlockFormat('hr') has no handling for
+          // 'hr' at all (execCommand('formatBlock', false, '<hr>') no-ops).
+          // So always return here, converting only when top-level, and
+          // otherwise leaving the typed "--- " as literal text untouched.
+          if (block.parentElement === editorEl) convertBlockToHr(block)
+          return
+        }
         if ((blockMatch.type === 'ul' || blockMatch.type === 'ol') && block.parentElement === editorEl) {
           convertBlockToList(block, blockMatch.type)
           return
@@ -739,6 +772,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      const ctx = currentBlockAndOffset()
+      if (ctx && ctx.block.parentElement === editorEl && ctx.caretOffset === ctx.text.length && /^-{3,}$/.test(ctx.text)) {
+        e.preventDefault()
+        convertBlockToHr(ctx.block)
+        scheduleChange()
+        return
+      }
+    }
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       const listItems = selectedListItems()

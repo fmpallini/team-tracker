@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
@@ -406,7 +406,7 @@ test('opening a module already shown in the other pane focuses that pane for rea
   // 0's wrapper after openInPane's focusOther branch runs.
   paneBtn(0, 'tt-pane-modules-btn').click()
   const milestonesItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
-    .find((b) => b.textContent === t('en-US', 'module_milestones'))
+    .find((b) => b.querySelector('.tt-pane-menu-label')?.textContent === `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
   if (!milestonesItem) throw new Error('milestones menu item not found')
   milestonesItem.click()
 
@@ -414,7 +414,7 @@ test('opening a module already shown in the other pane focuses that pane for rea
   expect(store.doc.nav.focusedPane).toBe(1)
 })
 
-test('pane module dropdown lists General notes right after Daily notes', () => {
+test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board modules, no Person entry', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   store.update((d) => { d.nav.activeTeamId = 'T1' })
@@ -423,8 +423,130 @@ test('pane module dropdown lists General notes right after Daily notes', () => {
   paneBtn(0, 'tt-pane-modules-btn').click()
   const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
 
-  expect(items[0]?.textContent).toBe(t('en-US', 'module_daily'))
-  expect(items[1]?.textContent).toBe(t('en-US', 'module_general_notes'))
+  expect(items.map((b) => b.querySelector('.tt-pane-menu-label')?.textContent)).toEqual([
+    `${KIND_ICON.daily} ${t('en-US', 'module_daily')}`,
+    `${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`,
+    `${KIND_ICON.stakeholders} ${t('en-US', 'module_stakeholders')}`,
+    `${KIND_ICON.members} ${t('en-US', 'module_members')}`,
+    `${KIND_ICON.actions} ${t('en-US', 'module_actions')}`,
+    `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`,
+    `${KIND_ICON.risks} ${t('en-US', 'module_risks')}`,
+  ])
+})
+
+test('pane module dropdown always shows an F1..F7 hotkey hint per row, in order', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const hints = Array.from(document.querySelectorAll<HTMLElement>('[data-pane-idx="0"] .tt-pane-menu-hotkey'))
+
+  expect(hints.map((h) => h.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
+})
+
+test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const selectedLabel = () => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')?.textContent
+
+  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+
+  // Clamped at the top: one more ArrowUp does nothing.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+
+  // Walk to the bottom (6 more ArrowDowns reaches Risks, the 7th row) and confirm clamping there too.
+  for (let i = 0; i < 6; i++) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+})
+
+test('opening the menu highlights the row matching the pane\'s current module', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const selected = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')
+  expect(selected?.textContent).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+})
+
+test('Enter commits the highlighted pane-menu row and closes the menu', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) // -> General notes
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('general')
+})
+
+test('Escape closes the pane menu without picking anything', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('actions')
+})
+
+test('dispose() while a pane menu is open closes it and drops its document keydown listener', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  pm.dispose()
+
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+  // The keydown listener is capture-phase on document; if it survived, this
+  // would throw trying to paintSelection into the now-detached menu list.
+  expect(() => document.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+  )).not.toThrow()
+})
+
+test('opening one pane\'s module menu closes the other pane\'s if it was open', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit() // split on
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelectorAll('.tt-pane-menu').length).toBe(1)
+
+  paneBtn(1, 'tt-pane-modules-btn').click()
+  expect(document.querySelectorAll('.tt-pane-menu').length).toBe(1)
+  expect(document.querySelector('[data-pane-idx="0"] .tt-pane-menu')).toBeNull()
+  expect(document.querySelector('[data-pane-idx="1"] .tt-pane-menu')).not.toBeNull()
 })
 
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
@@ -587,6 +709,32 @@ test('navigateFocusedHistory steps the currently focused pane and re-renders', (
   expect(store.doc.nav.panes[0].index).toBe(0)
 })
 
+test('openPaneModuleByIndex opens the row at that position (paneMenuItems order) in the focused pane', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.toggleSplit() // split on
+  store.updateNav((d) => { d.nav.focusedPane = 1 })
+
+  openPaneModuleByIndex(pm, store, 5) // 0=daily,1=general,2=stakeholders,3=members,4=actions,5=milestones
+  expect(currentLoc(store.doc.nav.panes[1])?.ref.kind).toBe('milestones')
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).not.toBe('milestones')
+})
+
+test('openPaneModuleByIndex is a no-op with no active team or an out-of-range index', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const before = currentLoc(store.doc.nav.panes[0])
+
+  openPaneModuleByIndex(pm, store, 99)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(before)
+
+  store.update((d) => { d.nav.activeTeamId = null })
+  openPaneModuleByIndex(pm, store, 0)
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(before)
+})
+
 test('shows first-team CTA when doc has no teams, with no pane shell (bars/split) visible', () => {
   setup() // doc.teams = [] by default (createEmptyDocument)
   const grid = document.querySelector('.tt-panes-grid') as HTMLElement
@@ -633,6 +781,26 @@ test('print button is disabled when the pane is empty and enabled once a module 
   pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
 
   expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(false)
+})
+
+test('module title/modules button are merged into one trigger: shows current module name, no separate title span, tracks disabled/title with team state', () => {
+  const { store, pm } = setup()
+
+  // No active team yet: trigger disabled, tooltip explains why, no title span exists separately.
+  const before = paneBtn(0, 'tt-pane-modules-btn')
+  expect(before.disabled).toBe(true)
+  expect(before.title).toBe(t('en-US', 'pane_no_team'))
+  expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
+
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  const after = paneBtn(0, 'tt-pane-modules-btn')
+  expect(after.disabled).toBe(false)
+  expect(after.title).toBe(t('en-US', 'pane_modules_title'))
+  expect(after.textContent).toContain(t('en-US', 'module_risks'))
+  expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
 })
 
 test('print button opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
@@ -747,7 +915,7 @@ test('buildModuleItems with no team includes the daily-notes entry, the general-
     { label: `${KIND_ICON.general} General notes`, ref: { kind: 'general' } },
     { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
     { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
-    { label: `${KIND_ICON.actions} Action items`, ref: { kind: 'actions' } },
+    { label: `${KIND_ICON.actions} Tasks`, ref: { kind: 'actions' } },
     { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
     { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
   ])
@@ -782,13 +950,20 @@ test('dispose() removes the document click listener that closes the module menu'
   store.update((d) => { d.nav.activeTeamId = 'T1' })
   pm.renderAll()
 
-  // Open pane 0's module dropdown.
+  // dispose() itself now proactively closes any open menu (see the
+  // dispose()-while-open test below), so this test can no longer observe
+  // the click-listener leak by leaving a menu open across dispose() and
+  // checking it survives a stray click — it wouldn't even without a leak.
+  // Instead: dispose() first (nothing open yet), then re-open the menu via
+  // the still-attached button (dispose() only tears down document-level
+  // listeners and module instances, not the pane bar itself) and confirm a
+  // stray outside click no longer closes it — proving onDocumentClick
+  // specifically was never re-registered/was removed.
+  pm.dispose()
+
   paneBtn(0, 'tt-pane-modules-btn').click()
   expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
 
-  pm.dispose()
-
-  // With the listener removed, an outside click no longer closes the menu.
   document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
 })

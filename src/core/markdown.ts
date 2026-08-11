@@ -85,9 +85,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     const h = /^(#{1,3}) (.*)$/.exec(line)
     const ul = /^( *)- (.*)$/.exec(line)
     const ol = /^( *)(\d+)\. (.*)$/.exec(line)
+    const hr = /^-{3,}$/.test(line)
     if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle)}</h${h[1]!.length}>`) }
     else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle), '')
     else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle), ` value="${ol[2]}"`)
+    else if (hr) { closeList(); out.push('<hr>') }
     else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle) : '<br>'}</div>`) }
   }
   closeList(); return out.join('')
@@ -282,6 +284,7 @@ export function htmlToPlainText(root: HTMLElement): string {
     }
     const tag = node.tagName.toLowerCase()
     if (tag === 'ul' || tag === 'ol') renderListText(node, out)
+    else if (tag === 'hr') out.push('---')
     else if (/^h[1-3]$/.test(tag) || tag === 'div' || tag === 'p') out.push(blockToText(node))
     else out.push(inlineText(node))
   }
@@ -298,6 +301,7 @@ export function htmlToMd(root: HTMLElement): string {
     const tag = node.tagName.toLowerCase()
     if (/^h[1-3]$/.test(tag)) out.push('#'.repeat(Number(tag[1])) + ' ' + blockToMd(node))
     else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
+    else if (tag === 'hr') out.push('---')
     else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))
     else out.push(inlineMd(node))
   }

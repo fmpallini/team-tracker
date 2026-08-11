@@ -441,6 +441,23 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   expect(tabs).toEqual(['Geral', 'Avançado', 'Templates', 'Tags', 'Segurança', 'Dados', 'Sobre'])
 })
 
+test('locale radio re-seeds untouched builtin templates and leaves an edited one alone', () => {
+  const { store, shell, appCtl } = setup()
+  // setup() creates the doc with 'en-US', so store.doc.templates start out English.
+  const beforeIds = store.doc.templates.map(t => t.id)
+  store.update((d) => {
+    d.templates[1]!.body = 'hand-edited body' // Feedback (SBI) template, left untouched by the switch
+  })
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  radio('tt-prefs-locale', 'pt-BR').click()
+
+  expect(store.doc.templates.map(t => t.id)).toEqual(beforeIds) // same ids/order
+  expect(store.doc.templates[0]!.name).toBe('1:1') // untouched builtin, now Portuguese wording
+  expect(store.doc.templates[0]!.body).toContain('Como está / energia')
+  expect(store.doc.templates[1]!.body).toBe('hand-edited body') // edited one, skipped
+})
+
 test('templates tab lists the 5 builtins with scope badges', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
@@ -869,9 +886,9 @@ describe('Data tab (export/import)', () => {
     expect(document.querySelector('.tt-data-team-name')?.textContent).toBe('Engineering')
     const hints = Array.from(document.querySelectorAll('.tt-data-hint')).map((n) => n.textContent)
     expect(hints).toEqual([
-      'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, action items, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
+      'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, tasks, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
       'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
-      'Removes done/cancelled action items, completed milestones, and closed risks, plus old daily notes — across every team in this file. This cannot be undone.',
+      'Removes done/cancelled tasks, completed milestones, and closed risks, plus old daily notes — across every team in this file. This cannot be undone.',
     ])
   })
 
@@ -993,7 +1010,7 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 action items, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
+        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
       )
 
       clickByText('Clean up data')

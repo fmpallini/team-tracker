@@ -340,3 +340,28 @@ test('htmlToPlainText indents 2 spaces per nesting level (mirrors markdown\'s in
   div.innerHTML = mdToHtml('- a\n  - b\n    - c\n      - d')
   expect(htmlToPlainText(div)).toBe('a\n  b\n    c\n      d')
 })
+
+test('bare "---" line becomes <hr> and round-trips', () => {
+  const md = 'before\n\n---\n\nafter'
+  const html = mdToHtml(md)
+  expect(html).toContain('<hr>')
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('"---" round-trips standalone and closes any open list first', () => {
+  const md = '- a\n- b\n---\ntext'
+  const html = mdToHtml(md)
+  expect(html).toBe('<ul><li>a</li><li>b</li></ul><hr><div>text</div>')
+  expect(roundTrip(md)).toBe(md)
+})
+
+test('a line with only 1-2 dashes is not treated as a rule', () => {
+  const md = '--\nnot a rule'
+  expect(mdToHtml(md)).not.toContain('<hr>')
+})
+
+test('htmlToPlainText renders an <hr> as "---" (copy without formatting keeps the divider visible instead of a blank line)', () => {
+  const div = document.createElement('div')
+  div.innerHTML = '<div>before</div><hr><div>after</div>'
+  expect(htmlToPlainText(div)).toBe('before\n---\nafter')
+})

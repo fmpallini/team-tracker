@@ -7,6 +7,7 @@ import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
 import { el } from './dom'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
@@ -107,6 +108,21 @@ export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[
     for (const c of list) items.push({ label: `${KIND_ICON[kind]} ${c.title}`, ref: { kind, itemId: c.id } })
   }
   return items
+}
+
+type PaneMenuRow = {
+  kind: 'daily' | 'general' | 'stakeholders' | 'members' | 'actions' | 'milestones' | 'risks'
+  ref: ModuleRef
+  labelKey: MsgKey
+}
+
+/** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems for the fuller Ctrl+K equivalent. */
+function paneMenuItems(): PaneMenuRow[] {
+  return [
+    { kind: 'daily', ref: { kind: 'daily', date: todayIso() }, labelKey: 'module_daily' },
+    { kind: 'general', ref: { kind: 'general' }, labelKey: 'module_general_notes' },
+    ...FIXED_MODULE_KEYS.map(({ kind, key }): PaneMenuRow => ({ kind, ref: { kind }, labelKey: key })),
+  ]
 }
 
 function titleFor(store: Store, loc: Loc, locale: Locale): string {
@@ -222,6 +238,21 @@ export function navigateFocusedHistory(pm: PaneManager, store: Store, dir: -1 | 
   }
 }
 
+/**
+ * F1..F7 global hotkey handler (main.ts): jumps the focused pane straight to
+ * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
+ * matching the "F<n>" hint each row shows in the pane's module dropdown.
+ * No-op with no active team or an out-of-range index (index is `e.key`'s
+ * digit minus one, so always 0-6 in practice, but stay defensive since a
+ * caller could pass anything).
+ */
+export function openPaneModuleByIndex(pm: PaneManager, store: Store, index: number): void {
+  const teamId = store.doc.nav.activeTeamId
+  const row = paneMenuItems()[index]
+  if (!teamId || !row) return
+  pm.openInFocused({ teamId, ref: row.ref })
+}
+
 export function teamHasHistory(store: Store, teamId: string): boolean {
   return store.doc.nav.panes.some((p) => p.history.some((loc) => loc.teamId === teamId))
 }
@@ -285,7 +316,8 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager & { searchIndex: SearchIndex } {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
-  const personSubOpen: [boolean, boolean] = [false, false]
+  const menuSelected: [number, number] = [0, 0]
+  const menuListEls: [HTMLElement | null, HTMLElement | null] = [null, null]
   let splitPct = 50
   // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
   // not part of Doc, so it never persists and never marks the file dirty.
@@ -419,10 +451,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     if (!menuOpen[0] && !menuOpen[1]) return
     const target = e.target as HTMLElement
     if (target.closest('.tt-pane-modules-btn') || target.closest('.tt-pane-menu')) return
-    menuOpen[0] = false
-    menuOpen[1] = false
-    personSubOpen[0] = false
-    personSubOpen[1] = false
+    closeMenu(0)
+    closeMenu(1)
     renderBar(0)
     renderBar(1)
   }
@@ -587,77 +617,97 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     else layout()
   }
 
+  function openMenu(idx: 0 | 1): void {
+    const other = otherPaneIdx(idx)
+    if (menuOpen[other]) {
+      closeMenu(other)
+      renderBar(other)
+    }
+    const cur = currentLoc(store.doc.nav.panes[idx])
+    const rows = paneMenuItems()
+    const foundIdx = cur ? rows.findIndex((r) => r.kind === cur.ref.kind) : -1
+    menuSelected[idx] = foundIdx === -1 ? 0 : foundIdx
+    menuOpen[idx] = true
+    document.addEventListener('keydown', idx === 0 ? onMenuKeydown0 : onMenuKeydown1, true)
+  }
+
+  function closeMenu(idx: 0 | 1): void {
+    if (!menuOpen[idx]) return
+    menuOpen[idx] = false
+    // Detach directly (mirrors sidebar.ts's closeTeamSwitcher's switcherEl.remove())
+    // rather than relying on a follow-up renderBar() to wipe it via innerHTML —
+    // dispose() below calls closeMenu() with no renderBar() afterward, so the
+    // menu must be self-removing or it would linger in the torn-down bar.
+    menuListEls[idx]?.remove()
+    menuListEls[idx] = null
+    document.removeEventListener('keydown', idx === 0 ? onMenuKeydown0 : onMenuKeydown1, true)
+  }
+
   function toggleMenu(idx: 0 | 1): void {
-    menuOpen[idx] = !menuOpen[idx]
-    if (!menuOpen[idx]) personSubOpen[idx] = false
+    if (menuOpen[idx]) closeMenu(idx)
+    else openMenu(idx)
     renderBar(idx)
   }
 
+  function makeMenuKeydownHandler(idx: 0 | 1): (e: KeyboardEvent) => void {
+    return (e: KeyboardEvent): void => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const count = paneMenuItems().length
+        menuSelected[idx] = clampMove(menuSelected[idx], e.key === 'ArrowDown' ? 1 : -1, count)
+        paintSelection(menuListEls[idx], '.tt-pane-menu-item', menuSelected[idx])
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const teamId = store.doc.nav.activeTeamId
+        const row = paneMenuItems()[menuSelected[idx]]
+        if (!teamId || !row) return
+        closeMenu(idx)
+        openInPane(idx, { teamId, ref: row.ref })
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeMenu(idx)
+        renderBar(idx)
+      }
+    }
+  }
+  const onMenuKeydown0 = makeMenuKeydownHandler(0)
+  const onMenuKeydown1 = makeMenuKeydownHandler(1)
+
   function buildMenu(idx: 0 | 1, teamId: string): HTMLElement {
     const lc = localeNow()
-    const team = store.doc.teams.find((tm) => tm.id === teamId) ?? null
 
     function pick(ref: ModuleRef): void {
-      menuOpen[idx] = false
-      personSubOpen[idx] = false
+      closeMenu(idx)
       openInPane(idx, { teamId, ref })
     }
 
-    const dailyBtn = el(
-      'button',
-      { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'daily', date: todayIso() }) },
-      t(lc, 'module_daily')
-    )
-
-    const generalBtn = el(
-      'button',
-      { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'general' }) },
-      t(lc, 'module_general_notes')
-    )
-
-    const personToggle = el(
-      'button',
-      {
-        class: 'tt-pane-menu-item tt-pane-menu-parent',
-        type: 'button',
-        onclick: () => {
-          personSubOpen[idx] = !personSubOpen[idx]
-          renderBar(idx)
+    const itemBtns = paneMenuItems().map((row, i) =>
+      el(
+        'button',
+        {
+          type: 'button',
+          ...selectableRowProps({
+            class: 'tt-pane-menu-item',
+            selected: i === menuSelected[idx],
+            onCommit: () => pick(row.ref),
+            onHover: () => {
+              menuSelected[idx] = i
+              paintSelection(menuListEls[idx], '.tt-pane-menu-item', menuSelected[idx])
+            },
+          }),
         },
-      },
-      `${t(lc, 'module_person')} ${personSubOpen[idx] ? '▾' : '▸'}`
+        el('span', { class: 'tt-pane-menu-label' }, `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`),
+        el('span', { class: 'tt-pane-menu-hotkey' }, `F${i + 1}`)
+      )
     )
 
-    const subItems: HTMLElement[] = []
-    if (personSubOpen[idx] && team) {
-      for (const group of ['stakeholders', 'members'] as const) {
-        const people = team[group]
-        if (people.length === 0) continue
-        subItems.push(
-          el('div', { class: 'tt-pane-menu-subheader' }, t(lc, group === 'stakeholders' ? 'module_stakeholders' : 'module_members'))
-        )
-        for (const person of people) {
-          subItems.push(
-            el(
-              'button',
-              {
-                class: 'tt-pane-menu-item tt-pane-menu-subitem',
-                type: 'button',
-                onclick: () => pick({ kind: 'person', personId: person.id, group }),
-              },
-              person.name
-            )
-          )
-        }
-      }
-    }
-    const personGroup = el('div', { class: 'tt-pane-menu-group' }, personToggle, ...subItems)
-
-    const fixedBtns = FIXED_MODULE_KEYS.map(({ kind, key }) =>
-      el('button', { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind }) }, t(lc, key))
-    )
-
-    return el('div', { class: 'tt-pane-menu' }, dailyBtn, generalBtn, personGroup, ...fixedBtns)
+    const listEl = el('div', { class: 'tt-pane-menu' }, ...itemBtns)
+    menuListEls[idx] = listEl
+    return listEl
   }
 
   /** Opens a print-only window with a clone of the pane's current module content — whatever it is (note editor, risks table, people tree, ...) — plus a clone of the app's own stylesheet (see PRINT_CSS) and a small discreet header identifying the team/module/detail being printed. Content is inserted via appendChild(cloneNode), never through document.write, matching src/ui/editor.ts's prior print implementation this replaces. */
@@ -724,19 +774,18 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       },
       '▶'
     )
-    const titleEl = el('span', { class: 'tt-pane-title' }, cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty'))
-
     const teamId = nav.activeTeamId
     const modulesBtn = el(
       'button',
       {
-        class: 'tt-btn tt-pane-modules-btn',
+        class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
         title: t(lc, teamId ? 'pane_modules_title' : 'pane_no_team'),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
-      '▾'
+      el('span', { class: 'tt-pane-title-text' }, cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty')),
+      el('span', { class: 'tt-pane-title-chev' }, '▾')
     )
     const printBtn = el(
       'button',
@@ -760,13 +809,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       '⧉'
     )
 
-    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, titleEl)
-    const right = el('div', { class: 'tt-pane-bar-right' }, modulesBtn, printBtn, splitBtn)
+    const moduleTriggerWrap = el(
+      'div',
+      { class: 'tt-pane-title-trigger-wrap' },
+      modulesBtn,
+      ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId)] : [])
+    )
+    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, moduleTriggerWrap)
+    const right = el('div', { class: 'tt-pane-bar-right' }, printBtn, splitBtn)
     barEl.append(left, right)
-
-    if (menuOpen[idx] && teamId !== null) {
-      barEl.appendChild(buildMenu(idx, teamId))
-    }
   }
 
   function renderBody(idx: 0 | 1): void {
@@ -832,6 +883,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     },
     setSplitSpaceConstrained,
     dispose(): void {
+      closeMenu(0)
+      closeMenu(1)
       document.removeEventListener('click', onDocumentClick)
       unsubscribeSearchIndex()
       // Tear down an in-flight divider drag, if any — see dragCleanup above.

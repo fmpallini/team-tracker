@@ -24,6 +24,7 @@ const MD_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['# / ## / ###', 'help_md_headings'],
   ['- texto', 'help_md_ul'],
   ['1. texto', 'help_md_ol'],
+  ['---', 'help_md_hr'],
 ]
 
 const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
@@ -34,6 +35,7 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+F ou /', 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
   ['Alt+← / Alt+→', 'help_global_history'],
+  ['F1 … F7', 'help_global_pane_module'],
   ['F11 / ⛶', 'help_global_fullscreen'],
   // The row actions are deliberately not Tab stops (see the row builders in
   // modules/risks.ts and modules/milestones.ts), so this is the only keyboard

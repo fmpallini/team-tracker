@@ -803,6 +803,60 @@ describe('block-prefix auto-format on typing', () => {
     editor.destroy()
   })
 
+  test('typing "--- " auto-converts the block to a horizontal rule, with an empty block after it for the caret', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '--- ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const hr = editorEl.querySelector('hr')
+    expect(hr).not.toBeNull()
+    expect(hr!.parentElement).toBe(editorEl)
+    const next = hr!.nextElementSibling as HTMLElement
+    expect(next).not.toBeNull()
+    expect(next.tagName).toBe('DIV')
+    const sel = window.getSelection()!
+    expect(sel.rangeCount).toBe(1)
+    expect(sel.getRangeAt(0).collapsed).toBe(true)
+    expect(next.contains(sel.anchorNode)).toBe(true)
+    editor.destroy()
+  })
+
+  test('editor.getMd() serializes the inserted rule back to "---"', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '--- ')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editor.getMd()).toBe('---\n')
+    editor.destroy()
+  })
+
+  test('typing "--- " inside a list item is not intercepted (converting would produce unrepresentable markup) and the typed text is preserved', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<ul><li>--- </li></ul>'
+    const li = editorEl.querySelector('li')!
+    const textNode = li.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('hr')).toBeNull()
+    expect(li.textContent).toBe('--- ')
+    editor.destroy()
+  })
+
   test('typing "1. " auto-converts the block to an ordered list (built directly, not via the unreliable execCommand path)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -815,6 +869,58 @@ describe('block-prefix auto-format on typing', () => {
     expect(ol).not.toBeNull()
     expect(ol!.parentElement).toBe(editorEl)
     expect(ol!.querySelectorAll('li')).toHaveLength(1)
+    editor.destroy()
+  })
+
+  test('pressing Enter on a block containing only "---" converts it to an hr (no trailing space needed)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, '---')
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const hr = editorEl.querySelector('hr')
+    expect(hr).not.toBeNull()
+    const next = hr!.nextElementSibling as HTMLElement
+    expect(next.tagName).toBe('DIV')
+    const sel = window.getSelection()!
+    expect(next.contains(sel.anchorNode)).toBe(true)
+    editor.destroy()
+  })
+
+  test('Enter on a block that is not exactly "---" behaves normally (not intercepted)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+
+    setBlockText(editorEl, 'some text --')
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(editorEl.querySelector('hr')).toBeNull()
+    editor.destroy()
+  })
+
+  test('Enter on "---" inside a list item is not intercepted (converting would produce unrepresentable markup)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<ul><li>---</li></ul>'
+    const li = editorEl.querySelector('li')!
+    const textNode = li.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(editorEl.querySelector('hr')).toBeNull()
     editor.destroy()
   })
 })
@@ -897,6 +1003,15 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('1. ')).toEqual({ type: 'ol', prefixLen: 3 })
     expect(detectBlockPrefix('12. ')).toEqual({ type: 'ol', prefixLen: 4 })
   })
+  test('detects --- (3+ dashes) with a trailing space as hr', () => {
+    expect(detectBlockPrefix('--- ')).toEqual({ type: 'hr', prefixLen: 4 })
+    expect(detectBlockPrefix('---- ')).toEqual({ type: 'hr', prefixLen: 5 })
+    expect(detectBlockPrefix('----------- ')).toEqual({ type: 'hr', prefixLen: 12 })
+  })
+  test('does not detect hr with fewer than 3 dashes', () => {
+    expect(detectBlockPrefix('-- ')).toBeNull()
+    expect(detectBlockPrefix('- ')).toEqual({ type: 'ul', prefixLen: 2 }) // still a list bullet, unaffected
+  })
   test('does not match mid-block text', () => {
     expect(detectBlockPrefix('# hello')).toBeNull()
     expect(detectBlockPrefix('hello')).toBeNull()
@@ -906,6 +1021,10 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('-' + nbsp)).toEqual({ type: 'ul', prefixLen: 2 })
     expect(detectBlockPrefix('1.' + nbsp)).toEqual({ type: 'ol', prefixLen: 3 })
     expect(detectBlockPrefix('#' + nbsp)).toEqual({ type: 'h1', prefixLen: 2 })
+  })
+  test('detects hr prefix with trailing NBSP too', () => {
+    const nbsp = ' '
+    expect(detectBlockPrefix('---' + nbsp)).toEqual({ type: 'hr', prefixLen: 4 })
   })
 })
 

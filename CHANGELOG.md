@@ -4,6 +4,22 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.6] - 2026-08-10
+
+### Added
+- Typing `---` (three or more dashes) then Space or Enter in any note field now inserts a horizontal divider — documented in the editor's help screen.
+
+### Changed
+- The pane's module ▾ menu now shows an icon per row and can be navigated with the arrow keys, Enter, and Escape — same as every other dropdown in the app. Jumping straight to one person's notes is now done via Ctrl+K (renamed "Fast Switch") instead of the pane menu.
+- The Ctrl+K picker is now called "Fast Switch" throughout the app.
+- The "Action items" module is now called "Tasks" throughout the app.
+- The pane's module switcher moved to the left of the toolbar and now shows the current module's name — click the name to switch modules.
+- The pane module dropdown's ▾ arrow is bigger, and each row shows its F1–F7 shortcut — press F1 through F7 to jump the focused pane straight to a module. Documented in the global shortcuts help screen.
+
+### Fixed
+- Switching the app's language no longer leaves the `/` template picker showing template names in the language you switched away from.
+- Arrow-key navigation in dropdown lists (@ mentions, Ctrl+K palette, `/` template picker, search results, team switcher) now scrolls the highlighted item into view instead of leaving it hidden below the visible area.
+
 ## [2.1.5] - 2026-08-09
 
 ### Changed

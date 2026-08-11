@@ -23,7 +23,11 @@ type RowProps = Record<string, string | ((e: Event) => void)>
  */
 export function paintSelection(listEl: HTMLElement | null, rowSelector: string, selected: number): void {
   if (!listEl) return
-  listEl.querySelectorAll<HTMLElement>(rowSelector).forEach((row, i) => row.classList.toggle('selected', i === selected))
+  listEl.querySelectorAll<HTMLElement>(rowSelector).forEach((row, i) => {
+    const isSelected = i === selected
+    row.classList.toggle('selected', isSelected)
+    if (isSelected) row.scrollIntoView?.({ block: 'nearest' })
+  })
 }
 
 /** Arrow-key movement, clamped to the ends of the list. */
