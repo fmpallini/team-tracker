@@ -58,24 +58,98 @@ describe('setMd/getMd round-trip', () => {
 })
 
 describe('paste', () => {
-  test('strips rich HTML and inserts only plain text', () => {
+  // jsdom has no ClipboardEvent constructor; a plain Event with a
+  // clipboardData property is enough since the handler only reads that.
+  function dispatchPaste(editor: Editor, data: Record<string, string>): { preventDefault: ReturnType<typeof vi.spyOn> } {
+    const clipboardData = { getData: (fmt: string) => data[fmt] ?? '' } as unknown as DataTransfer
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+    editor.root.querySelector('.editor')!.dispatchEvent(event)
+    return { preventDefault }
+  }
+
+  test('falls back to plain text when the clipboard has no HTML', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
 
-    // jsdom has no ClipboardEvent constructor; a plain Event with a
-    // clipboardData property is enough since the handler only reads that.
-    const clipboardData = {
-      getData: (fmt: string) => (fmt === 'text/plain' ? 'plain text' : '<b>rich</b> text'),
-    } as unknown as DataTransfer
-    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
-    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
-    const preventDefault = vi.spyOn(event, 'preventDefault')
-
-    editor.root.querySelector('.editor')!.dispatchEvent(event)
+    const { preventDefault } = dispatchPaste(editor, { 'text/plain': 'plain text' })
 
     expect(preventDefault).toHaveBeenCalled()
     expect(execSpy).toHaveBeenCalledWith('insertText', false, 'plain text')
+    editor.destroy()
+  })
+
+  test('preserves list structure from HTML clipboard data instead of flattening it to plain text', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/plain': 'um\ndois',
+      'text/html': '<ul><li>um</li><li>dois</li></ul>',
+    })
+
+    expect(execSpy).toHaveBeenCalledWith('insertHTML', false, expect.stringContaining('<li>'))
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).toContain('<ul>')
+    editor.destroy()
+  })
+
+  test('preserves nested list indentation from HTML clipboard data', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': '<ul><li>um<ul><li>dois</li></ul></li></ul>',
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    // The pasted HTML is round-tripped through the same md<->html conversion
+    // as setMd/getMd, so a nested list survives as a nested <ul>, not a
+    // second top-level bullet at the same depth as its parent.
+    expect(inserted).toMatch(/<li>um<ul><li>dois<\/li><\/ul><\/li>/)
+    editor.destroy()
+  })
+
+  test('preserves inline formatting from HTML clipboard data', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, { 'text/html': '<b>rich</b> text' })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).toContain('<strong>rich</strong>')
+    editor.destroy()
+  })
+
+  // Regression test for a CodeQL alert flagged on this paste path: clipboard
+  // HTML is untrusted, and a malicious <a data-ref="..."> could try to break
+  // out of the data-ref="${ref}" attribute mdToHtml (core/markdown.ts's
+  // inline()) rebuilds when re-rendering the pasted content. It can't,
+  // because inline() runs esc() over the *whole* line — converting `"` to
+  // `&quot;` etc. — before the ref regex ever captures its groups, so any
+  // quote/angle-bracket characters an attacker puts in data-ref are already
+  // inert entities by the time they're re-embedded. This asserts that
+  // property end-to-end rather than trusting the escaping order not to
+  // regress silently.
+  test('a malicious data-ref on pasted HTML cannot break out of the rebuilt attribute', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': `<a data-ref='person:x"onmouseover="window.__xss=1'>evil</a>`,
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    const probe = document.createElement('div')
+    probe.innerHTML = inserted
+    expect(probe.querySelector('[onmouseover]')).toBeNull()
+    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:x"onmouseover="window.__xss=1')
     editor.destroy()
   })
 })
@@ -644,6 +718,62 @@ describe('toolbar', () => {
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
     editor.destroy()
+  })
+
+  test('copy menu supports Up/Down + Enter keyboard navigation', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('**bold** text')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    openCopyMenu(editor)
+    const items = () => Array.from(document.querySelectorAll('.tt-atref-item'))
+    expect(items()[0]!.classList.contains('selected')).toBe(true) // opens with the first option selected
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(items()[0]!.classList.contains('selected')).toBe(false)
+    expect(items()[1]!.classList.contains('selected')).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(items()[2]!.classList.contains('selected')).toBe(true) // third option = "Copy as markdown"
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(writeText).toHaveBeenCalledWith('**bold** text')
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull() // menu closes after commit
+
+    editor.destroy()
+    Reflect.deleteProperty(navigator, 'clipboard')
+  })
+
+  test('copy menu clamps to the viewport when the toolbar button sits near the right/bottom edge', () => {
+    const originalGetRect = Element.prototype.getBoundingClientRect
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { value: 800, configurable: true })
+    Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true })
+    Element.prototype.getBoundingClientRect = function (this: HTMLElement): DOMRect {
+      const base = { x: 0, y: 0, toJSON: () => ({}) }
+      if (this.classList.contains('tt-atref-dropdown')) {
+        return { ...base, left: 780, right: 980, top: 580, bottom: 780, width: 200, height: 200 } as DOMRect
+      }
+      return originalGetRect.call(this)
+    }
+
+    try {
+      const editor = createEditor(makeHooks(), 'en-US')
+      document.body.appendChild(editor.root)
+
+      openCopyMenu(editor)
+      const menu = document.querySelector<HTMLElement>('.tt-atref-dropdown')!
+      expect(parseFloat(menu.style.left)).toBeLessThanOrEqual(800 - 8 - 200)
+      expect(parseFloat(menu.style.top)).toBeLessThanOrEqual(600 - 8 - 200)
+
+      editor.destroy()
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetRect
+      Object.defineProperty(window, 'innerWidth', { value: originalInnerWidth, configurable: true })
+      Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
+    }
   })
 
   test('"Copy formatted" falls back to selection + execCommand when the async Clipboard API is unavailable (e.g. jsdom, older browsers)', () => {

@@ -9,7 +9,7 @@ import { t, todayIso, type Locale } from '../core/i18n'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam } from '../core/document'
-import { el, bindOutsideDismiss } from './dom'
+import { el, bindOutsideDismiss, clampToViewport } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
@@ -275,6 +275,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const rect = headerTeamIndicator.getBoundingClientRect()
     switcherEl.style.left = `${rect.left}px`
     switcherEl.style.top = `${rect.bottom + 4}px`
+    // Clamp to the viewport — a long team list can push the dropdown past
+    // the bottom edge, and a narrow window can push it past the right edge.
+    // Same pattern as ui/context-menu.ts/ui/backlinks-panel.ts's popovers.
+    clampToViewport(switcherEl)
     unbindSwitcherDismiss = bindOutsideDismiss(
       (target) => !switcherEl!.contains(target) && !headerTeamIndicator.contains(target),
       closeTeamSwitcher

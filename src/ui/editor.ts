@@ -3,10 +3,10 @@
 // @ref chip clicks, and @/  triggers for Tasks 16/17.
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
-import { el } from './dom'
+import { el, clampToViewport } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
-import { selectableRowProps } from './select-list'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 
 export interface Editor {
   root: HTMLElement
@@ -670,15 +670,22 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // A static 3-item dropdown (plain / formatted / markdown), anchored to the
   // toolbar button rather than the caret — reuses the atref/template-picker
   // dropdown's visual styling (.tt-atref-dropdown/-list/-item) and row
-  // mechanics (select-list.ts's selectableRowProps) but not their caret-Range
-  // anchoring or keyboard nav, since there's nothing to type or filter here.
+  // mechanics (select-list.ts's paintSelection/clampMove/selectableRowProps),
+  // now including their keyboard nav (Up/Down + Enter), and clamped to the
+  // viewport on open the same way ui/context-menu.ts and
+  // ui/backlinks-panel.ts's popovers are.
 
   let copyMenuEl: HTMLElement | null = null
+  let copyMenuListEl: HTMLElement | null = null
+  let copyMenuOptions: [string, () => void][] = []
+  let copyMenuSelected = 0
 
   function closeCopyMenu(): void {
     if (!copyMenuEl) return
     copyMenuEl.remove()
     copyMenuEl = null
+    copyMenuListEl = null
+    copyMenuOptions = []
     document.removeEventListener('mousedown', onCopyMenuDocMousedown, true)
     document.removeEventListener('keydown', onCopyMenuKeydown, true)
   }
@@ -689,37 +696,57 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onCopyMenuKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') { e.preventDefault(); closeCopyMenu() }
+    if (e.key === 'Escape') { e.preventDefault(); closeCopyMenu(); return }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      copyMenuSelected = clampMove(copyMenuSelected, e.key === 'ArrowDown' ? 1 : -1, copyMenuOptions.length)
+      paintSelection(copyMenuListEl, '.tt-atref-item', copyMenuSelected)
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const option = copyMenuOptions[copyMenuSelected]
+      if (option) { option[1](); closeCopyMenu() }
+    }
   }
 
   function openCopyMenu(anchor: HTMLElement): void {
     closeCopyMenu()
-    const options: [string, () => void][] = [
+    copyMenuOptions = [
       [t(locale, 'editor_copy_option_plain'), copyPlain],
       [t(locale, 'editor_copy_option_formatted'), copyFormatted],
       [t(locale, 'editor_copy_option_markdown'), copyMarkdown],
     ]
+    copyMenuSelected = 0
     const listEl = el(
       'div',
       { class: 'tt-atref-list' },
-      ...options.map(([label, action]) =>
+      ...copyMenuOptions.map(([label, action], i) =>
         el(
           'div',
           selectableRowProps({
             class: 'tt-atref-item',
-            selected: false,
+            selected: i === copyMenuSelected,
             onCommit: () => { action(); closeCopyMenu() },
-            onHover: () => {},
+            onHover: () => { copyMenuSelected = i; paintSelection(copyMenuListEl, '.tt-atref-item', copyMenuSelected) },
           }),
           label
         )
       )
     )
+    copyMenuListEl = listEl
     copyMenuEl = el('div', { class: 'tt-atref-dropdown' }, listEl)
     document.body.appendChild(copyMenuEl)
     const rect = anchor.getBoundingClientRect()
     copyMenuEl.style.left = `${rect.left}px`
     copyMenuEl.style.top = `${rect.bottom}px`
+
+    // Clamp to the viewport — a toolbar button near the right/bottom edge of
+    // a pane (the common case for the right pane in split view) would
+    // otherwise open partly or fully off-screen. Same pattern as
+    // ui/context-menu.ts/ui/backlinks-panel.ts's popovers.
+    clampToViewport(copyMenuEl)
+
     document.addEventListener('mousedown', onCopyMenuDocMousedown, true)
     document.addEventListener('keydown', onCopyMenuKeydown, true)
   }
@@ -830,8 +857,50 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
   }
 
+  /**
+   * Converts pasted `text/html` into this editor's markdown dialect via the
+   * same htmlToMd() used to read the editor's own DOM — so paste round-trips
+   * through the identical block/list/inline rules setMd/getMd already rely
+   * on, instead of a bespoke parser. htmlToMd expects block-level children
+   * (div/p/ul/ol/h1-3/hr) at the root, which is always true of the editor's
+   * own markup but not of arbitrary clipboard HTML — a fragment with no
+   * block-level top node (e.g. copying just a bolded word out of another
+   * app) is wrapped in one synthetic <div> first so it reads as a single
+   * line instead of losing its wrapping context.
+   *
+   * Parsed via DOMParser rather than an innerHTML-assigned <div>: an
+   * innerHTML'd element still belongs to the live document, so a malicious
+   * clipboard payload like `<img src=x onerror=...>` starts loading (and can
+   * fire its handler) the instant it's parsed, before htmlToMd ever reads it
+   * back out. DOMParser's result is a separate, inert document — same
+   * script realm (so `instanceof HTMLElement` still holds for its nodes),
+   * but never a fully active document, so it doesn't fetch resources or run
+   * handlers. Only the plain text and the small allow-listed tag set
+   * htmlToMd/inlineMd understand ever survives into the rebuilt markdown
+   * anyway — everything else's attributes are discarded, and its text is
+   * escaped by markdown.ts's esc() when re-rendered.
+   */
+  function htmlClipboardToMd(html: string): string {
+    const wrapper = new DOMParser().parseFromString(html, 'text/html').body
+    const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr'])
+    const hasBlockChild = Array.from(wrapper.children).some((c) => BLOCK_TAGS.has(c.tagName.toLowerCase()))
+    if (!hasBlockChild) {
+      const line = wrapper.ownerDocument.createElement('div')
+      while (wrapper.firstChild) line.appendChild(wrapper.firstChild)
+      wrapper.appendChild(line)
+    }
+    return htmlToMd(wrapper)
+  }
+
   function onPaste(e: ClipboardEvent): void {
     e.preventDefault()
+    const html = e.clipboardData?.getData('text/html')
+    const md = html ? htmlClipboardToMd(html) : ''
+    if (md.trim()) {
+      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint')))
+      scheduleChange()
+      return
+    }
     const text = e.clipboardData?.getData('text/plain') ?? ''
     document.execCommand('insertText', false, text)
     scheduleChange()

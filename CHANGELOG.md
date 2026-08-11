@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.7] - 2026-08-11
+
+### Added
+- Two new color palettes: Verdant (green) and Ember (red) — the first green and red options in the picker.
+
+### Changed
+- Pasting between two notes now keeps lists, indentation, and bold/italic/underline/strikethrough formatting, instead of flattening everything to plain text.
+- The copy-options menu (🗐 in the note toolbar) can now be navigated with the arrow keys and Enter, and no longer opens partly off-screen near a pane's right or bottom edge — same fix applied to the `@`-mention dropdown, the `/` template picker, and the team switcher.
+- The "Warn about due dates within" field in Preferences is no longer a full-width input.
+- The Muster color palette was removed — it looked nearly identical to Forest. Anyone who had it selected is switched to Forest.
+
 ## [2.1.6] - 2026-08-10
 
 ### Added

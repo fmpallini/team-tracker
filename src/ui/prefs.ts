@@ -87,11 +87,12 @@ const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; swatch: 
   { value: 'ledger', key: 'prefs_palette_ledger', swatch: '#3b5a6b' },
   { value: 'signal', key: 'prefs_palette_signal', swatch: '#0058a3' },
   { value: 'blueprint', key: 'prefs_palette_blueprint', swatch: '#0a6890' },
-  { value: 'muster', key: 'prefs_palette_muster', swatch: '#8f4b10' },
   { value: 'forest', key: 'prefs_palette_forest', swatch: '#8f5814' },
   { value: 'desert', key: 'prefs_palette_desert', swatch: '#14706c' },
   { value: 'cosmic', key: 'prefs_palette_cosmic', swatch: '#5b4bc4' },
   { value: 'synthwave', key: 'prefs_palette_synthwave', swatch: '#22d3ee' },
+  { value: 'verdant', key: 'prefs_palette_verdant', swatch: '#1f8a4a' },
+  { value: 'ember', key: 'prefs_palette_ember', swatch: '#b23a2c' },
 ]
 
 const LOCALE_OPTIONS: readonly { value: Locale; key: MsgKey }[] = [

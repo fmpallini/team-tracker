@@ -2,7 +2,7 @@ import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 11
 
 export class SchemaTooNewError extends Error {}
 
@@ -108,6 +108,18 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   9: (d) => {
     const prefs = d.prefs as Record<string, unknown> | undefined
     if (prefs) prefs.backupFrequency = prefs.backupFrequency ?? 'daily'
+  },
+  // 'muster' was dropped (near-indistinguishable from 'forest' — same
+  // brown/orange accent, same pale khaki-green background, in both light
+  // and dark) in favor of two more visually distinct palettes, 'verdant'
+  // (green) and 'ember' (red) — neither hue previously existed in the set.
+  // Remap to 'forest', the closest surviving palette by accent hue, so a
+  // document saved under 'muster' keeps roughly the same look instead of
+  // silently falling back to the 'ledger' default (which [data-palette]'s
+  // CSS does for any unrecognized value).
+  10: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs?.palette === 'muster') prefs.palette = 'forest'
   },
 }
 

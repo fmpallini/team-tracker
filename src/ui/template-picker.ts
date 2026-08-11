@@ -10,7 +10,7 @@ import { mdToHtml } from '../core/markdown'
 import { resolveTemplate, type TemplateCtx } from '../core/templates'
 import type { Template } from '../core/types'
 import { t, type Locale } from '../core/i18n'
-import { el } from './dom'
+import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 
 export interface TemplatePickerHandle {
@@ -145,6 +145,11 @@ export function attachTemplatePicker(editor: Editor, opts: {
     }
     overlay.style.left = `${rect.left}px`
     overlay.style.top = `${rect.bottom}px`
+    // Clamp to the viewport — a caret near the right/bottom edge of a pane
+    // (the common case in split view, or typing near the bottom of a long
+    // note) would otherwise open the dropdown partly or fully off-screen.
+    // Same pattern as ui/context-menu.ts/ui/backlinks-panel.ts's popovers.
+    clampToViewport(overlay)
   }
 
   // --- lifecycle: open on SLASH_TRIGGER_EVENT ------------------------------

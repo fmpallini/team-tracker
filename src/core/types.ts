@@ -1,5 +1,5 @@
 // src/core/types.ts — completo, copiar literalmente
-export type PaletteId = 'ledger' | 'signal' | 'blueprint' | 'muster' | 'forest' | 'desert' | 'cosmic' | 'synthwave'
+export type PaletteId = 'ledger' | 'signal' | 'blueprint' | 'forest' | 'desert' | 'cosmic' | 'synthwave' | 'verdant' | 'ember'
 export interface Prefs {
   theme: 'light' | 'dark' | 'system'
   locale: 'pt-BR' | 'en-US'
