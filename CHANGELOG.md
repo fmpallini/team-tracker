@@ -11,6 +11,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Changed
 - The "Action items" module is now called "Tasks" throughout the app.
+- The pane's module switcher moved to the left of the toolbar and now shows the current module's name — click the name to switch modules.
 
 ### Fixed
 - Switching the app's language no longer leaves the `/` template picker showing template names in the language you switched away from.
