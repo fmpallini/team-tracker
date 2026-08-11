@@ -759,13 +759,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       '⧉'
     )
 
-    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, modulesBtn)
+    const moduleTriggerWrap = el(
+      'div',
+      { class: 'tt-pane-title-trigger-wrap' },
+      modulesBtn,
+      ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId)] : [])
+    )
+    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, moduleTriggerWrap)
     const right = el('div', { class: 'tt-pane-bar-right' }, printBtn, splitBtn)
     barEl.append(left, right)
-
-    if (menuOpen[idx] && teamId !== null) {
-      barEl.appendChild(buildMenu(idx, teamId))
-    }
   }
 
   function renderBody(idx: 0 | 1): void {
