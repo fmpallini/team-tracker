@@ -406,7 +406,7 @@ test('opening a module already shown in the other pane focuses that pane for rea
   // 0's wrapper after openInPane's focusOther branch runs.
   paneBtn(0, 'tt-pane-modules-btn').click()
   const milestonesItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
-    .find((b) => b.textContent === t('en-US', 'module_milestones'))
+    .find((b) => b.textContent === `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
   if (!milestonesItem) throw new Error('milestones menu item not found')
   milestonesItem.click()
 
@@ -414,7 +414,7 @@ test('opening a module already shown in the other pane focuses that pane for rea
   expect(store.doc.nav.focusedPane).toBe(1)
 })
 
-test('pane module dropdown lists General notes right after Daily notes', () => {
+test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board modules, no Person entry', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   store.update((d) => { d.nav.activeTeamId = 'T1' })
@@ -423,8 +423,15 @@ test('pane module dropdown lists General notes right after Daily notes', () => {
   paneBtn(0, 'tt-pane-modules-btn').click()
   const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
 
-  expect(items[0]?.textContent).toBe(t('en-US', 'module_daily'))
-  expect(items[1]?.textContent).toBe(t('en-US', 'module_general_notes'))
+  expect(items.map((b) => b.textContent)).toEqual([
+    `${KIND_ICON.daily} ${t('en-US', 'module_daily')}`,
+    `${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`,
+    `${KIND_ICON.stakeholders} ${t('en-US', 'module_stakeholders')}`,
+    `${KIND_ICON.members} ${t('en-US', 'module_members')}`,
+    `${KIND_ICON.actions} ${t('en-US', 'module_actions')}`,
+    `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`,
+    `${KIND_ICON.risks} ${t('en-US', 'module_risks')}`,
+  ])
 })
 
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {

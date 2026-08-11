@@ -109,6 +109,21 @@ export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[
   return items
 }
 
+type PaneMenuRow = {
+  kind: 'daily' | 'general' | 'stakeholders' | 'members' | 'actions' | 'milestones' | 'risks'
+  ref: ModuleRef
+  labelKey: MsgKey
+}
+
+/** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems for the fuller Ctrl+K equivalent. */
+function paneMenuItems(): PaneMenuRow[] {
+  return [
+    { kind: 'daily', ref: { kind: 'daily', date: todayIso() }, labelKey: 'module_daily' },
+    { kind: 'general', ref: { kind: 'general' }, labelKey: 'module_general_notes' },
+    ...FIXED_MODULE_KEYS.map(({ kind, key }): PaneMenuRow => ({ kind, ref: { kind }, labelKey: key })),
+  ]
+}
+
 function titleFor(store: Store, loc: Loc, locale: Locale): string {
   switch (loc.ref.kind) {
     case 'daily':
@@ -285,7 +300,6 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager & { searchIndex: SearchIndex } {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
-  const personSubOpen: [boolean, boolean] = [false, false]
   let splitPct = 50
   // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
   // not part of Doc, so it never persists and never marks the file dirty.
@@ -421,8 +435,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     if (target.closest('.tt-pane-modules-btn') || target.closest('.tt-pane-menu')) return
     menuOpen[0] = false
     menuOpen[1] = false
-    personSubOpen[0] = false
-    personSubOpen[1] = false
     renderBar(0)
     renderBar(1)
   }
@@ -589,75 +601,26 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
 
   function toggleMenu(idx: 0 | 1): void {
     menuOpen[idx] = !menuOpen[idx]
-    if (!menuOpen[idx]) personSubOpen[idx] = false
     renderBar(idx)
   }
 
   function buildMenu(idx: 0 | 1, teamId: string): HTMLElement {
     const lc = localeNow()
-    const team = store.doc.teams.find((tm) => tm.id === teamId) ?? null
 
     function pick(ref: ModuleRef): void {
       menuOpen[idx] = false
-      personSubOpen[idx] = false
       openInPane(idx, { teamId, ref })
     }
 
-    const dailyBtn = el(
-      'button',
-      { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'daily', date: todayIso() }) },
-      t(lc, 'module_daily')
+    const itemBtns = paneMenuItems().map((row) =>
+      el(
+        'button',
+        { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick(row.ref) },
+        `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`
+      )
     )
 
-    const generalBtn = el(
-      'button',
-      { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind: 'general' }) },
-      t(lc, 'module_general_notes')
-    )
-
-    const personToggle = el(
-      'button',
-      {
-        class: 'tt-pane-menu-item tt-pane-menu-parent',
-        type: 'button',
-        onclick: () => {
-          personSubOpen[idx] = !personSubOpen[idx]
-          renderBar(idx)
-        },
-      },
-      `${t(lc, 'module_person')} ${personSubOpen[idx] ? '▾' : '▸'}`
-    )
-
-    const subItems: HTMLElement[] = []
-    if (personSubOpen[idx] && team) {
-      for (const group of ['stakeholders', 'members'] as const) {
-        const people = team[group]
-        if (people.length === 0) continue
-        subItems.push(
-          el('div', { class: 'tt-pane-menu-subheader' }, t(lc, group === 'stakeholders' ? 'module_stakeholders' : 'module_members'))
-        )
-        for (const person of people) {
-          subItems.push(
-            el(
-              'button',
-              {
-                class: 'tt-pane-menu-item tt-pane-menu-subitem',
-                type: 'button',
-                onclick: () => pick({ kind: 'person', personId: person.id, group }),
-              },
-              person.name
-            )
-          )
-        }
-      }
-    }
-    const personGroup = el('div', { class: 'tt-pane-menu-group' }, personToggle, ...subItems)
-
-    const fixedBtns = FIXED_MODULE_KEYS.map(({ kind, key }) =>
-      el('button', { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick({ kind }) }, t(lc, key))
-    )
-
-    return el('div', { class: 'tt-pane-menu' }, dailyBtn, generalBtn, personGroup, ...fixedBtns)
+    return el('div', { class: 'tt-pane-menu' }, ...itemBtns)
   }
 
   /** Opens a print-only window with a clone of the pane's current module content — whatever it is (note editor, risks table, people tree, ...) — plus a clone of the app's own stylesheet (see PRINT_CSS) and a small discreet header identifying the team/module/detail being printed. Content is inserted via appendChild(cloneNode), never through document.write, matching src/ui/editor.ts's prior print implementation this replaces. */
