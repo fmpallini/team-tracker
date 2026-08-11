@@ -10,6 +10,8 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - Typing `---` (three or more dashes) then Space or Enter in any note field now inserts a horizontal divider — documented in the editor's help screen.
 
 ### Changed
+- The pane's module ▾ menu now shows an icon per row and can be navigated with the arrow keys, Enter, and Escape — same as every other dropdown in the app. Jumping straight to one person's notes is now done via Ctrl+K (renamed "Fast Switch") instead of the pane menu.
+- The Ctrl+K picker is now called "Fast Switch" throughout the app.
 - The "Action items" module is now called "Tasks" throughout the app.
 - The pane's module switcher moved to the left of the toolbar and now shows the current module's name — click the name to switch modules.
 
