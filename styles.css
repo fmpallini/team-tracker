@@ -590,7 +590,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .editor h1, .editor h2, .editor h3 { font-family: var(--font-display); margin: .5em 0 .25em; line-height: 1.25; }
 .editor ul, .editor ol { padding-left: 1.5em; }
-.editor hr { border: none; border-top: 1px solid var(--border); margin: .75em 0; }
+.editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
 .editor a.ref {
   color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: 4px;
   padding: 0 .25em; cursor: pointer; text-decoration: none;
