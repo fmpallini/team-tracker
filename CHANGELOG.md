@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.6] - 2026-08-10
+
+### Added
+- Typing `---` (three or more dashes) then Space or Enter in any note field now inserts a horizontal divider — documented in the editor's help screen.
+
+### Changed
+- The "Action items" module is now called "Tasks" throughout the app.
+
+### Fixed
+- Switching the app's language no longer leaves the `/` template picker showing template names in the language you switched away from.
+
 ## [2.1.5] - 2026-08-09
 
 ### Changed
