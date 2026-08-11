@@ -11,7 +11,7 @@ import { addDaysIso } from '../core/date'
 import type { Store } from '../core/store'
 import type { Loc } from '../core/types'
 import type { PaneManager } from './panes'
-import { el } from './dom'
+import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 
@@ -207,6 +207,11 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     const rect = anchorRange.getBoundingClientRect()
     overlay.style.left = `${rect.left}px`
     overlay.style.top = `${rect.bottom}px`
+    // Clamp to the viewport — a caret near the right/bottom edge of a pane
+    // (the common case in split view, or typing near the bottom of a long
+    // note) would otherwise open the dropdown partly or fully off-screen.
+    // Same pattern as ui/context-menu.ts/ui/backlinks-panel.ts's popovers.
+    clampToViewport(overlay)
   }
 
   function refresh(): void {

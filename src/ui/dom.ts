@@ -64,3 +64,26 @@ export function bindOutsideDismiss(shouldClose: (target: Node) => boolean, onDis
     document.removeEventListener('keydown', onKeydown, true)
   }
 }
+
+/**
+ * Clamps an already-positioned (`left`/`top` already set, appended to
+ * `document.body`) floating overlay so it never renders partly or fully off
+ * the right/bottom edge of the viewport — any dropdown/menu anchored to a
+ * button or caret near that edge would otherwise do exactly that. Pulled out
+ * of ui/context-menu.ts, the first place this was fixed, after the same
+ * missing-clamp bug turned up independently in three more anchored overlays
+ * (the copy-options menu, the @-mention/template-picker dropdowns, the team
+ * switcher) — centralizing it here is what keeps the next one from missing
+ * it too. Not used by ui/backlinks-panel.ts's popover, which instead flips
+ * above its anchor when clipped at the bottom (appropriate there since its
+ * anchor chip can sit anywhere in a scrolled pane, not just near the top).
+ */
+export function clampToViewport(el: HTMLElement, margin = 8): void {
+  const rect = el.getBoundingClientRect()
+  if (rect.right > window.innerWidth - margin) {
+    el.style.left = `${Math.max(margin, window.innerWidth - margin - rect.width)}px`
+  }
+  if (rect.bottom > window.innerHeight - margin) {
+    el.style.top = `${Math.max(margin, window.innerHeight - margin - rect.height)}px`
+  }
+}

@@ -2,7 +2,7 @@
 // overlay anchored at the click point, closed by Escape or an outside click.
 // Mirrors the open/close lifecycle of ui/atref.ts's @ dropdown but with no
 // keyboard navigation — every current use (card actions) is mouse-driven.
-import { el, bindOutsideDismiss } from './dom'
+import { el, bindOutsideDismiss, clampToViewport } from './dom'
 
 export interface ContextMenuItem {
   label: string
@@ -44,14 +44,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   // pane (the common case for the right pane in split view, or a card near
   // the bottom of a scrolled column) would otherwise open partly or fully
   // off-screen. Same pattern as ui/backlinks-panel.ts's popover.
-  const VIEWPORT_MARGIN = 8
-  const menuRect = menu.getBoundingClientRect()
-  if (menuRect.right > window.innerWidth - VIEWPORT_MARGIN) {
-    menu.style.left = `${Math.max(VIEWPORT_MARGIN, window.innerWidth - VIEWPORT_MARGIN - menuRect.width)}px`
-  }
-  if (menuRect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
-    menu.style.top = `${Math.max(VIEWPORT_MARGIN, window.innerHeight - VIEWPORT_MARGIN - menuRect.height)}px`
-  }
+  clampToViewport(menu)
 
   const unbind = bindOutsideDismiss((target) => !menu.contains(target), close)
   closeCurrent = close

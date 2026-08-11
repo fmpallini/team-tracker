@@ -51,16 +51,6 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --panel:#1b3552; --border:#2f5578; --brass:#e2a35c; --danger:#e2794a; --ok:#6bc79a;
   --card-slate:#4fc3f7; --card-brass:#e2a35c; --card-sage:#6bc79a; --card-rust:#e2794a; --card-plum:#b58fd6; --card-ledger:#8fb0c9;
 }
-[data-palette=muster][data-theme=light] {
-  --bg:#e9ebe6; --fg:#24271f; --muted:#5b5f52; --accent:#8f4b10; --accent-rgb:143,75,16;
-  --panel:#f2f3ee; --border:#c7cabb; --brass:#8a7412; --danger:#a83f2e; --ok:#3f7a4f;
-  --card-slate:#4a6a85; --card-brass:#8a7412; --card-sage:#3f7a4f; --card-rust:#a83f2e; --card-plum:#6b4a7a; --card-ledger:#5b5f52;
-}
-[data-palette=muster][data-theme=dark] {
-  --bg:#232323; --fg:#f0ede3; --muted:#9a9488; --accent:#e0973b; --accent-rgb:224,151,59;
-  --panel:#2a2a28; --border:#454540; --brass:#d4b23e; --danger:#d1584a; --ok:#7fae6e;
-  --card-slate:#7fa8c9; --card-brass:#d4b23e; --card-sage:#7fae6e; --card-rust:#d1584a; --card-plum:#b98fcb; --card-ledger:#9a9488;
-}
 [data-palette=forest][data-theme=light] {
   --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#8f5814; --accent-rgb:143,88,20;
   --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3f7a5c;
@@ -100,6 +90,26 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --bg:#180a24; --fg:#f2e9ff; --muted:#a48fc4; --accent:#22d3ee; --accent-rgb:34,211,238;
   --panel:#23103a; --border:#3d1f5c; --brass:#ff3fa4; --danger:#ff5757; --ok:#39ffb0;
   --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff5757; --card-plum:#b06bff; --card-ledger:#a48fc4;
+}
+[data-palette=verdant][data-theme=light] {
+  --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1f8a4a; --accent-rgb:31,138,74;
+  --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#6b8a2e;
+  --card-slate:#3a6b7a; --card-brass:#a17a1e; --card-sage:#6b8a2e; --card-rust:#a8402c; --card-plum:#6b4a7a; --card-ledger:#57684c;
+}
+[data-palette=verdant][data-theme=dark] {
+  --bg:#101a0d; --fg:#e3f0da; --muted:#93ab84; --accent:#5fd980; --accent-rgb:95,217,128;
+  --panel:#172413; --border:#35492e; --brass:#d1a233; --danger:#d9694a; --ok:#a3c94f;
+  --card-slate:#6aa0ad; --card-brass:#d1a233; --card-sage:#a3c94f; --card-rust:#d9694a; --card-plum:#b98fcb; --card-ledger:#93ab84;
+}
+[data-palette=ember][data-theme=light] {
+  --bg:#f4cebe; --fg:#2c1712; --muted:#8a6155; --accent:#b23a2c; --accent-rgb:178,58,44;
+  --panel:#f9e2d6; --border:#e2b6a2; --brass:#a1751e; --danger:#9c2a1f; --ok:#3f7a52;
+  --card-slate:#3f5f78; --card-brass:#a1751e; --card-sage:#3f7a52; --card-rust:#9c2a1f; --card-plum:#6b4a7a; --card-ledger:#8a6155;
+}
+[data-palette=ember][data-theme=dark] {
+  --bg:#1d100c; --fg:#f2e2da; --muted:#c99a8c; --accent:#ef6a4c; --accent-rgb:239,106,76;
+  --panel:#271510; --border:#4a2e24; --brass:#d9a83e; --danger:#d1483a; --ok:#6fae82;
+  --card-slate:#6f9fc0; --card-brass:#d9a83e; --card-sage:#6fae82; --card-rust:#d1483a; --card-plum:#b98fcb; --card-ledger:#c99a8c;
 }
 /* Risk exposure stamp colors. Declared once, in terms of the semantic tokens
    every palette block above already defines — custom properties resolve at
@@ -1249,6 +1259,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-prefs-radio input[type="radio"]:checked { border-color: var(--accent); }
 .tt-prefs-radio-swatch { width: .85rem; height: .85rem; border-radius: 50%; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .tt-prefs-autosave-input { width: 5rem; }
+.tt-prefs-due-soon-input { width: 5rem; }
 .tt-prefs-template-toolbar { display: flex; gap: .5rem; }
 .tt-prefs-template-list { display: flex; flex-direction: column; gap: .25rem; }
 .tt-prefs-template-empty { color: var(--muted); padding: .5rem; }

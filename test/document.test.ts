@@ -207,6 +207,24 @@ describe('v9 → v10 migration (backup frequency)', () => {
   })
 })
 
+describe("v10 → v11 migration ('muster' palette dropped)", () => {
+  it("remaps a saved 'muster' palette to 'forest', its closest surviving replacement", () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 10
+    d.prefs.palette = 'muster'
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.prefs.palette).toBe('forest')
+  })
+  it('leaves any other palette untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 10
+    d.prefs.palette = 'cosmic'
+    const doc = migrate(d)
+    expect(doc.prefs.palette).toBe('cosmic')
+  })
+})
+
 describe('migrateTeams (team export/import)', () => {
   it('applies v1 defaults (risk.closed, actionItem.notes, milestone.followup) to a bare v1-shaped team', () => {
     const teams = [{

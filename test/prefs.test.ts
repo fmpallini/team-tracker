@@ -157,13 +157,13 @@ test('size field offers 5 evenly-spaced steps and previews each label at its own
   expect(['XS', 'S', 'M', 'L', 'XL'].map(previewOf)).toEqual(['12px', '13.5px', '15px', '16.5px', '18px'])
 })
 
-test('palette field defaults to ledger, offers 8 swatched options, and updates store.prefs + shell on change', () => {
+test('palette field defaults to ledger, offers 9 swatched options, and updates store.prefs + shell on change', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')
   openPrefs(store, shell, 'en-US', appCtl)
 
   expect(radio('tt-prefs-palette', 'ledger').checked).toBe(true)
-  for (const value of ['signal', 'blueprint', 'muster', 'forest', 'desert', 'cosmic', 'synthwave']) {
+  for (const value of ['signal', 'blueprint', 'forest', 'desert', 'cosmic', 'synthwave', 'verdant', 'ember']) {
     expect(radio('tt-prefs-palette', value)).not.toBeNull()
   }
 
