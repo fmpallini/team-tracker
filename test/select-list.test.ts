@@ -72,6 +72,16 @@ describe('paintSelection', () => {
   test('a null list element is a no-op, not a crash', () => {
     expect(() => paintSelection(null, '.row', 0)).not.toThrow()
   })
+
+  test('scrolls the newly-selected row into view (so keyboard nav past the visible area follows it)', () => {
+    const el = makeList(3)
+    const rows = Array.from(el.querySelectorAll('.row')) as HTMLElement[]
+    rows.forEach((r) => { r.scrollIntoView = vi.fn() })
+    paintSelection(el, '.row', 2)
+    expect(rows[2]!.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(rows[0]!.scrollIntoView).not.toHaveBeenCalled()
+    expect(rows[1]!.scrollIntoView).not.toHaveBeenCalled()
+  })
 })
 
 describe('selectableRowProps', () => {

@@ -15,6 +15,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Fixed
 - Switching the app's language no longer leaves the `/` template picker showing template names in the language you switched away from.
+- Arrow-key navigation in dropdown lists (@ mentions, Ctrl+K palette, `/` template picker, search results, team switcher) now scrolls the highlighted item into view instead of leaving it hidden below the visible area.
 
 ## [2.1.5] - 2026-08-09
 
