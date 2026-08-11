@@ -434,6 +434,93 @@ test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board mo
   ])
 })
 
+test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const selectedLabel = () => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected')?.textContent
+
+  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+
+  // Clamped at the top: one more ArrowUp does nothing.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+
+  // Walk to the bottom (6 more ArrowDowns reaches Risks, the 7th row) and confirm clamping there too.
+  for (let i = 0; i < 6; i++) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(selectedLabel()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+})
+
+test('opening the menu highlights the row matching the pane\'s current module', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  const selected = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected')
+  expect(selected?.textContent).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+})
+
+test('Enter commits the highlighted pane-menu row and closes the menu', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) // -> General notes
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('general')
+})
+
+test('Escape closes the pane menu without picking anything', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('actions')
+})
+
+test('dispose() while a pane menu is open closes it and drops its document keydown listener', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.renderAll()
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+
+  pm.dispose()
+
+  expect(document.querySelector('.tt-pane-menu')).toBeNull()
+  // The keydown listener is capture-phase on document; if it survived, this
+  // would throw trying to paintSelection into the now-detached menu list.
+  expect(() => document.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+  )).not.toThrow()
+})
+
 test('un-splitting while pane 1 is focused, navigating in the now-single pane, then re-splitting keeps the navigation instead of reverting to pane 0\'s pre-expand content', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -809,13 +896,20 @@ test('dispose() removes the document click listener that closes the module menu'
   store.update((d) => { d.nav.activeTeamId = 'T1' })
   pm.renderAll()
 
-  // Open pane 0's module dropdown.
+  // dispose() itself now proactively closes any open menu (see the
+  // dispose()-while-open test below), so this test can no longer observe
+  // the click-listener leak by leaving a menu open across dispose() and
+  // checking it survives a stray click — it wouldn't even without a leak.
+  // Instead: dispose() first (nothing open yet), then re-open the menu via
+  // the still-attached button (dispose() only tears down document-level
+  // listeners and module instances, not the pane bar itself) and confirm a
+  // stray outside click no longer closes it — proving onDocumentClick
+  // specifically was never re-registered/was removed.
+  pm.dispose()
+
   paneBtn(0, 'tt-pane-modules-btn').click()
   expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
 
-  pm.dispose()
-
-  // With the listener removed, an outside click no longer closes the menu.
   document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
 })

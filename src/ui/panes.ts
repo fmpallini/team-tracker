@@ -7,6 +7,7 @@ import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
 import { el } from './dom'
+import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
@@ -300,6 +301,8 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager & { searchIndex: SearchIndex } {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
+  const menuSelected: [number, number] = [0, 0]
+  const menuListEls: [HTMLElement | null, HTMLElement | null] = [null, null]
   let splitPct = 50
   // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
   // not part of Doc, so it never persists and never marks the file dirty.
@@ -433,8 +436,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     if (!menuOpen[0] && !menuOpen[1]) return
     const target = e.target as HTMLElement
     if (target.closest('.tt-pane-modules-btn') || target.closest('.tt-pane-menu')) return
-    menuOpen[0] = false
-    menuOpen[1] = false
+    closeMenu(0)
+    closeMenu(1)
     renderBar(0)
     renderBar(1)
   }
@@ -599,28 +602,91 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     else layout()
   }
 
+  function openMenu(idx: 0 | 1): void {
+    const cur = currentLoc(store.doc.nav.panes[idx])
+    const rows = paneMenuItems()
+    const foundIdx = cur ? rows.findIndex((r) => r.kind === cur.ref.kind) : -1
+    menuSelected[idx] = foundIdx === -1 ? 0 : foundIdx
+    menuOpen[idx] = true
+    document.addEventListener('keydown', idx === 0 ? onMenuKeydown0 : onMenuKeydown1, true)
+  }
+
+  function closeMenu(idx: 0 | 1): void {
+    if (!menuOpen[idx]) return
+    menuOpen[idx] = false
+    // Detach directly (mirrors sidebar.ts's closeTeamSwitcher's switcherEl.remove())
+    // rather than relying on a follow-up renderBar() to wipe it via innerHTML —
+    // dispose() below calls closeMenu() with no renderBar() afterward, so the
+    // menu must be self-removing or it would linger in the torn-down bar.
+    menuListEls[idx]?.remove()
+    menuListEls[idx] = null
+    document.removeEventListener('keydown', idx === 0 ? onMenuKeydown0 : onMenuKeydown1, true)
+  }
+
   function toggleMenu(idx: 0 | 1): void {
-    menuOpen[idx] = !menuOpen[idx]
+    if (menuOpen[idx]) closeMenu(idx)
+    else openMenu(idx)
     renderBar(idx)
   }
+
+  function makeMenuKeydownHandler(idx: 0 | 1): (e: KeyboardEvent) => void {
+    return (e: KeyboardEvent): void => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const count = paneMenuItems().length
+        menuSelected[idx] = clampMove(menuSelected[idx], e.key === 'ArrowDown' ? 1 : -1, count)
+        paintSelection(menuListEls[idx], '.tt-pane-menu-item', menuSelected[idx])
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const teamId = store.doc.nav.activeTeamId
+        const row = paneMenuItems()[menuSelected[idx]]
+        if (!teamId || !row) return
+        closeMenu(idx)
+        openInPane(idx, { teamId, ref: row.ref })
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeMenu(idx)
+        renderBar(idx)
+      }
+    }
+  }
+  const onMenuKeydown0 = makeMenuKeydownHandler(0)
+  const onMenuKeydown1 = makeMenuKeydownHandler(1)
 
   function buildMenu(idx: 0 | 1, teamId: string): HTMLElement {
     const lc = localeNow()
 
     function pick(ref: ModuleRef): void {
-      menuOpen[idx] = false
+      closeMenu(idx)
       openInPane(idx, { teamId, ref })
     }
 
-    const itemBtns = paneMenuItems().map((row) =>
+    const itemBtns = paneMenuItems().map((row, i) =>
       el(
         'button',
-        { class: 'tt-pane-menu-item', type: 'button', onclick: () => pick(row.ref) },
+        {
+          type: 'button',
+          ...selectableRowProps({
+            class: 'tt-pane-menu-item',
+            selected: i === menuSelected[idx],
+            onCommit: () => pick(row.ref),
+            onHover: () => {
+              menuSelected[idx] = i
+              paintSelection(menuListEls[idx], '.tt-pane-menu-item', menuSelected[idx])
+            },
+          }),
+        },
         `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`
       )
     )
 
-    return el('div', { class: 'tt-pane-menu' }, ...itemBtns)
+    const listEl = el('div', { class: 'tt-pane-menu' }, ...itemBtns)
+    menuListEls[idx] = listEl
+    return listEl
   }
 
   /** Opens a print-only window with a clone of the pane's current module content — whatever it is (note editor, risks table, people tree, ...) — plus a clone of the app's own stylesheet (see PRINT_CSS) and a small discreet header identifying the team/module/detail being printed. Content is inserted via appendChild(cloneNode), never through document.write, matching src/ui/editor.ts's prior print implementation this replaces. */
@@ -796,6 +862,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     },
     setSplitSpaceConstrained,
     dispose(): void {
+      closeMenu(0)
+      closeMenu(1)
       document.removeEventListener('click', onDocumentClick)
       unsubscribeSearchIndex()
       // Tear down an in-flight divider drag, if any — see dragCleanup above.
