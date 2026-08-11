@@ -125,6 +125,33 @@ describe('paste', () => {
     expect(inserted).toContain('<strong>rich</strong>')
     editor.destroy()
   })
+
+  // Regression test for a CodeQL alert flagged on this paste path: clipboard
+  // HTML is untrusted, and a malicious <a data-ref="..."> could try to break
+  // out of the data-ref="${ref}" attribute mdToHtml (core/markdown.ts's
+  // inline()) rebuilds when re-rendering the pasted content. It can't,
+  // because inline() runs esc() over the *whole* line — converting `"` to
+  // `&quot;` etc. — before the ref regex ever captures its groups, so any
+  // quote/angle-bracket characters an attacker puts in data-ref are already
+  // inert entities by the time they're re-embedded. This asserts that
+  // property end-to-end rather than trusting the escaping order not to
+  // regress silently.
+  test('a malicious data-ref on pasted HTML cannot break out of the rebuilt attribute', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': `<a data-ref='person:x"onmouseover="window.__xss=1'>evil</a>`,
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    const probe = document.createElement('div')
+    probe.innerHTML = inserted
+    expect(probe.querySelector('[onmouseover]')).toBeNull()
+    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:x"onmouseover="window.__xss=1')
+    editor.destroy()
+  })
 })
 
 describe('ref click', () => {
