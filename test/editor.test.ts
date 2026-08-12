@@ -114,6 +114,52 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('does not leak "StartFragment"/"EndFragment" from a partial-selection paste (Windows CF_HTML fragment markers)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': '<div><!--StartFragment-->pasted text<!--EndFragment--></div>',
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).not.toContain('StartFragment')
+    expect(inserted).not.toContain('EndFragment')
+    expect(inserted).toContain('pasted text')
+    editor.destroy()
+  })
+
+  test('pasting a Google-Docs-shaped multi-paragraph export does not bold everything or mash the paragraphs together', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': '<b style="font-weight:normal" id="docs-internal-guid-x"><p>line1</p><p>line2</p></b>',
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).not.toContain('<strong>')
+    expect(inserted).toBe('<div>line1</div><div>line2</div>')
+    editor.destroy()
+  })
+
+  test('pasting a table renders readable pipe-separated rows instead of mashed text', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': '<table><tr><td>A1</td><td>B1</td></tr><tr><td>A2</td><td>B2</td></tr></table>',
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).toContain('A1 | B1')
+    expect(inserted).toContain('A2 | B2')
+    editor.destroy()
+  })
+
   test('preserves inline formatting from HTML clipboard data', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -126,17 +172,43 @@ describe('paste', () => {
     editor.destroy()
   })
 
-  // Regression test for a CodeQL alert flagged on this paste path: clipboard
+  test('a legitimate ref chip (this app\'s own uuid-shaped id) survives paste as a real chip', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': `<a class="ref" data-ref="person:3f2504e0-4f89-11d3-9a0c-0305e82c3301" contenteditable="false">@Ana</a>`,
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    const probe = document.createElement('div')
+    probe.innerHTML = inserted
+    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:3f2504e0-4f89-11d3-9a0c-0305e82c3301')
+    editor.destroy()
+  })
+
+  // Regression tests for a CodeQL alert flagged on this paste path: clipboard
   // HTML is untrusted, and a malicious <a data-ref="..."> could try to break
   // out of the data-ref="${ref}" attribute mdToHtml (core/markdown.ts's
-  // inline()) rebuilds when re-rendering the pasted content. It can't,
-  // because inline() runs esc() over the *whole* line — converting `"` to
-  // `&quot;` etc. — before the ref regex ever captures its groups, so any
-  // quote/angle-bracket characters an attacker puts in data-ref are already
-  // inert entities by the time they're re-embedded. This asserts that
-  // property end-to-end rather than trusting the escaping order not to
-  // regress silently.
-  test('a malicious data-ref on pasted HTML cannot break out of the rebuilt attribute', () => {
+  // inline()) rebuilds when re-rendering the pasted content.
+  //
+  // A same-pass quote in data-ref alone can't do it — inline() runs esc()
+  // over the whole line before its ref regex captures ref/label, so a bare
+  // `"` in data-ref is already `&quot;` by the time it's re-embedded. But
+  // inline() runs MORE regexes after that one (bold/italic/strike/the
+  // single-tilde unlinked-ref marker), over the *already-substituted*
+  // string — and the tilde marker's own template (`class="tt-unlinked-ref"`)
+  // contains a literal, unescaped `"`. A data-ref containing `~x~` reaches
+  // that regex and DOES break out of the attribute (confirmed empirically
+  // before this fix landed — the escaping-order argument alone was not
+  // sufficient). sanitizeRefAttrs() (src/ui/editor.ts) closes this off at
+  // the paste boundary instead: any data-ref whose id/date portion isn't
+  // restricted to [A-Za-z0-9-] — the only characters this app's own ref ids
+  // (crypto.randomUUID()) and dates ever contain — gets stripped before it
+  // ever reaches the markdown pipeline, so neither attack has anything to
+  // work with.
+  test('a data-ref with a bare quote is stripped, not left as an inert-but-intact chip', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
@@ -149,7 +221,26 @@ describe('paste', () => {
     const probe = document.createElement('div')
     probe.innerHTML = inserted
     expect(probe.querySelector('[onmouseover]')).toBeNull()
-    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:x"onmouseover="window.__xss=1')
+    expect(probe.querySelector('a.ref')).toBeNull() // not a safe ref shape -> not turned into a chip at all
+    expect(probe.textContent).toContain('evil') // visible text still survives
+    editor.destroy()
+  })
+
+  test('a data-ref chained through the single-tilde unlinked-ref marker cannot break attribute quoting', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, {
+      'text/html': `<a data-ref='person:x~y~contenteditable="true"~z~'>evil</a>`,
+    })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    const probe = document.createElement('div')
+    probe.innerHTML = inserted
+    expect(probe.querySelector('a.ref')).toBeNull()
+    expect(probe.querySelector('[contenteditable="true"]')).toBeNull()
+    expect(probe.querySelectorAll('a').length).toBeLessThanOrEqual(1) // no tag-splitting from a broken-out attribute
     editor.destroy()
   })
 })

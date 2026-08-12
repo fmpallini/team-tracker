@@ -10,15 +10,43 @@ const DAY_TARGET = new RegExp(`^${REF_KINDS.day.targetPattern}$`)
 /** Max list nesting depth (0-indexed) — depths 0-3 = 4 levels. Shared with src/ui/editor.ts's Tab/Shift+Tab nest/promote logic so both sides agree on the cap. */
 export const MAX_LIST_DEPTH = 3
 
+// Delimiters for inline()'s ref-chip placeholder tokens — two Private Use
+// Area code points (U+E000/U+E001) no markdown/HTML syntax below ever
+// matches, and that esc() never produces from `&`/`<`/`>`/`"`, so none of
+// the bold/italic/strike/tilde/underline passes below can ever match into,
+// or split, a token.
+const REF_OPEN = ''
+const REF_CLOSE = ''
+const REF_PLACEHOLDER = /(\d+)/g
+
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): string {
   let out = esc(s)
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
+  //
+  // Each match is extracted into a placeholder token here; the actual
+  // <a data-ref="${ref}"> markup is spliced back in only as the LAST step
+  // below, after every other substitution in this function has already run.
+  // Building the <a> tag directly at this point (as this used to do) isn't
+  // safe: the substitutions further down re-scan the *entire* string,
+  // including whatever this pass already emitted — and the single-tilde
+  // marker's own template (`class="tt-unlinked-ref"`) contains a literal,
+  // unescaped `"`. A ref value containing `~x~` — reachable through
+  // ui/editor.ts's clipboard paste, either via a crafted `data-ref`
+  // attribute or, since this function has no way to tell the two apart,
+  // via plain `@[label](kind:x~y~z)`-shaped *text* in the pasted HTML —
+  // would let that injected `"` land inside the still-open
+  // `data-ref="..."` attribute and break out of it, even though `esc(s)`
+  // above already neutralizes any quote that was in the *original* text.
+  // Deferring the real HTML to the last step closes both paths at once:
+  // there is no longer a "later pass" left to corrupt it.
+  const refChips: string[] = []
   out = out.replace(REF_PATTERN, (_, label: string, ref: string) => {
     const target = resolveLabel ? parseRef(ref) : null
     const resolved = target ? resolveLabel!(target) : null
     const shown = resolved !== null ? esc(resolved) : label
     const titleAttr = refTitle ? ` title="${esc(refTitle)}"` : ''
-    return `<a class="ref" data-ref="${ref}" contenteditable="false"${titleAttr}>@${shown}</a>`
+    refChips.push(`<a class="ref" data-ref="${ref}" contenteditable="false"${titleAttr}>@${shown}</a>`)
+    return `${REF_OPEN}${refChips.length - 1}${REF_CLOSE}`
   })
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
@@ -29,6 +57,12 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
   // single-tilde spans remain to match here).
   out = out.replace(/~([^~]+)~/g, '<span class="tt-unlinked-ref">$1</span>')
   out = out.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
+  // Falls back to the literal match (not e.g. an empty string) on an index
+  // with no corresponding chip — unreachable through normal input, since
+  // every token this function itself ever produces has one, but input text
+  // could in principle already contain a literal U+E000/U+E001 pair typed
+  // or pasted from elsewhere; leaving it as-is is the safe, inert default.
+  out = out.replace(REF_PLACEHOLDER, (m, i: string) => refChips[Number(i)] ?? m)
   return out
 }
 
@@ -114,6 +148,36 @@ export function parseRef(href: string): RefInfo['target'] | null {
   return { kind: kind as IdRefKind, id: target }
 }
 
+/**
+ * Reads a CSS `font-weight` and reports whether it means bold — `null` when
+ * the element has no `font-weight` set at all (i.e. defer to the tag), as
+ * opposed to `false` for an *explicit* non-bold value, which must override
+ * the tag (see inlineMd's doc comment for why that distinction matters).
+ */
+function styleBold(el: HTMLElement): boolean | null {
+  const fw = el.style.fontWeight
+  if (fw === '') return null
+  if (fw === 'bold' || fw === 'bolder') return true
+  if (fw === 'normal' || fw === 'lighter') return false
+  const n = Number(fw)
+  return Number.isNaN(n) ? null : n >= 600
+}
+
+/** Same null-means-"no opinion" contract as styleBold, for `font-style`. */
+function styleItalic(el: HTMLElement): boolean | null {
+  const fs = el.style.fontStyle
+  if (fs === '') return null
+  return fs === 'italic' || fs === 'oblique'
+}
+
+/** Same null-means-"no opinion" contract as styleBold, for one `text-decoration-line` keyword (`underline` or `line-through`). */
+function styleHasDecoration(el: HTMLElement, line: 'underline' | 'line-through'): boolean | null {
+  const td = el.style.textDecorationLine || el.style.textDecoration
+  if (!td) return null
+  if (td === 'none') return false
+  return td.includes(line)
+}
+
 function inlineMd(node: Node): string {
   // U+00A0 → ' ': undo mdToHtml's caret-slot &nbsp; (and the nbsp Chrome
   // itself inserts while editing) so markdown only ever stores plain spaces.
@@ -126,18 +190,37 @@ function inlineMd(node: Node): string {
     const safeLabel = label.replace(/[[\]()]/g, '')
     return `@[${safeLabel}](${node.dataset.ref})`
   }
-  switch (tag) {
-    case 'strong': case 'b': return `**${kids()}**`
-    case 'em': case 'i': return `*${kids()}*`
-    case 'u': return `<u>${kids()}</u>`
-    case 's': case 'strike': case 'del': return `~~${kids()}~~`
-    // Without this case, the default branch below would unwrap the span and
-    // drop the marker entirely — re-rendering a note through the rich editor
-    // (even untouched) would silently flatten it back to bare text.
-    case 'span': return node.classList.contains('tt-unlinked-ref') ? `~${kids()}~` : kids()
-    case 'br': return ''
-    default: return kids()
-  }
+  if (tag === 'br') return ''
+  // Without this case, the generic handling below would unwrap the span and
+  // drop the marker entirely — re-rendering a note through the rich editor
+  // (even untouched) would silently flatten it back to bare text.
+  if (tag === 'span' && node.classList.contains('tt-unlinked-ref')) return `~${kids()}~`
+  // Inert on the page (never executes here — see ui/editor.ts's paste doc
+  // comment on DOMParser) but its text content would otherwise leak into
+  // the note as visible text via the generic handling below.
+  if (tag === 'script' || tag === 'style') return ''
+
+  // Formatting is tag-based by default (b/strong => bold, etc.) but an
+  // *explicit* inline style always overrides the tag — needed for clipboard
+  // HTML from apps that represent real inline formatting via `style=`
+  // rather than semantic tags (Google Docs' inline bold is
+  // `<span style="font-weight:700">`, not `<strong>`), and for apps that
+  // reuse a formatting tag as a plain, non-formatting wrapper (Docs wraps
+  // its *entire* clipboard export in `<b style="font-weight:normal">`,
+  // which would otherwise bold the whole paste). `??`, not `||`: an
+  // explicit `false` (the override case) must not fall through to the tag
+  // default the way `false || tagDefault` would.
+  const bold = styleBold(node) ?? (tag === 'strong' || tag === 'b')
+  const italic = styleItalic(node) ?? (tag === 'em' || tag === 'i')
+  const underline = styleHasDecoration(node, 'underline') ?? tag === 'u'
+  const strike = styleHasDecoration(node, 'line-through') ?? (tag === 's' || tag === 'strike' || tag === 'del')
+
+  let out = kids()
+  if (bold) out = `**${out}**`
+  if (italic) out = `*${out}*`
+  if (underline) out = `<u>${out}</u>`
+  if (strike) out = `~~${out}~~`
+  return out
 }
 
 // Splits `nodes` at <br> boundaries into per-line node arrays. A <br>
@@ -219,6 +302,86 @@ function blockToMd(node: HTMLElement): string {
   return blockToMdNodes(Array.from(node.childNodes))
 }
 
+// Block-level tags htmlToMd's top-level walker recognizes as direct
+// children of its root. Also used by unwrapBlockContainers below to
+// detect a non-block wrapper that needs splitting.
+export const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr', 'table'])
+
+function isBlockTag(el: Element): boolean {
+  return BLOCK_TAGS.has(el.tagName.toLowerCase())
+}
+
+/**
+ * Some real-world clipboard sources wrap an entire multi-paragraph paste in
+ * a single non-block "container" element — most notably Google Docs, whose
+ * whole export is `<b style="font-weight:normal" id="docs-internal-guid-
+ * ...">` around every paragraph. htmlToMd's top-level walker only
+ * recognizes block tags (BLOCK_TAGS) as *direct* children of its root, so a
+ * block buried one level inside such a wrapper is invisible to it: its
+ * paragraphs collapse into one run-on inline blob instead of separate
+ * lines, and whatever formatting the wrapper carries (bold, in Docs' case
+ * reliably cancelled via `font-weight:normal`, but potentially real for
+ * other sources) ends up applied — or, worse, incorrectly applied — to
+ * that whole blob at once instead of scoped per-paragraph.
+ *
+ * Called on ui/editor.ts's parsed clipboard fragment before htmlToMd runs.
+ * Repeatedly replaces any element whose children are *entirely* block-level
+ * (deliberately narrow — a wrapper mixing inline and block content is left
+ * alone, since there's no single sane way to split it without more
+ * context) with clones of those block children, each one's own content
+ * re-wrapped in a shallow clone of the removed wrapper — so real
+ * formatting the wrapper carried is preserved and correctly scoped to each
+ * block individually, while a wrapper that (like Docs') carries none
+ * simply disappears.
+ */
+// Elements that already have their own correct, structure-aware handling
+// elsewhere in this file (a <ul>/<ol>'s <li> nesting another <ul>/<ol>;
+// a <table>'s <td>/<th> wrapping a <p>) and must never be treated as a
+// generic wrapper to dissolve, even though their children happen to all
+// be block-level tags too.
+const STRUCTURAL_CONTAINERS = new Set(['li', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot'])
+
+export function unwrapBlockContainers(root: HTMLElement): void {
+  for (;;) {
+    const wrapper = Array.from(root.querySelectorAll<HTMLElement>('*')).find(
+      (el) =>
+        !isBlockTag(el) &&
+        !STRUCTURAL_CONTAINERS.has(el.tagName.toLowerCase()) &&
+        el.children.length > 0 &&
+        Array.from(el.children).every(isBlockTag)
+    )
+    if (!wrapper) return
+    const blocks = Array.from(wrapper.children) as HTMLElement[]
+    for (const block of blocks) {
+      const shell = wrapper.cloneNode(false) as HTMLElement
+      while (block.firstChild) shell.appendChild(block.firstChild)
+      block.appendChild(shell)
+    }
+    wrapper.replaceWith(...blocks)
+  }
+}
+
+/**
+ * Renders one <tr>'s <td>/<th> cells, joined with " | " — this app's
+ * markdown dialect has no native table syntax, so a pasted table becomes
+ * readable delimited text rather than a real (re-parseable) table. Each
+ * cell's own block content (a table cell can itself contain <p>/<div>/
+ * <br>) is flattened to one line so a multi-line cell can't split its row
+ * into extra lines.
+ */
+function renderTableRowMd(tr: HTMLElement): string {
+  return Array.from(tr.children)
+    .filter((c): c is HTMLElement => c.tagName === 'TD' || c.tagName === 'TH')
+    .map((c) => blockToMdNodes(Array.from(c.childNodes)).replace(/\n/g, ' '))
+    .join(' | ')
+}
+
+/** Renders every row of a <table> (regardless of <thead>/<tbody>/<tfoot> nesting) as one line each. */
+function renderTableMd(table: HTMLElement, out: string[]): void {
+  table.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr')
+    .forEach((tr) => out.push(renderTableRowMd(tr as HTMLElement)))
+}
+
 // Renders a <ul>/<ol> element (and any nested <ul>/<ol> inside its <li>
 // children) as indented markdown lines, 2 spaces per depth level. Each
 // <li>'s own text excludes its nested sub-list (rendered separately, right
@@ -279,9 +442,15 @@ function renderListText(list: HTMLElement, out: string[], depth = 0): void {
 export function htmlToPlainText(root: HTMLElement): string {
   const out: string[] = []
   const walk = (node: Node) => {
-    if (!(node instanceof HTMLElement)) {
+    if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent; if (t) out.push(t); return
     }
+    // Non-text, non-element nodes — chiefly the <!--StartFragment-->/
+    // <!--EndFragment--> comment markers Windows' clipboard HTML format
+    // (CF_HTML) wraps around a partial selection — carry no real content.
+    // Comment.textContent is the comment's own string, so without this
+    // guard "StartFragment" would leak into the output as if it were text.
+    if (!(node instanceof HTMLElement)) return
     const tag = node.tagName.toLowerCase()
     if (tag === 'ul' || tag === 'ol') renderListText(node, out)
     else if (tag === 'hr') out.push('---')
@@ -295,13 +464,18 @@ export function htmlToPlainText(root: HTMLElement): string {
 export function htmlToMd(root: HTMLElement): string {
   const out: string[] = []
   const walk = (node: Node) => {
-    if (!(node instanceof HTMLElement)) {
+    if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent?.trim(); if (t) out.push(t); return
     }
+    // See htmlToPlainText's identical guard above: skips comment nodes
+    // (notably CF_HTML's StartFragment/EndFragment markers) instead of
+    // reading Comment.textContent as if it were real text.
+    if (!(node instanceof HTMLElement)) return
     const tag = node.tagName.toLowerCase()
     if (/^h[1-3]$/.test(tag)) out.push('#'.repeat(Number(tag[1])) + ' ' + blockToMd(node))
     else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
     else if (tag === 'hr') out.push('---')
+    else if (tag === 'table') renderTableMd(node, out)
     else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))
     else out.push(inlineMd(node))
   }

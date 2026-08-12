@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 
@@ -875,14 +875,44 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * back out. DOMParser's result is a separate, inert document — same
    * script realm (so `instanceof HTMLElement` still holds for its nodes),
    * but never a fully active document, so it doesn't fetch resources or run
-   * handlers. Only the plain text and the small allow-listed tag set
-   * htmlToMd/inlineMd understand ever survives into the rebuilt markdown
-   * anyway — everything else's attributes are discarded, and its text is
-   * escaped by markdown.ts's esc() when re-rendered.
+   * handlers. Most of the parsed tree's attributes are discarded anyway —
+   * htmlToMd/inlineMd only reads a small allow-listed tag set and never
+   * copies attributes across, EXCEPT for `<a data-ref>` ref chips, whose
+   * data-ref core/markdown.ts's inlineMd re-embeds verbatim into the
+   * rebuilt markdown, and mdToHtml's inline() later splices back into a
+   * literal `data-ref="${ref}"` attribute. sanitizeRefAttrs() below closes
+   * off that one path: without it, a crafted data-ref can break out of that
+   * attribute once inline()'s *later* bold/italic/tilde regexes run over
+   * the already-substituted markup (confirmed with an actual injection
+   * test, not just inspection — see test/editor.test.ts).
    */
+  const SAFE_REF_ID = /^[A-Za-z0-9-]+$/
+
+  /**
+   * Strips `data-ref` from any parsed `<a>` whose value isn't a genuine,
+   * safely-shaped ref (a recognized kind — see core/markdown.ts's parseRef —
+   * followed only by the letters/digits/hyphens this app's own ref ids
+   * (`crypto.randomUUID()`) and dates ever use). A ref chip copied out of
+   * this app's own "Copy formatted" always has an id in exactly that shape,
+   * so this never affects a legitimate paste — it only disarms a
+   * maliciously crafted data-ref, which falls back to its plain visible
+   * text (inlineMd's default case) instead of becoming a ref chip.
+   */
+  function sanitizeRefAttrs(wrapper: HTMLElement): void {
+    wrapper.querySelectorAll<HTMLElement>('a[data-ref]').forEach((a) => {
+      const ref = a.dataset.ref ?? ''
+      const idPart = ref.slice(ref.indexOf(':') + 1)
+      if (!parseRef(ref) || !SAFE_REF_ID.test(idPart)) a.removeAttribute('data-ref')
+    })
+  }
+
   function htmlClipboardToMd(html: string): string {
     const wrapper = new DOMParser().parseFromString(html, 'text/html').body
-    const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr'])
+    sanitizeRefAttrs(wrapper)
+    // Splits a Google-Docs-style "whole paste wrapped in one non-block
+    // container" fragment into real, separately-rendered blocks before the
+    // block-child check below — see unwrapBlockContainers' own doc comment.
+    unwrapBlockContainers(wrapper)
     const hasBlockChild = Array.from(wrapper.children).some((c) => BLOCK_TAGS.has(c.tagName.toLowerCase()))
     if (!hasBlockChild) {
       const line = wrapper.ownerDocument.createElement('div')

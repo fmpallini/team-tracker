@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -29,6 +29,38 @@ test('double-tilde strike is unaffected by the new single-tilde marker rule', ()
 test('headers and lists', () => {
   const md = '# T1\n## T2\n### T3\ntexto\n- um\n- dois\n1. a\n2. b'
   expect(roundTrip(md)).toBe(md)
+})
+
+describe('a ref target containing markdown-syntax characters cannot corrupt the rebuilt <a> tag', () => {
+  // Regression test for a CodeQL alert on ui/editor.ts's paste path: a ref
+  // target reaching mdToHtml (via a pasted <a data-ref>, or even just plain
+  // @[label](kind:ref)-shaped *text* in pasted HTML — mdToHtml can't tell
+  // the two apart) used to be able to break out of the rebuilt
+  // data-ref="${ref}" attribute. esc() escaping the line before the ref
+  // regex captures its groups stops a bare quote in the *original* text,
+  // but not one reintroduced by a *later* substitution in the same
+  // function — the single-tilde unlinked-ref marker's own template
+  // (`class="tt-unlinked-ref"`) contains one. A ref target of
+  // `x~y~contenteditable="true"~z~` used to reach exactly that. Fixed by
+  // extracting ref chips into placeholder tokens and only splicing in the
+  // real <a> markup as the very last step, after every other substitution
+  // has already run.
+  test('a tilde-chain in the ref target cannot inject a live attribute', () => {
+    const md = '@[evil](person:x~y~contenteditable="true"~z~)'
+    const html = mdToHtml(md)
+    const probe = document.createElement('div')
+    probe.innerHTML = html
+    expect(probe.querySelector('[contenteditable="true"]')).toBeNull()
+    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:x~y~contenteditable="true"~z~')
+  })
+  test('a legitimate ref (this app\'s own uuid-shaped id) still renders as a real chip', () => {
+    const md = '@[Ana](person:3f2504e0-4f89-11d3-9a0c-0305e82c3301)'
+    const html = mdToHtml(md)
+    expect(html).toContain('<a class="ref" data-ref="person:3f2504e0-4f89-11d3-9a0c-0305e82c3301"')
+  })
+  test('ordinary numbers in text are untouched by the placeholder mechanism', () => {
+    expect(mdToHtml('step 1 of 2024')).toContain('step 1 of 2024')
+  })
 })
 
 test('escapes html', () => {
@@ -364,4 +396,114 @@ test('htmlToPlainText renders an <hr> as "---" (copy without formatting keeps th
   const div = document.createElement('div')
   div.innerHTML = '<div>before</div><hr><div>after</div>'
   expect(htmlToPlainText(div)).toBe('before\n---\nafter')
+})
+
+describe('CF_HTML fragment comment markers are skipped, not read as text', () => {
+  // Windows' clipboard HTML format wraps a partial selection in
+  // <!--StartFragment-->/<!--EndFragment--> comments (alongside a
+  // Version/StartHTML/EndHTML header that lives outside the parsed
+  // fragment, so it's not exercised here) — a real ui/editor.ts paste
+  // parses this straight from the clipboard's text/html. Comment.textContent
+  // is the comment's own string, so a naive "not an element => read
+  // textContent" walk leaks "StartFragment" into the output as if it were
+  // real content.
+  test('htmlToMd skips them', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div><!--StartFragment-->kept text<!--EndFragment--></div>'
+    expect(htmlToMd(div)).toBe('kept text')
+  })
+  test('htmlToPlainText skips them', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div><!--StartFragment-->kept text<!--EndFragment--></div>'
+    expect(htmlToPlainText(div)).toBe('kept text')
+  })
+  test('htmlToMd skips a fragment comment sitting directly under the root, between real blocks', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<!--StartFragment--><div>a</div><div>b</div><!--EndFragment-->'
+    expect(htmlToMd(div)).toBe('a\nb')
+  })
+})
+
+describe('style-attribute formatting (clipboard HTML from apps that use style= instead of semantic tags)', () => {
+  test('a <span style="font-weight:700"> is read as bold even with no <b>/<strong> tag', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p>plain <span style="font-weight:700">bold word</span> plain</p>'
+    expect(htmlToMd(div)).toBe('plain **bold word** plain')
+  })
+  test('a <span style="font-style:italic"> is read as italic', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p>plain <span style="font-style:italic">italic word</span> plain</p>'
+    expect(htmlToMd(div)).toBe('plain *italic word* plain')
+  })
+  test('a <span style="text-decoration:underline"> is read as underline', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p>plain <span style="text-decoration:underline">u word</span> plain</p>'
+    expect(htmlToMd(div)).toBe('plain <u>u word</u> plain')
+  })
+  test('a <span style="text-decoration:line-through"> is read as strike', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p>plain <span style="text-decoration:line-through">s word</span> plain</p>'
+    expect(htmlToMd(div)).toBe('plain ~~s word~~ plain')
+  })
+  // Google Docs' clipboard export wraps its ENTIRE content in
+  // <b style="font-weight:normal" id="docs-internal-guid-...">, using <b>
+  // purely as a container, not as real bold — an explicit style override
+  // must win over the tag's default meaning, or every Docs paste would
+  // come out entirely bolded.
+  test('an explicit style="font-weight:normal" on a <b>/<strong> suppresses the tag\'s bold', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p><b style="font-weight:normal">not bold</b> plain</p>'
+    expect(htmlToMd(div)).toBe('not bold plain')
+  })
+  test('a real <b>/<strong> with no style override still bolds as before', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p><b>bold</b> plain</p>'
+    expect(htmlToMd(div)).toBe('**bold** plain')
+  })
+})
+
+describe('unwrapBlockContainers (Google-Docs-style whole-paste wrapper)', () => {
+  test('splits an all-block-children non-block wrapper into separate top-level blocks', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<b style="font-weight:normal" id="docs-internal-guid-x"><p>line1</p><p>line2</p></b>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('line1\nline2')
+  })
+  test('a wrapper that carries real formatting still applies it per-block after splitting', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<i><p>one</p><p>two</p></i>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('*one*\n*two*')
+  })
+  test('does not touch a <li> nesting a <ul>/<ol> — list nesting already has its own correct handling', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>um<ul><li>dois</li></ul></li></ul>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('- um\n  - dois')
+  })
+  test('does not touch a <td> wrapping a <p> — table cells already have their own correct handling', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<table><tr><td><p>cell</p></td></tr></table>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('cell')
+  })
+})
+
+describe('pasted tables render as readable delimited text (this app has no native table syntax)', () => {
+  test('cells join with " | ", one row per line', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<table><tr><td>A1</td><td>B1</td></tr><tr><td>A2</td><td>B2</td></tr></table>'
+    expect(htmlToMd(div)).toBe('A1 | B1\nA2 | B2')
+  })
+  test('a table wrapped in <thead>/<tbody> still renders every row', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>A1</td><td>B1</td></tr></tbody></table>'
+    expect(htmlToMd(div)).toBe('H1 | H2\nA1 | B1')
+  })
+})
+
+test('script/style tag text does not leak into the output as visible content', () => {
+  const div = document.createElement('div')
+  div.innerHTML = '<div>before</div><script>alert(1)</script><div>after</div>'
+  expect(htmlToMd(div)).not.toContain('alert(1)')
 })

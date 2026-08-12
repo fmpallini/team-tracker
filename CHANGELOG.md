@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.1.8] - 2026-08-11
+
+### Fixed
+- Closed a security issue where a maliciously crafted paste from another app could inject unexpected content into a note.
+- Pasting a partial selection on Windows no longer leaves stray "StartFragment"/"EndFragment" text in the note.
+- Pasting from Google Docs no longer bolds the entire pasted text, and multi-paragraph pastes no longer collapse onto one line.
+- Pasted bold/italic/underline/strikethrough text from Google Docs, Gmail, and similar apps is now preserved (previously silently dropped).
+- Pasting a table now renders readable rows instead of every cell's text jumbled together.
+- Pasting a `<script>`/`<style>` block no longer leaks its raw contents into the note as visible text.
+
 ## [2.1.7] - 2026-08-11
 
 ### Added
