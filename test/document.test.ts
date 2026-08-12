@@ -10,7 +10,7 @@ test('createEmptyDocument shape', () => {
   })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
-    panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false })
+    panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false })
 })
 
 test('migrate accepts current version untouched', () => {
@@ -222,6 +222,24 @@ describe("v10 → v11 migration ('muster' palette dropped)", () => {
     d.prefs.palette = 'cosmic'
     const doc = migrate(d)
     expect(doc.prefs.palette).toBe('cosmic')
+  })
+})
+
+describe('v11 → v12 migration (daily calendar collapse)', () => {
+  it('defaults nav.calendarCollapsed to false when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 11
+    delete d.nav.calendarCollapsed
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.nav.calendarCollapsed).toBe(false)
+  })
+  it('leaves an existing calendarCollapsed untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 11
+    d.nav.calendarCollapsed = true
+    const doc = migrate(d)
+    expect(doc.nav.calendarCollapsed).toBe(true)
   })
 })
 

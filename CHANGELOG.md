@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.2.1] - 2026-08-12
+
+### Fixed
+- The daily notes calendar now remembers whether you collapsed it, instead of reopening expanded every time.
+
 ## [2.2.0] - 2026-08-12
 
 ### Changed
