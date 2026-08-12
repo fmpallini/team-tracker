@@ -130,8 +130,10 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   }
   rebuildCalendar()
 
-  let collapsed = false
-  const calendarCol = el('div', { class: 'tt-daily-calendar-col' })
+  const calendarCol = el('div', {
+    class: 'tt-daily-calendar-col',
+  })
+  calendarCol.classList.toggle('tt-daily-collapsed', ctx.store.doc.nav.calendarCollapsed)
   const toggleBtn = el(
     'button',
     {
@@ -139,7 +141,8 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
       type: 'button',
       title: t(lc, 'calendar_toggle_title'),
       onclick: () => {
-        collapsed = !collapsed
+        const collapsed = !ctx.store.doc.nav.calendarCollapsed
+        ctx.store.updateNav((d) => { d.nav.calendarCollapsed = collapsed })
         calendarCol.classList.toggle('tt-daily-collapsed', collapsed)
       },
     },

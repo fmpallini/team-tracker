@@ -69,6 +69,8 @@ export interface NavState {
   teamSplit: Record<string, boolean>
   /** Manual sidebar collapse — a global layout choice (not per-team), toggled from the sidebar's own collapse button. */
   sidebarCollapsed: boolean
+  /** Manual daily-notes calendar collapse — a global layout choice (not per-team), toggled from the calendar's own toggle button. */
+  calendarCollapsed: boolean
 }
 export interface Doc {
   schemaVersion: number; prefs: Prefs; templates: Template[]
