@@ -23,7 +23,7 @@ import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
@@ -558,25 +558,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // date order and the timeline's positions in sync with the store, but it
   // would blow away an in-progress edit's caret if some *other* change fires
   // while a text/date input here is focused. Skip that one rebuild and defer
-  // it to the field's next blur — nothing is lost, since blur is exactly when
-  // this field's own edit (if any) commits and would have triggered a
-  // rebuild anyway. (The SVG itself never holds focus, so it's always safe
-  // to rebuild — renderAll rebuilds both together for simplicity.)
-  // Only ever ONE deferral armed at a time — see the identical guard in
-  // risks.ts. Arming per skipped mutation stacked a listener each time on the
-  // same focused element, so a field held focused across N mutations fired N
-  // full renderAll() rebuilds on a single blur.
-  let deferredEl: HTMLElement | null = null
-  function onDeferredBlur(): void {
-    deferredEl = null
-    renderAll()
-  }
-  function deferRebuildUntilBlur(active: HTMLElement): void {
-    if (deferredEl === active) return
-    deferredEl?.removeEventListener('blur', onDeferredBlur)
-    deferredEl = active
-    active.addEventListener('blur', onDeferredBlur, { once: true })
-  }
+  // it to the field's next blur (see ui/dom.ts's createDeferredRebuild,
+  // shared with the identical mechanism in risks.ts) — nothing is lost,
+  // since blur is exactly when this field's own edit (if any) commits and
+  // would have triggered a rebuild anyway. (The SVG itself never holds
+  // focus, so it's always safe to rebuild — renderAll rebuilds both together
+  // for simplicity.)
+  const deferred = createDeferredRebuild(renderAll)
 
   // Every milestone's backlinks chip must react to a mention of it
   // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
@@ -588,7 +576,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretInput()
     if (active) {
-      deferRebuildUntilBlur(active)
+      deferred.arm(active)
       return
     }
     renderAll()
@@ -611,8 +599,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     unsubscribe()
     // An armed deferral would otherwise rebuild a torn-down module on the
     // field's next blur.
-    deferredEl?.removeEventListener('blur', onDeferredBlur)
-    deferredEl = null
+    deferred.dispose()
     expandable.disposeAll()
     disposeDatePickers()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)

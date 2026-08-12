@@ -147,6 +147,28 @@ describe('renderPersonNotes', () => {
     expect(container.textContent).toBe('Person not found')
   })
 
+  // Regression: the header used to be painted once at mount and never
+  // refreshed by the pane's own subscribe callback (which only rebuilt the
+  // backlinks chip) — renaming the person from another pane (e.g. the
+  // people-tree edit modal) left this pane showing the stale name
+  // indefinitely, breaking the "labels always resolve live" guarantee every
+  // other module in the app honors.
+  test('the header picks up a rename made from elsewhere while the pane is open', () => {
+    const team = makeTeam()
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-person-header')?.textContent).toBe('Bruno — Dev')
+
+    store.update((d) => {
+      const p = d.teams[0]!.members.find((m) => m.id === 'mem-1')!
+      p.name = 'Bruna'
+      p.role = 'Lead'
+    })
+
+    expect(container.querySelector('.tt-person-header')?.textContent).toBe('Bruna — Lead')
+  })
+
   test('double render into the same container disposes the previous instance: no duplicate @ dropdowns', () => {
     const team = makeTeam()
     const { container, store, pm } = setup(team)

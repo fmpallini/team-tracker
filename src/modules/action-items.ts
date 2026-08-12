@@ -303,9 +303,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         if (!tm) return
         if (existing === null) {
           const group = itemsByStatus(tm.actionItems, defaultStatus)
+          // Not `group.length`: a prior delete can leave a gap in `order`
+          // (removeItem/clearZone never renumber survivors), so the next
+          // slot has to be past the highest existing value, not the count.
+          const nextOrder = group.length === 0 ? 0 : Math.max(...group.map((i) => i.order)) + 1
           tm.actionItems.push({
             id: crypto.randomUUID(), summary, notes, status: defaultStatus,
-            dueDate, assignee, color, order: group.length,
+            dueDate, assignee, color, order: nextOrder,
           })
         } else {
           const found = tm.actionItems.find((i) => i.id === existing.id)
@@ -410,6 +414,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // base neutral border (styles.css's .tt-kanban-card default).
         class: `tt-kanban-card status-${item.status}` + (item.color !== null ? ` color-${item.color}` : ''),
         draggable: 'true',
+        tabindex: '0',
         'data-item-id': item.id,
         title: t(lc, 'kanban_card_context_hint'),
       },
@@ -419,6 +424,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     card.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       openCardContextMenu(item.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
+    // Keyboard equivalent of the right-click menu — mirrors src/modules/risks.ts
+    // and milestones.ts's identical row-level handler. Guarded on `e.target
+    // === card` so Enter/Space on the edit button (a child) isn't hijacked.
+    card.addEventListener('keydown', (e) => {
+      const ev = e as KeyboardEvent
+      if (ev.target !== card) return
+      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      ev.preventDefault()
+      const rect = card.getBoundingClientRect()
+      openCardContextMenu(item.id, rect.left + 16, rect.bottom)
     })
 
     card.addEventListener('dragstart', (e) => {

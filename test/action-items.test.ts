@@ -232,6 +232,30 @@ describe('card context menu', () => {
   })
 })
 
+// Regression for the accessibility gap the kanban cards used to have: no
+// pointer-free route to the card's context menu at all (right-click or the
+// small pencil button only). Mirrors risks.ts/milestones.ts's identical
+// keyboard route to their own row context menu.
+describe('keyboard route to the card actions', () => {
+  test('the card is focusable', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const card = cards(container)[0]!
+    expect(card.getAttribute('tabindex')).toBe('0')
+  })
+
+  test.each(['Enter', ' '])('%s on the card opens the context menu', (key) => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const card = cards(container)[0]!
+
+    card.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+  })
+})
+
 describe('renderActionItems — board', () => {
   test('renders cards into their status column, sorted by order', () => {
     const team = makeTeam({
@@ -444,6 +468,23 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Save')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
     expect(store.doc.teams[0]!.actionItems[0]!.color).toBeNull()
+  })
+
+  // Regression: removeItem/clearZone never renumber the remaining cards'
+  // `order` after a delete, so a status group can end up with a gap (e.g.
+  // orders [0, 2]). The next card added to that group must not collide with
+  // an existing order value.
+  test('adding a card to a group with a gap in its order values does not collide with an existing card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 }), item({ id: 'c', order: 2 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    summaryInput.value = 'New one'
+    clickByTitleOrText(document.body, 'Save')
+
+    const orders = store.doc.teams[0]!.actionItems.map((i) => i.order)
+    expect(new Set(orders).size).toBe(orders.length)
   })
 
   test('clicking an existing card\'s already-selected color chip again unsets it', () => {

@@ -94,6 +94,11 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
       showNotFound()
       return
     }
+    // 'people' is in WATCHED, and a rename is the one edit to this same
+    // record that can land from a pane other than this one (the people-tree
+    // edit modal) — the label has to stay live the same way every @mention
+    // of this person elsewhere already does.
+    headerLabelEl.textContent = personLabel(currentPerson)
     headerBadgeSlot.innerHTML = ''
     const chip = createBacklinksChip(ctx.searchIndex.backlinks(teamId, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
     if (chip) headerBadgeSlot.appendChild(chip)

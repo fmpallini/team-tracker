@@ -21,7 +21,7 @@ import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
@@ -554,23 +554,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // an in-progress title edit's caret, or tear down and recreate the
   // expanded follow-up editor out from under an in-progress keystroke, if
   // some *other* change fires while either is focused. Skip that one rebuild
-  // and defer it to the field's next blur — nothing is lost, since blur is
-  // exactly when this field's own edit (if any) commits and would have
-  // triggered a rebuild anyway.
-  // Only ever ONE deferral armed at a time. Arming per skipped mutation stacks
-  // a listener each time on the same focused element, so a field held focused
-  // across N mutations fired N full renderAll() rebuilds on a single blur.
-  let deferredEl: HTMLElement | null = null
-  function onDeferredBlur(): void {
-    deferredEl = null
-    renderAll()
-  }
-  function deferRebuildUntilBlur(active: HTMLElement): void {
-    if (deferredEl === active) return
-    deferredEl?.removeEventListener('blur', onDeferredBlur)
-    deferredEl = active
-    active.addEventListener('blur', onDeferredBlur, { once: true })
-  }
+  // and defer it to the field's next blur (see ui/dom.ts's
+  // createDeferredRebuild, shared with the identical mechanism in
+  // milestones.ts) — nothing is lost, since blur is exactly when this
+  // field's own edit (if any) commits and would have triggered a rebuild
+  // anyway.
+  const deferred = createDeferredRebuild(renderAll)
 
   // Every risk's backlinks chip must react to a mention of it
   // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
@@ -582,7 +571,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const active = focusedCaretElement()
     if (active) {
-      deferRebuildUntilBlur(active)
+      deferred.arm(active)
       return
     }
     renderAll()
@@ -605,8 +594,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     unsubscribe()
     // An armed deferral would otherwise rebuild a torn-down module on the
     // field's next blur.
-    deferredEl?.removeEventListener('blur', onDeferredBlur)
-    deferredEl = null
+    deferred.dispose()
     expandable.disposeAll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }

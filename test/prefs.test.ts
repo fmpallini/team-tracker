@@ -280,6 +280,33 @@ test('advanced tab: canceling the save picker leaves the pref off', async () => 
   expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
 })
 
+// Regression: unchecking the daily-backup checkbox while its own async file
+// picker is still in flight used to let the picker's stale `.then()`
+// silently re-enable `dailyBackupEnabled` right after the user turned it off.
+test('advanced tab: unchecking the backup checkbox while the picker is still in flight is not clobbered by the picker resolving afterward', async () => {
+  const { store, shell, appCtl } = setup()
+  let resolvePicker!: (v: { handle: FileSystemFileHandle; name: string; lastModified: number } | null) => void
+  fsMocks.pickCreateBackup.mockImplementation(() => new Promise((resolve) => { resolvePicker = resolve }))
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await Promise.resolve() // let pickCreateBackup() be called; its promise is still pending
+
+  // The user changes their mind before the picker resolves.
+  checkbox.checked = false
+  checkbox.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+
+  // The picker resolves late, as if the user had picked a file.
+  resolvePicker({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+})
+
 test('advanced tab: a rejecting save picker (e.g. permission denied) leaves the pref off, same as a cancel', async () => {
   const { store, shell, appCtl } = setup()
   fsMocks.pickCreateBackup.mockRejectedValue(new Error('not allowed'))
@@ -361,6 +388,38 @@ test('advanced tab: "Change backup location" re-opens the picker without a disab
   expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
   const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
   expect(checkbox.checked).toBe(true)
+})
+
+// Regression: double-clicking "Change backup location" before the first
+// picker resolves used to let whichever picker resolved *last* win, even if
+// it was the stale first attempt — the second, more recent pick should win
+// instead.
+test('advanced tab: double-clicking "Change backup location" is not clobbered by the first, stale pick resolving after the second', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'old-id' })
+  let resolveFirst!: (v: { handle: FileSystemFileHandle; name: string; lastModified: number }) => void
+  fsMocks.pickCreateBackup
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+    .mockResolvedValueOnce({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 2 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Advanced')
+
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  changeBtn.dispatchEvent(new Event('click')) // first pick starts, stays pending
+  await Promise.resolve()
+  changeBtn.dispatchEvent(new Event('click')) // second pick starts and resolves immediately
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const idAfterSecondPick = store.doc.prefs.backupHandleId
+  expect(idAfterSecondPick).not.toBe('old-id')
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+
+  // The first pick finally resolves, late — it must not overwrite the
+  // second, more recent pick's outcome.
+  resolveFirst({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(store.doc.prefs.backupHandleId).toBe(idAfterSecondPick)
 })
 
 test('advanced tab: canceling "Change backup location" leaves the existing target and pref state untouched', async () => {
