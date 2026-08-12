@@ -153,7 +153,8 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     if (chip) badgeSlot.appendChild(chip)
   }
   rebuildBadge()
-  calendarCol.append(toggleBtn, badgeSlot, calendarSlot)
+  const calendarHeader = el('div', { class: 'tt-daily-calendar-header' }, toggleBtn, badgeSlot)
+  calendarCol.append(calendarHeader, calendarSlot)
 
   const bundle = createRichEditorBundle({
     store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
