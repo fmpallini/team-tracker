@@ -574,6 +574,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
+    // Patches every expanded follow-up editor's @mention chips in place —
+    // safe even while a caret-sensitive field elsewhere is focused (see
+    // Editor.refreshRefLabels' doc comment), so this runs unconditionally
+    // instead of waiting on the deferred full rebuild below.
+    expandable.refreshAllLabels()
     const active = focusedCaretInput()
     if (active) {
       deferred.arm(active)

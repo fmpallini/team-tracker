@@ -12,6 +12,18 @@ export interface Editor {
   root: HTMLElement
   getMd(): string
   setMd(md: string): void
+  /**
+   * Patches every `a.ref[data-ref]` chip's visible text in place via
+   * `hooks.resolveRefLabel`, without touching anything else in the DOM —
+   * unlike setMd(), safe to call while the user is actively typing elsewhere
+   * in this same editor. Chips are `contenteditable="false"` leaves, so a
+   * live caret/selection can never sit inside one; patching their
+   * `textContent` cannot perturb it. No-op if `hooks.resolveRefLabel` was
+   * never supplied, or (per-chip) if it returns null for a given ref — same
+   * "leave the frozen label alone" fallback setMd's initial parse already
+   * uses.
+   */
+  refreshRefLabels(): void
   focus(): void
   destroy(): void
 }
@@ -1039,6 +1051,19 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
   }
 
+  function refreshRefLabels(): void {
+    const resolve = hooks.resolveRefLabel
+    if (!resolve) return
+    editorEl.querySelectorAll<HTMLAnchorElement>('a.ref[data-ref]').forEach((chip) => {
+      const target = parseRef(chip.dataset.ref ?? '')
+      if (!target) return
+      const resolved = resolve(target)
+      if (resolved === null) return
+      const label = `@${resolved}`
+      if (chip.textContent !== label) chip.textContent = label
+    })
+  }
+
   function focus(): void {
     editorEl.focus()
   }
@@ -1060,5 +1085,5 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const registryEntry = { flush: flushChange }
   liveEditors.add(registryEntry)
 
-  return { root, getMd, setMd, focus, destroy }
+  return { root, getMd, setMd, refreshRefLabels, focus, destroy }
 }

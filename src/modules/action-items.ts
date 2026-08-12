@@ -653,6 +653,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
+    // The edit modal's notes editor is never rebuilt from the store (its
+    // Save button reads editor.getMd() directly instead of live-persisting),
+    // so patch its @mention chips in place the same way daily/person notes
+    // do — safe even mid-typing (see Editor.refreshRefLabels' doc comment).
+    if (openBundle) openBundle.richBundle.editor.refreshRefLabels()
     renderAll()
   })
 

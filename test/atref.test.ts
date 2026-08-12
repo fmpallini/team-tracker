@@ -289,7 +289,11 @@ describe('attachAtAutocomplete', () => {
     expect(chip.getAttribute('contenteditable')).toBe('false')
     expect(chip.dataset.ref).toBe('person:ana-id')
     expect(chip.textContent).toBe('@Ana')
-    expect(editorEl.textContent).toBe('@Ana ') // typed "@An" fully replaced, chip + trailing space, nothing left over
+    // Trailing separator is a non-breaking space (not a plain space): a
+    // mention is almost always the last thing on the line, and a plain
+    // space there is CSS-collapsed to zero width, leaving Chrome no real
+    // caret slot to land on — see the doc comment on atref.ts's commit().
+    expect(editorEl.textContent).toBe('@Ana ') // typed "@An" fully replaced, chip + trailing nbsp, nothing left over
     expect(picks).toEqual([{ kind: 'person', id: 'ana-id', name: 'Ana' }])
 
     // Caret lands after the trailing space, ready for the user to keep typing.
@@ -299,7 +303,7 @@ describe('attachAtAutocomplete', () => {
     const preCaret = document.createRange()
     preCaret.selectNodeContents(editorEl.firstElementChild as HTMLElement)
     preCaret.setEnd(caretRange.startContainer, caretRange.startOffset)
-    expect(preCaret.toString()).toBe('@Ana ')
+    expect(preCaret.toString()).toBe('@Ana ')
   })
 
   test('Escape cancels and leaves the literal @text as typed', () => {

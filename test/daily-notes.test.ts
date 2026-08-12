@@ -435,3 +435,25 @@ test('a store update scoped only to "risks" live-updates the chip via rebuildBad
 
   expect(container.querySelector('.tt-backlinks-chip')?.textContent).toBe('↩ 1')
 })
+
+test('renaming a milestone mentioned in this note live-updates its @mention chip, without disturbing the rest of the editor', () => {
+  const team = makeTeam()
+  team.milestones.push({ id: 'm1', date: '2026-08-04', title: 'Old Title', done: false, followup: '' })
+  team.dailyNotes['2026-08-04'] = 'See @[Old Title](milestone:m1) for details'
+  const { container, store, pm, loc } = setup(team, '2026-08-04')
+  render(container, loc, store, pm)
+
+  const chip = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="milestone:m1"]')!
+  expect(chip.textContent).toBe('@Old Title')
+
+  store.update((d) => {
+    d.teams[0]!.milestones.find((m) => m.id === 'm1')!.title = 'New Title'
+  }, { teamId: 'T1', sections: ['milestones'] })
+
+  const chipAfter = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="milestone:m1"]')!
+  expect(chipAfter.textContent).toBe('@New Title')
+  // Same DOM node patched in place, not a full re-render — a live caret
+  // elsewhere in this note would have survived untouched.
+  expect(chipAfter).toBe(chip)
+  expect(editorEl(container).textContent).toBe('See @New Title for details')
+})

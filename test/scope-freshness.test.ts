@@ -39,6 +39,14 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
+// jsdom has no layout engine, so Element.prototype.scrollIntoView doesn't
+// exist — clicking a ref chip (ui/atref.ts's navigateToLoc) schedules a
+// requestAnimationFrame callback that calls it to bring the navigated-to
+// item into view. Without this stub that callback throws once the frame
+// fires, after the test itself has already finished (mirrors the same stub
+// in test/atref.test.ts and test/sidebar.test.ts).
+Element.prototype.scrollIntoView ??= () => {}
+
 function seededTeam(): Team {
   return {
     id: 't1', name: 'Alpha', emoji: '🚀',
@@ -286,3 +294,52 @@ test("the daily-notes calendar picks up a milestone added from another pane (WAT
 // defensive rather than load-bearing, and there is no interaction that would
 // falsify removing it. Left in place: it costs one redundant render and
 // re-narrowing that call site later would silently need it back.
+
+// ---------------------------------------------------------------------------
+// Navigating one pane must not remount the other one's body — ui/panes.ts's
+// openInPane() used to call a blanket renderAll() after every navigation,
+// which tore down and rebuilt *both* panes' module instances even though
+// only one of them actually navigated. In milestones/risks that meant an
+// expanded follow-up row (local UI state, not persisted) silently collapsed
+// the moment a ref chip inside it navigated the *other* pane — reproduced by
+// clicking a mention that opens in the secondary pane from inside an
+// expanded row's own editor.
+// ---------------------------------------------------------------------------
+
+test('clicking an @mention chip that opens in the secondary pane does not collapse the expanded follow-up row it was clicked from', () => {
+  const { store } = setup({ kind: 'risks' }, { kind: 'milestones' }, (t) => {
+    t.risks[0]!.followup = 'blocks @[Launch](milestone:m1)'
+  })
+  store.update((d) => { d.prefs.openRefsInSecondaryPane = true })
+
+  const left = panes()[0]
+  expandFollowups(left)
+  expect(left.querySelector('.tt-risk-followup-row')).not.toBeNull()
+
+  const chip = refChip(left, 'milestone:m1')!
+  chip.click()
+
+  // Navigated the *other* pane to the milestone...
+  expect(panes()[1].querySelector('.tt-milestone-row')).not.toBeNull()
+  // ...while the risk pane clicked from is still showing, and its follow-up
+  // row is still expanded — same instance, not silently torn down and
+  // rebuilt from scratch.
+  expect(panes()[0].querySelector('.tt-risk-followup-row')).not.toBeNull()
+})
+
+test('clicking an @mention chip that opens in the secondary pane does not collapse an expanded follow-up row in the milestones pane either', () => {
+  const { store } = setup({ kind: 'milestones' }, { kind: 'risks' }, (t) => {
+    t.milestones[0]!.followup = 'blocked by @[Slippage](risk:r1)'
+  })
+  store.update((d) => { d.prefs.openRefsInSecondaryPane = true })
+
+  const left = panes()[0]
+  expandFollowups(left)
+  expect(left.querySelector('.tt-milestone-followup-row')).not.toBeNull()
+
+  const chip = refChip(left, 'risk:r1')!
+  chip.click()
+
+  expect(panes()[1].querySelector('.tt-risk-row')).not.toBeNull()
+  expect(panes()[0].querySelector('.tt-milestone-followup-row')).not.toBeNull()
+})

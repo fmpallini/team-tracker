@@ -102,6 +102,10 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     headerBadgeSlot.innerHTML = ''
     const chip = createBacklinksChip(ctx.searchIndex.backlinks(teamId, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
     if (chip) headerBadgeSlot.appendChild(chip)
+    // Patches this note's own @mention chips in place — safe even mid-typing
+    // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the
+    // editor content outright.
+    editor.refreshRefLabels()
   })
 
   container.appendChild(el('div', { class: 'tt-person-notes' }, headerEl, editor.root))

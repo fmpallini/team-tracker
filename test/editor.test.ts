@@ -1271,6 +1271,91 @@ describe('resolveRefLabel hook', () => {
   })
 })
 
+describe('refreshRefLabels', () => {
+  test('patches an existing chip textContent to the resolver current value, in place', () => {
+    let live = 'Old Title'
+    const editor = createEditor(
+      { ...makeHooks(), resolveRefLabel: (target) => (target.kind === 'action' ? live : null) },
+      'pt-BR'
+    )
+    editor.setMd('see @[Old Title](action:a1)')
+    const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.textContent).toBe('@Old Title')
+
+    live = 'New Title' // simulates a rename that happened elsewhere in the doc
+    editor.refreshRefLabels()
+
+    expect(chip.textContent).toBe('@New Title')
+    // The very same DOM node was patched, not swapped for a new one — a live
+    // caret elsewhere in the editor was never at risk of being disturbed.
+    expect(editor.root.querySelector('a.ref')).toBe(chip)
+    editor.destroy()
+  })
+
+  test('updates each chip independently by its own data-ref', () => {
+    const titles: Record<string, string> = { a1: 'Action A', m1: 'Milestone M' }
+    const editor = createEditor(
+      {
+        ...makeHooks(),
+        resolveRefLabel: (target) => (target.kind === 'action' || target.kind === 'milestone' ? titles[target.id]! : null),
+      },
+      'pt-BR'
+    )
+    editor.setMd('@[stale](action:a1) and @[stale](milestone:m1)')
+    titles.a1 = 'Renamed Action'
+    editor.refreshRefLabels()
+    const chips = editor.root.querySelectorAll('a.ref')
+    expect(chips[0]!.textContent).toBe('@Renamed Action')
+    expect(chips[1]!.textContent).toBe('@Milestone M') // untouched — its resolved value hasn't changed
+    editor.destroy()
+  })
+
+  test('leaves the chip label untouched when the resolver returns null (dangling/unresolvable ref)', () => {
+    const editor = createEditor({ ...makeHooks(), resolveRefLabel: () => null }, 'pt-BR')
+    editor.setMd('see @[Frozen Label](action:gone)')
+    editor.refreshRefLabels()
+    const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
+    expect(chip.textContent).toBe('@Frozen Label')
+    editor.destroy()
+  })
+
+  test('is a no-op (does not throw) when resolveRefLabel was never supplied', () => {
+    const editor = createEditor(makeHooks(), 'pt-BR')
+    editor.setMd('see @[Stale Title](action:a1)')
+    expect(() => editor.refreshRefLabels()).not.toThrow()
+    expect(editor.root.querySelector('a.ref')!.textContent).toBe('@Stale Title')
+    editor.destroy()
+  })
+
+  test('does not disturb a live caret positioned elsewhere in the editor', () => {
+    let live = 'Old Title'
+    const editor = createEditor(
+      { ...makeHooks(), resolveRefLabel: (target) => (target.kind === 'action' ? live : null) },
+      'pt-BR'
+    )
+    editor.setMd('see @[Old Title](action:a1)')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor')!
+    const lastBlock = editorEl.lastElementChild!
+    const range = document.createRange()
+    range.selectNodeContents(lastBlock)
+    range.collapse(false)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    const before = { node: sel.getRangeAt(0).startContainer, offset: sel.getRangeAt(0).startOffset }
+
+    live = 'New Title'
+    editor.refreshRefLabels()
+
+    const after = sel.getRangeAt(0)
+    expect(after.startContainer).toBe(before.node)
+    expect(after.startOffset).toBe(before.offset)
+    editor.destroy()
+  })
+})
+
 // flushAllEditors() backs main.ts's save-then-teardown paths (close-file,
 // tab-hide, beforeunload). Those save the document from outside the editing
 // flow, so without it a save firing within CHANGE_DEBOUNCE_MS of a keystroke

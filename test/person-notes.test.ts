@@ -248,4 +248,26 @@ describe('renderPersonNotes', () => {
     render(container, loc, store, pm)
     expect(container.querySelector('.tt-backlinks-chip')).toBeNull()
   })
+
+  test('renaming an action item mentioned in these notes live-updates its @mention chip, without disturbing the rest of the editor', () => {
+    const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: 'Follow up on @[Old Title](action:a1) soon' }] })
+    team.actionItems.push({ id: 'a1', summary: 'Old Title', status: 'todo', color: null, dueDate: null, assignee: '', order: 0, notes: '' })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+
+    const chip = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:a1"]')!
+    expect(chip.textContent).toBe('@Old Title')
+
+    store.update((d) => {
+      d.teams[0]!.actionItems.find((i) => i.id === 'a1')!.summary = 'New Title'
+    }, { teamId: 'T1', sections: ['actions'] })
+
+    const chipAfter = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:a1"]')!
+    expect(chipAfter.textContent).toBe('@New Title')
+    // Same DOM node patched in place, not a full re-render — a live caret
+    // elsewhere in these notes would have survived untouched.
+    expect(chipAfter).toBe(chip)
+    expect(editorEl(container).textContent).toBe('Follow up on @New Title soon')
+  })
 })

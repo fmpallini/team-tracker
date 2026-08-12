@@ -588,6 +588,25 @@ describe('renderActionItems — edit modal', () => {
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
+
+  test('renaming a milestone mentioned in the open modal\'s notes live-updates its @mention chip', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a', summary: 'Old', notes: 'See @[Old Title](milestone:m1)' })],
+      milestones: [{ id: 'm1', date: '2026-01-01', title: 'Old Title', done: false, followup: '' }],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    const chip = document.querySelector<HTMLAnchorElement>('a.ref[data-ref="milestone:m1"]')!
+    expect(chip.textContent).toBe('@Old Title')
+
+    store.update((d) => {
+      d.teams[0]!.milestones.find((m) => m.id === 'm1')!.title = 'New Title'
+    }, { teamId: 'T1', sections: ['milestones'] })
+
+    expect(document.querySelector<HTMLAnchorElement>('a.ref[data-ref="milestone:m1"]')?.textContent).toBe('@New Title')
+  })
 })
 
 describe('renderActionItems — zone clear-all', () => {

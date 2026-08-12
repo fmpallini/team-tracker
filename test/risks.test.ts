@@ -588,6 +588,53 @@ describe('renderRisks', () => {
 
       expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } } }])
     })
+
+    test('renaming an action item mentioned in an expanded follow-up live-updates its @mention chip', () => {
+      const team = makeTeam({
+        risks: [risk({ id: 'a', title: 'A', followup: 'Blocked by @[Old Task](action:x1)' })],
+        actionItems: [{ id: 'x1', summary: 'Old Task', status: 'todo', color: null, dueDate: null, assignee: '', order: 0, notes: '' }],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+
+      const chip = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:x1"]')!
+      expect(chip.textContent).toBe('@Old Task')
+
+      store.update((d) => {
+        d.teams[0]!.actionItems.find((i) => i.id === 'x1')!.summary = 'New Task'
+      }, { teamId: 'T1', sections: ['actions'] })
+
+      expect(container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:x1"]')?.textContent).toBe('@New Task')
+    })
+
+    test('the chip still live-updates while an unrelated title input elsewhere is focused (the deferred-rebuild path)', () => {
+      const team = makeTeam({
+        risks: [risk({ id: 'a', title: 'A', followup: 'Blocked by @[Old Task](action:x1)' }), risk({ id: 'b', title: 'B' })],
+        actionItems: [{ id: 'x1', summary: 'Old Task', status: 'todo', color: null, dueDate: null, assignee: '', order: 0, notes: '' }],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+
+      const chip = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:x1"]')!
+      expect(chip.textContent).toBe('@Old Task')
+
+      const bInput = Array.from(container.querySelectorAll<HTMLInputElement>('.tt-risk-title-input')).find((i) => i.value === 'B')!
+      bInput.focus()
+
+      store.update((d) => {
+        d.teams[0]!.actionItems.find((i) => i.id === 'x1')!.summary = 'New Task'
+      }, { teamId: 'T1', sections: ['actions'] })
+
+      // Full rebuild deferred to blur (caret preserved)...
+      expect(document.activeElement).toBe(bInput)
+      // ...but the chip patch is not: it isn't gated behind the deferral.
+      expect(container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:x1"]')?.textContent).toBe('@New Task')
+
+      bInput.dispatchEvent(new Event('blur'))
+      expect(container.querySelector<HTMLAnchorElement>('a.ref[data-ref="action:x1"]')?.textContent).toBe('@New Task')
+    })
   })
 
   describe('search-focus-item event', () => {

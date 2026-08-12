@@ -187,6 +187,10 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     if (!scopeAffects(scope, teamId, WATCHED)) return
     rebuildCalendar()
     rebuildBadge()
+    // Patches this note's own @mention chips in place — safe even mid-typing
+    // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the
+    // editor content outright.
+    editor.refreshRefLabels()
   })
 
   const layout = el(
