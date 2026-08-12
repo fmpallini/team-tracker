@@ -907,6 +907,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function htmlClipboardToMd(html: string): string {
+    // Untrusted clipboard HTML parsed here only ever reaches execCommand('insertHTML', ...)
+    // below after inline() (markdown.ts) escapes all text and reinserts it via
+    // Private-Use-Area placeholders, so attribute/tag breakout isn't possible — see the
+    // ref-placeholder-safety tests in test/markdown.test.ts. CodeQL's js/xss sink model
+    // can't see that custom sanitization and re-flags this DOMParser->insertHTML shape on
+    // every refactor of this function; verified false positive (alerts #1 and #2).
+    // codeql[js/xss]
     const wrapper = new DOMParser().parseFromString(html, 'text/html').body
     sanitizeRefAttrs(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
