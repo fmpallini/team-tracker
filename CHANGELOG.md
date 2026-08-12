@@ -4,6 +4,19 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.2.0] - 2026-08-12
+
+### Changed
+- The references chip under the daily notes calendar toggle now centers under the button instead of sitting flush left.
+
+### Fixed
+- Renaming a person, action item, milestone, or risk now updates its `@`-mention chips live in every other pane that has a note open showing that mention, instead of leaving them frozen until that note was reopened.
+- Typing right after inserting an `@`-mention no longer leaves you with no real cursor position to continue typing into.
+- Clicking an `@`-mention inside an expanded milestone or risk follow-up to open its target in the other pane no longer collapses that expanded row.
+- Deleting a task (kanban card) could occasionally cause a later card to land in the same position as another card.
+- The person notes pane header could keep showing a person's old name after they were renamed from another pane.
+- Unchecking daily backup in Preferences (or double-clicking "Change location") while a file picker was still resolving could silently leave the old backup setting active.
+
 ## [2.1.8] - 2026-08-11
 
 ### Fixed

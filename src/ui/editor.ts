@@ -12,6 +12,18 @@ export interface Editor {
   root: HTMLElement
   getMd(): string
   setMd(md: string): void
+  /**
+   * Patches every `a.ref[data-ref]` chip's visible text in place via
+   * `hooks.resolveRefLabel`, without touching anything else in the DOM —
+   * unlike setMd(), safe to call while the user is actively typing elsewhere
+   * in this same editor. Chips are `contenteditable="false"` leaves, so a
+   * live caret/selection can never sit inside one; patching their
+   * `textContent` cannot perturb it. No-op if `hooks.resolveRefLabel` was
+   * never supplied, or (per-chip) if it returns null for a given ref — same
+   * "leave the frozen label alone" fallback setMd's initial parse already
+   * uses.
+   */
+  refreshRefLabels(): void
   focus(): void
   destroy(): void
 }
@@ -907,6 +919,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function htmlClipboardToMd(html: string): string {
+    // Untrusted clipboard HTML parsed here only ever reaches execCommand('insertHTML', ...)
+    // below after inline() (markdown.ts) escapes all text and reinserts it via
+    // Private-Use-Area placeholders, so attribute/tag breakout isn't possible — see the
+    // ref-placeholder-safety tests in test/markdown.test.ts. CodeQL's js/xss sink model
+    // can't see that custom sanitization and re-flags this DOMParser->insertHTML shape on
+    // every refactor of this function; verified false positive (alerts #1 and #2).
+    // codeql[js/xss]
     const wrapper = new DOMParser().parseFromString(html, 'text/html').body
     sanitizeRefAttrs(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
@@ -1032,6 +1051,19 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
   }
 
+  function refreshRefLabels(): void {
+    const resolve = hooks.resolveRefLabel
+    if (!resolve) return
+    editorEl.querySelectorAll<HTMLAnchorElement>('a.ref[data-ref]').forEach((chip) => {
+      const target = parseRef(chip.dataset.ref ?? '')
+      if (!target) return
+      const resolved = resolve(target)
+      if (resolved === null) return
+      const label = `@${resolved}`
+      if (chip.textContent !== label) chip.textContent = label
+    })
+  }
+
   function focus(): void {
     editorEl.focus()
   }
@@ -1053,5 +1085,5 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const registryEntry = { flush: flushChange }
   liveEditors.add(registryEntry)
 
-  return { root, getMd, setMd, focus, destroy }
+  return { root, getMd, setMd, refreshRefLabels, focus, destroy }
 }

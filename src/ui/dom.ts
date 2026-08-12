@@ -87,3 +87,46 @@ export function clampToViewport(el: HTMLElement, margin = 8): void {
     el.style.top = `${Math.max(margin, window.innerHeight - margin - rect.height)}px`
   }
 }
+
+export interface DeferredRebuild {
+  /** Arms `rebuild` to run once, on `active`'s next blur, replacing any previously-armed element. No-op if `active` is already the armed element. */
+  arm(active: HTMLElement): void
+  /** Cancels an armed deferral without running `rebuild` — call from the owning module's own teardown so a torn-down module can't rebuild itself on a later blur. Idempotent. */
+  dispose(): void
+}
+
+/**
+ * Skips a full rebuild while a caret-sensitive field (`active`) holds focus,
+ * running `rebuild` once instead on that field's next blur — nothing is
+ * lost, since blur is exactly when the field's own edit (if any) commits and
+ * would have triggered a rebuild anyway. Only ever one deferral armed at a
+ * time: arming a second element while the first is still focused replaces
+ * it rather than stacking a second listener, which would otherwise fire N
+ * full rebuilds on a single blur after N skipped mutations.
+ *
+ * Extracted out of src/modules/milestones.ts and risks.ts, which each carried
+ * this identical ~15-line block (only the caret-sensitive-element predicate
+ * that decides *when* to call `arm` differs between them, and stays in each
+ * module as `focusedCaretInput`/`focusedCaretElement`) — sharing it here is
+ * what keeps a future fix to the defer/blur mechanics from having to land in
+ * both places.
+ */
+export function createDeferredRebuild(rebuild: () => void): DeferredRebuild {
+  let deferredEl: HTMLElement | null = null
+  function onBlur(): void {
+    deferredEl = null
+    rebuild()
+  }
+  return {
+    arm(active: HTMLElement): void {
+      if (deferredEl === active) return
+      deferredEl?.removeEventListener('blur', onBlur)
+      deferredEl = active
+      active.addEventListener('blur', onBlur, { once: true })
+    },
+    dispose(): void {
+      deferredEl?.removeEventListener('blur', onBlur)
+      deferredEl = null
+    },
+  }
+}

@@ -1,4 +1,4 @@
-import { blurOnEnter, clampToViewport } from '../src/ui/dom'
+import { blurOnEnter, clampToViewport, createDeferredRebuild } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -57,5 +57,75 @@ describe('clampToViewport', () => {
 
     expect(el.style.left).toBe('10px')
     expect(el.style.top).toBe('10px')
+  })
+})
+
+describe('createDeferredRebuild', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  test('runs the rebuild on the armed element\'s blur', () => {
+    const rebuild = vi.fn()
+    const deferred = createDeferredRebuild(rebuild)
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+
+    deferred.arm(input)
+    expect(rebuild).not.toHaveBeenCalled()
+
+    input.dispatchEvent(new FocusEvent('blur'))
+    expect(rebuild).toHaveBeenCalledTimes(1)
+  })
+
+  // Regression this type exists to prevent: arming a fresh listener on every
+  // skipped mutation, all on the same still-focused element, fires N full
+  // rebuilds on a single blur instead of one.
+  test('arming the same element repeatedly only ever arms one listener', () => {
+    const rebuild = vi.fn()
+    const deferred = createDeferredRebuild(rebuild)
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+
+    deferred.arm(input)
+    deferred.arm(input)
+    deferred.arm(input)
+    input.dispatchEvent(new FocusEvent('blur'))
+
+    expect(rebuild).toHaveBeenCalledTimes(1)
+  })
+
+  test('arming a different element cancels the deferral on the previous one', () => {
+    const rebuild = vi.fn()
+    const deferred = createDeferredRebuild(rebuild)
+    const first = document.createElement('input')
+    const second = document.createElement('input')
+    document.body.append(first, second)
+
+    deferred.arm(first)
+    deferred.arm(second)
+    first.dispatchEvent(new FocusEvent('blur'))
+    expect(rebuild).not.toHaveBeenCalled()
+
+    second.dispatchEvent(new FocusEvent('blur'))
+    expect(rebuild).toHaveBeenCalledTimes(1)
+  })
+
+  test('dispose() cancels an armed deferral without running the rebuild', () => {
+    const rebuild = vi.fn()
+    const deferred = createDeferredRebuild(rebuild)
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+
+    deferred.arm(input)
+    deferred.dispose()
+    input.dispatchEvent(new FocusEvent('blur'))
+
+    expect(rebuild).not.toHaveBeenCalled()
+  })
+
+  test('dispose() with nothing armed does not throw', () => {
+    const deferred = createDeferredRebuild(vi.fn())
+    expect(() => deferred.dispose()).not.toThrow()
   })
 })

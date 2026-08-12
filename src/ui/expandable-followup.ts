@@ -50,4 +50,9 @@ export class ExpandableRowsController {
   disposeAll(): void {
     for (const id of [...this.bundles.keys()]) this.disposeOne(id)
   }
+
+  /** Patches every currently-expanded row's ref chips in place (Editor.refreshRefLabels) — cheap and caret-safe, so callers can run it unconditionally on every scope-affecting store mutation instead of only on a full renderAll(). */
+  refreshAllLabels(): void {
+    for (const bundle of this.bundles.values()) bundle.editor.refreshRefLabels()
+  }
 }

@@ -523,7 +523,12 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
         d.nav.focusedPane = otherIdx
       })
       toast(t(localeNow(), 'toast_focus_other'))
-      renderAll()
+      // Neither pane's Loc changed here — only which one is focused — so
+      // there is nothing for either body to pick up; remounting either would
+      // only destroy in-pane state (an expanded follow-up row, a caret, ...)
+      // for no visible benefit. renderAll([]) still refreshes both bars
+      // (focus highlighting, back/forward state).
+      renderAll([])
       return
     }
     // Pane 1 (not "whichever pane isn't idx") is the one CSS actually hides
@@ -547,7 +552,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     })
     // Real navigation into pane 0 — see core/pane-layout.ts.
     if (idx === 0) layout$.noteRealNavigation(0)
-    renderAll()
+    // Only `idx` actually navigated — the other pane's Loc, and so its
+    // mounted module instance, is untouched. Remounting it too (the old
+    // unconditional renderAll()) tore down and rebuilt that instance from
+    // scratch on every navigation anywhere, silently collapsing an expanded
+    // milestone/risk follow-up row, dropping an in-progress edit's caret,
+    // etc. in whichever pane the user *wasn't* navigating — e.g. clicking an
+    // @mention chip inside an expanded risk row to open its target in the
+    // other pane used to collapse that very row out from under the click.
+    renderAll([idx])
   }
 
   function openBothPanes(target0: Loc, target1: Loc, focusedPane: 0 | 1): void {
@@ -854,17 +867,29 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
    * expensive part, not this function. So the hidden pane's instance is
    * disposed outright; the rebuild-on-becoming-visible above is what makes
    * that safe.
+   *
+   * `bodies` (default both) lets a caller that knows exactly which pane(s)
+   * just navigated skip remounting the other one — see openInPane's own
+   * calls below. renderBody() unconditionally tears down and rebuilds the
+   * module instance in that container (withDisposal), which loses any
+   * transient in-pane state the module itself owns (an expanded follow-up
+   * row in milestones/risks, an in-progress caret, ...); a pane whose Loc
+   * didn't change has no reason to pay that cost; its content is already
+   * kept live by its own store.subscribe(). renderBar() stays unconditional
+   * either way — cheap, stateless, and both panes' focus highlighting/
+   * back-forward state can change on every navigation regardless of which
+   * pane's body actually needs remounting.
    */
-  function renderAll(): void {
+  function renderAll(bodies: readonly (0 | 1)[] = [0, 1]): void {
     layout()
     renderBar(0)
-    renderBody(0)
+    if (bodies.includes(0)) renderBody(0)
     if (!effectiveSplit()) {
       disposeContainer(bodyEls[1])
       return
     }
     renderBar(1)
-    renderBody(1)
+    if (bodies.includes(1)) renderBody(1)
   }
 
   // Exposes searchIndex beyond the PaneManager interface (which module tests'

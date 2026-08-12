@@ -153,7 +153,8 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     if (chip) badgeSlot.appendChild(chip)
   }
   rebuildBadge()
-  calendarCol.append(toggleBtn, badgeSlot, calendarSlot)
+  const calendarHeader = el('div', { class: 'tt-daily-calendar-header' }, toggleBtn, badgeSlot)
+  calendarCol.append(calendarHeader, calendarSlot)
 
   const bundle = createRichEditorBundle({
     store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
@@ -187,6 +188,10 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     if (!scopeAffects(scope, teamId, WATCHED)) return
     rebuildCalendar()
     rebuildBadge()
+    // Patches this note's own @mention chips in place — safe even mid-typing
+    // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the
+    // editor content outright.
+    editor.refreshRefLabels()
   })
 
   const layout = el(

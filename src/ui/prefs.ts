@@ -292,13 +292,22 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
 
+    // Guards pickAndStoreBackupTarget's async picker→idbSet→store.update
+    // chain against a stale resolution clobbering more recent user intent —
+    // bumped both when a new pick starts (so an overlapping "Change
+    // location" double-click can't have its earlier call win) and when the
+    // checkbox is unchecked directly (so a pick already in flight can't
+    // silently re-enable the pref right after the user turned it off).
+    let pickGeneration = 0
+
     // Shared by the checkbox's first-time-enable path and the "Change
     // location" button: runs the .bck picker, and on a real pick (not a
     // cancel/error) persists the new handle and turns the pref on. Resolves
-    // true iff a new handle was actually picked and stored, so callers can
-    // tell a genuine pick apart from a cancel/error without duplicating the
-    // picker/idbSet/store.update sequence.
+    // true iff a new handle was actually picked, stored, and this was still
+    // the most recent pick attempt when it resolved — false for a cancel,
+    // error, or a pick superseded by a later one.
     function pickAndStoreBackupTarget(): Promise<boolean> {
+      const generation = ++pickGeneration
       const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
       // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
       // handle under 'lastHandle', which would repoint "reopen last" at the
@@ -308,6 +317,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           if (!session) return false
           const id = crypto.randomUUID()
           return idbSet(id, session.handle).then(() => {
+            if (generation !== pickGeneration) return false
             store.update((d) => {
               d.prefs.dailyBackupEnabled = true
               d.prefs.backupHandleId = id
@@ -329,6 +339,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       onchange: (e: Event) => {
         const checked = (e.target as HTMLInputElement).checked
         if (!checked) {
+          pickGeneration++ // supersede any in-flight pick — see pickGeneration's own comment
           store.update((d) => { d.prefs.dailyBackupEnabled = false })
           return
         }

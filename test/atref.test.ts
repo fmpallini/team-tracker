@@ -1,5 +1,5 @@
 import { createEditor, type Editor, type EditorHooks } from '../src/ui/editor'
-import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, navigateToLoc, type AtItem } from '../src/ui/atref'
+import { attachAtAutocomplete, filterAtItems, makeRefClickHandler, makeRefLabelResolver, navigateToLoc, type AtItem, type AtAutocompleteHandle } from '../src/ui/atref'
 import type { RefCandidate } from '../src/core/search'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -143,17 +143,17 @@ describe('attachAtAutocomplete', () => {
       { id: 'ana-id', title: 'Ana' },
       { id: 'bruno-id', title: 'Bruno' },
     ]
-  ): { editorEl: HTMLElement; picks: AtItem[] } {
+  ): { editorEl: HTMLElement; picks: AtItem[]; handle: AtAutocompleteHandle } {
     const picks: AtItem[] = []
     editor = createEditor(makeHooks(), locale)
     document.body.appendChild(editor.root)
-    attachAtAutocomplete(editor, {
+    const handle = attachAtAutocomplete(editor, {
       getRefCandidates: () => ({ people, actionItems: [], milestones: [], risks: [] }),
       locale,
       onPick: (item) => picks.push(item),
     })
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    return { editorEl, picks }
+    return { editorEl, picks, handle }
   }
 
   // Directly (re)writes the current block's text and places the caret at its
@@ -178,6 +178,59 @@ describe('attachAtAutocomplete', () => {
   function fireKey(editorEl: HTMLElement, key: string): void {
     editorEl.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
   }
+
+  // Regression: attachAtAutocomplete's own dispose() — removing the AT_TRIGGER_EVENT
+  // listener plus any open dropdown's document/element listeners — was never
+  // invoked or asserted on anywhere in this file. This is exactly the leak
+  // class src/modules/lifecycle.ts exists to prevent app-wide, on a widget
+  // mounted into every rich-text module.
+  describe('dispose()', () => {
+    test('closes an already-open dropdown', () => {
+      const { editorEl, handle } = setup()
+      setBlockText(editorEl, '@')
+      fireInput(editorEl)
+      expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
+
+      handle.dispose()
+
+      expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    })
+
+    test('removes the AT_TRIGGER_EVENT listener — a later @ no longer opens the dropdown', () => {
+      const { editorEl, handle } = setup()
+
+      handle.dispose()
+      setBlockText(editorEl, '@')
+      fireInput(editorEl)
+
+      expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    })
+
+    test('leaves no dangling document-level mousedown listener after a dropdown session', () => {
+      const addSpy = vi.spyOn(document, 'addEventListener')
+      const removeSpy = vi.spyOn(document, 'removeEventListener')
+      const { editorEl, handle } = setup()
+      setBlockText(editorEl, '@')
+      fireInput(editorEl)
+
+      handle.dispose()
+
+      const adds = addSpy.mock.calls.filter((c) => c[0] === 'mousedown').length
+      const removes = removeSpy.mock.calls.filter((c) => c[0] === 'mousedown').length
+      expect(removes).toBe(adds)
+      addSpy.mockRestore()
+      removeSpy.mockRestore()
+    })
+
+    test('is idempotent — calling it twice does not throw', () => {
+      const { editorEl, handle } = setup()
+      setBlockText(editorEl, '@')
+      fireInput(editorEl)
+
+      handle.dispose()
+      expect(() => handle.dispose()).not.toThrow()
+    })
+  })
 
   test('typing @ opens the dropdown listing all people plus the 3 relative-day suggestions and the format-hint item, under group headers', () => {
     const { editorEl } = setup()
@@ -236,7 +289,11 @@ describe('attachAtAutocomplete', () => {
     expect(chip.getAttribute('contenteditable')).toBe('false')
     expect(chip.dataset.ref).toBe('person:ana-id')
     expect(chip.textContent).toBe('@Ana')
-    expect(editorEl.textContent).toBe('@Ana ') // typed "@An" fully replaced, chip + trailing space, nothing left over
+    // Trailing separator is a non-breaking space (not a plain space): a
+    // mention is almost always the last thing on the line, and a plain
+    // space there is CSS-collapsed to zero width, leaving Chrome no real
+    // caret slot to land on — see the doc comment on atref.ts's commit().
+    expect(editorEl.textContent).toBe('@Ana ') // typed "@An" fully replaced, chip + trailing nbsp, nothing left over
     expect(picks).toEqual([{ kind: 'person', id: 'ana-id', name: 'Ana' }])
 
     // Caret lands after the trailing space, ready for the user to keep typing.
@@ -246,7 +303,7 @@ describe('attachAtAutocomplete', () => {
     const preCaret = document.createRange()
     preCaret.selectNodeContents(editorEl.firstElementChild as HTMLElement)
     preCaret.setEnd(caretRange.startContainer, caretRange.startOffset)
-    expect(preCaret.toString()).toBe('@Ana ')
+    expect(preCaret.toString()).toBe('@Ana ')
   })
 
   test('Escape cancels and leaves the literal @text as typed', () => {

@@ -274,8 +274,15 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     range.insertNode(chip)
     // A trailing space after the chip lets the user keep typing immediately
     // without first tapping space themselves (mirrors Slack/GitHub/Notion
-    // mention-insert UX).
-    const space = document.createTextNode(' ')
+    // mention-insert UX). Non-breaking (\u00a0), not a plain space: a
+    // mention is almost always the last thing typed on the line, and a
+    // plain space at the very end of a block is CSS-collapsed to zero width
+    // — same root cause as core/markdown.ts's blockInline trailing-&nbsp;
+    // fix — which left Chrome with no real caret slot to land the selection
+    // below on, so typing continued *inside* the chip's boundary instead of
+    // after it. htmlToMd (core/markdown.ts's inlineMd) normalizes it back
+    // to a plain space on save, so documents never accumulate it.
+    const space = document.createTextNode('\u00a0')
     chip.after(space)
 
     const sel = window.getSelection()

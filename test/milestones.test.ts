@@ -586,6 +586,56 @@ describe('renderMilestones', () => {
       expect(container.querySelectorAll('.editor')).toHaveLength(0)
       expect(expandAllBtn.textContent).toBe('Expand all')
     })
+
+    test('renaming a risk mentioned in an expanded follow-up live-updates its @mention chip', () => {
+      const team = makeTeam({
+        milestones: [milestone({ id: 'a', title: 'A', followup: 'Blocks @[Old Risk](risk:r1)' })],
+        risks: [{ id: 'r1', title: 'Old Risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      const chip = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="risk:r1"]')!
+      expect(chip.textContent).toBe('@Old Risk')
+
+      store.update((d) => {
+        d.teams[0]!.risks.find((r) => r.id === 'r1')!.title = 'New Risk'
+      }, { teamId: 'T1', sections: ['risks'] })
+
+      expect(container.querySelector<HTMLAnchorElement>('a.ref[data-ref="risk:r1"]')?.textContent).toBe('@New Risk')
+    })
+
+    test('the chip still live-updates while an unrelated title input elsewhere is focused (the deferred-rebuild path)', () => {
+      const team = makeTeam({
+        milestones: [
+          milestone({ id: 'a', title: 'A', date: '2026-01-01', followup: 'Blocks @[Old Risk](risk:r1)' }),
+          milestone({ id: 'b', title: 'B', date: '2026-02-01' }),
+        ],
+        risks: [{ id: 'r1', title: 'Old Risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
+
+      const chip = container.querySelector<HTMLAnchorElement>('a.ref[data-ref="risk:r1"]')!
+      expect(chip.textContent).toBe('@Old Risk')
+
+      const bInput = Array.from(container.querySelectorAll<HTMLInputElement>('.tt-milestone-title-input')).find((i) => i.value === 'B')!
+      bInput.focus()
+
+      store.update((d) => {
+        d.teams[0]!.risks.find((r) => r.id === 'r1')!.title = 'New Risk'
+      }, { teamId: 'T1', sections: ['risks'] })
+
+      // Full rebuild deferred to blur (caret preserved)...
+      expect(document.activeElement).toBe(bInput)
+      // ...but the chip patch is not: it isn't gated behind the deferral.
+      expect(container.querySelector<HTMLAnchorElement>('a.ref[data-ref="risk:r1"]')?.textContent).toBe('@New Risk')
+
+      bInput.dispatchEvent(new Event('blur'))
+      expect(container.querySelector<HTMLAnchorElement>('a.ref[data-ref="risk:r1"]')?.textContent).toBe('@New Risk')
+    })
   })
 
   test('a row carries a hover hint that right-click opens more actions', () => {
