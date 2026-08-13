@@ -1,4 +1,4 @@
-import { hotkeyAllowed, comboHotkeyAllowed } from '../src/ui/hotkeys'
+import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed } from '../src/ui/hotkeys'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -92,4 +92,57 @@ test('comboHotkeyAllowed blocks the combo while a modal overlay is open', () => 
   document.addEventListener('keydown', (e) => { captured = e })
   keydownOn(document.body, { ctrlKey: true, key: 'k' })
   expect(comboHotkeyAllowed(captured!)).toBe(false)
+})
+
+test('navHotkeyAllowed allows the hotkey on a plain document target', () => {
+  document.body.appendChild(document.createElement('div'))
+  let captured: KeyboardEvent | null = null
+  document.addEventListener('keydown', (e) => { captured = e })
+  keydownOn(document.body)
+  expect(navHotkeyAllowed(captured!)).toBe(true)
+})
+
+test('navHotkeyAllowed allows the hotkey while typing in a text input — Alt doesn\'t insert a character, so there is nothing to protect', () => {
+  const input = document.createElement('input')
+  document.body.appendChild(input)
+  let captured: KeyboardEvent | null = null
+  document.addEventListener('keydown', (e) => { captured = e })
+  keydownOn(input)
+  expect(navHotkeyAllowed(captured!)).toBe(true)
+})
+
+test('navHotkeyAllowed allows the hotkey inside a contenteditable element (a daily note, a risk title, a milestone follow-up)', () => {
+  const editable = document.createElement('div')
+  editable.setAttribute('contenteditable', 'true')
+  const child = document.createElement('span')
+  editable.appendChild(child)
+  document.body.appendChild(editable)
+  let captured: KeyboardEvent | null = null
+  document.addEventListener('keydown', (e) => { captured = e })
+  keydownOn(child)
+  expect(navHotkeyAllowed(captured!)).toBe(true)
+})
+
+test('navHotkeyAllowed blocks the hotkey when ctrlKey is set (AltGr on Windows)', () => {
+  let captured: KeyboardEvent | null = null
+  document.addEventListener('keydown', (e) => { captured = e })
+  keydownOn(document.body, { ctrlKey: true })
+  expect(navHotkeyAllowed(captured!)).toBe(false)
+})
+
+test('navHotkeyAllowed blocks the hotkey when metaKey is set', () => {
+  let captured: KeyboardEvent | null = null
+  document.addEventListener('keydown', (e) => { captured = e })
+  keydownOn(document.body, { metaKey: true })
+  expect(navHotkeyAllowed(captured!)).toBe(false)
+})
+
+test('navHotkeyAllowed blocks the hotkey while a modal overlay is open', () => {
+  const overlay = document.createElement('div')
+  overlay.className = 'tt-modal-overlay'
+  document.body.appendChild(overlay)
+  let captured: KeyboardEvent | null = null
+  document.addEventListener('keydown', (e) => { captured = e })
+  keydownOn(document.body)
+  expect(navHotkeyAllowed(captured!)).toBe(false)
 })

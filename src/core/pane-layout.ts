@@ -16,6 +16,13 @@ export interface PaneLayout {
    * the nav state actually changed.
    */
   stepHistory(idx: 0 | 1, dir: -1 | 1): boolean
+  /**
+   * Jumps pane `idx` straight to the most recent entry its history can reach
+   * — repeated `stepHistory(idx, 1)` in one call, stopping where that would:
+   * at the newest entry, or the newest one not conflicting with the other
+   * pane's current Loc. Returns whether the nav state actually changed.
+   */
+  jumpToLatest(idx: 0 | 1): boolean
   /** Records that a real navigation landed in pane `idx` — invalidates the stash for idx 0. */
   noteRealNavigation(idx: 0 | 1): void
   /** Drops the stash outright (e.g. sidebar.ts's deleteTeam pruning histories directly). */
@@ -47,6 +54,28 @@ export function createPaneLayout(store: Store): PaneLayout {
       if (!result) return false
       store.updateNav((d) => {
         d.nav.panes[idx] = result
+        d.nav.focusedPane = idx
+      })
+      if (idx === 0) {
+        unsplitStash = null
+        unsplitStashValid = false
+      }
+      return true
+    },
+    jumpToLatest(idx) {
+      const nav = store.doc.nav
+      const other = currentLoc(nav.panes[otherPaneIdx(idx)])
+      let cursor = nav.panes[idx]
+      let result: PaneState | null = null
+      for (;;) {
+        const stepped = navigateHistory(cursor, 1, other)
+        if (!stepped) break
+        result = stepped
+        cursor = stepped
+      }
+      if (!result) return false
+      store.updateNav((d) => {
+        d.nav.panes[idx] = result!
         d.nav.focusedPane = idx
       })
       if (idx === 0) {

@@ -11,6 +11,7 @@ import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
+import { blockedByModal } from './hotkeys'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { openDuePanel } from './due-panel'
@@ -198,6 +199,11 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   let unbindSwitcherDismiss: (() => void) | null = null
 
   function onSwitcherKeydown(e: KeyboardEvent): void {
+    // Same reasoning as panes.ts's pane-module dropdown: an async modal
+    // (e.g. a save-conflict error) can appear while this popup is still
+    // open, and this is a capturing document listener — without this guard
+    // Enter here would switch the active team behind the modal.
+    if (blockedByModal()) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       switcherSelected = clampMove(switcherSelected, e.key === 'ArrowDown' ? 1 : -1, switcherTeams.length)

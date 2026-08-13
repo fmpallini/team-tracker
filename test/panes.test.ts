@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
@@ -499,6 +499,22 @@ test('Enter commits the highlighted pane-menu row and closes the menu', () => {
   expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('general')
 })
 
+test('Enter/Arrow on the pane menu do not act while a modal is open (e.g. an async save-conflict error appearing over it)', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+
+  paneBtn(0, 'tt-pane-modules-btn').click()
+  document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay' }))
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+  expect(document.querySelector('.tt-pane-menu')).not.toBeNull() // still open, untouched
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('daily') // never navigated
+})
+
 test('Escape closes the pane menu without picking anything', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -707,6 +723,85 @@ test('navigateFocusedHistory steps the currently focused pane and re-renders', (
   // No earlier entry exists: a further back-step is a no-op.
   navigateFocusedHistory(pm, store, -1)
   expect(store.doc.nav.panes[0].index).toBe(0)
+})
+
+test('jumpFocusedHistoryToLatest jumps the currently focused pane straight to its newest entry and re-renders', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.openInPane(0, locA)
+  pm.openInPane(0, locB) // history [locA, locB], index 1, focused 0
+  navigateFocusedHistory(pm, store, -1) // back to locA, index 0
+  expect(store.doc.nav.panes[0].index).toBe(0)
+
+  jumpFocusedHistoryToLatest(pm, store)
+  expect(store.doc.nav.panes[0]).toEqual({ history: [locA, locB], index: 1 })
+  expect(paneBtn(0, 'tt-pane-fwd-btn').disabled).toBe(true)
+
+  // Already at the newest entry: a further jump is a no-op.
+  jumpFocusedHistoryToLatest(pm, store)
+  expect(store.doc.nav.panes[0].index).toBe(1)
+})
+
+test('setFocusedPane focuses the given pane index and reports whether focus actually changed', () => {
+  const { store } = setup()
+  expect(store.doc.nav.focusedPane).toBe(0)
+
+  expect(setFocusedPane(store, 0)).toBe(false) // already focused pane 0
+  expect(setFocusedPane(store, 1)).toBe(true)
+  expect(store.doc.nav.focusedPane).toBe(1)
+  expect(setFocusedPane(store, 1)).toBe(false) // already focused pane 1
+})
+
+test('swapPaneSides swaps the two panes\' contents and moves focus with the content that was focused, but only while split', () => {
+  const { store } = setup()
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+  store.updateNav((d) => {
+    d.nav.panes[0] = { history: [locA], index: 0 }
+    d.nav.panes[1] = { history: [locB], index: 0 }
+    d.nav.focusedPane = 0
+  })
+
+  // Unsplit: swapping sides makes no sense with only one side visible.
+  expect(swapPaneSides(store)).toBe(false)
+  expect(store.doc.nav.panes[0]).toEqual({ history: [locA], index: 0 })
+
+  store.updateNav((d) => { d.nav.split = true })
+  expect(swapPaneSides(store)).toBe(true)
+  expect(store.doc.nav.panes[0]).toEqual({ history: [locB], index: 0 })
+  expect(store.doc.nav.panes[1]).toEqual({ history: [locA], index: 0 })
+  expect(store.doc.nav.focusedPane).toBe(1) // focus follows locA, now on the right
+
+  swapPaneSides(store) // swap back
+  expect(store.doc.nav.panes[0]).toEqual({ history: [locA], index: 0 })
+  expect(store.doc.nav.panes[1]).toEqual({ history: [locB], index: 0 })
+  expect(store.doc.nav.focusedPane).toBe(0)
+})
+
+test('swapPaneSides invalidates the unsplit stash, so a later re-split does not resurrect it', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  pm.toggleSplit() // split on
+  pm.openInPane(0, locA)
+  pm.openInPane(1, locB) // focuses pane 1
+
+  pm.toggleSplit() // unsplit: pane 0 pulls in pane 1's (locB) content, stashes locA
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+
+  store.updateNav((d) => { d.nav.split = true }) // swapPaneSides itself requires split
+  swapPaneSides(store) // real navigation into pane 0 while its stash is still pending
+  store.updateNav((d) => { d.nav.split = false })
+
+  pm.toggleSplit() // back to split — stash was invalidated, so pane 0 keeps locB, not the resurrected locA
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
 })
 
 test('openPaneModuleByIndex opens the row at that position (paneMenuItems order) in the focused pane', () => {

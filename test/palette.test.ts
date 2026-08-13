@@ -3,6 +3,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createPaneManager, type PaneManager } from '../src/ui/panes'
 import { createPalette, type Palette } from '../src/ui/palette'
+import { currentLoc } from '../src/core/nav'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -114,4 +115,17 @@ test('without onOpenDue, no Due entry appears', () => {
 
   const labels = Array.from(document.querySelectorAll('.tt-palette-item')).map((r) => r.textContent)
   expect(labels.some((l) => l?.includes('Due'))).toBe(false)
+})
+
+test('Enter does not navigate while a modal is open (e.g. an async save-conflict error appearing over the palette)', () => {
+  const { store, palette } = setup()
+  palette.open()
+  expect(document.querySelector('.tt-palette-overlay')).not.toBeNull()
+  expect(currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])).toBeNull()
+
+  document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay' }))
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+  expect(document.querySelector('.tt-palette-overlay')).not.toBeNull() // still open, untouched
+  expect(currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])).toBeNull() // never navigated
 })

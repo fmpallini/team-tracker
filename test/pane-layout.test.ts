@@ -78,3 +78,71 @@ test('stepHistory walks back and sets the focused pane', () => {
   expect(store.doc.nav.panes[0]!.index).toBe(0)
   expect(store.doc.nav.focusedPane).toBe(0)
 })
+
+test('jumpToLatest returns false when already at the newest entry', () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const layout = createPaneLayout(store)
+  store.updateNav((d) => {
+    d.nav.panes[0] = { history: [loc('t1', 'daily'), loc('t1', 'members')], index: 1 }
+  })
+  expect(layout.jumpToLatest(0)).toBe(false)
+  expect(store.doc.nav.panes[0]!.index).toBe(1)
+})
+
+test('jumpToLatest returns false on a pane with no history at all', () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const layout = createPaneLayout(store)
+  expect(layout.jumpToLatest(0)).toBe(false)
+})
+
+test('jumpToLatest jumps straight to the newest entry in one call and sets the focused pane', () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const layout = createPaneLayout(store)
+  store.updateNav((d) => {
+    d.nav.focusedPane = 1
+    d.nav.panes[0] = {
+      history: [loc('t1', 'daily'), loc('t1', 'members'), loc('t1', 'actions')],
+      index: 0,
+    }
+  })
+  expect(layout.jumpToLatest(0)).toBe(true)
+  expect(store.doc.nav.panes[0]!.index).toBe(2)
+  expect(store.doc.nav.focusedPane).toBe(0)
+})
+
+test('jumpToLatest stops at the newest entry that does not conflict with the other pane', () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const layout = createPaneLayout(store)
+  store.updateNav((d) => {
+    d.nav.panes[0] = {
+      history: [loc('t1', 'daily'), loc('t1', 'members'), loc('t1', 'actions')],
+      index: 0,
+    }
+    // Pane 1 is currently showing 'actions' for t1 — the newest entry in
+    // pane 0's own history conflicts with it (same kind/team), so the jump
+    // must land on 'members' instead of skipping straight to the end.
+    d.nav.panes[1] = { history: [loc('t1', 'actions')], index: 0 }
+  })
+  expect(layout.jumpToLatest(0)).toBe(true)
+  expect(store.doc.nav.panes[0]!.index).toBe(1)
+})
+
+test('jumpToLatest on pane 0 invalidates the unsplit stash, same as stepHistory', () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const layout = createPaneLayout(store)
+  store.updateNav((d) => {
+    d.nav.split = true
+    d.nav.focusedPane = 1
+    d.nav.panes[0] = { history: [loc('t1', 'daily')], index: 0 }
+    // Pulled into pane 0 on un-split, not yet at its own newest entry —
+    // gives jumpToLatest(0) somewhere real to jump to afterward.
+    d.nav.panes[1] = { history: [loc('t1', 'actions'), loc('t1', 'members')], index: 0 }
+  })
+
+  layout.applyToggleSplit(true) // un-split, stash pane 0's 'daily', pull in pane 1's 'actions'
+  expect(layout.jumpToLatest(0)).toBe(true) // real navigation into pane 0 while unsplit
+  layout.applyToggleSplit(false) // re-split
+
+  // Stash was invalidated: pane 0 keeps what it jumped to, not the stale stash.
+  expect(store.doc.nav.panes[0]!.history[store.doc.nav.panes[0]!.index]!.ref.kind).toBe('members')
+})

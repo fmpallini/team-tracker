@@ -243,6 +243,20 @@ test('Ctrl+F (no Shift) still just focuses the search input, without touching th
   expect((document.querySelector('.tt-search-all-teams input') as HTMLInputElement).checked).toBe(false)
 })
 
+test('Ctrl+F and Ctrl+Shift+F do not steal focus into the search input while a modal is open', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const { input } = mount(store, fakePM())
+  input.blur()
+  document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay' }))
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))
+  expect(document.activeElement).not.toBe(input)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+  expect(document.activeElement).not.toBe(input)
+  expect((document.querySelector('.tt-search-all-teams input') as HTMLInputElement).checked).toBe(false)
+})
+
 test('arrow keys navigate results with wraparound in both directions; Enter opens the selected result', () => {
   const team: Team = {
     id: 'T1', name: 'Team One', emoji: '🚀',

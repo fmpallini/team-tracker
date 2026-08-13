@@ -9,6 +9,7 @@ import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } fro
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
+import { blockedByModal } from './hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
 // Runtime dependency in one direction only: modules/lifecycle.ts imports
@@ -234,6 +235,25 @@ export function stepPaneHistory(store: Store, idx: 0 | 1, dir: -1 | 1): boolean 
 /** Convenience wrapper: steps the currently focused pane's history and re-renders. */
 export function navigateFocusedHistory(pm: PaneManager, store: Store, dir: -1 | 1): void {
   if (stepPaneHistory(store, store.doc.nav.focusedPane, dir)) {
+    pm.renderAll()
+  }
+}
+
+/**
+ * Jumps pane `idx` straight to the newest entry its history can reach — see
+ * `PaneLayout.jumpToLatest`. Free function for the same reason as
+ * `stepPaneHistory` above: main.ts's global Alt+Shift+ArrowUp hotkey drives
+ * it without reaching into `createPaneManager`'s internals.
+ */
+export function jumpPaneHistoryToLatest(store: Store, idx: 0 | 1): boolean {
+  const owned = layoutsByStore.get(store)
+  if (owned) return owned.jumpToLatest(idx)
+  return createPaneLayout(store).jumpToLatest(idx)
+}
+
+/** Convenience wrapper: jumps the currently focused pane's history to its newest entry and re-renders. */
+export function jumpFocusedHistoryToLatest(pm: PaneManager, store: Store): void {
+  if (jumpPaneHistoryToLatest(store, store.doc.nav.focusedPane)) {
     pm.renderAll()
   }
 }
@@ -698,6 +718,13 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
 
   function makeMenuKeydownHandler(idx: 0 | 1): (e: KeyboardEvent) => void {
     return (e: KeyboardEvent): void => {
+      // This dropdown can still be open (and this capturing listener still
+      // attached) if a modal opens on top of it without the two ever having
+      // a chance to interact — e.g. an async save-conflict error modal
+      // popping up while the menu is open. Without this guard, Enter here
+      // would navigate the pane behind the modal instead of being consumed
+      // by the modal's own keydown handling.
+      if (blockedByModal()) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
         const count = paneMenuItems().length
