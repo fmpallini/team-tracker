@@ -85,6 +85,27 @@ async function switchModule(page: Page, label: string | RegExp): Promise<void> {
  * scales with N is being retained.
  */
 async function churnCycle(page: Page, i: number): Promise<void> {
+  // The previous cycle's quiesce() deliberately leaves the search dropdown
+  // open with a "leak" query and focus inside the search input (see its doc
+  // comment — that's the stable state it samples). Two problems for the next
+  // cycle if left alone: hotkeyAllowed() refuses global hotkeys (Alt+1 below)
+  // while a field is focused, and search-ui.ts's focus listener intentionally
+  // *reopens* the dropdown on refocus as long as the query is non-empty
+  // ("resuming focus on a query left over from before... should refresh
+  // matches immediately") — so merely closing the dropdown (e.g. Escape)
+  // isn't reliable: anything later in the cycle that refocuses the search
+  // input (quiesce()'s own `fill('')` included, since it focuses before it
+  // clears) reopens it right back over the pane bar. Clearing the value here
+  // removes the only thing that reopen depends on: an empty query can never
+  // repopulate results, however many times the input gets refocused. Blurring
+  // afterward (rather than Escape, whose close-then-blur behavior depends on
+  // whether the dropdown's already-async debounced close beat it there) is
+  // what makes Alt+1 below actually fire — hotkeyAllowed() refuses global
+  // hotkeys while any field still has focus.
+  const searchInput = page.locator('.tt-search-input-box input')
+  await searchInput.fill('')
+  await searchInput.blur()
+
   // Pin the team first so the note below always lands in the same one. Search
   // is scoped to the active team, and quiesce() counts hits — without this the
   // cycle would type into whichever team the previous cycle happened to leave
@@ -100,7 +121,7 @@ async function churnCycle(page: Page, i: number): Promise<void> {
   await editor.type(`leak probe ${i} `, { delay: 0 })
 
   // Modules with their own subscriptions, DnD wiring and expandable rows.
-  await switchModule(page, /Action items/i)
+  await switchModule(page, /Tasks/i)
   await switchModule(page, /Milestones/i)
   await switchModule(page, /Risks/i)
   await switchModule(page, /Members/i)
@@ -222,9 +243,9 @@ async function overlayCycle(page: Page): Promise<void> {
   await page.locator('.tt-milestone-delete-btn').first().click()
   await expect(page.locator('.tt-milestone-row')).toHaveCount(0)
 
-  // Action items: the card modal hosts its own rich editor and date picker —
-  // the one editor that lives outside the pane tree entirely.
-  await switchModule(page, /Action items/i)
+  // Tasks: the card modal hosts its own rich editor and date picker — the
+  // one editor that lives outside the pane tree entirely.
+  await switchModule(page, /Tasks/i)
   await page.locator('.tt-kanban-add-btn').first().click()
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')

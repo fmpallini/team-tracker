@@ -22,10 +22,10 @@ function blockedByFieldOrModal(e: KeyboardEvent): boolean {
 }
 
 /**
- * Guards the global Alt+1..9 team-switch hotkey and the Alt+ArrowLeft/Right
- * pane-history hotkey (see main.ts) from firing while the user is typing in
- * a form field, while AltGr is held (reported by browsers as
- * ctrlKey+altKey), or while a modal dialog is open.
+ * Guards the global Alt+1..9 team-switch hotkey and the Alt+Arrow /
+ * Alt+Shift+Arrow pane-layout hotkeys (see main.ts) from firing while the
+ * user is typing in a form field, while AltGr is held (reported by browsers
+ * as ctrlKey+altKey), or while a modal dialog is open.
  */
 export function hotkeyAllowed(e: KeyboardEvent): boolean {
   if (e.ctrlKey || e.metaKey) return false

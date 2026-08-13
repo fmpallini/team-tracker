@@ -8,7 +8,7 @@ import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
 import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
-import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
@@ -465,10 +465,32 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       return
     }
     if (!e.altKey) return
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    // Alt+Shift+Left/Right: pane history. Plain Alt+Arrow are pane-layout
+    // actions instead (below) — Left/Right select a pane, Up cycles
+    // single/dual, Down swaps sides while split.
+    if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       if (!hotkeyAllowed(e)) return
       e.preventDefault()
       navigateFocusedHistory(pm, store, e.key === 'ArrowLeft' ? -1 : 1)
+      return
+    }
+    if (e.shiftKey) return
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (!hotkeyAllowed(e)) return
+      e.preventDefault()
+      if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      if (!hotkeyAllowed(e)) return
+      e.preventDefault()
+      pm.toggleSplit()
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      if (!hotkeyAllowed(e)) return
+      e.preventDefault()
+      if (swapPaneSides(store)) pm.renderAll()
       return
     }
     if (!hotkeyAllowed(e)) return

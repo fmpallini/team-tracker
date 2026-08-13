@@ -239,6 +239,40 @@ export function navigateFocusedHistory(pm: PaneManager, store: Store, dir: -1 | 
 }
 
 /**
+ * Focuses pane `idx` directly — main.ts's global Alt+ArrowLeft (pane 0) /
+ * Alt+ArrowRight (pane 1) hotkey. A free function rather than a
+ * `PaneManager` method for the same reason as `stepPaneHistory` above: keeps
+ * the interface matching the task contract instead of every module test's
+ * `fakePM()` needing a new no-op. Returns whether focus actually changed.
+ */
+export function setFocusedPane(store: Store, idx: 0 | 1): boolean {
+  if (store.doc.nav.focusedPane === idx) return false
+  store.updateNav((d) => {
+    d.nav.focusedPane = idx
+  })
+  return true
+}
+
+/**
+ * Swaps panes 0 and 1's contents (and focus along with whichever one was
+ * focused) — main.ts's global Alt+ArrowDown hotkey. No-op while unsplit,
+ * since there is only one visible side to swap. Invalidates the unsplit
+ * stash (core/pane-layout.ts) since it assumes pane 0 is the one that
+ * survives un-splitting, an assumption a swap can invalidate.
+ */
+export function swapPaneSides(store: Store): boolean {
+  if (!store.doc.nav.split) return false
+  store.updateNav((d) => {
+    const tmp = d.nav.panes[0]
+    d.nav.panes[0] = d.nav.panes[1]
+    d.nav.panes[1] = tmp
+    d.nav.focusedPane = d.nav.focusedPane === 0 ? 1 : 0
+  })
+  invalidateUnsplitStash(store)
+  return true
+}
+
+/**
  * F1..F7 global hotkey handler (main.ts): jumps the focused pane straight to
  * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
  * matching the "F<n>" hint each row shows in the pane's module dropdown.

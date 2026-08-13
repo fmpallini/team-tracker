@@ -34,7 +34,8 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Alt+L / 🔒', 'help_global_close_file'],
   ['Ctrl+F ou /', 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
-  ['Alt+← / Alt+→', 'help_global_history'],
+  ['Alt+Shift+← / Alt+Shift+→', 'help_global_history'],
+  ['Alt+←/→/↑/↓', 'help_global_pane_layout'],
   ['F1 … F7', 'help_global_pane_module'],
   ['F11 / ⛶', 'help_global_fullscreen'],
   // The row actions are deliberately not Tab stops (see the row builders in

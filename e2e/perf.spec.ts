@@ -129,12 +129,12 @@ test.describe(`latency on a large document (${TEAMS} teams x ${ITEMS_PER_TEAM} i
 
     // Each of these renders a full board/list of ITEMS_PER_TEAM rows.
     const moduleSwitch = await timeMedian(6, async () => {
-      await toModule(/Action items/i)
+      await toModule(/Tasks/i)
       await expect(pane.locator('.tt-kanban-card').first()).toBeVisible()
       await toModule(/Risks/i)
       await expect(pane.locator('.tt-risk-row').first()).toBeVisible()
     })
-    console.log(`[perf] module switch pair (actions+risks, median): ${moduleSwitch}ms`)
+    console.log(`[perf] module switch pair (tasks+risks, median): ${moduleSwitch}ms`)
 
     const teamSwitch = await timeMedian(6, async () => {
       await page.keyboard.press('Alt+2')

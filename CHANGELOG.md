@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.2.2] - 2026-08-13
+
+### Changed
+- Pane history is now Alt+Shift+Left/Right (plain Alt+Left/Right stopped reliably reaching the app in some browsers). Alt+Left/Right now select the left/right pane, Alt+Up toggles single/dual pane view, and Alt+Down swaps the two panes' contents.
+
 ## [2.2.1] - 2026-08-12
 
 ### Fixed
