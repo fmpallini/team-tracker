@@ -313,7 +313,7 @@ describe('keyboard route to the card actions', () => {
   // Regression: closing the edit modal used to leave focus stranded on
   // document.body, so ArrowUp/Down after Enter-to-open/close felt like it
   // had "forgotten" the card the user was just on.
-  test('cancelling the edit modal restores focus to the card that was open', () => {
+  test('cancelling the edit modal restores focus to the card that was open', async () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -321,13 +321,18 @@ describe('keyboard route to the card actions', () => {
 
     card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     clickByTitleOrText(document.body, 'Cancel')
+    // The restore is deferred a tick — see openEditModal's onClose comment:
+    // a real-Chrome-only race where the browser's own delayed "focused
+    // element got removed" unfocus step can otherwise outrun a synchronous
+    // .focus() here and land back on <body>.
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(document.querySelector('.tt-modal-dialog')).toBeNull()
     expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
   })
 
 
-  test('saving the edit modal restores focus to that same card', () => {
+  test('saving the edit modal restores focus to that same card', async () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -335,11 +340,12 @@ describe('keyboard route to the card actions', () => {
 
     card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     clickByTitleOrText(document.body, 'Save')
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
   })
 
-  test('saving a brand-new card focuses the card it just created', () => {
+  test('saving a brand-new card focuses the card it just created', async () => {
     const team = makeTeam({ actionItems: [] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -348,6 +354,7 @@ describe('keyboard route to the card actions', () => {
     const summaryInput = document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement
     summaryInput.value = 'New card'
     clickByTitleOrText(document.body, 'Save')
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     const newCard = cards(container)[0]!
     expect(newCard.textContent).toContain('New card')

@@ -351,8 +351,23 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // Runs after showModal's close() has already removed the overlay
         // (see modal.ts), so this card, if still around, is free to take
         // focus back rather than leaving it stranded on document.body.
+        //
+        // The .focus() call itself is deferred a tick: closing via Escape
+        // (focus was on the Summary <input>) vs. the Cancel/Save *button*
+        // showed different real-Chrome behavior — confirmed live by patching
+        // HTMLElement.prototype.blur (never called) and probing
+        // document.activeElement right after Escape (correctly the card) vs.
+        // one macrotask later (reverted to <body>). No app code blurs it, so
+        // that's Chrome's own "focused element got removed" unfocus step
+        // running *after* this callback for an <input>, silently overriding
+        // a synchronous .focus() here — but not for a <button>, which is why
+        // Cancel/Save never showed the bug. Scheduling after it instead of
+        // racing it makes this the last word regardless of which path closed.
         if (focusItemIdOnClose) {
-          boardEl.querySelector<HTMLElement>(`[data-item-id="${focusItemIdOnClose}"]`)?.focus()
+          const id = focusItemIdOnClose
+          setTimeout(() => {
+            boardEl.querySelector<HTMLElement>(`[data-item-id="${id}"]`)?.focus()
+          }, 0)
         }
       },
     })
