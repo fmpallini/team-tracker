@@ -39,14 +39,16 @@ function relLabel(locale: Locale, dateIso: string): string {
 
 function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
   const icon = KIND_ICON[REF_KINDS[item.kind].moduleKind]
-  return el(
+  function activate(): void {
+    closeModal()
+    onOpenItem(item.loc)
+  }
+  const row = el(
     'div',
     {
       class: 'tt-due-row',
-      onclick: () => {
-        closeModal()
-        onOpenItem(item.loc)
-      },
+      tabindex: '0',
+      onclick: activate,
     },
     el('span', { class: 'tt-due-row-icon' }, icon),
     el('span', { class: 'tt-due-row-title' }, item.title),
@@ -56,6 +58,26 @@ function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenIt
     ...(showTeam ? [el('span', { class: 'tt-due-row-team' }, item.teamName)] : []),
     el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale)} · ${relLabel(locale, item.date)}`)
   )
+  // Guarded on e.target === row (mirrors risks.ts/milestones.ts's row nav):
+  // Enter/Space activates the row, Up/Down moves focus to the next/previous
+  // row so the whole list is walkable without a mouse.
+  row.addEventListener('keydown', (e) => {
+    const ev = e as KeyboardEvent
+    if (ev.target !== row) return
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault()
+      activate()
+      return
+    }
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      const rows = Array.from(row.parentElement?.querySelectorAll<HTMLElement>('.tt-due-row') ?? [])
+      const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
+      if (!next) return
+      ev.preventDefault()
+      next.focus()
+    }
+  })
+  return row
 }
 
 export function openDuePanel(opts: DuePanelOpts): void {
