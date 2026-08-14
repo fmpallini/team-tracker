@@ -456,8 +456,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-due-list { display: flex; flex-direction: column; gap: .15rem; max-height: 60vh; overflow-y: auto; }
 .tt-due-section-heading { font-weight: 700; margin-top: .6rem; color: var(--muted); font-size: .8rem; text-transform: uppercase; }
 .tt-due-section-heading:first-child { margin-top: 0; }
-.tt-due-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .4rem; border-radius: 6px; cursor: pointer; }
+.tt-due-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .4rem; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
 .tt-due-row:hover { background: rgba(var(--accent-rgb), .1); }
+.tt-due-row:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
+}
 .tt-due-row-title { flex: 1; }
 .tt-due-row-team { color: var(--muted); font-size: .85rem; }
 .tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; }

@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.2.3] - 2026-08-14
+
+### Added
+- Dialogs now trap Tab/Shift+Tab within themselves and focus their first field or row on open, instead of letting Tab escape to the page behind them.
+- The due-items panel's rows can now be reached and opened by keyboard (Tab to focus, Enter/Space to open, Up/Down to move between rows).
+
+### Fixed
+- Opening the due-items panel from the command palette's "⏰ Due" entry with Enter closed it again immediately instead of showing it.
+
 ## [2.2.2] - 2026-08-13
 
 ### Added

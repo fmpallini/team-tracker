@@ -29,6 +29,23 @@ interface RenderedDialog extends ModalHandle {
   buttonEls: HTMLButtonElement[]
 }
 
+/**
+ * Tab-reachable elements inside a dialog, in DOM order — used both to trap
+ * Tab/Shift+Tab at the dialog's edges and to pick the initial focus target.
+ * Excludes anything explicitly taken out of tab order (tabindex="-1", e.g.
+ * the secondary hover-only buttons on kanban/risk rows) and anything hidden
+ * via CSS (offsetParent null), same as a native focus trap would.
+ */
+function getFocusable(container: HTMLElement): HTMLElement[] {
+  const candidates = container.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]')
+  return Array.from(candidates).filter((node) => {
+    if (node.hasAttribute('disabled')) return false
+    if (node.tabIndex < 0) return false
+    if (node.offsetParent === null && node !== document.activeElement) return false
+    return true
+  })
+}
+
 function renderDialog(opts: ModalOptions): RenderedDialog {
   const overlay = el('div', { class: 'tt-modal-overlay' })
 
@@ -48,9 +65,34 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     // (team/person add-edit, etc.) gets it for free instead of each needing
     // its own keydown wiring (promptPassword already has its own, richer
     // version of this for its two-field confirm flow).
-    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+    //
+    // dialog.contains(e.target) matters: a caller that opens this modal from
+    // inside its own capture-phase Enter handler (e.g. the Ctrl+K palette's
+    // "Due" row) does so mid-dispatch, before that same Enter event finishes
+    // bubbling — so this listener, freshly added to `document`, still sees
+    // it. Without the containment check, e.target was the palette's own
+    // (already-detached) <input>, which still satisfies `instanceof
+    // HTMLInputElement`, so this modal immediately clicked its own primary
+    // button and closed itself before ever painting.
+    if (e.key === 'Enter' && e.target instanceof HTMLInputElement && dialog.contains(e.target)) {
       const primary = opts.buttons.find((b) => b.primary)
       primary?.onClick()
+    }
+    // Focus trap: the overlay is the last element in <body>, so without this
+    // Tab from the last field would walk off into the page behind it (and
+    // Shift+Tab from the first field likewise) instead of cycling within the
+    // dialog — the background isn't inert, just visually covered.
+    if (e.key === 'Tab') {
+      const focusable = getFocusable(dialog)
+      if (focusable.length === 0) return
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      const active = document.activeElement
+      if (e.shiftKey) {
+        if (active === first || !dialog.contains(active)) { e.preventDefault(); last.focus() }
+      } else {
+        if (active === last || !dialog.contains(active)) { e.preventDefault(); first.focus() }
+      }
     }
   }
 
@@ -83,6 +125,15 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   overlay.appendChild(dialog)
   document.addEventListener('keydown', onKeydown)
   document.body.appendChild(overlay)
+
+  // Default the initial focus to the dialog's first field/row so keyboard
+  // interaction (Tab, Enter, or a list's own arrow keys) works immediately
+  // without a preceding click. Several callers (promptPassword, kanban card,
+  // person add/edit) already .focus() a specific field of their own right
+  // after showModal() returns — that call simply wins over this one, so it's
+  // harmless for them and only changes behavior for callers that had no
+  // initial focus at all.
+  getFocusable(dialog)[0]?.focus()
 
   return { close, buttonEls }
 }
