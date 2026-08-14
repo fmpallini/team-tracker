@@ -42,13 +42,16 @@ your machine. Team Tracker doesn't:
   create (or later migrate to) a password-less plain-text file if you'd
   rather skip that overhead, at the cost of anyone with file access being
   able to read it.
-- 🪶 **Tiny** — the entire app is a single HTML file under 170 KB
-  (as of v1.2), smaller than most web pages' hero image.
-- 🖥️ **Desktop-only by design** — built for keyboard and large screens
-  (shortcuts, split view, dense panes). Phones and tablets show a notice
-  instead of the app: mobile browsers lack the File System Access API the
-  open/save flow depends on, so there is no good way to work with your
-  `.tmv` file there.
+- 🪶 **Tiny** — the entire app is a single HTML file, smaller than most
+  web pages' hero image alone.
+- ⌨️ **Built keyboard-first** — `Ctrl+K` command palette, `Ctrl+F` /
+  `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+←/→` pane
+  history, split-view panes, and a full set of shortcuts for every module —
+  the mouse is optional, not required. Desktop-only by design: phones and
+  tablets show a notice instead of the app, since mobile browsers lack the
+  File System Access API the open/save flow depends on.
+- 🎨 **Yours to tune** — 9 color palettes, light/dark/system theme, 5 font
+  stacks, adjustable font size, and pt-BR/en-US locales, all in Settings.
 
 There's no server and no backend. Everything lives in one password-encrypted
 `.tmv` file that you open, edit, and save yourself, either straight off disk
