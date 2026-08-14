@@ -11,7 +11,7 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
-import type { ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
@@ -21,7 +21,6 @@ import { el } from '../ui/dom'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
-import { blockedByModal } from '../ui/hotkeys'
 import { withDisposal } from './lifecycle'
 
 // Display order: red, yellow, blue (the three with a suggested default name
@@ -760,30 +759,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     boardEl.querySelector<HTMLElement>('.tt-kanban-card')?.focus()
   }
 
-  // Falls back to selecting the first card on any arrow key when nothing is
-  // focused at all (e.g. the user clicked away, then back into this pane's
-  // empty background) — document-level because at that point focus is on
-  // document.body, outside this (or any) container, so no element-scoped
-  // listener would ever see the keydown. Guarded to plain arrows only (no
-  // modifiers) so it never competes with main.ts's Alt+Arrow pane-layout
-  // hotkeys, and to the focused pane only, mirroring the mount-time focus
-  // guard above.
-  function onFallbackArrowKey(e: KeyboardEvent): void {
-    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-    if (document.activeElement !== document.body) return
-    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
-    if (blockedByModal()) return
-    const first = boardEl.querySelector<HTMLElement>('.tt-kanban-card')
-    if (!first) return
-    e.preventDefault()
-    first.focus()
-  }
-  document.addEventListener('keydown', onFallbackArrowKey)
+  const disposeArrowFallback = installArrowFallbackFocus(ctx, boardEl, '.tt-kanban-card', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
 
   return () => {
     unsubscribe()
     disposeOpenBundle()
-    document.removeEventListener('keydown', onFallbackArrowKey)
+    disposeArrowFallback()
   }
 })

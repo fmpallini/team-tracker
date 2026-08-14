@@ -64,6 +64,5 @@ export function comboHotkeyAllowed(_e: KeyboardEvent): boolean {
  * ctrlKey+altKey) and by an open modal, same as `hotkeyAllowed`.
  */
 export function navHotkeyAllowed(e: KeyboardEvent): boolean {
-  if (e.ctrlKey || e.metaKey) return false
-  return !blockedByModal()
+  return !e.ctrlKey && !e.metaKey && comboHotkeyAllowed(e)
 }

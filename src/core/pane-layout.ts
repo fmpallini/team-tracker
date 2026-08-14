@@ -3,7 +3,7 @@
 // from DOM rendering. Nothing here touches the DOM.
 import type { Store } from './store'
 import type { PaneState } from './types'
-import { currentLoc, navigateHistory } from './nav'
+import { currentLoc, locsConflict, navigateHistory } from './nav'
 
 function otherPaneIdx(idx: 0 | 1): 0 | 1 {
   return idx === 0 ? 1 : 0
@@ -65,17 +65,22 @@ export function createPaneLayout(store: Store): PaneLayout {
     jumpToLatest(idx) {
       const nav = store.doc.nav
       const other = currentLoc(nav.panes[otherPaneIdx(idx)])
-      let cursor = nav.panes[idx]
-      let result: PaneState | null = null
-      for (;;) {
-        const stepped = navigateHistory(cursor, 1, other)
-        if (!stepped) break
-        result = stepped
-        cursor = stepped
+      const pane = nav.panes[idx]
+      // The newest reachable entry is just the last non-conflicting one in
+      // the array — a single backward scan finds it directly, rather than
+      // walking forward one navigateHistory() call (and one conflict-skip
+      // scan) per reachable entry.
+      let target = -1
+      for (let i = pane.history.length - 1; i > pane.index; i--) {
+        const loc = pane.history[i]
+        if (loc !== undefined && !locsConflict(loc, other)) {
+          target = i
+          break
+        }
       }
-      if (!result) return false
+      if (target === -1) return false
       store.updateNav((d) => {
-        d.nav.panes[idx] = result!
+        d.nav.panes[idx] = { history: pane.history, index: target }
         d.nav.focusedPane = idx
       })
       if (idx === 0) {

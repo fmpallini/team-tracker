@@ -475,39 +475,35 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     // All of these use navHotkeyAllowed rather than hotkeyAllowed: they must
     // still fire while focus is inside a rich-text editor field, or the
     // browser's own Alt+Arrow back/forward navigation eats the keystroke
-    // instead (see navHotkeyAllowed's doc comment in ui/hotkeys.ts).
+    // instead (see navHotkeyAllowed's doc comment in ui/hotkeys.ts). Checked
+    // once here since it doesn't vary by branch below.
+    if (!navHotkeyAllowed(e)) return
     if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-      if (!navHotkeyAllowed(e)) return
       e.preventDefault()
       navigateFocusedHistory(pm, store, e.key === 'ArrowLeft' ? -1 : 1)
       return
     }
     if (e.shiftKey && e.key === 'ArrowUp') {
-      if (!navHotkeyAllowed(e)) return
       e.preventDefault()
       jumpFocusedHistoryToLatest(pm, store)
       return
     }
     if (e.shiftKey) return
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      if (!navHotkeyAllowed(e)) return
       e.preventDefault()
       if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
       return
     }
     if (e.key === 'ArrowUp') {
-      if (!navHotkeyAllowed(e)) return
       e.preventDefault()
       pm.toggleSplit()
       return
     }
     if (e.key === 'ArrowDown') {
-      if (!navHotkeyAllowed(e)) return
       e.preventDefault()
       if (swapPaneSides(store)) pm.renderAll()
       return
     }
-    if (!navHotkeyAllowed(e)) return
     const n = Number(e.key)
     if (!Number.isInteger(n) || n < 1 || n > 9) return
     const team = store.doc.teams[n - 1]

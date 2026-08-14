@@ -13,7 +13,7 @@
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
-import type { ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
@@ -28,7 +28,6 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
-import { blockedByModal } from '../ui/hotkeys'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /**
@@ -180,12 +179,6 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
   const expandable = new ExpandableRowsController()
-  // Keyboard-driven toggleExpand() (Enter on a focused row) needs to land
-  // focus somewhere sane after renderAll() replaces the row DOM — on the
-  // follow-up editor when expanding (so typing can start immediately), or
-  // back on the row itself when collapsing (so ArrowUp/Down can continue).
-  let focusFollowupMilestoneId: string | null = null
-  let focusRowId: string | null = null
 
   // Each row's date-picker owns a popover appended to document.body, outside
   // `container` — a plain listEl.innerHTML='' rebuild (renderList below)
@@ -201,12 +194,17 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     liveDatePickers = []
   }
 
+  // Keyboard-driven (Enter on a focused row) needs to land focus somewhere
+  // sane after renderAll() replaces the row DOM — on the follow-up editor
+  // when expanding (so typing can start immediately), or back on the row
+  // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
+  // synchronously here, so the DOM is already rebuilt by the time we query it.
   function toggleExpand(id: string): void {
     const wasExpanded = expandable.isExpanded(id)
     expandable.toggle(id)
-    if (wasExpanded) focusRowId = id
-    else focusFollowupMilestoneId = id
     renderAll()
+    if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-milestone-id="${id}"].tt-milestone-row`)?.focus()
+    else listEl.querySelector<HTMLElement>(`[data-milestone-followup-id="${id}"] .editor`)?.focus()
   }
 
   /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
@@ -523,14 +521,6 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       listEl.querySelector<HTMLInputElement>(`[data-milestone-id="${focusMilestoneId}"] .tt-milestone-title-input`)?.focus()
       focusMilestoneId = null
     }
-    if (focusFollowupMilestoneId) {
-      listEl.querySelector<HTMLElement>(`[data-milestone-followup-id="${focusFollowupMilestoneId}"] .editor`)?.focus()
-      focusFollowupMilestoneId = null
-    }
-    if (focusRowId) {
-      listEl.querySelector<HTMLElement>(`[data-milestone-id="${focusRowId}"].tt-milestone-row`)?.focus()
-      focusRowId = null
-    }
     updateExpandAllBtn(sorted)
   }
 
@@ -630,26 +620,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
 
-  // Falls back to selecting the first row on ArrowUp/Down when nothing is
-  // focused at all (e.g. the user clicked away, then back into this pane's
-  // empty background) — document-level because at that point focus is on
-  // document.body, outside this (or any) container, so no element-scoped
-  // listener would ever see the keydown. Guarded to plain arrows only (no
-  // modifiers) so it never competes with main.ts's Alt+Arrow pane-layout
-  // hotkeys, and to the focused pane only, mirroring the mount-time focus
-  // guard above.
-  function onFallbackArrowKey(e: KeyboardEvent): void {
-    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    if (document.activeElement !== document.body) return
-    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
-    if (blockedByModal()) return
-    const first = listEl.querySelector<HTMLElement>('.tt-milestone-row')
-    if (!first) return
-    e.preventDefault()
-    first.focus()
-  }
-  document.addEventListener('keydown', onFallbackArrowKey)
+  const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-milestone-row', ['ArrowDown', 'ArrowUp'])
 
   container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
   renderAll()
@@ -669,7 +640,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     deferred.dispose()
     expandable.disposeAll()
     disposeDatePickers()
-    document.removeEventListener('keydown', onFallbackArrowKey)
+    disposeArrowFallback()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

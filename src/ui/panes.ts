@@ -293,6 +293,36 @@ export function swapPaneSides(store: Store): boolean {
 }
 
 /**
+ * Falls back to focusing the first selectable row/card matching `selector`
+ * (within `container`) on a plain (no-modifier) arrow keypress, for when
+ * nothing at all is focused — e.g. the user clicked into a pane's empty
+ * background, landing focus on document.body. Document-level because at that
+ * point no element-scoped listener would ever see the keydown. Scoped to the
+ * pane `ctx` belongs to (so a background listener in an unfocused pane never
+ * fires) and to whichever arrow `keys` the caller cares about (2 for a 1D
+ * list, 4 for a 2D grid — see action-items.ts's kanban board), and never
+ * competes with main.ts's Alt+Arrow pane-layout hotkeys since it ignores any
+ * modified keypress. Shared by risks.ts/milestones.ts/action-items.ts, each
+ * of which also does the identical thing at mount time (see their own
+ * `container.querySelector(selector)?.focus()` call). Returns a disposer.
+ */
+export function installArrowFallbackFocus(ctx: ModuleCtx, container: HTMLElement, selector: string, keys: readonly string[]): () => void {
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    if (!keys.includes(e.key)) return
+    if (document.activeElement !== document.body) return
+    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
+    if (blockedByModal()) return
+    const first = container.querySelector<HTMLElement>(selector)
+    if (!first) return
+    e.preventDefault()
+    first.focus()
+  }
+  document.addEventListener('keydown', onKeydown)
+  return () => document.removeEventListener('keydown', onKeydown)
+}
+
+/**
  * F1..F7 global hotkey handler (main.ts): jumps the focused pane straight to
  * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
  * matching the "F<n>" hint each row shows in the pane's module dropdown.

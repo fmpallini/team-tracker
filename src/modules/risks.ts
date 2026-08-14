@@ -11,7 +11,7 @@
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
-import type { ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
@@ -26,7 +26,6 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
-import { blockedByModal } from '../ui/hotkeys'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -133,12 +132,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // simultaneously.
   const expandable = new ExpandableRowsController()
   let focusRiskId: string | null = null
-  // Keyboard-driven toggleExpand() (Enter on a focused row) needs to land
-  // focus somewhere sane after renderAll() replaces the row DOM — on the
-  // follow-up editor when expanding (so typing can start immediately), or
-  // back on the row itself when collapsing (so ArrowUp/Down can continue).
-  let focusFollowupRiskId: string | null = null
-  let focusRowId: string | null = null
 
   function clearDropClasses(): void {
     listEl.querySelectorAll('.tt-risk-row').forEach((n) => {
@@ -183,12 +176,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     })
   }
 
+  // Keyboard-driven (Enter on a focused row) needs to land focus somewhere
+  // sane after renderAll() replaces the row DOM — on the follow-up editor
+  // when expanding (so typing can start immediately), or back on the row
+  // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
+  // synchronously here, so the DOM is already rebuilt by the time we query it.
   function toggleExpand(id: string): void {
     const wasExpanded = expandable.isExpanded(id)
     expandable.toggle(id)
-    if (wasExpanded) focusRowId = id
-    else focusFollowupRiskId = id
     renderAll()
+    if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)?.focus()
+    else listEl.querySelector<HTMLElement>(`[data-risk-followup-id="${id}"] .editor`)?.focus()
   }
 
   /** Expands (or collapses) every currently-open (non-closed) risk's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
@@ -521,14 +519,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       listEl.querySelector<HTMLInputElement>(`[data-risk-id="${focusRiskId}"] .tt-risk-title-input`)?.focus()
       focusRiskId = null
     }
-    if (focusFollowupRiskId) {
-      listEl.querySelector<HTMLElement>(`[data-risk-followup-id="${focusFollowupRiskId}"] .editor`)?.focus()
-      focusFollowupRiskId = null
-    }
-    if (focusRowId) {
-      listEl.querySelector<HTMLElement>(`[data-risk-id="${focusRowId}"].tt-risk-row`)?.focus()
-      focusRowId = null
-    }
   }
 
   function addRisk(): void {
@@ -626,26 +616,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
 
-  // Falls back to selecting the first row on ArrowUp/Down when nothing is
-  // focused at all (e.g. the user clicked away, then back into this pane's
-  // empty background) — document-level because at that point focus is on
-  // document.body, outside this (or any) container, so no element-scoped
-  // listener would ever see the keydown. Guarded to plain arrows only (no
-  // modifiers) so it never competes with main.ts's Alt+Arrow pane-layout
-  // hotkeys, and to the focused pane only, mirroring the mount-time focus
-  // guard above.
-  function onFallbackArrowKey(e: KeyboardEvent): void {
-    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    if (document.activeElement !== document.body) return
-    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
-    if (blockedByModal()) return
-    const first = listEl.querySelector<HTMLElement>('.tt-risk-row')
-    if (!first) return
-    e.preventDefault()
-    first.focus()
-  }
-  document.addEventListener('keydown', onFallbackArrowKey)
+  const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-risk-row', ['ArrowDown', 'ArrowUp'])
 
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
@@ -664,7 +635,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // field's next blur.
     deferred.dispose()
     expandable.disposeAll()
-    document.removeEventListener('keydown', onFallbackArrowKey)
+    disposeArrowFallback()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })
