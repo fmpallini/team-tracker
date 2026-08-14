@@ -643,7 +643,7 @@ describe('renderMilestones', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
-    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team) · Row menu (Enter or Space)')
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team) · Row menu (Space) · Expand (Enter) · Navigate (arrows)')
   })
 
   // The timeline already distinguished done / overdue / upcoming through dot
@@ -669,14 +669,104 @@ describe('renderMilestones', () => {
     expect(stateOf('soon')).toEqual(['tt-milestone-state-future'])
   })
 
-  test('Enter on a milestone row opens the context menu', () => {
+  test('Space on a milestone row opens the context menu', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
     expect(row.getAttribute('tabindex')).toBe('0')
-    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
     expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+  })
+
+  test('Enter on a milestone row expands its follow-up editor and focuses it, not the context menu', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
+
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(document.querySelector('.tt-context-menu')).toBeNull()
+    expect(container.querySelector('.tt-milestone-followup-row')).not.toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[data-milestone-followup-id="a"] .editor'))
+  })
+
+  test('Enter again collapses the follow-up editor and returns focus to the row', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    let row = container.querySelector('[data-milestone-id="a"]') as HTMLElement
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    row = container.querySelector('[data-milestone-id="a"]') as HTMLElement // renderList rebuilt the row node
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[data-milestone-id="a"]'))
+  })
+
+  test('the first row is focused as soon as the module opens', () => {
+    const team = makeTeam({
+      milestones: [milestone({ id: 'a', date: '2020-01-01' }), milestone({ id: 'b', date: '2020-02-01' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(document.activeElement).toBe(container.querySelector('[data-milestone-id="a"]'))
+  })
+
+  // Regression: a team switch remounts both panes in the same tick
+  // (PaneManager.renderAll's default renders pane 0 then pane 1), and this
+  // module has no idea it's mounting into the pane that ISN'T
+  // nav.focusedPane — without this guard, whichever pane happened to mount
+  // second (always pane 1) would silently steal focus from pane 0's row.
+  test('mounting into a pane that is not the focused pane does not steal focus', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    store.updateNav((d) => { d.nav.focusedPane = 1 })
+    render(container, loc, store, pm, 0) // mounting into pane 0, but pane 1 is focused
+
+    expect(document.activeElement).not.toBe(container.querySelector('[data-milestone-id="a"]'))
+  })
+
+  describe('ArrowUp/ArrowDown row navigation', () => {
+    test('ArrowDown/ArrowUp move focus between rows, and no-op at the list ends', () => {
+      const team = makeTeam({
+        milestones: [milestone({ id: 'a', date: '2020-01-01' }), milestone({ id: 'b', date: '2020-02-01' })],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const rowA = container.querySelector('[data-milestone-id="a"]') as HTMLElement
+      const rowB = container.querySelector('[data-milestone-id="b"]') as HTMLElement
+
+      rowA.focus()
+      rowA.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      expect(document.activeElement).toBe(rowB)
+
+      rowB.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      expect(document.activeElement).toBe(rowB) // already last row, no-op
+
+      rowB.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      expect(document.activeElement).toBe(rowA)
+    })
+
+    // The document-level fallback: if the user clicked away entirely (focus
+    // landed on document.body, not some other field) and then presses an
+    // arrow key, the first row is selected instead of the keypress doing
+    // nothing.
+    test('ArrowDown/ArrowUp with nothing focused at all selects the first row', () => {
+      const team = makeTeam({
+        milestones: [milestone({ id: 'a', date: '2020-01-01' }), milestone({ id: 'b', date: '2020-02-01' })],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      expect(document.activeElement).toBe(document.body)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+
+      expect(document.activeElement).toBe(container.querySelector('[data-milestone-id="a"]'))
+    })
   })
 
   test('a defensive no-op when loc.ref.kind is not "milestones"', () => {
@@ -804,6 +894,21 @@ describe('row context menu', () => {
     const copied = store.doc.teams.find((t) => t.id === 'to')!.milestones
     expect(copied).toHaveLength(1)
     expect(copied[0]!.followup).toBe('blocked by Fix')
+  })
+
+  test('Delete opens the same confirm dialog as the row delete button, and removes the row on confirm', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'milestones' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Delete').click()
+
+    const confirmBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Delete')
+    expect(confirmBtn).toBeTruthy()
+    confirmBtn!.click()
+
+    expect(store.doc.teams[0]!.milestones).toHaveLength(0)
   })
 })
 

@@ -28,6 +28,7 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
+import { blockedByModal } from '../ui/hotkeys'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /**
@@ -179,6 +180,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
   const expandable = new ExpandableRowsController()
+  // Keyboard-driven toggleExpand() (Enter on a focused row) needs to land
+  // focus somewhere sane after renderAll() replaces the row DOM — on the
+  // follow-up editor when expanding (so typing can start immediately), or
+  // back on the row itself when collapsing (so ArrowUp/Down can continue).
+  let focusFollowupMilestoneId: string | null = null
+  let focusRowId: string | null = null
 
   // Each row's date-picker owns a popover appended to document.body, outside
   // `container` — a plain listEl.innerHTML='' rebuild (renderList below)
@@ -195,7 +202,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   function toggleExpand(id: string): void {
+    const wasExpanded = expandable.isExpanded(id)
     expandable.toggle(id)
+    if (wasExpanded) focusRowId = id
+    else focusFollowupMilestoneId = id
     renderAll()
   }
 
@@ -378,7 +388,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // --- list -------------------------------------------------------------
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    openItemContextMenu(ctx, 'milestone', teamId, itemId, x, y)
+    const m = milestones().find((mm) => mm.id === itemId)
+    if (!m) return
+    openItemContextMenu(ctx, 'milestone', teamId, itemId, x, y, () => requestDelete(m))
   }
 
   function renderRow(m: Milestone): HTMLElement {
@@ -469,11 +481,24 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
     // See the identical handler in src/modules/risks.ts for why this is
-    // guarded on `e.target === row`.
+    // guarded on `e.target === row` throughout.
     row.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
       if (ev.target !== row) return
-      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-milestone-row'))
+        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
+        if (!next) return
+        ev.preventDefault()
+        next.focus()
+        return
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        toggleExpand(m.id)
+        return
+      }
+      if (ev.key !== ' ') return
       ev.preventDefault()
       const rect = row.getBoundingClientRect()
       openRowContextMenu(m.id, rect.left + 16, rect.bottom)
@@ -497,6 +522,14 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     if (focusMilestoneId) {
       listEl.querySelector<HTMLInputElement>(`[data-milestone-id="${focusMilestoneId}"] .tt-milestone-title-input`)?.focus()
       focusMilestoneId = null
+    }
+    if (focusFollowupMilestoneId) {
+      listEl.querySelector<HTMLElement>(`[data-milestone-followup-id="${focusFollowupMilestoneId}"] .editor`)?.focus()
+      focusFollowupMilestoneId = null
+    }
+    if (focusRowId) {
+      listEl.querySelector<HTMLElement>(`[data-milestone-id="${focusRowId}"].tt-milestone-row`)?.focus()
+      focusRowId = null
     }
     updateExpandAllBtn(sorted)
   }
@@ -597,8 +630,37 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
 
+  // Falls back to selecting the first row on ArrowUp/Down when nothing is
+  // focused at all (e.g. the user clicked away, then back into this pane's
+  // empty background) — document-level because at that point focus is on
+  // document.body, outside this (or any) container, so no element-scoped
+  // listener would ever see the keydown. Guarded to plain arrows only (no
+  // modifiers) so it never competes with main.ts's Alt+Arrow pane-layout
+  // hotkeys, and to the focused pane only, mirroring the mount-time focus
+  // guard above.
+  function onFallbackArrowKey(e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    if (document.activeElement !== document.body) return
+    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
+    if (blockedByModal()) return
+    const first = listEl.querySelector<HTMLElement>('.tt-milestone-row')
+    if (!first) return
+    e.preventDefault()
+    first.focus()
+  }
+  document.addEventListener('keydown', onFallbackArrowKey)
+
   container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
   renderAll()
+  // Lands focus on the first row the moment the module opens, so
+  // ArrowUp/Down navigation works immediately without a preceding Tab. Only
+  // for the pane the user is actually in — a team switch remounts both
+  // panes together, and without this guard whichever pane happens to mount
+  // second (always pane 1) would silently steal focus from pane 0's.
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    listEl.querySelector<HTMLElement>('.tt-milestone-row')?.focus()
+  }
 
   return () => {
     unsubscribe()
@@ -607,6 +669,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     deferred.dispose()
     expandable.disposeAll()
     disposeDatePickers()
+    document.removeEventListener('keydown', onFallbackArrowKey)
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

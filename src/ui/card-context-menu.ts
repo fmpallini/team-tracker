@@ -18,6 +18,7 @@ import {
 export interface CardContextMenuActions {
   duplicate(itemId: string): void
   transfer(itemId: string, targetTeamId: string, mode: 'copy' | 'move'): void
+  delete(itemId: string): void
 }
 
 function openTransferModal(
@@ -43,6 +44,7 @@ export function showCardContextMenu(
     menuItems.push({ label: t(locale, 'context_menu_copy_to_team'), onClick: () => openTransferModal(locale, itemId, 'copy', otherTeams, actions) })
     menuItems.push({ label: t(locale, 'context_menu_move_to_team'), onClick: () => openTransferModal(locale, itemId, 'move', otherTeams, actions) })
   }
+  menuItems.push({ label: t(locale, 'context_menu_delete'), danger: true, onClick: () => actions.delete(itemId) })
   showContextMenu(x, y, menuItems)
 }
 
@@ -60,8 +62,8 @@ const TRANSFER_FNS: Record<CardKind, (teams: Team[], itemId: string, fromTeamId:
   risk: transferRisk,
 }
 
-/** Wires showCardContextMenu's duplicate/transfer callbacks to the right per-kind core/card-transfer.ts function, so action-items.ts/milestones.ts/risks.ts don't each hand-roll the same store.update wrapper. */
-export function openItemContextMenu(ctx: ModuleCtx, kind: CardKind, teamId: string, itemId: string, x: number, y: number): void {
+/** Wires showCardContextMenu's duplicate/transfer callbacks to the right per-kind core/card-transfer.ts function, so action-items.ts/milestones.ts/risks.ts don't each hand-roll the same store.update wrapper. `onDelete` is the caller's own confirm-then-remove flow (it already has the full item in scope for the confirmation message), invoked here rather than folded into DUPLICATE_FNS/TRANSFER_FNS since deletion needs a confirmation dialog, not a bare store mutation. */
+export function openItemContextMenu(ctx: ModuleCtx, kind: CardKind, teamId: string, itemId: string, x: number, y: number, onDelete: () => void): void {
   showCardContextMenu(ctx.locale, teamId, ctx.store.doc.teams, itemId, x, y, {
     duplicate: (id) => {
       ctx.store.update((d) => {
@@ -74,5 +76,6 @@ export function openItemContextMenu(ctx: ModuleCtx, kind: CardKind, teamId: stri
         TRANSFER_FNS[kind](d.teams, id, teamId, targetTeamId, mode)
       })
     },
+    delete: () => onDelete(),
   })
 }

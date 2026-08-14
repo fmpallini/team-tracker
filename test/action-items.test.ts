@@ -163,7 +163,7 @@ describe('pure helpers', () => {
 })
 
 describe('card context menu', () => {
-  test('right-click shows only Duplicate when there is just one team', () => {
+  test('right-click shows only Duplicate and Delete when there is just one team', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0 })] })
     const { container, store, pm } = setup(team)
     render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
@@ -171,7 +171,22 @@ describe('card context menu', () => {
     rightClick(cards(container)[0]!)
 
     const labels = Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.textContent)
-    expect(labels).toEqual(['Duplicate'])
+    expect(labels).toEqual(['Duplicate', 'Delete'])
+  })
+
+  test('Delete opens the same confirm dialog as the pencil-icon delete button, and removes the card on confirm', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0, summary: 'Do the thing' })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Delete').click()
+
+    const confirmBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Delete')
+    expect(confirmBtn).toBeTruthy()
+    confirmBtn!.click()
+
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
   })
 
   test('Duplicate appends a copy to the same team', () => {
@@ -245,14 +260,206 @@ describe('keyboard route to the card actions', () => {
     expect(card.getAttribute('tabindex')).toBe('0')
   })
 
-  test.each(['Enter', ' '])('%s on the card opens the context menu', (key) => {
+  test('Space on the card opens the context menu', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const card = cards(container)[0]!
 
-    card.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
     expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+  })
+
+  // Regression: with the context menu open, ArrowDown used to fall through
+  // to the board's own card-to-card navigation (the menu never took
+  // keyboard focus) instead of moving the menu's own selection. A second
+  // team is added so the menu has more than one option ("Copy/Move to
+  // team" only render when other teams exist) — otherwise ArrowDown's
+  // clamp-at-the-only-item behavior would pass even without the fix.
+  test('with the context menu open, arrows navigate its options, not the board', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 }), item({ id: 'b', order: 1 })] })
+    const { container, store, pm, loc } = setup(team)
+    store.update((d) => { d.teams.push(makeTeam({ id: 'T2', name: 'Team 2' })) })
+    render(container, loc, store, pm)
+    const cardA = cards(container)[0]!
+    const cardB = cards(container)[1]!
+
+    cardA.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    const menuItems = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item'))
+    expect(menuItems.length).toBeGreaterThan(1)
+    expect(document.activeElement).toBe(menuItems[0])
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+
+    expect(document.activeElement).toBe(menuItems[1]) // moved within the menu...
+    expect(document.activeElement).not.toBe(cardB) // ...not onto card B
+    expect(document.querySelector('.tt-context-menu')).not.toBeNull() // menu stayed open
+  })
+
+  test('Enter on the card opens the edit modal, not the context menu', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0, summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const card = cards(container)[0]!
+
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(document.querySelector('.tt-context-menu')).toBeNull()
+    const summaryInput = document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement
+    expect(summaryInput?.value).toBe('Do thing')
+    expect(document.activeElement).toBe(summaryInput)
+  })
+
+  // Regression: closing the edit modal used to leave focus stranded on
+  // document.body, so ArrowUp/Down after Enter-to-open/close felt like it
+  // had "forgotten" the card the user was just on.
+  test('cancelling the edit modal restores focus to the card that was open', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const card = cards(container)[0]!
+
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    clickByTitleOrText(document.body, 'Cancel')
+
+    expect(document.querySelector('.tt-modal-dialog')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
+  })
+
+
+  test('saving the edit modal restores focus to that same card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const card = cards(container)[0]!
+
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    clickByTitleOrText(document.body, 'Save')
+
+    expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
+  })
+
+  test('saving a brand-new card focuses the card it just created', () => {
+    const team = makeTeam({ actionItems: [] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const summaryInput = document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement
+    summaryInput.value = 'New card'
+    clickByTitleOrText(document.body, 'Save')
+
+    const newCard = cards(container)[0]!
+    expect(newCard.textContent).toContain('New card')
+    expect(document.activeElement).toBe(newCard)
+  })
+
+  test('cancelling a brand-new (never-saved) card leaves nothing stranded on the old card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(document.body, 'Cancel')
+
+    expect(document.activeElement).not.toBe(container.querySelector('[data-item-id="a"]'))
+  })
+})
+
+test('the first card (To Do column) is focused as soon as the module opens', () => {
+  const team = makeTeam({ actionItems: [item({ id: 'a', order: 0, status: 'todo' })] })
+  const { container, store, pm, loc } = setup(team)
+  render(container, loc, store, pm)
+  expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
+})
+
+// Regression: a team switch remounts both panes in the same tick
+// (PaneManager.renderAll's default renders pane 0 then pane 1), and this
+// module has no idea it's mounting into the pane that ISN'T nav.focusedPane
+// — without this guard, whichever pane happened to mount second (always
+// pane 1) would silently steal focus from pane 0's card.
+test('mounting into a pane that is not the focused pane does not steal focus', () => {
+  const team = makeTeam({ actionItems: [item({ id: 'a', order: 0, status: 'todo' })] })
+  const { container, store, pm, loc } = setup(team)
+  store.updateNav((d) => { d.nav.focusedPane = 1 })
+  render(container, loc, store, pm, 0) // mounting into pane 0, but pane 1 is focused
+
+  expect(document.activeElement).not.toBe(container.querySelector('[data-item-id="a"]'))
+})
+
+// Grid arrow navigation across the board: Up/Down step within a column,
+// Left/Right cross into the nearest card (by vertical position) in an
+// adjacent, non-empty column.
+describe('ArrowUp/Down/Left/Right card navigation', () => {
+  test('ArrowDown/ArrowUp move focus within a column, and no-op at its ends', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a', order: 0, status: 'todo' }), item({ id: 'b', order: 1, status: 'todo' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const [cardA, cardB] = cards(container)
+
+    cardA!.focus()
+    cardA!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(cardB)
+
+    cardB!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(cardB) // last card in the column, no-op
+
+    cardB!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(document.activeElement).toBe(cardA)
+  })
+
+  test('ArrowRight crosses into the WIP column, skipping an empty To Do column on ArrowLeft back', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'w', order: 0, status: 'wip' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const card = cards(container)[0]!
+
+    card.focus()
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    expect(document.activeElement).toBe(card) // To Do column is empty, no-op
+  })
+
+  test('ArrowLeft/ArrowRight land on the nearest card by vertical position in the adjacent column', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 't1', order: 0, status: 'todo' }),
+        item({ id: 't2', order: 1, status: 'todo' }),
+        item({ id: 'w1', order: 0, status: 'wip' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const t2 = container.querySelector('[data-item-id="t2"]') as HTMLElement
+    const w1 = container.querySelector('[data-item-id="w1"]') as HTMLElement
+
+    t2.focus()
+    t2.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement).toBe(w1) // only card in WIP
+
+    w1.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    // jsdom lays out every element at rect.top === 0, so the "nearest by
+    // vertical position" tie-break can't be distinguished here — this only
+    // confirms landing on *a* card (the first, since ties keep the running
+    // best) in the adjacent column rather than staying put or going nowhere.
+    expect(document.activeElement).toBe(container.querySelector('[data-item-id="t1"]'))
+  })
+
+  // The document-level fallback: if the user clicked away entirely (focus
+  // landed on document.body, not some other field) and then presses an
+  // arrow key, the first card is selected instead of the keypress doing
+  // nothing.
+  test('any arrow key with nothing focused at all selects the first card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0, status: 'todo' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+
+    expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
   })
 })
 

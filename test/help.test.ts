@@ -116,6 +116,26 @@ test('editor help explains ctrl/middle-click for the secondary pane', () => {
   expect(text.toLowerCase()).toContain('middle')
 })
 
+// Regression: Enter and Space are two different actions on a focused
+// risk/milestone row or kanban card (Enter expands/opens, Space opens the
+// context menu) — the help table used to document them as one merged
+// "Enter / Espaço" row sharing a single description, which was wrong once
+// they diverged.
+test('global help documents Enter and Space as separate row/card shortcuts, not one merged row', () => {
+  showGlobalHelp('en-US')
+  const rows = Array.from(document.querySelectorAll('.tt-help-table tr'))
+  const codes = rows.map((r) => r.querySelector('.tt-help-code')?.textContent)
+
+  expect(codes).not.toContain('Enter / Espaço')
+  expect(codes).not.toContain('Enter / Space')
+  expect(codes).toContain('Enter')
+  expect(codes).toContain('Espaço')
+
+  const enterRow = rows.find((r) => r.querySelector('.tt-help-code')?.textContent === 'Enter')!
+  const spaceRow = rows.find((r) => r.querySelector('.tt-help-code')?.textContent === 'Espaço')!
+  expect(enterRow.textContent).not.toBe(spaceRow.textContent)
+})
+
 test('editor help (pt-BR) also explains ctrl/middle-click for the secondary pane', () => {
   showEditorHelp('pt-BR')
   const text = document.body.textContent!

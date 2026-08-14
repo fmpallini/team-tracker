@@ -21,6 +21,7 @@ import { el } from '../ui/dom'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
+import { blockedByModal } from '../ui/hotkeys'
 import { withDisposal } from './lifecycle'
 
 // Display order: red, yellow, blue (the three with a suggested default name
@@ -226,6 +227,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // renderColorChips' onclick toggle below).
     let selectedColor: ActionItemColor | null = existing?.color ?? null
     const errorEl = el('div', { class: 'tt-field-error' })
+    // Which card's keyboard selection to restore once the modal closes —
+    // the card being edited, or (once save() actually creates one) the new
+    // card — so Enter-to-open/close doesn't drop the user back at "nothing
+    // selected". Stays null (no restore) for a cancelled "+ Add card".
+    let focusItemIdOnClose: string | null = existing?.id ?? null
 
     const richBundle = createRichEditorBundle({
       store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
@@ -307,8 +313,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           // (removeItem/clearZone never renumber survivors), so the next
           // slot has to be past the highest existing value, not the count.
           const nextOrder = group.length === 0 ? 0 : Math.max(...group.map((i) => i.order)) + 1
+          const newId = crypto.randomUUID()
+          focusItemIdOnClose = newId
           tm.actionItems.push({
-            id: crypto.randomUUID(), summary, notes, status: defaultStatus,
+            id: newId, summary, notes, status: defaultStatus,
             dueDate, assignee, color, order: nextOrder,
           })
         } else {
@@ -338,7 +346,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       title: t(lc, existing === null ? 'kanban_add_title' : 'kanban_edit_title'),
       body,
       buttons,
-      onClose: () => disposeOpenBundle(),
+      onClose: () => {
+        disposeOpenBundle()
+        // Runs after showModal's close() has already removed the overlay
+        // (see modal.ts), so this card, if still around, is free to take
+        // focus back rather than leaving it stranded on document.body.
+        if (focusItemIdOnClose) {
+          boardEl.querySelector<HTMLElement>(`[data-item-id="${focusItemIdOnClose}"]`)?.focus()
+        }
+      },
     })
     summaryInput.focus()
   }
@@ -383,7 +399,41 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   function openCardContextMenu(itemId: string, x: number, y: number): void {
-    openItemContextMenu(ctx, 'action', teamId, itemId, x, y)
+    const it = items().find((i) => i.id === itemId)
+    if (!it) return
+    openItemContextMenu(ctx, 'action', teamId, itemId, x, y, () => requestDelete(it))
+  }
+
+  /** Visible (post-filter) cards currently rendered in a status column, in on-screen order. */
+  function cardsInColumn(status: ActionItem['status']): HTMLElement[] {
+    return Array.from(cols[status].bodyEl.querySelectorAll<HTMLElement>('.tt-kanban-card'))
+  }
+
+  /**
+   * Grid-style arrow navigation for the board: Up/Down step within the
+   * current card's column; Left/Right cross into the nearest non-empty
+   * column in that direction (To Do / WIP / Done / Cancelled — Done and
+   * Cancelled share one visual column but are separate stops here), landing
+   * on whichever card in the target column is closest by vertical position
+   * to the card the user came from. Returns null at a board edge or when
+   * every column in that direction is empty.
+   */
+  function findAdjacentCard(item: ActionItem, key: string): HTMLElement | null {
+    const column = cardsInColumn(item.status)
+    const idx = column.findIndex((c) => c.getAttribute('data-item-id') === item.id)
+    if (idx === -1) return null
+    if (key === 'ArrowUp') return column[idx - 1] ?? null
+    if (key === 'ArrowDown') return column[idx + 1] ?? null
+    const dir = key === 'ArrowLeft' ? -1 : 1
+    const curTop = column[idx]!.getBoundingClientRect().top
+    for (let p = STATUSES.indexOf(item.status) + dir; p >= 0 && p < STATUSES.length; p += dir) {
+      const candidates = cardsInColumn(STATUSES[p]!)
+      if (candidates.length === 0) continue
+      return candidates.reduce((best, c) =>
+        Math.abs(c.getBoundingClientRect().top - curTop) < Math.abs(best.getBoundingClientRect().top - curTop) ? c : best
+      )
+    }
+    return null
   }
 
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>): HTMLElement {
@@ -425,13 +475,26 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       e.preventDefault()
       openCardContextMenu(item.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
-    // Keyboard equivalent of the right-click menu — mirrors src/modules/risks.ts
-    // and milestones.ts's identical row-level handler. Guarded on `e.target
-    // === card` so Enter/Space on the edit button (a child) isn't hijacked.
+    // Guarded on `e.target === card` so a keypress on the edit button (a
+    // child) isn't hijacked. Mirrors src/modules/risks.ts and milestones.ts's
+    // row-level handler, plus grid arrow navigation across the board.
     card.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
       if (ev.target !== card) return
-      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp' || ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+        const next = findAdjacentCard(item, ev.key)
+        if (!next) return
+        ev.preventDefault()
+        next.focus()
+        return
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        openEditModal(item)
+        return
+      }
+      if (ev.key !== ' ') return
+      // Keyboard equivalent of the right-click menu.
       ev.preventDefault()
       const rect = card.getBoundingClientRect()
       openCardContextMenu(item.id, rect.left + 16, rect.bottom)
@@ -671,9 +734,41 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
   container.appendChild(kanbanRootEl)
+  // Lands focus on the first card (To Do, then WIP, then Done, then
+  // Cancelled — same order as STATUSES/the board's DOM) the moment the
+  // module opens, so arrow-key navigation works immediately without a
+  // preceding Tab. Only for the pane the user is actually in — a team
+  // switch remounts both panes together, and without this guard whichever
+  // pane happens to mount second (always pane 1) would silently steal focus
+  // from pane 0's.
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    boardEl.querySelector<HTMLElement>('.tt-kanban-card')?.focus()
+  }
+
+  // Falls back to selecting the first card on any arrow key when nothing is
+  // focused at all (e.g. the user clicked away, then back into this pane's
+  // empty background) — document-level because at that point focus is on
+  // document.body, outside this (or any) container, so no element-scoped
+  // listener would ever see the keydown. Guarded to plain arrows only (no
+  // modifiers) so it never competes with main.ts's Alt+Arrow pane-layout
+  // hotkeys, and to the focused pane only, mirroring the mount-time focus
+  // guard above.
+  function onFallbackArrowKey(e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    if (document.activeElement !== document.body) return
+    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
+    if (blockedByModal()) return
+    const first = boardEl.querySelector<HTMLElement>('.tt-kanban-card')
+    if (!first) return
+    e.preventDefault()
+    first.focus()
+  }
+  document.addEventListener('keydown', onFallbackArrowKey)
 
   return () => {
     unsubscribe()
     disposeOpenBundle()
+    document.removeEventListener('keydown', onFallbackArrowKey)
   }
 })

@@ -26,6 +26,7 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
+import { blockedByModal } from '../ui/hotkeys'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -132,6 +133,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // simultaneously.
   const expandable = new ExpandableRowsController()
   let focusRiskId: string | null = null
+  // Keyboard-driven toggleExpand() (Enter on a focused row) needs to land
+  // focus somewhere sane after renderAll() replaces the row DOM — on the
+  // follow-up editor when expanding (so typing can start immediately), or
+  // back on the row itself when collapsing (so ArrowUp/Down can continue).
+  let focusFollowupRiskId: string | null = null
+  let focusRowId: string | null = null
 
   function clearDropClasses(): void {
     listEl.querySelectorAll('.tt-risk-row').forEach((n) => {
@@ -177,7 +184,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function toggleExpand(id: string): void {
+    const wasExpanded = expandable.isExpanded(id)
     expandable.toggle(id)
+    if (wasExpanded) focusRowId = id
+    else focusFollowupRiskId = id
     renderAll()
   }
 
@@ -227,7 +237,9 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    openItemContextMenu(ctx, 'risk', teamId, itemId, x, y)
+    const r = risks().find((rr) => rr.id === itemId)
+    if (!r) return
+    openItemContextMenu(ctx, 'risk', teamId, itemId, x, y, () => requestDelete(r))
   }
 
   function renderRow(r: Risk): HTMLElement {
@@ -358,14 +370,28 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
 
-    // Keyboard equivalent of the right-click menu. Guarded on `e.target ===
-    // row` so Enter inside the title input still means "commit and blur"
-    // (blurOnEnter) and Space inside a select still opens the dropdown —
-    // only a keypress on the row itself counts.
+    // Guarded on `e.target === row` throughout so Enter inside the title
+    // input still means "commit and blur" (blurOnEnter), Space inside a
+    // select still opens the dropdown, and arrows inside a select still
+    // change its value — only a keypress on the row itself counts.
     row.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
       if (ev.target !== row) return
-      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-risk-row'))
+        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
+        if (!next) return
+        ev.preventDefault()
+        next.focus()
+        return
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        toggleExpand(r.id)
+        return
+      }
+      if (ev.key !== ' ') return
+      // Keyboard equivalent of the right-click menu.
       ev.preventDefault()
       const rect = row.getBoundingClientRect()
       openRowContextMenu(r.id, rect.left + 16, rect.bottom)
@@ -495,6 +521,14 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       listEl.querySelector<HTMLInputElement>(`[data-risk-id="${focusRiskId}"] .tt-risk-title-input`)?.focus()
       focusRiskId = null
     }
+    if (focusFollowupRiskId) {
+      listEl.querySelector<HTMLElement>(`[data-risk-followup-id="${focusFollowupRiskId}"] .editor`)?.focus()
+      focusFollowupRiskId = null
+    }
+    if (focusRowId) {
+      listEl.querySelector<HTMLElement>(`[data-risk-id="${focusRowId}"].tt-risk-row`)?.focus()
+      focusRowId = null
+    }
   }
 
   function addRisk(): void {
@@ -592,8 +626,37 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
 
+  // Falls back to selecting the first row on ArrowUp/Down when nothing is
+  // focused at all (e.g. the user clicked away, then back into this pane's
+  // empty background) — document-level because at that point focus is on
+  // document.body, outside this (or any) container, so no element-scoped
+  // listener would ever see the keydown. Guarded to plain arrows only (no
+  // modifiers) so it never competes with main.ts's Alt+Arrow pane-layout
+  // hotkeys, and to the focused pane only, mirroring the mount-time focus
+  // guard above.
+  function onFallbackArrowKey(e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    if (document.activeElement !== document.body) return
+    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
+    if (blockedByModal()) return
+    const first = listEl.querySelector<HTMLElement>('.tt-risk-row')
+    if (!first) return
+    e.preventDefault()
+    first.focus()
+  }
+  document.addEventListener('keydown', onFallbackArrowKey)
+
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
+  // Lands focus on the first row the moment the module opens, so
+  // ArrowUp/Down navigation works immediately without a preceding Tab. Only
+  // for the pane the user is actually in — a team switch remounts both
+  // panes together, and without this guard whichever pane happens to mount
+  // second (always pane 1) would silently steal focus from pane 0's.
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    listEl.querySelector<HTMLElement>('.tt-risk-row')?.focus()
+  }
 
   return () => {
     unsubscribe()
@@ -601,6 +664,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // field's next blur.
     deferred.dispose()
     expandable.disposeAll()
+    document.removeEventListener('keydown', onFallbackArrowKey)
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

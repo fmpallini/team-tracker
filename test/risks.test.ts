@@ -230,7 +230,7 @@ describe('renderRisks', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
-    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team) · Row menu (Enter or Space)')
+    expect(row.title).toBe('Right-click for more actions (duplicate, copy/move to team) · Row menu (Space) · Expand (Enter) · Navigate (arrows)')
   })
 
   // Regression for the accessibility gap the row actions used to have: they
@@ -246,19 +246,46 @@ describe('renderRisks', () => {
       expect(row.getAttribute('tabindex')).toBe('0')
     })
 
-    test.each(['Enter', ' '])('%s on the row opens the context menu', (key) => {
+    test('Space on the row opens the context menu', () => {
       const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
       const { container, store, pm, loc } = setup(team)
       render(container, loc, store, pm)
       const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
 
-      row.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
       expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+    })
+
+    test('Enter on the row expands its follow-up editor and focuses it, not the context menu', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = container.querySelector('[data-risk-id="a"]') as HTMLElement
+
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+      expect(document.querySelector('.tt-context-menu')).toBeNull()
+      expect(container.querySelector('.tt-risk-followup-row')).not.toBeNull()
+      expect(document.activeElement).toBe(container.querySelector('[data-risk-followup-id="a"] .editor'))
+    })
+
+    test('Enter again collapses the follow-up editor and returns focus to the row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      let row = container.querySelector('[data-risk-id="a"]') as HTMLElement
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+      row = container.querySelector('[data-risk-id="a"]') as HTMLElement // renderAll rebuilt the row node
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+      expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"]'))
     })
 
     // The guard that keeps Enter meaning "commit and blur" in the title input
     // and Space meaning "open the dropdown" in a select.
-    test('the same keys inside a row field do not open the menu', () => {
+    test('the same keys inside a row field do not open the menu or toggle expand', () => {
       const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
       const { container, store, pm, loc } = setup(team)
       render(container, loc, store, pm)
@@ -269,6 +296,110 @@ describe('renderRisks', () => {
       select.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
 
       expect(document.querySelector('.tt-context-menu')).toBeNull()
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+    })
+  })
+
+  test('the first row is focused as soon as the module opens', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"]'))
+  })
+
+  // Regression: a team switch remounts both panes in the same tick
+  // (PaneManager.renderAll's default renders pane 0 then pane 1), and this
+  // module has no idea it's mounting into the pane that ISN'T
+  // nav.focusedPane — without this guard, whichever pane happened to mount
+  // second (always pane 1) would silently steal focus from pane 0's row.
+  test('mounting into a pane that is not the focused pane does not steal focus', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    store.updateNav((d) => { d.nav.focusedPane = 1 })
+    render(container, loc, store, pm, 0) // mounting into pane 0, but pane 1 is focused
+
+    expect(document.activeElement).not.toBe(container.querySelector('[data-risk-id="a"]'))
+  })
+
+  describe('ArrowUp/ArrowDown row navigation', () => {
+    test('ArrowDown/ArrowUp move focus between rows, and no-op at the list ends', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const rowA = container.querySelector('[data-risk-id="a"]') as HTMLElement
+      const rowB = container.querySelector('[data-risk-id="b"]') as HTMLElement
+
+      rowA.focus()
+      rowA.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      expect(document.activeElement).toBe(rowB)
+
+      rowB.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      expect(document.activeElement).toBe(rowB) // already last row, no-op
+
+      rowB.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      expect(document.activeElement).toBe(rowA)
+
+      rowA.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      expect(document.activeElement).toBe(rowA) // already first row, no-op
+    })
+
+    test('arrows inside a row field do not move focus between rows', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const titleInput = container.querySelector('[data-risk-id="a"] .tt-risk-title-input') as HTMLInputElement
+
+      titleInput.focus()
+      titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+
+      expect(document.activeElement).toBe(titleInput)
+    })
+
+    // The document-level fallback: if the user clicked away entirely (focus
+    // landed on document.body, not some other field) and then presses an
+    // arrow key, the first row is selected instead of the keypress doing
+    // nothing.
+    test('ArrowDown/ArrowUp with nothing focused at all selects the first row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      expect(document.activeElement).toBe(document.body)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+
+      expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"]'))
+    })
+
+    test('the fallback does nothing while a field elsewhere has focus, or while a modal is open', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+
+      const outside = document.createElement('input')
+      document.body.appendChild(outside)
+      outside.focus()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      expect(document.activeElement).toBe(outside)
+      outside.blur()
+      outside.remove()
+      expect(document.activeElement).toBe(document.body)
+
+      document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay' }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      expect(document.activeElement).toBe(document.body)
+    })
+
+    test('Alt+ArrowRight (pane-select hotkey) does not trigger the fallback', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }))
+
+      expect(document.activeElement).toBe(document.body)
     })
   })
 
@@ -764,6 +895,21 @@ describe('row context menu', () => {
     contextMenuItem('Duplicate').click()
 
     expect(store.doc.teams[0]!.risks).toHaveLength(2)
+  })
+
+  test('Delete opens the same confirm dialog as the row delete button, and removes the row on confirm', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', order: 0 })] })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: team.id, ref: { kind: 'risks' } }, store, pm)
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Delete').click()
+
+    const confirmBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Delete')
+    expect(confirmBtn).toBeTruthy()
+    confirmBtn!.click()
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
   })
 
   test('Move to team… removes the row from the source team', () => {
