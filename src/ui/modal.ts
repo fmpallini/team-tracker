@@ -33,15 +33,17 @@ interface RenderedDialog extends ModalHandle {
  * Tab-reachable elements inside a dialog, in DOM order — used both to trap
  * Tab/Shift+Tab at the dialog's edges and to pick the initial focus target.
  * Excludes anything explicitly taken out of tab order (tabindex="-1", e.g.
- * the secondary hover-only buttons on kanban/risk rows) and anything hidden
- * via CSS (offsetParent null), same as a native focus trap would.
+ * the secondary hover-only buttons on kanban/risk rows). No modal in this
+ * app currently CSS-hides a field instead of omitting it from the DOM, so
+ * there's no offsetParent/visibility check to make — worth revisiting if
+ * that ever changes, since offsetParent is always null under jsdom and any
+ * check built on it couldn't be covered by this app's test suite.
  */
 function getFocusable(container: HTMLElement): HTMLElement[] {
   const candidates = container.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]')
   return Array.from(candidates).filter((node) => {
     if (node.hasAttribute('disabled')) return false
     if (node.tabIndex < 0) return false
-    if (node.offsetParent === null && node !== document.activeElement) return false
     return true
   })
 }

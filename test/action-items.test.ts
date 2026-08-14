@@ -78,6 +78,12 @@ function pickDate(day: number): void {
 }
 
 afterEach(() => {
+  // Tests below routinely leave a context menu or modal open (no Escape/
+  // pick), and both attach a document-level keydown listener that wiping
+  // document.body doesn't remove — it would otherwise leak into the next
+  // test and react to that test's own keydown dispatches. Escape lets any
+  // still-open one close itself and unregister before the DOM is wiped.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
   document.body.innerHTML = ''
   vi.useRealTimers()
 })

@@ -6,6 +6,13 @@ function overlays(): NodeListOf<Element> {
 }
 
 afterEach(() => {
+  // Most tests below never call handle.close() — renderDialog's own
+  // document-level keydown listener would otherwise leak into the next
+  // test (wiping document.body doesn't remove it), so a later test's own
+  // Tab/Enter dispatch could also trigger a stale, detached dialog's trap
+  // logic. Escape lets every still-open modal close itself and unregister
+  // its own listener before the DOM is wiped.
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
   document.body.innerHTML = ''
 })
 
@@ -60,6 +67,90 @@ test('Enter does not trigger the primary button when there is none', () => {
   const input = el('input', { type: 'text' }) as HTMLInputElement
   showModal({ title: 'T', body: el('div', {}, input), buttons: [{ label: 'Cancel', onClick: () => {} }] })
   expect(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))).not.toThrow()
+})
+
+// Regression: opening this modal from inside another capture-phase Enter
+// handler (e.g. the Ctrl+K palette's "Due" row) means this modal's own
+// keydown listener can still see that same, still-bubbling Enter event —
+// but its e.target is a foreign <input> that was never part of this dialog.
+// Without the dialog.contains() check, that foreign input satisfied
+// `instanceof HTMLInputElement` and made this modal instantly click its own
+// primary button and close itself before ever painting.
+test('Enter from an input outside the dialog does not trigger the primary button', () => {
+  const foreignInput = el('input', { type: 'text' }) as HTMLInputElement
+  document.body.appendChild(foreignInput) // never placed inside the modal's body
+  let clicked = false
+  showModal({
+    title: 'T',
+    body: el('div', {}),
+    buttons: [{ label: 'OK', primary: true, onClick: () => { clicked = true } }],
+  })
+  foreignInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  expect(clicked).toBe(false)
+  expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+})
+
+test('showModal focuses the first focusable element on open when no caller focuses one', () => {
+  showModal({
+    title: 'T',
+    body: el('div', {}),
+    buttons: [
+      { label: 'Cancel', onClick: () => {} },
+      { label: 'OK', primary: true, onClick: () => {} },
+    ],
+  })
+  const cancelBtn = document.querySelectorAll('.tt-modal-buttons button')[0]
+  expect(document.activeElement).toBe(cancelBtn)
+})
+
+test('showModal does not fight a caller that focuses its own field right after opening', () => {
+  const input = el('input', { type: 'text' }) as HTMLInputElement
+  showModal({ title: 'T', body: el('div', {}, input), buttons: [{ label: 'Cancel', onClick: () => {} }] })
+  input.focus() // mirrors callers like people-tree.ts/action-items.ts that focus a field after showModal() returns
+  expect(document.activeElement).toBe(input)
+})
+
+test('Tab from the last focusable element wraps to the first (focus trap)', () => {
+  const input = el('input', { type: 'text' }) as HTMLInputElement
+  showModal({
+    title: 'T',
+    body: el('div', {}, input),
+    buttons: [
+      { label: 'Cancel', onClick: () => {} },
+      { label: 'OK', primary: true, onClick: () => {} },
+    ],
+  })
+  const okBtn = document.querySelectorAll('.tt-modal-buttons button')[1] as HTMLButtonElement
+  okBtn.focus()
+  const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  document.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+  expect(document.activeElement).toBe(input)
+})
+
+test('Shift+Tab from the first focusable element wraps to the last (focus trap)', () => {
+  const input = el('input', { type: 'text' }) as HTMLInputElement
+  showModal({
+    title: 'T',
+    body: el('div', {}, input),
+    buttons: [
+      { label: 'Cancel', onClick: () => {} },
+      { label: 'OK', primary: true, onClick: () => {} },
+    ],
+  })
+  input.focus()
+  const okBtn = document.querySelectorAll('.tt-modal-buttons button')[1] as HTMLButtonElement
+  const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+  document.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+  expect(document.activeElement).toBe(okBtn)
+})
+
+test('Tab is left alone (no trap) when nothing in the dialog is focusable', () => {
+  showModal({ title: 'T', body: el('div', {}), buttons: [] })
+  const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  expect(() => document.dispatchEvent(event)).not.toThrow()
+  expect(event.defaultPrevented).toBe(false)
 })
 
 test('showModal closes on Escape', () => {

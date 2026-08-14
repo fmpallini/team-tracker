@@ -74,4 +74,57 @@ describe('openDuePanel', () => {
     expect(onOpenItem).toHaveBeenCalledWith(loc)
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
+
+  test('rows are keyboard-focusable', () => {
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem()], dueSoon: [] }, onOpenItem: () => {} })
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    expect(row.tabIndex).toBe(0)
+  })
+
+  test('Enter on a focused row calls onOpenItem and closes the modal', () => {
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } }
+    const onOpenItem = vi.fn()
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem({ loc })], dueSoon: [] }, onOpenItem })
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(onOpenItem).toHaveBeenCalledWith(loc)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('Space on a focused row calls onOpenItem and closes the modal', () => {
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } }
+    const onOpenItem = vi.fn()
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem({ loc })], dueSoon: [] }, onOpenItem })
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    expect(onOpenItem).toHaveBeenCalledWith(loc)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('ArrowDown/ArrowUp move focus between rows without activating them', () => {
+    const first = makeItem({ title: 'First', loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } } })
+    const second = makeItem({ title: 'Second', loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a2' } } })
+    const onOpenItem = vi.fn()
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [first, second], dueSoon: [] }, onOpenItem })
+    const rows = document.querySelectorAll<HTMLElement>('.tt-due-row')
+    rows[0]!.focus()
+    rows[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(rows[1])
+    rows[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(document.activeElement).toBe(rows[0])
+    expect(onOpenItem).not.toHaveBeenCalled()
+  })
+
+  test('ArrowDown on the last row and ArrowUp on the first row are no-ops', () => {
+    const first = makeItem({ title: 'First', loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } } })
+    const second = makeItem({ title: 'Second', loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a2' } } })
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [first, second], dueSoon: [] }, onOpenItem: () => {} })
+    const rows = document.querySelectorAll<HTMLElement>('.tt-due-row')
+    rows[1]!.focus()
+    rows[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(rows[1])
+    rows[0]!.focus()
+    rows[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(document.activeElement).toBe(rows[0])
+  })
 })
