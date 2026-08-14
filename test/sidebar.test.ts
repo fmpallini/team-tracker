@@ -668,6 +668,24 @@ describe('per-team due badge (sidebar list)', () => {
   })
 })
 
+test('the team switcher\'s Enter/Arrow keys do not act while a modal is open (e.g. an async save-conflict error appearing over it)', () => {
+  const { store, selectTeam } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+
+  ;(document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement).click()
+  ;(document.querySelector('.tt-header-team-indicator') as HTMLElement).click()
+  expect(document.querySelector('.tt-team-switcher-dropdown')).not.toBeNull()
+
+  document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay' }))
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+  expect(selectTeam).not.toHaveBeenCalled()
+  expect(document.querySelector('.tt-team-switcher-dropdown')).not.toBeNull() // still open, untouched
+})
+
 describe('team switcher dropdown due badge', () => {
   function toggleBtn(): HTMLButtonElement {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement

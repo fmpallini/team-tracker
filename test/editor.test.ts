@@ -836,6 +836,26 @@ describe('toolbar', () => {
     Reflect.deleteProperty(navigator, 'clipboard')
   })
 
+  test('copy menu does not act while a modal is open (e.g. an async save-conflict error appearing over it)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('**bold** text')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    openCopyMenu(editor)
+    document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay' }))
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(writeText).not.toHaveBeenCalled()
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull() // still open, untouched
+
+    editor.destroy()
+    Reflect.deleteProperty(navigator, 'clipboard')
+  })
+
   test('copy menu clamps to the viewport when the toolbar button sits near the right/bottom edge', () => {
     const originalGetRect = Element.prototype.getBoundingClientRect
     const originalInnerWidth = window.innerWidth

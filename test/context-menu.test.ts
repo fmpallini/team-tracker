@@ -39,6 +39,64 @@ test('Escape closes the menu', () => {
   expect(document.querySelector('.tt-context-menu')).toBeNull()
 })
 
+// Regression: the menu used to render with no keyboard handling at all
+// ("every current use is mouse-driven"), so once a caller opened it via a
+// keyboard action (Space on a risk/milestone/action-item row), arrow keys
+// fell straight through to whatever the row's OWN arrow handler does
+// instead of moving the menu's own selection.
+describe('keyboard navigation', () => {
+  test('opening the menu moves focus into its first item', () => {
+    showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
+    expect(document.activeElement).toBe(items()[0])
+  })
+
+  test('ArrowDown/ArrowUp move the highlighted item, wrapping at neither end (clamped)', () => {
+    showContextMenu(0, 0, [
+      { label: 'A', onClick: () => {} },
+      { label: 'B', onClick: () => {} },
+      { label: 'C', onClick: () => {} },
+    ])
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(items()[1]!.classList.contains('selected')).toBe(true)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(items()[2]!.classList.contains('selected')).toBe(true) // clamped at last item
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(items()[1]!.classList.contains('selected')).toBe(true)
+  })
+
+  test('Enter activates the currently-highlighted item and closes the menu', () => {
+    const onClickA = vi.fn()
+    const onClickB = vi.fn()
+    showContextMenu(0, 0, [{ label: 'A', onClick: onClickA }, { label: 'B', onClick: onClickB }])
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(onClickB).toHaveBeenCalledTimes(1)
+    expect(onClickA).not.toHaveBeenCalled()
+    expect(document.querySelector('.tt-context-menu')).toBeNull()
+  })
+
+  test('closing the menu (Escape, outside click, or picking an item) restores focus to whatever opened it', () => {
+    const origin = document.createElement('button')
+    document.body.appendChild(origin)
+    origin.focus()
+
+    showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
+    expect(document.activeElement).not.toBe(origin)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.activeElement).toBe(origin)
+
+    origin.focus()
+    showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
+    items()[0]!.click()
+    expect(document.activeElement).toBe(origin)
+  })
+})
+
 test('closeAnyContextMenu closes an open menu and removes its document listeners (the file-close leak main.ts guards against)', () => {
   showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
   expect(document.querySelector('.tt-context-menu')).not.toBeNull()

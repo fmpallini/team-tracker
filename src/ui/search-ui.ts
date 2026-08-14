@@ -7,7 +7,7 @@ import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
 import { normalize, KIND_ICON, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
-import { hotkeyAllowed } from './hotkeys'
+import { hotkeyAllowed, blockedByModal } from './hotkeys'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
@@ -291,7 +291,13 @@ export function mountSearch(
   })
 
   const onDocKeydown = (e: KeyboardEvent): void => {
+    // Both Ctrl+F combos steal focus into the search box — must not do that
+    // out from under an open modal (a password prompt, preferences, ...).
+    // Unlike hotkeyAllowed, these deliberately still fire while typing
+    // elsewhere (e.g. in the rich-text editor) — that's the whole point of
+    // the shortcut — so only the modal check applies, not the field one.
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+      if (blockedByModal()) return
       e.preventDefault()
       checkbox.checked = true
       allTeams = true
@@ -301,6 +307,7 @@ export function mountSearch(
       return
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      if (blockedByModal()) return
       e.preventDefault()
       input.focus()
       input.select()

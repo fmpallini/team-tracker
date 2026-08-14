@@ -13,7 +13,7 @@
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
-import type { ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
@@ -194,9 +194,17 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     liveDatePickers = []
   }
 
+  // Keyboard-driven (Enter on a focused row) needs to land focus somewhere
+  // sane after renderAll() replaces the row DOM — on the follow-up editor
+  // when expanding (so typing can start immediately), or back on the row
+  // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
+  // synchronously here, so the DOM is already rebuilt by the time we query it.
   function toggleExpand(id: string): void {
+    const wasExpanded = expandable.isExpanded(id)
     expandable.toggle(id)
     renderAll()
+    if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-milestone-id="${id}"].tt-milestone-row`)?.focus()
+    else listEl.querySelector<HTMLElement>(`[data-milestone-followup-id="${id}"] .editor`)?.focus()
   }
 
   /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
@@ -378,7 +386,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // --- list -------------------------------------------------------------
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    openItemContextMenu(ctx, 'milestone', teamId, itemId, x, y)
+    const m = milestones().find((mm) => mm.id === itemId)
+    if (!m) return
+    openItemContextMenu(ctx, 'milestone', teamId, itemId, x, y, () => requestDelete(m))
   }
 
   function renderRow(m: Milestone): HTMLElement {
@@ -469,11 +479,24 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
     // See the identical handler in src/modules/risks.ts for why this is
-    // guarded on `e.target === row`.
+    // guarded on `e.target === row` throughout.
     row.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
       if (ev.target !== row) return
-      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-milestone-row'))
+        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
+        if (!next) return
+        ev.preventDefault()
+        next.focus()
+        return
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        toggleExpand(m.id)
+        return
+      }
+      if (ev.key !== ' ') return
       ev.preventDefault()
       const rect = row.getBoundingClientRect()
       openRowContextMenu(m.id, rect.left + 16, rect.bottom)
@@ -597,8 +620,18 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
 
+  const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-milestone-row', ['ArrowDown', 'ArrowUp'])
+
   container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
   renderAll()
+  // Lands focus on the first row the moment the module opens, so
+  // ArrowUp/Down navigation works immediately without a preceding Tab. Only
+  // for the pane the user is actually in — a team switch remounts both
+  // panes together, and without this guard whichever pane happens to mount
+  // second (always pane 1) would silently steal focus from pane 0's.
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    listEl.querySelector<HTMLElement>('.tt-milestone-row')?.focus()
+  }
 
   return () => {
     unsubscribe()
@@ -607,6 +640,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     deferred.dispose()
     expandable.disposeAll()
     disposeDatePickers()
+    disposeArrowFallback()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

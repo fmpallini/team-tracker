@@ -10,6 +10,7 @@ import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { buildModuleItems, type PaneManager } from './panes'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { blockedByModal } from './hotkeys'
 
 export interface Palette {
   open(): void
@@ -73,6 +74,12 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    // Ctrl+K itself already can't open the palette over a modal
+    // (comboHotkeyAllowed), but an async modal (e.g. a save-conflict error)
+    // can still appear while the palette is already open — this capturing
+    // document listener must not act (in particular Enter's navigation)
+    // behind it.
+    if (blockedByModal()) return
     if (e.key === 'Escape') {
       e.preventDefault()
       close()

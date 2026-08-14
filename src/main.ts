@@ -7,8 +7,8 @@ import { createStore, type Store } from './core/store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
-import { hotkeyAllowed, comboHotkeyAllowed } from './ui/hotkeys'
-import { createPaneManager, navigateFocusedHistory, openPaneModuleByIndex, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { comboHotkeyAllowed, navHotkeyAllowed } from './ui/hotkeys'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
@@ -459,19 +459,51 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     }
     const fKeyMatch = /^F([1-7])$/.exec(e.key)
     if (fKeyMatch) {
-      if (!hotkeyAllowed(e)) return
+      // navHotkeyAllowed, not hotkeyAllowed: must still fire while editing,
+      // or F5/F6/F7 fall through to the browser's own refresh/address-bar/
+      // caret-browsing default instead (see navHotkeyAllowed's doc comment
+      // in ui/hotkeys.ts).
+      if (!navHotkeyAllowed(e)) return
       e.preventDefault()
       openPaneModuleByIndex(pm, store, Number(fKeyMatch[1]) - 1)
       return
     }
     if (!e.altKey) return
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      if (!hotkeyAllowed(e)) return
+    // Alt+Shift+Left/Right/Up: pane history (back/forward/jump-to-latest).
+    // Plain Alt+Arrow are pane-layout actions instead (below) — Left/Right
+    // select a pane, Up cycles single/dual, Down swaps sides while split.
+    // All of these use navHotkeyAllowed rather than hotkeyAllowed: they must
+    // still fire while focus is inside a rich-text editor field, or the
+    // browser's own Alt+Arrow back/forward navigation eats the keystroke
+    // instead (see navHotkeyAllowed's doc comment in ui/hotkeys.ts). Checked
+    // once here since it doesn't vary by branch below.
+    if (!navHotkeyAllowed(e)) return
+    if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault()
       navigateFocusedHistory(pm, store, e.key === 'ArrowLeft' ? -1 : 1)
       return
     }
-    if (!hotkeyAllowed(e)) return
+    if (e.shiftKey && e.key === 'ArrowUp') {
+      e.preventDefault()
+      jumpFocusedHistoryToLatest(pm, store)
+      return
+    }
+    if (e.shiftKey) return
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      pm.toggleSplit()
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (swapPaneSides(store)) pm.renderAll()
+      return
+    }
     const n = Number(e.key)
     if (!Number.isInteger(n) || n < 1 || n > 9) return
     const team = store.doc.teams[n - 1]

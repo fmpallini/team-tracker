@@ -34,13 +34,19 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Alt+L / 🔒', 'help_global_close_file'],
   ['Ctrl+F ou /', 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
-  ['Alt+← / Alt+→', 'help_global_history'],
+  ['Alt+Shift+← / Alt+Shift+→', 'help_global_history'],
+  ['Alt+Shift+↑', 'help_global_history_latest'],
+  ['Alt+←/→/↑/↓', 'help_global_pane_layout'],
   ['F1 … F7', 'help_global_pane_module'],
   ['F11 / ⛶', 'help_global_fullscreen'],
-  // The row actions are deliberately not Tab stops (see the row builders in
-  // modules/risks.ts and modules/milestones.ts), so this is the only keyboard
-  // route to them — which makes documenting it the whole point.
-  ['Enter / Espaço', 'help_global_row_menu'],
+  // Enter and Space are deliberately two different actions on a focused row/
+  // card (see the row/card builders in modules/risks.ts, milestones.ts and
+  // action-items.ts) — documenting that split is the whole point of these
+  // three rows, so they must never be collapsed back into one "Enter /
+  // Espaço" row.
+  ['↑ / ↓ (← / →)', 'help_global_row_nav'],
+  ['Enter', 'help_global_row_enter'],
+  ['Espaço', 'help_global_row_menu'],
 ]
 
 function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {

@@ -9,6 +9,7 @@ import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } fro
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
+import { blockedByModal } from './hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
 // Runtime dependency in one direction only: modules/lifecycle.ts imports
@@ -236,6 +237,89 @@ export function navigateFocusedHistory(pm: PaneManager, store: Store, dir: -1 | 
   if (stepPaneHistory(store, store.doc.nav.focusedPane, dir)) {
     pm.renderAll()
   }
+}
+
+/**
+ * Jumps pane `idx` straight to the newest entry its history can reach — see
+ * `PaneLayout.jumpToLatest`. Free function for the same reason as
+ * `stepPaneHistory` above: main.ts's global Alt+Shift+ArrowUp hotkey drives
+ * it without reaching into `createPaneManager`'s internals.
+ */
+export function jumpPaneHistoryToLatest(store: Store, idx: 0 | 1): boolean {
+  const owned = layoutsByStore.get(store)
+  if (owned) return owned.jumpToLatest(idx)
+  return createPaneLayout(store).jumpToLatest(idx)
+}
+
+/** Convenience wrapper: jumps the currently focused pane's history to its newest entry and re-renders. */
+export function jumpFocusedHistoryToLatest(pm: PaneManager, store: Store): void {
+  if (jumpPaneHistoryToLatest(store, store.doc.nav.focusedPane)) {
+    pm.renderAll()
+  }
+}
+
+/**
+ * Focuses pane `idx` directly — main.ts's global Alt+ArrowLeft (pane 0) /
+ * Alt+ArrowRight (pane 1) hotkey. A free function rather than a
+ * `PaneManager` method for the same reason as `stepPaneHistory` above: keeps
+ * the interface matching the task contract instead of every module test's
+ * `fakePM()` needing a new no-op. Returns whether focus actually changed.
+ */
+export function setFocusedPane(store: Store, idx: 0 | 1): boolean {
+  if (store.doc.nav.focusedPane === idx) return false
+  store.updateNav((d) => {
+    d.nav.focusedPane = idx
+  })
+  return true
+}
+
+/**
+ * Swaps panes 0 and 1's contents (and focus along with whichever one was
+ * focused) — main.ts's global Alt+ArrowDown hotkey. No-op while unsplit,
+ * since there is only one visible side to swap. Invalidates the unsplit
+ * stash (core/pane-layout.ts) since it assumes pane 0 is the one that
+ * survives un-splitting, an assumption a swap can invalidate.
+ */
+export function swapPaneSides(store: Store): boolean {
+  if (!store.doc.nav.split) return false
+  store.updateNav((d) => {
+    const tmp = d.nav.panes[0]
+    d.nav.panes[0] = d.nav.panes[1]
+    d.nav.panes[1] = tmp
+    d.nav.focusedPane = d.nav.focusedPane === 0 ? 1 : 0
+  })
+  invalidateUnsplitStash(store)
+  return true
+}
+
+/**
+ * Falls back to focusing the first selectable row/card matching `selector`
+ * (within `container`) on a plain (no-modifier) arrow keypress, for when
+ * nothing at all is focused — e.g. the user clicked into a pane's empty
+ * background, landing focus on document.body. Document-level because at that
+ * point no element-scoped listener would ever see the keydown. Scoped to the
+ * pane `ctx` belongs to (so a background listener in an unfocused pane never
+ * fires) and to whichever arrow `keys` the caller cares about (2 for a 1D
+ * list, 4 for a 2D grid — see action-items.ts's kanban board), and never
+ * competes with main.ts's Alt+Arrow pane-layout hotkeys since it ignores any
+ * modified keypress. Shared by risks.ts/milestones.ts/action-items.ts, each
+ * of which also does the identical thing at mount time (see their own
+ * `container.querySelector(selector)?.focus()` call). Returns a disposer.
+ */
+export function installArrowFallbackFocus(ctx: ModuleCtx, container: HTMLElement, selector: string, keys: readonly string[]): () => void {
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+    if (!keys.includes(e.key)) return
+    if (document.activeElement !== document.body) return
+    if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
+    if (blockedByModal()) return
+    const first = container.querySelector<HTMLElement>(selector)
+    if (!first) return
+    e.preventDefault()
+    first.focus()
+  }
+  document.addEventListener('keydown', onKeydown)
+  return () => document.removeEventListener('keydown', onKeydown)
 }
 
 /**
@@ -664,6 +748,13 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
 
   function makeMenuKeydownHandler(idx: 0 | 1): (e: KeyboardEvent) => void {
     return (e: KeyboardEvent): void => {
+      // This dropdown can still be open (and this capturing listener still
+      // attached) if a modal opens on top of it without the two ever having
+      // a chance to interact — e.g. an async save-conflict error modal
+      // popping up while the menu is open. Without this guard, Enter here
+      // would navigate the pane behind the modal instead of being consumed
+      // by the modal's own keydown handling.
+      if (blockedByModal()) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
         const count = paneMenuItems().length

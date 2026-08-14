@@ -7,6 +7,7 @@ import { el, clampToViewport } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { blockedByModal } from './hotkeys'
 
 export interface Editor {
   root: HTMLElement
@@ -708,6 +709,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onCopyMenuKeydown(e: KeyboardEvent): void {
+    // Same reasoning as panes.ts's pane-module dropdown: an async modal can
+    // appear while this menu is still open, and this is a capturing document
+    // listener — without this guard Enter here would copy to the clipboard
+    // behind the modal.
+    if (blockedByModal()) return
     if (e.key === 'Escape') { e.preventDefault(); closeCopyMenu(); return }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()

@@ -117,4 +117,32 @@ describe('selectableRowProps', () => {
     ;(props.onmousedown as (e: Event) => void)(event)
     expect(event.defaultPrevented).toBe(true)
   })
+
+  // Regression: a scrollable dropdown (every consumer is `overflow-y: auto`
+  // with a capped max-height) can scroll a different row under an unmoved
+  // mouse cursor — via paintSelection's scrollIntoView during ArrowUp/Down —
+  // and real Chrome fires mouseenter for that too. Without ignoring it, that
+  // synthetic enter would immediately steal keyboard selection back to
+  // whatever row the scroll happened to land under the pointer.
+  describe('mouseenter ignores a stationary pointer (content scrolling under it, not real movement)', () => {
+    test('a mouseenter at the same coordinates as the last real mousemove does not call onHover', () => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 60 }))
+      const onHover = vi.fn()
+      const props = selectableRowProps({ class: 'tt-row', selected: false, onCommit: vi.fn(), onHover })
+
+      ;(props.onmouseenter as (e: Event) => void)(new MouseEvent('mouseenter', { clientX: 50, clientY: 60 }))
+
+      expect(onHover).not.toHaveBeenCalled()
+    })
+
+    test('a mouseenter at different coordinates (real pointer movement) still calls onHover', () => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 60 }))
+      const onHover = vi.fn()
+      const props = selectableRowProps({ class: 'tt-row', selected: false, onCommit: vi.fn(), onHover })
+
+      ;(props.onmouseenter as (e: Event) => void)(new MouseEvent('mouseenter', { clientX: 120, clientY: 200 }))
+
+      expect(onHover).toHaveBeenCalledTimes(1)
+    })
+  })
 })

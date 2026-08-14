@@ -4,6 +4,21 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.2.2] - 2026-08-13
+
+### Added
+- Keyboard navigation (arrow keys) for rows and cards in Risks, Milestones, and Tasks, plus a Delete option in their right-click menus.
+- Alt+Shift+Up jumps pane history straight to its most recent entry.
+
+### Changed
+- Pane history is now Alt+Shift+Left/Right (plain Alt+Left/Right stopped reliably reaching the app in some browsers). Alt+Left/Right now select the left/right pane, Alt+Up toggles single/dual pane view, and Alt+Down swaps the two panes' contents.
+
+### Fixed
+- Alt+1-9 (team switch), Alt+Arrow/Alt+Shift+Arrow (pane navigation and history), and F1-F7 (module jump) now work reliably while typing in a note or editor, instead of sometimes falling through to the browser's own shortcut (e.g. F5 refreshing the page).
+- Right-click and keyboard-opened context menus now support arrow-key navigation and restore keyboard focus to the row or card that opened them after closing.
+- Closing a task's edit window with Escape could leave keyboard focus stuck, breaking further arrow-key navigation until you clicked elsewhere.
+- Several dropdown menus (search, pane module picker, team switcher, command palette, editor's copy-format menu) could act behind an already-open dialog instead of being blocked by it.
+
 ## [2.2.1] - 2026-08-12
 
 ### Fixed

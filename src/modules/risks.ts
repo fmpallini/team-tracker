@@ -11,7 +11,7 @@
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
-import type { ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
 import { createRichEditorBundle } from '../ui/rich-editor'
@@ -176,9 +176,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     })
   }
 
+  // Keyboard-driven (Enter on a focused row) needs to land focus somewhere
+  // sane after renderAll() replaces the row DOM — on the follow-up editor
+  // when expanding (so typing can start immediately), or back on the row
+  // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
+  // synchronously here, so the DOM is already rebuilt by the time we query it.
   function toggleExpand(id: string): void {
+    const wasExpanded = expandable.isExpanded(id)
     expandable.toggle(id)
     renderAll()
+    if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)?.focus()
+    else listEl.querySelector<HTMLElement>(`[data-risk-followup-id="${id}"] .editor`)?.focus()
   }
 
   /** Expands (or collapses) every currently-open (non-closed) risk's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
@@ -227,7 +235,9 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function openRowContextMenu(itemId: string, x: number, y: number): void {
-    openItemContextMenu(ctx, 'risk', teamId, itemId, x, y)
+    const r = risks().find((rr) => rr.id === itemId)
+    if (!r) return
+    openItemContextMenu(ctx, 'risk', teamId, itemId, x, y, () => requestDelete(r))
   }
 
   function renderRow(r: Risk): HTMLElement {
@@ -358,14 +368,28 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
 
-    // Keyboard equivalent of the right-click menu. Guarded on `e.target ===
-    // row` so Enter inside the title input still means "commit and blur"
-    // (blurOnEnter) and Space inside a select still opens the dropdown —
-    // only a keypress on the row itself counts.
+    // Guarded on `e.target === row` throughout so Enter inside the title
+    // input still means "commit and blur" (blurOnEnter), Space inside a
+    // select still opens the dropdown, and arrows inside a select still
+    // change its value — only a keypress on the row itself counts.
     row.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
       if (ev.target !== row) return
-      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-risk-row'))
+        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
+        if (!next) return
+        ev.preventDefault()
+        next.focus()
+        return
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        toggleExpand(r.id)
+        return
+      }
+      if (ev.key !== ' ') return
+      // Keyboard equivalent of the right-click menu.
       ev.preventDefault()
       const rect = row.getBoundingClientRect()
       openRowContextMenu(r.id, rect.left + 16, rect.bottom)
@@ -592,8 +616,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
 
+  const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-risk-row', ['ArrowDown', 'ArrowUp'])
+
   container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
   renderAll()
+  // Lands focus on the first row the moment the module opens, so
+  // ArrowUp/Down navigation works immediately without a preceding Tab. Only
+  // for the pane the user is actually in — a team switch remounts both
+  // panes together, and without this guard whichever pane happens to mount
+  // second (always pane 1) would silently steal focus from pane 0's.
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    listEl.querySelector<HTMLElement>('.tt-risk-row')?.focus()
+  }
 
   return () => {
     unsubscribe()
@@ -601,6 +635,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // field's next blur.
     deferred.dispose()
     expandable.disposeAll()
+    disposeArrowFallback()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })
