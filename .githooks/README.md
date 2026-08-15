@@ -16,6 +16,7 @@ git config core.hooksPath .githooks
 | Lint (`eslint src test`) | Yes | flat config, type-checked rules — see `eslint.config.mjs` |
 | TypeCheck (`tsc --noEmit`) | Yes | |
 | Tests (`vitest run`) | Yes | |
+| E2E tests (`npm run test:e2e`) | Yes | builds `dist/` fresh, then Playwright/Chromium |
 | Test coverage sanity | Yes (new files only) | dev pushes only — see below |
 | Security audit (`npm audit`) | Yes (high/critical only) | moderate = advisory |
 | Outdated packages | No | advisory only |
@@ -49,9 +50,9 @@ Whether an existing test actually exercises the *new* behavior (as opposed to
 merely existing) is a judgment call this gate can't make — that's what the AI
 Test Coverage gate below is for.
 
-No browser-driven e2e coverage check runs deterministically here — "does this
-change need e2e" is also judgment-based, folded into the AI Test Coverage gate
-instead of a separate hard rule.
+The e2e suite itself runs deterministically as its own gate (Phase 1, above) —
+but *whether a given change needed a new/updated e2e spec* is still
+judgment-based, folded into the AI Test Coverage gate instead of a hard rule.
 
 ## AI gates
 

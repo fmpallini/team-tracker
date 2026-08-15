@@ -1,4 +1,4 @@
-import { openPrefs, onLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
+import { openPrefs, onLocaleChanged, notifyLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -498,6 +498,26 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
   expect(tabs).toEqual(['Geral', 'Avançado', 'Templates', 'Tags', 'Segurança', 'Dados', 'Sobre'])
+})
+
+test('notifyLocaleChanged is a plain document event: dispatching with zero listeners registered never throws (ui/prefs.ts has no direct PaneManager dependency)', () => {
+  expect(() => notifyLocaleChanged()).not.toThrow()
+})
+
+test('onLocaleChanged\'s returned unsubscribe stops that listener without affecting others', () => {
+  const a = vi.fn()
+  const b = vi.fn()
+  const unsubA = onLocaleChanged(a)
+  onLocaleChanged(b)
+
+  notifyLocaleChanged()
+  expect(a).toHaveBeenCalledTimes(1)
+  expect(b).toHaveBeenCalledTimes(1)
+
+  unsubA()
+  notifyLocaleChanged()
+  expect(a).toHaveBeenCalledTimes(1) // unsubscribed — no second call
+  expect(b).toHaveBeenCalledTimes(2)
 })
 
 test('locale radio re-seeds untouched builtin templates and leaves an edited one alone', () => {

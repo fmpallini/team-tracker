@@ -59,7 +59,16 @@ else
   gate_fail "Tests" "fix failing tests then push again"
 fi
 
-# 4. Test coverage sanity — enforces CLAUDE.md's "every src module gets a
+# 4. E2E tests — builds dist/ fresh, then runs the Playwright suite against
+# it (real File System Access API / OPFS, cross-tab locking, service worker).
+gate_run "E2E tests"
+if npm run test:e2e 2>&1; then
+  gate_ok "E2E tests"
+else
+  gate_fail "E2E tests" "fix failing e2e specs then push again"
+fi
+
+# 5. Test coverage sanity — enforces CLAUDE.md's "every src module gets a
 # matching test/*.test.ts" convention for *new* files (hard fail; the
 # convention is real and near-100% today, so a new file skipping it is a
 # mistake, not a style choice). Modified-but-not-new files only get a
@@ -103,7 +112,7 @@ else
   fi
 fi
 
-# 5. Security audit
+# 6. Security audit
 gate_run "Security audit"
 AUDIT_OUT=$(npm audit --json 2>/dev/null || true)
 HIGH_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
@@ -130,7 +139,7 @@ else
   gate_ok "Security audit"
 fi
 
-# 6. Outdated packages (advisory only, non-blocking)
+# 7. Outdated packages (advisory only, non-blocking)
 gate_run "Outdated packages"
 OUTDATED=$(npm outdated --json 2>/dev/null || true)
 if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ]; then

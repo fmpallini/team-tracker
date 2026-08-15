@@ -220,6 +220,49 @@ test('releaseTabLock() lets the same file be reopened without hanging behind its
   expect(store2.readOnly).toBe(false)
 })
 
+/**
+ * makeFakeLockManager() above grants synchronously (its Promise executor runs
+ * the callback inline), which happens to collapse the provisional-read-only
+ * window to nothing — no good for testing that the window itself is covered.
+ * This defers the grant by a microtask, like the real Web Locks API's actual
+ * async round trip, so the gap is observable.
+ */
+function makeDeferredLockManager() {
+  const request = vi.fn((_name: string, _opts: unknown, cb: (lock: { name: string } | null) => Promise<unknown> | undefined) => {
+    return new Promise((resolve) => {
+      void Promise.resolve().then(() => {
+        void Promise.resolve(cb({ name: 'fake-lock' })).then(resolve)
+      })
+    })
+  })
+  return { locks: { request } as unknown as LockManager }
+}
+
+test('provisional read-only (re-review #4a): readOnly is already true the instant createTabLock returns, before the lock request settles, and never flashes the blocked toast for a solo tab', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const shell = makeShell()
+  const { locks } = makeDeferredLockManager()
+
+  createTabLock({ session: makeSession('provisional.tmv'), store, shell, saveCtl: makeSaveCtl(), locks })
+
+  // Synchronous check, no await: setReadOnly(true, {silent:true}) runs before
+  // requestLock() is even called, so this must already be true.
+  expect(store.readOnly).toBe(true)
+  // An update attempted during this provisional window is still blocked...
+  store.update(() => {})
+  // ...but silently: the one-shot toast must not burn here, or a normal
+  // solo-tab open would flash a warning it has no business showing.
+  expect(modalMocks.toast).not.toHaveBeenCalled()
+
+  await Promise.resolve()
+  await Promise.resolve()
+
+  // Solo tab: the lock resolves in this tab's favor, so it becomes writable
+  // again — and still never having shown the toast.
+  expect(store.readOnly).toBe(false)
+  expect(modalMocks.toast).not.toHaveBeenCalled()
+})
+
 test('a real cross-instance BroadcastChannel takeover message is ignored by a tab that isn\'t holding the lock', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const shell = makeShell()

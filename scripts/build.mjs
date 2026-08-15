@@ -1,5 +1,6 @@
 import { build, transform } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
+import { computeAppOrigin } from './app-origin.mjs'
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
 
@@ -38,14 +39,7 @@ const [appJs, pwaJs] = await Promise.all([bundle(false), bundle(true)])
 writeFileSync('dist/app.html', page(appJs))
 writeFileSync('dist/pwa/index.html', withPwaHead(page(pwaJs)))
 
-// __APP_ORIGIN__ is the site origin, not pkg.homepage's /team-tracker/ subpath:
-// the manifest's top-level "id" ("/") resolves against the manifest URL as an
-// absolute-path reference, so Chrome's actually-computed app identity for every
-// install to date is the origin root (verified via DevTools Application panel
-// "Computed App Id"), not the subpath. The related_applications self-entry
-// below must match that already-installed identity exactly or
-// getInstalledRelatedApps() never matches.
-const appOrigin = pkg.homepage ? `${new URL(pkg.homepage).origin}/` : ''
+const appOrigin = computeAppOrigin(pkg.homepage)
 const manifest = readFileSync('pwa/manifest.json', 'utf8')
   .replaceAll('__APP_VERSION__', pkg.version)
   .replaceAll('__APP_ORIGIN__', appOrigin)
