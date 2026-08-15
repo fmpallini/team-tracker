@@ -9,6 +9,15 @@ view), and risks.
 **[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
 your browser, nothing to install.
 
+### 50-second tour
+
+Switching between teams (each fully separate), building an org chart, risks
+scored by chance × impact, `@`-references to a person and to an action item
+(one jumps into a dual-pane view, the other jumps to the item itself), one-click
+templates, and theming.
+
+<video src="docs/videos/feature-tour-short.webm" controls muted poster="docs/screenshots/daily-notes-and-org.png" width="100%"></video>
+
 <details>
 <summary>More screenshots</summary>
 
