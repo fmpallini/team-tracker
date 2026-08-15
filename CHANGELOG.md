@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.3.0] - 2026-08-15
+
+### Added
+- Risks now show a chance/impact quadrant chart above the list: each open risk is plotted as a ring, with cell backgrounds lightly tinted red/yellow/green by exposure. Risks sharing a cell are spread apart automatically, with a short title label next to each dot when there's room. Clicking a dot expands (if needed) and jumps to that risk in the list below. The chart grows to use extra space in a larger pane, down to a fixed minimum size.
+- Kanban column headings (To Do / WIP / Done+Cancelled) now show each column's item count, e.g. "To Do (3)".
+
 ## [2.2.3] - 2026-08-14
 
 ### Added

@@ -1036,6 +1036,34 @@ body { background: var(--bg); color: var(--fg); }
    width rather than the window's — the whole problem was that a full-width
    window still leaves this module 596px when it's in a split pane. */
 .tt-risks { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; container-type: inline-size; }
+/* Chance/impact quadrant, mirroring .tt-milestone-timeline's placement above
+   its list. Cell fills are computed from the same exposureLevel() bucketing
+   the exposure badge already uses (see risks.ts), tinted very lightly via
+   color-mix so the red/yellow/green reading is a background hint, not a
+   competing signal against the dots. */
+.tt-risk-quadrant { flex: none; border-bottom: 1px solid var(--border); padding-bottom: .5rem; display: flex; justify-content: center; }
+.tt-risk-quadrant-svg { display: block; max-width: 100%; height: auto; }
+.tt-risk-quadrant-cell { stroke: var(--border); stroke-width: 1; }
+/* Uneven opacity, not a flat 12% across all three: --danger and --brass are
+   both muted earthy tones in several palettes, so an equal-alpha tint left
+   the highest-exposure cell reading no redder than the medium ones — the
+   high cell gets extra punch here specifically so it still reads as the
+   worst-of-nine at a glance. */
+.tt-risk-quadrant-cell-low { fill: color-mix(in srgb, var(--exposure-low) 14%, transparent); }
+.tt-risk-quadrant-cell-medium { fill: color-mix(in srgb, var(--exposure-medium) 16%, transparent); }
+.tt-risk-quadrant-cell-high { fill: color-mix(in srgb, var(--exposure-high) 26%, transparent); }
+.tt-risk-quadrant-tick { font-size: 9px; fill: var(--muted); font-family: var(--font-data); text-anchor: middle; dominant-baseline: middle; }
+.tt-risk-quadrant-axis-title { font-size: 9px; fill: var(--muted); text-anchor: middle; }
+/* Hollow ring, not a flat filled dot — echoes the "ink stamp" read of this
+   module's own .tt-risk-exposure-badge (a hollow circle in currentColor) and
+   milestones.ts's not-done dots, rather than a generic scatter-plot marker.
+   Not exposure-tinted either way — the cell background already carries that
+   signal (see the .tt-risk-quadrant-cell-* rules above), so the ring stays
+   in the accent color regardless of which cell it's in. Fills solid on
+   hover as a lightweight affordance for the click-to-jump interaction. */
+.tt-risk-quadrant-dot { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; cursor: pointer; transition: fill .1s ease; }
+.tt-risk-quadrant-dot:hover { fill: var(--accent); }
+.tt-risk-quadrant-label { font-size: 9px; fill: var(--fg); dominant-baseline: middle; }
 .tt-risk-toolbar { flex: none; display: flex; align-items: center; }
 .tt-risk-expand-all-btn { margin-left: auto; }
 .tt-risk-header-row, .tt-risk-row {
