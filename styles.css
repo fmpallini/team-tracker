@@ -1041,7 +1041,7 @@ body { background: var(--bg); color: var(--fg); }
    the exposure badge already uses (see risks.ts), tinted very lightly via
    color-mix so the red/yellow/green reading is a background hint, not a
    competing signal against the dots. */
-.tt-risk-quadrant { flex: none; border-bottom: 1px solid var(--border); padding-bottom: .5rem; display: flex; justify-content: center; }
+.tt-risk-quadrant { flex: none; border-bottom: 1px solid var(--border); padding-bottom: 1rem; display: flex; flex-direction: column; align-items: center; gap: .6rem; }
 .tt-risk-quadrant-svg { display: block; max-width: 100%; height: auto; }
 .tt-risk-quadrant-cell { stroke: var(--border); stroke-width: 1; }
 /* Uneven opacity, not a flat 12% across all three: --danger and --brass are
@@ -1061,9 +1061,23 @@ body { background: var(--bg); color: var(--fg); }
    signal (see the .tt-risk-quadrant-cell-* rules above), so the ring stays
    in the accent color regardless of which cell it's in. Fills solid on
    hover as a lightweight affordance for the click-to-jump interaction. */
-.tt-risk-quadrant-dot { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; cursor: pointer; transition: fill .1s ease; }
+/* The class lives on the <g> wrapper (risks.ts's wireQuadrantDrag needs one
+   `transform` rewrite to move any plan's shape, whatever its element type),
+   and fill/stroke/cursor cascade down to the shape child via ordinary SVG/
+   CSS inheritance — no per-shape-type color rule needed. touch-action: none
+   stops a touch-drag from also panning the page. */
+.tt-risk-quadrant-dot { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; cursor: grab; transition: fill .1s ease; touch-action: none; }
 .tt-risk-quadrant-dot:hover { fill: var(--accent); }
+.tt-risk-quadrant-dot-dragging, .tt-risk-quadrant-dot-dragging:hover { cursor: grabbing; fill: var(--accent); }
+/* Drop-target feedback while dragging (wireQuadrantDrag) — a stronger,
+   accent-colored border on whichever cell the pointer currently sits over. */
+.tt-risk-quadrant-cell-drag-target { stroke: var(--accent); stroke-width: 2; }
 .tt-risk-quadrant-label { font-size: 9px; fill: var(--fg); dominant-baseline: middle; }
+.tt-risk-quadrant-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: .1rem .75rem; font-size: .72rem; color: var(--muted); }
+.tt-risk-quadrant-legend-item { display: inline-flex; align-items: center; gap: .3rem; }
+/* Same static coloring as .tt-risk-quadrant-dot, minus the interactive bits
+   (cursor/hover/drag) a legend icon has no use for. */
+.tt-risk-quadrant-legend-shape { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
 .tt-risk-toolbar { flex: none; display: flex; align-items: center; }
 .tt-risk-expand-all-btn { margin-left: auto; }
 .tt-risk-header-row, .tt-risk-row {

@@ -6,6 +6,7 @@ import {
   sortRisksForDisplay,
   moveRisk,
   computeQuadrantLayout,
+  cellFromPoint,
   type ExposureSort,
 } from '../src/modules/risks'
 import { createStore, type Store } from '../src/core/store'
@@ -14,6 +15,14 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Risk, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
+
+// jsdom has no layout engine, so Element.prototype.scrollIntoView doesn't
+// exist at all (see test/scope-freshness.test.ts's identical guard).
+// focusRiskFromQuadrant calls it unconditionally on every quadrant click/tap,
+// which most tests here don't care to assert on — a no-op default keeps
+// those from throwing; tests that DO want to assert the call still override
+// it per-instance (`row.scrollIntoView = spy`), which shadows this default.
+Element.prototype.scrollIntoView ??= () => {}
 
 function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
   const calls: { idx: 0 | 1; loc: Loc }[] = []
@@ -293,6 +302,31 @@ describe('pure helpers', () => {
       // A single-column layout would put every dot at the same cx; the
       // distributed pack should use more than one.
       expect(new Set(dots.map((d) => d.cx)).size).toBeGreaterThan(1)
+    })
+  })
+
+  describe('cellFromPoint', () => {
+    test.each([
+      { x: 0, y: 0, chance: 1, impact: 3 }, // top-left corner
+      { x: 170, y: 170, chance: 3, impact: 1 }, // bottom-right corner
+      { x: 90, y: 90, chance: 2, impact: 2 }, // dead center
+      { x: 60, y: 60, chance: 2, impact: 2 }, // exact cell boundary rounds into the next cell
+    ] as const)('($x, $y) in a 60px-cell grid -> chance=$chance impact=$impact', ({ x, y, chance, impact }) => {
+      expect(cellFromPoint(x, y, 60)).toEqual({ chance, impact })
+    })
+
+    test('clamps out-of-range points to the nearest edge cell instead of throwing', () => {
+      expect(cellFromPoint(-50, -50, 60)).toEqual({ chance: 1, impact: 3 })
+      expect(cellFromPoint(9999, 9999, 60)).toEqual({ chance: 3, impact: 1 })
+    })
+
+    test('is the exact inverse of computeQuadrantLayout\'s own cell placement for a lone dot in each cell', () => {
+      for (const chance of [1, 2, 3] as const) {
+        for (const impact of [1, 2, 3] as const) {
+          const [dot] = computeQuadrantLayout([{ id: 'a', chance, impact }])
+          expect(cellFromPoint(dot!.cx, dot!.cy, 60)).toEqual({ chance, impact })
+        }
+      }
     })
   })
 })
@@ -974,6 +1008,32 @@ describe('renderRisks', () => {
   })
 })
 
+/** A plain tap: pointerdown then pointerup at the same client coordinates — below the drag threshold, so risks.ts's wireQuadrantDrag treats it as a click rather than a drag. */
+function tapQuadrantDot(dot: Element, clientX = 0, clientY = 0): void {
+  dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX, clientY }))
+  dot.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX, clientY }))
+}
+
+/** A drag: pointerdown at the start position, pointermove past the drag threshold at the target position, then pointerup there. */
+function dragQuadrantDot(dot: Element, startX: number, startY: number, endX: number, endY: number): void {
+  dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: startX, clientY: startY }))
+  dot.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: endX, clientY: endY }))
+  dot.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: endX, clientY: endY }))
+}
+
+/** Parses a quadrant dot's `<g transform="translate(x,y)">` into {x, y} — dots are positioned via this transform (see risks.ts's wireQuadrantDrag doc comment), not cx/cy attributes, so any shape (circle/polygon/rect) moves the same way. */
+function dotTranslate(dot: Element): { x: number; y: number } {
+  const match = /translate\(([-\d.]+),([-\d.]+)\)/.exec(dot.getAttribute('transform') ?? '')
+  if (!match) throw new Error('dot has no translate transform')
+  return { x: Number(match[1]), y: Number(match[2]) }
+}
+
+/** Reads the quadrant's grid origin and cell size straight from the rendered chance=1/impact=3 (top-left) cell rect — robust against risks.ts's internal padding/cell-size constants without needing to export them just for tests. clientX/clientY that should land in a given (chance, impact) cell can then be computed as gx0 + (chance-1)*cell + local offset, gy0 + (3-impact)*cell + local offset (jsdom's zero-size getBoundingClientRect means wireQuadrantDrag's own clientX/clientY-to-local-point conversion is 1:1, no scaling). */
+function quadrantGeometry(container: Element): { gx0: number; gy0: number; cell: number } {
+  const topLeft = container.querySelector('.tt-risk-quadrant-cell[data-chance="1"][data-impact="3"]')!
+  return { gx0: Number(topLeft.getAttribute('x')), gy0: Number(topLeft.getAttribute('y')), cell: Number(topLeft.getAttribute('width')) }
+}
+
 describe('quadrant', () => {
   test('is hidden when there are no open risks', () => {
     const team = makeTeam()
@@ -1066,8 +1126,8 @@ describe('quadrant', () => {
     const scrollSpy = vi.fn()
     row.scrollIntoView = scrollSpy
 
-    const dot = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]') as unknown as SVGCircleElement
-    dot.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const dot = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]')!
+    tapQuadrantDot(dot)
 
     expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' })
     expect(document.activeElement).toBe(row)
@@ -1083,8 +1143,8 @@ describe('quadrant', () => {
 
       expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
 
-      const dot = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]') as unknown as SVGCircleElement
-      dot.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const dot = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]')!
+      tapQuadrantDot(dot)
 
       expect(container.querySelector('.tt-risk-followup-row')).not.toBeNull()
       expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"].tt-risk-row'))
@@ -1098,9 +1158,8 @@ describe('quadrant', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const dotX = () => Number(container.querySelector('.tt-risk-quadrant-dot')!.getAttribute('cx'))
-    const dotY = () => Number(container.querySelector('.tt-risk-quadrant-dot')!.getAttribute('cy'))
-    const lowXY = { x: dotX(), y: dotY() }
+    const dotXY = () => dotTranslate(container.querySelector('.tt-risk-quadrant-dot')!)
+    const lowXY = dotXY()
 
     const chanceSelect = container.querySelector('.tt-risk-chance-select') as HTMLSelectElement
     chanceSelect.value = '3'
@@ -1111,8 +1170,153 @@ describe('quadrant', () => {
 
     // chance=1,impact=1 sits bottom-left; chance=3,impact=3 sits top-right —
     // moving there should shift the dot right (larger x) and up (smaller y).
-    expect(dotX()).toBeGreaterThan(lowXY.x)
-    expect(dotY()).toBeLessThan(lowXY.y)
+    const highXY = dotXY()
+    expect(highXY.x).toBeGreaterThan(lowXY.x)
+    expect(highXY.y).toBeLessThan(lowXY.y)
+  })
+
+  describe('plan shapes', () => {
+    test('mitigate renders a circle', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', plan: 'mitigate' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      expect(container.querySelector('.tt-risk-quadrant-dot')!.firstElementChild!.tagName).toBe('circle')
+    })
+
+    test('transfer renders a 4-point polygon (diamond)', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', plan: 'transfer' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const shape = container.querySelector('.tt-risk-quadrant-dot')!.firstElementChild!
+      expect(shape.tagName).toBe('polygon')
+      expect(shape.getAttribute('points')!.trim().split(/\s+/)).toHaveLength(4)
+    })
+
+    test('eliminate renders a square', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', plan: 'eliminate' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      expect(container.querySelector('.tt-risk-quadrant-dot')!.firstElementChild!.tagName).toBe('rect')
+    })
+
+    test('accept renders a 3-point polygon (triangle)', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', plan: 'accept' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const shape = container.querySelector('.tt-risk-quadrant-dot')!.firstElementChild!
+      expect(shape.tagName).toBe('polygon')
+      expect(shape.getAttribute('points')!.trim().split(/\s+/)).toHaveLength(3)
+    })
+  })
+
+  describe('plan legend', () => {
+    test('shows one legend item per plan, in the same order as the plan dropdown, each labelled', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const items = [...container.querySelectorAll('.tt-risk-quadrant-legend-item')]
+      expect(items.map((i) => i.textContent)).toEqual(['Mitigate', 'Transfer', 'Eliminate', 'Accept'])
+    })
+
+    test('legend icon shapes are a distinct class from the real chart dots, so they are not counted as extra risks', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      expect(container.querySelectorAll('.tt-risk-quadrant-dot')).toHaveLength(1)
+      expect(container.querySelectorAll('.tt-risk-quadrant-legend-shape')).toHaveLength(4)
+    })
+  })
+
+  describe('drag to set chance/impact', () => {
+    test('dragging a dot to another cell persists the new chance/impact', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+
+      dragQuadrantDot(dot, gx0 + 10, gy0 + 170, gx0 + 2 * cell + cell / 2, gy0 + cell / 2)
+
+      expect(store.doc.teams[0]!.risks[0]!.chance).toBe(3)
+      expect(store.doc.teams[0]!.risks[0]!.impact).toBe(3)
+    })
+
+    test('a tap that never crosses the drag threshold does not change chance/impact', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const { gx0, gy0 } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+
+      tapQuadrantDot(dot, gx0 + 10, gy0 + 170)
+
+      expect(store.doc.teams[0]!.risks[0]!.chance).toBe(1)
+      expect(store.doc.teams[0]!.risks[0]!.impact).toBe(1)
+    })
+
+    test('dragging past the grid edge clamps to the nearest edge cell instead of leaving chance/impact unresolved', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const { gx0, gy0 } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+
+      dragQuadrantDot(dot, gx0 + 10, gy0 + 170, gx0 + 9999, gy0 - 9999)
+
+      expect(store.doc.teams[0]!.risks[0]!.chance).toBe(3)
+      expect(store.doc.teams[0]!.risks[0]!.impact).toBe(3)
+    })
+
+    test('highlights the cell under the pointer while dragging, and clears the highlight on drop', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+      const targetX = gx0 + 2 * cell + cell / 2
+      const targetY = gy0 + cell / 2
+
+      dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: gx0 + 10, clientY: gy0 + 170 }))
+      dot.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: targetX, clientY: targetY }))
+
+      const target = container.querySelector('.tt-risk-quadrant-cell-drag-target')
+      expect(target?.getAttribute('data-chance')).toBe('3')
+      expect(target?.getAttribute('data-impact')).toBe('3')
+
+      dot.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: targetX, clientY: targetY }))
+      expect(container.querySelector('.tt-risk-quadrant-cell-drag-target')).toBeNull()
+    })
+
+    test('a cancelled drag (pointercancel) discards the move without persisting any change', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+
+      dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: gx0 + 10, clientY: gy0 + 170 }))
+      dot.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: gx0 + 2 * cell + cell / 2, clientY: gy0 + cell / 2 }))
+      dot.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 1 }))
+
+      expect(store.doc.teams[0]!.risks[0]!.chance).toBe(1)
+      expect(store.doc.teams[0]!.risks[0]!.impact).toBe(1)
+      expect(container.querySelector('.tt-risk-quadrant-cell-drag-target')).toBeNull()
+    })
+
+    test('dragging a risk into a cell that already holds another risk repacks both without overlap', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 }), risk({ id: 'b', chance: 3, impact: 3 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dotA = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]')!
+
+      dragQuadrantDot(dotA, gx0 + 10, gy0 + 170, gx0 + 2 * cell + cell / 2, gy0 + cell / 2)
+
+      const risks = store.doc.teams[0]!.risks
+      expect(risks.find((r) => r.id === 'a')!.chance).toBe(3)
+      expect(risks.find((r) => r.id === 'a')!.impact).toBe(3)
+      expect(container.querySelectorAll('.tt-risk-quadrant-dot')).toHaveLength(2)
+    })
   })
 })
 
