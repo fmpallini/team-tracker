@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.3.1] - 2026-08-15
+
+### Added
+- Each risk's plan (Mitigate/Transfer/Eliminate/Accept) now shows as a distinct shape on the quadrant chart, with a legend below the chart explaining them.
+- Risks can now be dragged directly on the quadrant chart to change their chance/impact, instead of only through the dropdowns — the target cell highlights as you drag.
+
+### Fixed
+- The quadrant chart's plan legend sat beside the chart instead of below it, wasting horizontal space.
+
 ## [2.3.0] - 2026-08-15
 
 ### Added

@@ -202,6 +202,62 @@ function truncateForQuadrant(title: string, cellSize: number): string {
   return title.length > maxChars ? `${title.slice(0, maxChars)}…` : title
 }
 
+/**
+ * Inverse of computeQuadrantLayout's cell placement: given a point in the
+ * same `[0, cellSize*3]` grid-local space (no grid-origin offset baked in,
+ * same convention as QuadrantDot's cx/cy), returns which (chance, impact)
+ * cell it falls in. Out-of-range points (negative, or past the grid's far
+ * edge) clamp to the nearest edge cell rather than being rejected — a drag
+ * released outside the grid still resolves to a valid chance/impact.
+ */
+export function cellFromPoint(x: number, y: number, cellSize: number): { chance: 1 | 2 | 3; impact: 1 | 2 | 3 } {
+  const col = Math.min(2, Math.max(0, Math.floor(x / cellSize)))
+  const row = Math.min(2, Math.max(0, Math.floor(y / cellSize)))
+  return { chance: (col + 1) as 1 | 2 | 3, impact: (3 - row) as 1 | 2 | 3 }
+}
+
+/**
+ * Draws a risk's plan as a distinct outline shape, centered on local (0,0) —
+ * callers position it via a wrapping `<g transform="translate(cx,cy)">`
+ * rather than per-shape coordinate attributes, so dragging (see
+ * wireQuadrantDrag) can move any plan's shape identically by just rewriting
+ * that one transform. Mitigate keeps the original circle; the other three
+ * plans get a shape distinct enough to read at the smallest dot size, where
+ * fine icon linework wouldn't survive.
+ */
+function createQuadrantPlanShape(plan: RiskPlan, r: number): SVGElement {
+  switch (plan) {
+    case 'transfer': {
+      const poly = document.createElementNS(SVG_NS, 'polygon')
+      poly.setAttribute('points', `0,${-r} ${r},0 0,${r} ${-r},0`)
+      return poly
+    }
+    case 'eliminate': {
+      const side = r * 0.85
+      const rect = document.createElementNS(SVG_NS, 'rect')
+      rect.setAttribute('x', String(-side))
+      rect.setAttribute('y', String(-side))
+      rect.setAttribute('width', String(side * 2))
+      rect.setAttribute('height', String(side * 2))
+      return rect
+    }
+    case 'accept': {
+      const h = r * 1.05
+      const poly = document.createElementNS(SVG_NS, 'polygon')
+      poly.setAttribute('points', `0,${-h} ${h * 0.87},${h * 0.6} ${-h * 0.87},${h * 0.6}`)
+      return poly
+    }
+    case 'mitigate':
+    default: {
+      const circle = document.createElementNS(SVG_NS, 'circle')
+      circle.setAttribute('cx', '0')
+      circle.setAttribute('cy', '0')
+      circle.setAttribute('r', String(r))
+      return circle
+    }
+  }
+}
+
 const LEVEL_OPTIONS = [1, 2, 3] as const
 const LEVEL_KEYS: Record<1 | 2 | 3, MsgKey> = {
   1: 'risk_level_1',
@@ -362,6 +418,106 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     row.focus()
   }
 
+  function setRiskChanceImpact(id: string, chance: 1 | 2 | 3, impact: 1 | 2 | 3): void {
+    ctx.store.update((d) => {
+      const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
+      if (found) { found.chance = chance; found.impact = impact }
+    }, { teamId, sections: ['risks'] })
+  }
+
+  /** Below this pointer travel (px, in client space), a press+release on a dot counts as a click (jump to the row) rather than a drag (recompute chance/impact) — without a threshold, a hand's natural tremor during an intended click would occasionally register as a one-pixel drag. */
+  const QUADRANT_DRAG_THRESHOLD = 4
+  /** Set for the duration of an active drag; null otherwise. Only one drag runs at a time, so this is a single slot rather than a per-dot map. */
+  let quadrantDrag: { id: string; pointerId: number; startX: number; startY: number; moved: boolean } | null = null
+
+  /**
+   * Wires a quadrant dot's `<g>` for both interactions it supports: a plain
+   * click/tap (no real pointer movement) jumps to the risk's row via
+   * focusRiskFromQuadrant, same as before drag support existed; a real drag
+   * moves the shape live (direct `transform` rewrites, not a full rerender —
+   * smooth at any frame rate) and highlights the cell it's currently over,
+   * then on release resolves the drop point to a (chance, impact) via
+   * cellFromPoint and persists it through the same store call the
+   * chance/impact dropdowns already use. `computeQuadrantLayout`'s packing
+   * is untouched either way — the next renderAll() places the dot (and any
+   * cellmates) exactly as it would from editing the dropdowns directly.
+   *
+   * Pointer capture (setPointerCapture/releasePointerCapture) keeps drag
+   * events routed to this element even once the cursor leaves its small hit
+   * area mid-drag — real browsers only; jsdom (tests) lacks these methods
+   * entirely, so calls are optional-chained and simply no-op there, which is
+   * fine since tests dispatch events straight at the target regardless of
+   * "real" cursor position.
+   */
+  function wireQuadrantDrag(g: SVGGElement, id: string, cell: number, gx0: number, gy0: number, grid: number, svg: SVGSVGElement, svgWidth: number, svgHeight: number): void {
+    function localPoint(ev: PointerEvent): { x: number; y: number } {
+      const rect = svg.getBoundingClientRect()
+      const scaleX = rect.width > 0 ? svgWidth / rect.width : 1
+      const scaleY = rect.height > 0 ? svgHeight / rect.height : 1
+      return { x: (ev.clientX - rect.left) * scaleX, y: (ev.clientY - rect.top) * scaleY }
+    }
+    function clampedLocal(ev: PointerEvent): { x: number; y: number } {
+      const p = localPoint(ev)
+      return { x: Math.min(Math.max(p.x - gx0, 0), grid), y: Math.min(Math.max(p.y - gy0, 0), grid) }
+    }
+    function clearCellHighlight(): void {
+      svg.querySelectorAll('.tt-risk-quadrant-cell-drag-target').forEach((n) => n.classList.remove('tt-risk-quadrant-cell-drag-target'))
+    }
+    function endDrag(): void {
+      quadrantDrag = null
+      g.classList.remove('tt-risk-quadrant-dot-dragging')
+      clearCellHighlight()
+    }
+
+    g.addEventListener('pointerdown', (e) => {
+      const ev = e as PointerEvent
+      if (ev.button !== 0) return // primary mouse button / touch / pen only — not right-click
+      ev.preventDefault()
+      g.setPointerCapture?.(ev.pointerId)
+      quadrantDrag = { id, pointerId: ev.pointerId, startX: ev.clientX, startY: ev.clientY, moved: false }
+    })
+
+    g.addEventListener('pointermove', (e) => {
+      if (!quadrantDrag || quadrantDrag.id !== id) return
+      const ev = e as PointerEvent
+      if (!quadrantDrag.moved) {
+        if (Math.hypot(ev.clientX - quadrantDrag.startX, ev.clientY - quadrantDrag.startY) < QUADRANT_DRAG_THRESHOLD) return
+        quadrantDrag.moved = true
+        g.classList.add('tt-risk-quadrant-dot-dragging')
+      }
+      const { x, y } = clampedLocal(ev)
+      g.setAttribute('transform', `translate(${gx0 + x},${gy0 + y})`)
+      clearCellHighlight()
+      const { chance, impact } = cellFromPoint(x, y, cell)
+      svg.querySelector(`.tt-risk-quadrant-cell[data-chance="${chance}"][data-impact="${impact}"]`)?.classList.add('tt-risk-quadrant-cell-drag-target')
+    })
+
+    g.addEventListener('pointerup', (e) => {
+      if (!quadrantDrag || quadrantDrag.id !== id) return
+      const ev = e as PointerEvent
+      g.releasePointerCapture?.(ev.pointerId)
+      const wasMoved = quadrantDrag.moved
+      endDrag()
+      if (!wasMoved) {
+        focusRiskFromQuadrant(id)
+        return
+      }
+      const { x, y } = clampedLocal(ev)
+      const { chance, impact } = cellFromPoint(x, y, cell)
+      setRiskChanceImpact(id, chance, impact)
+    })
+
+    // A cancelled gesture (e.g. a touch drag interrupted by the browser)
+    // discards the in-progress move — renderAll() restores the dot to its
+    // real, packed position since nothing was persisted.
+    g.addEventListener('pointercancel', (e) => {
+      if (!quadrantDrag || quadrantDrag.id !== id) return
+      g.releasePointerCapture?.((e as PointerEvent).pointerId)
+      endDrag()
+      renderAll()
+    })
+  }
+
   /**
    * How large to draw each quadrant cell this render. QUADRANT_CELL_MIN is
    * the floor (today's fixed size); QUADRANT_CELL_MAX a sane ceiling. Grows
@@ -430,6 +586,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         rect.setAttribute('width', String(cell))
         rect.setAttribute('height', String(cell))
         rect.setAttribute('class', `tt-risk-quadrant-cell tt-risk-quadrant-cell-${level}`)
+        // Looked up during a drag (wireQuadrantDrag) to highlight whichever
+        // cell the pointer is currently over.
+        rect.setAttribute('data-chance', String(chance))
+        rect.setAttribute('data-impact', String(impact))
         svg.appendChild(rect)
       }
     }
@@ -473,22 +633,28 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       const cx = gx0 + dot.cx
       const cy = gy0 + dot.cy
 
-      const circle = document.createElementNS(SVG_NS, 'circle')
-      circle.setAttribute('cx', String(cx))
-      circle.setAttribute('cy', String(cy))
-      circle.setAttribute('r', String(dot.r))
+      // A <g transform="translate(…)"> wrapper, not per-shape coordinate
+      // attributes: dragging (wireQuadrantDrag) just rewrites this one
+      // transform regardless of which plan shape is inside, rather than
+      // needing separate move logic per SVG element type (circle uses
+      // cx/cy, polygon uses points, rect uses x/y). fill/stroke set via the
+      // .tt-risk-quadrant-dot class on the <g> cascade to the shape inside
+      // through normal SVG property inheritance.
+      const g = document.createElementNS(SVG_NS, 'g') as SVGGElement
+      g.setAttribute('transform', `translate(${cx},${cy})`)
       // Flat color, not exposure-level-tinted: the cell background already
       // carries that signal, and coloring the dot too was redundant with it.
-      circle.setAttribute('class', 'tt-risk-quadrant-dot')
+      g.setAttribute('class', 'tt-risk-quadrant-dot')
       // Not `data-risk-id`: that attribute already identifies the row below,
       // and several existing tests/selectors do `[data-risk-id="…"]` scoped
       // to the whole container expecting exactly one match.
-      circle.setAttribute('data-quadrant-risk-id', dot.id)
-      circle.addEventListener('click', () => focusRiskFromQuadrant(dot.id))
+      g.setAttribute('data-quadrant-risk-id', dot.id)
+      g.appendChild(createQuadrantPlanShape(risk.plan, dot.r))
       const titleNode = document.createElementNS(SVG_NS, 'title')
       titleNode.textContent = risk.title
-      circle.appendChild(titleNode)
-      svg.appendChild(circle)
+      g.appendChild(titleNode)
+      wireQuadrantDrag(g, dot.id, cell, gx0, gy0, grid, svg, svgWidth, svgHeight)
+      svg.appendChild(g)
 
       if (dot.showLabel) {
         const label = document.createElementNS(SVG_NS, 'text')
@@ -501,6 +667,26 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     }
 
     quadrantEl.appendChild(svg)
+    quadrantEl.appendChild(buildQuadrantLegend())
+  }
+
+  /** Small legend explaining the quadrant's per-plan shapes (see createQuadrantPlanShape) — without it, a shape-to-plan mapping isn't guessable the way the exposure color gradient is. Rebuilt every render alongside the chart itself, cheap and always in sync with the current locale. */
+  function buildQuadrantLegend(): HTMLElement {
+    const items = PLAN_OPTIONS.map((plan) => {
+      const iconSvg = document.createElementNS(SVG_NS, 'svg')
+      iconSvg.setAttribute('width', '12')
+      iconSvg.setAttribute('height', '12')
+      iconSvg.setAttribute('viewBox', '-6 -6 12 12')
+      iconSvg.setAttribute('class', 'tt-risk-quadrant-legend-icon')
+      const shape = createQuadrantPlanShape(plan, 5)
+      // Not `tt-risk-quadrant-dot`: that class also identifies the real,
+      // interactive chart dots (queried by id elsewhere), and reusing it
+      // here would make every legend icon match those queries too.
+      shape.setAttribute('class', 'tt-risk-quadrant-legend-shape')
+      iconSvg.appendChild(shape)
+      return el('span', { class: 'tt-risk-quadrant-legend-item' }, iconSvg, t(lc, PLAN_KEYS[plan]))
+    })
+    return el('div', { class: 'tt-risk-quadrant-legend' }, ...items)
   }
 
   function renderRow(r: Risk): HTMLElement {
