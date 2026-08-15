@@ -5,6 +5,7 @@ import {
   nextExposureSort,
   sortRisksForDisplay,
   moveRisk,
+  computeQuadrantLayout,
   type ExposureSort,
 } from '../src/modules/risks'
 import { createStore, type Store } from '../src/core/store'
@@ -204,6 +205,94 @@ describe('pure helpers', () => {
       const risks = [risk({ id: 'a', order: 0 })]
       moveRisk(risks, 'ghost', 'a', 'before')
       expect(risks[0]!.order).toBe(0)
+    })
+  })
+
+  describe('computeQuadrantLayout', () => {
+    test('empty input returns no dots', () => {
+      expect(computeQuadrantLayout([])).toEqual([])
+    })
+
+    test('a single risk lands in its own (chance, impact) cell', () => {
+      const [dot] = computeQuadrantLayout([{ id: 'a', chance: 1, impact: 1 }])
+      // chance=1 -> leftmost column (cx < 60); impact=1 -> bottom row (cy > 120, since impact
+      // increases upward and the grid is 3 * 60 = 180 tall).
+      expect(dot!.cx).toBeGreaterThan(0)
+      expect(dot!.cx).toBeLessThan(60)
+      expect(dot!.cy).toBeGreaterThan(120)
+      expect(dot!.cy).toBeLessThan(180)
+    })
+
+    test('higher impact places the dot higher on screen (smaller cy) than lower impact, at the same chance', () => {
+      const dots = computeQuadrantLayout([
+        { id: 'lowImpact', chance: 2, impact: 1 },
+        { id: 'highImpact', chance: 2, impact: 3 },
+      ])
+      const low = dots.find((d) => d.id === 'lowImpact')!
+      const high = dots.find((d) => d.id === 'highImpact')!
+      expect(high.cy).toBeLessThan(low.cy)
+    })
+
+    test('higher chance places the dot further right (larger cx) than lower chance, at the same impact', () => {
+      const dots = computeQuadrantLayout([
+        { id: 'lowChance', chance: 1, impact: 2 },
+        { id: 'highChance', chance: 3, impact: 2 },
+      ])
+      const low = dots.find((d) => d.id === 'lowChance')!
+      const high = dots.find((d) => d.id === 'highChance')!
+      expect(high.cx).toBeGreaterThan(low.cx)
+    })
+
+    test('risks sharing a cell are packed apart, never landing on the exact same point', () => {
+      const dots = computeQuadrantLayout([
+        { id: 'a', chance: 2, impact: 2 },
+        { id: 'b', chance: 2, impact: 2 },
+        { id: 'c', chance: 2, impact: 2 },
+      ])
+      expect(dots).toHaveLength(3)
+      const points = dots.map((d) => `${d.cx},${d.cy}`)
+      expect(new Set(points).size).toBe(3)
+    })
+
+    test('a crowded cell shrinks its dot radius so the pack still fits', () => {
+      const roomy = computeQuadrantLayout([{ id: 'a', chance: 1, impact: 1 }])
+      const crowded = computeQuadrantLayout(
+        Array.from({ length: 100 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const }))
+      )
+      expect(crowded[0]!.r).toBeLessThan(roomy[0]!.r)
+    })
+
+    test('packing is deterministic: same input order always yields the same positions', () => {
+      const input = [
+        { id: 'a', chance: 3 as const, impact: 3 as const },
+        { id: 'b', chance: 3 as const, impact: 3 as const },
+      ]
+      expect(computeQuadrantLayout(input)).toEqual(computeQuadrantLayout(input))
+    })
+
+    test('showLabel is true when a cell has room for its dots\' labels', () => {
+      const dots = computeQuadrantLayout([
+        { id: 'a', chance: 1, impact: 1 },
+        { id: 'b', chance: 2, impact: 2 },
+        { id: 'c', chance: 2, impact: 2 },
+      ])
+      expect(dots.every((d) => d.showLabel)).toBe(true)
+    })
+
+    test('showLabel turns false once a cell is too crowded for a label per row', () => {
+      const dots = computeQuadrantLayout(
+        Array.from({ length: 6 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const }))
+      )
+      expect(dots.every((d) => d.showLabel === false)).toBe(true)
+    })
+
+    test('a crowded (label-hidden) cell spreads its dots across both axes instead of a single cramped column', () => {
+      const dots = computeQuadrantLayout(
+        Array.from({ length: 6 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const }))
+      )
+      // A single-column layout would put every dot at the same cx; the
+      // distributed pack should use more than one.
+      expect(new Set(dots.map((d) => d.cx)).size).toBeGreaterThan(1)
     })
   })
 })
@@ -882,6 +971,148 @@ describe('renderRisks', () => {
     expect((row.querySelector('.tt-risk-expand-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-risk-close-btn') as HTMLElement).tabIndex).toBe(-1)
     expect((row.querySelector('.tt-risk-delete-btn') as HTMLElement).tabIndex).toBe(-1)
+  })
+})
+
+describe('quadrant', () => {
+  test('is hidden when there are no open risks', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const quadrant = container.querySelector('.tt-risk-quadrant') as HTMLElement
+    expect(quadrant.style.display).toBe('none')
+  })
+
+  test('is hidden when every risk is closed', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', closed: true })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const quadrant = container.querySelector('.tt-risk-quadrant') as HTMLElement
+    expect(quadrant.style.display).toBe('none')
+  })
+
+  test('renders one dot per open risk, excluding closed ones', () => {
+    const team = makeTeam({
+      risks: [risk({ id: 'a', title: 'Open one' }), risk({ id: 'b', title: 'Closed one', closed: true })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const dots = container.querySelectorAll('.tt-risk-quadrant-dot')
+    expect(dots).toHaveLength(1)
+    expect(dots[0]!.getAttribute('data-quadrant-risk-id')).toBe('a')
+  })
+
+  test('a dot has the same flat color regardless of exposure level — only the cell background varies', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 }), risk({ id: 'b', chance: 3, impact: 3 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const dots = [...container.querySelectorAll('.tt-risk-quadrant-dot')]
+    expect(dots).toHaveLength(2)
+    for (const dot of dots) {
+      expect(dot.getAttribute('class')).toBe('tt-risk-quadrant-dot')
+    }
+  })
+
+  test('a dot is labelled with (a truncation of) its risk\'s title, short enough to stay inside the cell', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'Vendor delivery delay past Q3' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const label = container.querySelector('.tt-risk-quadrant-label')!
+    expect(label.textContent).toBe('Vendor …')
+  })
+
+  test('a short title is not truncated', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'Short' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    expect(container.querySelector('.tt-risk-quadrant-label')!.textContent).toBe('Short')
+  })
+
+  test('labels are omitted once a cell is too crowded for them to stay legible, without dropping the dots', () => {
+    const team = makeTeam({
+      risks: Array.from({ length: 6 }, (_, i) => risk({ id: `r${i}`, title: `Risk ${i}`, chance: 1, impact: 1 })),
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    expect(container.querySelectorAll('.tt-risk-quadrant-dot')).toHaveLength(6)
+    expect(container.querySelectorAll('.tt-risk-quadrant-label')).toHaveLength(0)
+  })
+
+  test('the quadrant carries all 9 exposure-tinted background cells', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    expect(container.querySelectorAll('.tt-risk-quadrant-cell')).toHaveLength(9)
+    expect(container.querySelectorAll('.tt-risk-quadrant-cell-low').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('.tt-risk-quadrant-cell-high').length).toBeGreaterThan(0)
+  })
+
+  test('clicking a dot scrolls to and focuses its row', () => {
+    // Clicking an already-expanded risk's dot doesn't trigger a rebuild
+    // (see the next test for the collapsed case), so the row reference
+    // stays valid for the scrollIntoView stub below.
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', followup: 'x' }), risk({ id: 'b', title: 'B' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+
+    const row = container.querySelector('[data-risk-id="a"].tt-risk-row') as HTMLElement
+    const scrollSpy = vi.fn()
+    row.scrollIntoView = scrollSpy
+
+    const dot = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]') as unknown as SVGCircleElement
+    dot.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' })
+    expect(document.activeElement).toBe(row)
+  })
+
+  test('clicking a dot for a collapsed risk expands its follow-up editor before jumping to it', () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = () => {}
+    try {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+
+      const dot = container.querySelector('.tt-risk-quadrant-dot[data-quadrant-risk-id="a"]') as unknown as SVGCircleElement
+      dot.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-row')).not.toBeNull()
+      expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"].tt-risk-row'))
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView
+    }
+  })
+
+  test('re-renders live when chance/impact change elsewhere (e.g. via the select) — moving the dot to the high cell', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const dotX = () => Number(container.querySelector('.tt-risk-quadrant-dot')!.getAttribute('cx'))
+    const dotY = () => Number(container.querySelector('.tt-risk-quadrant-dot')!.getAttribute('cy'))
+    const lowXY = { x: dotX(), y: dotY() }
+
+    const chanceSelect = container.querySelector('.tt-risk-chance-select') as HTMLSelectElement
+    chanceSelect.value = '3'
+    chanceSelect.dispatchEvent(new Event('change'))
+    const impactSelect = container.querySelector('.tt-risk-impact-select') as HTMLSelectElement
+    impactSelect.value = '3'
+    impactSelect.dispatchEvent(new Event('change'))
+
+    // chance=1,impact=1 sits bottom-left; chance=3,impact=3 sits top-right —
+    // moving there should shift the dot right (larger x) and up (smaller y).
+    expect(dotX()).toBeGreaterThan(lowXY.x)
+    expect(dotY()).toBeLessThan(lowXY.y)
   })
 })
 

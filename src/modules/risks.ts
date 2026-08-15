@@ -7,7 +7,10 @@
 // src/modules/person-notes.ts's full editor + @ref + template-picker wiring.
 // Any number of follow-up editors can be expanded at once (tracked in the
 // shared `expandable` ExpandableRowsController, src/ui/expandable-followup.ts),
-// which is what backs the toolbar's expand-all/collapse-all button.
+// which is what backs the toolbar's expand-all/collapse-all button. A 3x3
+// chance/impact quadrant SVG sits above the list (computeQuadrantLayout +
+// renderQuadrant below), mirroring milestones.ts's timeline: always rebuilt
+// in full alongside the list, since nothing inside an SVG can hold DOM focus.
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
@@ -94,6 +97,109 @@ export function moveRisk(risks: Risk[], draggedId: string, targetId: string, pos
   const insertAt = position === 'before' ? targetIdx : targetIdx + 1
   sorted.splice(insertAt, 0, dragged)
   sorted.forEach((r, i) => { r.order = i })
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+/** Pixel size of one (chance, impact) cell in the quadrant grid at its floor — today's fixed size, kept as the minimum a render can shrink to (see computeCellSize, below). */
+const QUADRANT_CELL_MIN = 60
+/** Ceiling a render can grow a cell to, how ever much free pane space is available. */
+const QUADRANT_CELL_MAX = 110
+const QUADRANT_DOT_R = 3.5
+const QUADRANT_DOT_R_MIN = 2
+/** Dot's x offset from its cell's left edge — every dot in a cell shares this x, so their title labels (always drawn immediately to the dot's right) line up in a column instead of needing per-dot horizontal placement. */
+const QUADRANT_DOT_INSET = 10
+/** Below this per-row vertical slot, a cell's stacked dots sit too close together for an adjacent label to stay legible without overlapping its neighbors — the label is skipped for that dot (its <title> tooltip still carries the full text). */
+const QUADRANT_LABEL_MIN_GAP = 11
+/** Room reserved for the impact tick numbers + rotated axis title on the left. */
+const QUADRANT_PAD_LEFT = 34
+const QUADRANT_PAD_TOP = 6
+/** Room reserved on the right for title labels spilling past the last (chance=3) column. */
+const QUADRANT_PAD_RIGHT = 64
+/** Room reserved for the chance tick numbers + axis title below the grid. */
+const QUADRANT_PAD_BOTTOM = 30
+
+export interface QuadrantDot {
+  id: string
+  /** Center position in a [0, cellSize*3] x [0, cellSize*3] space — callers add their own grid-origin offset, same convention as computeTimelineLayout's (milestones.ts) innerWidth-relative x. */
+  cx: number
+  cy: number
+  r: number
+  /** Whether there's enough vertical room in this dot's cell to draw a title label beside it without overlapping a neighbor — see QUADRANT_LABEL_MIN_GAP. */
+  showLabel: boolean
+}
+
+/**
+ * Places every risk's dot in its (chance, impact) cell of a 3x3 grid —
+ * impact increases upward (row 0 = impact 3), chance increases rightward
+ * (col 0 = chance 1), the conventional risk-matrix reading. `cellSize`
+ * (defaults to QUADRANT_CELL_MIN) scales every dimension uniformly, so
+ * callers rendering a grown chart (see computeCellSize) pass their computed
+ * size straight through instead of this always assuming the floor. Risks
+ * sharing a cell get one of two layouts:
+ *
+ * - Few enough that a title label fits beside each one (see
+ *   QUADRANT_LABEL_MIN_GAP): stacked in a single column sharing one x, so
+ *   every label lines up and none of them overlap their neighbor above/below.
+ * - Too many for that: labels would collide regardless, so they're dropped
+ *   (the dot's <title> tooltip still carries the full text) and the dots
+ *   themselves switch to a 2D sub-grid spread across the *whole* cell instead
+ *   of staying pinned to the labeled layout's left column — a crowded cell
+ *   reads as a cluster, not a cramped, mostly-empty stack.
+ */
+export function computeQuadrantLayout(
+  risks: { id: string; chance: 1 | 2 | 3; impact: 1 | 2 | 3 }[],
+  cellSize: number = QUADRANT_CELL_MIN
+): QuadrantDot[] {
+  const ratio = cellSize / QUADRANT_CELL_MIN
+  const dotR = QUADRANT_DOT_R * ratio
+  const dotRMin = QUADRANT_DOT_R_MIN * ratio
+  const dotInset = QUADRANT_DOT_INSET * ratio
+  const labelMinGap = QUADRANT_LABEL_MIN_GAP * ratio
+
+  const groups = new Map<string, typeof risks>()
+  for (const r of risks) {
+    const key = `${r.chance}:${r.impact}`
+    const group = groups.get(key)
+    if (group) group.push(r)
+    else groups.set(key, [r])
+  }
+
+  const dots: QuadrantDot[] = []
+  for (const group of groups.values()) {
+    const { chance, impact } = group[0]!
+    const cellLeft = (chance - 1) * cellSize
+    const cellTop = (3 - impact) * cellSize
+    const n = group.length
+    const singleColStepY = cellSize / (n + 1)
+
+    if (n === 1 || singleColStepY >= labelMinGap) {
+      const r = n === 1 ? dotR : Math.max(dotRMin, Math.min(dotR, singleColStepY / 2 - 1))
+      group.forEach((risk, i) => {
+        dots.push({ id: risk.id, cx: cellLeft + dotInset, cy: cellTop + singleColStepY * (i + 1), r, showLabel: true })
+      })
+    } else {
+      const cols = Math.ceil(Math.sqrt(n))
+      const rows = Math.ceil(n / cols)
+      const r = Math.max(dotRMin, Math.min(dotR, cellSize / (2 * Math.max(cols, rows))))
+      const stepX = cellSize / (cols + 1)
+      const stepY = cellSize / (rows + 1)
+      group.forEach((risk, i) => {
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        dots.push({ id: risk.id, cx: cellLeft + stepX * (col + 1), cy: cellTop + stepY * (row + 1), r, showLabel: false })
+      })
+    }
+  }
+  return dots
+}
+
+/** Baseline character cap at QUADRANT_CELL_MIN, tuned to fit inside the remaining width of a *minimum-sized* cell (cell minus the dot's inset and radius) without spilling into the next cell over. */
+const QUADRANT_LABEL_MAX_CHARS = 7
+
+/** Truncation for a title drawn beside a quadrant dot, scaled to `cellSize` by the same ratio computeQuadrantLayout scales its own geometry by — a grown chart (see computeCellSize) has proportionally more room per cell, so it earns proportionally more of the title, while staying fit to its own cell at any size. The dot's <title> tooltip always carries the untruncated text. */
+function truncateForQuadrant(title: string, cellSize: number): string {
+  const maxChars = Math.max(QUADRANT_LABEL_MAX_CHARS, Math.round(QUADRANT_LABEL_MAX_CHARS * (cellSize / QUADRANT_CELL_MIN)))
+  return title.length > maxChars ? `${title.slice(0, maxChars)}…` : title
 }
 
 const LEVEL_OPTIONS = [1, 2, 3] as const
@@ -238,6 +344,163 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const r = risks().find((rr) => rr.id === itemId)
     if (!r) return
     openItemContextMenu(ctx, 'risk', teamId, itemId, x, y, () => requestDelete(r))
+  }
+
+  // --- quadrant (SVG) ---------------------------------------------------
+
+  const quadrantEl = el('div', { class: 'tt-risk-quadrant' })
+
+  /** Jumps to a risk from its quadrant dot: expands its follow-up first if it's currently collapsed (so the click has an unmistakable visible effect even when the row was already on-screen and needed no scrolling — a bare `.focus()` after a mouse click is easy to miss, since most browsers' :focus-visible heuristics suppress the ring for pointer-driven focus), then scrolls to and focuses the row. */
+  function focusRiskFromQuadrant(id: string): void {
+    if (!expandable.isExpanded(id)) {
+      expandable.expand(id)
+      renderAll()
+    }
+    const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
+    if (!row) return
+    row.scrollIntoView({ block: 'center' })
+    row.focus()
+  }
+
+  /**
+   * How large to draw each quadrant cell this render. QUADRANT_CELL_MIN is
+   * the floor (today's fixed size); QUADRANT_CELL_MAX a sane ceiling. Grows
+   * past the floor only when the pane genuinely has unused room to spare:
+   *
+   * - Horizontally, from the quadrant's own rendered width — mirrors
+   *   milestones.ts's timelineEl.clientWidth pattern.
+   * - Vertically, from risksWrap's viewport height (`.tt-risks` is
+   *   `height: 100%`, so this doesn't shrink/grow with content) minus what
+   *   the toolbar/header/list/closed-section currently need.
+   *
+   * Both measurements are taken independently of the quadrant's own current
+   * size (listEl/closedEl are already rebuilt for this render by the time
+   * this runs — see renderAll), so this is a single pass: no measure-resize-
+   * remeasure loop. In jsdom (tests), every measurement reads 0 and the
+   * floor is returned — the same fallback milestones.ts's FALLBACK_WIDTH
+   * uses for the identical reason.
+   */
+  function computeCellSize(): number {
+    const availWidth = quadrantEl.clientWidth
+    const widthCell = availWidth > 0 ? (availWidth - QUADRANT_PAD_LEFT - QUADRANT_PAD_RIGHT) / 3 : QUADRANT_CELL_MIN
+
+    let heightCell = QUADRANT_CELL_MIN
+    const totalAvail = risksWrap.clientHeight
+    if (totalAvail > 0) {
+      const wrapStyle = getComputedStyle(risksWrap)
+      const paddingV = (parseFloat(wrapStyle.paddingTop) || 0) + (parseFloat(wrapStyle.paddingBottom) || 0)
+      const gapPx = parseFloat(wrapStyle.rowGap) || 0
+      const others = toolbar.offsetHeight + headerRow.offsetHeight + listEl.offsetHeight + closedEl.offsetHeight
+      const freeForQuadrant = totalAvail - paddingV - gapPx * 4 - others
+      heightCell = (freeForQuadrant - QUADRANT_PAD_TOP - QUADRANT_PAD_BOTTOM) / 3
+    }
+
+    return Math.max(QUADRANT_CELL_MIN, Math.min(QUADRANT_CELL_MAX, Math.floor(Math.min(widthCell, heightCell))))
+  }
+
+  /** Renders the 3x3 chance/impact quadrant: a per-cell exposure-tinted background (reusing exposureLevel's own low/medium/high bucketing) plus one dot per open risk, packed via computeQuadrantLayout. Closed risks are excluded — mirrors the list below, where they live in their own collapsed section. */
+  function renderQuadrant(): void {
+    quadrantEl.innerHTML = ''
+    const open = risks().filter((r) => !r.closed)
+    if (open.length === 0) {
+      quadrantEl.style.display = 'none'
+      return
+    }
+    quadrantEl.style.display = ''
+
+    const cell = computeCellSize()
+    const grid = cell * 3
+    const gx0 = QUADRANT_PAD_LEFT
+    const gy0 = QUADRANT_PAD_TOP
+    const svgWidth = gx0 + grid + QUADRANT_PAD_RIGHT
+    const svgHeight = gy0 + grid + QUADRANT_PAD_BOTTOM
+
+    const svg = document.createElementNS(SVG_NS, 'svg')
+    svg.setAttribute('width', String(svgWidth))
+    svg.setAttribute('height', String(svgHeight))
+    svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`)
+    svg.setAttribute('class', 'tt-risk-quadrant-svg')
+
+    for (let chance = 1; chance <= 3; chance++) {
+      for (let impact = 1; impact <= 3; impact++) {
+        const level = exposureLevel(computeExposure(chance, impact))
+        const rect = document.createElementNS(SVG_NS, 'rect')
+        rect.setAttribute('x', String(gx0 + (chance - 1) * cell))
+        rect.setAttribute('y', String(gy0 + (3 - impact) * cell))
+        rect.setAttribute('width', String(cell))
+        rect.setAttribute('height', String(cell))
+        rect.setAttribute('class', `tt-risk-quadrant-cell tt-risk-quadrant-cell-${level}`)
+        svg.appendChild(rect)
+      }
+    }
+
+    for (let chance = 1; chance <= 3; chance++) {
+      const tick = document.createElementNS(SVG_NS, 'text')
+      tick.setAttribute('x', String(gx0 + (chance - 0.5) * cell))
+      tick.setAttribute('y', String(gy0 + grid + 14))
+      tick.setAttribute('class', 'tt-risk-quadrant-tick')
+      tick.textContent = String(chance)
+      svg.appendChild(tick)
+    }
+    for (let impact = 1; impact <= 3; impact++) {
+      const tick = document.createElementNS(SVG_NS, 'text')
+      tick.setAttribute('x', String(gx0 - 8))
+      tick.setAttribute('y', String(gy0 + (3 - impact + 0.5) * cell))
+      tick.setAttribute('class', 'tt-risk-quadrant-tick tt-risk-quadrant-tick-y')
+      tick.textContent = String(impact)
+      svg.appendChild(tick)
+    }
+
+    const xTitle = document.createElementNS(SVG_NS, 'text')
+    xTitle.setAttribute('x', String(gx0 + grid / 2))
+    xTitle.setAttribute('y', String(svgHeight - 2))
+    xTitle.setAttribute('class', 'tt-risk-quadrant-axis-title')
+    xTitle.textContent = t(lc, 'risk_col_chance')
+    svg.appendChild(xTitle)
+
+    const yTitle = document.createElementNS(SVG_NS, 'text')
+    yTitle.setAttribute('x', '10')
+    yTitle.setAttribute('y', String(gy0 + grid / 2))
+    yTitle.setAttribute('class', 'tt-risk-quadrant-axis-title')
+    yTitle.setAttribute('transform', `rotate(-90 10 ${gy0 + grid / 2})`)
+    yTitle.textContent = t(lc, 'risk_col_impact')
+    svg.appendChild(yTitle)
+
+    const byId = new Map(open.map((r) => [r.id, r]))
+    const dots = computeQuadrantLayout(open.map((r) => ({ id: r.id, chance: r.chance, impact: r.impact })), cell)
+    for (const dot of dots) {
+      const risk = byId.get(dot.id)!
+      const cx = gx0 + dot.cx
+      const cy = gy0 + dot.cy
+
+      const circle = document.createElementNS(SVG_NS, 'circle')
+      circle.setAttribute('cx', String(cx))
+      circle.setAttribute('cy', String(cy))
+      circle.setAttribute('r', String(dot.r))
+      // Flat color, not exposure-level-tinted: the cell background already
+      // carries that signal, and coloring the dot too was redundant with it.
+      circle.setAttribute('class', 'tt-risk-quadrant-dot')
+      // Not `data-risk-id`: that attribute already identifies the row below,
+      // and several existing tests/selectors do `[data-risk-id="…"]` scoped
+      // to the whole container expecting exactly one match.
+      circle.setAttribute('data-quadrant-risk-id', dot.id)
+      circle.addEventListener('click', () => focusRiskFromQuadrant(dot.id))
+      const titleNode = document.createElementNS(SVG_NS, 'title')
+      titleNode.textContent = risk.title
+      circle.appendChild(titleNode)
+      svg.appendChild(circle)
+
+      if (dot.showLabel) {
+        const label = document.createElementNS(SVG_NS, 'text')
+        label.setAttribute('x', String(cx + dot.r + 3))
+        label.setAttribute('y', String(cy))
+        label.setAttribute('class', 'tt-risk-quadrant-label')
+        label.textContent = truncateForQuadrant(risk.title, cell)
+        svg.appendChild(label)
+      }
+    }
+
+    quadrantEl.appendChild(svg)
   }
 
   function renderRow(r: Risk): HTMLElement {
@@ -519,6 +782,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       listEl.querySelector<HTMLInputElement>(`[data-risk-id="${focusRiskId}"] .tt-risk-title-input`)?.focus()
       focusRiskId = null
     }
+
+    // Sized against listEl/closedEl's just-rebuilt heights (see
+    // computeCellSize) — must run after they're rebuilt above, not before.
+    renderQuadrant()
   }
 
   function addRisk(): void {
@@ -618,7 +885,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-risk-row', ['ArrowDown', 'ArrowUp'])
 
-  container.appendChild(el('div', { class: 'tt-risks' }, toolbar, headerRow, listEl, closedEl))
+  // Named (not inlined into the appendChild below) so computeCellSize can
+  // measure its viewport height directly.
+  const risksWrap = el('div', { class: 'tt-risks' }, quadrantEl, toolbar, headerRow, listEl, closedEl)
+  container.appendChild(risksWrap)
   renderAll()
   // Lands focus on the first row the moment the module opens, so
   // ArrowUp/Down navigation works immediately without a preceding Tab. Only

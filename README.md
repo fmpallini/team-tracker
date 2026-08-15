@@ -206,18 +206,18 @@ the same with the local `app.html` and the installed PWA:
   synced file for a while (Google Drive keeps them for ~30 days), so you can
   also recover an earlier state by downloading an older version of the file.
 
-### Daily backup file (`.bck`)
+### Automatic backup file (`.bck`)
 
 As a second, independent line of defense against file corruption (distinct
 from a cloud provider's version history, which covers *losing* the file —
 this covers the file on disk becoming unreadable), Settings → General offers
-"Maintain daily backup file". Once enabled, the app keeps a `.bck` file —
-wherever you chose to save it (the picker defaults to the same folder as
-the original) — refreshed at most once every 24 hours (and immediately
-after any password change), containing the same bytes as the primary
-file. To recover from it, just rename it from `.bck` to `.tmv` and
-open it normally — it uses the exact same format as the file it was copied
-from, encrypted or plain.
+"Maintain automatic backup file (.bck)". Once enabled, the app keeps a `.bck`
+file — wherever you chose to save it (the picker defaults to the same folder
+as the original) — refreshed on your choice of cadence (daily, the default,
+or hourly; and always immediately after any password change), containing the
+same bytes as the primary file. To recover from it, just rename it from
+`.bck` to `.tmv` and open it normally — it uses the exact same format as the
+file it was copied from, encrypted or plain.
 
 ## FAQ
 
@@ -269,9 +269,10 @@ scanning by a cloud backup provider). You can set a password on a
 password-less file at any time from the same tab.
 
 **What's the `.bck` file next to my `.tmv` file?**
-An optional daily backup (see [Daily backup file](#daily-backup-file-bck)),
-enabled per-file in Settings → General. It's a plain copy of your file at
-its last backup point — rename it to `.tmv` to open it like any other file.
+An optional automatic backup, daily or hourly (see [Automatic backup
+file](#automatic-backup-file-bck)), enabled per-file in Settings → General.
+It's a plain copy of your file at its last backup point — rename it to
+`.tmv` to open it like any other file.
 
 **Is there version history or an undo for past edits?**
 Not inside the app. Whatever version history your cloud sync provider offers
@@ -354,7 +355,8 @@ come for free just from registering the module.
 2. **The renderer.** Write `src/modules/<name>.ts` exporting a function
    matching `ModuleRenderer` — `(container: HTMLElement, loc: Loc, ctx:
    ModuleCtx) => void`. `ctx` gives you `store`, `pm` (for opening other
-   locs), `paneIdx`, `locale`. Read the team via
+   locs), `paneIdx`, `locale`, and `searchIndex` (for backlink-chip lookups —
+   see `src/modules/milestones.ts` for an example consumer). Read the team via
    `ctx.store.doc.teams.find(...)`, build DOM with `src/ui/dom.ts`'s `el()`
    helper, mutate through `ctx.store.update((d) => { ... })`, and re-render on
    every store change via `ctx.store.subscribe(renderAll)`. Conventions worth
@@ -367,26 +369,38 @@ come for free just from registering the module.
      `subscribe()`); `store.updateNav()` is for navigation-only state (pane
      focus, split %) and deliberately bypasses `subscribe()` so switching
      panes doesn't blow away an in-progress edit elsewhere. Don't mix them up.
-   - Anything your renderer attaches outside `container` — a document-level
+   - **Wrap your exported renderer with `withDisposal()` from
+     `src/modules/lifecycle.ts`** — every existing module does (e.g.
+     `export const renderDecisions = withDisposal((container, loc, ctx) =>
+     { ... })`). `panes.ts` reuses one body element across module switches and
+     only clears `container`'s own DOM children between renders, so anything
+     your renderer attaches *outside* `container` — a document-level
      listener, an overlay appended to `document.body` (see `src/ui/atref.ts`'s
-     `@`-mention dropdown) — needs an explicit disposer, tracked in a
-     per-container `WeakMap<HTMLElement, () => void>` and called both at the
-     top of the renderer (before rebuilding) and from the pane manager's own
-     teardown. `panes.ts` clears `container`'s DOM children between renders,
-     but has no way to know about listeners/overlays living outside it.
+     `@`-mention dropdown) — would otherwise leak on every re-open or module
+     switch. To fix that, have your render function `return` a teardown
+     callback (`() => void`) when it attached anything external;
+     `withDisposal()` stores that callback in a shared `WeakMap` and calls it
+     automatically the next time that container is mounted into, so you don't
+     hand-roll any bookkeeping yourself.
 
 3. **Register it.** In `src/main.ts`, alongside the other
    `pm.registerModule(...)` calls: `pm.registerModule('decisions',
    renderDecisions)`. Do this before the post-registration `pm.renderAll()`
    call a few lines down, or a pane whose saved nav state already points at
    the new kind renders "Módulo em construção…" and never gets a second pass.
+   Also add a `case 'decisions':` to `titleFor()`'s switch in
+   `src/ui/panes.ts` (the pane header title) — it has an explicit `string`
+   return type, so TypeScript will refuse to compile a non-exhaustive switch
+   and point you straight back here if you forget.
 
 4. **Pane switcher + palette (one list, both surfaces).** Add it to
-   `FIXED_MODULE_KEYS` in `src/ui/panes.ts`. `buildModuleItems()` in that same
-   file turns that list into the `ModuleItem[]` array shown in the pane's own
-   "＋" module dropdown — **and `src/ui/palette.ts`'s `Ctrl+K` palette calls
-   this exact same function.** There's no separate palette item list to
-   maintain; wiring the pane switcher wires the palette too.
+   `FIXED_MODULE_KEYS` in `src/ui/panes.ts` (its `kind` field is a closed
+   union — widen that type alongside the new array entry, TypeScript will
+   flag the mismatch either way). `buildModuleItems()` in that same file
+   turns that list into the `ModuleItem[]` array shown in the pane's own "＋"
+   module dropdown — **and `src/ui/palette.ts`'s `Ctrl+K` palette calls this
+   exact same function.** There's no separate palette item list to maintain;
+   wiring the pane switcher wires the palette too.
    If individual items (not just the module as a whole) should get their own
    palette entries — the way each action item/milestone/risk shows up as its
    own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
@@ -427,11 +441,12 @@ come for free just from registering the module.
    `container.querySelector(...)`, dispatch DOM events, assert on the mutated
    `store.doc`.
 
-No other module needs to know the new one exists — the pane manager, sidebar,
-and search all work off the registered module list and the `Loc` union. The
-two places that genuinely don't come for free are global search
-(`collectCandidates`/`KIND_ICON`) and, if wanted, `@`-mentions (`REF_KINDS`) —
-everything else (pane switcher, palette, history, print) is generic.
+Beyond the explicit wiring above (steps 3–4: `registerModule`, `titleFor`,
+`FIXED_MODULE_KEYS`), no other module needs to know the new one exists — the
+pane manager's rendering, history, and print machinery all work off the
+registered module list and the `Loc` union generically. The two places that
+genuinely don't come for free just from that wiring are global search
+(`collectCandidates`/`KIND_ICON`) and, if wanted, `@`-mentions (`REF_KINDS`).
 
 ## Build
 
@@ -454,11 +469,13 @@ npm test              # run the test suite (vitest)
 npx vitest run test/store.test.ts   # run a single test file
 npm run test:watch    # vitest watch mode
 npm run typecheck     # tsc --noEmit, strict mode
+npm run lint          # eslint src test
+npm run test:e2e      # build, then run the Playwright suite against dist/
 npm run build          # produce dist/app.html and dist/pwa/
 ```
 
 The codebase has zero runtime dependencies — `esbuild`, `typescript`,
-`vitest`, and `jsdom` are dev-only tooling.
+`vitest`, `jsdom`, and `@playwright/test` are dev-only tooling.
 
 ## License
 

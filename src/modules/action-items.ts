@@ -6,7 +6,7 @@
 // there's no in-progress inline edit whose caret needs preserving across a
 // foreign store update.
 import type { ActionItem, ActionItemColor, Loc, Team } from '../core/types'
-import { t, todayIso, formatDate, type MsgKey } from '../core/i18n'
+import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
@@ -566,6 +566,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const STATUSES = ['todo', 'wip', 'done', 'cancelled'] as const
   const doneCountEl = el('span', {})
   const cancelledCountEl = el('span', {})
+  // Column-title counts — always the column's full item count, unaffected by
+  // activeTagFilter (see the "Counts feed the filter chips" comment below).
+  const todoTitleEl = el('span', {})
+  const wipTitleEl = el('span', {})
+  const doneCancelTitleEl = el('span', {})
 
   // Drop-zone highlight overlays — one per status body, mirroring
   // src/modules/people-tree.ts's rootDropEl. Each lives in its own
@@ -598,11 +603,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   /** The two columns cards can be added to directly — identical apart from status and heading. */
-  function addableCol(status: 'todo' | 'wip', headingKey: MsgKey): HTMLElement {
+  function addableCol(status: 'todo' | 'wip', titleEl: HTMLElement): HTMLElement {
     return el(
       'div', { class: 'tt-kanban-col' },
       el('div', { class: 'tt-kanban-col-head' },
-        el('span', {}, t(lc, headingKey)),
+        titleEl,
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, status) }, t(lc, 'kanban_add_card'))
       ),
       bodyWrap(cols[status].bodyEl, cols[status].zoneEl)
@@ -610,7 +615,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
   const doneCancelColEl = el(
     'div', { class: 'tt-kanban-col' },
-    el('div', { class: 'tt-kanban-col-head' }, el('span', {}, t(lc, 'kanban_col_done_cancelled'))),
+    el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl),
     el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
       el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
     bodyWrap(cols.done.bodyEl, cols.done.zoneEl),
@@ -620,7 +625,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     bodyWrap(cols.cancelled.bodyEl, cols.cancelled.zoneEl)
   )
 
-  const boardEl = el('div', { class: 'tt-kanban-board' }, addableCol('todo', 'kanban_col_todo'), addableCol('wip', 'kanban_col_wip'), doneCancelColEl)
+  const boardEl = el('div', { class: 'tt-kanban-board' },
+    addableCol('todo', todoTitleEl),
+    addableCol('wip', wipTitleEl),
+    doneCancelColEl)
   const datalistEl = el('datalist', { id: datalistId })
 
   // Drop target for deleting a card by dragging it off the board — shown
@@ -718,6 +726,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     }
     doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(byStatus.done.length) })
     cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(byStatus.cancelled.length) })
+    todoTitleEl.textContent = t(lc, 'kanban_col_todo', { count: String(byStatus.todo.length) })
+    wipTitleEl.textContent = t(lc, 'kanban_col_wip', { count: String(byStatus.wip.length) })
+    doneCancelTitleEl.textContent = t(lc, 'kanban_col_done_cancelled', {
+      count: String(byStatus.done.length + byStatus.cancelled.length),
+    })
   }
   renderAll()
 

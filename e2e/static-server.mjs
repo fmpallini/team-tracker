@@ -27,9 +27,16 @@ const MIME = {
 const server = createServer((req, res) => {
   void (async () => {
     const urlPath = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname)
+    // Checked on the URL's own pathname, not the normalized/platform-specific
+    // safePath below: on win32, path.normalize() turns the trailing '/' into
+    // '\\', so this must run first.
+    const isDirRequest = urlPath.endsWith('/')
     // Strips any leading '../' segments so a crafted request path can't escape ROOT.
     const safePath = normalize(urlPath).replace(/^([/\\]?\.\.[/\\])+/, '')
-    const filePath = join(ROOT, safePath)
+    // A directory-style request (e.g. the PWA service worker's own './' shell
+    // entry, which resolves to '/pwa/') has no filename to read — serve its
+    // index.html, same as any real static host would.
+    const filePath = join(ROOT, safePath, isDirRequest ? 'index.html' : '')
     try {
       const data = await readFile(filePath)
       res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] ?? 'application/octet-stream' })

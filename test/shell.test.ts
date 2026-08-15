@@ -1,4 +1,5 @@
 import { createShell, type Shell } from '../src/ui/shell'
+import { t } from '../src/core/i18n'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -161,6 +162,18 @@ describe('save indicator pill', () => {
     })
     // same underlying 14:32 save, now shown in pt-BR's 24h convention
     expect(pillText(shell)).toBe('Salvo · 14:32')
+  })
+
+  // Design note (src/ui/shell.ts): createShell(locale) has no companion
+  // setLocale() — the constructor param is the only way to seed locale before
+  // any Prefs/Doc exists, so the very first render must already reflect it.
+  test('createShell(locale) drives the very first render — no applyPrefs call needed to get the right locale', () => {
+    stubMatchMedia()
+    const shell = createShell('pt-BR')
+    document.body.appendChild(shell.root)
+    shell.setSaveState('saved')
+    expect(pillText(shell)).toContain(t('pt-BR', 'save_saved'))
+    expect(shell.root.querySelector('.tt-app-name')!.textContent).toBe(t('pt-BR', 'app_name'))
   })
 })
 

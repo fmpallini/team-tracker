@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number) {
   let mtime = initialMtime
@@ -75,6 +75,28 @@ test('openFromHandle returns null when permission is denied', async () => {
   const handle = mockLaunchHandle('denied')
   const result = await openFromHandle(handle)
   expect(result).toBeNull()
+})
+
+test('openFromHandle persists the handle to lastHandle by default (the File Handling API launch path)', async () => {
+  idbMocks.idbSet.mockClear()
+  const handle = mockLaunchHandle('granted')
+  await openFromHandle(handle)
+  expect(idbMocks.idbSet).toHaveBeenCalledWith('lastHandle', handle)
+})
+
+test('reopenLast opens via openFromHandle without re-persisting lastHandle (persist:false — it already came from that IDB entry)', async () => {
+  idbMocks.idbSet.mockClear()
+  const handle = mockLaunchHandle('granted')
+  idbMocks.idbGet.mockResolvedValueOnce(handle)
+  const result = await reopenLast()
+  expect(result).not.toBeNull()
+  expect(result!.session).toEqual({ handle, name: 'launched.tmv', lastModified: 42 })
+  expect(idbMocks.idbSet).not.toHaveBeenCalled()
+})
+
+test('reopenLast returns null when there is no stored handle', async () => {
+  idbMocks.idbGet.mockResolvedValueOnce(undefined)
+  expect(await reopenLast()).toBeNull()
 })
 
 test('sameEntry delegates to handle.isSameEntry', async () => {
