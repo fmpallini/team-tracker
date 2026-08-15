@@ -59,6 +59,16 @@ async function addPerson(page, paneIdx, name, role, addBtnSelector) {
   await expect(dialog).toBeHidden()
 }
 
+async function addChildPerson(page, paneIdx, parentName, childName, role) {
+  const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
+  await pane.locator('.tt-org-box', { hasText: parentName }).locator('.tt-people-add-child-btn').click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('input[name="tt-person-name"]').fill(childName)
+  await dialog.locator('input[name="tt-person-role"]').fill(role)
+  await dialog.getByRole('button', { name: 'OK' }).click()
+  await expect(dialog).toBeHidden()
+}
+
 async function typeIntoEditor(editor, text) {
   await editor.click()
   await editor.pressSequentially(text, { delay: 1 })
@@ -132,17 +142,13 @@ async function buildContent(page) {
   await expect(page.locator('.tt-shell')).toBeVisible()
   // First-ever team open lands split: pane0 = Daily notes, pane1 = Members.
 
-  // Members: Miguel (root) -> Mei (child)
+  // Members: three-level org tree — Miguel (root) -> Mei & Aisha (children),
+  // each with their own report, so the org chart screenshot shows real depth.
   await addPerson(page, 1, 'Miguel Fernandez', 'Senior Backend Engineer', '.tt-people-add-btn')
-  await page.locator('.tt-pane[data-pane-idx="1"] .tt-org-box', { hasText: 'Miguel Fernandez' })
-    .locator('.tt-people-add-child-btn').click()
-  {
-    const dialog = page.getByRole('dialog')
-    await dialog.locator('input[name="tt-person-name"]').fill('Mei Chen')
-    await dialog.locator('input[name="tt-person-role"]').fill('Platform Engineer')
-    await dialog.getByRole('button', { name: 'OK' }).click()
-    await expect(dialog).toBeHidden()
-  }
+  await addChildPerson(page, 1, 'Miguel Fernandez', 'Mei Chen', 'Platform Engineer')
+  await addChildPerson(page, 1, 'Mei Chen', 'Diego Silva', 'Associate Platform Engineer')
+  await addChildPerson(page, 1, 'Miguel Fernandez', 'Aisha Patel', 'Site Reliability Lead')
+  await addChildPerson(page, 1, 'Aisha Patel', 'Tom Becker', 'Site Reliability Engineer')
 
   // Stakeholders: Priya (temporarily switch pane1, then switch back to Members)
   await switchPaneModule(page, 1, /Stakeholders/i)
@@ -161,34 +167,29 @@ async function buildContent(page) {
   await switchPaneModule(page, 0, /Tasks/i)
   {
     const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
-
-    // Card 1: To Do
-    await pane0.locator('.tt-kanban-col', { hasText: 'To Do' }).locator('.tt-kanban-add-btn').click()
-    let dialog = page.getByRole('dialog')
-    await dialog.locator('.tt-kanban-form input.tt-input').first().fill('Cut over auth service to new K8s cluster')
-    // .fill() (not click + type-digits): the date field's mask logic
-    // (src/ui/date-picker.ts's onInput) reads digitsOnly() from the *whole*
-    // current field value, so typing digits at whatever cursor position a
-    // plain click leaves behind can interleave with any pre-existing text
-    // instead of replacing it. .fill() replaces the value outright, which
-    // the mask logic then parses cleanly regardless of what was there before.
-    await dialog.locator('.tt-date-picker-input').fill('08/20/2026')
-    await dialog.locator('.tt-kanban-form input.tt-input').first().click()
-    await dialog.locator('.tt-kanban-form-row input.tt-input:not(.tt-date-picker-input)').fill('Miguel Fernandez')
-    await dialog.locator('.tt-kanban-color-chip').first().click()
-    await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(dialog).toBeHidden()
-
-    // Card 2: WIP
-    await pane0.locator('.tt-kanban-col', { hasText: 'WIP' }).locator('.tt-kanban-add-btn').click()
-    dialog = page.getByRole('dialog')
-    await dialog.locator('.tt-kanban-form input.tt-input').first().fill('Draft rollback runbook for cutover weekend')
-    await dialog.locator('.tt-date-picker-input').fill('08/18/2026')
-    await dialog.locator('.tt-kanban-form input.tt-input').first().click()
-    await dialog.locator('.tt-kanban-form-row input.tt-input:not(.tt-date-picker-input)').fill('Mei Chen')
-    await dialog.locator('.tt-kanban-color-chip').nth(2).click()
-    await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(dialog).toBeHidden()
+    const cards = [
+      { column: 'To Do', title: 'Cut over auth service to new K8s cluster', date: '08/20/2026', assignee: 'Miguel Fernandez', chip: 0 },
+      { column: 'To Do', title: 'Write postmortem template for cutover retro', date: '08/25/2026', assignee: 'Aisha Patel', chip: 3 },
+      { column: 'WIP', title: 'Draft rollback runbook for cutover weekend', date: '08/18/2026', assignee: 'Mei Chen', chip: 2 },
+      { column: 'WIP', title: 'Provision staging cluster for dry-run', date: '08/16/2026', assignee: 'Diego Silva', chip: 4 },
+    ]
+    for (const c of cards) {
+      await pane0.locator('.tt-kanban-col', { hasText: c.column }).locator('.tt-kanban-add-btn').click()
+      const dialog = page.getByRole('dialog')
+      await dialog.locator('.tt-kanban-form input.tt-input').first().fill(c.title)
+      // .fill() (not click + type-digits): the date field's mask logic
+      // (src/ui/date-picker.ts's onInput) reads digitsOnly() from the *whole*
+      // current field value, so typing digits at whatever cursor position a
+      // plain click leaves behind can interleave with any pre-existing text
+      // instead of replacing it. .fill() replaces the value outright, which
+      // the mask logic then parses cleanly regardless of what was there before.
+      await dialog.locator('.tt-date-picker-input').fill(c.date)
+      await dialog.locator('.tt-kanban-form input.tt-input').first().click()
+      await dialog.locator('.tt-kanban-form-row input.tt-input:not(.tt-date-picker-input)').fill(c.assignee)
+      await dialog.locator('.tt-kanban-color-chip').nth(c.chip).click()
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      await expect(dialog).toBeHidden()
+    }
   }
 
   // --- Milestones on pane0 ------------------------------------------------------
@@ -329,9 +330,11 @@ async function main() {
           await expandFirstRiskWithMitigation(page)
           break
         case 'command-palette':
+          // Leave the query empty — filterModuleItems() (src/ui/palette.ts)
+          // returns every fast-switch item unfiltered when the query is
+          // blank, so the screenshot shows the full list instead of one match.
           await page.keyboard.press('Control+k')
           await expect(page.locator('.tt-palette-overlay')).toBeVisible()
-          await page.locator('.tt-palette-input').fill('mei')
           break
         case 'global-search':
           await page.locator('.tt-search-input').click()
