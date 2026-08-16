@@ -16,7 +16,7 @@ scored by chance × impact, `@`-references to a person and to an action item
 (one jumps into a dual-pane view, the other jumps to the item itself), one-click
 templates, and theming.
 
-<video src="docs/videos/feature-tour-short.webm" controls muted poster="docs/screenshots/daily-notes-and-org.png" width="100%"></video>
+<video src="https://raw.githubusercontent.com/fmpallini/team-tracker/main/docs/videos/feature-tour-short.webm" controls muted poster="https://raw.githubusercontent.com/fmpallini/team-tracker/main/docs/screenshots/daily-notes-and-org.png" width="100%"></video>
 
 <details>
 <summary>More screenshots</summary>
