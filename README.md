@@ -16,7 +16,12 @@ scored by chance × impact, `@`-references to a person and to an action item
 (one jumps into a dual-pane view, the other jumps to the item itself), one-click
 templates, and theming.
 
-<video src="https://raw.githubusercontent.com/fmpallini/team-tracker/main/docs/videos/feature-tour-short.webm" controls muted poster="https://raw.githubusercontent.com/fmpallini/team-tracker/main/docs/screenshots/daily-notes-and-org.png" width="100%"></video>
+![50-second tour of Team Tracker: switching teams, org chart, @-references, templates, risks, and theming](docs/videos/feature-tour-short.gif)
+
+**[▶ Watch with sound](https://github.com/fmpallini/team-tracker/blob/main/docs/videos/feature-tour-short.webm)**
+(GitHub doesn't allow inline `<video>` in a rendered README — the GIF above
+is silent; that link opens the same file with GitHub's own video player and
+the background music)
 
 <details>
 <summary>More screenshots</summary>
