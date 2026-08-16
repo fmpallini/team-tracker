@@ -4,8 +4,6 @@ A zero-runtime-dependency, single-file web app for tracking teams: people and
 hierarchy, daily/per-person notes, action items, milestones (with a calendar
 view), and risks.
 
-![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshots/daily-notes-and-org.png)
-
 **[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
 your browser, nothing to install.
 
@@ -28,12 +26,12 @@ the background music)
 
 | | |
 |---|---|
-| ![Action items kanban board with tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) |
-| Action items — kanban board | Milestones — timeline + list |
-| ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![Ctrl+K fast switch for jumping to any team, person, or item](docs/screenshots/command-palette.png) |
-| Risks — chance × impact exposure | `Ctrl+K` fast switch |
-| ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) | |
-| `Ctrl+Shift+F` search across every team | |
+| ![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshots/daily-notes-and-org.png) | ![Action items kanban board with tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) |
+| Daily notes + team hierarchy | Action items — kanban board |
+| ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) | ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) |
+| Milestones — timeline + list | Risks — chance × impact exposure |
+| ![Ctrl+K fast switch for jumping to any team, person, or item](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
+| `Ctrl+K` fast switch | `Ctrl+Shift+F` search across every team |
 
 </details>
 
