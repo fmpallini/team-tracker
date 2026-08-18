@@ -151,8 +151,7 @@ test('editing an action item summary refreshes its mention label in the mileston
   const card = left.querySelector<HTMLElement>('.tt-kanban-card')!
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   const summaryInput = document.querySelector<HTMLInputElement>('.tt-modal-overlay input.tt-input')!
-  summaryInput.value = 'Renamed card'
-  clickButtonLabelled(document, 'Save')
+  setInputValue(summaryInput, 'Renamed card') // commits on change/blur now — no Save button anymore
 
   expect(refChip(panes()[1], 'action:a1')?.textContent).toBe('@Renamed card')
 })

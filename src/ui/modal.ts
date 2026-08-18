@@ -19,10 +19,14 @@ export interface ModalOptions {
   buttons: ModalButton[]
   /** Fires exactly once, however the dialog closes (a button's onClick calling handle.close(), or Escape) — e.g. openPrefs uses this to trigger a save on the way out instead of waiting for the next nav change or autosave tick. */
   onClose?: () => void
+  /** Rendered in the title row, right-aligned next to `title` — e.g. action-items.ts's expand-mode toggle and (once expanded) its mirrored save-state pill. Omit for the plain title-only header every other modal uses. */
+  headerExtra?: HTMLElement
 }
 
 export interface ModalHandle {
   close: () => void
+  /** The dialog's own element (not the full-viewport overlay) — for a caller that needs to toggle its own classes on it, e.g. action-items.ts's expand-mode sizing. Every other caller can ignore this and use `close()` alone. */
+  dialogEl: HTMLElement
 }
 
 interface RenderedDialog extends ModalHandle {
@@ -116,10 +120,14 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   })
   const buttonsRow = el('div', { class: 'tt-modal-buttons' }, ...buttonEls)
 
+  const titleRow = opts.headerExtra
+    ? el('div', { class: 'tt-modal-title-row' }, el('h2', { class: 'tt-modal-title' }, opts.title), opts.headerExtra)
+    : el('h2', { class: 'tt-modal-title' }, opts.title)
+
   const dialog = el(
     'div',
     { class: 'tt-modal-dialog', role: 'dialog', 'aria-modal': 'true' },
-    el('h2', { class: 'tt-modal-title' }, opts.title),
+    titleRow,
     opts.body,
     buttonsRow
   )
@@ -137,12 +145,12 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   // initial focus at all.
   getFocusable(dialog)[0]?.focus()
 
-  return { close, buttonEls }
+  return { close, buttonEls, dialogEl: dialog }
 }
 
 export function showModal(opts: ModalOptions): ModalHandle {
-  const { close } = renderDialog(opts)
-  return { close }
+  const { close, dialogEl } = renderDialog(opts)
+  return { close, dialogEl }
 }
 
 export function showErrorModal(locale: Locale, message: string): ModalHandle {

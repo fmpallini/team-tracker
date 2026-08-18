@@ -177,6 +177,89 @@ describe('save indicator pill', () => {
   })
 })
 
+// Task: action-items.ts's expanded-modal header mirrors the real pill via
+// this narrow subscribe/trigger surface (src/ui/panes.ts's SaveStatusApi) —
+// these tests cover the shell-side half of that contract in isolation.
+describe('subscribeSaveState / requestSaveNow', () => {
+  test('fires immediately on subscribe with the current, already-formatted snapshot', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
+    const shell = setup()
+    shell.setSaveState('saved')
+
+    const seen: { state: string; label: string }[] = []
+    shell.subscribeSaveState((info) => seen.push({ state: info.state, label: info.label }))
+
+    expect(seen).toEqual([{ state: 'saved', label: 'Saved · 2:32 PM' }])
+  })
+
+  test('fires again on every subsequent setSaveState, with the same label the real pill shows', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
+    const shell = setup()
+    const pillText = (): string => shell.root.querySelector('.tt-save-pill-text')!.textContent!
+
+    const seen: string[] = []
+    shell.subscribeSaveState((info) => seen.push(info.label))
+
+    shell.setSaveState('dirty')
+    expect(seen.at(-1)).toBe(pillText())
+    shell.setSaveState('saving')
+    expect(seen.at(-1)).toBe(pillText())
+    shell.setSaveState('saved')
+    expect(seen.at(-1)).toBe(pillText())
+  })
+
+  test('every subscriber is notified, independently', () => {
+    const shell = setup()
+    const a = vi.fn()
+    const b = vi.fn()
+    shell.subscribeSaveState(a)
+    shell.subscribeSaveState(b)
+    a.mockClear()
+    b.mockClear() // drop the immediate on-subscribe call each got
+
+    shell.setSaveState('dirty')
+    expect(a).toHaveBeenCalledOnce()
+    expect(b).toHaveBeenCalledOnce()
+  })
+
+  test('the unsubscribe function stops further notifications without affecting other subscribers', () => {
+    const shell = setup()
+    const a = vi.fn()
+    const b = vi.fn()
+    const unsubscribeA = shell.subscribeSaveState(a)
+    shell.subscribeSaveState(b)
+    a.mockClear()
+    b.mockClear()
+
+    unsubscribeA()
+    shell.setSaveState('dirty')
+    expect(a).not.toHaveBeenCalled()
+    expect(b).toHaveBeenCalledOnce()
+  })
+
+  test('requestSaveNow() has the same dirty/error-only gating as clicking the real pill', () => {
+    const shell = setup()
+    const cb = vi.fn()
+    shell.onSaveRequest(cb)
+
+    shell.setSaveState('saved')
+    shell.requestSaveNow()
+    shell.setSaveState('saving')
+    shell.requestSaveNow()
+    expect(cb).not.toHaveBeenCalled()
+
+    shell.setSaveState('dirty')
+    shell.requestSaveNow()
+    expect(cb).toHaveBeenCalledOnce()
+
+    shell.setSaveState('error')
+    shell.requestSaveNow()
+    expect(cb).toHaveBeenCalledTimes(2)
+  })
+})
+
 // The shell's OS-theme listener lives on a matchMedia MediaQueryList, which
 // outlives any one document. Left attached, it kept the whole shell — and via
 // createShell's shared closure scope, its entire DOM tree — reachable for the

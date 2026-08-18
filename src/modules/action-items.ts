@@ -205,43 +205,151 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
-  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle }
+  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle; unsubscribeSaveStatus: () => void }
   let openBundle: ModalBundle | null = null
 
-  /** Single teardown for the edit modal's editor bundle — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
+  /** Single teardown for the edit modal's editor bundle (plus its header save-state subscription) — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
   function disposeOpenBundle(): void {
     if (!openBundle) return
     openBundle.richBundle.dispose()
     openBundle.datePicker.destroy()
+    openBundle.unsubscribeSaveStatus()
     openBundle = null
   }
 
-  /** Full CRUD modal: `existing === null` creates a new card in `defaultStatus`; otherwise edits/deletes `existing`. Mirrors src/modules/people-tree.ts's openPersonModal shape, plus a rich-text notes editor (created on open, destroyed on close) wired exactly like the old inline renderNotesRow (@ref autocomplete + '/' template picker). */
+  /**
+   * Full CRUD modal: `existing === null` creates a new card in
+   * `defaultStatus`; otherwise edits/deletes `existing`. Mirrors
+   * src/modules/people-tree.ts's openPersonModal shape, plus a rich-text
+   * notes editor (created on open, destroyed on close) wired exactly like the
+   * old inline renderNotesRow (@ref autocomplete + '/' template picker).
+   *
+   * No Save/Cancel: every field commits to the store as it's edited, same as
+   * risks.ts/milestones.ts's rows — the only "commit" left is closing, and
+   * even that isn't one, it just stops editing. A new card is inserted into
+   * the store immediately (empty summary, same as risks.ts's addRisk), so
+   * every field — including the very first one touched, whichever it is —
+   * has something real to attach to.
+   */
   function openEditModal(existing: ActionItem | null, defaultStatus: 'todo' | 'wip' = 'todo'): void {
-    const summaryInput = el('input', { type: 'text', class: 'tt-input', value: existing?.summary ?? '' }) as HTMLInputElement
-    const datePicker = createDatePicker({ value: existing?.dueDate ?? '', locale: lc, allowClear: true, onChange: () => {} })
-    const assigneeInput = el('input', { type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '' }) as HTMLInputElement
+    let itemId: string
+    if (existing === null) {
+      itemId = crypto.randomUUID()
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        const group = itemsByStatus(tm.actionItems, defaultStatus)
+        // Not `group.length`: a prior delete can leave a gap in `order`
+        // (removeItem/clearZone never renumber survivors), so the next
+        // slot has to be past the highest existing value, not the count.
+        const nextOrder = group.length === 0 ? 0 : Math.max(...group.map((i) => i.order)) + 1
+        tm.actionItems.push({
+          id: itemId, summary: '', notes: '', status: defaultStatus,
+          dueDate: null, assignee: '', color: null, order: nextOrder,
+        })
+      }, { teamId, sections: ['actions'] })
+    } else {
+      itemId = existing.id
+    }
+
+    /** Every field's commit path funnels through here — finds this card by `itemId` (never stale: re-looked-up on every call) and mutates it in place inside a single store.update. `sections` defaults to unscoped (everything changed) for `summary`, since it's also the @mention label; every other field narrows to `['actions']`. */
+    function patch(mutate: (item: ActionItem) => void, sections?: Section[]): void {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        const found = tm?.actionItems.find((i) => i.id === itemId)
+        if (found) mutate(found)
+      }, sections ? { teamId, sections } : { teamId })
+    }
+
+    const summaryInput = el('input', {
+      type: 'text', class: 'tt-input', value: existing?.summary ?? '',
+      onchange: (e: Event) => {
+        const value = (e.target as HTMLInputElement).value
+        // Unscoped beyond the team: `summary` is the label @[…](action:id)
+        // mentions resolve through live — see the note at people-tree.ts's
+        // rename site.
+        patch((item) => { item.summary = value })
+      },
+    }) as HTMLInputElement
+
+    const datePicker = createDatePicker({
+      value: existing?.dueDate ?? '', locale: lc, allowClear: true,
+      onChange: () => {
+        const dueDate = datePicker.getValue() === '' ? null : datePicker.getValue()
+        patch((item) => { item.dueDate = dueDate }, ['actions'])
+      },
+    })
+    const assigneeInput = el('input', {
+      type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '',
+      onchange: (e: Event) => {
+        const value = (e.target as HTMLInputElement).value
+        patch((item) => { item.assignee = value }, ['actions'])
+      },
+    }) as HTMLInputElement
     // New cards start with no color chosen — the color tag is optional, and
     // an existing card's color can be unset the same way (see
     // renderColorChips' onclick toggle below).
     let selectedColor: ActionItemColor | null = existing?.color ?? null
-    const errorEl = el('div', { class: 'tt-field-error' })
-    // Which card's keyboard selection to restore once the modal closes —
-    // the card being edited, or (once save() actually creates one) the new
-    // card — so Enter-to-open/close doesn't drop the user back at "nothing
-    // selected". Stays null (no restore) for a cancelled "+ Add card".
-    let focusItemIdOnClose: string | null = existing?.id ?? null
+    // Which card's keyboard selection to restore once the modal closes — the
+    // DOM query in onClose below naturally finds nothing if this card ended
+    // up deleted (empty summary), so no separate null/abandoned tracking is
+    // needed the way the old Save-gated flow required.
+    const focusItemIdOnClose = itemId
 
     const richBundle = createRichEditorBundle({
       store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
       initialMd: existing?.notes ?? '',
-      onChange: () => {}, // this modal reads editor.getMd() on Save instead of live-persisting
+      onChange: (md) => {
+        patch((item) => { item.notes = md.trim() === '' ? '' : md }, ['actions'])
+      },
       getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
       getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
     const editor = richBundle.editor
-    openBundle = { richBundle, datePicker }
+
+    // --- expand-mode toggle + its mirrored save-state pill (header) -------
+    // `handle` (assigned once showModal() returns, below) is only read
+    // inside these onclick callbacks, which never fire before that — same
+    // deferred-reference pattern closeModal() already relies on.
+    let expanded = false
+    const savePillMiniText = el('span', { class: 'tt-save-pill-text' })
+    // Hidden until expanded: the real header pill already covers this while
+    // collapsed, so a second always-visible pill in the card modal would
+    // just be noise. See shell.ts's SaveStatusInfo for why this never needs
+    // its own copy of the label/tooltip formatting rules.
+    //
+    // Reuses the header pill's own `.tt-save-pill` class for the free visual
+    // match — but that class sets `display: inline-flex` unconditionally, so
+    // the plain `hidden` attribute (a low-specificity UA rule) can't actually
+    // hide it; `style.display` is set directly instead, which always wins.
+    const savePillMini = el('span', {
+      class: 'tt-save-pill',
+      onclick: () => ctx.saveStatus.requestSaveNow(),
+    }, savePillMiniText)
+    savePillMini.style.display = 'none'
+    const unsubscribeSaveStatus = ctx.saveStatus.subscribeSaveState((info) => {
+      savePillMiniText.textContent = info.label
+      savePillMini.title = info.title
+      savePillMini.dataset.state = info.state
+      savePillMini.classList.toggle('tt-save-pill-clickable', info.state === 'dirty' || info.state === 'error')
+    })
+    const expandBtn = el(
+      'button',
+      {
+        class: 'tt-btn tt-kanban-expand-btn', type: 'button', title: t(lc, 'kanban_expand_title'),
+        onclick: () => {
+          expanded = !expanded
+          handle.dialogEl.classList.toggle('tt-kanban-expanded', expanded)
+          savePillMini.style.display = expanded ? '' : 'none'
+          expandBtn.title = t(lc, expanded ? 'kanban_collapse_title' : 'kanban_expand_title')
+        },
+      },
+      '⛶'
+    )
+    const headerExtra = el('div', { class: 'tt-kanban-modal-header-extra' }, savePillMini, expandBtn)
+
+    openBundle = { richBundle, datePicker, unsubscribeSaveStatus }
 
     const colorRow = el('div', { class: 'tt-kanban-color-row tt-kanban-tag-chips filtering' })
     function paintSelectedColor(): void {
@@ -258,7 +366,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
             type: 'button', class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}`, 'data-color': c, 'aria-label': custom ?? suggestedTagName(c),
             // Clicking the already-selected chip again unsets it — the only
             // way to clear a color back to "none" once one's been picked.
-            onclick: () => { selectedColor = selectedColor === c ? null : c; paintSelectedColor() },
+            onclick: () => {
+              selectedColor = selectedColor === c ? null : c
+              paintSelectedColor()
+              patch((item) => { item.color = selectedColor }, ['actions'])
+            },
           }, custom)
         )
       }
@@ -271,103 +383,71 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       'div',
       { class: 'tt-kanban-form' },
       el('label', { class: 'tt-field' }, t(lc, 'kanban_summary_label'), summaryInput),
-      el('div', { class: 'tt-field' }, t(lc, 'kanban_notes_label'), editor.root),
+      el('div', { class: 'tt-field tt-kanban-notes-field' }, t(lc, 'kanban_notes_label'), editor.root),
       el(
         'div',
         { class: 'tt-kanban-form-row' },
         el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), datePicker.root),
         el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeInput)
       ),
-      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow),
-      errorEl
+      el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow)
     )
 
     function closeModal(): void {
       handle.close()
     }
 
-    function save(): void {
-      const summary = summaryInput.value.trim()
-      if (summary === '') {
-        errorEl.textContent = t(lc, 'kanban_summary_required')
-        return
-      }
-      const color = selectedColor
-      const dueDate = datePicker.getValue() === '' ? null : datePicker.getValue()
-      const assignee = assigneeInput.value
-      const notes = editor.getMd()
-      // A new card whose color the active filter would hide is invisible the
-      // instant it's created — clear the filter first so store.update()'s
-      // synchronous renderAll() (see src/core/store.ts) picks it up already
-      // showing everything, rather than needing a second click to find it.
-      if (existing === null && activeTagFilter !== null && activeTagFilter !== color) {
-        activeTagFilter = null
-      }
-      ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
-        if (!tm) return
-        if (existing === null) {
-          const group = itemsByStatus(tm.actionItems, defaultStatus)
-          // Not `group.length`: a prior delete can leave a gap in `order`
-          // (removeItem/clearZone never renumber survivors), so the next
-          // slot has to be past the highest existing value, not the count.
-          const nextOrder = group.length === 0 ? 0 : Math.max(...group.map((i) => i.order)) + 1
-          const newId = crypto.randomUUID()
-          focusItemIdOnClose = newId
-          tm.actionItems.push({
-            id: newId, summary, notes, status: defaultStatus,
-            dueDate, assignee, color, order: nextOrder,
-          })
-        } else {
-          const found = tm.actionItems.find((i) => i.id === existing.id)
-          if (!found) return
-          found.summary = summary
-          found.notes = notes
-          found.dueDate = dueDate
-          found.assignee = assignee
-          found.color = color
-        }
-        // Unscoped beyond the team: `summary` is the label @[…](action:id)
-        // mentions resolve through live — see the note at people-tree.ts's
-        // rename site.
-      }, { teamId })
-      closeModal()
-    }
-
     const buttons: ModalButton[] = []
     if (existing !== null) {
       buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { closeModal(); requestDelete(existing) } })
     }
-    buttons.push({ label: t(lc, 'cancel'), onClick: () => closeModal() })
-    buttons.push({ label: t(lc, 'kanban_save_btn'), primary: true, onClick: () => save() })
+    buttons.push({ label: t(lc, 'kanban_close_btn'), onClick: () => closeModal() })
 
     const handle: ModalHandle = showModal({
       title: t(lc, existing === null ? 'kanban_add_title' : 'kanban_edit_title'),
       body,
       buttons,
+      headerExtra,
       onClose: () => {
         disposeOpenBundle()
+        // Empty summary carries no meaningful content to lose — delete
+        // silently on close, same rule requestDelete() already applies to an
+        // explicit delete. Covers both a "+ Card" draft nothing was ever
+        // typed into and an existing card edited back down to blank.
+        const current = items().find((i) => i.id === itemId)
+        if (current && current.summary.trim() === '') {
+          removeItem(itemId)
+        } else if (current && existing === null && activeTagFilter !== null && activeTagFilter !== current.color) {
+          // A new card whose final color the active filter would hide is
+          // invisible the moment the modal closes — clear the filter so the
+          // board's next render shows it without a second click. Only for a
+          // genuinely new card: editing an existing card's color while a
+          // filter is active is left alone, filtering it out is the point.
+          activeTagFilter = null
+          renderAll()
+        }
         // Runs after showModal's close() has already removed the overlay
         // (see modal.ts), so this card, if still around, is free to take
-        // focus back rather than leaving it stranded on document.body.
+        // focus back rather than leaving it stranded on document.body. If
+        // the card above was just deleted, the query below finds nothing —
+        // store.update() (both here and inside patch()) notifies subscribe()
+        // synchronously, so renderAll() has already dropped it from the DOM
+        // by the time this runs.
         //
         // The .focus() call itself is deferred a tick: closing via Escape
-        // (focus was on the Summary <input>) vs. the Cancel/Save *button*
-        // showed different real-Chrome behavior — confirmed live by patching
+        // (focus was on the Summary <input>) vs. the Close *button* showed
+        // different real-Chrome behavior — confirmed live by patching
         // HTMLElement.prototype.blur (never called) and probing
         // document.activeElement right after Escape (correctly the card) vs.
         // one macrotask later (reverted to <body>). No app code blurs it, so
         // that's Chrome's own "focused element got removed" unfocus step
         // running *after* this callback for an <input>, silently overriding
         // a synchronous .focus() here — but not for a <button>, which is why
-        // Cancel/Save never showed the bug. Scheduling after it instead of
-        // racing it makes this the last word regardless of which path closed.
-        if (focusItemIdOnClose) {
-          const id = focusItemIdOnClose
-          setTimeout(() => {
-            boardEl.querySelector<HTMLElement>(`[data-item-id="${id}"]`)?.focus()
-          }, 0)
-        }
+        // Close never showed the bug. Scheduling after it instead of racing
+        // it makes this the last word regardless of which path closed.
+        setTimeout(() => {
+          boardEl.querySelector<HTMLElement>(`[data-item-id="${focusItemIdOnClose}"]`)?.focus()
+        }, 0)
       },
     })
     summaryInput.focus()
@@ -743,10 +823,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
-    // The edit modal's notes editor is never rebuilt from the store (its
-    // Save button reads editor.getMd() directly instead of live-persisting),
-    // so patch its @mention chips in place the same way daily/person notes
-    // do — safe even mid-typing (see Editor.refreshRefLabels' doc comment).
+    // The edit modal's notes editor is never rebuilt from the store on a
+    // foreign change (only a full renderAll() below, which would blow away
+    // an in-progress edit), so patch its @mention chips in place the same
+    // way daily/person notes do — safe even mid-typing (see
+    // Editor.refreshRefLabels' doc comment).
     if (openBundle) openBundle.richBundle.editor.refreshRefLabels()
     renderAll()
   })
@@ -772,6 +853,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     boardEl.querySelector<HTMLElement>('.tt-kanban-card')?.focus()
   }
 
+  // No SEARCH_FOCUS_ITEM_EVENT listener here, unlike risks.ts/milestones.ts:
+  // those need it to expand their own inline follow-up row before a match
+  // inside it can be found/highlighted. A kanban card has no such inline
+  // state — search-ui.ts's commit() already resolves the matched card via
+  // `[data-item-id]` and applySearchHighlight() (search-highlight.ts) gives
+  // it real focus, which is all landing here needs: same selection ring
+  // arrow-key nav uses, and Enter opens it via the card's own keydown
+  // handler above (openEditModal(item)) — no separate open-on-search path.
   const disposeArrowFallback = installArrowFallbackFocus(ctx, boardEl, '.tt-kanban-card', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
 
   return () => {
