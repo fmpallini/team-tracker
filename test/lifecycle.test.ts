@@ -187,7 +187,7 @@ for (const { name, render, ref, subscribes } of RENDERERS) {
     document.body.appendChild(container)
     const loc: Loc = { teamId: 'T1', ref }
     const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex }
+    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
 
     // Three mounts, mirroring panes.ts's renderBody (which clears the
     // container's children before re-invoking the renderer).
@@ -218,7 +218,7 @@ test('stress: 200 mount/unmount cycles across every module leave a constant subs
     document.body.appendChild(container)
     const loc: Loc = { teamId: 'T1', ref }
     const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex }
+    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
     const expected = subscribes ? 1 : 0
 
     for (let i = 0; i < STRESS_CYCLES; i++) {
@@ -334,7 +334,7 @@ test('switching modules within one container disposes the outgoing module, not j
   const container = document.createElement('div')
   document.body.appendChild(container)
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex }
+  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
 
   container.innerHTML = ''
   renderDailyNotes(container, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-10' } }, ctx)

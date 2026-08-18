@@ -1,6 +1,6 @@
 // src/ui/panes.ts — central navigation hub; every module open goes through here.
 import type { Store } from '../core/store'
-import type { Shell } from './shell'
+import type { Shell, SaveStatusInfo } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
@@ -18,6 +18,20 @@ import { disposeContainer } from '../modules/lifecycle'
 
 export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void
 
+/**
+ * The one sliver of Shell a module is allowed to see: mirroring the header's
+ * save-state pill (state/label/tooltip already formatted) and triggering the
+ * same explicit-save action it does. Deliberately narrower than `Shell`
+ * itself — a module has no business touching the sidebar, prefs, or any of
+ * Shell's other two dozen methods, and a narrow interface keeps every other
+ * module test's fake ModuleCtx a two-line stub instead of a full Shell mock.
+ * See action-items.ts's expanded-modal header pill, the first consumer.
+ */
+export interface SaveStatusApi {
+  requestSaveNow(): void
+  subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void
+}
+
 export interface ModuleCtx {
   store: Store
   pm: PaneManager
@@ -25,6 +39,7 @@ export interface ModuleCtx {
   locale: Locale
   /** One instance per document, shared by every module's backlinks-chip lookups — see createPaneManager's own construction of it below. */
   searchIndex: SearchIndex
+  saveStatus: SaveStatusApi
 }
 
 export interface PaneManager {
@@ -420,6 +435,13 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // dispose() below already tears down for other concerns.
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
   const unsubscribeSearchIndex = store.subscribe((scope) => searchIndex.invalidate(scope))
+
+  // The narrow Shell slice every ModuleCtx gets — see SaveStatusApi's doc
+  // comment for why this isn't `shell` itself.
+  const saveStatus: SaveStatusApi = {
+    requestSaveNow: () => shell.requestSaveNow(),
+    subscribeSaveState: (cb) => shell.subscribeSaveState(cb),
+  }
 
   function effectiveSplit(): boolean {
     return store.doc.nav.split && !spaceHideSplit
@@ -938,7 +960,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       container.appendChild(el('div', { class: 'tt-pane-placeholder' }, t(lc, 'module_placeholder')))
       return
     }
-    const ctx: ModuleCtx = { store, pm, paneIdx: idx, locale: lc, searchIndex }
+    const ctx: ModuleCtx = { store, pm, paneIdx: idx, locale: lc, searchIndex, saveStatus }
     renderer(container, loc, ctx)
   }
 

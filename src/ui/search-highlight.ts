@@ -81,6 +81,19 @@ export function applySearchHighlight(rootEls: HTMLElement[], terms: string[], sc
   }
   const first = ranges[0]
   const target = scrollTarget ?? (first && (first.startContainer instanceof Element ? first.startContainer : first.startContainer.parentElement))
+  // Real focus, not just a visual marker: every module's row/card is already
+  // a tabindex="0" stop with its own Enter handler (open the card, toggle a
+  // follow-up row, ...) and its own :focus-visible ring — landing here via
+  // search puts the item in that exact same "selected" state arrow-key nav
+  // would, so Enter now does what arrow-selecting it and pressing Enter
+  // always did, and the ring is the same ring for free. `preventScroll`
+  // keeps the explicit scrollIntoView below as the sole source of truth for
+  // *where* it scrolls to (`block: 'center'`) instead of racing the
+  // browser's own default "scroll nearest edge into view" from a bare
+  // .focus() call. A target that isn't itself focusable (e.g. the
+  // free-text-match fallback below, elsewhere inside a notes editor) simply
+  // ignores this — .focus() on a non-focusable element is a safe no-op.
+  if (target instanceof HTMLElement) target.focus({ preventScroll: true })
   target?.scrollIntoView({ block: 'center' })
 
   if (flashedEl && flashedEl !== scrollTarget) flashedEl.classList.remove(TARGET_FLASH_CLASS)

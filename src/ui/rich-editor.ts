@@ -27,7 +27,6 @@ export function createRichEditorBundle(opts: {
   locale: Locale
   teamId: string
   initialMd: string
-  /** No-op for callers (action-items.ts's card modal) that persist via a separate Save button reading editor.getMd() instead of live-writing on every change. */
   onChange(md: string): void
   getTeam(): Team | undefined
   getTemplates(): Template[]

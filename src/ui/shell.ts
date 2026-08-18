@@ -6,6 +6,13 @@ import { formatHHMM } from '../core/date'
 
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 
+/** Already-formatted (current-locale) snapshot of the save-state pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of SAVE_STATE_KEY/renderSaveIndicator's formatting rules. */
+export interface SaveStatusInfo {
+  state: SaveState
+  label: string
+  title: string
+}
+
 export interface Shell {
   root: HTMLElement
   headerLeft: HTMLElement
@@ -42,6 +49,22 @@ export interface Shell {
   onCloseFile(cb: () => void): void
   /** Registers the click handler for the save-state pill — clicking it while a save is pending ('dirty'/'error') triggers an explicit save, same as Ctrl+S. */
   onSaveRequest(cb: () => void): void
+  /**
+   * Same effect as clicking the real save-state pill — an explicit save while
+   * a save is pending ('dirty'/'error'), a no-op otherwise — for a caller
+   * that mirrors the pill in its own UI (action-items.ts's expanded-modal
+   * header "force save") instead of the header pill itself.
+   */
+  requestSaveNow(): void
+  /**
+   * Subscribes to every save-state pill update — state plus its
+   * already-formatted (current-locale) label/tooltip, the same strings the
+   * real pill renders. Fires once immediately with the current snapshot (a
+   * fresh subscriber doesn't wait for the next change), then again on every
+   * subsequent `setSaveState`/`setFallbackHint`/locale-changing `applyPrefs`
+   * call. Returns an unsubscribe function.
+   */
+  subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void
   /**
    * Driven by the responsive-layout ResizeObserver (src/ui/responsive.ts):
    * below a width threshold, force-hides every non-mandatory header element
@@ -132,9 +155,7 @@ export function createShell(locale: Locale): Shell {
     'span',
     {
       class: 'tt-save-pill',
-      onclick: () => {
-        if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
-      },
+      onclick: () => requestSaveNow(),
     },
     savePillIcon,
     savePillText,
@@ -190,10 +211,30 @@ export function createShell(locale: Locale): Shell {
   let currentState: SaveState = 'saved'
   let fallbackHint = false
   // Raw hours/minutes, not a pre-formatted string — formatting happens in
-  // renderSaveIndicator() so a locale switch reformats the last-saved time
+  // computeSaveInfo() so a locale switch reformats the last-saved time
   // immediately (12h/24h), instead of leaving it stuck in whatever format
   // was current when the save actually happened.
   let lastSavedAt: { h: number; m: number } | null = null
+  const saveStateSubscribers = new Set<(info: SaveStatusInfo) => void>()
+
+  /** `label`/`title` computation shared by the real pill (renderSaveIndicator) and every subscribeSaveState() listener — one place text/tooltip rules live, so a mirroring control never drifts from the real pill's wording. */
+  function computeSaveInfo(): SaveStatusInfo {
+    const label = t(currentLocale, SAVE_STATE_KEY[currentState])
+    const time = lastSavedAt ? formatHHMM(lastSavedAt.h, lastSavedAt.m, currentLocale) : null
+    // `label · time` is right for 'saved' ("Saved · 5:11 PM") and 'error', but
+    // reads wrong for 'dirty': the timestamp is the last *successful* save,
+    // and joining it to "Unsaved" with a middot makes it look like the moment
+    // things went wrong. The dirty state names what the time refers to.
+    const text =
+      currentState === 'saving' || !time ? label
+      : currentState === 'dirty' ? t(currentLocale, 'save_dirty_since', { time })
+      : `${label} · ${time}`
+    let title = label
+    if (currentState === 'dirty' && fallbackHint) {
+      title += ` — ${t(currentLocale, 'save_fallback_hint')}`
+    }
+    return { state: currentState, label: text, title }
+  }
 
   // Redraws the pill from `currentState`/`lastSavedAt`/`fallbackHint`/
   // `currentLocale` without touching `lastSavedAt` — callers that only need
@@ -201,21 +242,10 @@ export function createShell(locale: Locale): Shell {
   // this instead of setSaveState() so a re-render never re-stamps the
   // timestamp as if a fresh save had just happened.
   function renderSaveIndicator(): void {
-    const label = t(currentLocale, SAVE_STATE_KEY[currentState])
-    const time = lastSavedAt ? formatHHMM(lastSavedAt.h, lastSavedAt.m, currentLocale) : null
-    // `label · time` is right for 'saved' ("Saved · 5:11 PM") and 'error', but
-    // reads wrong for 'dirty': the timestamp is the last *successful* save,
-    // and joining it to "Unsaved" with a middot makes it look like the moment
-    // things went wrong. The dirty state names what the time refers to.
-    if (currentState === 'saving' || !time) savePillText.textContent = label
-    else if (currentState === 'dirty') savePillText.textContent = t(currentLocale, 'save_dirty_since', { time })
-    else savePillText.textContent = `${label} · ${time}`
+    const info = computeSaveInfo()
+    savePillText.textContent = info.label
     savePillIcon.classList.toggle('tt-save-pill-spin', currentState === 'saving')
-    let title = label
-    if (currentState === 'dirty' && fallbackHint) {
-      title += ` — ${t(currentLocale, 'save_fallback_hint')}`
-    }
-    saveIndicator.title = title
+    saveIndicator.title = info.title
     // Fallback mode is permanent for the life of the file, so it belongs on
     // the pill rather than in a sticky toast — and it needs to be legible
     // without a hover, hence the mark rather than tooltip-only.
@@ -223,6 +253,7 @@ export function createShell(locale: Locale): Shell {
     saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
     saveIndicator.dataset.state = currentState
     saveIndicator.classList.toggle('tt-save-pill-clickable', currentState === 'dirty' || currentState === 'error')
+    for (const sub of saveStateSubscribers) sub(info)
   }
 
   function setSaveState(state: SaveState): void {
@@ -287,6 +318,16 @@ export function createShell(locale: Locale): Shell {
     saveRequestHandler = cb
   }
 
+  function requestSaveNow(): void {
+    if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
+  }
+
+  function subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void {
+    saveStateSubscribers.add(cb)
+    cb(computeSaveInfo())
+    return () => { saveStateSubscribers.delete(cb) }
+  }
+
   function setHeaderCompactSpaceHidden(hidden: boolean): void {
     header.classList.toggle('tt-header-compact', hidden)
   }
@@ -297,5 +338,5 @@ export function createShell(locale: Locale): Shell {
     mq.removeEventListener('change', onSystemThemeChange)
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, setHeaderCompactSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
 }

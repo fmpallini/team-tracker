@@ -45,7 +45,7 @@ function setup(team: Team, date = '2026-07-10'): { container: HTMLElement; store
 
 function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager, paneIdx: 0 | 1 = 0): void {
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex }
+  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
   renderDailyNotes(container, loc, ctx)
 }
 

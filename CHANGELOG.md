@@ -4,6 +4,18 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.3.2] - 2026-08-18
+
+### Added
+- Task cards can now be expanded to fill the pane — a button at the top of the edit window — showing a save-status indicator and a manual save button while expanded, for a card you're working on for a while.
+
+### Changed
+- Task cards now save each change as you type, the same as risks, milestones, and notes — the edit window's Save/Cancel buttons are now a single Close.
+
+### Fixed
+- Search results now get the same selection highlight arrow-key navigation uses, instead of a different-looking outline.
+- Landing on a task from a search result now selects it directly (Enter opens it), instead of only highlighting it with no keyboard way to open it.
+
 ## [2.3.1] - 2026-08-15
 
 ### Added

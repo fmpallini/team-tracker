@@ -2,8 +2,28 @@ import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, m
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
-import type { PaneManager, ModuleCtx } from '../src/ui/panes'
+import type { PaneManager, ModuleCtx, SaveStatusApi } from '../src/ui/panes'
+import type { SaveStatusInfo } from '../src/ui/shell'
 import type { ActionItem, Loc, Team } from '../src/core/types'
+
+/** A controllable fake for ModuleCtx.saveStatus — `emit` drives every subscriber the same way shell.ts's real setSaveState() would, and `requestCount` counts force-save clicks, for the header-pill/expand-mode tests below. Every other test just needs the default (a no-op stub, built fresh per render() call) and never touches this directly. */
+function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) => void; requestCount: () => number; subscriberCount: () => number } {
+  const subs = new Set<(info: SaveStatusInfo) => void>()
+  let requestCount = 0
+  return {
+    api: {
+      requestSaveNow: () => { requestCount++ },
+      subscribeSaveState: (cb) => {
+        subs.add(cb)
+        cb({ state: 'saved', label: 'Saved', title: 'Saved' })
+        return () => { subs.delete(cb) }
+      },
+    },
+    emit: (info) => { for (const cb of subs) cb(info) },
+    requestCount: () => requestCount,
+    subscriberCount: () => subs.size,
+  }
+}
 
 function fakePM(): PaneManager {
   return {
@@ -45,10 +65,16 @@ function setup(team: Team): { container: HTMLElement; store: Store; pm: PaneMana
   return { container, store, pm, loc }
 }
 
-function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager, paneIdx: 0 | 1 = 0): void {
+function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager, paneIdx: 0 | 1 = 0, saveStatus: SaveStatusApi = fakeSaveStatus().api): void {
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex }
+  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex, saveStatus }
   renderActionItems(container, loc, ctx)
+}
+
+/** Sets an input's value and fires the real `change` event — every card field now commits on `onchange` (blur/Enter), not a Save button reading `.value` directly, so a test that only assigns `.value` would silently persist nothing. */
+function setValue(input: HTMLInputElement, value: string): void {
+  input.value = value
+  input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
 function clickByTitleOrText(root: ParentNode, text: string): void {
@@ -67,6 +93,22 @@ function rightClick(el: HTMLElement): void {
 
 function contextMenuItem(text: string): HTMLButtonElement {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === text)!
+}
+
+function setBlockText(editor: HTMLElement, text: string): void {
+  editor.innerHTML = `<div>${text}</div>`
+  const textNode = editor.firstChild!.firstChild as Text | null
+  const range = document.createRange()
+  if (textNode) range.setStart(textNode, textNode.textContent!.length)
+  else range.setStart(editor.firstChild!, 0)
+  range.collapse(true)
+  const sel = window.getSelection()!
+  sel.removeAllRanges()
+  sel.addRange(range)
+}
+
+function fireInput(editor: HTMLElement): void {
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 function pickDate(day: number): void {
@@ -319,14 +361,14 @@ describe('keyboard route to the card actions', () => {
   // Regression: closing the edit modal used to leave focus stranded on
   // document.body, so ArrowUp/Down after Enter-to-open/close felt like it
   // had "forgotten" the card the user was just on.
-  test('cancelling the edit modal restores focus to the card that was open', async () => {
+  test('closing the edit modal restores focus to the card that was open', async () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const card = cards(container)[0]!
 
     card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    clickByTitleOrText(document.body, 'Cancel')
+    clickByTitleOrText(document.body, 'Close')
     // The restore is deferred a tick — see openEditModal's onClose comment:
     // a real-Chrome-only race where the browser's own delayed "focused
     // element got removed" unfocus step can otherwise outrun a synchronous
@@ -337,29 +379,34 @@ describe('keyboard route to the card actions', () => {
     expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
   })
 
-
-  test('saving the edit modal restores focus to that same card', async () => {
+  // No more Save button: an edit commits the moment the field changes (see
+  // "live persistence" describe block below), so closing afterward is just
+  // closing — this only re-checks that the focus-restore behavior above
+  // still holds once a field's actually been edited first.
+  test('editing then closing the modal persists the edit and restores focus to that same card', async () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const card = cards(container)[0]!
 
     card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    clickByTitleOrText(document.body, 'Save')
+    setValue(document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement, 'Updated')
+    clickByTitleOrText(document.body, 'Close')
     await new Promise((resolve) => setTimeout(resolve, 0))
 
+    expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('Updated')
     expect(document.activeElement).toBe(container.querySelector('[data-item-id="a"]'))
   })
 
-  test('saving a brand-new card focuses the card it just created', async () => {
+  test('typing a summary into a brand-new card focuses the card it just created, once closed', async () => {
     const team = makeTeam({ actionItems: [] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card')
     const summaryInput = document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement
-    summaryInput.value = 'New card'
-    clickByTitleOrText(document.body, 'Save')
+    setValue(summaryInput, 'New card')
+    clickByTitleOrText(document.body, 'Close')
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     const newCard = cards(container)[0]!
@@ -367,14 +414,19 @@ describe('keyboard route to the card actions', () => {
     expect(document.activeElement).toBe(newCard)
   })
 
-  test('cancelling a brand-new (never-saved) card leaves nothing stranded on the old card', () => {
+  test('closing a brand-new, never-typed-into card discards the empty draft and leaves nothing stranded on the old card', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card')
-    clickByTitleOrText(document.body, 'Cancel')
+    // The draft is a real (if empty) store entry the instant the modal
+    // opens — same as risks.ts's addRisk — so every field, including
+    // whichever one is touched first, has something to attach to.
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(2)
+    clickByTitleOrText(document.body, 'Close')
 
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1) // empty draft silently discarded
     expect(document.activeElement).not.toBe(container.querySelector('[data-item-id="a"]'))
   })
 })
@@ -625,7 +677,7 @@ describe('renderActionItems — edit modal', () => {
 
     clickByTitleOrText(container, '+ Card')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
-    summaryInput.value = 'New task'
+    setValue(summaryInput, 'New task')
     pickDate(1)
     // Scoped to the modal form: the toolbar's filter chips now share the
     // .tt-kanban-color-chip class (same square swatch pattern), so an
@@ -634,7 +686,7 @@ describe('renderActionItems — edit modal', () => {
     // free to change without breaking this.
     ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-sage') as HTMLButtonElement).click()
 
-    clickByTitleOrText(document.body, 'Save')
+    clickByTitleOrText(document.body, 'Close')
 
     const created = store.doc.teams[0]!.actionItems[0]!
     expect(created.summary).toBe('New task')
@@ -651,21 +703,22 @@ describe('renderActionItems — edit modal', () => {
     const wipAddBtn = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent === '+ Card')[1]!
     wipAddBtn.click()
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
-    summaryInput.value = 'WIP task'
+    setValue(summaryInput, 'WIP task')
     ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-sage') as HTMLButtonElement).click()
-    clickByTitleOrText(document.body, 'Save')
+    clickByTitleOrText(document.body, 'Close')
 
     expect(store.doc.teams[0]!.actionItems[0]!.status).toBe('wip')
   })
 
-  test('leaving summary blank shows a validation error and does not save', () => {
+  test('leaving summary blank and closing discards the draft silently — no error, no confirmation', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     clickByTitleOrText(container, '+ Card')
-    clickByTitleOrText(document.body, 'Save')
+    clickByTitleOrText(document.body, 'Close')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
-    expect(document.querySelector('.tt-field-error')!.textContent).toBe('Summary is required')
+    expect(document.querySelector('.tt-field-error')).toBeNull()
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
   test('a new card starts with no color chip pre-selected', () => {
@@ -678,14 +731,14 @@ describe('renderActionItems — edit modal', () => {
     expect(Array.from(chips).some((c) => c.classList.contains('selected'))).toBe(false)
   })
 
-  test('saving a new card without picking a color saves it uncategorized (color: null)', () => {
+  test('closing a new card without picking a color leaves it uncategorized (color: null)', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     clickByTitleOrText(container, '+ Card')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
-    summaryInput.value = 'No color yet'
-    clickByTitleOrText(document.body, 'Save')
+    setValue(summaryInput, 'No color yet')
+    clickByTitleOrText(document.body, 'Close')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
     expect(store.doc.teams[0]!.actionItems[0]!.color).toBeNull()
   })
@@ -700,14 +753,14 @@ describe('renderActionItems — edit modal', () => {
     render(container, loc, store, pm)
     clickByTitleOrText(container, '+ Card')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
-    summaryInput.value = 'New one'
-    clickByTitleOrText(document.body, 'Save')
+    setValue(summaryInput, 'New one')
+    clickByTitleOrText(document.body, 'Close')
 
     const orders = store.doc.teams[0]!.actionItems.map((i) => i.order)
     expect(new Set(orders).size).toBe(orders.length)
   })
 
-  test('clicking an existing card\'s already-selected color chip again unsets it', () => {
+  test('clicking an existing card\'s already-selected color chip again unsets it — live, with no Save needed', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', color: 'rust' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -717,7 +770,6 @@ describe('renderActionItems — edit modal', () => {
     expect(rustChip.classList.contains('selected')).toBe(true)
     rustChip.click()
     expect(rustChip.classList.contains('selected')).toBe(false)
-    clickByTitleOrText(document.body, 'Save')
 
     expect(store.doc.teams[0]!.actionItems[0]!.color).toBeNull()
   })
@@ -731,7 +783,7 @@ describe('renderActionItems — edit modal', () => {
     expect(plumChip.classList.contains('selected')).toBe(true)
   })
 
-  test('editing an existing card via dblclick pre-fills fields and Save persists changes', () => {
+  test('editing an existing card via dblclick pre-fills fields, and the edit persists live — no Save needed', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Old', dueDate: '2026-01-01', assignee: 'Bruno', color: 'rust' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -739,8 +791,7 @@ describe('renderActionItems — edit modal', () => {
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     expect(summaryInput.value).toBe('Old')
-    summaryInput.value = 'New'
-    clickByTitleOrText(document.body, 'Save')
+    setValue(summaryInput, 'New')
 
     expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('New')
   })
@@ -828,6 +879,140 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector<HTMLAnchorElement>('a.ref[data-ref="milestone:m1"]')?.textContent).toBe('@New Title')
   })
 })
+
+describe('renderActionItems — edit modal live persistence', () => {
+  test('due date and assignee commit to the store as soon as they change, with the modal still open', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    pickDate(15)
+    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Carla')
+
+    const updated = store.doc.teams[0]!.actionItems[0]!
+    expect(updated.assignee).toBe('Carla')
+    expect(updated.dueDate).toMatch(/-15$/)
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull() // still open — no Save/close needed
+  })
+
+  test('notes commit to the store as they\'re typed, via the same debounced onChange risks.ts\'s follow-up editor uses', () => {
+    vi.useFakeTimers()
+    const team = makeTeam({ actionItems: [item({ id: 'a', notes: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
+    setBlockText(editorEl, 'Talked to vendor today')
+    fireInput(editorEl)
+    vi.advanceTimersByTime(400)
+
+    expect(store.doc.teams[0]!.actionItems[0]!.notes).toBe('Talked to vendor today')
+  })
+})
+
+describe('renderActionItems — expand mode and the header save-state pill', () => {
+  function openModal(container: HTMLElement): void {
+    clickByTitleOrText(container, '✎')
+  }
+
+  test('the expand button starts collapsed, with the mini save-state pill hidden', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    openModal(container)
+
+    const dialog = document.querySelector('.tt-modal-dialog')!
+    const pill = dialog.querySelector<HTMLElement>('.tt-save-pill')!
+    expect(dialog.classList.contains('tt-kanban-expanded')).toBe(false)
+    // Not `.hidden`: `.tt-save-pill`'s own `display: inline-flex` rule beats
+    // the low-specificity UA `[hidden]` rule, so the pill is hidden via
+    // `style.display` directly instead — see action-items.ts's comment.
+    expect(pill.style.display).toBe('none')
+  })
+
+  test('clicking expand grows the dialog and reveals the mini pill; clicking again restores it', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    openModal(container)
+
+    const dialog = document.querySelector('.tt-modal-dialog')!
+    const expandBtn = dialog.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!
+    const pill = dialog.querySelector<HTMLElement>('.tt-save-pill')!
+
+    expandBtn.click()
+    expect(dialog.classList.contains('tt-kanban-expanded')).toBe(true)
+    expect(pill.style.display).not.toBe('none')
+
+    expandBtn.click()
+    expect(dialog.classList.contains('tt-kanban-expanded')).toBe(false)
+    expect(pill.style.display).toBe('none')
+  })
+
+  test('the mini pill mirrors whatever ctx.saveStatus broadcasts, including after the state changes', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    openModal(container)
+    document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
+
+    const pillText = document.querySelector('.tt-save-pill-text')!
+    expect(pillText.textContent).toBe('Saved') // fakeSaveStatus's immediate subscribe() callback
+
+    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes' })
+    expect(pillText.textContent).toBe('Unsaved')
+    expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('dirty')
+  })
+
+  test('clicking the mini pill triggers ctx.saveStatus.requestSaveNow(), the same explicit-save action Ctrl+S uses', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    openModal(container)
+    document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
+
+    document.querySelector<HTMLElement>('.tt-save-pill')!.click()
+    expect(fake.requestCount()).toBe(1)
+  })
+
+  test('closing the modal unsubscribes from saveStatus, same as the container disposer would if the module unmounted mid-edit', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    openModal(container)
+    expect(fake.subscriberCount()).toBe(1)
+
+    clickByTitleOrText(document.body, 'Close')
+    expect(fake.subscriberCount()).toBe(0)
+  })
+
+  test('unmounting the module while the modal is still open also unsubscribes (double-mount disposer path)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    openModal(container)
+    expect(fake.subscriberCount()).toBe(1)
+
+    container.innerHTML = '' // mirrors panes.ts's renderBody clearing the container before re-invoking the renderer
+    render(container, loc, store, pm, 0, fake.api)
+    expect(fake.subscriberCount()).toBe(0)
+  })
+})
+
+// Landing on a Tasks search result is handled generically now, not by this
+// module: search-ui.ts's commit() resolves the matched card via
+// `[data-item-id]` and search-highlight.ts's applySearchHighlight() gives it
+// real focus (see that file's own tests) — which is enough on its own,
+// since the card's existing Enter handler (tested above, under "keyboard
+// route to the card actions") already opens the modal from a focused card.
+// No SEARCH_FOCUS_ITEM_EVENT listener needed here — see the comment on that
+// in action-items.ts itself.
 
 describe('renderActionItems — zone clear-all', () => {
   test('zone trash clears all cards in that zone after confirmation', () => {
@@ -1091,9 +1276,9 @@ describe('renderActionItems — tag display and filter', () => {
     expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['old'])
 
     clickByTitleOrText(container, '+ Card')
-    ;(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement).value = 'New task'
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'New task')
     ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-rust') as HTMLButtonElement).click()
-    clickByTitleOrText(document.body, 'Save')
+    clickByTitleOrText(document.body, 'Close')
 
     expect(cards(container)).toHaveLength(2)
     expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(false)
@@ -1107,9 +1292,9 @@ describe('renderActionItems — tag display and filter', () => {
     chipByColor(container, '.tt-kanban-tag-chip', 'slate').click() // filter to slate
 
     clickByTitleOrText(container, '+ Card')
-    ;(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement).value = 'New slate task'
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'New slate task')
     ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-slate') as HTMLButtonElement).click()
-    clickByTitleOrText(document.body, 'Save')
+    clickByTitleOrText(document.body, 'Close')
 
     expect(cards(container)).toHaveLength(2) // both slate cards still shown
     expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(true)
