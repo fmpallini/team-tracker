@@ -106,6 +106,39 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   }
 
   /**
+   * Chromium can drop a file handle's write permission mid-session (tab
+   * backgrounded a while, user revoked it via site settings, etc.) without
+   * the handle itself becoming invalid — `writeFile()`'s `createWritable()`
+   * throws `NotAllowedError` in that case. Recovery is re-requesting
+   * permission on the *same* handle, not "Save as…": the file the user
+   * already has open is still the right file, it just needs re-granting.
+   */
+  function reportPermissionError(): void {
+    deps.shell.setSaveState('error')
+    const lc = deps.locale()
+    toast(t(lc, 'save_permission_toast'), {
+      sticky: true,
+      action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void requestAccess() },
+    })
+  }
+
+  async function requestAccess(): Promise<void> {
+    const handle = deps.session.handle
+    if (!handle) return
+    let permission: PermissionState
+    try {
+      // The button click that triggered this satisfies the user-activation
+      // requirement Chromium enforces for re-prompting a downgraded grant.
+      permission = await handle.requestPermission({ mode: 'readwrite' })
+    } catch (e) {
+      console.error(e)
+      return
+    }
+    if (permission !== 'granted') return
+    await saveNow({ explicit: true })
+  }
+
+  /**
    * "Salvar como…" recovery for the generic-error toast. Mutates the shared
    * `deps.session` object in place (rather than swapping it out) so the app
    * controller in main.ts — which holds the very same `FileSession` object —
@@ -172,6 +205,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
         if (!deps.isConflictOpen?.()) {
           deps.onExternalChange()
         }
+        return
+      }
+      if (e instanceof DOMException && e.name === 'NotAllowedError') {
+        console.error(e)
+        reportPermissionError()
         return
       }
       console.error(e)
