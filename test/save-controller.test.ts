@@ -340,6 +340,30 @@ test('"Grant access..." toast action stays dirty when the user denies the re-req
   expect(store.dirty).toBe(true)
 })
 
+test('"Grant access..." toast action stays dirty when requestPermission itself throws', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const requestPermission = vi.fn(async () => { throw new Error('user gesture required') })
+  const handle = { requestPermission } as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
+  fsMocks.writeFile.mockImplementation(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  opts.action?.onClick()
+  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(requestPermission).toHaveBeenCalledTimes(1)
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  expect(store.dirty).toBe(true)
+})
+
 test('scheduleFrom re-arms the auto-save interval from prefs.autoSaveMin', async () => {
   vi.useFakeTimers()
   try {
