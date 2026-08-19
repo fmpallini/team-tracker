@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.3.3] - 2026-08-19
+
+### Fixed
+- A save failure caused by the browser revoking file write access mid-session now shows a clearer "grant access" prompt that re-authorizes the same file, instead of the generic save-failed message that only offered "Save as…".
+
 ## [2.3.2] - 2026-08-18
 
 ### Added

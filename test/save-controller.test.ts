@@ -269,6 +269,101 @@ test('"Save as..." toast action picks a new file via pickCreate, adopts the sess
   expect(store.dirty).toBe(false)
 })
 
+test('NotAllowedError (permission revoked): sticky toast with a "Grant access..." action, doc stays dirty, state is error', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
+  const session = makeSession()
+  fsMocks.writeFile.mockImplementation(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+
+  expect(store.dirty).toBe(true)
+  expect(setSaveStateSpy.mock.calls.map((c) => c[0])).toEqual(['saving', 'error'])
+  expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+  const [msg, opts] = modalMocks.toast.mock.calls[0] as [string, { sticky?: boolean; action?: { label: string; onClick: () => void } }]
+  expect(msg).toBe('Write access was lost — your data is still safe in memory')
+  expect(opts.sticky).toBe(true)
+  expect(opts.action?.label).toBe('Grant access…')
+})
+
+test('"Grant access..." toast action re-requests permission on the same handle and retries the save', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const requestPermission = vi.fn(async () => 'granted' as PermissionState)
+  const handle = { requestPermission } as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
+  fsMocks.writeFile.mockImplementationOnce(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  opts.action?.onClick()
+  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(requestPermission).toHaveBeenCalledWith({ mode: 'readwrite' })
+  expect(fsMocks.writeFile).toHaveBeenLastCalledWith(session, expect.any(Uint8Array))
+  expect(store.dirty).toBe(false)
+})
+
+test('"Grant access..." toast action stays dirty when the user denies the re-request', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const requestPermission = vi.fn(async () => 'denied' as PermissionState)
+  const handle = { requestPermission } as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
+  fsMocks.writeFile.mockImplementation(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  opts.action?.onClick()
+  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(requestPermission).toHaveBeenCalledTimes(1)
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  expect(store.dirty).toBe(true)
+})
+
+test('"Grant access..." toast action stays dirty when requestPermission itself throws', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const requestPermission = vi.fn(async () => { throw new Error('user gesture required') })
+  const handle = { requestPermission } as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
+  fsMocks.writeFile.mockImplementation(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  opts.action?.onClick()
+  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(requestPermission).toHaveBeenCalledTimes(1)
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  expect(store.dirty).toBe(true)
+})
+
 test('scheduleFrom re-arms the auto-save interval from prefs.autoSaveMin', async () => {
   vi.useFakeTimers()
   try {
