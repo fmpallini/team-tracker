@@ -108,6 +108,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   let draggedId: string | null = null
+  let draggedColumnId: string | null = null
   let pendingColumnFocusId: string | null = null
 
   let activeTagFilter: ActionItemColor | null = null
@@ -808,6 +809,30 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
+  /** Makes a middle column's header draggable, reordering `Team.actionColumns` on drop. Only called for middle-column heads (see rebuildBoard below) — the fixed Todo/Done+Cancelled headers never call this, so they're never `draggable` and never gain listeners, naturally excluding them as both a drag source and a drop target. `draggedColumnId === status` also guards a column being dropped onto itself. */
+  function wireColumnHeaderDrag(headEl: HTMLElement, status: string): void {
+    headEl.draggable = true
+    headEl.addEventListener('dragstart', (e) => {
+      draggedColumnId = status
+      ;(e as DragEvent).dataTransfer?.setData('text/plain', status)
+    })
+    headEl.addEventListener('dragover', (e) => {
+      if (draggedColumnId === null || draggedColumnId === status) return
+      e.preventDefault()
+    })
+    headEl.addEventListener('drop', (e) => {
+      e.preventDefault()
+      const srcId = draggedColumnId
+      draggedColumnId = null
+      if (srcId === null || srcId === status) return
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm?.actionColumns) return
+        moveColumn(tm.actionColumns, srcId, status, 'before')
+      }, { teamId, sections: ['actions'] })
+    })
+  }
+
   /** Rebuilds the whole board (column headers + bodies, drop zones, add/rename/delete affordances) from the team's current actionColumns. Same "full rebuild is simplest and correct" convention as people-tree.ts's tree — called at the top of renderAll(), below, before that function repopulates each column's cards. */
   function rebuildBoard(): void {
     const tm = findTeam()
@@ -862,6 +887,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, '🗑'),
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card'))
       )
+      wireColumnHeaderDrag(headEl, id)
       if (pendingColumnFocusId === id) {
         pendingColumnFocusId = null
         focusAfterAttach.run = startRename

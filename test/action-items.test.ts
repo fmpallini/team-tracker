@@ -1706,3 +1706,39 @@ describe('renderActionItems — drag and drop', () => {
     expect(root.classList.contains('dragging')).toBe(false)
   })
 })
+
+describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
+  function fire(el: HTMLElement, type: string, dataTransfer: Partial<DataTransfer> = {}): void {
+    const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent & { dataTransfer: Partial<DataTransfer> }
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+    el.dispatchEvent(event)
+  }
+
+  test('dragging one middle column header before another persists the new order', () => {
+    const team = makeTeam({
+      actionColumns: [{ id: 'a', name: 'A', order: 0 }, { id: 'b', name: 'B', order: 1 }, { id: 'c', name: 'C', order: 2 }],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const [todoHead, headA, headB, headC] = heads // eslint-disable-line @typescript-eslint/no-unused-vars
+
+    fire(headC!, 'dragstart', { setData: () => {} })
+    fire(headA!, 'dragover')
+    fire(headA!, 'drop')
+
+    const ids = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(ids).toEqual(['c', 'a', 'b'])
+  })
+
+  test('the fixed Todo and Done+Cancelled column headers are not drop targets for a column drag', () => {
+    const team = makeTeam({ actionColumns: [{ id: 'a', name: 'A', order: 0 }] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const todoHead = container.querySelector<HTMLElement>('.tt-kanban-col-head')!
+
+    fire(todoHead, 'dragstart', { setData: () => {} })
+
+    expect(todoHead.getAttribute('draggable')).toBeNull()
+  })
+})
