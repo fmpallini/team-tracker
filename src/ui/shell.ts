@@ -4,7 +4,7 @@ import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { formatHHMM } from '../core/date'
 
-export type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
+export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission'
 
 /** Already-formatted (current-locale) snapshot of the save-state pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of SAVE_STATE_KEY/renderSaveIndicator's formatting rules. */
 export interface SaveStatusInfo {
@@ -50,10 +50,19 @@ export interface Shell {
   /** Registers the click handler for the save-state pill — clicking it while a save is pending ('dirty'/'error') triggers an explicit save, same as Ctrl+S. */
   onSaveRequest(cb: () => void): void
   /**
+   * Registers the click handler for the save-state pill while it's in the
+   * 'permission' state — a lapsed write grant on the primary file, the
+   * backup file, or both. Separate from `onSaveRequest` because the recovery
+   * action is different: re-requesting permission(s), not just retrying a
+   * write that would fail the same way again.
+   */
+  onGrantRequest(cb: () => void): void
+  /**
    * Same effect as clicking the real save-state pill — an explicit save while
-   * a save is pending ('dirty'/'error'), a no-op otherwise — for a caller
-   * that mirrors the pill in its own UI (action-items.ts's expanded-modal
-   * header "force save") instead of the header pill itself.
+   * a save is pending ('dirty'/'error'), the grant-recovery action while
+   * 'permission', a no-op otherwise — for a caller that mirrors the pill in
+   * its own UI (action-items.ts's expanded-modal header "force save") instead
+   * of the header pill itself.
    */
   requestSaveNow(): void
   /**
@@ -98,6 +107,7 @@ const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
   dirty: 'save_dirty',
   saving: 'save_saving',
   error: 'save_error',
+  permission: 'save_permission',
 }
 
 function toggleFullscreen(): void {
@@ -151,6 +161,7 @@ export function createShell(locale: Locale): Shell {
   const savePillFallbackMark = el('span', { class: 'tt-save-pill-fallback-mark', 'aria-hidden': 'true' }, '⤓')
   savePillFallbackMark.hidden = true
   let saveRequestHandler: (() => void) | null = null
+  let grantRequestHandler: (() => void) | null = null
   const saveIndicator = el(
     'span',
     {
@@ -252,7 +263,10 @@ export function createShell(locale: Locale): Shell {
     savePillFallbackMark.hidden = !fallbackHint
     saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
     saveIndicator.dataset.state = currentState
-    saveIndicator.classList.toggle('tt-save-pill-clickable', currentState === 'dirty' || currentState === 'error')
+    saveIndicator.classList.toggle(
+      'tt-save-pill-clickable',
+      currentState === 'dirty' || currentState === 'error' || currentState === 'permission'
+    )
     for (const sub of saveStateSubscribers) sub(info)
   }
 
@@ -318,7 +332,15 @@ export function createShell(locale: Locale): Shell {
     saveRequestHandler = cb
   }
 
+  function onGrantRequest(cb: () => void): void {
+    grantRequestHandler = cb
+  }
+
   function requestSaveNow(): void {
+    if (currentState === 'permission') {
+      grantRequestHandler?.()
+      return
+    }
     if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
   }
 
@@ -338,5 +360,5 @@ export function createShell(locale: Locale): Shell {
     mq.removeEventListener('change', onSystemThemeChange)
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
 }

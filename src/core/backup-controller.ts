@@ -14,12 +14,44 @@ export interface BackupController {
   writeBackupNow(bytes: Uint8Array): Promise<void>
   /** Writes only if the interval implied by `prefs.backupFrequency` ('daily' => 24h, 'hourly' => 1h) has elapsed since the last backup write this session (or none yet). */
   maybeWriteBackup(bytes: Uint8Array): Promise<void>
+  /**
+   * Re-requests write permission on the backup handle, if one is configured
+   * and its grant has lapsed. Meant to be chained directly off a click that
+   * already re-granted the *primary* file's permission (save-controller.ts's
+   * "Grant access…" toast action) — the primary and backup files are separate
+   * paths with independent grants, so fixing one never fixes the other on its
+   * own. Calling this immediately after, with no intervening `await` on
+   * anything else, keeps it inside the same user-activation window so the
+   * browser's native prompt (if the backup grant actually needs re-asking)
+   * doesn't require a second physical gesture. No-op, never throws, if
+   * there's no backup configured or the grant is already fine.
+   */
+  regrantPermission(): Promise<void>
+  /**
+   * True only when a backup is configured (a handle id is set) and its
+   * grant is not currently 'granted'. Read-only — never prompts, never
+   * writes. Backup writes are interval-gated (daily/hourly), so unlike the
+   * primary file a lapsed backup grant can otherwise go undetected for up
+   * to a day; save-controller.ts calls this after every successful primary
+   * save (cheap — a single `queryPermission`) so the save-state pill can
+   * reflect it immediately instead of waiting for the next backup attempt.
+   */
+  hasMissingGrant(): Promise<boolean>
 }
 
 export function createBackupController(deps: { store: Store }): BackupController {
   let cachedHandle: FileSystemFileHandle | null = null
   let lastBackupAt = 0
   let warnedThisSession = false
+
+  async function loadHandle(): Promise<FileSystemFileHandle | null> {
+    if (!cachedHandle) {
+      const id = deps.store.doc.prefs.backupHandleId
+      if (!id) return null
+      cachedHandle = (await idbGet<FileSystemFileHandle>(id)) ?? null
+    }
+    return cachedHandle
+  }
 
   /**
    * Returns the backup handle only if it's actually writable right now, else
@@ -32,18 +64,38 @@ export function createBackupController(deps: { store: Store }): BackupController
    *
    * Deliberately `queryPermission` only, no `requestPermission`: backup writes
    * ride along with (auto-)saves, which have no transient user activation, so
-   * a re-request would be denied anyway — and re-granting is a UX decision,
-   * not something to prompt for from a background save.
+   * a re-request would be denied anyway — see `regrantPermission()` for the
+   * one path that does have activation to spend.
    */
   async function getHandle(): Promise<FileSystemFileHandle | null> {
-    if (!cachedHandle) {
-      const id = deps.store.doc.prefs.backupHandleId
-      if (!id) return null
-      cachedHandle = (await idbGet<FileSystemFileHandle>(id)) ?? null
-      if (!cachedHandle) return null
+    const handle = await loadHandle()
+    if (!handle) return null
+    if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') return null
+    return handle
+  }
+
+  async function regrantPermission(): Promise<void> {
+    // Consistent with hasMissingGrant()/writeBackupNow(): a disabled backup
+    // must stay silent, not fire its own native permission prompt off the
+    // back of the primary file's "Grant access…" click for a feature the
+    // user has turned off.
+    if (!deps.store.doc.prefs.dailyBackupEnabled) return
+    const handle = await loadHandle()
+    if (!handle) return
+    if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') return
+    try {
+      const permission = await handle.requestPermission({ mode: 'readwrite' })
+      if (permission === 'granted') warnedThisSession = false
+    } catch (e) {
+      console.error(e)
     }
-    if ((await cachedHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') return null
-    return cachedHandle
+  }
+
+  async function hasMissingGrant(): Promise<boolean> {
+    if (!deps.store.doc.prefs.dailyBackupEnabled) return false
+    const handle = await loadHandle()
+    if (!handle) return false
+    return (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
   }
 
   // Write backup bytes without the side effect of setting 'lastHandle' in IndexedDB.
@@ -89,5 +141,5 @@ export function createBackupController(deps: { store: Store }): BackupController
     await writeBackupNow(bytes)
   }
 
-  return { writeBackupNow, maybeWriteBackup }
+  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant }
 }

@@ -303,6 +303,16 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--danger) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
+/* A lapsed write permission (main file and/or backup file) — amber, distinct
+   from "error": the user can fix this themselves with one click, it isn't a
+   failure needing investigation. Reuses --brass, the same amber token
+   already used for "medium" risk exposure and the password meter's "fair"
+   step, rather than introducing a new color variable across every palette. */
+.tt-save-pill[data-state="permission"] {
+  color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
+}
 /* Fallback mode (no File System Access API — every save is a download). The
    mark replaces a sticky toast that used to sit over the app for the whole
    session; the pill's tooltip carries the full sentence. */
