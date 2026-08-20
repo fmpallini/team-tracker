@@ -2,7 +2,7 @@ import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 12
+export const SCHEMA_VERSION = 13
 
 export class SchemaTooNewError extends Error {}
 
@@ -39,6 +39,7 @@ export function createEmptyTeam(id: string, name: string, emoji: string, locale:
     stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
     dailyNotes: {},
     actionTagNames,
+    actionColumns: [{ id: 'wip', name: t(locale, 'kanban_wip_default_name'), order: 0 }],
     generalNotes: '',
   }
 }
@@ -124,6 +125,15 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   11: (d) => {
     const nav = d.nav as Record<string, unknown> | undefined
     if (nav) nav.calendarCollapsed = nav.calendarCollapsed ?? false
+  },
+  12: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    const locale: Locale = prefs?.locale === 'pt-BR' ? 'pt-BR' : 'en-US'
+    for (const team of (d.teams as Record<string, unknown>[]) ?? []) {
+      if (!Array.isArray(team.actionColumns)) {
+        team.actionColumns = [{ id: 'wip', name: t(locale, 'kanban_wip_default_name'), order: 0 }]
+      }
+    }
   },
 }
 

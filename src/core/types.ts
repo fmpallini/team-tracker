@@ -25,9 +25,12 @@ export interface Person {
   parentId: string | null; order: number; notes: string
 }
 export type ActionItemColor = 'slate' | 'brass' | 'sage' | 'rust' | 'plum' | 'ledger'
+export interface ActionColumn { id: string; name: string; order: number }
 export interface ActionItem {
   id: string; summary: string; notes: string
-  status: 'todo' | 'wip' | 'done' | 'cancelled'
+  // Any column id: the fixed 'todo'/'done'/'cancelled', or a custom middle
+  // column's id from the owning team's actionColumns.
+  status: string
   dueDate: string | null; assignee: string
   // No default: a new card starts uncategorized until the user explicitly
   // picks a color, and an existing one can be unset back to null (see
@@ -48,6 +51,7 @@ export interface Team {
   actionItems: ActionItem[]; milestones: Milestone[]; risks: Risk[]
   dailyNotes: Record<string, string>
   actionTagNames?: Partial<Record<ActionItemColor, string>>
+  actionColumns?: ActionColumn[]
   generalNotes?: string
 }
 export interface Template {
