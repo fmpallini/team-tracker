@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.3.4] - 2026-08-19
+
+### Added
+- The save-status indicator now shows a distinct amber "Grant needed" state when the browser has revoked write access to the main file or the daily backup file, separate from a real save error. Clicking it re-authorizes whichever file(s) need it and saves — one click covers both the main file and the backup, not just the one that failed.
+
+### Changed
+- A lapsed backup-file permission is now caught right after the next successful save, instead of only surfacing whenever the backup itself was next due to run (which could be up to a day later).
+
 ## [2.3.3] - 2026-08-19
 
 ### Fixed

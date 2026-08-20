@@ -39,6 +39,7 @@ function makeSaveCtl(overrides: Partial<SaveController> = {}): SaveController {
     scheduleFrom: vi.fn(),
     runExclusive: vi.fn(async (fn) => fn()),
     flush: vi.fn(async () => {}),
+    resolveGrants: vi.fn(async () => {}),
     dispose: vi.fn(),
     ...overrides,
   }

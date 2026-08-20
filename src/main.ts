@@ -254,8 +254,25 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
             shell.setTitle(session.name, false)
           } catch (e) {
             console.error(e)
-            shell.setSaveState('error')
-            toast(t(store.doc.prefs.locale, 'save_error_toast'), { sticky: true })
+            if (e instanceof DOMException && e.name === 'NotAllowedError') {
+              // Same lapsed-permission case save-controller.ts's doSave()
+              // handles for a normal save — reached here instead because the
+              // write that hit it was this "Overwrite" retry. Reuses the same
+              // recovery, resolveGrants(): if the file is still externally
+              // different once permission's fixed, the retried (non-forced)
+              // save surfaces the conflict modal again rather than silently
+              // forcing this "Overwrite" choice through a permission
+              // side-channel — the user re-confirms instead of it happening
+              // unattended.
+              shell.setSaveState('permission')
+              toast(t(store.doc.prefs.locale, 'save_permission_toast'), {
+                sticky: true,
+                action: { label: t(store.doc.prefs.locale, 'grant_access_ellipsis'), onClick: () => void saveCtl.resolveGrants() },
+              })
+            } else {
+              shell.setSaveState('error')
+              toast(t(store.doc.prefs.locale, 'save_error_toast'), { sticky: true })
+            }
           } finally {
             conflictOpen = false
           }
@@ -406,6 +423,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
   shell.onCloseFile(closeFile)
   shell.onSaveRequest(() => void saveCtl.saveNow({ explicit: true }))
+  shell.onGrantRequest(() => void saveCtl.resolveGrants())
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was

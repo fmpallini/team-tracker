@@ -23,11 +23,13 @@ const fakeWritable = { write: writeMock, close: closeMock }
 
 const createWritableMock = vi.fn(async () => fakeWritable)
 const queryPermissionMock = vi.fn(async (): Promise<PermissionState> => 'granted')
+const requestPermissionMock = vi.fn(async (): Promise<PermissionState> => 'granted')
 
 const fakeHandle = {
   name: 'team.bck',
   createWritable: createWritableMock,
   queryPermission: queryPermissionMock,
+  requestPermission: requestPermissionMock,
 } as unknown as FileSystemFileHandle
 
 beforeEach(() => {
@@ -37,6 +39,7 @@ beforeEach(() => {
   closeMock.mockReset()
   createWritableMock.mockReset().mockResolvedValue(fakeWritable)
   queryPermissionMock.mockReset().mockResolvedValue('granted')
+  requestPermissionMock.mockReset().mockResolvedValue('granted')
   modalMocks.toast.mockReset()
 })
 
@@ -236,5 +239,111 @@ describe('backup-controller', () => {
     queryPermissionMock.mockResolvedValue('granted')
     await ctl.maybeWriteBackup(new Uint8Array([2]))
     expect(writeMock).toHaveBeenCalledTimes(1)
+  })
+
+  // Consistent with hasMissingGrant()/writeBackupNow(): must not fire its own
+  // native permission prompt for a feature the user has turned off, even
+  // though a handle is still configured and its grant has genuinely lapsed —
+  // this can otherwise be reached off the primary file's "Grant access…"
+  // click, which has nothing to do with whether backups are currently on.
+  test('regrantPermission no-ops when backups are disabled, even with a configured, lapsed handle', async () => {
+    queryPermissionMock.mockResolvedValue('prompt')
+    const store = storeWithBackup(false)
+    const ctl = createBackupController({ store })
+    await ctl.regrantPermission()
+    expect(idbMocks.idbGet).not.toHaveBeenCalled()
+    expect(requestPermissionMock).not.toHaveBeenCalled()
+  })
+
+  test('regrantPermission no-ops when no backup handle id is configured', async () => {
+    const store = storeWithBackup(true, null)
+    const ctl = createBackupController({ store })
+    await ctl.regrantPermission()
+    expect(idbMocks.idbGet).not.toHaveBeenCalled()
+    expect(requestPermissionMock).not.toHaveBeenCalled()
+  })
+
+  test('regrantPermission no-ops (no native prompt fired) when the grant is already fine', async () => {
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.regrantPermission()
+    expect(queryPermissionMock).toHaveBeenCalledWith({ mode: 'readwrite' })
+    expect(requestPermissionMock).not.toHaveBeenCalled()
+  })
+
+  test('regrantPermission re-requests permission on the same handle when the grant has lapsed', async () => {
+    queryPermissionMock.mockResolvedValue('prompt')
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.regrantPermission()
+    expect(requestPermissionMock).toHaveBeenCalledWith({ mode: 'readwrite' })
+  })
+
+  test('regrantPermission swallows a rejecting requestPermission instead of throwing', async () => {
+    queryPermissionMock.mockResolvedValue('prompt')
+    requestPermissionMock.mockRejectedValue(new Error('user gesture required'))
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.regrantPermission()).resolves.toBeUndefined()
+    expect(consoleErrorSpy).toHaveBeenCalled()
+    consoleErrorSpy.mockRestore()
+  })
+
+  // The one-shot warning latch (see writeBackupNow's sticky-toast comment)
+  // should not stay permanently spent once the underlying grant is actually
+  // fixed — otherwise a later, unrelated write failure goes fully silent for
+  // the rest of the session.
+  test('a successful regrant clears the one-shot warning latch so a later write failure can toast again', async () => {
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+
+    createWritableMock.mockRejectedValueOnce(new Error('disk full'))
+    await ctl.writeBackupNow(new Uint8Array([1]))
+    expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+    modalMocks.toast.mockClear()
+
+    // A second failure right after does NOT toast again — the latch is spent.
+    createWritableMock.mockRejectedValueOnce(new Error('disk full'))
+    await ctl.writeBackupNow(new Uint8Array([2]))
+    expect(modalMocks.toast).not.toHaveBeenCalled()
+
+    // The grant lapsed and gets fixed via the primary save's "Grant access…" chain.
+    queryPermissionMock.mockResolvedValue('prompt')
+    await ctl.regrantPermission()
+    queryPermissionMock.mockResolvedValue('granted')
+
+    // A fresh failure after the regrant can toast again.
+    createWritableMock.mockRejectedValueOnce(new Error('disk full'))
+    await ctl.writeBackupNow(new Uint8Array([3]))
+    expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+  })
+
+  test('hasMissingGrant is false when backups are off, even with a lapsed grant', async () => {
+    queryPermissionMock.mockResolvedValue('prompt')
+    const store = storeWithBackup(false)
+    const ctl = createBackupController({ store })
+    await expect(ctl.hasMissingGrant()).resolves.toBe(false)
+  })
+
+  test('hasMissingGrant is false when no backup handle is configured yet', async () => {
+    const store = storeWithBackup(true, null)
+    const ctl = createBackupController({ store })
+    await expect(ctl.hasMissingGrant()).resolves.toBe(false)
+    expect(idbMocks.idbGet).not.toHaveBeenCalled()
+  })
+
+  test('hasMissingGrant is false when the configured handle is granted', async () => {
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.hasMissingGrant()).resolves.toBe(false)
+  })
+
+  test('hasMissingGrant is true when the configured handle has lapsed, and never prompts', async () => {
+    queryPermissionMock.mockResolvedValue('prompt')
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.hasMissingGrant()).resolves.toBe(true)
+    expect(requestPermissionMock).not.toHaveBeenCalled()
   })
 })

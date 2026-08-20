@@ -332,7 +332,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       savePillMiniText.textContent = info.label
       savePillMini.title = info.title
       savePillMini.dataset.state = info.state
-      savePillMini.classList.toggle('tt-save-pill-clickable', info.state === 'dirty' || info.state === 'error')
+      savePillMini.classList.toggle(
+        'tt-save-pill-clickable',
+        info.state === 'dirty' || info.state === 'error' || info.state === 'permission'
+      )
     })
     const expandBtn = el(
       'button',

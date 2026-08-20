@@ -30,6 +30,14 @@ export interface SaveController {
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
   /** Resolves once no save is in flight and no trailing round is queued. */
   flush(): Promise<void>
+  /**
+   * Re-requests write permission on whichever of the primary file / backup
+   * file (if configured) currently need it, then retries the save. This is
+   * the save-state pill's click handler while it's in the 'permission'
+   * state, and the "Grant access…" toast action — same recovery either way.
+   * A no-op, resolving cleanly, if neither actually needs re-granting.
+   */
+  resolveGrants(): Promise<void>
   dispose(): void
 }
 
@@ -105,6 +113,14 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     })
   }
 
+  // One-shot per "episode": while a grant stays missing, the auto-save
+  // interval keeps retrying (and, for the backup file, every successful
+  // primary save re-checks it) — without this, each retry would stack
+  // another identical sticky toast. Reset back to false once everything's
+  // fully granted again (see the success tail of doSave()), so a *later*,
+  // unrelated lapse still gets its own toast.
+  let permissionEpisodeToasted = false
+
   /**
    * Chromium can drop a file handle's write permission mid-session (tab
    * backgrounded a while, user revoked it via site settings, etc.) without
@@ -112,29 +128,46 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
    * throws `NotAllowedError` in that case. Recovery is re-requesting
    * permission on the *same* handle, not "Save as…": the file the user
    * already has open is still the right file, it just needs re-granting.
+   * The same toast (and the same recovery, `resolveGrants()`) also covers a
+   * backup-only lapse discovered after a successful primary save — see the
+   * end of doSave().
    */
-  function reportPermissionError(): void {
-    deps.shell.setSaveState('error')
+  function reportPermissionNeeded(): void {
+    deps.shell.setSaveState('permission')
+    if (permissionEpisodeToasted) return
+    permissionEpisodeToasted = true
     const lc = deps.locale()
     toast(t(lc, 'save_permission_toast'), {
       sticky: true,
-      action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void requestAccess() },
+      action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
     })
   }
 
-  async function requestAccess(): Promise<void> {
+  async function resolveGrants(): Promise<void> {
     const handle = deps.session.handle
-    if (!handle) return
-    let permission: PermissionState
-    try {
-      // The button click that triggered this satisfies the user-activation
-      // requirement Chromium enforces for re-prompting a downgraded grant.
-      permission = await handle.requestPermission({ mode: 'readwrite' })
-    } catch (e) {
-      console.error(e)
-      return
+    if (handle) {
+      try {
+        // queryPermission first: requestPermission() is a no-op returning
+        // 'granted' immediately when the grant is already fine, but skipping
+        // straight to it would still be one more call than necessary on the
+        // (common) path where only the *backup* file's grant actually lapsed.
+        let permission = await handle.queryPermission({ mode: 'readwrite' })
+        if (permission !== 'granted') {
+          // The button click that triggered this satisfies the user-activation
+          // requirement Chromium enforces for re-prompting a downgraded grant.
+          permission = await handle.requestPermission({ mode: 'readwrite' })
+        }
+        if (permission !== 'granted') return
+      } catch (e) {
+        console.error(e)
+        return
+      }
     }
-    if (permission !== 'granted') return
+    // Chained directly off the same click, no intervening `await` on anything
+    // else — stays inside the activation window `requestPermission()` above
+    // just spent, so the backup file's own native prompt (if it needs one;
+    // it's a separate file with its own grant) doesn't need a second gesture.
+    await deps.backupCtl?.regrantPermission()
     await saveNow({ explicit: true })
   }
 
@@ -209,7 +242,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       }
       if (e instanceof DOMException && e.name === 'NotAllowedError') {
         console.error(e)
-        reportPermissionError()
+        reportPermissionNeeded()
         return
       }
       console.error(e)
@@ -218,7 +251,18 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
-    deps.shell.setSaveState('saved')
+    // The primary write just succeeded, but the backup mirror (if enabled) is
+    // interval-gated — up to a day could pass before it's next attempted for
+    // real, during which a lapsed grant would otherwise go undetected. This
+    // check is a cheap, prompt-free `queryPermission`, cheap enough to run on
+    // every successful save rather than waiting for that next attempt.
+    const backupMissingGrant = (await deps.backupCtl?.hasMissingGrant()) ?? false
+    if (backupMissingGrant) {
+      reportPermissionNeeded()
+    } else {
+      permissionEpisodeToasted = false
+      deps.shell.setSaveState('saved')
+    }
     deps.shell.setTitle(deps.session.name, false)
   }
 
@@ -338,5 +382,5 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     unsubscribeDirtyGuard()
   }
 
-  return { saveNow, scheduleFrom, runExclusive, flush, dispose }
+  return { saveNow, scheduleFrom, runExclusive, flush, resolveGrants, dispose }
 }

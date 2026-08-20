@@ -140,6 +140,36 @@ describe('save indicator pill', () => {
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
   })
 
+  // A lapsed write permission is amber ("the user can fix this themselves"),
+  // deliberately distinct from 'error' (red, "something actually went
+  // wrong") — see styles.css's data-state="permission" rule.
+  test('permission state: amber-distinct data-state, its own label, clickable', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
+    const shell = setup()
+    shell.setSaveState('saved')
+    shell.setSaveState('permission')
+    expect(pillText(shell)).toBe('Grant needed · 2:32 PM')
+    expect(shell.root.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('permission')
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+  })
+
+  test('clicking the pill in the permission state fires onGrantRequest, not onSaveRequest', () => {
+    const shell = setup()
+    const saveCb = vi.fn()
+    const grantCb = vi.fn()
+    shell.onSaveRequest(saveCb)
+    shell.onGrantRequest(grantCb)
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('permission')
+    pill.click()
+
+    expect(grantCb).toHaveBeenCalledOnce()
+    expect(saveCb).not.toHaveBeenCalled()
+  })
+
   test('createShell stamps an initial timestamp, so dirty shows it immediately', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 20, 9, 5))
@@ -257,6 +287,20 @@ describe('subscribeSaveState / requestSaveNow', () => {
     shell.setSaveState('error')
     shell.requestSaveNow()
     expect(cb).toHaveBeenCalledTimes(2)
+  })
+
+  test('requestSaveNow() in the permission state calls onGrantRequest instead of onSaveRequest', () => {
+    const shell = setup()
+    const saveCb = vi.fn()
+    const grantCb = vi.fn()
+    shell.onSaveRequest(saveCb)
+    shell.onGrantRequest(grantCb)
+
+    shell.setSaveState('permission')
+    shell.requestSaveNow()
+
+    expect(grantCb).toHaveBeenCalledOnce()
+    expect(saveCb).not.toHaveBeenCalled()
   })
 })
 
