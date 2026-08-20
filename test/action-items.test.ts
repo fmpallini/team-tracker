@@ -577,6 +577,27 @@ describe('renderActionItems — board', () => {
     expect(container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-card-title')!.textContent).toBe('W')
   })
 
+  test('the WIP column header shows the column name plus its item count, refreshed on every render', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'w1', order: 0, status: 'wip' }),
+        item({ id: 'w2', order: 1, status: 'wip' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const wipCol = container.querySelectorAll('.tt-kanban-col')[1]!
+    const nameEl = wipCol.querySelector('.tt-kanban-col-name')!
+    expect(nameEl.textContent).toBe('WIP (2)')
+
+    // Count updates on the next render, same as the fixed-column headers.
+    store.update((d) => {
+      d.teams[0]!.actionItems.push(item({ id: 'w3', order: 2, status: 'wip' }))
+    })
+    expect(container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-col-name')!.textContent).toBe('WIP (3)')
+  })
+
   test('shows an empty placeholder per column with no cards', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)

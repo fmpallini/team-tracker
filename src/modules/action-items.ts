@@ -691,6 +691,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   // and wireColumnDrop below, always as the latest board shape.
   let STATUSES: string[] = ['todo', 'done', 'cancelled']
   let cols = new Map<string, { bodyEl: HTMLElement; zoneEl: HTMLElement }>()
+  // Middle-column header name spans, keyed by column id — populated fresh in
+  // rebuildBoard() (like `cols` above) and read back in renderAll()'s
+  // per-status loop below to append the item count, the same way
+  // todoTitleEl/doneCancelTitleEl get their counts refreshed every render.
+  // The column *name* is user data, so it's interpolated inline rather than
+  // routed through an i18n `{count}`-placeholder key like kanban_col_todo.
+  let middleNameSpans = new Map<string, HTMLElement>()
 
   const doneCountEl = el('span', {})
   const cancelledCountEl = el('span', {})
@@ -749,9 +756,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('todo')!.bodyEl, cols.get('todo')!.zoneEl)
     )
 
+    middleNameSpans = new Map()
     const middleColEls = STATUSES.filter((s) => !isFixedStatus(s)).map((id) => {
       const name = tm?.actionColumns?.find((c) => c.id === id)?.name ?? ''
       const nameSpan = el('span', { class: 'tt-kanban-col-name' }, name)
+      middleNameSpans.set(id, nameSpan)
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
         nameSpan,
@@ -832,6 +841,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       bodyEl.innerHTML = ''
       if (visible.length === 0) bodyEl.appendChild(emptyEl())
       else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames)))
+      const nameSpan = middleNameSpans.get(s)
+      if (nameSpan) {
+        const name = tm?.actionColumns?.find((c) => c.id === s)?.name ?? ''
+        nameSpan.textContent = `${name} (${group.length})`
+      }
     }
     doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(byStatus.done!.length) })
     cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(byStatus.cancelled!.length) })
