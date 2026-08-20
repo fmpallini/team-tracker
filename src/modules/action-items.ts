@@ -5,7 +5,7 @@
 // renderAll) is simplest and correct — unlike the old flat-list version,
 // there's no in-progress inline edit whose caret needs preserving across a
 // foreign store update.
-import type { ActionItem, ActionItemColor, Loc, Team } from '../core/types'
+import type { ActionColumn, ActionItem, ActionItemColor, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
@@ -72,6 +72,23 @@ export function moveCard(items: ActionItem[], draggedId: string, status: ActionI
     const oldGroup = items.filter((i) => i.status === oldStatus).sort((a, b) => a.order - b.order)
     oldGroup.forEach((i, idx) => { i.order = idx })
   }
+}
+
+/**
+ * Reorders `columns` (a team's custom middle columns) by moving `draggedId`
+ * to before/after `targetId`, densely renumbering `order`. Single flat list
+ * (no status-group split like moveCard's), so this is simpler: one splice,
+ * one renumber pass.
+ */
+export function moveColumn(columns: ActionColumn[], draggedId: string, targetId: string | null, position: 'before' | 'after'): void {
+  const dragged = columns.find((c) => c.id === draggedId)
+  if (!dragged) return
+  if (draggedId === targetId) return
+  const rest = columns.filter((c) => c.id !== draggedId).sort((a, b) => a.order - b.order)
+  const targetIdx = targetId === null ? -1 : rest.findIndex((c) => c.id === targetId)
+  const insertAt = targetIdx === -1 ? rest.length : (position === 'before' ? targetIdx : targetIdx + 1)
+  rest.splice(insertAt, 0, dragged)
+  rest.forEach((c, idx) => { c.order = idx })
 }
 
 // --- renderer ---------------------------------------------------------------

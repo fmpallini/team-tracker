@@ -1,10 +1,10 @@
-import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard } from '../src/modules/action-items'
+import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard, moveColumn } from '../src/modules/action-items'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx, SaveStatusApi } from '../src/ui/panes'
 import type { SaveStatusInfo } from '../src/ui/shell'
-import type { ActionItem, Loc, Team } from '../src/core/types'
+import type { ActionColumn, ActionItem, Loc, Team } from '../src/core/types'
 
 /** A controllable fake for ModuleCtx.saveStatus — `emit` drives every subscriber the same way shell.ts's real setSaveState() would, and `requestCount` counts force-save clicks, for the header-pill/expand-mode tests below. Every other test just needs the default (a no-op stub, built fresh per render() call) and never touches this directly. */
 function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) => void; requestCount: () => number; subscriberCount: () => number } {
@@ -206,6 +206,36 @@ describe('pure helpers', () => {
       const items = [item({ id: 'a', status: 'todo', order: 0 }), item({ id: 'w', status: 'wip', order: 0 })]
       moveCard(items, 'a', 'wip', 'ghost', 'before')
       expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
+    })
+  })
+
+  describe('moveColumn', () => {
+    function col(overrides: Partial<ActionColumn>): ActionColumn {
+      return { id: 'c1', name: 'Col', order: 0, ...overrides }
+    }
+
+    test('reorders within bounds, renumbering densely', () => {
+      const columns = [col({ id: 'a', order: 0 }), col({ id: 'b', order: 1 }), col({ id: 'c', order: 2 })]
+      moveColumn(columns, 'c', 'a', 'before')
+      expect(columns.slice().sort((x, y) => x.order - y.order).map((c) => c.id)).toEqual(['c', 'a', 'b'])
+    })
+
+    test('no-op when the dragged id does not exist', () => {
+      const columns = [col({ id: 'a', order: 0 })]
+      moveColumn(columns, 'ghost', 'a', 'before')
+      expect(columns[0]!.order).toBe(0)
+    })
+
+    test('no-op when dropped onto itself', () => {
+      const columns = [col({ id: 'a', order: 0 }), col({ id: 'b', order: 1 })]
+      moveColumn(columns, 'a', 'a', 'before')
+      expect(columns.map((c) => c.order)).toEqual([0, 1])
+    })
+
+    test('appends at the end when the target id is null or not found', () => {
+      const columns = [col({ id: 'a', order: 0 }), col({ id: 'b', order: 1 })]
+      moveColumn(columns, 'a', null, 'after')
+      expect(columns.slice().sort((x, y) => x.order - y.order).map((c) => c.id)).toEqual(['b', 'a'])
     })
   })
 })
