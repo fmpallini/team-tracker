@@ -441,6 +441,21 @@ test.describe('resource growth over a long session', () => {
       await dialog.getByRole('button', { name: 'OK' }).click()
       await expect(page.locator('.tt-shell')).toBeVisible()
       await switchModule(page, /Risks/i)
+      // Same class of problem quiesce() (above) exists to remove for the
+      // other tests, one layer down: switchModule()'s own click resolves the
+      // instant the DOM mutation happens, with no guarantee any
+      // animation-frame-scheduled follow-up work it triggered has run yet.
+      // Sampling immediately after made this test's own state bimodal —
+      // whichever side of that boundary measure()'s CDP round trip happened
+      // to land on read as a node/listener jump to perCycleGrowth's median
+      // comparison, on a machine slow/loaded enough for the gap to matter,
+      // even though nothing was actually growing cycle over cycle. Confirming
+      // the pane menu is gone and the risk row is (still, deterministically)
+      // mounted, then flushing two animation frames, removes the variable
+      // instead of averaging over it.
+      await expect(page.locator('.tt-pane-menu')).toHaveCount(0)
+      await expect(page.locator('.tt-risk-row')).toHaveCount(1)
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
 
       if (i >= 2) samples.push(await measure(cdp))
     }
