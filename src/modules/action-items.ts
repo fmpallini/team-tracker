@@ -1,10 +1,11 @@
 // src/modules/action-items.ts — kanban board (To Do / WIP / Done+Cancelled)
 // for a team's action items. Cards are edited exclusively through a modal
-// (openEditModal below); the board itself has no live inputs, so a full
-// rebuild on every store change (like src/modules/people-tree.ts's
-// renderAll) is simplest and correct — unlike the old flat-list version,
-// there's no in-progress inline edit whose caret needs preserving across a
-// foreign store update.
+// (openEditModal below), so a full rebuild on every store change (like
+// src/modules/people-tree.ts's renderAll) is simplest and correct there.
+// The one live input the board itself owns is a middle column's inline
+// rename field (see focusedRenameInput/deferredRebuild below) — a foreign
+// store update while it's focused defers the rebuild to the input's next
+// blur instead of wiping the in-progress edit.
 import type { ActionColumn, ActionItem, ActionItemColor, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
@@ -17,7 +18,7 @@ import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '..
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
-import { el } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
@@ -107,6 +108,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   let draggedId: string | null = null
+  let pendingColumnFocusId: string | null = null
 
   let activeTagFilter: ActionItemColor | null = null
 
@@ -184,6 +186,31 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       // unlinkRefsInTeam's reach changes later — refs never cross teams
       // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
     }, { teamId })
+  }
+
+  function addColumn(): void {
+    const newId = crypto.randomUUID()
+    // Set before store.update(), not after: store.update() notifies
+    // subscribe() synchronously (see core/store.ts), which for this module
+    // runs straight into renderAll() -> rebuildBoard() before update()
+    // returns. rebuildBoard()'s pendingColumnFocusId check (below) has to see
+    // the new id during that same synchronous pass, or the just-added column
+    // never gets its auto-focus.
+    pendingColumnFocusId = newId
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const existing = tm.actionColumns ?? []
+      const maxOrder = existing.length === 0 ? -1 : Math.max(...existing.map((c) => c.order))
+      tm.actionColumns = [...existing, { id: newId, name: t(lc, 'kanban_new_column_default_name'), order: maxOrder + 1 }]
+    }, { teamId, sections: ['actions'] })
+  }
+
+  function renameColumn(columnId: string, name: string): void {
+    ctx.store.update((d) => {
+      const col = d.teams.find((t2) => t2.id === teamId)?.actionColumns?.find((c) => c.id === columnId)
+      if (col) col.name = name
+    }, { teamId, sections: ['actions'] })
   }
 
   function requestDelete(item: ActionItem): void {
@@ -757,18 +784,54 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     )
 
     middleNameSpans = new Map()
+    // Set inside the map() below when a just-added column's id matches
+    // pendingColumnFocusId, then invoked once, after boardEl.append() below —
+    // not from inside the map() callback itself, since the column's head
+    // isn't attached to the document yet at that point and .focus() on a
+    // detached element is a no-op. A plain `let` reassigned only inside the
+    // .map() callback below hits a TS 6 control-flow narrowing quirk (the
+    // read after .map() infers `never` instead of the declared type) — the
+    // object-wrapper indirection sidesteps it.
+    const focusAfterAttach: { run: (() => void) | null } = { run: null }
     const middleColEls = STATUSES.filter((s) => !isFixedStatus(s)).map((id) => {
       const name = tm?.actionColumns?.find((c) => c.id === id)?.name ?? ''
-      const nameSpan = el('span', { class: 'tt-kanban-col-name' }, name)
+      const nameSpan = el('span', { class: 'tt-kanban-col-name', title: t(lc, 'kanban_rename_column_hint') }, name)
       middleNameSpans.set(id, nameSpan)
+      const nameInput = el('input', {
+        type: 'text', class: 'tt-input tt-kanban-col-rename-input', value: name, style: 'display:none',
+      }) as HTMLInputElement
+      function startRename(): void {
+        nameSpan.style.display = 'none'
+        nameInput.style.display = ''
+        nameInput.focus()
+        nameInput.select()
+      }
+      function commitRename(): void {
+        nameInput.style.display = 'none'
+        nameSpan.style.display = ''
+        const value = nameInput.value.trim()
+        if (value !== '' && value !== name) renameColumn(id, value)
+      }
+      nameSpan.addEventListener('click', startRename)
+      nameInput.addEventListener('blur', commitRename)
+      nameInput.addEventListener('keydown', blurOnEnter)
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
-        nameSpan,
+        nameSpan, nameInput,
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card'))
       )
+      if (pendingColumnFocusId === id) {
+        pendingColumnFocusId = null
+        focusAfterAttach.run = startRename
+      }
       return el('div', { class: 'tt-kanban-col' }, headEl,
         el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get(id)!.bodyEl, cols.get(id)!.zoneEl))
     })
+
+    const addColumnBtn = el('button', {
+      class: 'tt-btn tt-kanban-add-column-btn', type: 'button', title: t(lc, 'kanban_add_column'),
+      onclick: () => addColumn(),
+    }, t(lc, 'kanban_add_column'))
 
     const doneCancelColEl = el(
       'div', { class: 'tt-kanban-col' },
@@ -783,8 +846,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     )
 
     boardEl.innerHTML = ''
-    boardEl.append(todoColEl, ...middleColEls, doneCancelColEl)
+    boardEl.append(todoColEl, ...middleColEls, addColumnBtn, doneCancelColEl)
     STATUSES.forEach((s) => wireColumnDrop(cols.get(s)!.bodyEl, s, cols.get(s)!.zoneEl))
+    focusAfterAttach.run?.()
   }
 
   const boardEl = el('div', { class: 'tt-kanban-board' })
@@ -856,10 +920,20 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
   renderAll()
 
+  function focusedRenameInput(): HTMLElement | null {
+    const active = document.activeElement
+    if (!(active instanceof HTMLInputElement) || !boardEl.contains(active)) return null
+    return active.classList.contains('tt-kanban-col-rename-input') ? active : null
+  }
+
+  const deferredRebuild = createDeferredRebuild(renderAll)
+
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     if (openBundle) openBundle.richBundle.editor.refreshRefLabels()
+    const active = focusedRenameInput()
+    if (active) { deferredRebuild.arm(active); return }
     renderAll()
   })
 
@@ -883,5 +957,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     unsubscribe()
     disposeOpenBundle()
     disposeArrowFallback()
+    deferredRebuild.dispose()
   }
 })

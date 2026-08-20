@@ -1213,6 +1213,88 @@ describe('renderActionItems — edit tags modal (toolbar)', () => {
   })
 })
 
+describe('renderActionItems — custom columns: add + rename', () => {
+  test('"+ Add column" appends a new middle column, focused for immediate rename', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Column')
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(2)
+    const added = store.doc.teams[0]!.actionColumns![1]!
+    expect(added.name).toBe('New column')
+    // Every middle column carries its own (hidden-unless-active) rename
+    // input — makeTeam()'s default "WIP" column has one too — so the new
+    // column's input is the last one in DOM order, not the first match.
+    const inputs = document.querySelectorAll<HTMLInputElement>('.tt-kanban-col-rename-input')
+    const input = inputs[inputs.length - 1]
+    expect(document.activeElement).toBe(input)
+  })
+
+  test('a new column always lands at the right end of the middle zone', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Column')
+
+    // Middle-column headers carry a live "(n)" item count (see
+    // middleNameSpans in action-items.ts) alongside the name — asserting the
+    // raw name here would false-fail against that existing behavior.
+    const names = Array.from(container.querySelectorAll('.tt-kanban-col-name')).map((n) => n.textContent)
+    expect(names).toEqual(['WIP (0)', 'New column (0)'])
+  })
+
+  test('clicking a column name switches it to an editable input pre-filled with the current name', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    expect(input.value).toBe('WIP')
+  })
+
+  test('blurring the rename input commits the new name to the store', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    input.value = 'In Review'
+    input.dispatchEvent(new Event('blur'))
+
+    expect(store.doc.teams[0]!.actionColumns![0]!.name).toBe('In Review')
+  })
+
+  test('Enter in the rename input blurs it, committing the same way', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    input.value = 'In Review'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(store.doc.teams[0]!.actionColumns![0]!.name).toBe('In Review')
+  })
+
+  test('committing an empty name reverts to the previous name instead of storing blank', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    input.value = '   '
+    input.dispatchEvent(new Event('blur'))
+
+    expect(store.doc.teams[0]!.actionColumns![0]!.name).toBe('WIP')
+  })
+})
+
 describe('renderActionItems — tag display and filter', () => {
   // Finds the chip/badge carrying `color-${color}` — avoids relying on
   // visible text, which is now blank for colors without a custom name.
