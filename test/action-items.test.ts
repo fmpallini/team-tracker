@@ -49,6 +49,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     stakeholders: [{ id: 'stk-1', name: 'Carla', role: 'Sponsor', parentId: null, order: 0, notes: '' }],
     members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: '' }],
     actionItems: [], milestones: [], risks: [], dailyNotes: {},
+    actionColumns: [{ id: 'wip', name: 'WIP', order: 0 }],
     ...overrides,
   }
 }
