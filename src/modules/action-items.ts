@@ -535,6 +535,49 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_edit_tags_title'), body, buttons: [cancelBtn, saveBtn] })
   }
 
+  function deleteColumn(columnId: string): void {
+    const count = items().filter((i) => i.status === columnId).length
+    if (count === 0) {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (tm?.actionColumns) tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
+      }, { teamId, sections: ['actions'] })
+      return
+    }
+    openDeleteColumnModal(columnId, count)
+  }
+
+  function openDeleteColumnModal(columnId: string, count: number): void {
+    const tm = findTeam()
+    const targets = STATUSES.filter((s) => s !== columnId)
+    const select = el('select', { class: 'tt-input tt-kanban-column-landing-select' }) as HTMLSelectElement
+    for (const s of targets) select.appendChild(el('option', { value: s }, statusLabel(s, tm)))
+    const body = el(
+      'div', { class: 'tt-prefs-field' },
+      el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_column_confirm', { count: String(count) })),
+      el('label', { class: 'tt-field' }, t(lc, 'kanban_column_landing_label'), select)
+    )
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const confirmBtn: ModalButton = {
+      label: t(lc, 'kanban_delete_column_btn'),
+      danger: true,
+      onClick: () => {
+        const targetStatus = select.value
+        ctx.store.update((d) => {
+          const team2 = d.teams.find((t2) => t2.id === teamId)
+          if (!team2) return
+          const moving = team2.actionItems.filter((i) => i.status === columnId).sort((a, b) => a.order - b.order)
+          const destGroup = team2.actionItems.filter((i) => i.status === targetStatus)
+          let nextOrder = destGroup.length === 0 ? 0 : Math.max(...destGroup.map((i) => i.order)) + 1
+          for (const i of moving) { i.status = targetStatus; i.order = nextOrder++ }
+          if (team2.actionColumns) team2.actionColumns = team2.actionColumns.filter((c) => c.id !== columnId)
+        }, { teamId, sections: ['actions'] })
+        handle.close()
+      },
+    }
+    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_delete_column_title'), body, buttons: [cancelBtn, confirmBtn] })
+  }
+
   function emptyEl(): HTMLElement {
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
@@ -695,11 +738,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     return status === 'todo' || status === 'done' || status === 'cancelled'
   }
 
-  // Unused within Task 5 itself — Task 8's column-transfer dropdown
-  // (docs/superpowers/plans/2026-08-20-kanban-custom-columns.md) is its
-  // first call site. Kept here now (rather than added in Task 8) because
-  // it's part of this task's declared skeleton interface.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Unused within Task 5 itself, when this was added as part of that task's
+  // declared skeleton interface — first used by Task 7's delete-column
+  // landing-picker labels (openDeleteColumnModal, above).
   function statusLabel(status: string, tm: Team | undefined): string {
     if (status === 'todo') return t(lc, 'kanban_status_todo')
     if (status === 'done') return t(lc, 'kanban_status_done')
@@ -818,6 +859,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
         nameSpan, nameInput,
+        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, '🗑'),
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card'))
       )
       if (pendingColumnFocusId === id) {

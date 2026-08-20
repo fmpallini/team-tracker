@@ -1295,6 +1295,71 @@ describe('renderActionItems — custom columns: add + rename', () => {
   })
 })
 
+describe('renderActionItems — custom columns: delete', () => {
+  function deleteColumnBtn(container: HTMLElement, index = 0): HTMLButtonElement {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-kanban-col-delete-btn'))[index]!
+  }
+
+  test('deletes an empty column immediately, with no confirmation', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('a non-empty column opens a landing-column picker instead of deleting immediately', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'wip' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(1) // not deleted yet
+    expect(document.querySelector('.tt-modal-dialog')).not.toBeNull()
+    const options = Array.from(document.querySelectorAll<HTMLOptionElement>('.tt-kanban-column-landing-select option')).map((o) => o.textContent)
+    expect(options).toEqual(['To Do', 'Done', 'Cancelled']) // every column except the one being deleted
+  })
+
+  test('confirming the landing picker moves every card in the deleted column to the chosen target, then removes the column', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a', status: 'wip', order: 0 }), item({ id: 'b', status: 'wip', order: 1 })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+    const select = document.querySelector('.tt-kanban-column-landing-select') as HTMLSelectElement
+    select.value = 'todo'
+    // Scoped to the dialog, not document.body: the column header's own
+    // trash-icon button shares this exact label text (both route through
+    // kanban_delete_column_title/_btn — see i18n.ts), and it sits earlier in
+    // DOM order, so a body-wide clickByTitleOrText would hit it instead of
+    // the modal's confirm button.
+    clickByTitleOrText(document.querySelector('.tt-modal-dialog')!, 'Delete column')
+
+    const items = store.doc.teams[0]!.actionItems
+    expect(items.every((i) => i.status === 'todo')).toBe(true)
+    expect(new Set(items.map((i) => i.order)).size).toBe(2) // densely renumbered, no collision
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+  })
+
+  test('canceling the landing picker keeps the column and its cards untouched', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'wip' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+    clickByTitleOrText(document.body, 'Cancel')
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(1)
+    expect(store.doc.teams[0]!.actionItems[0]!.status).toBe('wip')
+  })
+})
+
 describe('renderActionItems — tag display and filter', () => {
   // Finds the chip/badge carrying `color-${color}` — avoids relying on
   // visible text, which is now blank for colors without a custom name.
