@@ -69,7 +69,7 @@ function transferBetweenTeams<T extends { id: string }>(
 }
 
 export function transferActionItem(
-  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move'
+  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move', targetStatus?: string
 ): void {
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'action',
@@ -77,6 +77,7 @@ export function transferActionItem(
     (item) => item.summary,
     (to, copy) => {
       copy.notes = stripAllRefs(copy.notes)
+      if (targetStatus !== undefined) copy.status = targetStatus
       copy.order = to.actionItems.length - 1
     }
   )
