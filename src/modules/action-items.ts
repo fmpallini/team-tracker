@@ -570,6 +570,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           if (!team2) return
           const moving = team2.actionItems.filter((i) => i.status === columnId).sort((a, b) => a.order - b.order)
           const destGroup = team2.actionItems.filter((i) => i.status === targetStatus)
+          // Appends past the destination's highest existing order — same
+          // nextOrder idiom as openEditModal's new-card insertion above.
+          // Doesn't renumber the destination group densely; any pre-existing
+          // gaps in its order values are left untouched.
           let nextOrder = destGroup.length === 0 ? 0 : Math.max(...destGroup.map((i) => i.order)) + 1
           for (const i of moving) { i.status = targetStatus; i.order = nextOrder++ }
           if (team2.actionColumns) team2.actionColumns = team2.actionColumns.filter((c) => c.id !== columnId)
@@ -905,6 +909,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const nameInput = el('input', {
         type: 'text', class: 'tt-input tt-kanban-col-rename-input', value: name, style: 'display:none',
       }) as HTMLInputElement
+      // headEl (below) is draggable for column-reorder — without this,
+      // Chrome starts the ancestor's drag instead of a text drag-select the
+      // moment the user tries to drag-select inside this input mid-rename.
+      nameInput.draggable = false
       function startRename(): void {
         nameSpan.style.display = 'none'
         nameInput.style.display = ''

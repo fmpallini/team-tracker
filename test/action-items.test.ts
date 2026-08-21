@@ -1367,7 +1367,7 @@ describe('renderActionItems — custom columns: delete', () => {
 
     const items = store.doc.teams[0]!.actionItems
     expect(items.every((i) => i.status === 'todo')).toBe(true)
-    expect(new Set(items.map((i) => i.order)).size).toBe(2) // densely renumbered, no collision
+    expect(new Set(items.map((i) => i.order)).size).toBe(2) // appended past destination's highest order, no collision
     expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
   })
 
