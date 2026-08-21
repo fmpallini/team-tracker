@@ -6,7 +6,7 @@ import {
   ExportTooNewError,
   type TeamExportFile,
 } from '../src/core/team-export'
-import { SCHEMA_VERSION } from '../src/core/document'
+import { SCHEMA_VERSION, createEmptyTeam } from '../src/core/document'
 import type { Team } from '../src/core/types'
 
 function sampleTeam(): Team {
@@ -140,5 +140,12 @@ describe('remapForImport', () => {
     expect(imported!.actionTagNames?.sage).toBe('Technical')
     expect(imported!.actionTagNames?.plum).toBe('Operations')
     expect(imported!.actionTagNames?.ledger).toBe('Legal')
+  })
+
+  it('seeds the same default actionColumns a brand-new team gets, not zero middle columns', () => {
+    const file = buildExport([sampleTeam()])
+    const [imported] = remapForImport(file.teams, 'en-US')
+    const brandNew = createEmptyTeam('new-id', 'New Team', '🆕', 'en-US')
+    expect(imported!.actionColumns).toEqual(brandNew.actionColumns)
   })
 })
