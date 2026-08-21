@@ -816,11 +816,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       draggedColumnId = status
       ;(e as DragEvent).dataTransfer?.setData('text/plain', status)
     })
+    // A card drag and a column-header drag are mutually exclusive: bail out
+    // of the header's own handlers whenever a card drag is in flight, so
+    // stale `draggedColumnId` state (see dragend below) can never be misread
+    // as "a column drop is in progress" while the user is actually mid-way
+    // through dragging a card.
     headEl.addEventListener('dragover', (e) => {
+      if (draggedId !== null) return
       if (draggedColumnId === null || draggedColumnId === status) return
       e.preventDefault()
     })
     headEl.addEventListener('drop', (e) => {
+      if (draggedId !== null) return
       e.preventDefault()
       const srcId = draggedColumnId
       draggedColumnId = null
@@ -831,6 +838,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         moveColumn(tm.actionColumns, srcId, status, 'before')
       }, { teamId, sections: ['actions'] })
     })
+    // Cards clear their own drag state on `dragend` (see the card-level
+    // handler in renderCard above); a column header needs the same guard.
+    // Without it, releasing a column drag anywhere that isn't a valid
+    // column-header drop target (empty board space, the trash bar, a card,
+    // Escape) leaves `draggedColumnId` set forever — and a later CARD drag
+    // dropped on a different column's header would then be misread as a
+    // pending column reorder by the checks above.
+    headEl.addEventListener('dragend', () => { draggedColumnId = null })
   }
 
   /** Rebuilds the whole board (column headers + bodies, drop zones, add/rename/delete affordances) from the team's current actionColumns. Same "full rebuild is simplest and correct" convention as people-tree.ts's tree — called at the top of renderAll(), below, before that function repopulates each column's cards. */

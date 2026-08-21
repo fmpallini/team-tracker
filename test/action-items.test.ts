@@ -1760,9 +1760,49 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const todoHead = container.querySelector<HTMLElement>('.tt-kanban-col-head')!
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const headA = heads[1]!
 
     fire(todoHead, 'dragstart', { setData: () => {} })
-
     expect(todoHead.getAttribute('draggable')).toBeNull()
+
+    // Not just missing `draggable` — the fixed header must genuinely have no
+    // drag listeners wired: dragging a real column onto it must not reorder
+    // anything.
+    fire(headA, 'dragstart', { setData: () => {} })
+    fire(todoHead, 'dragover')
+    fire(todoHead, 'drop')
+
+    const idsAfter = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(idsAfter).toEqual(['a'])
+  })
+
+  test('dropping a dragged CARD onto a middle column\'s header does not reorder actionColumns, even after an earlier column drag was aborted (regression: an aborted column drag left draggedColumnId set forever, since headEl had no dragend handler — a later card drop onto a different column\'s header was then misread as a pending column reorder)', () => {
+    const team = makeTeam({
+      actionColumns: [{ id: 'a', name: 'A', order: 0 }, { id: 'b', name: 'B', order: 1 }, { id: 'c', name: 'C', order: 2 }],
+      actionItems: [item({ id: 'i1', status: 'todo' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const headA = heads[1]!
+    const headC = heads[3]! // todo, a, b, c, done+cancelled
+    const card = cards(container)[0]!
+
+    // Start (and abort) a column-header drag on 'a': released somewhere that
+    // isn't a valid column-header drop target, so no `drop` ever fires on
+    // any header — the exact scenario that used to leak `draggedColumnId`.
+    fire(headA, 'dragstart', { setData: () => {} })
+
+    // Now drag a CARD and drop it on a *different* middle column's header
+    // ('c') — dragging 'a' before 'c' would visibly change the order (unlike
+    // 'a' before 'b', which is already 'a' before 'b'), so this actually
+    // exercises the bug rather than landing on a no-op reorder.
+    card.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    fire(headC, 'dragover')
+    fire(headC, 'drop')
+
+    const idsAfter = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(idsAfter).toEqual(['a', 'b', 'c'])
   })
 })
