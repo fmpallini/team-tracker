@@ -337,9 +337,17 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn:disabled:hover { border-color: var(--border); color: var(--fg); }
 
 /* Start screen */
+/* height:100% + overflow-y:auto makes this a scroll container of its own;
+   .tt-start-content centers via auto margins instead of justify-content, so
+   on short viewports it top-aligns and scrolls instead of clipping (a
+   justify-content:center flex item can't be scrolled past on overflow). */
 .tt-start-screen {
-  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 1.5rem; text-align: center; padding: 1rem;
+  height: 100%; overflow-y: auto; display: flex; flex-direction: column; align-items: center;
+  padding: 1rem;
+}
+.tt-start-content {
+  margin: auto 0; display: flex; flex-direction: column; align-items: center;
+  gap: 1.5rem; text-align: center;
 }
 .tt-start-title { font-family: var(--font-display); font-size: 2.2rem; font-weight: 700; }
 .tt-start-version { margin-top: -1.25rem; font-size: .75rem; letter-spacing: .02em; }
@@ -885,11 +893,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
 
-.tt-kanban-add-column-btn {
-  border: 1px dashed var(--border); background: transparent; color: var(--muted);
-  border-radius: 6px; padding: .3rem .6rem; font-size: .82rem; cursor: pointer; white-space: nowrap;
-}
-.tt-kanban-add-column-btn:hover { color: var(--fg); border-color: var(--accent); }
+.tt-kanban-add-column-btn { white-space: nowrap; }
 
 .tt-kanban-col-name { cursor: pointer; position: relative; padding-right: 1.1rem; }
 .tt-kanban-col-name::after {

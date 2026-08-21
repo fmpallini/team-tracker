@@ -864,10 +864,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const srcId = draggedColumnId
       draggedColumnId = null
       if (srcId === null || srcId === status) return
+      // Left half of the header drops before `status`, right half drops
+      // after — always 'before' made a drag onto the column immediately to
+      // the dragged one's right a no-op (removing the source and
+      // re-inserting it "before" that neighbor lands it right back where it
+      // started), which read as drag-and-drop silently not working.
+      const rect = headEl.getBoundingClientRect()
+      const pos: 'before' | 'after' = (e as MouseEvent).clientX - rect.left < rect.width / 2 ? 'before' : 'after'
       ctx.store.update((d) => {
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm?.actionColumns) return
-        moveColumn(tm.actionColumns, srcId, status, 'before')
+        moveColumn(tm.actionColumns, srcId, status, pos)
       }, { teamId, sections: ['actions'] })
     })
     // Cards clear their own drag state on `dragend` (see the card-level
@@ -941,7 +948,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       }
       nameSpan.addEventListener('click', startRename)
       nameInput.addEventListener('blur', commitRename)
-      nameInput.addEventListener('keydown', blurOnEnter)
+      nameInput.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Escape') {
+          // Reset to the original name before blur, so commitRename's
+          // value !== name check skips the rename — same "no-op on unchanged
+          // value" path a plain blur-without-edit already takes.
+          e.preventDefault()
+          nameInput.value = name
+          nameInput.blur()
+          return
+        }
+        blurOnEnter(e)
+      })
       const gripEl = el('span', { class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint') }, '⠿')
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
@@ -978,6 +996,21 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const boardEl = el('div', { class: 'tt-kanban-board' })
   const datalistEl = el('datalist', { id: datalistId })
+
+  // Vertical mouse-wheel scroll becomes horizontal board scroll, but only
+  // when the pointer isn't over a column body that itself needs to scroll
+  // vertically (a tall column keeps its own native vertical wheel scroll) —
+  // otherwise a board with a horizontal scrollbar but short columns was
+  // unreachable by wheel at all, since nothing under the cursor consumed a
+  // vertical delta.
+  boardEl.addEventListener('wheel', (e) => {
+    if (e.deltaY === 0 || e.deltaX !== 0) return
+    if (boardEl.scrollWidth <= boardEl.clientWidth) return
+    const bodyEl = (e.target as HTMLElement).closest('.tt-kanban-col-body')
+    if (bodyEl && bodyEl.scrollHeight > bodyEl.clientHeight) return
+    e.preventDefault()
+    boardEl.scrollLeft += e.deltaY
+  })
 
   // Drop target for deleting a card by dragging it off the board — shown
   // only while dragging (see dragstart in renderCard above), same rationale

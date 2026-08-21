@@ -1738,6 +1738,15 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     el.dispatchEvent(event)
   }
 
+  /** A 'drop' fired with a real clientX, against a stubbed getBoundingClientRect, so wireColumnHeaderDrag's before/after split (left half vs. right half of the header) is exercised instead of degenerating on jsdom's all-zero layout rect. */
+  function fireDropAt(headEl: HTMLElement, clientX: number): void {
+    headEl.getBoundingClientRect = () => ({ left: 0, right: 200, width: 200, top: 0, bottom: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) })
+    const event = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent & { dataTransfer: Partial<DataTransfer>; clientX: number }
+    Object.defineProperty(event, 'dataTransfer', { value: {} })
+    Object.defineProperty(event, 'clientX', { value: clientX })
+    headEl.dispatchEvent(event)
+  }
+
   // The drag source is the grip icon (.tt-kanban-col-grip), not the header
   // itself — see wireColumnHeaderDrag's doc comment in action-items.ts.
   function grip(headEl: HTMLElement): HTMLElement {
@@ -1755,10 +1764,27 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
 
     fire(grip(headC!), 'dragstart', { setData: () => {} })
     fire(headA!, 'dragover')
-    fire(headA!, 'drop')
+    fireDropAt(headA!, 10) // left half of the header -> before A
 
     const ids = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
     expect(ids).toEqual(['c', 'a', 'b'])
+  })
+
+  test('dropping on the right half of a header places the dragged column after it', () => {
+    const team = makeTeam({
+      actionColumns: [{ id: 'a', name: 'A', order: 0 }, { id: 'b', name: 'B', order: 1 }, { id: 'c', name: 'C', order: 2 }],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const [, headA, , headC] = heads
+
+    fire(grip(headC!), 'dragstart', { setData: () => {} })
+    fire(headA!, 'dragover')
+    fireDropAt(headA!, 150) // right half of the header -> after A
+
+    const ids = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(ids).toEqual(['a', 'c', 'b'])
   })
 
   test('the fixed Todo and Done+Cancelled column headers are not drop targets for a column drag', () => {
