@@ -56,16 +56,20 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
     el(
       'div',
       { class: 'tt-start-screen' },
-      el('h1', { class: 'tt-start-title' }, t(locale, 'app_name')),
-      el('h2', { class: 'tt-mobile-block-title' }, '📵 ' + t(locale, 'mobile_block_title')),
-      el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_intro')),
       el(
-        'ul',
-        { class: 'tt-start-advantages' },
-        el('li', {}, t(locale, 'mobile_block_reason_fs')),
-        el('li', {}, t(locale, 'mobile_block_reason_ux'))
-      ),
-      el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_hint'))
+        'div',
+        { class: 'tt-start-content' },
+        el('h1', { class: 'tt-start-title' }, t(locale, 'app_name')),
+        el('h2', { class: 'tt-mobile-block-title' }, '📵 ' + t(locale, 'mobile_block_title')),
+        el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_intro')),
+        el(
+          'ul',
+          { class: 'tt-start-advantages' },
+          el('li', {}, t(locale, 'mobile_block_reason_fs')),
+          el('li', {}, t(locale, 'mobile_block_reason_ux'))
+        ),
+        el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_hint'))
+      )
     )
   )
 }
@@ -302,7 +306,7 @@ export function showStartScreen(
     children.push(el('p', { class: 'tt-start-fallback-notice' }, t(locale, 'fallback_notice')))
   }
   children.push(promoStartCard(locale))
-  const root = el('div', { class: 'tt-start-screen' }, ...children)
+  const root = el('div', { class: 'tt-start-screen' }, el('div', { class: 'tt-start-content' }, ...children))
 
   container.append(root, fileInput)
 
