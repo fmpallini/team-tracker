@@ -870,7 +870,8 @@ body { background: var(--bg); color: var(--fg); }
 
 .tt-person-form { display: flex; flex-direction: column; gap: .75rem; }
 
-/* Action items module — kanban board (To Do / WIP / Done+Cancelled) */
+/* Action items module — kanban board (fixed To Do start, N custom middle
+   columns, fixed Done+Cancelled end) */
 .tt-kanban { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; padding: .5rem; }
 .tt-kanban-board { display: flex; gap: .75rem; flex: 1; min-height: 0; overflow-x: auto; }
 .tt-kanban-board > .tt-kanban-col { flex: 1 1 220px; min-width: 220px; }
@@ -900,7 +901,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-col-body { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; flex: 1; min-height: 40px; padding-bottom: .5rem; }
 /* Drop-zone highlight — mirrors .tt-people-root-drop's dashed-overlay
    treatment. Lives in the wrap (sibling of the body, not a child of it) so
-   renderAll()'s `body.innerHTML = ''` never destroys it mid-drag. */
+   it's absolutely positioned outside the body's flex-laid-out card flow —
+   toggling .active/.drag-over never reflows the cards. It's recreated fresh
+   on every rebuildBoard() call (src/modules/action-items.ts) along with the
+   rest of the column skeleton, same as people-tree.ts's full-rebuild
+   convention — fine because a rebuild only happens between drag gestures in
+   the normal case, not mid-drag. */
 .tt-kanban-dropzone {
   display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none;
   border: 2px dashed var(--accent); border-radius: 8px;

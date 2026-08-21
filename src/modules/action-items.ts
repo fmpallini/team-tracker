@@ -1,5 +1,6 @@
-// src/modules/action-items.ts — kanban board (To Do / WIP / Done+Cancelled)
-// for a team's action items. Cards are edited exclusively through a modal
+// src/modules/action-items.ts — kanban board (fixed To Do start, the team's
+// own custom middle columns, fixed Done+Cancelled end) for a team's action
+// items. Cards are edited exclusively through a modal
 // (openEditModal below), so a full rebuild on every store change (like
 // src/modules/people-tree.ts's renderAll) is simplest and correct there.
 // The one live input the board itself owns is a middle column's inline
@@ -597,11 +598,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   /**
    * Grid-style arrow navigation for the board: Up/Down step within the
    * current card's column; Left/Right cross into the nearest non-empty
-   * column in that direction (To Do / WIP / Done / Cancelled — Done and
-   * Cancelled share one visual column but are separate stops here), landing
-   * on whichever card in the target column is closest by vertical position
-   * to the card the user came from. Returns null at a board edge or when
-   * every column in that direction is empty.
+   * column in that direction (To Do, then each of the team's custom middle
+   * columns in order, then Done, then Cancelled — Done and Cancelled share
+   * one visual column but are separate stops here), landing on whichever
+   * card in the target column is closest by vertical position to the card
+   * the user came from. Returns null at a board edge or when every column
+   * in that direction is empty.
    */
   function findAdjacentCard(item: ActionItem, key: string): HTMLElement | null {
     const column = cardsInColumn(item.status)
@@ -770,11 +772,19 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const doneCountEl = el('span', {})
   const cancelledCountEl = el('span', {})
+  // Column-title counts — always the column's full item count, unaffected by
+  // activeTagFilter (see the "Counts feed the filter chips" comment in
+  // renderAll below). The middle-column live count (middleNameSpans, set in
+  // renderAll) follows this same rule.
   const todoTitleEl = el('span', {})
   const doneCancelTitleEl = el('span', {})
 
   function showDropZones(): void {
     STATUSES.forEach((s) => cols.get(s)!.zoneEl.classList.add('active'))
+    // Lets the CSS shrink each column drop-zone's bottom edge, clearing
+    // space for the full-width trash bar (see .tt-kanban-trash) so the two
+    // never overlap. Also out-of-flow (see the drop-zone comment on `cols`
+    // above), so this doesn't reflow anything mid-dragstart either.
     kanbanRootEl.classList.add('dragging')
   }
   function hideDropZones(): void {
@@ -789,6 +799,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       e.preventDefault()
       zoneEl.classList.add('drag-over')
     })
+    // A dragover on a child card bubbles here too (cards don't stopPropagation
+    // on dragover), so a dragleave fired while moving between child cards
+    // would otherwise flicker the highlight off and back on — ignore it
+    // unless the pointer actually left the body's subtree.
     bodyEl.addEventListener('dragleave', (e) => {
       const related = (e as DragEvent).relatedTarget as Node | null
       if (related && bodyEl.contains(related)) return
@@ -852,6 +866,16 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function rebuildBoard(): void {
     const tm = findTeam()
     STATUSES = statusesFor(tm)
+    // Drop-zone highlight overlays — one per status body, mirroring
+    // src/modules/people-tree.ts's rootDropEl. Each `zoneEl` is attached as a
+    // sibling of its `bodyEl` (in the `tt-kanban-col-body-wrap` built below),
+    // not a child of it, so it's absolutely positioned outside `bodyEl`'s
+    // flex-laid-out card flow — toggling it (showDropZones/hideDropZones)
+    // never reflows the cards. (This whole map is thrown away and rebuilt
+    // fresh on every renderAll() call regardless, so — unlike the pre-custom-
+    // columns version of this board — sibling placement is no longer about
+    // surviving `bodyEl.innerHTML = ''`; both elements get recreated
+    // together either way.)
     cols = new Map(STATUSES.map((s) => [s, {
       bodyEl: el('div', { class: 'tt-kanban-col-body' }),
       zoneEl: el('div', { class: 'tt-kanban-dropzone' }),
@@ -937,6 +961,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const boardEl = el('div', { class: 'tt-kanban-board' })
   const datalistEl = el('datalist', { id: datalistId })
 
+  // Drop target for deleting a card by dragging it off the board — shown
+  // only while dragging (see dragstart in renderCard above), same rationale
+  // as src/modules/people-tree.ts's rootDropEl: revealing it must not
+  // reflow the board mid-dragstart, or Chrome cancels the drag.
   const trashEl = el('div', { class: 'tt-kanban-trash' }, '🗑 ', t(lc, 'kanban_trash_hint'))
   trashEl.addEventListener('dragover', (e) => {
     if (draggedId === null) return
@@ -973,6 +1001,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     updateDatalist(tm)
     const byStatus: Record<string, ActionItem[]> = {}
     STATUSES.forEach((s) => { byStatus[s] = [] })
+    // Counts feed the filter chips. Only the two live columns count: a chip
+    // reading "Urgent 7" where six of those are already done would be
+    // answering a question nobody asked.
     const counts: Record<ActionItemColor, number> = { slate: 0, brass: 0, sage: 0, rust: 0, plum: 0, ledger: 0 }
     for (const it of tm?.actionItems ?? []) {
       const bucket = byStatus[it.status]
@@ -988,6 +1019,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       bodyEl.innerHTML = ''
       if (visible.length === 0) bodyEl.appendChild(emptyEl())
       else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames)))
+      // Same "always the full count, unaffected by activeTagFilter" rule as
+      // todoTitleEl/doneCancelTitleEl below (see the comment there) — a
+      // middle column's live count is built from `group`, not `visible`.
       const nameSpan = middleNameSpans.get(s)
       if (nameSpan) {
         const name = tm?.actionColumns?.find((c) => c.id === s)?.name ?? ''
@@ -1011,9 +1045,20 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const deferredRebuild = createDeferredRebuild(renderAll)
 
+  // Every card's backlinks chip must react to a mention of it
+  // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
+  // a person's notes, a milestone or risk follow-up — not just edits to
+  // actions themselves, so the watch list is that full set rather than just
+  // 'actions'. 'people' also feeds updateDatalist() above, which reads
+  // stakeholders/members for the assignee autocomplete.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
+    // The edit modal's notes editor is never rebuilt from the store on a
+    // foreign change (only a full renderAll() below, which would blow away
+    // an in-progress edit), so patch its @mention chips in place the same
+    // way daily/person notes do — safe even mid-typing (see
+    // Editor.refreshRefLabels' doc comment).
     if (openBundle) openBundle.richBundle.editor.refreshRefLabels()
     const active = focusedRenameInput()
     if (active) { deferredRebuild.arm(active); return }
@@ -1030,10 +1075,25 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
   container.appendChild(kanbanRootEl)
+  // Lands focus on the first card (To Do, then the middle columns in order,
+  // then Done, then Cancelled — same order as STATUSES/the board's DOM) the
+  // moment the module opens, so arrow-key navigation works immediately
+  // without a preceding Tab. Only for the pane the user is actually in — a
+  // team switch remounts both panes together, and without this guard
+  // whichever pane happens to mount second (always pane 1) would silently
+  // steal focus from pane 0's.
   if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
     boardEl.querySelector<HTMLElement>('.tt-kanban-card')?.focus()
   }
 
+  // No SEARCH_FOCUS_ITEM_EVENT listener here, unlike risks.ts/milestones.ts:
+  // those need it to expand their own inline follow-up row before a match
+  // inside it can be found/highlighted. A kanban card has no such inline
+  // state — search-ui.ts's commit() already resolves the matched card via
+  // `[data-item-id]` and applySearchHighlight() (search-highlight.ts) gives
+  // it real focus, which is all landing here needs: same selection ring
+  // arrow-key nav uses, and Enter opens it via the card's own keydown
+  // handler above (openEditModal(item)) — no separate open-on-search path.
   const disposeArrowFallback = installArrowFallbackFocus(ctx, boardEl, '.tt-kanban-card', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
 
   return () => {
