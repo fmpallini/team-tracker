@@ -1738,6 +1738,12 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     el.dispatchEvent(event)
   }
 
+  // The drag source is the grip icon (.tt-kanban-col-grip), not the header
+  // itself — see wireColumnHeaderDrag's doc comment in action-items.ts.
+  function grip(headEl: HTMLElement): HTMLElement {
+    return headEl.querySelector<HTMLElement>('.tt-kanban-col-grip')!
+  }
+
   test('dragging one middle column header before another persists the new order', () => {
     const team = makeTeam({
       actionColumns: [{ id: 'a', name: 'A', order: 0 }, { id: 'b', name: 'B', order: 1 }, { id: 'c', name: 'C', order: 2 }],
@@ -1747,7 +1753,7 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
     const [todoHead, headA, headB, headC] = heads // eslint-disable-line @typescript-eslint/no-unused-vars
 
-    fire(headC!, 'dragstart', { setData: () => {} })
+    fire(grip(headC!), 'dragstart', { setData: () => {} })
     fire(headA!, 'dragover')
     fire(headA!, 'drop')
 
@@ -1769,7 +1775,7 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     // Not just missing `draggable` — the fixed header must genuinely have no
     // drag listeners wired: dragging a real column onto it must not reorder
     // anything.
-    fire(headA, 'dragstart', { setData: () => {} })
+    fire(grip(headA), 'dragstart', { setData: () => {} })
     fire(todoHead, 'dragover')
     fire(todoHead, 'drop')
 
@@ -1792,7 +1798,7 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     // Start (and abort) a column-header drag on 'a': released somewhere that
     // isn't a valid column-header drop target, so no `drop` ever fires on
     // any header — the exact scenario that used to leak `draggedColumnId`.
-    fire(headA, 'dragstart', { setData: () => {} })
+    fire(grip(headA), 'dragstart', { setData: () => {} })
 
     // Now drag a CARD and drop it on a *different* middle column's header
     // ('c') — dragging 'a' before 'c' would visibly change the order (unlike

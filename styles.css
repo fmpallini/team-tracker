@@ -877,12 +877,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-board > .tt-kanban-col { flex: 1 1 220px; min-width: 220px; }
 .tt-kanban-board > .tt-kanban-col:last-child { flex: 1.15 1 260px; min-width: 260px; }
 .tt-kanban-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.tt-kanban-col-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; padding: .3rem .4rem .6rem; border-bottom: 2px solid var(--border); margin-bottom: .5rem; flex: none; }
+.tt-kanban-col-head { display: flex; align-items: center; gap: .4rem; font-weight: 700; padding: .3rem .4rem .6rem; border-bottom: 2px solid var(--border); margin-bottom: .5rem; flex: none; }
+/* Pushes itself (and whatever follows — the delete button) flush right, so
+   add/delete cluster together at the head's trailing edge instead of
+   space-between's even spread across every child. */
+.tt-kanban-col-head .tt-kanban-add-btn { margin-left: auto; }
 .tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
 
 .tt-kanban-add-column-btn {
-  flex: none; align-self: flex-start; margin-top: .3rem;
   border: 1px dashed var(--border); background: transparent; color: var(--muted);
   border-radius: 6px; padding: .3rem .6rem; font-size: .82rem; cursor: pointer; white-space: nowrap;
 }
@@ -896,6 +899,20 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-col-rename-input { font: inherit; font-weight: 700; width: 100%; }
 .tt-kanban-col-delete-btn { opacity: .5; border: none; background: transparent; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
 .tt-kanban-col-delete-btn:hover { opacity: 1; }
+
+/* Grip is the sole drag source for column reorder (wireColumnHeaderDrag) —
+   distinct from the header itself so clicking the name/rename input/buttons
+   never gets mistaken for the start of a drag. */
+.tt-kanban-col-grip { cursor: grab; opacity: .45; padding: 0 .35rem 0 0; font-size: .9rem; line-height: 1; user-select: none; flex: none; }
+.tt-kanban-col-grip:hover { opacity: .85; }
+.tt-kanban-col-grip:active { cursor: grabbing; }
+/* Column-reorder feedback — the dragged column itself dims and lifts
+   (col-dragging, applied to the .tt-kanban-col wrapper on dragstart) while a
+   valid drop target's header rings on dragover (drag-over-col), same
+   "source dims, target rings" split as the card/dropzone drag above. */
+.tt-kanban-col.col-dragging { opacity: .5; }
+.tt-kanban-col.col-dragging .tt-kanban-col-head { outline: 1px dashed rgba(var(--accent-rgb), .55); outline-offset: 2px; }
+.tt-kanban-col-head.drag-over-col { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 4px; }
 
 .tt-kanban-col-body-wrap { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tt-kanban-col-body { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; flex: 1; min-height: 40px; padding-bottom: .5rem; }
@@ -1007,7 +1024,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
 .tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
 .tt-kanban-filter-label { color: var(--muted); font-size: .8rem; flex: none; }
-.tt-kanban-edit-tags-btn { margin-left: auto; }
+.tt-kanban-add-column-btn { margin-left: auto; }
 /* Color-naming rows — src/modules/action-items.ts's openEditTagsModal. */
 .tt-kanban-color-name-rows { display: flex; flex-direction: column; gap: .4rem; }
 .tt-kanban-color-name-row { display: flex; align-items: center; gap: .5rem; }
@@ -1024,8 +1041,8 @@ body { background: var(--bg); color: var(--fg); }
   transform: scale(1.08);
   z-index: 1;
 }
-.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .35; filter: saturate(.35); }
-.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .75; filter: none; }
+.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .6; filter: saturate(.5); }
+.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .85; filter: none; }
 /* Open cards this tag would filter to. Spaced with the chip's own `gap`
    rather than a left margin, so an unnamed swatch — where the count is the
    only child — still centers it instead of pushing it off-axis. */

@@ -827,12 +827,16 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
-  /** Makes a middle column's header draggable, reordering `Team.actionColumns` on drop. Only called for middle-column heads (see rebuildBoard below) — the fixed Todo/Done+Cancelled headers never call this, so they're never `draggable` and never gain listeners, naturally excluding them as both a drag source and a drop target. `draggedColumnId === status` also guards a column being dropped onto itself. */
-  function wireColumnHeaderDrag(headEl: HTMLElement, status: string): void {
-    headEl.draggable = true
-    headEl.addEventListener('dragstart', (e) => {
+  /** Makes a middle column reorderable via a dedicated grip handle, dragging `Team.actionColumns` on drop. Only called for middle-column heads (see rebuildBoard below) — the fixed Todo/Done+Cancelled headers never call this, so they never gain a grip or listeners, naturally excluding them as both a drag source and a drop target. `draggedColumnId === status` also guards a column being dropped onto itself. The drag source is `gripEl`, not `headEl` — the header also holds the rename input and buttons, which need their own click/text-select behavior unbothered by an ancestor drag. */
+  function wireColumnHeaderDrag(headEl: HTMLElement, gripEl: HTMLElement, status: string): void {
+    gripEl.draggable = true
+    gripEl.addEventListener('dragstart', (e) => {
       draggedColumnId = status
       ;(e as DragEvent).dataTransfer?.setData('text/plain', status)
+      // Visually "lifts" the whole column so it reads as the thing being
+      // moved, not just the grip icon — mirrors people-tree.ts's dragged-node
+      // treatment (.tt-org-box-dragging).
+      headEl.closest('.tt-kanban-col')?.classList.add('col-dragging')
     })
     // A card drag and a column-header drag are mutually exclusive: bail out
     // of the header's own handlers whenever a card drag is in flight, so
@@ -843,10 +847,20 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       if (draggedId !== null) return
       if (draggedColumnId === null || draggedColumnId === status) return
       e.preventDefault()
+      headEl.classList.add('drag-over-col')
+    })
+    // Dragover on a child (name, buttons) bubbles here too, so ignore a
+    // dragleave that's just moving between those children — same guard as
+    // wireColumnDrop's bodyEl.dragleave above.
+    headEl.addEventListener('dragleave', (e) => {
+      const related = (e as DragEvent).relatedTarget as Node | null
+      if (related && headEl.contains(related)) return
+      headEl.classList.remove('drag-over-col')
     })
     headEl.addEventListener('drop', (e) => {
       if (draggedId !== null) return
       e.preventDefault()
+      headEl.classList.remove('drag-over-col')
       const srcId = draggedColumnId
       draggedColumnId = null
       if (srcId === null || srcId === status) return
@@ -863,7 +877,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // Escape) leaves `draggedColumnId` set forever — and a later CARD drag
     // dropped on a different column's header would then be misread as a
     // pending column reorder by the checks above.
-    headEl.addEventListener('dragend', () => { draggedColumnId = null })
+    gripEl.addEventListener('dragend', () => {
+      draggedColumnId = null
+      headEl.closest('.tt-kanban-col')?.classList.remove('col-dragging')
+      headEl.classList.remove('drag-over-col')
+    })
   }
 
   /** Rebuilds the whole board (column headers + bodies, drop zones, add/rename/delete affordances) from the team's current actionColumns. Same "full rebuild is simplest and correct" convention as people-tree.ts's tree — called at the top of renderAll(), below, before that function repopulates each column's cards. */
@@ -909,10 +927,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const nameInput = el('input', {
         type: 'text', class: 'tt-input tt-kanban-col-rename-input', value: name, style: 'display:none',
       }) as HTMLInputElement
-      // headEl (below) is draggable for column-reorder — without this,
-      // Chrome starts the ancestor's drag instead of a text drag-select the
-      // moment the user tries to drag-select inside this input mid-rename.
-      nameInput.draggable = false
       function startRename(): void {
         nameSpan.style.display = 'none'
         nameInput.style.display = ''
@@ -928,13 +942,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       nameSpan.addEventListener('click', startRename)
       nameInput.addEventListener('blur', commitRename)
       nameInput.addEventListener('keydown', blurOnEnter)
+      const gripEl = el('span', { class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint') }, '⠿')
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
-        nameSpan, nameInput,
-        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, '🗑'),
-        el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card'))
+        gripEl, nameSpan, nameInput,
+        el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card')),
+        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, '🗑')
       )
-      wireColumnHeaderDrag(headEl, id)
+      wireColumnHeaderDrag(headEl, gripEl, id)
       if (pendingColumnFocusId === id) {
         pendingColumnFocusId = null
         focusAfterAttach.run = startRename
@@ -942,11 +957,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       return el('div', { class: 'tt-kanban-col' }, headEl,
         el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get(id)!.bodyEl, cols.get(id)!.zoneEl))
     })
-
-    const addColumnBtn = el('button', {
-      class: 'tt-btn tt-kanban-add-column-btn', type: 'button', title: t(lc, 'kanban_add_column'),
-      onclick: () => addColumn(),
-    }, t(lc, 'kanban_add_column'))
 
     const doneCancelColEl = el(
       'div', { class: 'tt-kanban-col' },
@@ -961,7 +971,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     )
 
     boardEl.innerHTML = ''
-    boardEl.append(todoColEl, ...middleColEls, addColumnBtn, doneCancelColEl)
+    boardEl.append(todoColEl, ...middleColEls, doneCancelColEl)
     STATUSES.forEach((s) => wireColumnDrop(cols.get(s)!.bodyEl, s, cols.get(s)!.zoneEl))
     focusAfterAttach.run?.()
   }
@@ -1074,12 +1084,20 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   })
 
   const filterLabelEl = el('span', { class: 'tt-kanban-filter-label' }, t(lc, 'kanban_filter_label'))
+  // Lives in the toolbar rather than as a board-width column (its old spot,
+  // between the middle columns and Done/Cancelled) so it no longer eats a
+  // column-sized slice of board width just to hold one button.
+  const addColumnBtn = el(
+    'button',
+    { class: 'tt-btn tt-kanban-add-column-btn', type: 'button', title: t(lc, 'kanban_add_column'), onclick: () => addColumn() },
+    t(lc, 'kanban_add_column')
+  )
   const editTagsBtn = el(
     'button',
     { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
     t(lc, 'kanban_edit_tags_btn')
   )
-  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, editTagsBtn)
+  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)
 
   const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
   container.appendChild(kanbanRootEl)
