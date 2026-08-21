@@ -243,6 +243,48 @@ describe('v11 → v12 migration (daily calendar collapse)', () => {
   })
 })
 
+describe('v12 → v13 migration (per-team custom kanban columns)', () => {
+  it('seeds a single WIP actionColumns entry, named from the doc\'s own locale, leaving existing wip items untouched', () => {
+    const d = createEmptyDocument('pt-BR') as any
+    d.schemaVersion = 12
+    d.teams = [{
+      id: 't1', name: 'T', emoji: '🙂', dailyNotes: {},
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', summary: 'x', notes: '', status: 'wip', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [], risks: [],
+    }]
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.teams[0]!.actionColumns).toEqual([{ id: 'wip', name: 'Em Andamento', order: 0 }])
+    expect(doc.teams[0]!.actionItems[0]!.status).toBe('wip') // untouched — 'wip' already matches the seeded column's id
+  })
+
+  it('uses the English default name when the doc\'s locale is en-US', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 12
+    d.teams = [{ id: 't1', name: 'T', emoji: '🙂', dailyNotes: {}, stakeholders: [], members: [], actionItems: [], milestones: [], risks: [] }]
+    const doc = migrate(d)
+    expect(doc.teams[0]!.actionColumns).toEqual([{ id: 'wip', name: 'WIP', order: 0 }])
+  })
+
+  it('leaves an existing actionColumns array untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 12
+    d.teams = [{
+      id: 't1', name: 'T', emoji: '🙂', dailyNotes: {}, stakeholders: [], members: [],
+      actionItems: [], milestones: [], risks: [],
+      actionColumns: [{ id: 'custom-1', name: 'Review', order: 0 }],
+    }]
+    const doc = migrate(d)
+    expect(doc.teams[0]!.actionColumns).toEqual([{ id: 'custom-1', name: 'Review', order: 0 }])
+  })
+})
+
+test('createEmptyTeam seeds a single default WIP column', () => {
+  const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+  expect(team.actionColumns).toEqual([{ id: 'wip', name: 'WIP', order: 0 }])
+})
+
 describe('migrateTeams (team export/import)', () => {
   it('applies v1 defaults (risk.closed, actionItem.notes, milestone.followup) to a bare v1-shaped team', () => {
     const teams = [{

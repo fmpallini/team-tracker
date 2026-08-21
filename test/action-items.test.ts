@@ -1,10 +1,10 @@
-import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard } from '../src/modules/action-items'
+import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard, moveColumn } from '../src/modules/action-items'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx, SaveStatusApi } from '../src/ui/panes'
 import type { SaveStatusInfo } from '../src/ui/shell'
-import type { ActionItem, Loc, Team } from '../src/core/types'
+import type { ActionColumn, ActionItem, Loc, Team } from '../src/core/types'
 
 /** A controllable fake for ModuleCtx.saveStatus — `emit` drives every subscriber the same way shell.ts's real setSaveState() would, and `requestCount` counts force-save clicks, for the header-pill/expand-mode tests below. Every other test just needs the default (a no-op stub, built fresh per render() call) and never touches this directly. */
 function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) => void; requestCount: () => number; subscriberCount: () => number } {
@@ -49,6 +49,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     stakeholders: [{ id: 'stk-1', name: 'Carla', role: 'Sponsor', parentId: null, order: 0, notes: '' }],
     members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: '' }],
     actionItems: [], milestones: [], risks: [], dailyNotes: {},
+    actionColumns: [{ id: 'wip', name: 'WIP', order: 0 }],
     ...overrides,
   }
 }
@@ -208,6 +209,36 @@ describe('pure helpers', () => {
       expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
     })
   })
+
+  describe('moveColumn', () => {
+    function col(overrides: Partial<ActionColumn>): ActionColumn {
+      return { id: 'c1', name: 'Col', order: 0, ...overrides }
+    }
+
+    test('reorders within bounds, renumbering densely', () => {
+      const columns = [col({ id: 'a', order: 0 }), col({ id: 'b', order: 1 }), col({ id: 'c', order: 2 })]
+      moveColumn(columns, 'c', 'a', 'before')
+      expect(columns.slice().sort((x, y) => x.order - y.order).map((c) => c.id)).toEqual(['c', 'a', 'b'])
+    })
+
+    test('no-op when the dragged id does not exist', () => {
+      const columns = [col({ id: 'a', order: 0 })]
+      moveColumn(columns, 'ghost', 'a', 'before')
+      expect(columns[0]!.order).toBe(0)
+    })
+
+    test('no-op when dropped onto itself', () => {
+      const columns = [col({ id: 'a', order: 0 }), col({ id: 'b', order: 1 })]
+      moveColumn(columns, 'a', 'a', 'before')
+      expect(columns.map((c) => c.order)).toEqual([0, 1])
+    })
+
+    test('appends at the end when the target id is null or not found', () => {
+      const columns = [col({ id: 'a', order: 0 }), col({ id: 'b', order: 1 })]
+      moveColumn(columns, 'a', null, 'after')
+      expect(columns.slice().sort((x, y) => x.order - y.order).map((c) => c.id)).toEqual(['b', 'a'])
+    })
+  })
 })
 
 describe('card context menu', () => {
@@ -292,6 +323,30 @@ describe('card context menu', () => {
 
     expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(0)
     expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems).toHaveLength(1)
+  })
+
+  test('"Copy to team…" opens a combined team+column picker whose column list is the target team\'s actionColumns plus the fixed statuses', () => {
+    const from = makeTeam({ id: 'from', actionItems: [item({ id: 'a1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2', actionColumns: [{ id: 'review', name: 'Review', order: 0 }] })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    const [teamSelect, columnSelect] = document.querySelectorAll<HTMLSelectElement>('select')
+    teamSelect!.value = 'to'
+    teamSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(Array.from(columnSelect!.querySelectorAll('option')).map((o) => o.value)).toEqual(['todo', 'review', 'done', 'cancelled'])
+    columnSelect!.value = 'review'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems[0]!.status).toBe('review')
   })
 })
 
@@ -544,6 +599,27 @@ describe('renderActionItems — board', () => {
     const titles = Array.from(todoCol.querySelectorAll('.tt-kanban-card-title')).map((n) => n.textContent)
     expect(titles).toEqual(['A', 'B'])
     expect(container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-card-title')!.textContent).toBe('W')
+  })
+
+  test('the WIP column header shows the column name plus its item count, refreshed on every render', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'w1', order: 0, status: 'wip' }),
+        item({ id: 'w2', order: 1, status: 'wip' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const wipCol = container.querySelectorAll('.tt-kanban-col')[1]!
+    const nameEl = wipCol.querySelector('.tt-kanban-col-name')!
+    expect(nameEl.textContent).toBe('WIP (2)')
+
+    // Count updates on the next render, same as the fixed-column headers.
+    store.update((d) => {
+      d.teams[0]!.actionItems.push(item({ id: 'w3', order: 2, status: 'wip' }))
+    })
+    expect(container.querySelectorAll('.tt-kanban-col')[1]!.querySelector('.tt-kanban-col-name')!.textContent).toBe('WIP (3)')
   })
 
   test('shows an empty placeholder per column with no cards', () => {
@@ -1161,6 +1237,153 @@ describe('renderActionItems — edit tags modal (toolbar)', () => {
   })
 })
 
+describe('renderActionItems — custom columns: add + rename', () => {
+  test('"+ Add column" appends a new middle column, focused for immediate rename', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Column')
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(2)
+    const added = store.doc.teams[0]!.actionColumns![1]!
+    expect(added.name).toBe('New column')
+    // Every middle column carries its own (hidden-unless-active) rename
+    // input — makeTeam()'s default "WIP" column has one too — so the new
+    // column's input is the last one in DOM order, not the first match.
+    const inputs = document.querySelectorAll<HTMLInputElement>('.tt-kanban-col-rename-input')
+    const input = inputs[inputs.length - 1]
+    expect(document.activeElement).toBe(input)
+  })
+
+  test('a new column always lands at the right end of the middle zone', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Column')
+
+    // Middle-column headers carry a live "(n)" item count (see
+    // middleNameSpans in action-items.ts) alongside the name — asserting the
+    // raw name here would false-fail against that existing behavior.
+    const names = Array.from(container.querySelectorAll('.tt-kanban-col-name')).map((n) => n.textContent)
+    expect(names).toEqual(['WIP (0)', 'New column (0)'])
+  })
+
+  test('clicking a column name switches it to an editable input pre-filled with the current name', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    expect(input.value).toBe('WIP')
+  })
+
+  test('blurring the rename input commits the new name to the store', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    input.value = 'In Review'
+    input.dispatchEvent(new Event('blur'))
+
+    expect(store.doc.teams[0]!.actionColumns![0]!.name).toBe('In Review')
+  })
+
+  test('Enter in the rename input blurs it, committing the same way', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    input.value = 'In Review'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(store.doc.teams[0]!.actionColumns![0]!.name).toBe('In Review')
+  })
+
+  test('committing an empty name reverts to the previous name instead of storing blank', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click()
+    const input = document.querySelector('.tt-kanban-col-rename-input') as HTMLInputElement
+    input.value = '   '
+    input.dispatchEvent(new Event('blur'))
+
+    expect(store.doc.teams[0]!.actionColumns![0]!.name).toBe('WIP')
+  })
+})
+
+describe('renderActionItems — custom columns: delete', () => {
+  function deleteColumnBtn(container: HTMLElement, index = 0): HTMLButtonElement {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-kanban-col-delete-btn'))[index]!
+  }
+
+  test('deletes an empty column immediately, with no confirmation', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('a non-empty column opens a landing-column picker instead of deleting immediately', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'wip' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(1) // not deleted yet
+    expect(document.querySelector('.tt-modal-dialog')).not.toBeNull()
+    const options = Array.from(document.querySelectorAll<HTMLOptionElement>('.tt-kanban-column-landing-select option')).map((o) => o.textContent)
+    expect(options).toEqual(['To Do', 'Done', 'Cancelled']) // every column except the one being deleted
+  })
+
+  test('confirming the landing picker moves every card in the deleted column to the chosen target, then removes the column', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a', status: 'wip', order: 0 }), item({ id: 'b', status: 'wip', order: 1 })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+    const select = document.querySelector('.tt-kanban-column-landing-select') as HTMLSelectElement
+    select.value = 'todo'
+    // Scoped to the dialog, not document.body: the column header's own
+    // trash-icon button shares this exact label text (both route through
+    // kanban_delete_column_title/_btn — see i18n.ts), and it sits earlier in
+    // DOM order, so a body-wide clickByTitleOrText would hit it instead of
+    // the modal's confirm button.
+    clickByTitleOrText(document.querySelector('.tt-modal-dialog')!, 'Delete column')
+
+    const items = store.doc.teams[0]!.actionItems
+    expect(items.every((i) => i.status === 'todo')).toBe(true)
+    expect(new Set(items.map((i) => i.order)).size).toBe(2) // appended past destination's highest order, no collision
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+  })
+
+  test('canceling the landing picker keeps the column and its cards untouched', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'wip' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    deleteColumnBtn(container).click()
+    clickByTitleOrText(document.body, 'Cancel')
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(1)
+    expect(store.doc.teams[0]!.actionItems[0]!.status).toBe('wip')
+  })
+})
+
 describe('renderActionItems — tag display and filter', () => {
   // Finds the chip/badge carrying `color-${color}` — avoids relying on
   // visible text, which is now blank for colors without a custom name.
@@ -1505,5 +1728,87 @@ describe('renderActionItems — drag and drop', () => {
     wipBody.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
 
     expect(root.classList.contains('dragging')).toBe(false)
+  })
+})
+
+describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
+  function fire(el: HTMLElement, type: string, dataTransfer: Partial<DataTransfer> = {}): void {
+    const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent & { dataTransfer: Partial<DataTransfer> }
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+    el.dispatchEvent(event)
+  }
+
+  // The drag source is the grip icon (.tt-kanban-col-grip), not the header
+  // itself — see wireColumnHeaderDrag's doc comment in action-items.ts.
+  function grip(headEl: HTMLElement): HTMLElement {
+    return headEl.querySelector<HTMLElement>('.tt-kanban-col-grip')!
+  }
+
+  test('dragging one middle column header before another persists the new order', () => {
+    const team = makeTeam({
+      actionColumns: [{ id: 'a', name: 'A', order: 0 }, { id: 'b', name: 'B', order: 1 }, { id: 'c', name: 'C', order: 2 }],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const [todoHead, headA, headB, headC] = heads // eslint-disable-line @typescript-eslint/no-unused-vars
+
+    fire(grip(headC!), 'dragstart', { setData: () => {} })
+    fire(headA!, 'dragover')
+    fire(headA!, 'drop')
+
+    const ids = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(ids).toEqual(['c', 'a', 'b'])
+  })
+
+  test('the fixed Todo and Done+Cancelled column headers are not drop targets for a column drag', () => {
+    const team = makeTeam({ actionColumns: [{ id: 'a', name: 'A', order: 0 }] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const todoHead = container.querySelector<HTMLElement>('.tt-kanban-col-head')!
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const headA = heads[1]!
+
+    fire(todoHead, 'dragstart', { setData: () => {} })
+    expect(todoHead.getAttribute('draggable')).toBeNull()
+
+    // Not just missing `draggable` — the fixed header must genuinely have no
+    // drag listeners wired: dragging a real column onto it must not reorder
+    // anything.
+    fire(grip(headA), 'dragstart', { setData: () => {} })
+    fire(todoHead, 'dragover')
+    fire(todoHead, 'drop')
+
+    const idsAfter = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(idsAfter).toEqual(['a'])
+  })
+
+  test('dropping a dragged CARD onto a middle column\'s header does not reorder actionColumns, even after an earlier column drag was aborted (regression: an aborted column drag left draggedColumnId set forever, since headEl had no dragend handler — a later card drop onto a different column\'s header was then misread as a pending column reorder)', () => {
+    const team = makeTeam({
+      actionColumns: [{ id: 'a', name: 'A', order: 0 }, { id: 'b', name: 'B', order: 1 }, { id: 'c', name: 'C', order: 2 }],
+      actionItems: [item({ id: 'i1', status: 'todo' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
+    const headA = heads[1]!
+    const headC = heads[3]! // todo, a, b, c, done+cancelled
+    const card = cards(container)[0]!
+
+    // Start (and abort) a column-header drag on 'a': released somewhere that
+    // isn't a valid column-header drop target, so no `drop` ever fires on
+    // any header — the exact scenario that used to leak `draggedColumnId`.
+    fire(grip(headA), 'dragstart', { setData: () => {} })
+
+    // Now drag a CARD and drop it on a *different* middle column's header
+    // ('c') — dragging 'a' before 'c' would visibly change the order (unlike
+    // 'a' before 'b', which is already 'a' before 'b'), so this actually
+    // exercises the bug rather than landing on a no-op reorder.
+    card.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    fire(headC, 'dragover')
+    fire(headC, 'drop')
+
+    const idsAfter = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(idsAfter).toEqual(['a', 'b', 'c'])
   })
 })

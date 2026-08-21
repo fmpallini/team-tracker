@@ -66,7 +66,7 @@ describe('transferActionItem', () => {
 
   test('copy: appends a stripped-refs copy to the target team, leaves source untouched', () => {
     const [from, to] = twoTeams()
-    transferActionItem([from, to], 'a1', 'from', 'to', 'copy')
+    transferActionItem([from, to], 'a1', 'from', 'to', 'copy', 'todo')
     expect(from.actionItems).toHaveLength(1) // untouched
     expect(to.actionItems).toHaveLength(1)
     const copy = to.actionItems[0]!
@@ -78,7 +78,7 @@ describe('transferActionItem', () => {
 
   test('move: appends to target and removes from source', () => {
     const [from, to] = twoTeams()
-    transferActionItem([from, to], 'a1', 'from', 'to', 'move')
+    transferActionItem([from, to], 'a1', 'from', 'to', 'move', 'todo')
     expect(from.actionItems).toHaveLength(0)
     expect(to.actionItems).toHaveLength(1)
   })
@@ -86,7 +86,7 @@ describe('transferActionItem', () => {
   test('move: unlinks dangling refs to the moved item elsewhere in the source team', () => {
     const [from, to] = twoTeams()
     from.actionItems.push({ id: 'a2', summary: 'Follow up', notes: 'see @[Do thing](action:a1)', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 1 })
-    transferActionItem([from, to], 'a1', 'from', 'to', 'move')
+    transferActionItem([from, to], 'a1', 'from', 'to', 'move', 'todo')
     expect(from.actionItems).toHaveLength(1)
     // Item is truly gone from this team (it now lives only in "to") — same
     // muted-marker treatment as a delete, not a bare-text strip.
@@ -95,8 +95,15 @@ describe('transferActionItem', () => {
 
   test('no-ops when the item id is not found', () => {
     const [from, to] = twoTeams()
-    transferActionItem([from, to], 'missing', 'from', 'to', 'copy')
+    transferActionItem([from, to], 'missing', 'from', 'to', 'copy', 'todo')
     expect(to.actionItems).toHaveLength(0)
+  })
+
+  test('sets the copy\'s status to the passed targetStatus, independent of the source item\'s status', () => {
+    const [from, to] = twoTeams()
+    transferActionItem([from, to], 'a1', 'from', 'to', 'copy', 'review-col')
+    expect(to.actionItems[0]!.status).toBe('review-col')
+    expect(from.actionItems[0]!.status).toBe('todo') // source untouched
   })
 })
 

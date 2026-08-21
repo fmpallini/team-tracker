@@ -1,11 +1,13 @@
-// src/modules/action-items.ts — kanban board (To Do / WIP / Done+Cancelled)
-// for a team's action items. Cards are edited exclusively through a modal
-// (openEditModal below); the board itself has no live inputs, so a full
-// rebuild on every store change (like src/modules/people-tree.ts's
-// renderAll) is simplest and correct — unlike the old flat-list version,
-// there's no in-progress inline edit whose caret needs preserving across a
-// foreign store update.
-import type { ActionItem, ActionItemColor, Loc, Team } from '../core/types'
+// src/modules/action-items.ts — kanban board (fixed To Do start, the team's
+// own custom middle columns, fixed Done+Cancelled end) for a team's action
+// items. Cards are edited exclusively through a modal
+// (openEditModal below), so a full rebuild on every store change (like
+// src/modules/people-tree.ts's renderAll) is simplest and correct there.
+// The one live input the board itself owns is a middle column's inline
+// rename field (see focusedRenameInput/deferredRebuild below) — a foreign
+// store update while it's focused defers the rebuild to the input's next
+// blur instead of wiping the in-progress edit.
+import type { ActionColumn, ActionItem, ActionItemColor, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { isOverdue } from '../core/due'
@@ -17,7 +19,7 @@ import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '..
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
-import { el } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
@@ -74,6 +76,23 @@ export function moveCard(items: ActionItem[], draggedId: string, status: ActionI
   }
 }
 
+/**
+ * Reorders `columns` (a team's custom middle columns) by moving `draggedId`
+ * to before/after `targetId`, densely renumbering `order`. Single flat list
+ * (no status-group split like moveCard's), so this is simpler: one splice,
+ * one renumber pass.
+ */
+export function moveColumn(columns: ActionColumn[], draggedId: string, targetId: string | null, position: 'before' | 'after'): void {
+  const dragged = columns.find((c) => c.id === draggedId)
+  if (!dragged) return
+  if (draggedId === targetId) return
+  const rest = columns.filter((c) => c.id !== draggedId).sort((a, b) => a.order - b.order)
+  const targetIdx = targetId === null ? -1 : rest.findIndex((c) => c.id === targetId)
+  const insertAt = targetIdx === -1 ? rest.length : (position === 'before' ? targetIdx : targetIdx + 1)
+  rest.splice(insertAt, 0, dragged)
+  rest.forEach((c, idx) => { c.order = idx })
+}
+
 // --- renderer ---------------------------------------------------------------
 
 export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
@@ -90,6 +109,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   let draggedId: string | null = null
+  let draggedColumnId: string | null = null
+  let pendingColumnFocusId: string | null = null
 
   let activeTagFilter: ActionItemColor | null = null
 
@@ -169,6 +190,31 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     }, { teamId })
   }
 
+  function addColumn(): void {
+    const newId = crypto.randomUUID()
+    // Set before store.update(), not after: store.update() notifies
+    // subscribe() synchronously (see core/store.ts), which for this module
+    // runs straight into renderAll() -> rebuildBoard() before update()
+    // returns. rebuildBoard()'s pendingColumnFocusId check (below) has to see
+    // the new id during that same synchronous pass, or the just-added column
+    // never gets its auto-focus.
+    pendingColumnFocusId = newId
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const existing = tm.actionColumns ?? []
+      const maxOrder = existing.length === 0 ? -1 : Math.max(...existing.map((c) => c.order))
+      tm.actionColumns = [...existing, { id: newId, name: t(lc, 'kanban_new_column_default_name'), order: maxOrder + 1 }]
+    }, { teamId, sections: ['actions'] })
+  }
+
+  function renameColumn(columnId: string, name: string): void {
+    ctx.store.update((d) => {
+      const col = d.teams.find((t2) => t2.id === teamId)?.actionColumns?.find((c) => c.id === columnId)
+      if (col) col.name = name
+    }, { teamId, sections: ['actions'] })
+  }
+
   function requestDelete(item: ActionItem): void {
     if (item.summary.trim() === '') {
       removeItem(item.id) // empty cards carry no meaningful content to lose — delete silently
@@ -231,7 +277,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
    * every field — including the very first one touched, whichever it is —
    * has something real to attach to.
    */
-  function openEditModal(existing: ActionItem | null, defaultStatus: 'todo' | 'wip' = 'todo'): void {
+  function openEditModal(existing: ActionItem | null, defaultStatus: string = 'todo'): void {
     let itemId: string
     if (existing === null) {
       itemId = crypto.randomUUID()
@@ -491,6 +537,53 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const handle: ModalHandle = showModal({ title: t(lc, 'kanban_edit_tags_title'), body, buttons: [cancelBtn, saveBtn] })
   }
 
+  function deleteColumn(columnId: string): void {
+    const count = items().filter((i) => i.status === columnId).length
+    if (count === 0) {
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (tm?.actionColumns) tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
+      }, { teamId, sections: ['actions'] })
+      return
+    }
+    openDeleteColumnModal(columnId, count)
+  }
+
+  function openDeleteColumnModal(columnId: string, count: number): void {
+    const tm = findTeam()
+    const targets = STATUSES.filter((s) => s !== columnId)
+    const select = el('select', { class: 'tt-input tt-kanban-column-landing-select' }) as HTMLSelectElement
+    for (const s of targets) select.appendChild(el('option', { value: s }, statusLabel(s, tm)))
+    const body = el(
+      'div', { class: 'tt-prefs-field' },
+      el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_column_confirm', { count: String(count) })),
+      el('label', { class: 'tt-field' }, t(lc, 'kanban_column_landing_label'), select)
+    )
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const confirmBtn: ModalButton = {
+      label: t(lc, 'kanban_delete_column_btn'),
+      danger: true,
+      onClick: () => {
+        const targetStatus = select.value
+        ctx.store.update((d) => {
+          const team2 = d.teams.find((t2) => t2.id === teamId)
+          if (!team2) return
+          const moving = team2.actionItems.filter((i) => i.status === columnId).sort((a, b) => a.order - b.order)
+          const destGroup = team2.actionItems.filter((i) => i.status === targetStatus)
+          // Appends past the destination's highest existing order — same
+          // nextOrder idiom as openEditModal's new-card insertion above.
+          // Doesn't renumber the destination group densely; any pre-existing
+          // gaps in its order values are left untouched.
+          let nextOrder = destGroup.length === 0 ? 0 : Math.max(...destGroup.map((i) => i.order)) + 1
+          for (const i of moving) { i.status = targetStatus; i.order = nextOrder++ }
+          if (team2.actionColumns) team2.actionColumns = team2.actionColumns.filter((c) => c.id !== columnId)
+        }, { teamId, sections: ['actions'] })
+        handle.close()
+      },
+    }
+    const handle: ModalHandle = showModal({ title: t(lc, 'kanban_delete_column_title'), body, buttons: [cancelBtn, confirmBtn] })
+  }
+
   function emptyEl(): HTMLElement {
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
@@ -502,18 +595,19 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   /** Visible (post-filter) cards currently rendered in a status column, in on-screen order. */
-  function cardsInColumn(status: ActionItem['status']): HTMLElement[] {
-    return Array.from(cols[status].bodyEl.querySelectorAll<HTMLElement>('.tt-kanban-card'))
+  function cardsInColumn(status: string): HTMLElement[] {
+    return Array.from(cols.get(status)!.bodyEl.querySelectorAll<HTMLElement>('.tt-kanban-card'))
   }
 
   /**
    * Grid-style arrow navigation for the board: Up/Down step within the
    * current card's column; Left/Right cross into the nearest non-empty
-   * column in that direction (To Do / WIP / Done / Cancelled — Done and
-   * Cancelled share one visual column but are separate stops here), landing
-   * on whichever card in the target column is closest by vertical position
-   * to the card the user came from. Returns null at a board edge or when
-   * every column in that direction is empty.
+   * column in that direction (To Do, then each of the team's custom middle
+   * columns in order, then Done, then Cancelled — Done and Cancelled share
+   * one visual column but are separate stops here), landing on whichever
+   * card in the target column is closest by vertical position to the card
+   * the user came from. Returns null at a board edge or when every column
+   * in that direction is empty.
    */
   function findAdjacentCard(item: ActionItem, key: string): HTMLElement | null {
     const column = cardsInColumn(item.status)
@@ -646,78 +740,249 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     return card
   }
 
-  const STATUSES = ['todo', 'wip', 'done', 'cancelled'] as const
+  /** The two ends, never renamed/removed/reordered. */
+  function isFixedStatus(status: string): boolean {
+    return status === 'todo' || status === 'done' || status === 'cancelled'
+  }
+
+  // Unused within Task 5 itself, when this was added as part of that task's
+  // declared skeleton interface — first used by Task 7's delete-column
+  // landing-picker labels (openDeleteColumnModal, above).
+  function statusLabel(status: string, tm: Team | undefined): string {
+    if (status === 'todo') return t(lc, 'kanban_status_todo')
+    if (status === 'done') return t(lc, 'kanban_status_done')
+    if (status === 'cancelled') return t(lc, 'kanban_status_cancelled')
+    return tm?.actionColumns?.find((c) => c.id === status)?.name ?? ''
+  }
+
+  /** Column ids in board order: fixed 'todo', the team's custom columns sorted by order, fixed 'done'/'cancelled'. */
+  function statusesFor(tm: Team | undefined): string[] {
+    const middle = [...(tm?.actionColumns ?? [])].sort((a, b) => a.order - b.order).map((c) => c.id)
+    return ['todo', ...middle, 'done', 'cancelled']
+  }
+
+  // Reassigned on every rebuildBoard() call (see below) — read by
+  // cardsInColumn/findAdjacentCard above, and by showDropZones/hideDropZones
+  // and wireColumnDrop below, always as the latest board shape.
+  let STATUSES: string[] = ['todo', 'done', 'cancelled']
+  let cols = new Map<string, { bodyEl: HTMLElement; zoneEl: HTMLElement }>()
+  // Middle-column header name spans, keyed by column id — populated fresh in
+  // rebuildBoard() (like `cols` above) and read back in renderAll()'s
+  // per-status loop below to append the item count, the same way
+  // todoTitleEl/doneCancelTitleEl get their counts refreshed every render.
+  // The column *name* is user data, so it's interpolated inline rather than
+  // routed through an i18n `{count}`-placeholder key like kanban_col_todo.
+  let middleNameSpans = new Map<string, HTMLElement>()
+
   const doneCountEl = el('span', {})
   const cancelledCountEl = el('span', {})
   // Column-title counts — always the column's full item count, unaffected by
-  // activeTagFilter (see the "Counts feed the filter chips" comment below).
+  // activeTagFilter (see the "Counts feed the filter chips" comment in
+  // renderAll below). The middle-column live count (middleNameSpans, set in
+  // renderAll) follows this same rule.
   const todoTitleEl = el('span', {})
-  const wipTitleEl = el('span', {})
   const doneCancelTitleEl = el('span', {})
 
-  // Drop-zone highlight overlays — one per status body, mirroring
-  // src/modules/people-tree.ts's rootDropEl. Each lives in its own
-  // `tt-kanban-col-body-wrap` (position: relative), a sibling of the body
-  // rather than a child of it, because renderAll() wipes each body's
-  // innerHTML on every store change; a child here would be destroyed along
-  // with the cards. Absolutely positioned so toggling it never reflows the
-  // body's flex-laid-out cards (see wireColumnDrop / renderCard dragstart).
-  function bodyWrap(bodyEl: HTMLElement, zoneEl: HTMLElement): HTMLElement {
-    return el('div', { class: 'tt-kanban-col-body-wrap' }, bodyEl, zoneEl)
-  }
-  const colParts = (): { bodyEl: HTMLElement; zoneEl: HTMLElement } => ({
-    bodyEl: el('div', { class: 'tt-kanban-col-body' }),
-    zoneEl: el('div', { class: 'tt-kanban-dropzone' }),
-  })
-  const cols: Record<ActionItem['status'], { bodyEl: HTMLElement; zoneEl: HTMLElement }> = {
-    todo: colParts(), wip: colParts(), done: colParts(), cancelled: colParts(),
-  }
   function showDropZones(): void {
-    STATUSES.forEach((s) => cols[s].zoneEl.classList.add('active'))
+    STATUSES.forEach((s) => cols.get(s)!.zoneEl.classList.add('active'))
     // Lets the CSS shrink each column drop-zone's bottom edge, clearing
     // space for the full-width trash bar (see .tt-kanban-trash) so the two
-    // never overlap. Also out-of-flow (see the drop-zone comment above), so
-    // this doesn't reflow anything mid-dragstart either.
+    // never overlap. Also out-of-flow (see the drop-zone comment on `cols`
+    // above), so this doesn't reflow anything mid-dragstart either.
     kanbanRootEl.classList.add('dragging')
   }
   function hideDropZones(): void {
-    STATUSES.forEach((s) => cols[s].zoneEl.classList.remove('active', 'drag-over'))
+    STATUSES.forEach((s) => cols.get(s)!.zoneEl.classList.remove('active', 'drag-over'))
     kanbanRootEl.classList.remove('dragging')
   }
 
-  /** The two columns cards can be added to directly — identical apart from status and heading. */
-  function addableCol(status: 'todo' | 'wip', titleEl: HTMLElement): HTMLElement {
-    return el(
-      'div', { class: 'tt-kanban-col' },
-      el('div', { class: 'tt-kanban-col-head' },
-        titleEl,
-        el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, status) }, t(lc, 'kanban_add_card'))
-      ),
-      bodyWrap(cols[status].bodyEl, cols[status].zoneEl)
-    )
+  /** Catches a drop onto empty column space (below the last card, or an empty column) — the case moveCard's `targetId === null` append handles. Card-level drop handlers already stopPropagation() so this never double-fires for a drop that landed on a specific card. */
+  function wireColumnDrop(bodyEl: HTMLElement, status: string, zoneEl: HTMLElement): void {
+    bodyEl.addEventListener('dragover', (e) => {
+      if (draggedId === null) return
+      e.preventDefault()
+      zoneEl.classList.add('drag-over')
+    })
+    // A dragover on a child card bubbles here too (cards don't stopPropagation
+    // on dragover), so a dragleave fired while moving between child cards
+    // would otherwise flicker the highlight off and back on — ignore it
+    // unless the pointer actually left the body's subtree.
+    bodyEl.addEventListener('dragleave', (e) => {
+      const related = (e as DragEvent).relatedTarget as Node | null
+      if (related && bodyEl.contains(related)) return
+      zoneEl.classList.remove('drag-over')
+    })
+    bodyEl.addEventListener('drop', (e) => {
+      e.preventDefault()
+      trashEl.classList.remove('active', 'drag-over')
+      hideDropZones()
+      const srcId = draggedId
+      draggedId = null
+      if (srcId === null) return
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm) return
+        moveCard(tm.actionItems, srcId, status, null, 'after')
+      }, { teamId, sections: ['actions'] })
+    })
   }
-  const doneCancelColEl = el(
-    'div', { class: 'tt-kanban-col' },
-    el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl),
-    el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
-      el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
-    bodyWrap(cols.done.bodyEl, cols.done.zoneEl),
-    el('div', { class: 'tt-kanban-divider' }),
-    el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
-      el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, '🗑')),
-    bodyWrap(cols.cancelled.bodyEl, cols.cancelled.zoneEl)
-  )
 
-  const boardEl = el('div', { class: 'tt-kanban-board' },
-    addableCol('todo', todoTitleEl),
-    addableCol('wip', wipTitleEl),
-    doneCancelColEl)
+  /** Makes a middle column reorderable via a dedicated grip handle, dragging `Team.actionColumns` on drop. Only called for middle-column heads (see rebuildBoard below) — the fixed Todo/Done+Cancelled headers never call this, so they never gain a grip or listeners, naturally excluding them as both a drag source and a drop target. `draggedColumnId === status` also guards a column being dropped onto itself. The drag source is `gripEl`, not `headEl` — the header also holds the rename input and buttons, which need their own click/text-select behavior unbothered by an ancestor drag. */
+  function wireColumnHeaderDrag(headEl: HTMLElement, gripEl: HTMLElement, status: string): void {
+    gripEl.draggable = true
+    gripEl.addEventListener('dragstart', (e) => {
+      draggedColumnId = status
+      ;(e as DragEvent).dataTransfer?.setData('text/plain', status)
+      // Visually "lifts" the whole column so it reads as the thing being
+      // moved, not just the grip icon — mirrors people-tree.ts's dragged-node
+      // treatment (.tt-org-box-dragging).
+      headEl.closest('.tt-kanban-col')?.classList.add('col-dragging')
+    })
+    // A card drag and a column-header drag are mutually exclusive: bail out
+    // of the header's own handlers whenever a card drag is in flight, so
+    // stale `draggedColumnId` state (see dragend below) can never be misread
+    // as "a column drop is in progress" while the user is actually mid-way
+    // through dragging a card.
+    headEl.addEventListener('dragover', (e) => {
+      if (draggedId !== null) return
+      if (draggedColumnId === null || draggedColumnId === status) return
+      e.preventDefault()
+      headEl.classList.add('drag-over-col')
+    })
+    // Dragover on a child (name, buttons) bubbles here too, so ignore a
+    // dragleave that's just moving between those children — same guard as
+    // wireColumnDrop's bodyEl.dragleave above.
+    headEl.addEventListener('dragleave', (e) => {
+      const related = (e as DragEvent).relatedTarget as Node | null
+      if (related && headEl.contains(related)) return
+      headEl.classList.remove('drag-over-col')
+    })
+    headEl.addEventListener('drop', (e) => {
+      if (draggedId !== null) return
+      e.preventDefault()
+      headEl.classList.remove('drag-over-col')
+      const srcId = draggedColumnId
+      draggedColumnId = null
+      if (srcId === null || srcId === status) return
+      ctx.store.update((d) => {
+        const tm = d.teams.find((t2) => t2.id === teamId)
+        if (!tm?.actionColumns) return
+        moveColumn(tm.actionColumns, srcId, status, 'before')
+      }, { teamId, sections: ['actions'] })
+    })
+    // Cards clear their own drag state on `dragend` (see the card-level
+    // handler in renderCard above); a column header needs the same guard.
+    // Without it, releasing a column drag anywhere that isn't a valid
+    // column-header drop target (empty board space, the trash bar, a card,
+    // Escape) leaves `draggedColumnId` set forever — and a later CARD drag
+    // dropped on a different column's header would then be misread as a
+    // pending column reorder by the checks above.
+    gripEl.addEventListener('dragend', () => {
+      draggedColumnId = null
+      headEl.closest('.tt-kanban-col')?.classList.remove('col-dragging')
+      headEl.classList.remove('drag-over-col')
+    })
+  }
+
+  /** Rebuilds the whole board (column headers + bodies, drop zones, add/rename/delete affordances) from the team's current actionColumns. Same "full rebuild is simplest and correct" convention as people-tree.ts's tree — called at the top of renderAll(), below, before that function repopulates each column's cards. */
+  function rebuildBoard(): void {
+    const tm = findTeam()
+    STATUSES = statusesFor(tm)
+    // Drop-zone highlight overlays — one per status body, mirroring
+    // src/modules/people-tree.ts's rootDropEl. Each `zoneEl` is attached as a
+    // sibling of its `bodyEl` (in the `tt-kanban-col-body-wrap` built below),
+    // not a child of it, so it's absolutely positioned outside `bodyEl`'s
+    // flex-laid-out card flow — toggling it (showDropZones/hideDropZones)
+    // never reflows the cards. (This whole map is thrown away and rebuilt
+    // fresh on every renderAll() call regardless, so — unlike the pre-custom-
+    // columns version of this board — sibling placement is no longer about
+    // surviving `bodyEl.innerHTML = ''`; both elements get recreated
+    // together either way.)
+    cols = new Map(STATUSES.map((s) => [s, {
+      bodyEl: el('div', { class: 'tt-kanban-col-body' }),
+      zoneEl: el('div', { class: 'tt-kanban-dropzone' }),
+    }]))
+
+    const todoColEl = el(
+      'div', { class: 'tt-kanban-col' },
+      el('div', { class: 'tt-kanban-col-head' }, todoTitleEl,
+        el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, 'todo') }, t(lc, 'kanban_add_card'))),
+      el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('todo')!.bodyEl, cols.get('todo')!.zoneEl)
+    )
+
+    middleNameSpans = new Map()
+    // Set inside the map() below when a just-added column's id matches
+    // pendingColumnFocusId, then invoked once, after boardEl.append() below —
+    // not from inside the map() callback itself, since the column's head
+    // isn't attached to the document yet at that point and .focus() on a
+    // detached element is a no-op. A plain `let` reassigned only inside the
+    // .map() callback below hits a TS 6 control-flow narrowing quirk (the
+    // read after .map() infers `never` instead of the declared type) — the
+    // object-wrapper indirection sidesteps it.
+    const focusAfterAttach: { run: (() => void) | null } = { run: null }
+    const middleColEls = STATUSES.filter((s) => !isFixedStatus(s)).map((id) => {
+      const name = tm?.actionColumns?.find((c) => c.id === id)?.name ?? ''
+      const nameSpan = el('span', { class: 'tt-kanban-col-name', title: t(lc, 'kanban_rename_column_hint') }, name)
+      middleNameSpans.set(id, nameSpan)
+      const nameInput = el('input', {
+        type: 'text', class: 'tt-input tt-kanban-col-rename-input', value: name, style: 'display:none',
+      }) as HTMLInputElement
+      function startRename(): void {
+        nameSpan.style.display = 'none'
+        nameInput.style.display = ''
+        nameInput.focus()
+        nameInput.select()
+      }
+      function commitRename(): void {
+        nameInput.style.display = 'none'
+        nameSpan.style.display = ''
+        const value = nameInput.value.trim()
+        if (value !== '' && value !== name) renameColumn(id, value)
+      }
+      nameSpan.addEventListener('click', startRename)
+      nameInput.addEventListener('blur', commitRename)
+      nameInput.addEventListener('keydown', blurOnEnter)
+      const gripEl = el('span', { class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint') }, '⠿')
+      const headEl = el(
+        'div', { class: 'tt-kanban-col-head' },
+        gripEl, nameSpan, nameInput,
+        el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card')),
+        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, '🗑')
+      )
+      wireColumnHeaderDrag(headEl, gripEl, id)
+      if (pendingColumnFocusId === id) {
+        pendingColumnFocusId = null
+        focusAfterAttach.run = startRename
+      }
+      return el('div', { class: 'tt-kanban-col' }, headEl,
+        el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get(id)!.bodyEl, cols.get(id)!.zoneEl))
+    })
+
+    const doneCancelColEl = el(
+      'div', { class: 'tt-kanban-col' },
+      el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl),
+      el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
+        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
+      el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('done')!.bodyEl, cols.get('done')!.zoneEl),
+      el('div', { class: 'tt-kanban-divider' }),
+      el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
+        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, '🗑')),
+      el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('cancelled')!.bodyEl, cols.get('cancelled')!.zoneEl)
+    )
+
+    boardEl.innerHTML = ''
+    boardEl.append(todoColEl, ...middleColEls, doneCancelColEl)
+    STATUSES.forEach((s) => wireColumnDrop(cols.get(s)!.bodyEl, s, cols.get(s)!.zoneEl))
+    focusAfterAttach.run?.()
+  }
+
+  const boardEl = el('div', { class: 'tt-kanban-board' })
   const datalistEl = el('datalist', { id: datalistId })
 
   // Drop target for deleting a card by dragging it off the board — shown
-  // only while dragging (see dragstart above), same rationale as
-  // src/modules/people-tree.ts's rootDropEl: revealing it must not reflow
-  // the board mid-dragstart, or Chrome cancels the drag.
+  // only while dragging (see dragstart in renderCard above), same rationale
+  // as src/modules/people-tree.ts's rootDropEl: revealing it must not
+  // reflow the board mid-dragstart, or Chrome cancels the drag.
   const trashEl = el('div', { class: 'tt-kanban-trash' }, '🗑 ', t(lc, 'kanban_trash_hint'))
   trashEl.addEventListener('dragover', (e) => {
     if (draggedId === null) return
@@ -738,40 +1003,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (found) requestDelete(found)
   })
 
-  /** Catches a drop onto empty column space (below the last card, or an empty column) — the case moveCard's `targetId === null` append handles. Card-level drop handlers already stopPropagation() so this never double-fires for a drop that landed on a specific card. */
-  function wireColumnDrop(bodyEl: HTMLElement, status: ActionItem['status'], zoneEl: HTMLElement): void {
-    bodyEl.addEventListener('dragover', (e) => {
-      if (draggedId === null) return
-      e.preventDefault()
-      zoneEl.classList.add('drag-over')
-    })
-    // A dragover on a child card bubbles here too (cards don't stopPropagation
-    // on dragover), so a dragleave fired while moving between child cards
-    // would otherwise flicker the highlight off and back on — ignore it
-    // unless the pointer actually left the body's subtree.
-    bodyEl.addEventListener('dragleave', (e) => {
-      const related = (e as DragEvent).relatedTarget as Node | null
-      if (related && bodyEl.contains(related)) return
-      zoneEl.classList.remove('drag-over')
-    })
-    bodyEl.addEventListener('drop', (e) => {
-      e.preventDefault()
-      // Hide eagerly — see the identical comment on the card-level drop
-      // handler above.
-      trashEl.classList.remove('active', 'drag-over')
-      hideDropZones()
-      const srcId = draggedId
-      draggedId = null
-      if (srcId === null) return
-      ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
-        if (!tm) return
-        moveCard(tm.actionItems, srcId, status, null, 'after')
-      }, { teamId, sections: ['actions'] })
-    })
-  }
-  STATUSES.forEach((s) => wireColumnDrop(cols[s].bodyEl, s, cols[s].zoneEl))
-
   function updateDatalist(tm: Team | undefined): void {
     datalistEl.innerHTML = ''
     const names = tm ? [...tm.stakeholders, ...tm.members].map((p) => p.name) : []
@@ -780,48 +1011,63 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     }
   }
 
-  // Runs on every store change (the subscribe below) — the team lookup,
-  // today's date, and the tag-name map are computed once here and threaded
-  // through, and the items are bucketed in a single pass, instead of a
-  // findTeam()/todayIso() per column and per card.
   function renderAll(): void {
+    rebuildBoard()
     const tm = findTeam()
     const today = todayIso()
     const tagNames = tm?.actionTagNames ?? {}
     updateDatalist(tm)
-    const byStatus: Record<ActionItem['status'], ActionItem[]> = { todo: [], wip: [], done: [], cancelled: [] }
+    const byStatus: Record<string, ActionItem[]> = {}
+    STATUSES.forEach((s) => { byStatus[s] = [] })
     // Counts feed the filter chips. Only the two live columns count: a chip
     // reading "Urgent 7" where six of those are already done would be
     // answering a question nobody asked.
     const counts: Record<ActionItemColor, number> = { slate: 0, brass: 0, sage: 0, rust: 0, plum: 0, ledger: 0 }
     for (const it of tm?.actionItems ?? []) {
-      byStatus[it.status].push(it)
-      if (it.color !== null && (it.status === 'todo' || it.status === 'wip')) counts[it.color]++
+      const bucket = byStatus[it.status]
+      if (!bucket) continue // its column was deleted elsewhere; ignore until reassigned
+      bucket.push(it)
+      if (it.color !== null && it.status !== 'done' && it.status !== 'cancelled') counts[it.color]++
     }
     renderTagChips(tagNames, counts)
     for (const s of STATUSES) {
-      const group = byStatus[s].sort((a, b) => a.order - b.order)
+      const group = byStatus[s]!.sort((a, b) => a.order - b.order)
       const visible = activeTagFilter === null ? group : group.filter((i) => i.color === activeTagFilter)
-      const bodyEl = cols[s].bodyEl
+      const bodyEl = cols.get(s)!.bodyEl
       bodyEl.innerHTML = ''
       if (visible.length === 0) bodyEl.appendChild(emptyEl())
       else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames)))
+      // Same "always the full count, unaffected by activeTagFilter" rule as
+      // todoTitleEl/doneCancelTitleEl below (see the comment there) — a
+      // middle column's live count is built from `group`, not `visible`.
+      const nameSpan = middleNameSpans.get(s)
+      if (nameSpan) {
+        const name = tm?.actionColumns?.find((c) => c.id === s)?.name ?? ''
+        nameSpan.textContent = `${name} (${group.length})`
+      }
     }
-    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(byStatus.done.length) })
-    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(byStatus.cancelled.length) })
-    todoTitleEl.textContent = t(lc, 'kanban_col_todo', { count: String(byStatus.todo.length) })
-    wipTitleEl.textContent = t(lc, 'kanban_col_wip', { count: String(byStatus.wip.length) })
+    doneCountEl.textContent = t(lc, 'kanban_done_heading', { count: String(byStatus.done!.length) })
+    cancelledCountEl.textContent = t(lc, 'kanban_cancelled_heading', { count: String(byStatus.cancelled!.length) })
+    todoTitleEl.textContent = t(lc, 'kanban_col_todo', { count: String(byStatus.todo!.length) })
     doneCancelTitleEl.textContent = t(lc, 'kanban_col_done_cancelled', {
-      count: String(byStatus.done.length + byStatus.cancelled.length),
+      count: String(byStatus.done!.length + byStatus.cancelled!.length),
     })
   }
   renderAll()
+
+  function focusedRenameInput(): HTMLElement | null {
+    const active = document.activeElement
+    if (!(active instanceof HTMLInputElement) || !boardEl.contains(active)) return null
+    return active.classList.contains('tt-kanban-col-rename-input') ? active : null
+  }
+
+  const deferredRebuild = createDeferredRebuild(renderAll)
 
   // Every card's backlinks chip must react to a mention of it
   // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
   // a person's notes, a milestone or risk follow-up — not just edits to
   // actions themselves, so the watch list is that full set rather than just
-  // 'actions'. 'people' also feeds updateDatalist() below, which reads
+  // 'actions'. 'people' also feeds updateDatalist() above, which reads
   // stakeholders/members for the assignee autocomplete.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
@@ -832,26 +1078,36 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // way daily/person notes do — safe even mid-typing (see
     // Editor.refreshRefLabels' doc comment).
     if (openBundle) openBundle.richBundle.editor.refreshRefLabels()
+    const active = focusedRenameInput()
+    if (active) { deferredRebuild.arm(active); return }
     renderAll()
   })
 
   const filterLabelEl = el('span', { class: 'tt-kanban-filter-label' }, t(lc, 'kanban_filter_label'))
+  // Lives in the toolbar rather than as a board-width column (its old spot,
+  // between the middle columns and Done/Cancelled) so it no longer eats a
+  // column-sized slice of board width just to hold one button.
+  const addColumnBtn = el(
+    'button',
+    { class: 'tt-btn tt-kanban-add-column-btn', type: 'button', title: t(lc, 'kanban_add_column'), onclick: () => addColumn() },
+    t(lc, 'kanban_add_column')
+  )
   const editTagsBtn = el(
     'button',
     { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
     t(lc, 'kanban_edit_tags_btn')
   )
-  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, editTagsBtn)
+  const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)
 
   const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
   container.appendChild(kanbanRootEl)
-  // Lands focus on the first card (To Do, then WIP, then Done, then
-  // Cancelled — same order as STATUSES/the board's DOM) the moment the
-  // module opens, so arrow-key navigation works immediately without a
-  // preceding Tab. Only for the pane the user is actually in — a team
-  // switch remounts both panes together, and without this guard whichever
-  // pane happens to mount second (always pane 1) would silently steal focus
-  // from pane 0's.
+  // Lands focus on the first card (To Do, then the middle columns in order,
+  // then Done, then Cancelled — same order as STATUSES/the board's DOM) the
+  // moment the module opens, so arrow-key navigation works immediately
+  // without a preceding Tab. Only for the pane the user is actually in — a
+  // team switch remounts both panes together, and without this guard
+  // whichever pane happens to mount second (always pane 1) would silently
+  // steal focus from pane 0's.
   if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
     boardEl.querySelector<HTMLElement>('.tt-kanban-card')?.focus()
   }
@@ -870,5 +1126,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     unsubscribe()
     disposeOpenBundle()
     disposeArrowFallback()
+    deferredRebuild.dispose()
   }
 })

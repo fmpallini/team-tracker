@@ -6,7 +6,7 @@
 // teammates so they can skip re-entering the team/people structure, not to
 // carry work content. See docs/superpowers/specs/2026-07-16-team-export-
 // import-design.md and 2026-07-21-shell-layout-export-help-fixes-design.md.
-import type { ActionItemColor, Person, Team } from './types'
+import type { ActionColumn, ActionItemColor, Person, Team } from './types'
 import { SCHEMA_VERSION, SUGGESTED_TAG_NAME_KEYS } from './document'
 import { t, type Locale, type MsgKey } from './i18n'
 
@@ -104,6 +104,11 @@ function defaultActionTagNames(locale: Locale): Partial<Record<ActionItemColor, 
   return names
 }
 
+/** Mirrors `createEmptyTeam`'s (document.ts) single default middle column literal — an imported team starts with the same "WIP" starter column any brand-new team gets, not zero middle columns. */
+function defaultActionColumns(locale: Locale): ActionColumn[] {
+  return [{ id: 'wip', name: t(locale, 'kanban_wip_default_name'), order: 0 }]
+}
+
 export function remapForImport(teams: ExportedTeam[], locale: Locale): Team[] {
   return teams.map((src) => ({
     id: crypto.randomUUID(),
@@ -117,5 +122,6 @@ export function remapForImport(teams: ExportedTeam[], locale: Locale): Team[] {
     dailyNotes: {},
     generalNotes: '',
     actionTagNames: defaultActionTagNames(locale),
+    actionColumns: defaultActionColumns(locale),
   }))
 }

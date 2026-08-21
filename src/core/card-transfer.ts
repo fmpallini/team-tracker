@@ -69,7 +69,13 @@ function transferBetweenTeams<T extends { id: string }>(
 }
 
 export function transferActionItem(
-  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move'
+  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move',
+  // Optional so this function's signature matches the shared TRANSFER_FNS
+  // Record<CardKind, ...> type in src/ui/card-context-menu.ts, where
+  // transferMilestone/transferRisk carry this same unused param (prefixed
+  // `_targetStatus` there, by that file's convention for an intentionally
+  // unused parameter) — only action items have a landing column to pick.
+  targetStatus?: string
 ): void {
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'action',
@@ -77,13 +83,14 @@ export function transferActionItem(
     (item) => item.summary,
     (to, copy) => {
       copy.notes = stripAllRefs(copy.notes)
+      if (targetStatus !== undefined) copy.status = targetStatus
       copy.order = to.actionItems.length - 1
     }
   )
 }
 
 export function transferMilestone(
-  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move'
+  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move', _targetStatus?: string
 ): void {
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'milestone',
@@ -96,7 +103,7 @@ export function transferMilestone(
 }
 
 export function transferRisk(
-  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move'
+  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move', _targetStatus?: string
 ): void {
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'risk',
