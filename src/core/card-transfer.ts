@@ -84,7 +84,7 @@ export function transferActionItem(
 }
 
 export function transferMilestone(
-  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move'
+  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move', _targetStatus?: string
 ): void {
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'milestone',
@@ -97,7 +97,7 @@ export function transferMilestone(
 }
 
 export function transferRisk(
-  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move'
+  teams: Team[], itemId: string, fromTeamId: string, toTeamId: string, mode: 'copy' | 'move', _targetStatus?: string
 ): void {
   transferBetweenTeams(
     teams, itemId, fromTeamId, toTeamId, mode, 'risk',

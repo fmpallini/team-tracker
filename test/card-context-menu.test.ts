@@ -141,6 +141,33 @@ test('openItemContextMenu dispatches transfer (copy) to the right kind and targe
   expect(store.doc.teams[1]!.risks.length).toBe(0)
 })
 
+test('when getColumnsForTeam is supplied, "Copy to team…" opens the combined team+column picker and transfer receives the chosen column', () => {
+  const transfer = vi.fn()
+  const teams = [team('T1', 'Alpha'), team('T2', 'Beta')]
+  const getColumnsForTeam = () => [{ id: 'todo', label: 'To Do' }, { id: 'review', label: 'Review' }]
+  showCardContextMenu(LOCALE, 'T1', teams, 'item-1', 0, 0, { duplicate: vi.fn(), transfer, delete: vi.fn() }, getColumnsForTeam)
+  menuItems()[1]!.click() // "Copy to team…"
+
+  const selects = document.querySelectorAll<HTMLSelectElement>('select')
+  expect(selects).toHaveLength(2) // team + column, not just team
+  selects[0]!.value = 'T2'
+  selects[0]!.dispatchEvent(new Event('change', { bubbles: true }))
+  selects[1]!.value = 'review'
+  modalButton('Confirm').click()
+
+  expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'copy', 'review')
+})
+
+test('without getColumnsForTeam, the plain team-only picker is used (milestones/risks unaffected)', () => {
+  const transfer = vi.fn()
+  const teams = [team('T1', 'Alpha'), team('T2', 'Beta')]
+  showCardContextMenu(LOCALE, 'T1', teams, 'item-1', 0, 0, { duplicate: vi.fn(), transfer, delete: vi.fn() })
+  menuItems()[1]!.click()
+  expect(document.querySelectorAll('select')).toHaveLength(1)
+  modalButton('Confirm').click()
+  expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'copy')
+})
+
 test('openItemContextMenu wires "Delete" to the onDelete callback, not a store mutation', () => {
   const doc = createEmptyDocument('en-US')
   const team2 = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')

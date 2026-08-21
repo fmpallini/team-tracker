@@ -324,6 +324,30 @@ describe('card context menu', () => {
     expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(0)
     expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems).toHaveLength(1)
   })
+
+  test('"Copy to team…" opens a combined team+column picker whose column list is the target team\'s actionColumns plus the fixed statuses', () => {
+    const from = makeTeam({ id: 'from', actionItems: [item({ id: 'a1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2', actionColumns: [{ id: 'review', name: 'Review', order: 0 }] })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const pm = fakePM()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'actions' } }, store, pm)
+
+    rightClick(cards(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    const [teamSelect, columnSelect] = document.querySelectorAll<HTMLSelectElement>('select')
+    teamSelect!.value = 'to'
+    teamSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(Array.from(columnSelect!.querySelectorAll('option')).map((o) => o.value)).toEqual(['todo', 'review', 'done', 'cancelled'])
+    columnSelect!.value = 'review'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems[0]!.status).toBe('review')
+  })
 })
 
 // Regression for the accessibility gap the kanban cards used to have: no
