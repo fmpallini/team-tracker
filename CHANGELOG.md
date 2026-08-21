@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.1] - 2026-08-21
+
+### Fixed
+- The "+ Column" button now matches the look of the "Edit tags" button instead of a dashed outline style of its own.
+- Pressing Esc while renaming a column now cancels the rename instead of leaving it stuck in edit mode.
+- The board can now be scrolled horizontally with the mouse wheel when it has a horizontal scrollbar but the hovered column has nothing to scroll vertically.
+- Dragging a column onto the column immediately to its right no longer silently fails to reorder it.
+
 ## [2.4.0] - 2026-08-20
 
 ### Added
