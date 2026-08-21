@@ -1777,7 +1777,7 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     const heads = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-col-head'))
-    const [, headA, , headC] = heads // eslint-disable-line @typescript-eslint/no-unused-vars
+    const [, headA, , headC] = heads
 
     fire(grip(headC!), 'dragstart', { setData: () => {} })
     fire(headA!, 'dragover')
