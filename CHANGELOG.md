@@ -4,6 +4,13 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.0] - 2026-08-20
+
+### Added
+- Kanban boards can now have custom columns between the fixed To Do and Done/Cancelled columns — add, rename, remove, and reorder them per team. Removing a column that still has cards on it asks where those cards should go first.
+- Once a board has enough columns to need it, the board scrolls horizontally instead of squeezing columns below a readable width.
+- Copying or moving a task card to another team now asks which column it should land in on the destination board, instead of always dropping it in the first one.
+
 ## [2.3.4] - 2026-08-19
 
 ### Added
