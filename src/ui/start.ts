@@ -14,6 +14,7 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet } from '../core/idb'
+import { logEvent } from '../core/debug-log'
 import { decryptDocument, encryptDocument, serializePlain, parsePlain, WrongPasswordError, CorruptFileError } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
@@ -88,6 +89,7 @@ export function showStartScreen(
 
   function reportUnexpected(e: unknown): void {
     console.error(e)
+    logEvent('start.reportUnexpected', String(e))
     showErrorModal(locale, t(locale, 'err_unexpected'))
   }
 
@@ -123,12 +125,16 @@ export function showStartScreen(
   // in how the pair is obtained. A plain (password-less) file is sniffed
   // first so it can open directly, without ever prompting for a password.
   async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
+    logEvent('start.openAndDecrypt', 'fetching session+bytes')
     const result = await fetchResult()
+    logEvent('start.openAndDecrypt', result ? 'got session+bytes' : 'fetchResult returned null (cancelled/denied)')
     if (!result) return
     let plainDoc: Doc | null
     try {
       plainDoc = parsePlain(result.bytes)
+      logEvent('start.openAndDecrypt', `parsePlain -> ${plainDoc ? 'plain doc' : 'encrypted, needs password'}`)
     } catch (e) {
+      logEvent('start.openAndDecrypt', `parsePlain threw: ${String(e)}`)
       if (e instanceof CorruptFileError) {
         showErrorModal(locale, t(locale, 'err_corrupt_file'))
         return
@@ -141,14 +147,22 @@ export function showStartScreen(
     }
     if (plainDoc) {
       onOpen(result.session, plainDoc, null)
+      logEvent('start.openAndDecrypt', 'onOpen called (plain doc)')
       return
     }
     const outcome = await decryptLoop(result.bytes)
-    if (outcome) onOpen(result.session, outcome.doc, outcome.password)
+    logEvent('start.openAndDecrypt', outcome ? 'decryptLoop succeeded' : 'decryptLoop cancelled/failed')
+    if (outcome) {
+      onOpen(result.session, outcome.doc, outcome.password)
+      logEvent('start.openAndDecrypt', 'onOpen called (decrypted doc)')
+    }
   }
 
   const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(pickOpen)
-  const handleReopenLast = (): Promise<void> => openAndDecrypt(reopenLast)
+  const handleReopenLast = (): Promise<void> => {
+    logEvent('start.handleReopenLast', 'clicked')
+    return openAndDecrypt(reopenLast)
+  }
   const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
 
   async function handleOpenFallbackFile(file: File): Promise<void> {

@@ -23,7 +23,8 @@ import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
 import { forceWrite, readCurrent, sameEntry } from './core/fs'
-import { toast } from './ui/modal'
+import { toast, showErrorModal } from './ui/modal'
+import { logEvent } from './core/debug-log'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
@@ -44,6 +45,19 @@ import { showUpdateNotice } from './ui/update-notice'
 // registered at startup or the native install prompt is lost (see
 // src/ui/promo.ts). PWA build only; the file:// build has nothing to install.
 if (__PWA__) initInstallCapture()
+
+// Diagnostic instrumentation added to investigate a reported installed-PWA
+// crash on reopen-last that kills the page — and its devtools — before any
+// console output is visible (see src/core/debug-log.ts, whose entries
+// survive that). Registered before anything else runs so it catches errors
+// app-wide, not just in the open flow. Never calls preventDefault(): this
+// only observes, the browser's own default handling still happens.
+window.addEventListener('error', (e) => {
+  logEvent('window.error', `${e.message} @ ${e.filename}:${e.lineno}`)
+})
+window.addEventListener('unhandledrejection', (e) => {
+  logEvent('window.unhandledrejection', String(e.reason))
+})
 
 // App controller state lives in this module-level closure only — never on
 // window/globals — so the in-memory password never leaves this scope.
@@ -73,7 +87,18 @@ let app: AppController | null = null
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
 function openDocument(session: FileSession, doc: Doc, password: string | null): void {
-  onDocumentOpened(session, doc, password).catch((e: unknown) => console.error(e))
+  logEvent('main.openDocument', `onDocumentOpened starting for ${session.name}`)
+  onDocumentOpened(session, doc, password)
+    .then(() => logEvent('main.openDocument', 'onDocumentOpened completed'))
+    .catch((e: unknown) => {
+      console.error(e)
+      logEvent('main.openDocument', `onDocumentOpened threw: ${String(e)}`)
+      // Previously silent (console.error only) — a throw here left the user
+      // staring at whatever partially rendered before it, with no feedback at
+      // all. This doesn't change the happy path, only what happens on a
+      // failure that used to be invisible.
+      showErrorModal(doc.prefs.locale, t(doc.prefs.locale, 'err_unexpected'))
+    })
 }
 
 /**
@@ -131,6 +156,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     app = null
   }
 
+  logEvent('main.onDocumentOpened', 'creating shell')
   const shell = createShell(doc.prefs.locale)
   shell.applyPrefs(doc.prefs)
   const promoBtn = promoHeaderButton(doc.prefs.locale)
@@ -171,6 +197,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // shell (and its DOM) reachable for the life of the tab — see Shell.dispose.
   disposers.push(() => shell.dispose())
 
+  logEvent('main.onDocumentOpened', 'creating store and pane manager')
   const store = createStore(doc)
   const pm = createPaneManager(shell, store, doc.prefs.locale)
   pm.registerModule('daily', renderDailyNotes)
@@ -535,6 +562,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
   document.addEventListener('keydown', onKeyDown)
   disposers.push(() => document.removeEventListener('keydown', onKeyDown))
+  logEvent('main.onDocumentOpened', 'fully wired up')
 }
 
 /**

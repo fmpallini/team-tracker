@@ -1,4 +1,5 @@
 import { idbGet, idbSet } from './idb'
+import { logEvent } from './debug-log'
 
 export interface FileSession {
   handle: FileSystemFileHandle | null // null in fallback mode
@@ -100,19 +101,34 @@ export async function openFromHandle(
   handle: FileSystemFileHandle,
   persist = true
 ): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
-  let permission = await handle.queryPermission({ mode: 'readwrite' })
-  if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
-  if (permission !== 'granted') return null
-  const { bytes, lastModified } = await readHandle(handle)
-  const session: FileSession = { handle, name: handle.name, lastModified }
-  // `reopenLast` passes persist:false — the handle it hands in came from this
-  // same IndexedDB entry, so writing it straight back is a no-op round trip.
-  if (persist) await idbSet('lastHandle', handle)
-  return { session, bytes }
+  logEvent('fs.openFromHandle', 'start')
+  try {
+    let permission = await handle.queryPermission({ mode: 'readwrite' })
+    logEvent('fs.openFromHandle', `queryPermission -> ${permission}`)
+    if (permission !== 'granted') {
+      permission = await handle.requestPermission({ mode: 'readwrite' })
+      logEvent('fs.openFromHandle', `requestPermission -> ${permission}`)
+    }
+    if (permission !== 'granted') return null
+    logEvent('fs.openFromHandle', 'reading file')
+    const { bytes, lastModified } = await readHandle(handle)
+    logEvent('fs.openFromHandle', `read ok, ${bytes.length} bytes`)
+    const session: FileSession = { handle, name: handle.name, lastModified }
+    // `reopenLast` passes persist:false — the handle it hands in came from this
+    // same IndexedDB entry, so writing it straight back is a no-op round trip.
+    if (persist) await idbSet('lastHandle', handle)
+    logEvent('fs.openFromHandle', 'done')
+    return { session, bytes }
+  } catch (e) {
+    logEvent('fs.openFromHandle', `threw: ${String(e)}`)
+    throw e
+  }
 }
 
 export async function reopenLast(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+  logEvent('fs.reopenLast', 'start')
   const handle = await idbGet<FileSystemFileHandle>('lastHandle')
+  logEvent('fs.reopenLast', handle ? 'handle found in IDB' : 'no handle in IDB')
   if (!handle) return null
   return openFromHandle(handle, false)
 }

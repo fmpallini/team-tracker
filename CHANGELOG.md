@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.5] - 2026-08-22
+
+### Fixed
+- Opening a file (reopen-last, "Open…", or double-clicking a .tmv) that fails partway through now shows an error message instead of silently leaving a half-loaded, unresponsive screen with no feedback.
+
+### Changed
+- Added internal diagnostics around file-opening to help track down a reported crash on "reopen last file" in the installed app — no visible change in normal use.
+
 ## [2.4.4] - 2026-08-22
 
 ### Added
