@@ -52,6 +52,18 @@ function perCycleGrowth(samples: Counters[], key: 'nodes' | 'listeners'): number
   return (median(secondHalf) - median(firstHalf)) / (samples.length - half)
 }
 
+// Overlay teardown (a modal's CSS transition, a detached node's cleanup
+// microtask) can still be in flight the instant a cycle's last `await`
+// resolves. Measuring then catches a transient half-torn-down state — not
+// growth, just bad timing — which is what turned this test flaky: samples
+// jumping between two stable node/listener counts instead of drifting.
+// Two animation frames give the browser room to actually finish.
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  )
+}
+
 async function measure(cdp: CDPSession): Promise<Counters> {
   // Two GCs: the first can resurrect objects into a later generation, the
   // second collects what that first pass made unreachable.
@@ -323,6 +335,7 @@ test.describe('resource growth over a long session', () => {
     const samples: Counters[] = []
     for (let i = 0; i < WARMUP + MEASURED; i++) {
       await overlayCycle(page)
+      await settle(page)
       if (i >= WARMUP) samples.push(await measure(cdp))
     }
 
