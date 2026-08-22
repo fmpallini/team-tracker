@@ -7,7 +7,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.4.2] - 2026-08-21
 
 ### Fixed
-- Daily backup no longer fails silently forever when a team file is moved to a different computer: it now turns itself off and shows a notice, instead of leaving the checkbox on while quietly never backing up again.
+- Automatic backup no longer fails silently forever when a team file is moved to a different computer: it now turns itself off and shows a notice, instead of leaving the checkbox on while quietly never backing up again.
 
 ## [2.4.1] - 2026-08-21
 
