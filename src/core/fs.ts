@@ -95,27 +95,13 @@ export async function pickCreateBackup(suggestedName: string, startIn?: FileSyst
  * `window.launchQueue` consumer) — both need the same permission re-check
  * before reading, since a handle persisted or received across a launch
  * doesn't carry its earlier grant with it.
- *
- * Requests `'read'` only, not `'readwrite'`: this runs on the bare start
- * screen, before any shell/store exists, so there's nowhere to route a
- * mid-open failure other than "unexpected error". Asking for less here and
- * upgrading to write lazily lets a denied/lapsed write grant surface through
- * the already-existing, already-tested path instead — `doSave()`'s
- * `NotAllowedError` catch (save-controller.ts) triggers the same "Grant
- * access…" toast/pill this app already shows for a write grant that lapses
- * mid-session, which `pickOpen` (the picker path, granted read-only by the
- * picker itself) already goes through on its first save. An installed PWA
- * window re-requesting permission on every relaunch (no omnibox to anchor a
- * persistent grant against) makes this path hit the native prompt far more
- * often than the picker path ever does, so it should ask for the least
- * possible scope when it does.
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,
   persist = true
 ): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
-  let permission = await handle.queryPermission({ mode: 'read' })
-  if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'read' })
+  let permission = await handle.queryPermission({ mode: 'readwrite' })
+  if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
   if (permission !== 'granted') return null
   const { bytes, lastModified } = await readHandle(handle)
   const session: FileSession = { handle, name: handle.name, lastModified }

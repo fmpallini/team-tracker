@@ -4,11 +4,6 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
-## [2.4.5] - 2026-08-22
-
-### Fixed
-- "Reopen last file" (installed app) now only asks for read access instead of read-write up front — asking for more than needed on every relaunch is suspected of triggering a browser crash on some setups. Write access is still requested normally, the moment you actually save.
-
 ## [2.4.4] - 2026-08-22
 
 ### Added
