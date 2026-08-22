@@ -21,7 +21,12 @@ async function readHandle(handle: FileSystemFileHandle): Promise<{ bytes: Uint8A
   return { bytes: new Uint8Array(buf), lastModified: file.lastModified }
 }
 
-export async function pickOpen(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+/**
+ * `startIn`, when given a stale handle (e.g. `NeedsRepickError.handle` below),
+ * opens the picker in that file's folder by default — same convenience as
+ * `pickCreateBackup`'s `startIn`, a starting point rather than a guarantee.
+ */
+export async function pickOpen(startIn?: FileSystemHandle): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   try {
     const [handle] = await window.showOpenFilePicker({
       // Chromium expands a registered MIME type like application/octet-stream
@@ -30,6 +35,7 @@ export async function pickOpen(): Promise<{ session: FileSession; bytes: Uint8Ar
       // specific MIME type has no OS associations to merge in, keeping the
       // filter to just the extension below.
       types: [{ description: 'Team Tracker', accept: { 'application/vnd.teamtracker.tmv': ['.tmv'] } }],
+      startIn,
     })
     if (!handle) return null
     const { bytes, lastModified } = await readHandle(handle)
@@ -90,19 +96,31 @@ export async function pickCreateBackup(suggestedName: string, startIn?: FileSyst
 }
 
 /**
- * Two animation-frame ticks — long enough for the browser to paint at least
- * once — before the caller does a large synchronous DOM build. Investigating
- * a reported installed-PWA crash on reopen-last (see core/debug-log.ts):
- * every crash correlates with a native FileSystemFileHandle permission
- * dialog closing on a titlebar-less standalone-app window, immediately
- * followed by openFromHandle's caller building the whole app shell — a
- * window/compositor state right after a native dialog dismissal that may not
- * have "settled" yet. Cheap and harmless if this turns out not to be it.
+ * Thrown by `openFromHandle` when the handle's permission has lapsed and
+ * needs re-establishing. Callers (ui/start.ts) catch this and fall back to
+ * `pickOpen(e.handle)` — the plain OS file picker, pre-pointed at the same
+ * folder — instead of the path that used to lead here: `requestPermission()`.
+ *
+ * That's deliberate, not an oversight. Two earlier fixes tried to make
+ * `requestPermission()` safe to call on this path — first asking for `'read'`
+ * instead of `'readwrite'`, then adding a settle delay after it resolved —
+ * and a real-device repro with the debug log (core/debug-log.ts) disproved
+ * both: full JS-level success, zero errors, crash anyway. The user then
+ * isolated the actual trigger by screenshotting two *different* native
+ * dialogs Chromium shows for a lapsed grant: a plain "Allow/Don't allow"
+ * confirm (harmless), and a three-button "Allow this time / Allow on every
+ * visit / Don't allow" dropdown — Chrome's "Persistent Permissions" UI for
+ * installed PWAs (chrome://flags/#file-system-access-persistent-permission,
+ * itself since removed as the feature's now permanent/GA) — which is the one
+ * that crashes, every time, in this titlebar-less standalone-app window.
+ * `showOpenFilePicker()`'s own native dialog is a different, simpler surface
+ * that has never crashed in any repro, so this routes through that instead of
+ * ever inviting Chromium to show the dropdown.
  */
-function settleAfterNativeDialog(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-  })
+export class NeedsRepickError extends Error {
+  constructor(public readonly handle: FileSystemFileHandle) {
+    super('permission lapsed — caller should fall back to pickOpen(handle)')
+  }
 }
 
 /**
@@ -111,38 +129,21 @@ function settleAfterNativeDialog(): Promise<void> {
  * see `pwa/manifest.json`'s `file_handlers` and `ui/start.ts`'s
  * `window.launchQueue` consumer) — both need the same permission re-check
  * before reading, since a handle persisted or received across a launch
- * doesn't carry its earlier grant with it.
- *
- * Requests `'read'` only, not `'readwrite'`: this runs on the bare start
- * screen, before any shell/store exists, so there's nowhere to route a
- * mid-open failure other than "unexpected error". Asking for less here and
- * upgrading to write lazily lets a denied/lapsed write grant surface through
- * the already-existing, already-tested path instead — `doSave()`'s
- * `NotAllowedError` catch (save-controller.ts) — which `pickOpen` (granted
- * read-only by the picker itself) already relies on for its first save. It's
- * also possible (untested until this ships) that a `'read'`-only grant
- * survives a PWA relaunch where `'readwrite'` doesn't, in which case this
- * skips the native dialog — and the crash it's implicated in — entirely.
+ * doesn't carry its earlier grant with it. See `NeedsRepickError` above for
+ * why a lapsed grant throws instead of requesting it here.
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,
   persist = true
 ): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   logEvent('fs.openFromHandle', 'start')
+  const permission = await handle.queryPermission({ mode: 'read' })
+  logEvent('fs.openFromHandle', `queryPermission -> ${permission}`)
+  if (permission !== 'granted') {
+    logEvent('fs.openFromHandle', 'not granted — needs re-pick via file dialog')
+    throw new NeedsRepickError(handle)
+  }
   try {
-    let permission = await handle.queryPermission({ mode: 'read' })
-    logEvent('fs.openFromHandle', `queryPermission -> ${permission}`)
-    let showedDialog = false
-    if (permission !== 'granted') {
-      permission = await handle.requestPermission({ mode: 'read' })
-      showedDialog = true
-      logEvent('fs.openFromHandle', `requestPermission -> ${permission}`)
-    }
-    if (permission !== 'granted') return null
-    if (showedDialog) {
-      logEvent('fs.openFromHandle', 'settling after native permission dialog')
-      await settleAfterNativeDialog()
-    }
     logEvent('fs.openFromHandle', 'reading file')
     const { bytes, lastModified } = await readHandle(handle)
     logEvent('fs.openFromHandle', `read ok, ${bytes.length} bytes`)

@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, sameEntry, pickCreateBackup, ExternalChangeError, NeedsRepickError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number) {
   let mtime = initialMtime
@@ -56,38 +56,19 @@ function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
   return handle
 }
 
-// Regression: investigating a reported installed-PWA crash correlated with
-// this exact native dialog (see the comment on openFromHandle in
-// src/core/fs.ts) — it must ask for the minimum permission needed at open
-// time ('read'), not 'readwrite'; write access is upgraded lazily on first
-// save via save-controller.ts's own NotAllowedError recovery.
-test('openFromHandle requests read-only permission, never readwrite', async () => {
+// Regression: openFromHandle used to call requestPermission({mode:'readwrite'})
+// on a lapsed grant — the exact call that shows Chromium's "Persistent
+// Permissions" three-button dropdown, which a real-device repro (debug log,
+// screenshots) pinned as the actual crash trigger in the installed PWA. It
+// must never call requestPermission at all now — see NeedsRepickError's doc
+// comment in src/core/fs.ts for the full history.
+test('openFromHandle only ever queries permission (read-only), never requests it', async () => {
   const handle = mockLaunchHandle('prompt')
-  await openFromHandle(handle)
+  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(NeedsRepickError)
   const queryPermission = handle.queryPermission as ReturnType<typeof vi.fn>
   const requestPermission = handle.requestPermission as ReturnType<typeof vi.fn>
   expect(queryPermission).toHaveBeenCalledWith({ mode: 'read' })
-  expect(requestPermission).toHaveBeenCalledWith({ mode: 'read' })
-})
-
-// The settle delay (two rAF ticks) exists to let the browser's window/
-// compositor state settle after a native dialog closes — it should only
-// fire when a dialog was actually shown (requestPermission called), not
-// when the grant was already in place, since there's nothing to settle from.
-test('openFromHandle does not wait for animation frames when permission was already granted', async () => {
-  const handle = mockLaunchHandle('granted')
-  const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
-  await openFromHandle(handle)
-  expect(rafSpy).not.toHaveBeenCalled()
-  rafSpy.mockRestore()
-})
-
-test('openFromHandle waits two animation frames after a native permission dialog resolves, before returning', async () => {
-  const handle = mockLaunchHandle('prompt')
-  const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
-  await openFromHandle(handle)
-  expect(rafSpy).toHaveBeenCalledTimes(2)
-  rafSpy.mockRestore()
+  expect(requestPermission).not.toHaveBeenCalled()
 })
 
 test('openFromHandle reads the file when permission is already granted', async () => {
@@ -98,17 +79,16 @@ test('openFromHandle reads the file when permission is already granted', async (
   expect(result!.bytes).toEqual(new Uint8Array([7]))
 })
 
-test('openFromHandle requests permission when not yet granted, then reads', async () => {
+test('openFromHandle throws NeedsRepickError (carrying the handle) when permission is only "prompt"', async () => {
   const handle = mockLaunchHandle('prompt')
-  const result = await openFromHandle(handle)
-  expect(result).not.toBeNull()
-  expect(result!.bytes).toEqual(new Uint8Array([7]))
+  const error = await openFromHandle(handle).catch((e: unknown) => e)
+  expect(error).toBeInstanceOf(NeedsRepickError)
+  expect((error as NeedsRepickError).handle).toBe(handle)
 })
 
-test('openFromHandle returns null when permission is denied', async () => {
+test('openFromHandle throws NeedsRepickError when permission is denied', async () => {
   const handle = mockLaunchHandle('denied')
-  const result = await openFromHandle(handle)
-  expect(result).toBeNull()
+  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(NeedsRepickError)
 })
 
 test('openFromHandle persists the handle to lastHandle by default (the File Handling API launch path)', async () => {
