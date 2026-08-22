@@ -346,4 +346,44 @@ describe('backup-controller', () => {
     await expect(ctl.hasMissingGrant()).resolves.toBe(true)
     expect(requestPermissionMock).not.toHaveBeenCalled()
   })
+
+  test('checkOrphaned is false when backups are off', async () => {
+    idbMocks.idbGet.mockResolvedValue(undefined)
+    const store = storeWithBackup(false)
+    const ctl = createBackupController({ store })
+    await expect(ctl.checkOrphaned()).resolves.toBe(false)
+    expect(idbMocks.idbGet).not.toHaveBeenCalled()
+  })
+
+  test('checkOrphaned is false when no backup handle id is configured yet', async () => {
+    const store = storeWithBackup(true, null)
+    const ctl = createBackupController({ store })
+    await expect(ctl.checkOrphaned()).resolves.toBe(false)
+    expect(idbMocks.idbGet).not.toHaveBeenCalled()
+  })
+
+  test('checkOrphaned is false when the configured handle resolves fine from IDB', async () => {
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.checkOrphaned()).resolves.toBe(false)
+  })
+
+  // The moved-computer scenario: `backupHandleId` travels with the .tmv file
+  // itself, but the handle it names only ever lived in the old machine's
+  // IndexedDB — a fresh profile has no entry under that id at all.
+  test('checkOrphaned is true when a handle id is configured but IDB has no matching entry', async () => {
+    idbMocks.idbGet.mockResolvedValue(undefined)
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.checkOrphaned()).resolves.toBe(true)
+  })
+
+  // A transient IDB failure is a different, already-handled failure mode
+  // (writeBackupNow's own try/catch) — not proof the reference is orphaned.
+  test('checkOrphaned is false when the IDB lookup itself fails', async () => {
+    idbMocks.idbGet.mockRejectedValue(new Error('IndexedDB unavailable'))
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.checkOrphaned()).resolves.toBe(false)
+  })
 })

@@ -37,6 +37,18 @@ export interface BackupController {
    * reflect it immediately instead of waiting for the next backup attempt.
    */
   hasMissingGrant(): Promise<boolean>
+  /**
+   * True only when a backup is configured (a handle id is set) but that id
+   * has no matching entry in this machine's IndexedDB — the file was moved
+   * to a different computer (or browser profile) than the one that picked
+   * the backup target, so the id travelled in the .tmv but the handle it
+   * names never did. Distinct from `hasMissingGrant()`: that's a handle
+   * that still exists but needs re-permissioning; this is no handle at all.
+   * Read-only — never prompts, never writes. A failed IDB lookup itself
+   * (already `writeBackupNow()`'s own failure mode) is reported `false`
+   * here, not orphaned — it isn't proof the reference is gone.
+   */
+  checkOrphaned(): Promise<boolean>
 }
 
 export function createBackupController(deps: { store: Store }): BackupController {
@@ -141,5 +153,16 @@ export function createBackupController(deps: { store: Store }): BackupController
     await writeBackupNow(bytes)
   }
 
-  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant }
+  async function checkOrphaned(): Promise<boolean> {
+    if (!deps.store.doc.prefs.dailyBackupEnabled) return false
+    if (!deps.store.doc.prefs.backupHandleId) return false
+    try {
+      return (await loadHandle()) === null
+    } catch (e) {
+      console.error(e)
+      return false
+    }
+  }
+
+  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant, checkOrphaned }
 }

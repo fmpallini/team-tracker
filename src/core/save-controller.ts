@@ -251,17 +251,35 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
-    // The primary write just succeeded, but the backup mirror (if enabled) is
-    // interval-gated — up to a day could pass before it's next attempted for
-    // real, during which a lapsed grant would otherwise go undetected. This
-    // check is a cheap, prompt-free `queryPermission`, cheap enough to run on
-    // every successful save rather than waiting for that next attempt.
-    const backupMissingGrant = (await deps.backupCtl?.hasMissingGrant()) ?? false
-    if (backupMissingGrant) {
-      reportPermissionNeeded()
-    } else {
+    // The moved-computer case: `backupHandleId` travelled inside the .tmv
+    // itself, but the handle it names only ever lived in the old machine's
+    // IndexedDB. Left alone this fails silently forever — `hasMissingGrant()`
+    // below reports "no lapse" for a handle that's simply absent, so nothing
+    // would ever tell the user their backups quietly stopped. Disabling the
+    // pref here (rather than just toasting) also self-heals: the pref flip is
+    // itself a mutation, so the dirty guard schedules a trailing save that
+    // persists `dailyBackupEnabled: false` to the primary file.
+    const backupOrphaned = (await deps.backupCtl?.checkOrphaned()) ?? false
+    if (backupOrphaned) {
+      deps.store.update((d) => {
+        d.prefs.dailyBackupEnabled = false
+      })
+      toast(t(deps.locale(), 'backup_orphaned_toast'), { sticky: true })
       permissionEpisodeToasted = false
       deps.shell.setSaveState('saved')
+    } else {
+      // The primary write just succeeded, but the backup mirror (if enabled) is
+      // interval-gated — up to a day could pass before it's next attempted for
+      // real, during which a lapsed grant would otherwise go undetected. This
+      // check is a cheap, prompt-free `queryPermission`, cheap enough to run on
+      // every successful save rather than waiting for that next attempt.
+      const backupMissingGrant = (await deps.backupCtl?.hasMissingGrant()) ?? false
+      if (backupMissingGrant) {
+        reportPermissionNeeded()
+      } else {
+        permissionEpisodeToasted = false
+        deps.shell.setSaveState('saved')
+      }
     }
     deps.shell.setTitle(deps.session.name, false)
   }

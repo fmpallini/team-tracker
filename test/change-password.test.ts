@@ -30,7 +30,7 @@ function makeShell(): Shell {
 }
 
 function makeBackupCtl(): BackupController {
-  return { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false) }
+  return { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false) }
 }
 
 beforeEach(() => {
@@ -116,6 +116,7 @@ test('a rejecting backup write is swallowed — password still flips and the doc
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => {}),
     hasMissingGrant: vi.fn(async () => false),
+    checkOrphaned: vi.fn(async () => false),
   }
   const setPassword = vi.fn()
   const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
