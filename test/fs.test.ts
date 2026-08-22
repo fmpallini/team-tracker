@@ -50,11 +50,45 @@ function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
   const handle = {
     name: 'launched.tmv',
     async getFile() { return { lastModified: 42, async arrayBuffer() { return new Uint8Array([7]).buffer } } },
-    async queryPermission() { return permission },
-    async requestPermission() { return permission === 'prompt' ? 'granted' : permission },
+    queryPermission: vi.fn(async () => permission),
+    requestPermission: vi.fn(async () => (permission === 'prompt' ? 'granted' : permission)),
   } as unknown as FileSystemFileHandle
   return handle
 }
+
+// Regression: investigating a reported installed-PWA crash correlated with
+// this exact native dialog (see the comment on openFromHandle in
+// src/core/fs.ts) — it must ask for the minimum permission needed at open
+// time ('read'), not 'readwrite'; write access is upgraded lazily on first
+// save via save-controller.ts's own NotAllowedError recovery.
+test('openFromHandle requests read-only permission, never readwrite', async () => {
+  const handle = mockLaunchHandle('prompt')
+  await openFromHandle(handle)
+  const queryPermission = handle.queryPermission as ReturnType<typeof vi.fn>
+  const requestPermission = handle.requestPermission as ReturnType<typeof vi.fn>
+  expect(queryPermission).toHaveBeenCalledWith({ mode: 'read' })
+  expect(requestPermission).toHaveBeenCalledWith({ mode: 'read' })
+})
+
+// The settle delay (two rAF ticks) exists to let the browser's window/
+// compositor state settle after a native dialog closes — it should only
+// fire when a dialog was actually shown (requestPermission called), not
+// when the grant was already in place, since there's nothing to settle from.
+test('openFromHandle does not wait for animation frames when permission was already granted', async () => {
+  const handle = mockLaunchHandle('granted')
+  const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
+  await openFromHandle(handle)
+  expect(rafSpy).not.toHaveBeenCalled()
+  rafSpy.mockRestore()
+})
+
+test('openFromHandle waits two animation frames after a native permission dialog resolves, before returning', async () => {
+  const handle = mockLaunchHandle('prompt')
+  const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
+  await openFromHandle(handle)
+  expect(rafSpy).toHaveBeenCalledTimes(2)
+  rafSpy.mockRestore()
+})
 
 test('openFromHandle reads the file when permission is already granted', async () => {
   const handle = mockLaunchHandle('granted')

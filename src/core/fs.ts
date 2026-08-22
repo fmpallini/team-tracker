@@ -90,12 +90,39 @@ export async function pickCreateBackup(suggestedName: string, startIn?: FileSyst
 }
 
 /**
+ * Two animation-frame ticks — long enough for the browser to paint at least
+ * once — before the caller does a large synchronous DOM build. Investigating
+ * a reported installed-PWA crash on reopen-last (see core/debug-log.ts):
+ * every crash correlates with a native FileSystemFileHandle permission
+ * dialog closing on a titlebar-less standalone-app window, immediately
+ * followed by openFromHandle's caller building the whole app shell — a
+ * window/compositor state right after a native dialog dismissal that may not
+ * have "settled" yet. Cheap and harmless if this turns out not to be it.
+ */
+function settleAfterNativeDialog(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
+/**
  * Shared by `reopenLast` (handle pulled from IndexedDB) and the File Handling
  * API launch path (handle handed in by the OS/browser on `.tmv` double-click,
  * see `pwa/manifest.json`'s `file_handlers` and `ui/start.ts`'s
  * `window.launchQueue` consumer) — both need the same permission re-check
  * before reading, since a handle persisted or received across a launch
  * doesn't carry its earlier grant with it.
+ *
+ * Requests `'read'` only, not `'readwrite'`: this runs on the bare start
+ * screen, before any shell/store exists, so there's nowhere to route a
+ * mid-open failure other than "unexpected error". Asking for less here and
+ * upgrading to write lazily lets a denied/lapsed write grant surface through
+ * the already-existing, already-tested path instead — `doSave()`'s
+ * `NotAllowedError` catch (save-controller.ts) — which `pickOpen` (granted
+ * read-only by the picker itself) already relies on for its first save. It's
+ * also possible (untested until this ships) that a `'read'`-only grant
+ * survives a PWA relaunch where `'readwrite'` doesn't, in which case this
+ * skips the native dialog — and the crash it's implicated in — entirely.
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,
@@ -103,13 +130,19 @@ export async function openFromHandle(
 ): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   logEvent('fs.openFromHandle', 'start')
   try {
-    let permission = await handle.queryPermission({ mode: 'readwrite' })
+    let permission = await handle.queryPermission({ mode: 'read' })
     logEvent('fs.openFromHandle', `queryPermission -> ${permission}`)
+    let showedDialog = false
     if (permission !== 'granted') {
-      permission = await handle.requestPermission({ mode: 'readwrite' })
+      permission = await handle.requestPermission({ mode: 'read' })
+      showedDialog = true
       logEvent('fs.openFromHandle', `requestPermission -> ${permission}`)
     }
     if (permission !== 'granted') return null
+    if (showedDialog) {
+      logEvent('fs.openFromHandle', 'settling after native permission dialog')
+      await settleAfterNativeDialog()
+    }
     logEvent('fs.openFromHandle', 'reading file')
     const { bytes, lastModified } = await readHandle(handle)
     logEvent('fs.openFromHandle', `read ok, ${bytes.length} bytes`)
