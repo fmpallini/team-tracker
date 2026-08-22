@@ -11,16 +11,57 @@ import {
   writeFile,
   downloadFallback,
   openFromHandle,
-  NeedsRepickError,
   type FileSession,
 } from '../core/fs'
 import { idbGet } from '../core/idb'
-import { logEvent } from '../core/debug-log'
 import { decryptDocument, encryptDocument, serializePlain, parsePlain, WrongPasswordError, CorruptFileError } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
+
+// "Reopen last file" hidden from regular users: on an installed PWA, a lapsed
+// permission grant makes core/fs.ts's openFromHandle() show Chromium's
+// "Persistent Permissions" dropdown, which crashes the app in this
+// titlebar-less standalone window — a Chromium bug with no app-level fix (see
+// openFromHandle's doc comment). The button — and the requestPermission()
+// machinery behind it — are left fully working so this can be re-checked from
+// the console after a future Chromium update, without exposing the crash risk
+// to regular users in the meantime: run `ttShowReopenButton()` in devtools to
+// reveal it (persists across reloads), `ttHideReopenButton()` to hide it again.
+const SHOW_REOPEN_KEY = 'tt-show-reopen'
+
+declare global {
+  interface Window {
+    ttShowReopenButton?: () => void
+    ttHideReopenButton?: () => void
+  }
+}
+
+function reopenButtonRevealed(): boolean {
+  try {
+    return localStorage.getItem(SHOW_REOPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+window.ttShowReopenButton = () => {
+  try {
+    localStorage.setItem(SHOW_REOPEN_KEY, '1')
+  } catch {
+    // ignore — see reopenButtonRevealed
+  }
+  location.reload()
+}
+window.ttHideReopenButton = () => {
+  try {
+    localStorage.removeItem(SHOW_REOPEN_KEY)
+  } catch {
+    // ignore — see reopenButtonRevealed
+  }
+  location.reload()
+}
 
 // File Handling API (Chromium, PWA-installed only): OS-level "open with" /
 // double-click on a .tmv file launches the app and hands it the file's
@@ -90,7 +131,6 @@ export function showStartScreen(
 
   function reportUnexpected(e: unknown): void {
     console.error(e)
-    logEvent('start.reportUnexpected', String(e))
     showErrorModal(locale, t(locale, 'err_unexpected'))
   }
 
@@ -126,16 +166,12 @@ export function showStartScreen(
   // in how the pair is obtained. A plain (password-less) file is sniffed
   // first so it can open directly, without ever prompting for a password.
   async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
-    logEvent('start.openAndDecrypt', 'fetching session+bytes')
     const result = await fetchResult()
-    logEvent('start.openAndDecrypt', result ? 'got session+bytes' : 'fetchResult returned null (cancelled/denied)')
     if (!result) return
     let plainDoc: Doc | null
     try {
       plainDoc = parsePlain(result.bytes)
-      logEvent('start.openAndDecrypt', `parsePlain -> ${plainDoc ? 'plain doc' : 'encrypted, needs password'}`)
     } catch (e) {
-      logEvent('start.openAndDecrypt', `parsePlain threw: ${String(e)}`)
       if (e instanceof CorruptFileError) {
         showErrorModal(locale, t(locale, 'err_corrupt_file'))
         return
@@ -148,43 +184,15 @@ export function showStartScreen(
     }
     if (plainDoc) {
       onOpen(result.session, plainDoc, null)
-      logEvent('start.openAndDecrypt', 'onOpen called (plain doc)')
       return
     }
     const outcome = await decryptLoop(result.bytes)
-    logEvent('start.openAndDecrypt', outcome ? 'decryptLoop succeeded' : 'decryptLoop cancelled/failed')
-    if (outcome) {
-      onOpen(result.session, outcome.doc, outcome.password)
-      logEvent('start.openAndDecrypt', 'onOpen called (decrypted doc)')
-    }
+    if (outcome) onOpen(result.session, outcome.doc, outcome.password)
   }
 
   const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
-
-  /**
-   * Shared by `handleReopenLast` and `handleLaunchFile`: both go through
-   * `openFromHandle`, which throws `NeedsRepickError` instead of ever calling
-   * `requestPermission()` on a lapsed grant (see that class's doc comment in
-   * core/fs.ts for the crash history behind this). Falls back to the plain
-   * file picker, pre-pointed at the same folder, so "reopen last" still ends
-   * up open — just via one extra click — instead of the crashing dialog.
-   */
-  async function openWithRepickFallback(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
-    try {
-      await openAndDecrypt(fetchResult)
-    } catch (e) {
-      if (!(e instanceof NeedsRepickError)) throw e
-      logEvent('start.openWithRepickFallback', 'permission lapsed, falling back to file picker')
-      toast(t(locale, 'reopen_needs_repick_toast'))
-      await openAndDecrypt(() => pickOpen(e.handle))
-    }
-  }
-
-  const handleReopenLast = (): Promise<void> => {
-    logEvent('start.handleReopenLast', 'clicked')
-    return openWithRepickFallback(reopenLast)
-  }
-  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openWithRepickFallback(() => openFromHandle(handle))
+  const handleReopenLast = (): Promise<void> => openAndDecrypt(reopenLast)
+  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
 
   async function handleOpenFallbackFile(file: File): Promise<void> {
     const buf = await file.arrayBuffer()
@@ -347,7 +355,7 @@ export function showStartScreen(
 
   idbGet('lastHandle')
     .then((handle) => {
-      if (handle !== undefined) reopenBtn.style.display = ''
+      if (handle !== undefined && reopenButtonRevealed()) reopenBtn.style.display = ''
     })
     .catch((e: unknown) => console.error(e))
 

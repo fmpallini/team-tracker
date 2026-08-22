@@ -6,6 +6,7 @@
   "lang": "en-US",
   "version": "__APP_VERSION__",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
   "start_url": "./",
   "scope": "./",
   "background_color": "#1c1a14",

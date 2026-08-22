@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.6] - 2026-08-22
+
+### Changed
+- "Reopen last file" is temporarily removed from the start screen: the previous fix traded the crash for an extra confirmation step every time, which wasn't a good trade. The underlying browser crash (installed app only, on a lapsed file permission) still has no clean fix, so the button is hidden until a browser update resolves it.
+- The installed app now asks Windows/ChromeOS for a titlebar area when available, as part of investigating that same crash.
+
 ## [2.4.5] - 2026-08-22
 
 ### Fixed

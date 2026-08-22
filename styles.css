@@ -156,6 +156,26 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-right { justify-self: end; }
 .tt-header-center { justify-self: center; min-width: 0; }
 
+/* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
+   draws its min/maximize/close caption buttons over the top-right corner of
+   the window instead of a separate titlebar strip above the page — turning
+   this existing header into that titlebar area rather than adding a new one.
+   This is an experiment to test whether restoring an OS titlebar area avoids
+   the crash documented in core/fs.ts's openFromHandle (theorized trigger:
+   Chromium's "Persistent Permissions" dropdown rendering in a titlebar-less
+   window). Only takes effect when the browser actually grants the overlay
+   (see `display_override` in pwa/manifest.json) — everywhere else, including
+   the non-PWA build, this block simply never matches. */
+@media (display-mode: window-controls-overlay) {
+  .tt-shell { padding-top: env(titlebar-area-height, 2.5rem); }
+  .tt-header {
+    position: fixed; top: env(titlebar-area-y, 0); left: env(titlebar-area-x, 0);
+    width: env(titlebar-area-width, 100%); height: env(titlebar-area-height, 2.5rem);
+    -webkit-app-region: drag; app-region: drag; z-index: 20;
+  }
+  .tt-header-left, .tt-header-center, .tt-header-right { -webkit-app-region: no-drag; app-region: no-drag; }
+}
+
 /* Sidebar collapse toggle: lives in the header (prepended before the app
    name button, see sidebar.ts) rather than inside the sidebar, so it stays
    put — and the sidebar can shrink to 0 — regardless of collapsed state.
