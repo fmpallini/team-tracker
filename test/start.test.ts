@@ -11,13 +11,6 @@ const fsMocks = vi.hoisted(() => ({
   writeFile: vi.fn(async () => {}),
   downloadFallback: vi.fn(),
   openFromHandle: vi.fn(),
-  // A real class (not a plain vi.fn stub) so start.ts's `e instanceof
-  // NeedsRepickError` checks work against errors constructed here.
-  NeedsRepickError: class NeedsRepickError extends Error {
-    constructor(public readonly handle: FileSystemFileHandle) {
-      super('permission lapsed')
-    }
-  },
 }))
 vi.mock('../src/core/fs', () => fsMocks)
 
@@ -44,6 +37,7 @@ function flush(): Promise<void> {
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>'
+  localStorage.removeItem('tt-show-reopen')
   fsMocks.supportsFsApi = true
   fsMocks.pickOpen.mockReset()
   fsMocks.pickCreate.mockReset()
@@ -89,12 +83,69 @@ test('renders start screen with open/create buttons but no reopen when no lastHa
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
 })
 
-test('shows reopen button when idbGet resolves a handle', async () => {
+// "Reopen last file" is hidden from regular users even when a lastHandle
+// exists — see start.ts's SHOW_REOPEN_KEY doc comment: the underlying
+// Chromium crash on a lapsed grant has no app-level fix, so the button (and
+// the requestPermission() machinery behind it) is kept working but out of
+// sight, revealed only via the ttShowReopenButton() console command below.
+test('reopen button stays hidden even with a lastHandle, unless explicitly revealed', async () => {
+  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
+  showStartScreen('en-US', () => {})
+  await flush()
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
+  expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
+})
+
+test('shows reopen button when idbGet resolves a handle and the reveal flag is set', async () => {
+  localStorage.setItem('tt-show-reopen', '1')
   idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
   showStartScreen('en-US', () => {})
   await flush()
   const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('')
+})
+
+test('ttShowReopenButton sets the reveal flag; ttHideReopenButton clears it', () => {
+  const originalLocation = window.location
+  const reload = vi.fn()
+  Object.defineProperty(window, 'location', { value: { ...originalLocation, reload }, writable: true, configurable: true })
+  try {
+    window.ttShowReopenButton!()
+    expect(localStorage.getItem('tt-show-reopen')).toBe('1')
+    window.ttHideReopenButton!()
+    expect(localStorage.getItem('tt-show-reopen')).toBeNull()
+    expect(reload).toHaveBeenCalledTimes(2)
+  } finally {
+    Object.defineProperty(window, 'location', { value: originalLocation, writable: true, configurable: true })
+  }
+})
+
+test('reopen-last: opens directly via reopenLast (no fallback dance)', async () => {
+  localStorage.setItem('tt-show-reopen', '1')
+  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
+  const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'last.tmv', lastModified: 1 }
+  const bytes = new Uint8Array([9])
+  fsMocks.reopenLast.mockResolvedValue({ session, bytes })
+  const doc = createEmptyDocument('en-US')
+  cryptoMocks.decryptDocument.mockResolvedValue(doc)
+
+  let opened: [FileSession, Doc, string | null] | null = null
+  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  await flush()
+
+  clickByText('⏪ Reopen last…')
+  await flush()
+
+  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+  pwInput.value = 'right'
+  pwInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+  await flush()
+  await flush()
+
+  expect(fsMocks.reopenLast).toHaveBeenCalledTimes(1)
+  expect(opened).not.toBeNull()
+  expect(opened![0]).toBe(session)
 })
 
 test('file handling launch: consumes launchQueue file, decrypts, and calls onOpen', async () => {
@@ -140,71 +191,6 @@ test('file handling launch: fetchResult resolving null (e.g. picker cancel) is a
 
   expect(onOpen).not.toHaveBeenCalled()
   expect(document.querySelector('input[name="tt-password"]')).toBeNull()
-})
-
-// Regression: openFromHandle/reopenLast throw NeedsRepickError instead of
-// ever calling requestPermission() on a lapsed grant (see that class's doc
-// comment in src/core/fs.ts) — the native dialog that triggers is the one a
-// real-device repro pinned as an installed-PWA crash. Both open routes that
-// can hit a lapsed grant must fall back to the plain file picker instead.
-test('file handling launch: NeedsRepickError falls back to the file picker, then opens normally', async () => {
-  const getConsumer = mockLaunchQueue()
-  const handle = {} as unknown as FileSystemFileHandle
-  fsMocks.openFromHandle.mockRejectedValue(new fsMocks.NeedsRepickError(handle))
-  const pickedSession: FileSession = { handle, name: 'repicked.tmv', lastModified: 2 }
-  const bytes = new Uint8Array([9])
-  fsMocks.pickOpen.mockResolvedValue({ session: pickedSession, bytes })
-  const doc = createEmptyDocument('en-US')
-  cryptoMocks.decryptDocument.mockResolvedValue(doc)
-
-  let opened: [FileSession, Doc, string | null] | null = null
-  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
-  await flush()
-
-  getConsumer()({ files: [handle] })
-  await flush()
-
-  expect(fsMocks.pickOpen).toHaveBeenCalledWith(handle)
-
-  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
-  pwInput.value = 'right'
-  pwInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
-  await flush()
-  await flush()
-
-  expect(opened).not.toBeNull()
-  expect(opened![0]).toBe(pickedSession)
-})
-
-test('reopen-last: NeedsRepickError falls back to the file picker, then opens normally', async () => {
-  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
-  const handle = {} as unknown as FileSystemFileHandle
-  fsMocks.reopenLast.mockRejectedValue(new fsMocks.NeedsRepickError(handle))
-  const pickedSession: FileSession = { handle, name: 'repicked.tmv', lastModified: 2 }
-  const bytes = new Uint8Array([9])
-  fsMocks.pickOpen.mockResolvedValue({ session: pickedSession, bytes })
-  const doc = createEmptyDocument('en-US')
-  cryptoMocks.decryptDocument.mockResolvedValue(doc)
-
-  let opened: [FileSession, Doc, string | null] | null = null
-  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
-  await flush()
-
-  clickByText('⏪ Reopen last…')
-  await flush()
-
-  expect(fsMocks.pickOpen).toHaveBeenCalledWith(handle)
-
-  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
-  pwInput.value = 'right'
-  pwInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
-  await flush()
-  await flush()
-
-  expect(opened).not.toBeNull()
-  expect(opened![0]).toBe(pickedSession)
 })
 
 test('open flow: wrong password loops until correct, then calls onOpen', async () => {

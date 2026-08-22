@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, sameEntry, pickCreateBackup, ExternalChangeError, NeedsRepickError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number) {
   let mtime = initialMtime
@@ -50,26 +50,11 @@ function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
   const handle = {
     name: 'launched.tmv',
     async getFile() { return { lastModified: 42, async arrayBuffer() { return new Uint8Array([7]).buffer } } },
-    queryPermission: vi.fn(async () => permission),
-    requestPermission: vi.fn(async () => (permission === 'prompt' ? 'granted' : permission)),
+    async queryPermission() { return permission },
+    async requestPermission() { return permission === 'prompt' ? 'granted' : permission },
   } as unknown as FileSystemFileHandle
   return handle
 }
-
-// Regression: openFromHandle used to call requestPermission({mode:'readwrite'})
-// on a lapsed grant — the exact call that shows Chromium's "Persistent
-// Permissions" three-button dropdown, which a real-device repro (debug log,
-// screenshots) pinned as the actual crash trigger in the installed PWA. It
-// must never call requestPermission at all now — see NeedsRepickError's doc
-// comment in src/core/fs.ts for the full history.
-test('openFromHandle only ever queries permission (read-only), never requests it', async () => {
-  const handle = mockLaunchHandle('prompt')
-  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(NeedsRepickError)
-  const queryPermission = handle.queryPermission as ReturnType<typeof vi.fn>
-  const requestPermission = handle.requestPermission as ReturnType<typeof vi.fn>
-  expect(queryPermission).toHaveBeenCalledWith({ mode: 'read' })
-  expect(requestPermission).not.toHaveBeenCalled()
-})
 
 test('openFromHandle reads the file when permission is already granted', async () => {
   const handle = mockLaunchHandle('granted')
@@ -79,16 +64,17 @@ test('openFromHandle reads the file when permission is already granted', async (
   expect(result!.bytes).toEqual(new Uint8Array([7]))
 })
 
-test('openFromHandle throws NeedsRepickError (carrying the handle) when permission is only "prompt"', async () => {
+test('openFromHandle requests permission when not yet granted, then reads', async () => {
   const handle = mockLaunchHandle('prompt')
-  const error = await openFromHandle(handle).catch((e: unknown) => e)
-  expect(error).toBeInstanceOf(NeedsRepickError)
-  expect((error as NeedsRepickError).handle).toBe(handle)
+  const result = await openFromHandle(handle)
+  expect(result).not.toBeNull()
+  expect(result!.bytes).toEqual(new Uint8Array([7]))
 })
 
-test('openFromHandle throws NeedsRepickError when permission is denied', async () => {
+test('openFromHandle returns null when permission is denied', async () => {
   const handle = mockLaunchHandle('denied')
-  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(NeedsRepickError)
+  const result = await openFromHandle(handle)
+  expect(result).toBeNull()
 })
 
 test('openFromHandle persists the handle to lastHandle by default (the File Handling API launch path)', async () => {

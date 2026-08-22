@@ -1,5 +1,4 @@
 import { idbGet, idbSet } from './idb'
-import { logEvent } from './debug-log'
 
 export interface FileSession {
   handle: FileSystemFileHandle | null // null in fallback mode
@@ -21,12 +20,7 @@ async function readHandle(handle: FileSystemFileHandle): Promise<{ bytes: Uint8A
   return { bytes: new Uint8Array(buf), lastModified: file.lastModified }
 }
 
-/**
- * `startIn`, when given a stale handle (e.g. `NeedsRepickError.handle` below),
- * opens the picker in that file's folder by default — same convenience as
- * `pickCreateBackup`'s `startIn`, a starting point rather than a guarantee.
- */
-export async function pickOpen(startIn?: FileSystemHandle): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+export async function pickOpen(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   try {
     const [handle] = await window.showOpenFilePicker({
       // Chromium expands a registered MIME type like application/octet-stream
@@ -35,7 +29,6 @@ export async function pickOpen(startIn?: FileSystemHandle): Promise<{ session: F
       // specific MIME type has no OS associations to merge in, keeping the
       // filter to just the extension below.
       types: [{ description: 'Team Tracker', accept: { 'application/vnd.teamtracker.tmv': ['.tmv'] } }],
-      startIn,
     })
     if (!handle) return null
     const { bytes, lastModified } = await readHandle(handle)
@@ -96,73 +89,44 @@ export async function pickCreateBackup(suggestedName: string, startIn?: FileSyst
 }
 
 /**
- * Thrown by `openFromHandle` when the handle's permission has lapsed and
- * needs re-establishing. Callers (ui/start.ts) catch this and fall back to
- * `pickOpen(e.handle)` — the plain OS file picker, pre-pointed at the same
- * folder — instead of the path that used to lead here: `requestPermission()`.
- *
- * That's deliberate, not an oversight. Two earlier fixes tried to make
- * `requestPermission()` safe to call on this path — first asking for `'read'`
- * instead of `'readwrite'`, then adding a settle delay after it resolved —
- * and a real-device repro with the debug log (core/debug-log.ts) disproved
- * both: full JS-level success, zero errors, crash anyway. The user then
- * isolated the actual trigger by screenshotting two *different* native
- * dialogs Chromium shows for a lapsed grant: a plain "Allow/Don't allow"
- * confirm (harmless), and a three-button "Allow this time / Allow on every
- * visit / Don't allow" dropdown — Chrome's "Persistent Permissions" UI for
- * installed PWAs (chrome://flags/#file-system-access-persistent-permission,
- * itself since removed as the feature's now permanent/GA) — which is the one
- * that crashes, every time, in this titlebar-less standalone-app window.
- * `showOpenFilePicker()`'s own native dialog is a different, simpler surface
- * that has never crashed in any repro, so this routes through that instead of
- * ever inviting Chromium to show the dropdown.
- */
-export class NeedsRepickError extends Error {
-  constructor(public readonly handle: FileSystemFileHandle) {
-    super('permission lapsed — caller should fall back to pickOpen(handle)')
-  }
-}
-
-/**
  * Shared by `reopenLast` (handle pulled from IndexedDB) and the File Handling
  * API launch path (handle handed in by the OS/browser on `.tmv` double-click,
  * see `pwa/manifest.json`'s `file_handlers` and `ui/start.ts`'s
  * `window.launchQueue` consumer) — both need the same permission re-check
  * before reading, since a handle persisted or received across a launch
- * doesn't carry its earlier grant with it. See `NeedsRepickError` above for
- * why a lapsed grant throws instead of requesting it here.
+ * doesn't carry its earlier grant with it.
+ *
+ * Known issue: on an installed PWA, a lapsed grant makes `requestPermission()`
+ * below show Chromium's "Persistent Permissions" three-button dropdown
+ * ("Allow this time" / "Allow on every visit" / "Don't allow"), which crashes
+ * the app in this titlebar-less standalone window — confirmed via real-device
+ * repro (screenshots showing that specific dialog, as opposed to the plain
+ * "Allow/Don't allow" confirm, which never crashes). No app-level fix exists:
+ * it's a Chromium bug, the gating flag has since been removed (feature is
+ * fully GA), and there's no manifest-level way to pre-grant this permission.
+ * Rather than routing around it (which previously meant an extra
+ * confirmation step even when the bug doesn't fire), "Reopen last file" is
+ * hidden from regular users in ui/start.ts and this function is left as-is,
+ * so it can be re-tested from the console after a future Chromium update —
+ * see ui/start.ts's `window.ttShowReopenButton`.
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,
   persist = true
 ): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
-  logEvent('fs.openFromHandle', 'start')
-  const permission = await handle.queryPermission({ mode: 'read' })
-  logEvent('fs.openFromHandle', `queryPermission -> ${permission}`)
-  if (permission !== 'granted') {
-    logEvent('fs.openFromHandle', 'not granted — needs re-pick via file dialog')
-    throw new NeedsRepickError(handle)
-  }
-  try {
-    logEvent('fs.openFromHandle', 'reading file')
-    const { bytes, lastModified } = await readHandle(handle)
-    logEvent('fs.openFromHandle', `read ok, ${bytes.length} bytes`)
-    const session: FileSession = { handle, name: handle.name, lastModified }
-    // `reopenLast` passes persist:false — the handle it hands in came from this
-    // same IndexedDB entry, so writing it straight back is a no-op round trip.
-    if (persist) await idbSet('lastHandle', handle)
-    logEvent('fs.openFromHandle', 'done')
-    return { session, bytes }
-  } catch (e) {
-    logEvent('fs.openFromHandle', `threw: ${String(e)}`)
-    throw e
-  }
+  let permission = await handle.queryPermission({ mode: 'readwrite' })
+  if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
+  if (permission !== 'granted') return null
+  const { bytes, lastModified } = await readHandle(handle)
+  const session: FileSession = { handle, name: handle.name, lastModified }
+  // `reopenLast` passes persist:false — the handle it hands in came from this
+  // same IndexedDB entry, so writing it straight back is a no-op round trip.
+  if (persist) await idbSet('lastHandle', handle)
+  return { session, bytes }
 }
 
 export async function reopenLast(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
-  logEvent('fs.reopenLast', 'start')
   const handle = await idbGet<FileSystemFileHandle>('lastHandle')
-  logEvent('fs.reopenLast', handle ? 'handle found in IDB' : 'no handle in IDB')
   if (!handle) return null
   return openFromHandle(handle, false)
 }
