@@ -4,23 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
-## [2.4.5] - 2026-08-22
+## [2.4.3] - 2026-08-22
+
+### Added
+- When installed as an app, the icon in the taskbar/dock now shows a badge with your total overdue and due-soon count across all teams, so you can see it without opening the window.
+- The toast that appears when daily backup gets disabled because its file wasn't found now has a "Set up backup…" button that jumps straight to the backup settings, instead of just the earlier heads-up notice with no way to act on it.
 
 ### Fixed
 - Opening a file (reopen-last, "Open…", or double-clicking a .tmv) that fails partway through now shows an error message instead of silently leaving a half-loaded, unresponsive screen with no feedback.
 
 ### Changed
 - Added internal diagnostics around file-opening to help track down a reported crash on "reopen last file" in the installed app — no visible change in normal use.
-
-## [2.4.4] - 2026-08-22
-
-### Added
-- The toast that appears when daily backup gets disabled because its file wasn't found now has a "Set up backup…" button that jumps straight to the backup settings, instead of just the earlier heads-up notice with no way to act on it.
-
-## [2.4.3] - 2026-08-22
-
-### Added
-- When installed as an app, the icon in the taskbar/dock now shows a badge with your total overdue and due-soon count across all teams, so you can see it without opening the window.
 
 ## [2.4.2] - 2026-08-21
 
