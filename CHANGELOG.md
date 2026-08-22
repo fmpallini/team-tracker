@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.4] - 2026-08-22
+
+### Fixed
+- Attempted fix for a crash on "Reopen last file" in the installed app: it now asks for read-only access up front instead of read-write (write access is still requested normally the moment you save), and pauses briefly after the permission prompt closes before rebuilding the screen.
+- The taskbar/dock badge no longer shows a stale count left over from a previous session — it's cleared on launch (before any file is open) and when you close the current file.
+
 ## [2.4.3] - 2026-08-22
 
 ### Added

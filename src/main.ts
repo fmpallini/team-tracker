@@ -25,6 +25,7 @@ import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSess
 import { forceWrite, readCurrent, sameEntry } from './core/fs'
 import { toast, showErrorModal } from './ui/modal'
 import { logEvent } from './core/debug-log'
+import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
@@ -446,6 +447,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     ;(async () => {
       await teardownApp({ store, saveCtl, dispose })
       app = null
+      // No file open once we're back at the start screen — same reasoning as
+      // the launch-time clear above.
+      if (__PWA__) updateAppBadge(0)
       showStartScreen(store.doc.prefs.locale, openDocument)
     })().catch((e) => {
       console.error(e)
@@ -634,6 +638,11 @@ async function runUpdateCheck(): Promise<void> {
   document.body.appendChild(banner)
 }
 
+// The badge only means anything while a team file is open (it mirrors that
+// file's own overdue+due-soon total, set by sidebar.ts on each render) — an
+// app launch with no file open yet must never show a stale count left over
+// from whatever was open in a previous session.
+if (__PWA__) updateAppBadge(0)
 showStartScreen(detectBrowserLocale(), openDocument)
 
 void runUpdateCheck()
