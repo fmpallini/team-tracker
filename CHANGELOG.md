@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.3] - 2026-08-22
+
+### Added
+- When installed as an app, the icon in the taskbar/dock now shows a badge with your total overdue and due-soon count across all teams, so you can see it without opening the window.
+
 ## [2.4.2] - 2026-08-21
 
 ### Fixed

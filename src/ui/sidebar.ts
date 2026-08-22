@@ -7,6 +7,7 @@ import type { Loc, Team } from '../core/types'
 import { lastLocForTeam, locsConflict } from '../core/nav'
 import { t, todayIso, type Locale } from '../core/i18n'
 import { collectDueItems, type DueBuckets } from '../core/due'
+import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport } from './dom'
@@ -369,6 +370,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   function renderDueBadge(buckets: DueBuckets): void {
     const total = buckets.overdue.length + buckets.dueSoon.length
     dueBtn.classList.toggle('tt-due-empty', total === 0)
+    // OS-level badge (taskbar/dock/launcher icon) only makes sense for an
+    // installed PWA — file:// build has no such surface to badge.
+    if (__PWA__) updateAppBadge(total)
   }
 
   shell.sidebar.innerHTML = ''
