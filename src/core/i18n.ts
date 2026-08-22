@@ -293,6 +293,7 @@ const pt = {
   person_root_drop_hint: '⬆️ Solte aqui para mover ao nível principal',
   backup_write_failed_toast: 'Falha ao gravar o backup automático — verifique o local do arquivo .bck',
   backup_orphaned_toast: 'Backup automático desativado — o arquivo de backup configurado não foi encontrado neste computador',
+  backup_orphaned_action: 'Configurar backup…',
   // An empty tree used to borrow `pane_empty` ("Nenhum módulo aberto"), which
   // told the user the opposite of what was true — the module *is* open. Each
   // group gets its own invitation instead, and the members copy carries the
@@ -768,6 +769,7 @@ const en: Record<MsgKey, string> = {
   about_github_link: 'Source code on GitHub ↗',
   backup_write_failed_toast: 'Automatic backup failed — check the .bck file\'s location',
   backup_orphaned_toast: 'Automatic backup disabled — the configured backup file wasn\'t found on this computer',
+  backup_orphaned_action: 'Set up backup…',
   person_box_hint: 'Double-click to open person notes',
   person_root_drop_hint: '⬆️ Drop here to move to the top level',
   people_empty_members: 'No members yet. Add the first one, then drag people onto each other to build the reporting line.',

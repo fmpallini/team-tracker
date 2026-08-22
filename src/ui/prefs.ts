@@ -62,7 +62,7 @@ export function onLocaleChanged(cb: () => void): () => void {
   }
 }
 
-type TabId = 'general' | 'advanced' | 'templates' | 'tags' | 'security' | 'data' | 'about'
+export type TabId = 'general' | 'advanced' | 'templates' | 'tags' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
@@ -138,8 +138,8 @@ function scopeLabel(locale: Locale, scope: Template['scope']): string {
   return opt ? t(locale, opt.key) : scope
 }
 
-export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: PrefsAppCtl): void {
-  let activeTab: TabId = 'general'
+export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: PrefsAppCtl, initialTab: TabId = 'general'): void {
+  let activeTab: TabId = initialTab
 
   function radioField(
     name: string,

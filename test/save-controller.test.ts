@@ -886,6 +886,63 @@ test('a successful primary save with an orphaned backup reference disables the p
   expect(modalMocks.toast).toHaveBeenCalledTimes(1)
 })
 
+test('the orphaned-backup toast omits its action when onOpenBackupPrefs is not wired', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => {
+    d.prefs.autoSaveMin = 9
+    d.prefs.dailyBackupEnabled = true
+    d.prefs.backupHandleId = 'stale-id'
+  })
+  const shell = makeShell()
+  const session = makeSession()
+  const backupCtl = {
+    writeBackupNow: vi.fn(async () => {}),
+    maybeWriteBackup: vi.fn(async () => {}),
+    regrantPermission: vi.fn(async () => {}),
+    hasMissingGrant: vi.fn(async () => false),
+    checkOrphaned: vi.fn(async () => store.doc.prefs.dailyBackupEnabled),
+  }
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
+  })
+
+  await ctl.saveNow()
+  await ctl.flush()
+
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  expect(opts.action).toBeUndefined()
+})
+
+test('the orphaned-backup toast action opens backup prefs when onOpenBackupPrefs is wired', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => {
+    d.prefs.autoSaveMin = 9
+    d.prefs.dailyBackupEnabled = true
+    d.prefs.backupHandleId = 'stale-id'
+  })
+  const shell = makeShell()
+  const session = makeSession()
+  const backupCtl = {
+    writeBackupNow: vi.fn(async () => {}),
+    maybeWriteBackup: vi.fn(async () => {}),
+    regrantPermission: vi.fn(async () => {}),
+    hasMissingGrant: vi.fn(async () => false),
+    checkOrphaned: vi.fn(async () => store.doc.prefs.dailyBackupEnabled),
+  }
+  const onOpenBackupPrefs = vi.fn()
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl, onOpenBackupPrefs,
+  })
+
+  await ctl.saveNow()
+  await ctl.flush()
+
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { label: string; onClick: () => void } }]
+  expect(opts.action?.label).toBeTruthy()
+  opts.action?.onClick()
+  expect(onOpenBackupPrefs).toHaveBeenCalledTimes(1)
+})
+
 test('backupCtl is optional — a save with none configured does not throw', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   store.update((d) => { d.prefs.autoSaveMin = 9 })

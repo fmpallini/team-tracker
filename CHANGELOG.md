@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.4] - 2026-08-22
+
+### Added
+- The toast that appears when daily backup gets disabled because its file wasn't found now has a "Set up backup…" button that jumps straight to the backup settings, instead of just the earlier heads-up notice with no way to act on it.
+
 ## [2.4.3] - 2026-08-22
 
 ### Added
