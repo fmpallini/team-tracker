@@ -38,6 +38,16 @@ declare global {
 function installShimInPage(): void {
   const DEFAULT_NAME = 'team-tracker.tmv'
 
+  // "Reopen last file" is hidden from regular users by default (src/ui/
+  // start.ts's SHOW_REOPEN_KEY) — revealed here so specs can drive that real
+  // flow the same way a developer would via the console (ttShowReopenButton),
+  // just without its location.reload() round trip.
+  try {
+    localStorage.setItem('tt-show-reopen', '1')
+  } catch {
+    // ignore — matches start.ts's own best-effort localStorage handling
+  }
+
   window.showSaveFilePicker = (async (options?: { suggestedName?: string }) => {
     const root = await navigator.storage.getDirectory()
     const name = options?.suggestedName ?? DEFAULT_NAME
