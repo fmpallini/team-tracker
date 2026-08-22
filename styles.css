@@ -160,18 +160,21 @@ body { background: var(--bg); color: var(--fg); }
    draws its min/maximize/close caption buttons over the top-right corner of
    the window instead of a separate titlebar strip above the page — turning
    this existing header into that titlebar area rather than adding a new one.
-   This is an experiment to test whether restoring an OS titlebar area avoids
-   the crash documented in core/fs.ts's openFromHandle (theorized trigger:
-   Chromium's "Persistent Permissions" dropdown rendering in a titlebar-less
-   window). Only takes effect when the browser actually grants the overlay
-   (see `display_override` in pwa/manifest.json) — everywhere else, including
-   the non-PWA build, this block simply never matches. */
+   Confirmed fix for the crash documented in core/fs.ts's openFromHandle
+   (trigger: Chromium's "Persistent Permissions" dropdown rendering in a
+   titlebar-less window). Only takes effect when the browser actually grants
+   the overlay (see `display_override` in pwa/manifest.json) — everywhere
+   else, including the non-PWA build, this block simply never matches.
+   Deliberately NOT position:fixed: this reuses the header in its normal grid
+   flow (an earlier fixed/repositioned version broke the rest of the shell's
+   layout, which relies on this row's real height to size everything below
+   it) — just tall and padded enough to clear the caption-button cluster, and
+   marked as the drag region. */
 @media (display-mode: window-controls-overlay) {
-  .tt-shell { padding-top: env(titlebar-area-height, 2.5rem); }
   .tt-header {
-    position: fixed; top: env(titlebar-area-y, 0); left: env(titlebar-area-x, 0);
-    width: env(titlebar-area-width, 100%); height: env(titlebar-area-height, 2.5rem);
-    -webkit-app-region: drag; app-region: drag; z-index: 20;
+    min-height: env(titlebar-area-height, 2.5rem);
+    padding-inline-end: calc(.75rem + 100% - env(titlebar-area-width, 100%));
+    -webkit-app-region: drag; app-region: drag;
   }
   .tt-header-left, .tt-header-center, .tt-header-right { -webkit-app-region: no-drag; app-region: no-drag; }
 }

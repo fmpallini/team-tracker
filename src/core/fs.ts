@@ -96,19 +96,18 @@ export async function pickCreateBackup(suggestedName: string, startIn?: FileSyst
  * before reading, since a handle persisted or received across a launch
  * doesn't carry its earlier grant with it.
  *
- * Known issue: on an installed PWA, a lapsed grant makes `requestPermission()`
- * below show Chromium's "Persistent Permissions" three-button dropdown
- * ("Allow this time" / "Allow on every visit" / "Don't allow"), which crashes
- * the app in this titlebar-less standalone window — confirmed via real-device
- * repro (screenshots showing that specific dialog, as opposed to the plain
- * "Allow/Don't allow" confirm, which never crashes). No app-level fix exists:
- * it's a Chromium bug, the gating flag has since been removed (feature is
- * fully GA), and there's no manifest-level way to pre-grant this permission.
- * Rather than routing around it (which previously meant an extra
- * confirmation step even when the bug doesn't fire), "Reopen last file" is
- * hidden from regular users in ui/start.ts and this function is left as-is,
- * so it can be re-tested from the console after a future Chromium update —
- * see ui/start.ts's `window.ttShowReopenButton`.
+ * Previously crashed on an installed PWA: a lapsed grant made
+ * `requestPermission()` below show Chromium's "Persistent Permissions"
+ * three-button dropdown ("Allow this time" / "Allow on every visit" /
+ * "Don't allow"), which crashed the app specifically in the titlebar-less
+ * standalone window installed PWAs used to run in — confirmed via
+ * real-device repro (screenshots showing that specific dialog, as opposed to
+ * the plain "Allow/Don't allow" confirm, which never crashed). Fixed not
+ * here but in pwa/manifest.json's `display_override: window-controls-overlay`
+ * (plus styles.css), which gives the installed app a real OS titlebar area —
+ * confirmed by the user that the dropdown no longer crashes once that
+ * titlebar exists. This function's original requestPermission() behavior
+ * was restored unchanged once that was confirmed.
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,

@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.7] - 2026-08-22
+
+### Fixed
+- The Window Controls Overlay titlebar area (added in 2.4.6, installed app only) was overlapping and misaligning the header, search bar, and view below it. It now sits correctly alongside the OS window controls without disturbing the rest of the layout.
+
+### Changed
+- "Reopen last file" is back on the start screen: confirmed the 2.4.6 titlebar change fixes the crash it was hidden for, so it no longer needs to be.
+
 ## [2.4.6] - 2026-08-22
 
 ### Changed
