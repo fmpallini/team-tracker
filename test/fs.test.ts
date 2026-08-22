@@ -50,11 +50,26 @@ function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
   const handle = {
     name: 'launched.tmv',
     async getFile() { return { lastModified: 42, async arrayBuffer() { return new Uint8Array([7]).buffer } } },
-    async queryPermission() { return permission },
-    async requestPermission() { return permission === 'prompt' ? 'granted' : permission },
+    queryPermission: vi.fn(async () => permission),
+    requestPermission: vi.fn(async () => (permission === 'prompt' ? 'granted' : permission)),
   } as unknown as FileSystemFileHandle
   return handle
 }
+
+// Regression: openFromHandle used to request 'readwrite' upfront, the only
+// open path that did — see the comment on openFromHandle in src/core/fs.ts
+// for why that's suspected of provoking a real browser-level crash on
+// reopen-last in an installed PWA window. It must only ever ask for 'read';
+// a later save's own permission-lapse recovery (save-controller.ts's
+// NotAllowedError catch) is what upgrades to write, same as the picker path.
+test('openFromHandle requests read-only permission, never readwrite', async () => {
+  const handle = mockLaunchHandle('prompt')
+  await openFromHandle(handle)
+  const queryPermission = handle.queryPermission as ReturnType<typeof vi.fn>
+  const requestPermission = handle.requestPermission as ReturnType<typeof vi.fn>
+  expect(queryPermission).toHaveBeenCalledWith({ mode: 'read' })
+  expect(requestPermission).toHaveBeenCalledWith({ mode: 'read' })
+})
 
 test('openFromHandle reads the file when permission is already granted', async () => {
   const handle = mockLaunchHandle('granted')
