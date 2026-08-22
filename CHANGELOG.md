@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.5] - 2026-08-22
+
+### Fixed
+- "Reopen last file" (installed app) no longer triggers the browser's permission-confirmation dialog that was crashing the app when the previous access had expired. Instead, it now asks you to pick the file again in the normal file-open dialog — the same one used by "Open…", which never crashed.
+
 ## [2.4.4] - 2026-08-22
 
 ### Fixed

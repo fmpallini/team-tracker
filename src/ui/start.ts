@@ -11,6 +11,7 @@ import {
   writeFile,
   downloadFallback,
   openFromHandle,
+  NeedsRepickError,
   type FileSession,
 } from '../core/fs'
 import { idbGet } from '../core/idb'
@@ -158,12 +159,32 @@ export function showStartScreen(
     }
   }
 
-  const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(pickOpen)
+  const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
+
+  /**
+   * Shared by `handleReopenLast` and `handleLaunchFile`: both go through
+   * `openFromHandle`, which throws `NeedsRepickError` instead of ever calling
+   * `requestPermission()` on a lapsed grant (see that class's doc comment in
+   * core/fs.ts for the crash history behind this). Falls back to the plain
+   * file picker, pre-pointed at the same folder, so "reopen last" still ends
+   * up open — just via one extra click — instead of the crashing dialog.
+   */
+  async function openWithRepickFallback(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
+    try {
+      await openAndDecrypt(fetchResult)
+    } catch (e) {
+      if (!(e instanceof NeedsRepickError)) throw e
+      logEvent('start.openWithRepickFallback', 'permission lapsed, falling back to file picker')
+      toast(t(locale, 'reopen_needs_repick_toast'))
+      await openAndDecrypt(() => pickOpen(e.handle))
+    }
+  }
+
   const handleReopenLast = (): Promise<void> => {
     logEvent('start.handleReopenLast', 'clicked')
-    return openAndDecrypt(reopenLast)
+    return openWithRepickFallback(reopenLast)
   }
-  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
+  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openWithRepickFallback(() => openFromHandle(handle))
 
   async function handleOpenFallbackFile(file: File): Promise<void> {
     const buf = await file.arrayBuffer()

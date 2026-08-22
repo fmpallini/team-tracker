@@ -11,6 +11,13 @@ const fsMocks = vi.hoisted(() => ({
   writeFile: vi.fn(async () => {}),
   downloadFallback: vi.fn(),
   openFromHandle: vi.fn(),
+  // A real class (not a plain vi.fn stub) so start.ts's `e instanceof
+  // NeedsRepickError` checks work against errors constructed here.
+  NeedsRepickError: class NeedsRepickError extends Error {
+    constructor(public readonly handle: FileSystemFileHandle) {
+      super('permission lapsed')
+    }
+  },
 }))
 vi.mock('../src/core/fs', () => fsMocks)
 
@@ -120,7 +127,7 @@ test('file handling launch: consumes launchQueue file, decrypts, and calls onOpe
   expect(opened![1]).toEqual(doc)
 })
 
-test('file handling launch: permission denied (openFromHandle returns null) is a no-op', async () => {
+test('file handling launch: fetchResult resolving null (e.g. picker cancel) is a no-op', async () => {
   const getConsumer = mockLaunchQueue()
   fsMocks.openFromHandle.mockResolvedValue(null)
 
@@ -133,6 +140,71 @@ test('file handling launch: permission denied (openFromHandle returns null) is a
 
   expect(onOpen).not.toHaveBeenCalled()
   expect(document.querySelector('input[name="tt-password"]')).toBeNull()
+})
+
+// Regression: openFromHandle/reopenLast throw NeedsRepickError instead of
+// ever calling requestPermission() on a lapsed grant (see that class's doc
+// comment in src/core/fs.ts) — the native dialog that triggers is the one a
+// real-device repro pinned as an installed-PWA crash. Both open routes that
+// can hit a lapsed grant must fall back to the plain file picker instead.
+test('file handling launch: NeedsRepickError falls back to the file picker, then opens normally', async () => {
+  const getConsumer = mockLaunchQueue()
+  const handle = {} as unknown as FileSystemFileHandle
+  fsMocks.openFromHandle.mockRejectedValue(new fsMocks.NeedsRepickError(handle))
+  const pickedSession: FileSession = { handle, name: 'repicked.tmv', lastModified: 2 }
+  const bytes = new Uint8Array([9])
+  fsMocks.pickOpen.mockResolvedValue({ session: pickedSession, bytes })
+  const doc = createEmptyDocument('en-US')
+  cryptoMocks.decryptDocument.mockResolvedValue(doc)
+
+  let opened: [FileSession, Doc, string | null] | null = null
+  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  await flush()
+
+  getConsumer()({ files: [handle] })
+  await flush()
+
+  expect(fsMocks.pickOpen).toHaveBeenCalledWith(handle)
+
+  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+  pwInput.value = 'right'
+  pwInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+  await flush()
+  await flush()
+
+  expect(opened).not.toBeNull()
+  expect(opened![0]).toBe(pickedSession)
+})
+
+test('reopen-last: NeedsRepickError falls back to the file picker, then opens normally', async () => {
+  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
+  const handle = {} as unknown as FileSystemFileHandle
+  fsMocks.reopenLast.mockRejectedValue(new fsMocks.NeedsRepickError(handle))
+  const pickedSession: FileSession = { handle, name: 'repicked.tmv', lastModified: 2 }
+  const bytes = new Uint8Array([9])
+  fsMocks.pickOpen.mockResolvedValue({ session: pickedSession, bytes })
+  const doc = createEmptyDocument('en-US')
+  cryptoMocks.decryptDocument.mockResolvedValue(doc)
+
+  let opened: [FileSession, Doc, string | null] | null = null
+  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  await flush()
+
+  clickByText('⏪ Reopen last…')
+  await flush()
+
+  expect(fsMocks.pickOpen).toHaveBeenCalledWith(handle)
+
+  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+  pwInput.value = 'right'
+  pwInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+  await flush()
+  await flush()
+
+  expect(opened).not.toBeNull()
+  expect(opened![0]).toBe(pickedSession)
 })
 
 test('open flow: wrong password loops until correct, then calls onOpen', async () => {
