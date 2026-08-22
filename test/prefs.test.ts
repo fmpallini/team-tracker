@@ -230,6 +230,15 @@ test('the "open refs in secondary pane" checkbox reflects and updates the pref',
   expect(store.doc.prefs.openRefsInSecondaryPane).toBe(true)
 })
 
+test('an initialTab argument opens directly on that tab instead of defaulting to General', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl, 'advanced')
+
+  expect(document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox')).not.toBeNull()
+  const activeBtn = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).find((b) => b.classList.contains('active'))
+  expect(activeBtn?.textContent).toBe('Advanced')
+})
+
 test('advanced tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
   const { store, shell, appCtl } = setup()
   fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })

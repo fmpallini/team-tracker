@@ -59,6 +59,8 @@ export interface SaveControllerDeps {
   isConflictOpen?(): boolean
   /** Mirrors every successful save to the daily .bck file, if the user has enabled it. Optional — plumbed in only by main.ts, not required by every caller/test. */
   backupCtl?: BackupController
+  /** Opens Prefs on the Advanced tab (where backup settings live) — the orphaned-backup toast's action button. Optional like backupCtl — not required by every caller/test. */
+  onOpenBackupPrefs?: () => void
 }
 
 export function createSaveController(deps: SaveControllerDeps): SaveController {
@@ -264,7 +266,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       deps.store.update((d) => {
         d.prefs.dailyBackupEnabled = false
       })
-      toast(t(deps.locale(), 'backup_orphaned_toast'), { sticky: true })
+      const openBackupPrefs = deps.onOpenBackupPrefs
+      toast(t(deps.locale(), 'backup_orphaned_toast'), {
+        sticky: true,
+        ...(openBackupPrefs ? { action: { label: t(deps.locale(), 'backup_orphaned_action'), onClick: () => openBackupPrefs() } } : {}),
+      })
       permissionEpisodeToasted = false
       deps.shell.setSaveState('saved')
     } else {
