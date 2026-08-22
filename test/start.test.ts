@@ -37,7 +37,6 @@ function flush(): Promise<void> {
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>'
-  localStorage.removeItem('tt-show-reopen')
   fsMocks.supportsFsApi = true
   fsMocks.pickOpen.mockReset()
   fsMocks.pickCreate.mockReset()
@@ -83,21 +82,7 @@ test('renders start screen with open/create buttons but no reopen when no lastHa
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
 })
 
-// "Reopen last file" is hidden from regular users even when a lastHandle
-// exists — see start.ts's SHOW_REOPEN_KEY doc comment: the underlying
-// Chromium crash on a lapsed grant has no app-level fix, so the button (and
-// the requestPermission() machinery behind it) is kept working but out of
-// sight, revealed only via the ttShowReopenButton() console command below.
-test('reopen button stays hidden even with a lastHandle, unless explicitly revealed', async () => {
-  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
-  showStartScreen('en-US', () => {})
-  await flush()
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
-  expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
-})
-
-test('shows reopen button when idbGet resolves a handle and the reveal flag is set', async () => {
-  localStorage.setItem('tt-show-reopen', '1')
+test('shows reopen button when idbGet resolves a handle', async () => {
   idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
   showStartScreen('en-US', () => {})
   await flush()
@@ -105,23 +90,7 @@ test('shows reopen button when idbGet resolves a handle and the reveal flag is s
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('')
 })
 
-test('ttShowReopenButton sets the reveal flag; ttHideReopenButton clears it', () => {
-  const originalLocation = window.location
-  const reload = vi.fn()
-  Object.defineProperty(window, 'location', { value: { ...originalLocation, reload }, writable: true, configurable: true })
-  try {
-    window.ttShowReopenButton!()
-    expect(localStorage.getItem('tt-show-reopen')).toBe('1')
-    window.ttHideReopenButton!()
-    expect(localStorage.getItem('tt-show-reopen')).toBeNull()
-    expect(reload).toHaveBeenCalledTimes(2)
-  } finally {
-    Object.defineProperty(window, 'location', { value: originalLocation, writable: true, configurable: true })
-  }
-})
-
 test('reopen-last: opens directly via reopenLast (no fallback dance)', async () => {
-  localStorage.setItem('tt-show-reopen', '1')
   idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
   const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'last.tmv', lastModified: 1 }
   const bytes = new Uint8Array([9])

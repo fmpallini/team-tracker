@@ -20,49 +20,6 @@ import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
 
-// "Reopen last file" hidden from regular users: on an installed PWA, a lapsed
-// permission grant makes core/fs.ts's openFromHandle() show Chromium's
-// "Persistent Permissions" dropdown, which crashes the app in this
-// titlebar-less standalone window — a Chromium bug with no app-level fix (see
-// openFromHandle's doc comment). The button — and the requestPermission()
-// machinery behind it — are left fully working so this can be re-checked from
-// the console after a future Chromium update, without exposing the crash risk
-// to regular users in the meantime: run `ttShowReopenButton()` in devtools to
-// reveal it (persists across reloads), `ttHideReopenButton()` to hide it again.
-const SHOW_REOPEN_KEY = 'tt-show-reopen'
-
-declare global {
-  interface Window {
-    ttShowReopenButton?: () => void
-    ttHideReopenButton?: () => void
-  }
-}
-
-function reopenButtonRevealed(): boolean {
-  try {
-    return localStorage.getItem(SHOW_REOPEN_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-window.ttShowReopenButton = () => {
-  try {
-    localStorage.setItem(SHOW_REOPEN_KEY, '1')
-  } catch {
-    // ignore — see reopenButtonRevealed
-  }
-  location.reload()
-}
-window.ttHideReopenButton = () => {
-  try {
-    localStorage.removeItem(SHOW_REOPEN_KEY)
-  } catch {
-    // ignore — see reopenButtonRevealed
-  }
-  location.reload()
-}
-
 // File Handling API (Chromium, PWA-installed only): OS-level "open with" /
 // double-click on a .tmv file launches the app and hands it the file's
 // FileSystemFileHandle here instead of the picker flow. Declared locally
@@ -355,7 +312,7 @@ export function showStartScreen(
 
   idbGet('lastHandle')
     .then((handle) => {
-      if (handle !== undefined && reopenButtonRevealed()) reopenBtn.style.display = ''
+      if (handle !== undefined) reopenBtn.style.display = ''
     })
     .catch((e: unknown) => console.error(e))
 
