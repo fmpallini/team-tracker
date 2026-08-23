@@ -59,7 +59,7 @@ export interface SaveControllerDeps {
   isConflictOpen?(): boolean
   /** Mirrors every successful save to the daily .bck file, if the user has enabled it. Optional — plumbed in only by main.ts, not required by every caller/test. */
   backupCtl?: BackupController
-  /** Opens Prefs on the Advanced tab (where backup settings live) — the orphaned-backup toast's action button. Optional like backupCtl — not required by every caller/test. */
+  /** Opens Prefs on the Backup tab (where backup settings live) — the orphaned-backup toast's action button. Optional like backupCtl — not required by every caller/test. */
   onOpenBackupPrefs?: () => void
 }
 

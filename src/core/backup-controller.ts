@@ -12,7 +12,7 @@ const DAY_MS = 24 * HOUR_MS
 export interface BackupController {
   /** Writes now and resets the elapsed-time clock. Never rejects. No-op if the pref is off, no handle is stored yet, or the stored handle's write permission has lapsed. */
   writeBackupNow(bytes: Uint8Array): Promise<void>
-  /** Writes only if the interval implied by `prefs.backupFrequency` ('daily' => 24h, 'hourly' => 1h) has elapsed since the last backup write this session (or none yet). */
+  /** Writes only if the interval implied by `prefs.backupFrequency` ('daily' => 24h, 'hourly' => 1h) has elapsed since the last backup write — seeded from the .bck file's own on-disk lastModified on the first check each session, so the gate survives a reopen instead of always writing on the next save. */
   maybeWriteBackup(bytes: Uint8Array): Promise<void>
   /**
    * Re-requests write permission on the backup handle, if one is configured
@@ -54,6 +54,7 @@ export interface BackupController {
 export function createBackupController(deps: { store: Store }): BackupController {
   let cachedHandle: FileSystemFileHandle | null = null
   let lastBackupAt = 0
+  let lastBackupAtInitialized = false
   let warnedThisSession = false
 
   async function loadHandle(): Promise<FileSystemFileHandle | null> {
@@ -61,6 +62,27 @@ export function createBackupController(deps: { store: Store }): BackupController
       const id = deps.store.doc.prefs.backupHandleId
       if (!id) return null
       cachedHandle = (await idbGet<FileSystemFileHandle>(id)) ?? null
+      // Seeds the elapsed-time clock from the .bck file's own on-disk
+      // lastModified, once per session, so `maybeWriteBackup`'s interval
+      // gate survives a reopen instead of resetting to "never" every launch
+      // (which would write a fresh backup on the very next save regardless
+      // of how recently the real one on disk was written). Guarded by
+      // `size > 0`: `pickCreateBackup` (fs.ts) creates the file the moment
+      // it's picked, before any real content is ever written — reading that
+      // brand-new empty file's creation timestamp as "just backed up" would
+      // make the actual first write skip for up to a full interval, leaving
+      // an empty .bck behind. Only checked on this first resolution — a
+      // write later in the same session already advances `lastBackupAt`
+      // itself (see writeBackupNow), so nothing here should override that.
+      if (cachedHandle && !lastBackupAtInitialized) {
+        lastBackupAtInitialized = true
+        try {
+          const file = await cachedHandle.getFile()
+          if (file.size > 0) lastBackupAt = file.lastModified
+        } catch (e) {
+          console.error(e)
+        }
+      }
     }
     return cachedHandle
   }
@@ -148,6 +170,21 @@ export function createBackupController(deps: { store: Store }): BackupController
 
   async function maybeWriteBackup(bytes: Uint8Array): Promise<void> {
     if (!deps.store.doc.prefs.dailyBackupEnabled) return
+    // Ensures the disk-seeded `lastBackupAt` (see loadHandle's own comment)
+    // is in place before the gate below reads it — this is the *first*
+    // touch of the handle on a fresh session for the common case (an
+    // auto-save arriving before any explicit write), so without this the
+    // gate would still compare against the stale in-memory default of 0.
+    // Cheap on every later call: loadHandle() short-circuits on the cached
+    // handle and never re-reads the disk timestamp once seeded. Failures are
+    // swallowed here (best-effort seed only, falls through to the default
+    // "write now" gate) — writeBackupNow below retries the same lookup and
+    // is where a real failure gets logged/toasted, not this pre-fetch.
+    try {
+      await loadHandle()
+    } catch {
+      /* best-effort seed only — see comment above */
+    }
     const intervalMs = deps.store.doc.prefs.backupFrequency === 'hourly' ? HOUR_MS : DAY_MS
     if (Date.now() - lastBackupAt < intervalMs) return
     await writeBackupNow(bytes)

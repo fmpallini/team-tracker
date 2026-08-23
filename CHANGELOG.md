@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.4.8] - 2026-08-23
+
+### Changed
+- Preferences: the "Advanced" tab is now "Backup", holding only backup settings. Auto-save timing moved to the General tab, next to a clearer note that it saves your regular file (not the backup). Spacing throughout the dialog is more consistent and less cramped.
+- Preferences → Backup: turning the checkbox on always opens the file picker, so backup never silently reuses an old file reference. "Change backup location" is hidden while backup is off.
+- Clicking into a pane showing Daily Notes or General Notes (or opening one of those modules) now puts the cursor straight into the note so you can start typing immediately.
+
+### Fixed
+- The daily/hourly backup interval used to reset every time the app was reopened, so the first save of every session wrote a fresh backup regardless of how recently the real one on disk was written. It now checks the backup file's own last-modified time, so the interval is honored across reopens too.
+
 ## [2.4.7] - 2026-08-22
 
 ### Fixed

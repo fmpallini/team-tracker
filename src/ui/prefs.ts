@@ -62,11 +62,11 @@ export function onLocaleChanged(cb: () => void): () => void {
   }
 }
 
-export type TabId = 'general' | 'advanced' | 'templates' | 'tags' | 'security' | 'data' | 'about'
+export type TabId = 'general' | 'backup' | 'templates' | 'tags' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
-  { id: 'advanced', key: 'prefs_tab_advanced' },
+  { id: 'backup', key: 'prefs_tab_backup' },
   { id: 'templates', key: 'prefs_tab_templates' },
   { id: 'tags', key: 'prefs_tab_tags' },
   { id: 'security', key: 'prefs_tab_security' },
@@ -223,6 +223,28 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       shell.applyPrefs(store.doc.prefs)
     })
 
+    const autoSaveInput = el('input', {
+      type: 'number',
+      class: 'tt-input tt-prefs-autosave-input',
+      min: '1',
+      max: '60',
+      value: String(prefs.autoSaveMin),
+      onchange: (e: Event) => {
+        const raw = Number((e.target as HTMLInputElement).value)
+        const clamped = Math.min(60, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.autoSaveMin))
+        ;(e.target as HTMLInputElement).value = String(clamped)
+        store.update((d) => {
+          d.prefs.autoSaveMin = clamped
+        })
+      },
+    })
+    const autoSaveField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_autosave_hint'))
+    )
+
     const dueSoonInput = el('input', {
       type: 'number',
       class: 'tt-input tt-prefs-due-soon-input',
@@ -261,34 +283,13 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
     )
 
-    container.append(themeField, paletteField, localeField, fontField, sizeField, dueSoonField, openRefsSecondaryField)
+    container.append(autoSaveField, themeField, paletteField, localeField, fontField, sizeField, dueSoonField, openRefsSecondaryField)
   }
 
-  // --- Tab 1b: Avançado (autosave, backup) ---------------------------------
-  function renderAdvanced(container: HTMLElement): void {
+  // --- Tab 1b: Backup -----------------------------------------------------
+  function renderBackup(container: HTMLElement): void {
     container.innerHTML = ''
     const prefs = store.doc.prefs
-
-    const autoSaveInput = el('input', {
-      type: 'number',
-      class: 'tt-input tt-prefs-autosave-input',
-      min: '1',
-      max: '60',
-      value: String(prefs.autoSaveMin),
-      onchange: (e: Event) => {
-        const raw = Number((e.target as HTMLInputElement).value)
-        const clamped = Math.min(60, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.autoSaveMin))
-        ;(e.target as HTMLInputElement).value = String(clamped)
-        store.update((d) => {
-          d.prefs.autoSaveMin = clamped
-        })
-      },
-    })
-    const autoSaveField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput)
-    )
 
     const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
 
@@ -300,9 +301,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     // silently re-enable the pref right after the user turned it off).
     let pickGeneration = 0
 
-    // Shared by the checkbox's first-time-enable path and the "Change
-    // location" button: runs the .bck picker, and on a real pick (not a
-    // cancel/error) persists the new handle and turns the pref on. Resolves
+    // Shared by the checkbox's enable path and the "Change location" button:
+    // runs the .bck picker, and on a real pick (not a cancel/error) persists
+    // the new handle and turns the pref on. Always re-prompts — even if
+    // `backupHandleId` is already set — so enabling never silently resumes a
+    // stale reference to a file the user may not even want anymore. Resolves
     // true iff a new handle was actually picked, stored, and this was still
     // the most recent pick attempt when it resolved — false for a cancel,
     // error, or a pick superseded by a later one.
@@ -343,10 +346,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           store.update((d) => { d.prefs.dailyBackupEnabled = false })
           return
         }
-        if (store.doc.prefs.backupHandleId) {
-          store.update((d) => { d.prefs.dailyBackupEnabled = true })
-          return
-        }
+        // Always re-prompts, even with an existing `backupHandleId` — see
+        // pickAndStoreBackupTarget's own comment.
         // `pickAndStoreBackupTarget` never rejects (its own `.catch` already
         // swallows and logs), but the linter can't see that from here.
         pickAndStoreBackupTarget()
@@ -356,13 +357,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           .catch(() => {})
       },
     })
-    // Re-picking without a disable/enable round trip: disabling deliberately
-    // keeps `backupHandleId` (so re-enabling resumes the same file), which
-    // means there'd otherwise be no way to point the backup somewhere else
-    // short of disabling, re-enabling, and hoping the picker doesn't skip
-    // itself. Only shown once a target exists — for the first-time pick, the
-    // checkbox itself already opens the picker.
-    const changeBackupBtn = prefs.backupHandleId
+    // Only shown while backup is actually enabled — with it off there's
+    // nothing active to point elsewhere, and unchecking then rechecking the
+    // box already re-prompts on its own (see pickAndStoreBackupTarget's
+    // comment), so this button is purely a same-state shortcut for that.
+    const changeBackupBtn = prefs.dailyBackupEnabled && prefs.backupHandleId
       ? el(
           'button',
           {
@@ -394,17 +393,21 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       !backupAvailable
     )
 
-    const backupField = el(
+    // Two separate top-level fields (not one field stacking everything with
+    // the tighter intra-field gap) — the toggle+picker group and the
+    // frequency selector are separate decisions, so they get the same
+    // section-to-section spacing General's tab uses between e.g. Theme and
+    // Color palette, instead of reading as one crowded block.
+    const backupToggleField = el(
       'div',
       { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
       el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
-      backupAvailable ? null : el('p', { class: 'tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint')),
-      changeBackupBtn,
-      frequencyField
+      el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
+      backupAvailable ? null : el('p', { class: 'tt-data-hint tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint')),
+      changeBackupBtn
     )
 
-    container.append(autoSaveField, backupField)
+    container.append(backupToggleField, frequencyField)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------
@@ -1049,8 +1052,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       case 'general':
         renderGeneral(contentEl)
         return
-      case 'advanced':
-        renderAdvanced(contentEl)
+      case 'backup':
+        renderBackup(contentEl)
         return
       case 'templates':
         renderTemplates(contentEl)

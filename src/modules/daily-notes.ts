@@ -204,6 +204,13 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     el('div', { class: 'tt-daily-editor-col' }, editor.root)
   )
   container.appendChild(layout)
+  // Only for the pane the user is actually in — a team switch remounts both
+  // panes together, and without this guard whichever pane mounts second
+  // would silently steal focus from the other (same guard action-items.ts's
+  // kanban-card mount focus uses).
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    editor.focus()
+  }
 
   return () => {
     unsubscribe()
