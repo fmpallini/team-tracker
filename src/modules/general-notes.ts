@@ -39,6 +39,13 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
   const editor = bundle.editor
 
   container.appendChild(editor.root)
+  // Only for the pane the user is actually in — a team switch remounts both
+  // panes together, and without this guard whichever pane mounts second
+  // would silently steal focus from the other (same guard action-items.ts's
+  // kanban-card mount focus uses).
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    editor.focus()
+  }
 
   return () => {
     bundle.dispose()

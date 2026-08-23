@@ -233,7 +233,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     // prefsAppCtl is assigned later in this same function scope (below) —
     // safe because this closure only runs on a save failure well after
     // setup completes, never during the temporal dead zone.
-    onOpenBackupPrefs: () => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl, 'advanced'),
+    onOpenBackupPrefs: () => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl, 'backup'),
     onExternalChange: () => {
       if (conflictOpen) return
       conflictOpen = true

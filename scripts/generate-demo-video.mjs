@@ -273,7 +273,7 @@ async function showSecurityAndBackup(page, dialog) {
   await hideCaption(page)
 
   await caption(page, 'Daily backups mirror to a second file automatically')
-  await click(page, page.getByRole('button', { name: 'Advanced' }))
+  await click(page, page.getByRole('button', { name: 'Backup' }))
   await pause(page, 400)
   const backupCheckbox = dialog.locator('.tt-prefs-backup-checkbox')
   if (await backupCheckbox.isEnabled()) {
