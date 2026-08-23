@@ -24,12 +24,18 @@ const fakeWritable = { write: writeMock, close: closeMock }
 const createWritableMock = vi.fn(async () => fakeWritable)
 const queryPermissionMock = vi.fn(async (): Promise<PermissionState> => 'granted')
 const requestPermissionMock = vi.fn(async (): Promise<PermissionState> => 'granted')
+// Defaults to a non-empty file with no meaningful lastModified (0) so tests
+// that don't care about the disk-seeded clock keep today's "nothing written
+// yet this session" starting point (see maybeWriteBackup's own tests below
+// for the cases that do care).
+const getFileMock = vi.fn(async (): Promise<Pick<File, 'size' | 'lastModified'>> => ({ size: 1, lastModified: 0 }))
 
 const fakeHandle = {
   name: 'team.bck',
   createWritable: createWritableMock,
   queryPermission: queryPermissionMock,
   requestPermission: requestPermissionMock,
+  getFile: getFileMock,
 } as unknown as FileSystemFileHandle
 
 beforeEach(() => {
@@ -40,6 +46,7 @@ beforeEach(() => {
   createWritableMock.mockReset().mockResolvedValue(fakeWritable)
   queryPermissionMock.mockReset().mockResolvedValue('granted')
   requestPermissionMock.mockReset().mockResolvedValue('granted')
+  getFileMock.mockReset().mockResolvedValue({ size: 1, lastModified: 0 })
   modalMocks.toast.mockReset()
 })
 
@@ -161,6 +168,58 @@ describe('backup-controller', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // The elapsed-time clock is seeded from the .bck file's own on-disk
+  // lastModified the first time its handle is resolved each session, so the
+  // interval survives a reopen instead of resetting to "never backed up" and
+  // writing again on the very next save.
+  test('maybeWriteBackup seeds the clock from disk: skips if the .bck was already written within the interval', async () => {
+    getFileMock.mockResolvedValue({ size: 100, lastModified: Date.now() - 60 * 60 * 1000 }) // 1h ago
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    expect(writeMock).not.toHaveBeenCalled()
+  })
+
+  test('maybeWriteBackup seeds the clock from disk: writes when the .bck on disk is older than the interval', async () => {
+    getFileMock.mockResolvedValue({ size: 100, lastModified: Date.now() - 25 * 60 * 60 * 1000 }) // 25h ago
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    expect(writeMock).toHaveBeenCalledTimes(1)
+  })
+
+  // pickCreateBackup (fs.ts) creates the .bck file the moment it's picked,
+  // before any real backup content is ever written — its lastModified at
+  // that point is just the creation instant, not proof a backup happened.
+  test('a freshly-picked, still-empty .bck (size 0) is not treated as already backed up', async () => {
+    getFileMock.mockResolvedValue({ size: 0, lastModified: Date.now() })
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    expect(writeMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('the disk lastModified is read only once per session, not on every call', async () => {
+    getFileMock.mockResolvedValue({ size: 100, lastModified: Date.now() - 25 * 60 * 60 * 1000 })
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    await ctl.hasMissingGrant()
+    await ctl.checkOrphaned()
+    expect(getFileMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('a failed disk lastModified read is swallowed — falls back to "nothing written yet this session"', async () => {
+    getFileMock.mockRejectedValue(new Error('permission lapsed'))
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await ctl.maybeWriteBackup(new Uint8Array([1]))
+    expect(writeMock).toHaveBeenCalledTimes(1)
+    expect(consoleErrorSpy).toHaveBeenCalled()
+    consoleErrorSpy.mockRestore()
   })
 
   test('maybeWriteBackup no-ops when the pref is off, regardless of elapsed time', async () => {
