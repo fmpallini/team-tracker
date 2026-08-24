@@ -1009,6 +1009,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         class: extraClass ? `tt-btn tt-editor-btn ${extraClass}` : 'tt-btn tt-editor-btn',
         type: 'button',
         title,
+        tabindex: '-1',
         onmousedown: (e: Event) => e.preventDefault(),
         onclick: () => {
           editorEl.focus()
