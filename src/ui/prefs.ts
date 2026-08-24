@@ -6,7 +6,8 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
-import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
+import { t, todayIso, formatDateTime, type Locale, type MsgKey } from '../core/i18n'
+import type { BackupStatus } from '../core/backup-controller'
 import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
@@ -35,6 +36,8 @@ export interface PrefsAppCtl {
   fileHandle(): FileSystemFileHandle | null
   fileName: string
   fileSchemaVersion: number
+  /** Read-only snapshot of the configured backup (filename/size/last/next), for the Backup tab's status display. Null when nothing is configured/resolvable — see BackupController.getStatus. */
+  backupStatus(): Promise<BackupStatus | null>
 }
 
 /**
@@ -60,6 +63,14 @@ export function onLocaleChanged(cb: () => void): () => void {
   return () => {
     document.removeEventListener(LOCALE_CHANGED_EVENT, cb)
   }
+}
+
+/** Simple KB/MB byte formatting for the backup status table — no need for anything more precise than one decimal place there. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
 }
 
 export type TabId = 'general' | 'backup' | 'templates' | 'tags' | 'security' | 'data' | 'about'
@@ -344,6 +355,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         if (!checked) {
           pickGeneration++ // supersede any in-flight pick — see pickGeneration's own comment
           store.update((d) => { d.prefs.dailyBackupEnabled = false })
+          renderActiveTab() // hides the status block/Change-location button immediately, not just on next tab visit
           return
         }
         // Always re-prompts, even with an existing `backupHandleId` — see
@@ -352,7 +364,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         // swallows and logs), but the linter can't see that from here.
         pickAndStoreBackupTarget()
           .then((picked) => {
-            if (!picked) backupCheckbox.checked = false
+            // A rebuild already reflects the unchecked box on `false` (nothing
+            // else changed) — only the `true` case needs the explicit
+            // `.checked = false` un-tick, since there's no rebuild to do it.
+            if (picked) renderActiveTab() // reveals the status block/Change-location button immediately
+            else backupCheckbox.checked = false
           })
           .catch(() => {})
       },
@@ -361,6 +377,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     // nothing active to point elsewhere, and unchecking then rechecking the
     // box already re-prompts on its own (see pickAndStoreBackupTarget's
     // comment), so this button is purely a same-state shortcut for that.
+    // Placed at the very bottom of the tab (see container.append below) —
+    // it's a secondary action, subordinate to the toggle/frequency/status
+    // controls above it.
     const changeBackupBtn = prefs.dailyBackupEnabled && prefs.backupHandleId
       ? el(
           'button',
@@ -371,7 +390,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             onclick: () => {
               pickAndStoreBackupTarget()
                 .then((picked) => {
-                  if (picked) backupCheckbox.checked = true
+                  // Rebuild refreshes the status block for the newly picked
+                  // target too, not just the checkbox — the old table would
+                  // otherwise keep showing the previous file's stats.
+                  if (picked) renderActiveTab()
                 })
                 .catch(() => {})
             },
@@ -403,11 +425,39 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       { class: 'tt-prefs-field' },
       el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
       el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
-      backupAvailable ? null : el('p', { class: 'tt-data-hint tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint')),
-      changeBackupBtn
+      backupAvailable ? null : el('p', { class: 'tt-data-hint tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint'))
     )
 
-    container.append(backupToggleField, frequencyField)
+    // Only fetched/shown once there's an actual target configured — nothing
+    // to report otherwise. Rendered as an (initially empty) table appended
+    // in the right DOM slot immediately, then filled in once the async
+    // `backupStatus()` read resolves, so the surrounding layout doesn't
+    // jump once the data arrives.
+    let statusWrap: HTMLElement | null = null
+    if (prefs.dailyBackupEnabled && prefs.backupHandleId) {
+      const statusBody = el('tbody', {})
+      statusWrap = el('div', { class: 'tt-prefs-backup-status' }, el('table', { class: 'tt-help-table' }, statusBody))
+      appCtl
+        .backupStatus()
+        .then((status) => {
+          statusBody.innerHTML = ''
+          if (!status) return
+          const everWritten = status.lastBackupAt > 0
+          const rows: readonly (readonly [string, string])[] = [
+            [t(locale, 'prefs_backup_status_filename_label'), status.fileName],
+            [t(locale, 'prefs_backup_status_size_label'), formatBytes(status.size)],
+            [t(locale, 'prefs_backup_status_last_label'), everWritten ? formatDateTime(status.lastBackupAt, locale) : t(locale, 'prefs_backup_status_never')],
+            [t(locale, 'prefs_backup_status_next_label'), everWritten ? formatDateTime(status.nextDueAt, locale) : t(locale, 'prefs_backup_status_never')],
+          ]
+          for (const [label, value] of rows) statusBody.appendChild(el('tr', {}, el('td', {}, label), el('td', {}, value)))
+        })
+        .catch(() => {})
+    }
+
+    const children: HTMLElement[] = [backupToggleField, frequencyField]
+    if (statusWrap) children.push(statusWrap)
+    if (changeBackupBtn) children.push(changeBackupBtn)
+    container.append(...children)
   }
 
   // --- Tab 2: Templates ---------------------------------------------------

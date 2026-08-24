@@ -49,6 +49,26 @@ export interface BackupController {
    * here, not orphaned — it isn't proof the reference is gone.
    */
   checkOrphaned(): Promise<boolean>
+  /**
+   * Read-only snapshot of the configured backup for display (prefs UI's
+   * Backup tab). Returns null whenever there's nothing meaningful to show:
+   * backups off, no handle configured yet, the handle is orphaned, or the
+   * file couldn't be read. `lastBackupAt` is 0 for a freshly-picked, never
+   * actually written .bck (same "empty file" guard as the disk-seeded clock
+   * in `loadHandle`) — callers render that as "never backed up yet" rather
+   * than a date. `nextDueAt` is simply `lastBackupAt + interval`, so with
+   * `lastBackupAt` at 0 it reads as "due now", which callers should treat
+   * the same as the never-backed-up case rather than displaying literally.
+   * Never prompts, never writes.
+   */
+  getStatus(): Promise<BackupStatus | null>
+}
+
+export interface BackupStatus {
+  fileName: string
+  size: number
+  lastBackupAt: number
+  nextDueAt: number
 }
 
 export function createBackupController(deps: { store: Store }): BackupController {
@@ -201,5 +221,25 @@ export function createBackupController(deps: { store: Store }): BackupController
     }
   }
 
-  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant, checkOrphaned }
+  async function getStatus(): Promise<BackupStatus | null> {
+    if (!deps.store.doc.prefs.dailyBackupEnabled) return null
+    if (!deps.store.doc.prefs.backupHandleId) return null
+    try {
+      const handle = await loadHandle()
+      if (!handle) return null
+      const file = await handle.getFile()
+      const intervalMs = deps.store.doc.prefs.backupFrequency === 'hourly' ? HOUR_MS : DAY_MS
+      return {
+        fileName: handle.name,
+        size: file.size,
+        lastBackupAt,
+        nextDueAt: lastBackupAt + intervalMs,
+      }
+    } catch (e) {
+      console.error(e)
+      return null
+    }
+  }
+
+  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant, checkOrphaned, getStatus }
 }
