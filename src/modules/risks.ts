@@ -100,10 +100,12 @@ export function moveRisk(risks: Risk[], draggedId: string, targetId: string, pos
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
-/** Pixel size of one (chance, impact) cell in the quadrant grid at its floor — today's fixed size, kept as the minimum a render can shrink to (see computeCellSize, below). */
-const QUADRANT_CELL_MIN = 60
+/** Pixel size of one (chance, impact) cell in the quadrant grid at its floor — the minimum a render can shrink to (see computeCellSize, below), and also what jsdom (zero-size layout in tests) and a too-cramped pane fall back to. */
+const QUADRANT_CELL_MIN = 90
 /** Ceiling a render can grow a cell to, how ever much free pane space is available. */
-const QUADRANT_CELL_MAX = 110
+const QUADRANT_CELL_MAX = 140
+/** Reference cell size the dot/label/truncation geometry constants below (QUADRANT_DOT_R, QUADRANT_LABEL_MIN_GAP, QUADRANT_LABEL_MAX_CHARS) were tuned at — computeQuadrantLayout/truncateForQuadrant scale relative to *this*, not QUADRANT_CELL_MIN, so raising the render floor above doesn't also rescale geometry meant to stay pinned to a fixed 60px reference. */
+const QUADRANT_CELL_SCALE_BASE = 60
 const QUADRANT_DOT_R = 3.5
 const QUADRANT_DOT_R_MIN = 2
 /** Dot's x offset from its cell's left edge — every dot in a cell shares this x, so their title labels (always drawn immediately to the dot's right) line up in a column instead of needing per-dot horizontal placement. */
@@ -148,9 +150,9 @@ export interface QuadrantDot {
  */
 export function computeQuadrantLayout(
   risks: { id: string; chance: 1 | 2 | 3; impact: 1 | 2 | 3 }[],
-  cellSize: number = QUADRANT_CELL_MIN
+  cellSize: number = QUADRANT_CELL_SCALE_BASE
 ): QuadrantDot[] {
-  const ratio = cellSize / QUADRANT_CELL_MIN
+  const ratio = cellSize / QUADRANT_CELL_SCALE_BASE
   const dotR = QUADRANT_DOT_R * ratio
   const dotRMin = QUADRANT_DOT_R_MIN * ratio
   const dotInset = QUADRANT_DOT_INSET * ratio
@@ -193,12 +195,12 @@ export function computeQuadrantLayout(
   return dots
 }
 
-/** Baseline character cap at QUADRANT_CELL_MIN, tuned to fit inside the remaining width of a *minimum-sized* cell (cell minus the dot's inset and radius) without spilling into the next cell over. */
+/** Baseline character cap at QUADRANT_CELL_SCALE_BASE, tuned to fit inside the remaining width of a *reference-sized* cell (cell minus the dot's inset and radius) without spilling into the next cell over. */
 const QUADRANT_LABEL_MAX_CHARS = 7
 
 /** Truncation for a title drawn beside a quadrant dot, scaled to `cellSize` by the same ratio computeQuadrantLayout scales its own geometry by — a grown chart (see computeCellSize) has proportionally more room per cell, so it earns proportionally more of the title, while staying fit to its own cell at any size. The dot's <title> tooltip always carries the untruncated text. */
 function truncateForQuadrant(title: string, cellSize: number): string {
-  const maxChars = Math.max(QUADRANT_LABEL_MAX_CHARS, Math.round(QUADRANT_LABEL_MAX_CHARS * (cellSize / QUADRANT_CELL_MIN)))
+  const maxChars = Math.max(QUADRANT_LABEL_MAX_CHARS, Math.round(QUADRANT_LABEL_MAX_CHARS * (cellSize / QUADRANT_CELL_SCALE_BASE)))
   return title.length > maxChars ? `${title.slice(0, maxChars)}…` : title
 }
 
@@ -405,6 +407,16 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // --- quadrant (SVG) ---------------------------------------------------
 
   const quadrantEl = el('div', { class: 'tt-risk-quadrant' })
+  const quadrantChartEl = el('div', { class: 'tt-risk-quadrant-chart' })
+  const exposureTotalValueEl = el('div', { class: 'tt-risk-exposure-total-value' })
+  const exposureTotalEl = el(
+    'div',
+    { class: 'tt-risk-exposure-total' },
+    el('div', { class: 'tt-risk-exposure-total-label' }, t(lc, 'risk_exposure_total_label')),
+    exposureTotalValueEl,
+  )
+  quadrantEl.appendChild(quadrantChartEl)
+  quadrantEl.appendChild(exposureTotalEl)
 
   /** Jumps to a risk from its quadrant dot: expands its follow-up first if it's currently collapsed (so the click has an unmistakable visible effect even when the row was already on-screen and needed no scrolling — a bare `.focus()` after a mouse click is easy to miss, since most browsers' :focus-visible heuristics suppress the ring for pointer-driven focus), then scrolls to and focuses the row. */
   function focusRiskFromQuadrant(id: string): void {
@@ -537,7 +549,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
    * uses for the identical reason.
    */
   function computeCellSize(): number {
-    const availWidth = quadrantEl.clientWidth
+    const availWidth = quadrantChartEl.clientWidth
     const widthCell = availWidth > 0 ? (availWidth - QUADRANT_PAD_LEFT - QUADRANT_PAD_RIGHT) / 3 : QUADRANT_CELL_MIN
 
     let heightCell = QUADRANT_CELL_MIN
@@ -556,13 +568,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   /** Renders the 3x3 chance/impact quadrant: a per-cell exposure-tinted background (reusing exposureLevel's own low/medium/high bucketing) plus one dot per open risk, packed via computeQuadrantLayout. Closed risks are excluded — mirrors the list below, where they live in their own collapsed section. */
   function renderQuadrant(): void {
-    quadrantEl.innerHTML = ''
+    quadrantChartEl.innerHTML = ''
     const open = risks().filter((r) => !r.closed)
     if (open.length === 0) {
       quadrantEl.style.display = 'none'
       return
     }
     quadrantEl.style.display = ''
+
+    const totalExposure = open.reduce((sum, r) => sum + computeExposure(r.chance, r.impact), 0)
+    exposureTotalValueEl.textContent = String(totalExposure)
+    exposureTotalValueEl.className = `tt-risk-exposure-total-value tt-risk-exposure-${exposureLevel(totalExposure / open.length)}`
 
     const cell = computeCellSize()
     const grid = cell * 3
@@ -662,12 +678,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         label.setAttribute('y', String(cy))
         label.setAttribute('class', 'tt-risk-quadrant-label')
         label.textContent = truncateForQuadrant(risk.title, cell)
+        // Same untruncated-title tooltip as the dot's own <title> above —
+        // without it, hovering the (often-truncated) label text showed no
+        // hint of the full title, only the dot next to it did.
+        const labelTitleNode = document.createElementNS(SVG_NS, 'title')
+        labelTitleNode.textContent = risk.title
+        label.appendChild(labelTitleNode)
         svg.appendChild(label)
       }
     }
 
-    quadrantEl.appendChild(svg)
-    quadrantEl.appendChild(buildQuadrantLegend())
+    quadrantChartEl.appendChild(svg)
+    quadrantChartEl.appendChild(buildQuadrantLegend())
   }
 
   /** Small legend explaining the quadrant's per-plan shapes (see createQuadrantPlanShape) — without it, a shape-to-plan mapping isn't guessable the way the exposure color gradient is. Rebuilt every render alongside the chart itself, cheap and always in sync with the current locale. */

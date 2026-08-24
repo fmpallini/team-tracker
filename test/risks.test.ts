@@ -223,7 +223,7 @@ describe('pure helpers', () => {
     })
 
     test('a single risk lands in its own (chance, impact) cell', () => {
-      const [dot] = computeQuadrantLayout([{ id: 'a', chance: 1, impact: 1 }])
+      const [dot] = computeQuadrantLayout([{ id: 'a', chance: 1, impact: 1 }], 60)
       // chance=1 -> leftmost column (cx < 60); impact=1 -> bottom row (cy > 120, since impact
       // increases upward and the grid is 3 * 60 = 180 tall).
       expect(dot!.cx).toBeGreaterThan(0)
@@ -264,9 +264,10 @@ describe('pure helpers', () => {
     })
 
     test('a crowded cell shrinks its dot radius so the pack still fits', () => {
-      const roomy = computeQuadrantLayout([{ id: 'a', chance: 1, impact: 1 }])
+      const roomy = computeQuadrantLayout([{ id: 'a', chance: 1, impact: 1 }], 60)
       const crowded = computeQuadrantLayout(
-        Array.from({ length: 100 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const }))
+        Array.from({ length: 100 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const })),
+        60
       )
       expect(crowded[0]!.r).toBeLessThan(roomy[0]!.r)
     })
@@ -290,14 +291,16 @@ describe('pure helpers', () => {
 
     test('showLabel turns false once a cell is too crowded for a label per row', () => {
       const dots = computeQuadrantLayout(
-        Array.from({ length: 6 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const }))
+        Array.from({ length: 6 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const })),
+        60
       )
       expect(dots.every((d) => d.showLabel === false)).toBe(true)
     })
 
     test('a crowded (label-hidden) cell spreads its dots across both axes instead of a single cramped column', () => {
       const dots = computeQuadrantLayout(
-        Array.from({ length: 6 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const }))
+        Array.from({ length: 6 }, (_, i) => ({ id: `r${i}`, chance: 1 as const, impact: 1 as const })),
+        60
       )
       // A single-column layout would put every dot at the same cx; the
       // distributed pack should use more than one.
@@ -323,7 +326,7 @@ describe('pure helpers', () => {
     test('is the exact inverse of computeQuadrantLayout\'s own cell placement for a lone dot in each cell', () => {
       for (const chance of [1, 2, 3] as const) {
         for (const impact of [1, 2, 3] as const) {
-          const [dot] = computeQuadrantLayout([{ id: 'a', chance, impact }])
+          const [dot] = computeQuadrantLayout([{ id: 'a', chance, impact }], 60)
           expect(cellFromPoint(dot!.cx, dot!.cy, 60)).toEqual({ chance, impact })
         }
       }
@@ -1081,7 +1084,16 @@ describe('quadrant', () => {
     render(container, loc, store, pm)
 
     const label = container.querySelector('.tt-risk-quadrant-label')!
-    expect(label.textContent).toBe('Vendor …')
+    expect(label.firstChild!.textContent).toBe('Vendor deli…')
+  })
+
+  test('a label carries the untruncated title as its own tooltip, same as the dot next to it', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', title: 'Vendor delivery delay past Q3' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const label = container.querySelector('.tt-risk-quadrant-label')!
+    expect(label.querySelector('title')!.textContent).toBe('Vendor delivery delay past Q3')
   })
 
   test('a short title is not truncated', () => {
@@ -1089,17 +1101,17 @@ describe('quadrant', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    expect(container.querySelector('.tt-risk-quadrant-label')!.textContent).toBe('Short')
+    expect(container.querySelector('.tt-risk-quadrant-label')!.firstChild!.textContent).toBe('Short')
   })
 
   test('labels are omitted once a cell is too crowded for them to stay legible, without dropping the dots', () => {
     const team = makeTeam({
-      risks: Array.from({ length: 6 }, (_, i) => risk({ id: `r${i}`, title: `Risk ${i}`, chance: 1, impact: 1 })),
+      risks: Array.from({ length: 9 }, (_, i) => risk({ id: `r${i}`, title: `Risk ${i}`, chance: 1, impact: 1 })),
     })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    expect(container.querySelectorAll('.tt-risk-quadrant-dot')).toHaveLength(6)
+    expect(container.querySelectorAll('.tt-risk-quadrant-dot')).toHaveLength(9)
     expect(container.querySelectorAll('.tt-risk-quadrant-label')).toHaveLength(0)
   })
 
@@ -1111,6 +1123,20 @@ describe('quadrant', () => {
     expect(container.querySelectorAll('.tt-risk-quadrant-cell')).toHaveLength(9)
     expect(container.querySelectorAll('.tt-risk-quadrant-cell-low').length).toBeGreaterThan(0)
     expect(container.querySelectorAll('.tt-risk-quadrant-cell-high').length).toBeGreaterThan(0)
+  })
+
+  test('shows the sum of every open risk\'s exposure, excluding closed ones', () => {
+    const team = makeTeam({
+      risks: [
+        risk({ id: 'a', chance: 2, impact: 3 }), // 6
+        risk({ id: 'b', chance: 1, impact: 2 }), // 2
+        risk({ id: 'c', chance: 3, impact: 3, closed: true }), // excluded
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    expect(container.querySelector('.tt-risk-exposure-total-value')!.textContent).toBe('8')
   })
 
   test('clicking a dot scrolls to and focuses its row', () => {
