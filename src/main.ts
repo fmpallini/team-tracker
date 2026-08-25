@@ -12,7 +12,9 @@ import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, 
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
-import { t } from './core/i18n'
+import { t, todayIso } from './core/i18n'
+import { currentLoc } from './core/nav'
+import { addDaysIso } from './core/date'
 import { renderDailyNotes } from './modules/daily-notes'
 import { renderGeneralNotes } from './modules/general-notes'
 import { renderPeopleTree } from './modules/people-tree'
@@ -523,6 +525,26 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       return
     }
     if (e.shiftKey) return
+    // Alt+[ / Alt+] / Alt+T: daily-notes day nav (prev/next/today). Only
+    // acts when the focused pane is currently showing a daily note — plain
+    // Alt+letter/bracket doesn't insert a character, so (like Alt+Arrow
+    // above) this must reach the app even while typing in the rich-text
+    // editor, hence navHotkeyAllowed rather than hotkeyAllowed.
+    if (e.key === '[' || e.key === ']' || e.key.toLowerCase() === 't') {
+      const idx = store.doc.nav.focusedPane
+      const loc = currentLoc(store.doc.nav.panes[idx])
+      if (loc && loc.ref.kind === 'daily') {
+        e.preventDefault()
+        const date =
+          e.key === '['
+            ? addDaysIso(loc.ref.date, -1)
+            : e.key === ']'
+              ? addDaysIso(loc.ref.date, 1)
+              : todayIso()
+        pm.openInPane(idx, { teamId: loc.teamId, ref: { kind: 'daily', date } })
+        return
+      }
+    }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault()
       if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
