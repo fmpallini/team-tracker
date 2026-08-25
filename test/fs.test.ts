@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number) {
   let mtime = initialMtime
@@ -51,7 +51,7 @@ function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
     name: 'launched.tmv',
     async getFile() { return { lastModified: 42, async arrayBuffer() { return new Uint8Array([7]).buffer } } },
     async queryPermission() { return permission },
-    async requestPermission() { return permission === 'prompt' ? 'granted' : permission },
+    requestPermission: vi.fn(async () => (permission === 'prompt' ? 'granted' : permission)),
   } as unknown as FileSystemFileHandle
   return handle
 }
@@ -97,6 +97,29 @@ test('reopenLast opens via openFromHandle without re-persisting lastHandle (pers
 test('reopenLast returns null when there is no stored handle', async () => {
   idbMocks.idbGet.mockResolvedValueOnce(undefined)
   expect(await reopenLast()).toBeNull()
+})
+
+test('peekLastFile returns null when there is no stored handle', async () => {
+  idbMocks.idbGet.mockResolvedValueOnce(undefined)
+  expect(await peekLastFile()).toBeNull()
+})
+
+test('peekLastFile returns null without ever prompting when permission is not silently granted', async () => {
+  const handle = mockLaunchHandle('prompt')
+  idbMocks.idbGet.mockResolvedValueOnce(handle)
+  const result = await peekLastFile()
+  expect(result).toBeNull()
+  expect(handle.requestPermission).not.toHaveBeenCalled()
+})
+
+test('peekLastFile reads session+bytes silently when permission is already granted', async () => {
+  const handle = mockLaunchHandle('granted')
+  idbMocks.idbGet.mockResolvedValueOnce(handle)
+  const result = await peekLastFile()
+  expect(result).not.toBeNull()
+  expect(result!.session).toEqual({ handle, name: 'launched.tmv', lastModified: 42 })
+  expect(result!.bytes).toEqual(new Uint8Array([7]))
+  expect(handle.requestPermission).not.toHaveBeenCalled()
 })
 
 test('sameEntry delegates to handle.isSameEntry', async () => {

@@ -433,7 +433,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       // No file open once we're back at the start screen — same reasoning as
       // the launch-time clear above.
       if (__PWA__) updateAppBadge(0)
-      showStartScreen(store.doc.prefs.locale, openDocument)
+      showStartScreen(store.doc.prefs.locale, openDocument, { skipAutoLoad: true })
     })().catch((e) => {
       console.error(e)
       closing = false

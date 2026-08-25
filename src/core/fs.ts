@@ -131,6 +131,23 @@ export async function reopenLast(): Promise<{ session: FileSession; bytes: Uint8
 }
 
 /**
+ * Silent variant of `reopenLast` for the "auto-load last file on startup"
+ * checkbox (`ui/start.ts`): only ever calls `queryPermission`, never
+ * `requestPermission` — a permission prompt shown with no user gesture (e.g.
+ * on page load) either auto-denies or throws in Chromium, so this must not
+ * risk it. Returns null whenever silent access isn't available, leaving the
+ * normal (gesture-driven) reopen button as the fallback.
+ */
+export async function peekLastFile(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+  const handle = await idbGet<FileSystemFileHandle>('lastHandle')
+  if (!handle) return null
+  const permission = await handle.queryPermission({ mode: 'readwrite' })
+  if (permission !== 'granted') return null
+  const { bytes, lastModified } = await readHandle(handle)
+  return { session: { handle, name: handle.name, lastModified }, bytes }
+}
+
+/**
  * Compares two sessions by their underlying file-system entry (not
  * name/path, so it stays correct across renames) — e.g. so a File Handling
  * API launch (see `ui/start.ts`) can detect it's re-launching the file

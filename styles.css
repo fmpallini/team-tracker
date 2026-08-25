@@ -384,6 +384,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-start-backup-tip a { color: inherit; text-decoration: underline; }
 .tt-start-buttons { display: flex; flex-direction: column; gap: .75rem; min-width: 220px; }
 .tt-start-btn { padding: .6rem 1rem; font-size: 1rem; }
+.tt-start-reopen-row { display: flex; flex-direction: column; gap: .5rem; padding: .5rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); }
+.tt-start-autoload { display: flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--muted); cursor: pointer; padding: 0 .1rem; }
 .tt-start-fallback-notice { color: var(--muted); max-width: 32em; font-size: .9rem; }
 .tt-promo-card { position: relative; max-width: 36em; margin-top: 1.25rem; padding: .9rem 2.2rem .9rem 1.1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); text-align: left; font-size: .9rem; color: var(--muted); }
 .tt-promo-title { font-size: 1rem; margin: 0 0 .4rem; color: var(--fg); }

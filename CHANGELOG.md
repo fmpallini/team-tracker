@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.5.1] - 2026-08-25
+
+### Added
+- Start screen: when the last file is password-less, a "Reopen this file automatically next time" checkbox appears under the Reopen button. Enable it once and the app skips straight past the start screen on future launches — no click needed. Only works while the browser still remembers file access permission for that file; otherwise it falls back to the normal Reopen button.
+
+### Fixed
+- Closing a file (🔒 / Ctrl+Alt+L) with auto-reopen enabled no longer immediately reopens the same file, trapping you — it now returns to a normal start screen so you can open or create another file.
+
 ## [2.5.0] - 2026-08-24
 
 ### Added
