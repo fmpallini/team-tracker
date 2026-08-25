@@ -57,6 +57,7 @@ function setup(): Setup {
     fileHandle: () => null,
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
+    backupStatus: vi.fn(async () => null),
   }
   return { store, shell, appCtl, changePassword, currentPassword }
 }
@@ -499,6 +500,133 @@ test('backup tab: backup frequency defaults to Daily and updates the pref when c
   hourly.checked = true
   hourly.dispatchEvent(new Event('change'))
   expect(store.doc.prefs.backupFrequency).toBe('hourly')
+})
+
+test('backup tab: no status table when backup is off', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+
+  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
+})
+
+test('backup tab: no status table when enabled but no target picked yet', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = null })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+
+  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
+})
+
+test('backup tab: shows filename, size, last and next backup time once status resolves', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  const lastBackupAt = new Date('2026-08-20T14:30:00').getTime()
+  appCtl.backupStatus = vi.fn(async () => ({
+    fileName: 'team-tracker.bck',
+    size: 2048,
+    lastBackupAt,
+    nextDueAt: lastBackupAt + 24 * 60 * 60 * 1000,
+  }))
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+
+  const table = document.querySelector('.tt-prefs-backup-status')
+  expect(table).not.toBeNull()
+  expect(table?.textContent).toContain('team-tracker.bck')
+  expect(table?.textContent).toContain('2')
+  expect(table?.textContent).toMatch(/KB/)
+})
+
+test('backup tab: shows a "never backed up yet" state when lastBackupAt is 0', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  appCtl.backupStatus = vi.fn(async () => ({
+    fileName: 'team-tracker.bck',
+    size: 0,
+    lastBackupAt: 0,
+    nextDueAt: 24 * 60 * 60 * 1000,
+  }))
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(document.querySelector('.tt-prefs-backup-status')?.textContent).toContain('Never backed up yet')
+})
+
+// "Change backup location" is a same-state shortcut, secondary to the
+// toggle/frequency/status — moved to the bottom of the tab so those primary
+// controls read first.
+test('backup tab: "Change backup location" button is the last element in the tab', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+
+  const content = document.querySelector('.tt-prefs-content')
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn')
+  expect(changeBtn).not.toBeNull()
+  expect(content?.lastElementChild).toBe(changeBtn)
+})
+
+test('backup tab: enabling backup live-updates the tab to show the status block and "Change location" button', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+
+  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(document.querySelector('.tt-prefs-backup-status')).not.toBeNull()
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
+})
+
+test('backup tab: disabling backup live-updates the tab to hide the status block and "Change location" button', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+
+  expect(document.querySelector('.tt-prefs-backup-status')).not.toBeNull()
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = false
+  checkbox.dispatchEvent(new Event('change'))
+
+  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
+  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
+})
+
+test('backup tab: "Change location" live-refreshes the status block for the newly picked target', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
+  const primaryHandle = {} as unknown as FileSystemFileHandle
+  appCtl.fileHandle = () => primaryHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'new-target.bck', lastModified: 1 })
+  const statusMock = vi.fn(async () => null)
+  appCtl.backupStatus = statusMock
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  const callsBeforeChange = statusMock.mock.calls.length
+
+  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  changeBtn.dispatchEvent(new Event('click'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(statusMock.mock.calls.length).toBeGreaterThan(callsBeforeChange)
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {

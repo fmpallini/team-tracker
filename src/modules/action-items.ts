@@ -780,8 +780,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   // activeTagFilter (see the "Counts feed the filter chips" comment in
   // renderAll below). The middle-column live count (middleNameSpans, set in
   // renderAll) follows this same rule.
-  const todoTitleEl = el('span', {})
-  const doneCancelTitleEl = el('span', {})
+  const todoTitleEl = el('span', { class: 'tt-kanban-col-title' })
+  const doneCancelTitleEl = el('span', { class: 'tt-kanban-col-title' })
 
   function showDropZones(): void {
     STATUSES.forEach((s) => cols.get(s)!.zoneEl.classList.add('active'))
@@ -929,7 +929,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const focusAfterAttach: { run: (() => void) | null } = { run: null }
     const middleColEls = STATUSES.filter((s) => !isFixedStatus(s)).map((id) => {
       const name = tm?.actionColumns?.find((c) => c.id === id)?.name ?? ''
-      const nameSpan = el('span', { class: 'tt-kanban-col-name', title: t(lc, 'kanban_rename_column_hint') }, name)
+      const nameSpan = el('span', { class: 'tt-kanban-col-name tt-kanban-col-title', title: t(lc, 'kanban_rename_column_hint') }, name)
       middleNameSpans.set(id, nameSpan)
       const nameInput = el('input', {
         type: 'text', class: 'tt-input tt-kanban-col-rename-input', value: name, style: 'display:none',

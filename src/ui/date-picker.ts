@@ -168,10 +168,24 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
     closeCurrentPopover = closePopover
   }
 
+  // Tabbing away must close the popover too, not just outside clicks/Escape
+  // (bindOutsideDismiss only covers those) — otherwise it's left open,
+  // floating over whatever the user tabbed onto next. Guarded by
+  // relatedTarget so focus moving *into* the popover itself (mousedown on a
+  // calendar day/Today/Clear button) doesn't close it out from under that
+  // click; those already call closePopover() themselves on commit.
+  function onFocusOut(e: FocusEvent): void {
+    if (!popover) return
+    const next = e.relatedTarget as Node | null
+    if (next && popover.contains(next)) return
+    closePopover()
+  }
+
   input.addEventListener('click', openPopover)
   input.addEventListener('focus', openPopover)
   input.addEventListener('input', onInput)
   input.addEventListener('blur', onBlur)
+  input.addEventListener('focusout', onFocusOut)
   input.addEventListener('keydown', blurOnEnter)
 
   return {

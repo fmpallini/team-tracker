@@ -913,10 +913,16 @@ body { background: var(--bg); color: var(--fg); }
    add/delete cluster together at the head's trailing edge instead of
    space-between's even spread across every child. */
 .tt-kanban-col-head .tt-kanban-add-btn { margin-left: auto; }
-.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
+.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
 
 .tt-kanban-add-column-btn { white-space: nowrap; }
+
+/* Column title (todo/middle/done+cancelled) truncates to one line with an
+   ellipsis instead of wrapping or overflowing when the board gets narrow —
+   min-width: 0 is what lets a flex item shrink below its text's intrinsic
+   width in the first place. */
+.tt-kanban-col-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1 1 auto; }
 
 .tt-kanban-col-name { cursor: pointer; position: relative; padding-right: 1.1rem; }
 .tt-kanban-col-name::after {
@@ -924,7 +930,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-kanban-col-name:hover::after { opacity: .6; }
 .tt-kanban-col-rename-input { font: inherit; font-weight: 700; width: 100%; }
-.tt-kanban-col-delete-btn { opacity: .5; border: none; background: transparent; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
+.tt-kanban-col-delete-btn { opacity: .5; border: none; background: transparent; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; flex: none; }
 .tt-kanban-col-delete-btn:hover { opacity: 1; }
 
 /* Grip is the sole drag source for column reorder (wireColumnHeaderDrag) —
@@ -1138,8 +1144,14 @@ body { background: var(--bg); color: var(--fg); }
    the exposure badge already uses (see risks.ts), tinted very lightly via
    color-mix so the red/yellow/green reading is a background hint, not a
    competing signal against the dots. */
-.tt-risk-quadrant { flex: none; border-bottom: 1px solid var(--border); padding-bottom: 1rem; display: flex; flex-direction: column; align-items: center; gap: .6rem; }
+.tt-risk-quadrant { flex: none; border-bottom: 1px solid var(--border); padding-bottom: 1rem; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1.5rem; }
+.tt-risk-quadrant-chart { display: flex; flex-direction: column; align-items: center; gap: .6rem; min-width: 0; }
 .tt-risk-quadrant-svg { display: block; max-width: 100%; height: auto; }
+/* Sum of every open risk's exposure, next to the chart it summarizes — a
+   single glanceable number rather than making someone add up the dots. */
+.tt-risk-exposure-total { flex: none; display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+.tt-risk-exposure-total-label { font-size: .72rem; color: var(--muted); text-align: center; max-width: 6rem; }
+.tt-risk-exposure-total-value { font-family: var(--font-data); font-weight: 700; font-size: 3rem; line-height: 1; }
 .tt-risk-quadrant-cell { stroke: var(--border); stroke-width: 1; }
 /* Uneven opacity, not a flat 12% across all three: --danger and --brass are
    both muted earthy tones in several palettes, so an equal-alpha tint left
@@ -1169,7 +1181,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Drop-target feedback while dragging (wireQuadrantDrag) — a stronger,
    accent-colored border on whichever cell the pointer currently sits over. */
 .tt-risk-quadrant-cell-drag-target { stroke: var(--accent); stroke-width: 2; }
-.tt-risk-quadrant-label { font-size: 9px; fill: var(--fg); dominant-baseline: middle; }
+.tt-risk-quadrant-label { font-size: 9px; fill: var(--fg); dominant-baseline: middle; cursor: default; }
 .tt-risk-quadrant-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: .1rem .75rem; font-size: .72rem; color: var(--muted); }
 .tt-risk-quadrant-legend-item { display: inline-flex; align-items: center; gap: .3rem; }
 /* Same static coloring as .tt-risk-quadrant-dot, minus the interactive bits

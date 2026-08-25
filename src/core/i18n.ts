@@ -183,6 +183,7 @@ const pt = {
   risk_col_chance: 'Chance',
   risk_col_impact: 'Impacto',
   risk_col_exposure: 'Exposição',
+  risk_exposure_total_label: 'Nível de exposição atual',
   risk_col_plan: 'Plano',
   // Chance and impact are stored as bare 1-3. Nothing on screen said whether
   // 3 meant "high chance" or "high confidence", so the words live in the
@@ -384,6 +385,11 @@ const pt = {
   prefs_backup_frequency_label: 'Frequência do backup',
   prefs_backup_frequency_daily: 'Diária',
   prefs_backup_frequency_hourly: 'A cada hora',
+  prefs_backup_status_filename_label: 'Arquivo',
+  prefs_backup_status_size_label: 'Tamanho',
+  prefs_backup_status_last_label: 'Último backup',
+  prefs_backup_status_next_label: 'Próximo backup',
+  prefs_backup_status_never: 'Nunca ainda — será feito no próximo salvamento',
   prefs_templates_scope_personal: 'Pessoal',
   prefs_templates_scope_daily: 'Diário',
   prefs_templates_scope_any: 'Qualquer',
@@ -669,6 +675,7 @@ const en: Record<MsgKey, string> = {
   risk_col_chance: 'Chance',
   risk_col_impact: 'Impact',
   risk_col_exposure: 'Exposure',
+  risk_exposure_total_label: 'Current exposure level',
   risk_col_plan: 'Plan',
   risk_level_1: '1 · Low',
   risk_level_2: '2 · Medium',
@@ -859,6 +866,11 @@ const en: Record<MsgKey, string> = {
   prefs_backup_frequency_label: 'Backup frequency',
   prefs_backup_frequency_daily: 'Daily',
   prefs_backup_frequency_hourly: 'Hourly',
+  prefs_backup_status_filename_label: 'File',
+  prefs_backup_status_size_label: 'Size',
+  prefs_backup_status_last_label: 'Last backup',
+  prefs_backup_status_next_label: 'Next backup',
+  prefs_backup_status_never: 'Never backed up yet — will happen on the next save',
   prefs_templates_scope_personal: 'Personal',
   prefs_templates_scope_daily: 'Daily',
   prefs_templates_scope_any: 'Any',
@@ -987,6 +999,13 @@ export function formatDate(iso: string, locale: Locale): string {
   const [y, m, d] = iso.split('-')
   if (locale === 'pt-BR') return `${d}/${m}/${y}`
   return `${m}/${d}/${y}`
+}
+
+/** Locale-ordered date (see formatDate) plus 24h time — for timestamps (backup last/next times) where the date alone would be ambiguous for an hourly interval. */
+export function formatDateTime(ms: number, locale: Locale): string {
+  const d = new Date(ms)
+  const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  return `${formatDate(iso, locale)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
 /** formatDate() prefixed with the 3-letter weekday abbreviation (e.g. "Wed, 07/24/2026") — used for `@day` ref chips, where recalling the weekday at a glance matters more than in a plain due-date field. */

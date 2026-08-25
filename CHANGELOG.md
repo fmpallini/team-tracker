@@ -4,6 +4,20 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.5.0] - 2026-08-24
+
+### Added
+- Preferences → Backup now shows a status block (filename, size, last/next backup time) that updates live as you toggle backup or change its target file.
+
+### Changed
+- Preferences → Backup: "Change backup location" moved below the new status block.
+- Risks quadrant chart shows the team's total exposure (sum of chance × impact across open risks) next to the chart, and the chart itself renders bigger by default. Hovering a quadrant label now shows a tooltip too, not just the dot.
+
+### Fixed
+- Tabbing out of a rich-text field (a risk's plan, a milestone's concluded checkbox, a task's title) no longer lands on a toolbar button — it goes straight to the text area.
+- The date picker's calendar popover now closes when you tab away instead of staying open over whatever you tabbed onto next.
+- Action item board column titles now truncate with "…" on one line instead of wrapping or squeezing the add-card/delete buttons onto a second row.
+
 ## [2.4.8] - 2026-08-23
 
 ### Changed
