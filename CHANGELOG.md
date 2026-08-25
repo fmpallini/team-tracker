@@ -7,6 +7,8 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.5.1] - 2026-08-25
 
 ### Added
+- Daily notes: Alt+[ and Alt+] step to the previous/next day, Alt+T jumps to today — works even while typing in the note, documented in Help.
+- Action items: typing or picking an assignee name that matches an existing team member or stakeholder now turns it into a linked reference instead of plain text — it shows up on that person's page and stays correct if they're renamed. A clear (x) button reverts it back to free text.
 - Start screen: when the last file is password-less, a "Reopen this file automatically next time" checkbox appears under the Reopen button. Enable it once and the app skips straight past the start screen on future launches — no click needed. Only works while the browser still remembers file access permission for that file; otherwise it falls back to the normal Reopen button.
 
 ### Fixed
