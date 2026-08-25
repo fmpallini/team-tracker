@@ -523,4 +523,27 @@ describe('backup-controller', () => {
       consoleErrorSpy.mockRestore()
     })
   })
+
+  // Toggling backup off/on, or "Change backup location", picks a brand-new
+  // handle under a brand-new random id (see prefs.ts's pickAndStoreBackupTarget)
+  // and updates prefs.backupHandleId to point at it — same running
+  // BackupController instance, no reload. loadHandle() must notice the id
+  // changed and re-resolve from IDB instead of going on serving the handle it
+  // cached under the *old* id.
+  test('getStatus re-resolves from IDB after prefs.backupHandleId changes to a new id mid-session', async () => {
+    const secondGetFile = vi.fn(async () => ({ size: 999, lastModified: 42 }))
+    const secondHandle = { ...fakeHandle, name: 'second.bck', getFile: secondGetFile } as unknown as FileSystemFileHandle
+    idbMocks.idbGet.mockImplementation(async (id?: string) => (id === 'backup-2' ? secondHandle : fakeHandle))
+
+    const store = storeWithBackup(true, 'backup-1')
+    const ctl = createBackupController({ store })
+
+    const first = await ctl.getStatus()
+    expect(first?.fileName).toBe('team.bck')
+
+    store.update((d) => { d.prefs.backupHandleId = 'backup-2' })
+    const second = await ctl.getStatus()
+    expect(second?.fileName).toBe('second.bck')
+    expect(secondGetFile).toHaveBeenCalled()
+  })
 })

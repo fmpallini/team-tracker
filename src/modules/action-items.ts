@@ -7,9 +7,9 @@
 // rename field (see focusedRenameInput/deferredRebuild below) — a foreign
 // store update while it's focused defers the rebuild to the input's next
 // blur instead of wiping the in-progress edit.
-import type { ActionColumn, ActionItem, ActionItemColor, Loc, Team } from '../core/types'
+import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
-import { unlinkRefsInTeam } from '../core/refs'
+import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
@@ -20,7 +20,7 @@ import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
-import { BACKLINK_SECTIONS } from '../core/search'
+import { BACKLINK_SECTIONS, normalize } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
@@ -43,6 +43,40 @@ export function itemsByStatus(items: ActionItem[], status: ActionItem['status'])
 // The overdue rule lives in core/due.ts (shared with the sidebar due badge);
 // re-exported here so board code and tests keep one import site.
 export { isOverdue }
+
+/**
+ * How the assignee field's raw string should render: a live reference
+ * (resolved to the person's *current* name, same "always resolve live"
+ * convention as notes/followup @mentions), a former reference left behind by
+ * unlink-on-delete (refs.ts's ~label~ marker), or plain free text — today's
+ * only shape, still supported so existing hint-typed names keep working.
+ */
+export type AssigneeDisplay =
+  | { kind: 'linked'; personId: string; name: string }
+  | { kind: 'unlinked'; label: string }
+  | { kind: 'text'; text: string }
+
+export function resolveAssigneeDisplay(assignee: string, team: Team): AssigneeDisplay {
+  const ref = parsePersonRef(assignee)
+  if (ref) {
+    const person = [...team.stakeholders, ...team.members].find((p) => p.id === ref.id)
+    // Falls back to the frozen label rather than throwing away the mention
+    // syntax — unreachable in normal use (unlink-on-delete rewrites this
+    // field the moment the person is deleted), kept only as a defensive
+    // no-crash path.
+    return person ? { kind: 'linked', personId: person.id, name: person.name } : { kind: 'text', text: ref.label }
+  }
+  const marker = parseUnlinkMarker(assignee)
+  if (marker !== null) return { kind: 'unlinked', label: marker }
+  return { kind: 'text', text: assignee }
+}
+
+/** Exact (case/accent-insensitive) name match against the team's stakeholders+members — the trigger for turning typed/picked free text into a live reference. Null on blank input or no exact match; a partial hint alone never auto-links. */
+export function matchPersonByName(name: string, team: Team): Person | null {
+  const q = normalize(name.trim())
+  if (!q) return null
+  return [...team.stakeholders, ...team.members].find((p) => normalize(p.name) === q) ?? null
+}
 
 /** Maps a drop's vertical offset within the target card to before/after. Degenerates to 'after' for a non-positive `height` (cards not yet laid out, e.g. in a test without real layout) rather than dividing by zero. "Flat" to distinguish it from people-tree.ts's tree-aware computeDropPosition, which adds a 'child' band. */
 export function computeFlatDropPosition(offsetY: number, height: number): 'before' | 'after' {
@@ -251,7 +285,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
-  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle; unsubscribeSaveStatus: () => void }
+  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle; unsubscribeSaveStatus: () => void; refreshAssignee: () => void }
   let openBundle: ModalBundle | null = null
 
   /** Single teardown for the edit modal's editor bundle (plus its header save-state subscription) — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
@@ -325,13 +359,48 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         patch((item) => { item.dueDate = dueDate }, ['actions'])
       },
     })
-    const assigneeInput = el('input', {
-      type: 'text', class: 'tt-input', list: datalistId, value: existing?.assignee ?? '',
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        patch((item) => { item.assignee = value }, ['actions'])
-      },
-    }) as HTMLInputElement
+    // Chip-or-input: a live person reference renders as a read-only chip
+    // (icon + current name + clear button); anything else (plain hint text,
+    // or a former reference left behind by unlink-on-delete) renders as
+    // today's text+datalist input. Rebuilt in place — via renderAssigneeField,
+    // exposed on openBundle below — after every commit and after a foreign
+    // rename/delete while the modal stays open, same as the notes editor's
+    // refreshRefLabels().
+    const assigneeField = el('div', { class: 'tt-kanban-assignee-field' })
+    function renderAssigneeField(): void {
+      assigneeField.innerHTML = ''
+      const tm = findTeam()
+      const current = tm?.actionItems.find((i) => i.id === itemId)?.assignee ?? ''
+      const display = tm ? resolveAssigneeDisplay(current, tm) : { kind: 'text' as const, text: current }
+      if (display.kind === 'linked') {
+        // No click-to-navigate here (unlike a notes editor's @mention chip):
+        // this field lives inside the card's own edit modal, so navigating
+        // to the person's page in single-pane mode would leave the kanban
+        // board behind it. Only the clear button is interactive.
+        const clearBtn = el('button', {
+          type: 'button', class: 'tt-kanban-assignee-clear',
+          title: t(lc, 'kanban_assignee_clear_btn'), 'aria-label': t(lc, 'kanban_assignee_clear_btn'),
+          onclick: () => {
+            patch((item) => { item.assignee = '' }, ['actions'])
+            renderAssigneeField()
+          },
+        }, '×')
+        assigneeField.appendChild(el('span', { class: 'tt-kanban-assignee-chip' }, `🧑 ${display.name}`, clearBtn))
+        return
+      }
+      const value = display.kind === 'unlinked' ? display.label : display.text
+      assigneeField.appendChild(el('input', {
+        type: 'text', class: 'tt-input', list: datalistId, value,
+        onchange: (e: Event) => {
+          const typed = (e.target as HTMLInputElement).value
+          const team2 = findTeam()
+          const match = team2 ? matchPersonByName(typed, team2) : null
+          patch((item) => { item.assignee = match ? formatPersonRef(match.id, match.name) : typed }, ['actions'])
+          renderAssigneeField()
+        },
+      }))
+    }
+    renderAssigneeField()
     // New cards start with no color chosen — the color tag is optional, and
     // an existing card's color can be unset the same way (see
     // renderColorChips' onclick toggle below).
@@ -398,7 +467,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     )
     const headerExtra = el('div', { class: 'tt-kanban-modal-header-extra' }, savePillMini, expandBtn)
 
-    openBundle = { richBundle, datePicker, unsubscribeSaveStatus }
+    openBundle = { richBundle, datePicker, unsubscribeSaveStatus, refreshAssignee: renderAssigneeField }
 
     const colorRow = el('div', { class: 'tt-kanban-color-row tt-kanban-tag-chips filtering' })
     function paintSelectedColor(): void {
@@ -437,7 +506,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         'div',
         { class: 'tt-kanban-form-row' },
         el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), datePicker.root),
-        el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeInput)
+        el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeField)
       ),
       el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow)
     )
@@ -627,7 +696,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     return null
   }
 
-  function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>): HTMLElement {
+  function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>, team: Team | undefined): HTMLElement {
     const editBtn = el(
       'button',
       { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
@@ -640,7 +709,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (item.dueDate) {
       metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, today) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
     }
-    if (item.assignee) metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, item.assignee))
+    if (item.assignee) {
+      const display = team ? resolveAssigneeDisplay(item.assignee, team) : { kind: 'text' as const, text: item.assignee }
+      const assigneeText = display.kind === 'linked' ? `🧑 ${display.name}` : display.kind === 'unlinked' ? display.label : display.text
+      metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, assigneeText))
+    }
     const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const backlinks = ctx.searchIndex.backlinks(teamId, 'action', item.id)
@@ -1069,7 +1142,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const bodyEl = cols.get(s)!.bodyEl
       bodyEl.innerHTML = ''
       if (visible.length === 0) bodyEl.appendChild(emptyEl())
-      else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames)))
+      else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames, tm)))
       // Same "always the full count, unaffected by activeTagFilter" rule as
       // todoTitleEl/doneCancelTitleEl below (see the comment there) — a
       // middle column's live count is built from `group`, not `visible`.
@@ -1110,7 +1183,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // an in-progress edit), so patch its @mention chips in place the same
     // way daily/person notes do — safe even mid-typing (see
     // Editor.refreshRefLabels' doc comment).
-    if (openBundle) openBundle.richBundle.editor.refreshRefLabels()
+    if (openBundle) { openBundle.richBundle.editor.refreshRefLabels(); openBundle.refreshAssignee() }
     const active = focusedRenameInput()
     if (active) { deferredRebuild.arm(active); return }
     renderAll()

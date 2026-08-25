@@ -76,6 +76,13 @@ describe('transferActionItem', () => {
     expect(copy.order).toBe(0)
   })
 
+  test('copy: strips a person reference from assignee, same as notes', () => {
+    const from = team({ id: 'from', actionItems: [{ id: 'a1', summary: 'Do thing', notes: '', status: 'todo', dueDate: null, assignee: '@[Ana](person:p1)', color: null, order: 0 }] })
+    const to = team({ id: 'to' })
+    transferActionItem([from, to], 'a1', 'from', 'to', 'copy', 'todo')
+    expect(to.actionItems[0]!.assignee).toBe('Ana')
+  })
+
   test('move: appends to target and removes from source', () => {
     const [from, to] = twoTeams()
     transferActionItem([from, to], 'a1', 'from', 'to', 'move', 'todo')

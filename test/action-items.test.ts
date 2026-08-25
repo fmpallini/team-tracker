@@ -1,4 +1,4 @@
-import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard, moveColumn } from '../src/modules/action-items'
+import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard, moveColumn, resolveAssigneeDisplay, matchPersonByName } from '../src/modules/action-items'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -25,9 +25,11 @@ function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) =>
   }
 }
 
-function fakePM(): PaneManager {
+function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
+  const calls: { idx: 0 | 1; loc: Loc }[] = []
   return {
-    openInPane: () => {},
+    calls,
+    openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
     openBothPanes: () => {},
     openInFocused: () => {},
     openInSecondaryPane: () => 0,
@@ -54,7 +56,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
   }
 }
 
-function setup(team: Team): { container: HTMLElement; store: Store; pm: PaneManager; loc: Loc } {
+function setup(team: Team): { container: HTMLElement; store: Store; pm: ReturnType<typeof fakePM>; loc: Loc } {
   const doc = createEmptyDocument('en-US')
   doc.teams.push(team)
   doc.nav.activeTeamId = team.id
@@ -207,6 +209,52 @@ describe('pure helpers', () => {
       const items = [item({ id: 'a', status: 'todo', order: 0 }), item({ id: 'w', status: 'wip', order: 0 })]
       moveCard(items, 'a', 'wip', 'ghost', 'before')
       expect(itemsByStatus(items, 'wip').map((i) => i.id)).toEqual(['w', 'a'])
+    })
+  })
+
+  describe('resolveAssigneeDisplay', () => {
+    test('linked: a live person mention resolves to the person\'s current name', () => {
+      const team = makeTeam() // stakeholder Carla (stk-1), member Bruno (mem-1)
+      expect(resolveAssigneeDisplay('@[Old Name](person:stk-1)', team)).toEqual({ kind: 'linked', personId: 'stk-1', name: 'Carla' })
+    })
+
+    test('unlinked: a muted marker resolves to its frozen label', () => {
+      const team = makeTeam()
+      expect(resolveAssigneeDisplay('~Departed Person~', team)).toEqual({ kind: 'unlinked', label: 'Departed Person' })
+    })
+
+    test('text: plain free text passes through unchanged', () => {
+      const team = makeTeam()
+      expect(resolveAssigneeDisplay('External vendor', team)).toEqual({ kind: 'text', text: 'External vendor' })
+    })
+
+    test('text: empty string passes through unchanged', () => {
+      const team = makeTeam()
+      expect(resolveAssigneeDisplay('', team)).toEqual({ kind: 'text', text: '' })
+    })
+
+    test('text: falls back to the mention\'s frozen label when its id no longer exists in the team (defensive — unlink-on-delete should prevent this)', () => {
+      const team = makeTeam()
+      expect(resolveAssigneeDisplay('@[Ghost](person:gone)', team)).toEqual({ kind: 'text', text: 'Ghost' })
+    })
+  })
+
+  describe('matchPersonByName', () => {
+    test('finds a stakeholder or member by exact, case/accent-insensitive name match', () => {
+      const team = makeTeam()
+      expect(matchPersonByName('carla', team)?.id).toBe('stk-1')
+      expect(matchPersonByName('BRUNO', team)?.id).toBe('mem-1')
+    })
+
+    test('returns null when there is no exact match (a partial hint is not enough)', () => {
+      const team = makeTeam()
+      expect(matchPersonByName('Car', team)).toBeNull()
+      expect(matchPersonByName('Someone else', team)).toBeNull()
+    })
+
+    test('returns null for blank input', () => {
+      const team = makeTeam()
+      expect(matchPersonByName('  ', team)).toBeNull()
     })
   })
 
@@ -964,10 +1012,10 @@ describe('renderActionItems — edit modal live persistence', () => {
 
     clickByTitleOrText(container, '✎')
     pickDate(15)
-    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Carla')
+    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Something else')
 
     const updated = store.doc.teams[0]!.actionItems[0]!
-    expect(updated.assignee).toBe('Carla')
+    expect(updated.assignee).toBe('Something else')
     expect(updated.dueDate).toMatch(/-15$/)
     expect(document.querySelector('.tt-kanban-form')).not.toBeNull() // still open — no Save/close needed
   })
@@ -985,6 +1033,79 @@ describe('renderActionItems — edit modal live persistence', () => {
     vi.advanceTimersByTime(400)
 
     expect(store.doc.teams[0]!.actionItems[0]!.notes).toBe('Talked to vendor today')
+  })
+})
+
+describe('renderActionItems — assignee reference chip', () => {
+  test('committing text that exactly matches an existing person turns the field into a live reference chip', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Carla')
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
+    const chip = document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')
+    expect(chip?.textContent).toContain('Carla')
+    expect(document.querySelector('.tt-kanban-form-row input[list]')).toBeNull() // input replaced by the chip
+  })
+
+  test('the chip shows the person\'s live name, updating in place when the person is renamed elsewhere while the modal stays open', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: '@[Carla](person:stk-1)' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Carla')
+
+    store.update((d) => { d.teams[0]!.stakeholders[0]!.name = 'Carla Renamed' }, { teamId: 'T1', sections: ['people'] })
+
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Carla Renamed')
+  })
+
+  test('clicking the chip\'s clear button unlinks it back to an empty, editable input', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: '@[Carla](person:stk-1)' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const clearBtn = document.querySelector<HTMLButtonElement>('.tt-kanban-form-row .tt-kanban-assignee-clear')!
+    clearBtn.click()
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('')
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')).toBeNull()
+    expect((document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement).value).toBe('')
+  })
+
+  test('the chip\'s name/icon is not interactive — the clear button is its only clickable control', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: '@[Carla](person:stk-1)' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const chip = document.querySelector<HTMLElement>('.tt-kanban-form-row .tt-kanban-assignee-chip')!
+    expect(chip.querySelectorAll('button')).toHaveLength(1)
+    expect(chip.querySelector('button')?.classList.contains('tt-kanban-assignee-clear')).toBe(true)
+    expect(pm.calls).toEqual([]) // opening the modal itself never navigates
+  })
+
+  test('a card whose assignee is a live person reference shows the person icon and current name in the card meta row', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: '@[Carla](person:stk-1)' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const assigneeEl = container.querySelector('.tt-kanban-card-assignee')!
+    expect(assigneeEl.textContent).toBe('🧑 Carla')
+  })
+
+  test('deleting the referenced person turns the assignee into a muted plain marker on the card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: '~Carla~' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const assigneeEl = container.querySelector('.tt-kanban-card-assignee')!
+    expect(assigneeEl.textContent).toBe('Carla')
   })
 })
 

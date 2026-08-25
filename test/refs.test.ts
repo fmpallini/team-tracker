@@ -1,5 +1,47 @@
-import { unlinkRefsInText, unlinkRefsInTeam } from '../src/core/refs'
+import { unlinkRefsInText, unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../src/core/refs'
 import type { Team } from '../src/core/types'
+
+describe('parsePersonRef', () => {
+  test('parses a whole-string person mention into its id and label', () => {
+    expect(parsePersonRef('@[Carla](person:p1)')).toEqual({ id: 'p1', label: 'Carla' })
+  })
+
+  test('returns null for plain text', () => {
+    expect(parsePersonRef('Carla')).toBeNull()
+  })
+
+  test('returns null when the mention is only part of the string', () => {
+    expect(parsePersonRef('see @[Carla](person:p1) now')).toBeNull()
+  })
+
+  test('returns null for a mention of a different kind', () => {
+    expect(parsePersonRef('@[Fix bug](action:a1)')).toBeNull()
+  })
+})
+
+describe('parseUnlinkMarker', () => {
+  test('parses a whole-string muted marker into its label', () => {
+    expect(parseUnlinkMarker('~Carla~')).toBe('Carla')
+  })
+
+  test('returns null for plain text', () => {
+    expect(parseUnlinkMarker('Carla')).toBeNull()
+  })
+
+  test('returns null when the marker is only part of the string', () => {
+    expect(parseUnlinkMarker('see ~Carla~ now')).toBeNull()
+  })
+})
+
+describe('formatPersonRef', () => {
+  test('formats an id/name pair into mention syntax', () => {
+    expect(formatPersonRef('p1', 'Carla')).toBe('@[Carla](person:p1)')
+  })
+
+  test('strips brackets/parens from the name so the mention syntax cannot be broken', () => {
+    expect(formatPersonRef('p1', 'Carla (Lead) [VP]')).toBe('@[Carla Lead VP](person:p1)')
+  })
+})
 
 describe('unlinkRefsInText', () => {
   test('rewrites a matching ref to a muted ~title~ marker', () => {
@@ -93,6 +135,13 @@ describe('unlinkRefsInTeam', () => {
     const before = JSON.stringify(tm)
     unlinkRefsInTeam(tm, 'action', new Map())
     expect(JSON.stringify(tm)).toBe(before)
+  })
+
+  test('also unlinks a person reference held in an action item\'s assignee field', () => {
+    const tm = team()
+    tm.actionItems[0]!.assignee = '@[Carla](person:s1)'
+    unlinkRefsInTeam(tm, 'person', new Map([['s1', 'Carla']]))
+    expect(tm.actionItems[0]!.assignee).toBe('~Carla~')
   })
 })
 

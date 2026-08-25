@@ -11,10 +11,14 @@ const fsMocks = vi.hoisted(() => ({
   writeFile: vi.fn(async () => {}),
   downloadFallback: vi.fn(),
   openFromHandle: vi.fn(),
+  peekLastFile: vi.fn(async () => null as unknown),
 }))
 vi.mock('../src/core/fs', () => fsMocks)
 
-const idbMocks = vi.hoisted(() => ({ idbGet: vi.fn(async () => undefined as unknown) }))
+const idbMocks = vi.hoisted(() => ({
+  idbGet: vi.fn(async (_key?: string) => undefined as unknown),
+  idbSet: vi.fn(async () => {}),
+}))
 vi.mock('../src/core/idb', () => idbMocks)
 
 const cryptoMocks = vi.hoisted(() => {
@@ -44,8 +48,10 @@ beforeEach(() => {
   fsMocks.writeFile.mockReset().mockImplementation(async () => {})
   fsMocks.downloadFallback.mockReset()
   fsMocks.openFromHandle.mockReset()
+  fsMocks.peekLastFile.mockReset().mockResolvedValue(null)
   delete (window as unknown as { launchQueue?: unknown }).launchQueue
   idbMocks.idbGet.mockReset().mockImplementation(async () => undefined)
+  idbMocks.idbSet.mockReset().mockImplementation(async () => {})
   cryptoMocks.decryptDocument.mockReset()
   cryptoMocks.encryptDocument.mockReset().mockImplementation(async () => new Uint8Array([1, 2, 3]))
   cryptoMocks.serializePlain.mockReset().mockReturnValue(new Uint8Array([9, 9, 9]))
@@ -378,6 +384,106 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
   }
+})
+
+describe('auto-load last file on startup', () => {
+  function plainSession(): FileSession {
+    return { handle: {} as unknown as FileSystemFileHandle, name: 'last.tmv', lastModified: 1 }
+  }
+
+  test('checkbox hidden when peekLastFile finds nothing (no handle, or permission not silently granted)', async () => {
+    fsMocks.peekLastFile.mockResolvedValue(null)
+    showStartScreen('en-US', () => {})
+    await flush()
+    const row = document.querySelector('.tt-start-autoload') as HTMLElement
+    expect(row.style.display).toBe('none')
+  })
+
+  test('checkbox hidden when the last file is not passwordless', async () => {
+    fsMocks.peekLastFile.mockResolvedValue({ session: plainSession(), bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(null)
+    showStartScreen('en-US', () => {})
+    await flush()
+    const row = document.querySelector('.tt-start-autoload') as HTMLElement
+    expect(row.style.display).toBe('none')
+  })
+
+  test('checkbox shown unchecked when last file is passwordless and pref is unset', async () => {
+    fsMocks.peekLastFile.mockResolvedValue({ session: plainSession(), bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+    showStartScreen('en-US', () => {})
+    await flush()
+    const checkbox = document.querySelector('.tt-start-autoload-checkbox') as HTMLInputElement
+    expect(checkbox).not.toBeNull()
+    expect(checkbox.checked).toBe(false)
+  })
+
+  test('toggling the checkbox persists the pref via idbSet', async () => {
+    fsMocks.peekLastFile.mockResolvedValue({ session: plainSession(), bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+    showStartScreen('en-US', () => {})
+    await flush()
+    const checkbox = document.querySelector('.tt-start-autoload-checkbox') as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+    expect(idbMocks.idbSet).toHaveBeenCalledWith('autoLoadLast', true)
+  })
+
+  test('auto-loads immediately (no click needed) when pref is true and last file is confirmed passwordless', async () => {
+    const session = plainSession()
+    const bytes = new Uint8Array([9])
+    fsMocks.peekLastFile.mockResolvedValue({ session, bytes })
+    const plainDoc = createEmptyDocument('en-US')
+    cryptoMocks.parsePlain.mockReturnValue(plainDoc)
+    idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? true : undefined))
+
+    let opened: [FileSession, Doc, string | null] | null = null
+    showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+    await flush()
+
+    expect(opened).not.toBeNull()
+    expect(opened![0]).toBe(session)
+    expect(opened![1]).toEqual(plainDoc)
+    expect(opened![2]).toBeNull()
+  })
+
+  test('skipAutoLoad option: does not auto-fire onOpen even when pref is true and file is passwordless (used when closing a file, to avoid re-opening it immediately)', async () => {
+    fsMocks.peekLastFile.mockResolvedValue({ session: plainSession(), bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+    idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? true : undefined))
+
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen, { skipAutoLoad: true })
+    await flush()
+
+    expect(onOpen).not.toHaveBeenCalled()
+    const checkbox = document.querySelector('.tt-start-autoload-checkbox') as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+  })
+
+  test('does not auto-load when pref is false, even though the last file is passwordless', async () => {
+    fsMocks.peekLastFile.mockResolvedValue({ session: plainSession(), bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+    idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? false : undefined))
+
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+    await flush()
+
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  test('does not auto-load when pref is true but the last file is not passwordless', async () => {
+    fsMocks.peekLastFile.mockResolvedValue({ session: plainSession(), bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(null)
+    idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? true : undefined))
+
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+    await flush()
+
+    expect(onOpen).not.toHaveBeenCalled()
+  })
 })
 
 describe('promo card', () => {

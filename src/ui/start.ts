@@ -11,9 +11,10 @@ import {
   writeFile,
   downloadFallback,
   openFromHandle,
+  peekLastFile,
   type FileSession,
 } from '../core/fs'
-import { idbGet } from '../core/idb'
+import { idbGet, idbSet } from '../core/idb'
 import { decryptDocument, encryptDocument, serializePlain, parsePlain, WrongPasswordError, CorruptFileError } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
@@ -76,7 +77,8 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
 
 export function showStartScreen(
   locale: Locale,
-  onOpen: (session: FileSession, doc: Doc, password: string | null) => void
+  onOpen: (session: FileSession, doc: Doc, password: string | null) => void,
+  opts?: { skipAutoLoad?: boolean }
 ): void {
   const container = document.getElementById('app') ?? document.body
   container.innerHTML = ''
@@ -298,8 +300,20 @@ export function showStartScreen(
     cloudLink('https://www.dropbox.com/install', t(locale, 'start_backup_tip_link_dropbox')),
     t(locale, 'start_backup_tip_suffix')
   )
-  const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenBtn, openBtn, createBtn)
+  const autoLoadCheckbox = el('input', {
+    type: 'checkbox',
+    class: 'tt-start-autoload-checkbox',
+    onchange: () => {
+      idbSet('autoLoadLast', autoLoadCheckbox.checked).catch((e: unknown) => console.error(e))
+    },
+  }) as HTMLInputElement
+  const autoLoadRow = el('label', { class: 'tt-start-autoload' }, autoLoadCheckbox, ' ' + t(locale, 'start_auto_load_last'))
+  autoLoadRow.style.display = 'none'
+
+  const reopenRow = el('div', { class: 'tt-start-reopen-row' }, reopenBtn, autoLoadRow)
+  const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenRow, openBtn, createBtn)
   reopenBtn.style.display = 'none'
+  reopenRow.style.display = 'none'
 
   const children: (Node | string | null)[] = [title, versionTag, tagline, advantages, backupTip, buttonsCol]
   if (!supportsFsApi) {
@@ -312,9 +326,39 @@ export function showStartScreen(
 
   idbGet('lastHandle')
     .then((handle) => {
-      if (handle !== undefined) reopenBtn.style.display = ''
+      if (handle !== undefined) {
+        reopenBtn.style.display = ''
+        reopenRow.style.display = ''
+      }
     })
     .catch((e: unknown) => console.error(e))
+
+  // Silent (no permission prompt) peek at the last file, to offer/act on
+  // "auto-open on startup" — only possible when it's passwordless (nothing
+  // to prompt for) and the FS permission grant hasn't lapsed since last
+  // visit. Never surfaces an error modal: an unreadable/corrupt last file
+  // here just means no auto-load, same as if there were no last file at all.
+  async function checkAutoLoad(): Promise<void> {
+    const result = await peekLastFile()
+    if (!result) return
+    let plainDoc: Doc | null
+    try {
+      plainDoc = parsePlain(result.bytes)
+    } catch (e) {
+      console.error(e)
+      return
+    }
+    if (!plainDoc) return
+    const autoLoad = (await idbGet<boolean>('autoLoadLast')) === true
+    autoLoadRow.style.display = ''
+    autoLoadCheckbox.checked = autoLoad
+    // skipAutoLoad: this render came from closeFile() (main.ts) — the user
+    // just chose to leave this exact file, so re-opening it right back
+    // would trap them (open/create would be unreachable). The checkbox still
+    // reflects/edits the pref; only the immediate re-open is suppressed.
+    if (autoLoad && !opts?.skipAutoLoad) onOpen(result.session, plainDoc, null)
+  }
+  checkAutoLoad().catch((e: unknown) => console.error(e))
 
   // Absent outside Chromium and in jsdom (tests) — feature-detected, no-op
   // everywhere else.

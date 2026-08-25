@@ -73,29 +73,39 @@ export interface BackupStatus {
 
 export function createBackupController(deps: { store: Store }): BackupController {
   let cachedHandle: FileSystemFileHandle | null = null
+  // The id `cachedHandle` was resolved for — lets loadHandle() notice
+  // `prefs.backupHandleId` pointing at a *different* id (toggling backup
+  // off/on, or "Change backup location", picks a new id mid-session with no
+  // reload) and re-resolve, instead of going on serving the old handle.
+  let cachedHandleId: string | null = null
   let lastBackupAt = 0
-  let lastBackupAtInitialized = false
   let warnedThisSession = false
 
   async function loadHandle(): Promise<FileSystemFileHandle | null> {
-    if (!cachedHandle) {
-      const id = deps.store.doc.prefs.backupHandleId
-      if (!id) return null
+    const id = deps.store.doc.prefs.backupHandleId
+    if (!id) {
+      cachedHandle = null
+      cachedHandleId = null
+      return null
+    }
+    if (!cachedHandle || cachedHandleId !== id) {
       cachedHandle = (await idbGet<FileSystemFileHandle>(id)) ?? null
+      cachedHandleId = id
       // Seeds the elapsed-time clock from the .bck file's own on-disk
-      // lastModified, once per session, so `maybeWriteBackup`'s interval
-      // gate survives a reopen instead of resetting to "never" every launch
-      // (which would write a fresh backup on the very next save regardless
-      // of how recently the real one on disk was written). Guarded by
-      // `size > 0`: `pickCreateBackup` (fs.ts) creates the file the moment
-      // it's picked, before any real content is ever written — reading that
-      // brand-new empty file's creation timestamp as "just backed up" would
-      // make the actual first write skip for up to a full interval, leaving
-      // an empty .bck behind. Only checked on this first resolution — a
-      // write later in the same session already advances `lastBackupAt`
-      // itself (see writeBackupNow), so nothing here should override that.
-      if (cachedHandle && !lastBackupAtInitialized) {
-        lastBackupAtInitialized = true
+      // lastModified, once per resolved handle, so `maybeWriteBackup`'s
+      // interval gate survives a reopen instead of resetting to "never"
+      // every launch (which would write a fresh backup on the very next
+      // save regardless of how recently the real one on disk was written).
+      // Guarded by `size > 0`: `pickCreateBackup` (fs.ts) creates the file
+      // the moment it's picked, before any real content is ever written —
+      // reading that brand-new empty file's creation timestamp as "just
+      // backed up" would make the actual first write skip for up to a full
+      // interval, leaving an empty .bck behind. Only checked on first
+      // resolution of a given id — a write later in the same session
+      // already advances `lastBackupAt` itself (see writeBackupNow), so
+      // nothing here should override that.
+      lastBackupAt = 0
+      if (cachedHandle) {
         try {
           const file = await cachedHandle.getFile()
           if (file.size > 0) lastBackupAt = file.lastModified
