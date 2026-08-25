@@ -13,6 +13,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Fixed
 - Closing a file (🔒 / Ctrl+Alt+L) with auto-reopen enabled no longer immediately reopens the same file, trapping you — it now returns to a normal start screen so you can open or create another file.
+- Preferences → Backup: turning backup off then on, or picking a new backup location, could get stuck showing (and writing to) the *previous* backup file instead of the new one, with the status table failing to load. Picking a new target now takes effect immediately.
 
 ## [2.5.0] - 2026-08-24
 
