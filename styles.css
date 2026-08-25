@@ -913,10 +913,16 @@ body { background: var(--bg); color: var(--fg); }
    add/delete cluster together at the head's trailing edge instead of
    space-between's even spread across every child. */
 .tt-kanban-col-head .tt-kanban-add-btn { margin-left: auto; }
-.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; }
+.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
 
 .tt-kanban-add-column-btn { white-space: nowrap; }
+
+/* Column title (todo/middle/done+cancelled) truncates to one line with an
+   ellipsis instead of wrapping or overflowing when the board gets narrow —
+   min-width: 0 is what lets a flex item shrink below its text's intrinsic
+   width in the first place. */
+.tt-kanban-col-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1 1 auto; }
 
 .tt-kanban-col-name { cursor: pointer; position: relative; padding-right: 1.1rem; }
 .tt-kanban-col-name::after {
@@ -924,7 +930,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-kanban-col-name:hover::after { opacity: .6; }
 .tt-kanban-col-rename-input { font: inherit; font-weight: 700; width: 100%; }
-.tt-kanban-col-delete-btn { opacity: .5; border: none; background: transparent; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; }
+.tt-kanban-col-delete-btn { opacity: .5; border: none; background: transparent; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; flex: none; }
 .tt-kanban-col-delete-btn:hover { opacity: 1; }
 
 /* Grip is the sole drag source for column reorder (wireColumnHeaderDrag) —
