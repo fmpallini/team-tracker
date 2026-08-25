@@ -242,6 +242,15 @@ describe('renderPersonNotes', () => {
     expect(container.querySelector('.tt-backlinks-chip')?.textContent).toBe('↩ 1')
   })
 
+  test('a backlink chip renders when an action item\'s (reference-linked) assignee mentions this person', () => {
+    const team = makeTeam()
+    team.actionItems.push({ id: 'a1', summary: 'Ship it', status: 'todo', color: 'ledger', dueDate: null, assignee: '@[Carla](person:stk-1)', order: 0, notes: '' })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-backlinks-chip')?.textContent).toBe('↩ 1')
+  })
+
   test('no chip when nothing mentions this person', () => {
     const { container, store, pm } = setup(makeTeam())
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }

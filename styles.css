@@ -1042,6 +1042,18 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-form .editor { min-height: 240px; max-height: 55vh; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
+/* Assignee chip — same color language as .editor a.ref (line ~676), since
+   both represent a live @[label](person:id) mention, just outside the rich
+   editor's contenteditable surface. */
+.tt-kanban-assignee-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .4rem .5rem; border-radius: 4px;
+  background: rgba(var(--accent-rgb), .12); color: var(--accent); font-size: 1rem;
+}
+.tt-kanban-assignee-clear {
+  border: none; background: none; cursor: pointer; color: inherit;
+  font-size: 1rem; line-height: 1; padding: 0;
+}
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
 .tt-kanban-color-chip {
   min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;

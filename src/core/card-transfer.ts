@@ -83,6 +83,7 @@ export function transferActionItem(
     (item) => item.summary,
     (to, copy) => {
       copy.notes = stripAllRefs(copy.notes)
+      copy.assignee = stripAllRefs(copy.assignee)
       if (targetStatus !== undefined) copy.status = targetStatus
       copy.order = to.actionItems.length - 1
     }

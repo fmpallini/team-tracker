@@ -100,7 +100,7 @@ export function unlinkRefsInTeam(team: Team, kind: IdRefKind, titles: ReadonlyMa
   for (const group of ['stakeholders', 'members'] as const) {
     for (const p of team[group]) p.notes = unlink(p.notes)
   }
-  for (const item of team.actionItems) item.notes = unlink(item.notes)
+  for (const item of team.actionItems) { item.notes = unlink(item.notes); item.assignee = unlink(item.assignee) }
   for (const m of team.milestones) m.followup = unlink(m.followup)
   for (const r of team.risks) r.followup = unlink(r.followup)
 }
@@ -116,4 +116,31 @@ export function unlinkRefsInTeam(team: Team, kind: IdRefKind, titles: ReadonlyMa
  */
 export function stripAllRefs(text: string): string {
   return text.replace(refPattern(), (_, label: string) => label)
+}
+
+// --- single-value person ref (action-items.ts's assignee field) -----------
+// Unlike refPattern's free-text scan, these anchor to the *whole* string:
+// the assignee field holds either one mention/marker or plain text, never a
+// mix of prose and links the way a notes body can.
+
+const PERSON_REF_RE = new RegExp(`^@\\[([^\\]]+)\\]\\(person:(${REF_KINDS.person.targetPattern})\\)$`)
+
+/** Whole-string @[label](person:id), or null if `text` isn't exactly one such mention. */
+export function parsePersonRef(text: string): { id: string; label: string } | null {
+  const m = PERSON_REF_RE.exec(text)
+  return m ? { label: m[1]!, id: m[2]! } : null
+}
+
+const UNLINK_MARKER_RE = /^~([^~]+)~$/
+
+/** Whole-string ~label~ (refs.ts's own unlink-on-delete marker), or null if `text` isn't exactly one. */
+export function parseUnlinkMarker(text: string): string | null {
+  const m = UNLINK_MARKER_RE.exec(text)
+  return m ? m[1]! : null
+}
+
+/** Builds an @[name](person:id) mention — same bracket/paren stripping as ui/atref.ts's commit() uses for inserted mentions, so the syntax can't be broken by a name containing them. */
+export function formatPersonRef(personId: string, name: string): string {
+  const safeLabel = name.replace(/[[\]()]/g, '')
+  return `@[${safeLabel}](person:${personId})`
 }
