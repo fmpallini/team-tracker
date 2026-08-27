@@ -1,0 +1,31 @@
+name: Dependency audit
+
+# Moved off the pre-push hook (was its "Security audit" / "Outdated packages"
+# gates) so it stops adding two network round-trips to every push. Weekly is
+# plenty for a project with zero runtime deps and a small dev-only tree. Same
+# cadence slot as CodeQL's cron; workflow_dispatch for an on-demand run.
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: npm audit & outdated
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Fails the run on high/critical (emails you); moderate stays advisory,
+      # same threshold the pre-push gate used.
+      - name: npm audit (fail on high/critical)
+        run: npm audit --audit-level=high
+      - name: npm outdated (advisory)
+        if: always()
+        run: npm outdated || true

@@ -41,11 +41,9 @@ Most team-tracking tools require an account, a server, and your data leaving
 your machine. Team Tracker doesn't:
 
 - 🔌 **100% offline** — works without internet; nothing leaves your machine.
-  The one exception: the app checks GitHub for a newer release at most once a
-  day (a plain, read-only request to the public releases API — no data of
-  yours is sent) and shows a banner if one exists; it never downloads or
-  installs anything on its own; that's always something you have to trigger
-  — see [Checking for updates](#checking-for-updates).
+  The one exception is an optional once-a-day check against GitHub's public
+  releases API for a newer version (no data of yours is sent, nothing installs
+  automatically) — see [Checking for updates](#checking-for-updates).
 - 🗄️ **A single `.tmv` file** you keep wherever you want — copy it, back it up,
   put it in your own cloud sync, put it on a USB stick. There is no vendor
   storing it for you.
@@ -65,10 +63,9 @@ your machine. Team Tracker doesn't:
 - 🎨 **Yours to tune** — 9 color palettes, light/dark/system theme, 5 font
   stacks, adjustable font size, and pt-BR/en-US locales, all in Settings.
 
-There's no server and no backend. Everything lives in one password-encrypted
-`.tmv` file that you open, edit, and save yourself, either straight off disk
-(`dist/app.html` via `file://`) or through an installable PWA build
-(`dist/pwa/`).
+There's no server and no backend — you keep the `.tmv` file, opened straight
+off disk (`dist/app.html` via `file://`) or through the installable PWA build
+(`dist/pwa/`), both covered next.
 
 ## Why zero runtime dependencies
 
@@ -94,9 +91,8 @@ notes and click `app.html` there — that single file is everything you need
 (or build it yourself, see [Build](#build), where it lands in `dist/app.html`).
 Just double-click it, or open it from your browser's file picker. No install,
 no server required — the whole app (HTML, CSS, JS) is inlined into that one
-file. The only network request it ever makes is the once-a-day update check
-(see [Checking for updates](#checking-for-updates)); nothing else needs, or
-uses, a connection.
+file. Its only network request is the once-a-day update check (see
+[Checking for updates](#checking-for-updates)).
 
 To open it in its own app-like window (no address bar/tabs) instead of a
 regular browser tab, launch Chrome with the `--app` flag:
@@ -161,17 +157,10 @@ gh attestation verify team-tracker-1.5.1.html -R fmpallini/team-tracker
 
 A successful verify exits with status `0` (silently, in most shells); a
 tampered or unrelated file fails with a `404` — there's no matching
-attestation for that file's hash. To see exactly which commit the file was
-built from, add `--format json` (requires [`jq`](https://jqlang.org/)):
-
-```
-gh attestation verify team-tracker-1.5.1.html -R fmpallini/team-tracker --format json \
-  | jq -r '.[0].verificationResult.statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit'
-```
-
-Compare that SHA against the tag's commit on the
-[commits page](https://github.com/fmpallini/team-tracker/commits/main) to
-confirm they match.
+attestation for that file's hash. Adding `--format json` to the command also
+prints the source commit the file was built from, to compare against the
+tag on the
+[commits page](https://github.com/fmpallini/team-tracker/commits/main).
 
 The PWA build isn't a separate downloadable release asset — it's attested
 directly and deployed straight from that same attested build to GitHub Pages,
@@ -188,18 +177,17 @@ done
 ## Data file
 
 Team Tracker never uploads or syncs your data anywhere. All state lives in a
-single encrypted `.tmv` file (password-based encryption) that you create,
-open, and save through the app's own file dialogs (or the download-fallback
-path in browsers without File System Access API support). **You own the
-file and are responsible for backing it up** — losing the file, or forgetting
-its password, means the data is unrecoverable. See the next section for the
-recommended way to keep it backed up.
+single `.tmv` file — encrypted by default (see below for password-less) — that
+you create, open, and save through the app's own file dialogs (or the
+download-fallback path in browsers without File System Access API support).
+**You own the file and are responsible for backing it up** — losing the file,
+or forgetting its password, means the data is unrecoverable. See the next
+section for the recommended way to keep it backed up.
 
-Team Tracker also supports password-less files (chosen at creation, or via
-Settings → Security's "Migrate to password-less") for cases where you don't
-need the encryption — the trade-off is anyone with access to the file,
-including automated scanning by a cloud backup provider, can read it as
-plain text.
+Team Tracker also supports password-less files (chosen at creation, or
+Settings → Security → "Migrate to password-less") for when you don't need
+encryption — the trade-off is that anyone with file access, including a cloud
+provider's automated scanning, can read it as plain text.
 
 ## Backing up your team file
 
@@ -273,12 +261,9 @@ it anywhere, the data is gone too. See [Backing up your team
 file](#backing-up-your-team-file).
 
 **Can I skip the password entirely?**
-Yes — choose "Use without password" when creating a file, or migrate an
-existing encrypted file via Settings → Security → "Migrate to
-password-less". The trade-off: the file is then stored as plain,
-unencrypted text, readable by anyone with access to it (including automated
-scanning by a cloud backup provider). You can set a password on a
-password-less file at any time from the same tab.
+Yes — "Use without password" at creation, or Settings → Security → "Migrate
+to password-less" later (trade-offs in [Data file](#data-file)). You can also
+set a password on a password-less file at any time from the same tab.
 
 **What's the `.bck` file next to my `.tmv` file?**
 An optional automatic backup, daily or hourly (see [Automatic backup
@@ -292,12 +277,10 @@ Not inside the app. Whatever version history your cloud sync provider offers
 state of the file.
 
 **Does any of my data leave my machine — analytics, telemetry, anything?**
-No. There's no analytics or telemetry, ever. The one network call the app
-makes, in either build, is a once-a-day read-only check against GitHub's
-public releases API to see if a newer version exists (see [Checking for
-updates](#checking-for-updates)) — it sends no data of yours, and it never
-downloads or installs anything by itself; updating is always something you
-choose to do.
+No analytics or telemetry, ever. The only network call, in either build, is
+the once-a-day version check against GitHub's public releases API (see
+[Checking for updates](#checking-for-updates)) — no data of yours is sent,
+nothing installs by itself.
 
 **How secure is the `.tmv` file's encryption — could someone brute-force my password?**
 The file is AES-256-GCM encrypted with a key derived from your password via

@@ -59,16 +59,14 @@ else
   gate_fail "Tests" "fix failing tests then push again"
 fi
 
-# 4. E2E tests — builds dist/ fresh, then runs the Playwright suite against
-# it (real File System Access API / OPFS, cross-tab locking, service worker).
-gate_run "E2E tests"
-if npm run test:e2e 2>&1; then
-  gate_ok "E2E tests"
-else
-  gate_fail "E2E tests" "fix failing e2e specs then push again"
-fi
+# E2E (Playwright) and the npm audit / npm outdated checks used to live here
+# as gates 4, 6 and 7. E2E moved to CI (.github/workflows/ci.yml's `e2e` job,
+# on every dev push + PRs into main) so pushes stay fast and its enforcement
+# survives a missing hook / --no-verify. The dependency checks moved to a
+# weekly workflow (.github/workflows/deps-audit.yml). What's left here is the
+# fast deterministic set plus the cheap changelog nag.
 
-# 5. Test coverage sanity — enforces CLAUDE.md's "every src module gets a
+# 4. Test coverage sanity — enforces CLAUDE.md's "every src module gets a
 # matching test/*.test.ts" convention for *new* files (hard fail; the
 # convention is real and near-100% today, so a new file skipping it is a
 # mistake, not a style choice). Modified-but-not-new files only get a
@@ -112,57 +110,27 @@ else
   fi
 fi
 
-# 6. Security audit
-gate_run "Security audit"
-AUDIT_OUT=$(npm audit --json 2>/dev/null || true)
-HIGH_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
-  let r=''; process.stdin.on('data',d=>r+=d);
-  process.stdin.on('end',()=>{
-    try{const d=JSON.parse(r); const s=d.metadata&&d.metadata.vulnerabilities||{}; console.log((s.high||0)+(s.critical||0));}
-    catch{console.log(0);}
-  });
-" 2>/dev/null || echo 0)
-MOD_COUNT=$(printf '%s' "$AUDIT_OUT" | node -e "
-  let r=''; process.stdin.on('data',d=>r+=d);
-  process.stdin.on('end',()=>{
-    try{const d=JSON.parse(r); const s=d.metadata&&d.metadata.vulnerabilities||{}; console.log(s.moderate||0);}
-    catch{console.log(0);}
-  });
-" 2>/dev/null || echo 0)
-if [ "$HIGH_COUNT" -gt 0 ] 2>/dev/null; then
-  npm audit --audit-level=high 2>&1 || true
-  gate_fail "Security audit" "high/critical vulnerabilities found — run: npm audit fix"
-elif [ "$MOD_COUNT" -gt 0 ] 2>/dev/null; then
-  gate_warn "Security audit — $MOD_COUNT moderate vulnerabilities (run: npm audit for details)"
-  gate_ok "Security audit (moderate — advisory only)"
+# 5. Changelog entry — if this push bumps package.json's version but adds no
+# matching "## [x.y.z]" section to CHANGELOG.md, nag. Non-blocking on purpose:
+# the bump and the entry may land in separate commits within one push cycle.
+# CI's changelog-gate hard-fails the same check on the dev -> main PR, against
+# the origin/main baseline (the true last release).
+gate_run "Changelog entry"
+if [ "$BRANCH" != "dev" ]; then
+  gate_warn "Changelog entry — skipped (only checked on pushes to dev)"
+elif ! printf '%s\n' "$PUSH_DIFF_FILES" | grep -qxF "package.json"; then
+  gate_ok "Changelog entry (package.json not in this push)"
 else
-  gate_ok "Security audit"
-fi
-
-# 7. Outdated packages (advisory only, non-blocking)
-gate_run "Outdated packages"
-OUTDATED=$(npm outdated --json 2>/dev/null || true)
-if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ]; then
-  gate_warn "Outdated packages (safe minor/patch updates available):"
-  printf '%s' "$OUTDATED" | node -e "
-    let raw = '';
-    process.stdin.on('data', d => raw += d);
-    process.stdin.on('end', () => {
-      try {
-        const data = JSON.parse(raw);
-        for (const [pkg, info] of Object.entries(data)) {
-          const cur = (info.current || '').split('.')[0];
-          const want = (info.wanted || '').split('.')[0];
-          if (cur && want && cur === want && info.current !== info.wanted) {
-            process.stdout.write('  ' + pkg.padEnd(20) + info.current + ' -> ' + info.wanted + '\n');
-          }
-        }
-      } catch {}
-    });
-  " 2>/dev/null || true
-  echo "  Run: npm update"
-else
-  gate_ok "Outdated packages"
+  extract_ver() { grep -m1 '"version"' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; }
+  HEAD_VER=$( { extract_ver < package.json; } || echo "")
+  BASE_VER=$( { git show origin/dev:package.json 2>/dev/null | extract_ver; } || echo "")
+  if [ -z "$HEAD_VER" ] || [ -z "$BASE_VER" ] || [ "$HEAD_VER" = "$BASE_VER" ]; then
+    gate_ok "Changelog entry (version unchanged)"
+  elif grep -qF "## [${HEAD_VER}]" CHANGELOG.md; then
+    gate_ok "Changelog entry (## [${HEAD_VER}] present)"
+  else
+    gate_warn "Changelog entry — package.json ${BASE_VER} -> ${HEAD_VER} but CHANGELOG.md has no '## [${HEAD_VER}]' section yet (CI blocks the dev -> main PR until it does)"
+  fi
 fi
 
 # ─── PHASE 2: AI GATES ───────────────────────────────────────────────────────
