@@ -1,7 +1,16 @@
 # Git Hooks
 
-Pre-push quality gates run automatically before every `git push`, catching
-what the CI gate would catch anyway but before you wait on a CI run.
+Pre-push quality gates run automatically before every `git push` — the fast,
+deterministic checks, so a broken push is caught locally in seconds instead of
+by a red CI run minutes later.
+
+The slower checks run in CI instead:
+
+- **E2E** (`npm run test:e2e`, Playwright/Chromium) — `.github/workflows/ci.yml`'s
+  `e2e` job, on every push to `dev` and every PR into `main`.
+- **`npm audit` / `npm outdated`** — `.github/workflows/deps-audit.yml`, weekly
+  cron (plus `workflow_dispatch`). Fails on high/critical, same threshold the
+  pre-push gate used.
 
 ## One-time setup (per machine)
 
@@ -16,29 +25,16 @@ git config core.hooksPath .githooks
 | Lint (`eslint src test`) | Yes | flat config, type-checked rules — see `eslint.config.mjs` |
 | TypeCheck (`tsc --noEmit`) | Yes | |
 | Tests (`vitest run`) | Yes | |
-| E2E tests (`npm run test:e2e`) | Yes | builds `dist/` fresh, then Playwright/Chromium |
 | Test coverage sanity | Yes (new files only) | dev pushes only — see below |
-| Security audit (`npm audit`) | Yes (high/critical only) | moderate = advisory |
-| Outdated packages | No | advisory only |
-| AI: Simplify | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
-| AI: Security review | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
-| AI: Bug hunt | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
-| AI: Test Coverage | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI |
+| Changelog entry | No | dev pushes only — warns if `package.json` version changed vs `origin/dev` with no matching `## [x.y.z]` in `CHANGELOG.md`; CI hard-fails the same check on the `dev → main` PR |
+| AI: Simplify / Security review / Bug hunt / Test Coverage | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI — see [AI gates](#ai-gates) |
 
-`eslint.config.mjs`'s highest-value rules are `@typescript-eslint/no-floating-promises`
-and `no-misused-promises` — the save/lock/dispose code in `save-controller.ts` and
-`main.ts` is full of fire-and-forget async, exactly the bug class an unhandled
-rejection slips through. `no-unnecessary-type-assertion` is turned off project-wide
-(cosmetic, not a bug signal); a few test-only rules (`require-await`, `no-base-to-string`)
-are relaxed for mocks/stubs that intentionally don't need the rigor.
-
-### Test coverage sanity (deterministic, Phase 1)
+### Test coverage sanity
 
 `CLAUDE.md`'s "every `src` module gets a matching `test/*.test.ts`" convention is
-now effectively 1:1 (the historical exceptions — `dom.ts`, `idb.ts`, `palette.ts` —
-all got tests since); the only files exempt today are `src/core/types.ts`
-(type-only), `src/main.ts` (wiring, covered by e2e instead), and `*.d.ts` ambient
-declarations. Scoped to the diff against `origin/dev` on pushes to `dev`:
+effectively 1:1 today; the only exempt files are `src/core/types.ts` (type-only),
+`src/main.ts` (wiring, covered by e2e), and `*.d.ts` ambient declarations. Scoped
+to the diff against `origin/dev` on pushes to `dev`:
 
 - A **new** `src/**/*.ts` file with no matching `test/<name>.test.ts` **fails the
   push** — the convention is real, so this is a mistake, not a style choice.
@@ -50,9 +46,9 @@ Whether an existing test actually exercises the *new* behavior (as opposed to
 merely existing) is a judgment call this gate can't make — that's what the AI
 Test Coverage gate below is for.
 
-The e2e suite itself runs deterministically as its own gate (Phase 1, above) —
-but *whether a given change needed a new/updated e2e spec* is still
-judgment-based, folded into the AI Test Coverage gate instead of a hard rule.
+The e2e suite runs in CI (see top of this file), not as a pre-push gate — and
+*whether a given change needed a new/updated e2e spec* is still judgment-based,
+folded into the AI Test Coverage gate instead of a hard rule.
 
 ## AI gates
 
@@ -73,20 +69,14 @@ sets it for the commit, so the push wouldn't run the AI gates anyway. They're
 also skipped automatically if the `claude` CLI isn't installed, even with
 `ENABLE_AI=1`.
 
-When an AI gate finds a HIGH-severity issue, it blocks the push and launches
-`claude` interactively with instructions to fix it; review the changes,
-commit, then push again. MEDIUM/LOW findings are printed but never block.
+When an AI gate finds a HIGH-severity issue it blocks the push and launches
+`claude` interactively to fix it; review the changes, commit, then push again.
+MEDIUM/LOW findings are printed but never block.
 
-The Security gate is told to weigh `src/core/crypto.ts`, `src/core/store.ts`,
-and `src/core/fs.ts` more heavily than the rest of the diff — the app's whole
-value proposition rests on the password never leaving the browser and the
-`.tmv` format being sound.
-
-The Test Coverage gate is told to actually open the relevant `test/*.test.ts`
-(not just confirm it was touched) and check it exercises the new/changed code
-path, and to check whether a change to a cross-cutting flow (FS Access/OPFS
-round trips, cross-tab locking, external-change conflicts, password-change)
-should have touched `e2e/*.spec.ts` and didn't.
+Each gate's prompt — including the Security gate's extra weight on
+`crypto.ts`/`store.ts`/`fs.ts` and the Test Coverage gate's instruction to
+open the actual `test/*.test.ts` rather than just confirm it was touched —
+lives inline in `pre-push`; read it there.
 
 ## Requirements
 

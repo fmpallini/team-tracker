@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.5.2] - 2026-08-26
+
+### Fixed
+- The update-available banner's button ("Reload now" / "View release") became unreadable on hover — the label took on the banner's own background color and vanished. It now stays white with a subtle highlight.
+
 ## [2.5.1] - 2026-08-25
 
 ### Added

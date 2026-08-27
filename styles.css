@@ -467,7 +467,11 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-update-banner-row { display: flex; align-items: center; justify-content: center; gap: .75rem; width: 100%; }
 .tt-update-banner-action { border-color: rgba(255, 255, 255, .6); color: #fff; }
-.tt-update-banner-action:hover { border-color: #fff; opacity: .85; }
+/* Banner background is var(--accent); .tt-btn:hover would otherwise set the
+   text to var(--accent) too (higher specificity than .tt-update-banner-action's
+   plain color), making the label vanish on hover. Pin white and use a
+   translucent-white fill as the actual hover highlight instead of dimming. */
+.tt-update-banner-action:hover { border-color: #fff; color: #fff; background: rgba(255, 255, 255, .18); }
 .tt-update-banner-action:disabled { opacity: .5; cursor: default; }
 .tt-update-banner-dismiss { border: none; background: none; color: #fff; font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
 .tt-update-banner-dismiss:hover { opacity: .85; }

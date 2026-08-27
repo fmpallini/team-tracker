@@ -3,8 +3,8 @@
 //
 // The rest of the suite asserts on behavior. This file asserts on *resource
 // growth*: it drives a long, realistic editing session and watches whether DOM
-// nodes and JS event listeners accumulate across iterations that each end
-// exactly where they started. A renderer that forgets to unsubscribe, a
+// nodes, JS event listeners and the JS heap accumulate across iterations that
+// each end exactly where they started. A renderer that forgets to unsubscribe, a
 // dropdown that outlives its module, a listener re-armed per mutation (the
 // class of bug fixed in risks.ts/milestones.ts) all show up here as a slope
 // that doesn't flatten, even when every functional test still passes.
@@ -39,7 +39,7 @@ interface Counters { nodes: number; listeners: number; heapMB: number }
  * where the last sample happened to land. Medians ignore the oscillation and
  * still track a genuine monotonic climb, which is the only thing being tested.
  */
-function perCycleGrowth(samples: Counters[], key: 'nodes' | 'listeners'): number {
+function perCycleGrowth(samples: Counters[], key: keyof Counters): number {
   const median = (xs: number[]): number => {
     const s = [...xs].sort((a, b) => a - b)
     const mid = Math.floor(s.length / 2)
@@ -269,9 +269,62 @@ async function overlayCycle(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
 }
 
+/**
+ * The surfaces the two cycles above never touch: the pane history stack, the
+ * due panel, the backlinks popover, and the save + backup controllers. Every
+ * step is undone (or nets to the same doc state) by the end, so N iterations
+ * must cost the same as one.
+ *
+ * Assumes setup has left a milestone titled "Beacon" that the daily note
+ * @-refs, so a `.tt-backlinks-chip` is always on its row.
+ */
+async function controllerCycle(page: Page, i: number): Promise<void> {
+  const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
+
+  // Build history entries, then walk the stack both ways. A history stack
+  // that grows without bound, or a nav listener re-armed per step, shows here.
+  await switchModule(page, /Daily/i)
+  await switchModule(page, /Risks/i)
+  await switchModule(page, /Milestones/i)
+  await pane0.locator('.tt-pane-back-btn').click()
+  await pane0.locator('.tt-pane-back-btn').click()
+  await pane0.locator('.tt-pane-fwd-btn').click()
+  await pane0.locator('.tt-pane-fwd-btn').click()
+
+  // Due panel: a document.body-appended modal no navigation reaches.
+  await page.locator('.tt-due-btn').click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  // Backlinks popover: a module-level singleton with two capturing document
+  // listeners while open, appended to document.body — main.ts's teardown
+  // territory, exercised here in the steady state instead.
+  await switchModule(page, /Milestones/i)
+  await pane0.locator('.tt-backlinks-chip').first().click()
+  await expect(page.locator('.tt-backlinks-panel')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.tt-backlinks-panel')).toHaveCount(0)
+
+  // Dirty the doc, then force a real save. With backup enabled in setup this
+  // is one full save-controller round plus one backup-controller mirror per
+  // cycle. Appending (no clear) keeps the @Beacon chip intact; the few extra
+  // chars per cycle are one text node, far below the heap bound.
+  await switchModule(page, /Daily/i)
+  const editor = pane0.locator('.editor').first()
+  await editor.click()
+  await editor.type(`s${i} `, { delay: 0 })
+  await page.keyboard.press('Control+s')
+  await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+
+  await expect(page.locator('.tt-pane-menu')).toHaveCount(0)
+  await settle(page)
+}
+
 test.describe('resource growth over a long session', () => {
   // Long, serial, and CDP-bound: give it room and keep it off the parallel path.
-  test.describe.configure({ mode: 'serial', timeout: 180_000 })
+  test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
   test('repeated edit/navigate cycles do not accumulate DOM nodes or listeners', async ({ page }) => {
     await installOpfsPickerShim(page)
@@ -290,7 +343,7 @@ test.describe('resource growth over a long session', () => {
     // compiled code) that never repeat. Measuring from cycle 0 would read
     // those as growth.
     const WARMUP = 3
-    const MEASURED = 12
+    const MEASURED = 30
     const samples: Counters[] = []
 
     for (let i = 0; i < WARMUP + MEASURED; i++) {
@@ -302,11 +355,12 @@ test.describe('resource growth over a long session', () => {
     const last = samples[samples.length - 1]!
     const perCycleNodes = perCycleGrowth(samples, 'nodes')
     const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
 
     console.log(
       `[leak] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
       `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
-      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB`
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
     )
     console.log('[leak] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
 
@@ -316,6 +370,12 @@ test.describe('resource growth over a long session', () => {
     // (hundreds of nodes, dozens of listeners).
     expect(perCycleNodes, 'DOM nodes retained per cycle').toBeLessThan(25)
     expect(perCycleListeners, 'JS event listeners retained per cycle').toBeLessThan(5)
+    // Heap slope catches a pure-JS leak (a closure, a Map/array that grows
+    // per cycle) that adds no DOM node and no listener, so the two counts
+    // above stay flat while memory still climbs. Loose enough for GC
+    // jitter across the run, tight enough that a retained per-cycle
+    // structure of any real size trips it.
+    expect(perCycleHeapMB, 'JS heap retained per cycle (MB)').toBeLessThan(1.0)
   })
 
   test('modals, popups and expandable rows release their DOM and listeners', async ({ page }) => {
@@ -331,7 +391,7 @@ test.describe('resource growth over a long session', () => {
     await addTeam(page, 'Alpha')
 
     const WARMUP = 2
-    const MEASURED = 8
+    const MEASURED = 20
     const samples: Counters[] = []
     for (let i = 0; i < WARMUP + MEASURED; i++) {
       await overlayCycle(page)
@@ -343,11 +403,12 @@ test.describe('resource growth over a long session', () => {
     const last = samples[samples.length - 1]!
     const perCycleNodes = perCycleGrowth(samples, 'nodes')
     const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
 
     console.log(
       `[leak/overlays] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
       `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
-      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB`
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
     )
     console.log('[leak/overlays] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
 
@@ -356,6 +417,10 @@ test.describe('resource growth over a long session', () => {
     // per cycle, well clear of these bounds.
     expect(perCycleNodes, 'DOM nodes retained per overlay cycle').toBeLessThan(25)
     expect(perCycleListeners, 'JS event listeners retained per overlay cycle').toBeLessThan(5)
+    // A modal whose JS state (its button closures, a captured buckets array,
+    // an un-removed transition listener) outlives its DOM shows up here even
+    // when the node/listener counts settle.
+    expect(perCycleHeapMB, 'JS heap retained per overlay cycle (MB)').toBeLessThan(1.0)
   })
 
   test('close-file → reopen cycles release the previous document', async ({ page }) => {
@@ -376,7 +441,7 @@ test.describe('resource growth over a long session', () => {
     // manager and its whole shell DOM. A miss here pins an entire prior
     // document per cycle — the most expensive leak shape in the app.
     const samples: Counters[] = []
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 24; i++) {
       await page.locator('.tt-pane[data-pane-idx="0"] .editor').first().click()
       await page.keyboard.type(`cycle ${i}`)
 
@@ -396,11 +461,12 @@ test.describe('resource growth over a long session', () => {
     const last = samples[samples.length - 1]!
     const perCycleNodes = perCycleGrowth(samples, 'nodes')
     const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
 
     console.log(
       `[leak/reopen] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
       `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
-      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB`
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
     )
     console.log('[leak/reopen] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
 
@@ -409,6 +475,12 @@ test.describe('resource growth over a long session', () => {
     // catch that.
     expect(perCycleNodes, 'DOM nodes retained per close/reopen').toBeLessThan(40)
     expect(perCycleListeners, 'JS event listeners retained per close/reopen').toBeLessThan(6)
+    // The most expensive leak shape in the app: a pinned prior document keeps
+    // its whole doc object graph, store, pane manager and search index
+    // reachable — megabytes, even if teardown released enough of the DOM and
+    // listeners to stay under the counts above. Heap slope is the check that
+    // actually covers that.
+    expect(perCycleHeapMB, 'JS heap retained per close/reopen (MB)').toBeLessThan(1.5)
   })
 
   test('closing the file while a context menu is open does not strand the popover or its listeners', async ({ page }) => {
@@ -435,7 +507,7 @@ test.describe('resource growth over a long session', () => {
     // showContextMenu() call anywhere in the app — see main.ts's
     // teardownApp, which now closes it explicitly.
     const samples: Counters[] = []
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       await page.locator('.tt-risk-row').first().click({ button: 'right' })
       await expect(page.locator('.tt-context-menu')).toBeVisible()
 
@@ -477,15 +549,233 @@ test.describe('resource growth over a long session', () => {
     const last = samples[samples.length - 1]!
     const perCycleNodes = perCycleGrowth(samples, 'nodes')
     const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
 
     console.log(
       `[leak/context-menu-stranding] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
       `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
-      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB`
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
     )
     console.log('[leak/context-menu-stranding] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
 
     expect(perCycleNodes, 'DOM nodes retained per cycle').toBeLessThan(40)
     expect(perCycleListeners, 'JS event listeners retained per cycle').toBeLessThan(6)
+    // A stranded menu pins the closed document's store/pm through its
+    // item.onClick closures — heap, not DOM, is where that mass sits.
+    expect(perCycleHeapMB, 'JS heap retained per cycle (MB)').toBeLessThan(1.5)
+  })
+
+  test('history stepping, the due panel, backlinks and the save/backup controllers do not accumulate', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, 'leak-probe-password')
+
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('Runtime.enable')
+
+    // Turn daily backup on: the shimmed save picker hands back a real OPFS
+    // handle, so every Ctrl+S in the cycle below also drives
+    // backup-controller's mirror write, not just save-controller.
+    await page.locator('.tt-btn-settings').click()
+    const prefs = page.getByRole('dialog')
+    await prefs.locator('.tt-prefs-tab-btn', { hasText: 'Backup' }).first().click()
+    const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
+    await expect(backupCheckbox).toBeEnabled()
+    await backupCheckbox.check()
+    // pickAndStoreBackupTarget()'s picker->idbSet->store.update chain is all
+    // local (OPFS + IndexedDB), no network — a bounded settle, not a flake
+    // source. The prefs tab doesn't re-render on it so there's no DOM signal.
+    await page.waitForTimeout(500)
+    await prefs.getByRole('button', { name: 'OK' }).click()
+    await expect(prefs).toHaveCount(0)
+
+    await addTeam(page, 'Alpha')
+
+    // A milestone with a known title, referenced once from the daily note, so
+    // a backlinks chip is present on its row for every cycle to open/close.
+    await switchModule(page, /Milestones/i)
+    await page.locator('.tt-milestone-add-btn').click()
+    const title = page.locator('.tt-pane[data-pane-idx="0"] .tt-milestone-title-input').first()
+    await title.fill('Beacon')
+    await title.blur()
+
+    await switchModule(page, /Daily/i)
+    const editor = page.locator('.tt-pane[data-pane-idx="0"] .editor').first()
+    await editor.click()
+    await page.keyboard.type('@Beacon')
+    await expect(page.locator('.tt-atref-dropdown')).toBeVisible()
+    await page.keyboard.press('Enter')
+    await editor.blur()
+
+    await switchModule(page, /Milestones/i)
+    await expect(page.locator('.tt-pane[data-pane-idx="0"] .tt-backlinks-chip')).toHaveCount(1)
+
+    const WARMUP = 3
+    const MEASURED = 20
+    const samples: Counters[] = []
+    for (let i = 0; i < WARMUP + MEASURED; i++) {
+      await controllerCycle(page, i)
+      if (i >= WARMUP) samples.push(await measure(cdp))
+    }
+
+    const first = samples[0]!
+    const last = samples[samples.length - 1]!
+    const perCycleNodes = perCycleGrowth(samples, 'nodes')
+    const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
+
+    console.log(
+      `[leak/controllers] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
+      `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
+    )
+    console.log('[leak/controllers] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
+
+    // Each cycle steps the pane history stack back and forward, opens and
+    // closes the due panel and the backlinks popover, and forces a real
+    // save + backup mirror. An unbounded history stack, a re-armed nav
+    // listener, a due-panel/backlinks singleton that isn't released, or a
+    // save/backup round that retains its previous payload all read as slope.
+    expect(perCycleNodes, 'DOM nodes retained per controller cycle').toBeLessThan(25)
+    expect(perCycleListeners, 'JS event listeners retained per controller cycle').toBeLessThan(5)
+    expect(perCycleHeapMB, 'JS heap retained per controller cycle (MB)').toBeLessThan(1.0)
+  })
+
+  test('sustained editing — many debounced commits accumulate no nodes, listeners or heap', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, 'leak-probe-password')
+
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('Runtime.enable')
+
+    await addTeam(page, 'Alpha')
+    await switchModule(page, /Daily/i)
+    const editor = page.locator('.tt-pane[data-pane-idx="0"] .editor').first()
+    await editor.click()
+    await editor.type('probe ', { delay: 0 })
+
+    // Each batch fires a burst of `input` events on the editor and lets the
+    // debounced store commit — and every subscriber it wakes (sidebar,
+    // calendar, save controller) — settle once. The editor text is left
+    // unchanged, so anything that grows batch over batch is retention on the
+    // per-keystroke commit path itself, not document content: a listener
+    // re-added per input, a closure pinned per commit, an unbounded
+    // rev-keyed cache.
+    const BATCH = 80
+    const WARMUP = 4
+    const MEASURED = 20
+    const samples: Counters[] = []
+    for (let b = 0; b < WARMUP + MEASURED; b++) {
+      await page.evaluate(async (n) => {
+        const ed = document.querySelector('.tt-pane[data-pane-idx="0"] .editor') as HTMLElement
+        for (let k = 0; k < n; k++) ed.dispatchEvent(new InputEvent('input', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 400))
+        await new Promise((r) => requestAnimationFrame(() => r(null)))
+      }, BATCH)
+      if (b >= WARMUP) samples.push(await measure(cdp))
+    }
+
+    const first = samples[0]!
+    const last = samples[samples.length - 1]!
+    const perCycleNodes = perCycleGrowth(samples, 'nodes')
+    const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
+
+    console.log(
+      `[leak/edit-storm] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/batch) | ` +
+      `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/batch) | ` +
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/batch)`
+    )
+    console.log('[leak/edit-storm] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
+
+    // ~1600 commits across the measured batches. Tighter bounds than the
+    // navigation cycles: nothing here mounts a module or an overlay, so a
+    // clean commit path should hold these near flat.
+    expect(perCycleNodes, 'DOM nodes retained per edit batch').toBeLessThan(15)
+    expect(perCycleListeners, 'JS event listeners retained per edit batch').toBeLessThan(3)
+    expect(perCycleHeapMB, 'JS heap retained per edit batch (MB)').toBeLessThan(0.75)
+  })
+
+  test('repeated cross-tab write-lock handoffs release their locks, channels and banner listeners', async ({ page: pageA, context }) => {
+    // Two pages in one context = two real tabs on one file: same
+    // navigator.locks namespace, same BroadcastChannel, same IndexedDB.
+    // Context-level shims so pageB (opened below) inherits them.
+    await installOpfsPickerShim(context)
+    await blockUpdateCheck(context)
+
+    const PASSWORD = 'leak-tab-lock-password'
+    await pageA.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(pageA, PASSWORD)
+    await expect(pageA.locator('.tt-readonly-banner')).toHaveCount(0)
+
+    const pageB = await context.newPage()
+    await pageB.goto(`${E2E_BASE_URL}/app.html`)
+    await pageB.getByRole('button', { name: /Reopen last/ }).click()
+    const dialog = pageB.getByRole('dialog')
+    await dialog.locator('input[name="tt-password"]').fill(PASSWORD)
+    await dialog.getByRole('button', { name: 'OK' }).click()
+    await expect(pageB.locator('.tt-shell')).toBeVisible()
+    // Starting state every cycle returns to: A holds the lock, B is read-only.
+    await expect(pageB.locator('.tt-readonly-banner')).toBeVisible()
+    await expect(pageA.locator('.tt-readonly-banner')).toHaveCount(0)
+
+    const cdpA = await context.newCDPSession(pageA)
+    const cdpB = await context.newCDPSession(pageB)
+    for (const c of [cdpA, cdpB]) {
+      await c.send('HeapProfiler.enable')
+      await c.send('Runtime.enable')
+    }
+
+    // One handoff round: B takes control from A (real BroadcastChannel
+    // 'takeover' -> A flushes + releases its Web Lock -> B's queued
+    // locks.request() is granted), then A takes it straight back. Every
+    // requestLock(true) mints a fresh lock request and a fresh releaseLock
+    // closure; the BroadcastChannel and the banner element are made once per
+    // open and must be reused, not re-created. A leaked lock grant (never
+    // resolved), a re-bound bc.onmessage, or a banner listener re-added per
+    // enterReadOnly() all show as slope on one page or the other.
+    async function handoff(): Promise<void> {
+      await pageB.locator('.tt-readonly-banner .tt-readonly-takeover-btn').click()
+      await expect(pageA.locator('.tt-readonly-banner')).toBeVisible()
+      await expect(pageB.locator('.tt-readonly-banner')).toHaveCount(0)
+
+      await pageA.locator('.tt-readonly-banner .tt-readonly-takeover-btn').click()
+      await expect(pageB.locator('.tt-readonly-banner')).toBeVisible()
+      await expect(pageA.locator('.tt-readonly-banner')).toHaveCount(0)
+    }
+
+    const WARMUP = 3
+    const MEASURED = 15
+    const a: Counters[] = []
+    const b: Counters[] = []
+    for (let i = 0; i < WARMUP + MEASURED; i++) {
+      await handoff()
+      if (i >= WARMUP) {
+        a.push(await measure(cdpA))
+        b.push(await measure(cdpB))
+      }
+    }
+
+    for (const [tag, s] of [['A', a], ['B', b]] as const) {
+      const perCycleNodes = perCycleGrowth(s, 'nodes')
+      const perCycleListeners = perCycleGrowth(s, 'listeners')
+      const perCycleHeapMB = perCycleGrowth(s, 'heapMB')
+      console.log(
+        `[leak/tab-lock ${tag}] nodes ${s[0]!.nodes} -> ${s[s.length - 1]!.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
+        `listeners ${s[0]!.listeners} -> ${s[s.length - 1]!.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
+        `heap ${s[0]!.heapMB.toFixed(1)}MB -> ${s[s.length - 1]!.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
+      )
+      console.log(`[leak/tab-lock ${tag}] samples:`, s.map((x) => `${x.nodes}/${x.listeners}`).join(' '))
+      expect(perCycleNodes, `${tag}: DOM nodes retained per handoff`).toBeLessThan(15)
+      expect(perCycleListeners, `${tag}: JS event listeners retained per handoff`).toBeLessThan(3)
+      expect(perCycleHeapMB, `${tag}: JS heap retained per handoff (MB)`).toBeLessThan(0.75)
+    }
+
+    await pageB.close()
   })
 })

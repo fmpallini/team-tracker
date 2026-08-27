@@ -27,6 +27,27 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # e2e used to run only in the pre-push hook, on your machine, on every push
+  # — the slowest gate there (full build + Chromium). Moved here so pushes are
+  # fast and e2e enforcement no longer depends on the hook being installed or
+  # not bypassed with --no-verify. Runs on every push to dev (catch early) and
+  # on PRs into main (release gate); skipped for PRs into dev.
+  e2e:
+    name: E2E (Playwright)
+    if: github.event_name == 'push' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
   # Only runs for PRs targeting main — dev -> main is where releases are cut,
   # so this is the heavier gate: full build, on both OSes, with output
   # sanity checks. Feature -> dev and plain dev pushes only need `check`.
@@ -55,3 +76,47 @@ jobs:
           test -f dist/pwa/index.html
           test -f dist/pwa/sw.js
           test -f dist/pwa/manifest.json
+
+  # Also main-only: a dev -> main PR that bumps package.json's version MUST
+  # carry a matching, non-empty "## [x.y.z]" section in CHANGELOG.md. Without
+  # it, release.yml silently falls back to auto-generated PR-title notes
+  # (`--generate-notes`), so a forgotten entry degrades the release instead of
+  # blocking it — this gate is what turns that into a hard failure at PR time,
+  # while the version bump is still easy to pair with its changelog entry.
+  changelog-gate:
+    name: Changelog entry for version bump
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Require CHANGELOG.md entry when package.json version changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver() { grep -m1 '"version"' "$1" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; }
+          HEAD_VER=$(ver package.json)
+          git show "origin/${GITHUB_BASE_REF}:package.json" > /tmp/base-package.json
+          BASE_VER=$(ver /tmp/base-package.json)
+          echo "package.json version: base=${BASE_VER} head=${HEAD_VER}"
+          if [ "$HEAD_VER" = "$BASE_VER" ]; then
+            echo "No version change — CHANGELOG.md entry not required."
+            exit 0
+          fi
+          if ! grep -qF "## [${HEAD_VER}]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::package.json version bumped ${BASE_VER} -> ${HEAD_VER} but CHANGELOG.md has no '## [${HEAD_VER}]' section. Add one covering every user-facing change since the last release tag."
+            exit 1
+          fi
+          BODY=$(awk -v t="## [${HEAD_VER}]" '
+            index($0, t) == 1 { f = 1; next }
+            f && index($0, "## [") == 1 { exit }
+            f && NF { print }
+          ' CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md '## [${HEAD_VER}]' section is empty — release.yml would fall back to auto-generated notes."
+            exit 1
+          fi
+          echo "CHANGELOG.md '## [${HEAD_VER}]' section present and non-empty."
