@@ -412,7 +412,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       }
 
       const value = display.kind === 'unlinked' ? display.label : display.text
+      // A pick (row click / Enter) rebuilds this field into a chip, removing
+      // this still-focused, still-dirty input — Chrome then fires a late
+      // `change` on it carrying the partial text typed so far, which would
+      // re-commit over the reference just picked (the pick "doesn't take").
+      // One commit per rendered input: the latch swallows that trailing event.
+      let committed = false
       const commit = (raw: string): void => {
+        if (committed) return
+        committed = true
         const team2 = findTeam()
         const match = team2 ? matchPersonByName(raw, team2) : null
         patch((item) => { item.assignee = match ? formatPersonRef(match.id, match.name) : raw }, ['actions'])
@@ -421,11 +429,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
       const input = el('input', {
         type: 'text', class: 'tt-input tt-assignee-input', autocomplete: 'off', value,
-        // A pick rebuilds this field, removing this still-focused, still-dirty
-        // input — Chrome then fires a late `change` on it carrying the partial
-        // text typed so far, which would re-commit over the just-picked
-        // reference. Ignore any `change` once this input is detached.
-        onchange: (e: Event) => { if (input.isConnected) commit((e.target as HTMLInputElement).value) },
+        onchange: (e: Event) => commit((e.target as HTMLInputElement).value),
         oninput: () => openMenu(false),
         onkeydown: (e: Event) => onKeydown(e as KeyboardEvent),
       }) as HTMLInputElement

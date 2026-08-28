@@ -815,8 +815,10 @@ describe('renderActionItems — board', () => {
     Array.from(document.querySelectorAll<HTMLElement>('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item'))
       .find((r) => r.textContent === 'Carla')!
       .click()
-    // Chrome fires `change` on the now-removed, still-dirty input after the
-    // pick has already rebuilt the field — jsdom does not, so simulate it.
+    // Chrome fires `change` on the old, still-dirty input after the pick has
+    // already rebuilt the field — jsdom doesn't, so simulate it. Re-attach it
+    // first so the guard can't lean on isConnected (Chrome's timing varies).
+    document.body.appendChild(staleInput)
     staleInput.dispatchEvent(new Event('change', { bubbles: true }))
 
     expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
