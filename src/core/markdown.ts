@@ -375,6 +375,67 @@ export function unwrapBlockContainers(root: HTMLElement): void {
 }
 
 /**
+ * `document.execCommand('formatBlock', '<h1>')` on a selection spanning
+ * multiple lines, or on a list, makes Chromium NEST a fresh <hN> inside the
+ * existing heading instead of replacing it — and every repeat of the same
+ * Ctrl+1/2/3 shortcut stacks another wrapper (<h1><h1><h1>…). Because the
+ * UA stylesheet sizes headings with a *relative* `2em`, each extra level
+ * multiplies the rendered size (32 -> 64 -> 128px…), so the heading appears
+ * to grow without bound. The editor calls this right after every
+ * formatBlock: any heading nested inside another heading is unwrapped, so
+ * repeated presses collapse back to a single heading (the outer one wins).
+ *
+ * Deliberately does NOT touch a lone heading that wraps a list/block —
+ * that's the browser's own (if imperfect) answer to "make this list item a
+ * heading", and dissolving it would make Ctrl+1 a no-op on any list. The
+ * companion fixed-rem `.editor h1/h2/h3` sizing keeps even that shape from
+ * compounding.
+ *
+ * Idempotent: a well-formed heading tree is left untouched.
+ */
+export function flattenNestedHeadings(root: HTMLElement): void {
+  const HEADING = 'h1,h2,h3'
+  // Bounded loop — each iteration removes one heading element, so it always
+  // terminates; the cap is just belt-and-braces against an unforeseen shape.
+  for (let pass = 0; pass < 100; pass++) {
+    const nested = Array.from(root.querySelectorAll<HTMLElement>(HEADING)).find(
+      (h) => h.parentElement?.closest(HEADING)
+    )
+    if (!nested) return
+    nested.replaceWith(...nested.childNodes)
+  }
+}
+
+/** Standard `Range.intersectsNode` polyfill (jsdom's Range has no such
+ * method): true when `range` overlaps any part of `node`. */
+function rangeHitsNode(range: Range, node: Node): boolean {
+  const nr = (node.ownerDocument ?? document).createRange()
+  nr.selectNode(node)
+  return (
+    range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
+    range.compareBoundaryPoints(Range.START_TO_END, nr) > 0
+  )
+}
+
+/**
+ * "Clear formatting" (the editor's 🧹 button) reverts every heading the
+ * selection touches back to a plain paragraph — matching Google Docs / Word,
+ * where clearing formatting drops the heading style, not just inline
+ * bold/italic. `document.execCommand('removeFormat')` only ever touches
+ * inline formatting, so without this an <h1>/<h2>/<h3> survives the broom.
+ * List nesting is deliberately left alone (removing it isn't what "clear
+ * formatting" means in those products either).
+ */
+export function demoteHeadings(root: HTMLElement, range: Range): void {
+  for (const h of Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3'))) {
+    if (!rangeHitsNode(range, h)) continue
+    const div = (root.ownerDocument ?? document).createElement('div')
+    while (h.firstChild) div.appendChild(h.firstChild)
+    h.replaceWith(div)
+  }
+}
+
+/**
  * Renders one <tr>'s <td>/<th> cells, joined with " | " — this app's
  * markdown dialect has no native table syntax, so a pasted table becomes
  * readable delimited text rather than a real (re-parseable) table. Each

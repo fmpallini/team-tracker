@@ -681,7 +681,14 @@ body { background: var(--bg); color: var(--fg); }
   );
   background-attachment: local;
 }
-.editor h1, .editor h2, .editor h3 { font-family: var(--font-display); margin: .5em 0 .25em; line-height: 1.25; }
+/* Fixed rem sizes (not the UA's relative `2em`/`1.5em`/`1.17em`): a stray
+   nested <hN> — which Chromium's formatBlock can still produce on an odd
+   selection — must render at a fixed size, never compound to 2x/4x per
+   level. rem keeps the root font-size preference scaling them. */
+.editor h1, .editor h2, .editor h3 { font-family: var(--font-display); font-weight: 600; margin: .5em 0 .25em; line-height: 1.25; }
+.editor h1 { font-size: 1.6rem; }
+.editor h2 { font-size: 1.35rem; }
+.editor h3 { font-size: 1.15rem; }
 .editor ul, .editor ol { padding-left: 1.5em; }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
 .editor a.ref {

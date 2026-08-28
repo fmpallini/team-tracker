@@ -421,14 +421,17 @@ describe('keyboard shortcuts', () => {
     [{ key: 'b', ctrlKey: true }, 'bold'],
     [{ key: 'i', ctrlKey: true }, 'italic'],
     [{ key: 'u', ctrlKey: true }, 'underline'],
-    [{ key: 'X', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    // Strikethrough is Ctrl+Shift+5 (some Windows browsers/drivers eat
+    // Ctrl+Shift+X before the page sees it); matched by physical key so
+    // Shift+5 producing '%' / '(' / etc. across layouts doesn't matter.
+    [{ key: '%', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    [{ key: '5', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     // Layout-independence: e.key for the physical position isn't the letter
     // (Dvorak/Colemak, or a dead-key/AltGr layout under Ctrl), so the match
     // must fall back to e.code — same as the digit-row shortcuts already do.
     [{ key: 'ñ', code: 'KeyB', ctrlKey: true }, 'bold'],
     [{ key: 'ç', code: 'KeyI', ctrlKey: true }, 'italic'],
     [{ key: 'º', code: 'KeyU', ctrlKey: true }, 'underline'],
-    [{ key: 'b', code: 'KeyX', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
   ])('%o -> execCommand(%s)', (init, cmd) => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

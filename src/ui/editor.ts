@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
@@ -417,7 +417,40 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.focus()
     if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
     else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
-    else document.execCommand('formatBlock', false, `<${type}>`)
+    else { document.execCommand('formatBlock', false, `<${type}>`); flattenNestedHeadings(editorEl) }
+  }
+
+  /**
+   * Ctrl+1/2/3 (and the toolbar H1/H2/H3/¶ buttons) route through here rather
+   * than a bare `exec('formatBlock', ...)`: on a multi-line selection or a
+   * list block, Chromium's formatBlock *nests* a fresh <hN> inside the block
+   * instead of replacing it, and every repeat stacks another wrapper whose
+   * relative `2em` size compounds — the heading visibly doubles on each
+   * keypress. flattenNestedHeadings() undoes that right after.
+   */
+  function formatBlockTag(tag: 'h1' | 'h2' | 'h3' | 'div' | 'p'): void {
+    editorEl.focus()
+    document.execCommand('formatBlock', false, `<${tag}>`)
+    flattenNestedHeadings(editorEl)
+    scheduleChange()
+  }
+
+  /**
+   * The 🧹 button. `removeFormat` alone (per spec) only strips inline
+   * formatting — bold/italic/underline/strike/colour — and leaves block
+   * styling untouched, so a heading would survive the broom. Google Docs and
+   * Word both also drop the heading style on "clear formatting", so
+   * demoteHeadings() reverts any heading the selection touches to a plain
+   * paragraph. List nesting is left as-is (neither product strips it either).
+   */
+  function clearFormatting(): void {
+    // Snapshot the selection before focus()/removeFormat can move or drop it.
+    const sel = window.getSelection()
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+    editorEl.focus()
+    document.execCommand('removeFormat', false, undefined)
+    if (range) demoteHeadings(editorEl, range)
+    scheduleChange()
   }
 
   /**
@@ -883,14 +916,20 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
       if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
       if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
-      if (e.code === 'Digit1') { e.preventDefault(); exec('formatBlock', '<h1>'); return }
-      if (e.code === 'Digit2') { e.preventDefault(); exec('formatBlock', '<h2>'); return }
-      if (e.code === 'Digit3') { e.preventDefault(); exec('formatBlock', '<h3>'); return }
-      if (e.code === 'Digit0') { e.preventDefault(); exec('formatBlock', '<div>'); return }
+      if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
+      if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
+      if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }
+      if (e.code === 'Digit0') { e.preventDefault(); formatBlockTag('div'); return }
       return
     }
 
-    if (matchKey(e, 'x')) { e.preventDefault(); exec('strikeThrough'); return }
+    // Ctrl+Shift+5 (not the old Ctrl+Shift+X): some Windows browsers / vendor
+    // keyboard drivers swallow the Ctrl+Shift+X chord before it reaches the
+    // page, so its keydown never fires at all. Digit5 sits with the
+    // Ctrl+Shift+7/8 list shortcuts and matched physically (e.code) rides
+    // over layout differences. Toolbar S button and `~~text~~` markdown are
+    // the mouse/typing alternatives.
+    if (e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
     if (e.code === 'Digit8') { e.preventDefault(); exec('insertUnorderedList'); return }
     if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
   }
@@ -1050,11 +1089,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
     toolbarButton('•', t(locale, 'editor_ul_title'), () => exec('insertUnorderedList')),
     toolbarButton('1.', t(locale, 'editor_ol_title'), () => exec('insertOrderedList')),
-    toolbarButton('H1', t(locale, 'editor_h1_title'), () => exec('formatBlock', '<h1>')),
-    toolbarButton('H2', t(locale, 'editor_h2_title'), () => exec('formatBlock', '<h2>')),
-    toolbarButton('H3', t(locale, 'editor_h3_title'), () => exec('formatBlock', '<h3>')),
-    toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => exec('formatBlock', '<p>')),
-    toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => exec('removeFormat')),
+    toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
+    toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
+    toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
+    toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
+    toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
     toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),

@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -497,6 +497,96 @@ describe('unwrapBlockContainers (Google-Docs-style whole-paste wrapper)', () => 
     div.innerHTML = '<table><tr><td><p>cell</p></td></tr></table>'
     unwrapBlockContainers(div)
     expect(htmlToMd(div)).toBe('cell')
+  })
+})
+
+describe('flattenNestedHeadings (undoes Chromium formatBlock nesting that makes a heading "grow" per keypress)', () => {
+  // The HTML parser refuses to nest one <h1> inside another, so innerHTML
+  // can't reproduce the state execCommand('formatBlock') builds via the DOM
+  // API. This mirrors that: wrap `inner` in `depth` genuine <h1> parents.
+  const nest = (inner: string, depth: number): HTMLElement => {
+    const root = document.createElement('div')
+    const frag = document.createElement('div')
+    frag.innerHTML = inner
+    let cursor: Node = root
+    for (let i = 0; i < depth; i++) {
+      const h = document.createElement('h1')
+      cursor.appendChild(h)
+      cursor = h
+    }
+    while (frag.firstChild) cursor.appendChild(frag.firstChild)
+    return root
+  }
+
+  test('a heading nested inside a heading collapses to one outer heading', () => {
+    const div = nest('hello world here<br>second line text', 2)
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<h1>hello world here<br>second line text</h1>')
+  })
+  test('repeated nesting (Ctrl+1 pressed several times) flattens back to a single heading', () => {
+    const div = nest('text', 4)
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<h1>text</h1>')
+  })
+  test('repeated Ctrl+1 on a list collapses the stacked headings but keeps one wrapping heading', () => {
+    // Chromium wraps <h1> around the whole <ul> and stacks another on each
+    // repeat; unwrapping the nested ones leaves a single <h1><ul>…</ul></h1>,
+    // which the fixed-rem heading CSS renders at a stable size.
+    const div = nest('<ul><li>hello world item</li></ul>', 3)
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<h1><ul><li>hello world item</li></ul></h1>')
+  })
+  test('a well-formed heading is left untouched', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<h2>a real heading</h2><div>body</div>'
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<h2>a real heading</h2><div>body</div>')
+  })
+})
+
+describe('demoteHeadings ("clear formatting" also drops the heading style, like Docs/Word)', () => {
+  const mount = (html: string): HTMLElement => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    document.body.appendChild(root)
+    return root
+  }
+  const selectAll = (root: HTMLElement): Range => {
+    const r = document.createRange()
+    r.selectNodeContents(root)
+    return r
+  }
+
+  test('a heading in the selection becomes a plain <div>, text kept', () => {
+    const root = mount('<h1>Title</h1><div>body</div>')
+    demoteHeadings(root, selectAll(root))
+    expect(root.innerHTML).toBe('<div>Title</div><div>body</div>')
+    expect(htmlToMd(root)).toBe('Title\nbody')
+    root.remove()
+  })
+
+  test('every heading level the range touches is demoted at once', () => {
+    const root = mount('<h1>a</h1><h2>b</h2><h3>c</h3>')
+    demoteHeadings(root, selectAll(root))
+    expect(root.innerHTML).toBe('<div>a</div><div>b</div><div>c</div>')
+    root.remove()
+  })
+
+  test('a heading outside the range is left alone', () => {
+    const root = mount('<h1>keep</h1><div>x</div><h2>clear</h2>')
+    const r = document.createRange()
+    r.setStart(root.children[1]!, 0) // start at the middle <div>
+    r.setEndAfter(root.children[2]!) // through the <h2>
+    demoteHeadings(root, r)
+    expect(root.innerHTML).toBe('<h1>keep</h1><div>x</div><div>clear</div>')
+    root.remove()
+  })
+
+  test('list nesting is not touched', () => {
+    const root = mount('<ul><li>a<ul><li>b</li></ul></li></ul>')
+    demoteHeadings(root, selectAll(root))
+    expect(htmlToMd(root)).toBe('- a\n  - b')
+    root.remove()
   })
 })
 
