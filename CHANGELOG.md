@@ -7,7 +7,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.6.0] - 2026-08-28
 
 ### Added
-- Person notes: the header now shows a second line under the name with the person's classification (team member or stakeholder) and their role, and gains two buttons — one edits their name and role in place without leaving the page, the other jumps to their box in the org chart (stakeholders or team members) and flashes it.
+- Person notes: the header now shows a second line under the name with the person's role and their classification (team member or stakeholder), and gains two buttons — one edits their name and role in place without leaving the page, the other jumps to their box in the org chart (stakeholders or team members) and flashes it.
 
 ### Changed
 - Action items: the assignee field's dropdown is now a custom list grouped into "Stakeholders" and "Members" (each with its icon), filters as you type, and is fully keyboard-navigable (arrows / Enter / Escape) — replacing the plain browser autocomplete. The ▾ button always opens the full roster, even when the field already has text.

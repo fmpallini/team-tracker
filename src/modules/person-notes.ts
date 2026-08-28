@@ -45,11 +45,11 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const headerNameEl = el('span', { class: 'tt-person-header-name' })
   const headerTitleEl = el('span', { class: 'tt-person-header-title' })
   const groupLabel = t(lc, group === 'members' ? 'person_group_member' : 'person_group_stakeholder')
-  // Muted second line: the person's classification (team member / stakeholder)
-  // always, plus their role after a "·" when they have one.
+  // Muted second line: the person's role first (when they have one), then
+  // their classification (team member / stakeholder) after a "·".
   function renderIdentity(p: Person): void {
     headerNameEl.textContent = p.name
-    headerTitleEl.textContent = p.role.trim() ? `${groupLabel} · ${p.role}` : groupLabel
+    headerTitleEl.textContent = p.role.trim() ? `${p.role} · ${groupLabel}` : groupLabel
   }
   renderIdentity(person)
 
