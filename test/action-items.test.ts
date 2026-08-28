@@ -923,6 +923,80 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
+  test('a new card with notes but no name will not close — the modal stays, the name field takes focus, a hint shows', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
+    setBlockText(editorEl, 'A note I do not want to lose')
+    fireInput(editorEl)
+    vi.advanceTimersByTime(400)
+
+    clickByTitleOrText(document.body, 'Close')
+
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull() // still open
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1) // not discarded
+    expect(document.querySelector('.tt-kanban-form .tt-field-error')?.textContent).toBeTruthy()
+    expect(document.activeElement).toBe(document.querySelector('.tt-kanban-form input[type="text"]'))
+
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'named') // let afterEach close it
+    clickByTitleOrText(document.body, 'Close')
+  })
+
+  test('once a name is entered the blocked card closes normally and keeps its notes', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
+    setBlockText(editorEl, 'Keep me')
+    fireInput(editorEl)
+    vi.advanceTimersByTime(400)
+    clickByTitleOrText(document.body, 'Close') // blocked
+
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    setValue(summaryInput, 'Now named')
+    expect(document.querySelector('.tt-kanban-form .tt-field-error')?.textContent).toBeFalsy() // hint cleared
+    clickByTitleOrText(document.body, 'Close')
+
+    expect(document.querySelector('.tt-kanban-form')).toBeNull() // closed
+    expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('Now named')
+    expect(store.doc.teams[0]!.actionItems[0]!.notes).toBe('Keep me')
+  })
+
+  test('a new card with only a due date picked cannot be closed nameless either', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 1))
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    pickDate(10)
+    clickByTitleOrText(document.body, 'Close')
+
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'named') // let afterEach close it
+    clickByTitleOrText(document.body, 'Close')
+  })
+
+  test('the Delete button on an existing card edited down to blank still closes (not blocked)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Had a name', notes: 'has notes' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, '')
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+  })
+
   test('a new card starts with no color chip pre-selected', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)

@@ -19,6 +19,8 @@ export interface ModalOptions {
   buttons: ModalButton[]
   /** Fires exactly once, however the dialog closes (a button's onClick calling handle.close(), or Escape) — e.g. openPrefs uses this to trigger a save on the way out instead of waiting for the next nav change or autosave tick. */
   onClose?: () => void
+  /** Return `false` to veto a close attempt (Escape or any path through `handle.close()`) — e.g. action-items.ts blocks closing a card that has content but no name. `onClose` does not fire on a vetoed attempt. Absent = every close is allowed. */
+  beforeClose?: () => boolean
   /** Rendered in the title row, right-aligned next to `title` — e.g. action-items.ts's expand-mode toggle and (once expanded) its mirrored save-state pill. Omit for the plain title-only header every other modal uses. */
   headerExtra?: HTMLElement
 }
@@ -58,6 +60,7 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   let closed = false
   function close(): void {
     if (closed) return
+    if (opts.beforeClose && opts.beforeClose() === false) return
     closed = true
     overlay.remove()
     document.removeEventListener('keydown', onKeydown)

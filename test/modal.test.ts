@@ -174,6 +174,29 @@ test('onClose fires once when closed via Escape', () => {
   expect(onClose).toHaveBeenCalledOnce()
 })
 
+test('beforeClose returning false vetoes both Escape and handle.close(), and onClose does not fire', () => {
+  const onClose = vi.fn()
+  let allowClose = false
+  const handle = showModal({ title: 'T', body: el('div'), buttons: [], onClose, beforeClose: () => allowClose })
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  expect(overlays().length).toBe(1)
+  handle.close()
+  expect(overlays().length).toBe(1)
+  expect(onClose).not.toHaveBeenCalled()
+
+  allowClose = true
+  handle.close()
+  expect(overlays().length).toBe(0)
+  expect(onClose).toHaveBeenCalledOnce()
+})
+
+test('beforeClose returning true allows the close', () => {
+  const handle = showModal({ title: 'T', body: el('div'), buttons: [], beforeClose: () => true })
+  handle.close()
+  expect(overlays().length).toBe(0)
+})
+
 test('promptPassword resolves with entered password on OK', async () => {
   const promise = promptPassword('en-US', { title: 'Open' })
   const input = document.querySelector('input[name="tt-password"]') as HTMLInputElement

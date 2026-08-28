@@ -342,10 +342,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       }, sections ? { teamId, sections } : { teamId })
     }
 
+    // Shown by beforeClose when the card has content but no name (see the
+    // showModal call below); cleared the moment the name field is non-blank.
+    const summaryError = el('div', { class: 'tt-field-error' })
+    // Delete button routes through closeModal(); this lets beforeClose tell a
+    // real delete apart from a plain close so it doesn't block the delete.
+    let deleting = false
     const summaryInput = el('input', {
       type: 'text', class: 'tt-input', value: existing?.summary ?? '',
+      oninput: (e: Event) => { if ((e.target as HTMLInputElement).value.trim() !== '') summaryError.textContent = '' },
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
+        if (value.trim() !== '') summaryError.textContent = ''
         // Unscoped beyond the team: `summary` is the label @[…](action:id)
         // mentions resolve through live — see the note at people-tree.ts's
         // rename site.
@@ -603,7 +611,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const body = el(
       'div',
       { class: 'tt-kanban-form' },
-      el('label', { class: 'tt-field' }, t(lc, 'kanban_summary_label'), summaryInput),
+      el('label', { class: 'tt-field' }, t(lc, 'kanban_summary_label'), summaryInput, summaryError),
       el('div', { class: 'tt-field tt-kanban-notes-field' }, t(lc, 'kanban_notes_label'), editor.root),
       el(
         'div',
@@ -624,7 +632,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
     const buttons: ModalButton[] = []
     if (existing !== null) {
-      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { closeModal(); requestDelete(existing) } })
+      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { deleting = true; closeModal(); requestDelete(existing) } })
     }
     buttons.push({ label: t(lc, 'kanban_close_btn'), onClick: () => closeModal() })
 
@@ -633,12 +641,28 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       body,
       buttons,
       headerExtra,
+      // A card with content but no name must not be closed — closing it would
+      // delete it (empty summary, below) and take the notes/assignee/due/color
+      // the user just entered with it. Hold the modal open, surface why, and
+      // put the cursor back on the name field. A real Delete (the button sets
+      // `deleting`) is always allowed through.
+      beforeClose: () => {
+        if (deleting) return true
+        const cur = items().find((i) => i.id === itemId)
+        if (!cur || cur.summary.trim() !== '') return true
+        const hasContent =
+          cur.notes.trim() !== '' || cur.assignee.trim() !== '' || cur.dueDate !== null || cur.color !== null
+        if (!hasContent) return true
+        summaryError.textContent = t(lc, 'kanban_name_required')
+        summaryInput.focus()
+        return false
+      },
       onClose: () => {
         disposeOpenBundle()
-        // Empty summary carries no meaningful content to lose — delete
-        // silently on close, same rule requestDelete() already applies to an
-        // explicit delete. Covers both a "+ Card" draft nothing was ever
-        // typed into and an existing card edited back down to blank.
+        // A blank summary that reached here carries nothing to lose (beforeClose
+        // blocks the case where it would) — delete silently, same rule
+        // requestDelete() applies to an explicit delete. Covers a "+ Card"
+        // draft nothing was typed into and an existing card cleared to blank.
         const current = items().find((i) => i.id === itemId)
         if (current && current.summary.trim() === '') {
           removeItem(itemId)
