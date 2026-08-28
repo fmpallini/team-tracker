@@ -232,7 +232,20 @@ function inlineMd(node: Node): string {
 // a trailing top-level <br> producing no extra empty segment). Deep-clones
 // `nodes` up front so moving pieces into new per-line wrappers never
 // detaches anything from the live editor DOM.
+//
+// The overwhelmingly common case is a block with no <br> at all (a single
+// line): nothing is ever moved into a wrapper, so the deep-clone is pure
+// waste on every getMd()/htmlToPlainText() call. Detect that up front and
+// hand the original nodes straight back — every caller only *reads* them
+// (inlineMd/inlineText), never mutates.
+function nodeRunHasBr(nodes: Node[]): boolean {
+  return nodes.some(
+    (n) => n instanceof HTMLElement && (n.tagName.toLowerCase() === 'br' || n.querySelector('br') !== null)
+  )
+}
+
 function segmentsToLineNodes(nodes: Node[]): Node[][] {
+  if (!nodeRunHasBr(nodes)) return [nodes]
   const segments: Node[][] = [[]]
   nodes.map(n => n.cloneNode(true)).forEach(node => {
     if (node instanceof HTMLElement && node.tagName.toLowerCase() === 'br') {

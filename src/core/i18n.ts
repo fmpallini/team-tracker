@@ -992,13 +992,16 @@ const dicts: Record<Locale, Record<MsgKey, string>> = {
 }
 
 export function t(locale: Locale, key: MsgKey, params?: Record<string, string>): string {
-  let msg = dicts[locale][key]
-  if (params) {
-    for (const [name, value] of Object.entries(params)) {
-      msg = msg.split(`{${name}}`).join(value)
-    }
-  }
-  return msg
+  const msg = dicts[locale][key]
+  if (!params) return msg
+  // One pass over the message, rather than a split()/join() allocation per
+  // param (t() runs hundreds of times per render). A `{name}` with no
+  // matching param is left verbatim — same as the old per-param loop, which
+  // simply never touched it. Single-pass, so an inserted value that happens
+  // to contain `{other}` is not itself re-substituted.
+  return msg.replace(/\{(\w+)\}/g, (whole, name: string) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? params[name]! : whole
+  )
 }
 
 export function formatDate(iso: string, locale: Locale): string {

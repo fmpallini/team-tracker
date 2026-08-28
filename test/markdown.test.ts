@@ -507,3 +507,29 @@ test('script/style tag text does not leak into the output as visible content', (
   div.innerHTML = '<div>before</div><script>alert(1)</script><div>after</div>'
   expect(htmlToMd(div)).not.toContain('alert(1)')
 })
+
+describe('htmlToMd / htmlToPlainText do not mutate the source DOM', () => {
+  test('single-line block (no <br>) round-trips without touching the source', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div>a <strong>b</strong> c</div><div>second</div>'
+    const before = div.innerHTML
+    expect(htmlToMd(div)).toBe('a **b** c\nsecond')
+    expect(div.innerHTML).toBe(before)
+  })
+
+  test('block with a <br> nested inside inline formatting round-trips without touching the source', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div><b>l1<br>l2</b></div>'
+    const before = div.innerHTML
+    expect(htmlToMd(div)).toBe('**l1**\n**l2**')
+    expect(div.innerHTML).toBe(before)
+  })
+
+  test('htmlToPlainText leaves the source DOM intact', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div>one</div><div><i>two<br>three</i></div>'
+    const before = div.innerHTML
+    expect(htmlToPlainText(div)).toBe('one\ntwo\nthree')
+    expect(div.innerHTML).toBe(before)
+  })
+})
