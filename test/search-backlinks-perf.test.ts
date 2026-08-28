@@ -93,6 +93,33 @@ test('a shared index scales far better than an uncached lookup under repeat call
   expect(cachedMs).toBeLessThan(coldMs / 3)
 })
 
+test('a cold backlinks() lookup skips the stripMd/normalize pass that only search() needs', () => {
+  const doc = largeFixture()
+
+  // backlinks() only needs a raw-text mention regex scan. search()
+  // additionally runs stripMd (several regexes per line) + normalize (an NFD
+  // pass) over every field of every candidate. Building both halves together
+  // (the old single TeamIndex) made a chip render pay search()'s cost; the
+  // split means a cold backlinks() lookup is materially cheaper.
+  const REPS = 40
+  const backlinksMs = timeIt(() => {
+    for (let i = 0; i < REPS; i++) {
+      const index = createSearchIndex(() => doc, () => 0)
+      expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
+    }
+  })
+  const searchMs = timeIt(() => {
+    for (let i = 0; i < REPS; i++) {
+      const index = createSearchIndex(() => doc, () => 0)
+      expect(index.search('rollout', 't1').length).toBeGreaterThan(0)
+    }
+  })
+
+  // Generous margin (same reasoning as the other tests here): near-parity
+  // would mean backlinks() is still doing the strip/normalize work.
+  expect(backlinksMs).toBeLessThan(searchMs / 2)
+})
+
 test('scoped invalidation makes reading an unedited team far cheaper than reading the team being edited', () => {
   const doc = createEmptyDocument('en-US')
   doc.teams.push(buildLargeTeam('t1', 'Alpha'), buildLargeTeam('t2', 'Beta'))

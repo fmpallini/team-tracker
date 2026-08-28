@@ -159,12 +159,8 @@ interface PreparedCandidate {
   normalized: string
 }
 
-/** One team's cached prep: search's candidate list plus backlinks' reverse index, built together in one pass — see `indexFor` below. */
-interface TeamIndex {
-  candidates: PreparedCandidate[]
-  /** Keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
-  backlinksByRef: Map<string, Backlink[]>
-}
+/** Backlinks' reverse index for one team, keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
+type BacklinksByRef = Map<string, Backlink[]>
 
 /** A match plus its ranking data — kept separate from the public `SearchResult` so `span`/`minPos` never leak into the UI-facing shape. */
 interface ScoredHit { result: SearchResult; span: number; minPos: number }
@@ -236,41 +232,45 @@ const SEARCHABLE: readonly Section[] = ['notes', 'people', 'actions', 'milestone
  * every note in every team on each of a fast typist's keystrokes was the
  * single largest source of repeated allocation in the app.
  *
- * Keyed by `getRev()` rather than by object identity, because the store
- * mutates the Doc in place: the same `Team` object is both the before and the
- * after of an edit, so identity can never signal staleness.
+ * Two separate per-team caches, both keyed by `getRev()` (not object
+ * identity — the store mutates the Doc in place, so the same `Team` object is
+ * both the before and after of an edit):
+ *
+ *  - `backlinksCache` — the reverse mention index. Cheap to build: one
+ *    raw-text regex scan per candidate, no `stripMd`/`normalize`. Every chip
+ *    render (milestone/risk/action/person/day) hits this, so it is built the
+ *    moment any such module mounts.
+ *  - `candidatesCache` — `stripMd`ped + `normalize`d text for full-text
+ *    search. Expensive, and only the Ctrl+K palette ever reads it, so it is
+ *    built lazily on the first `search()` that touches a team rather than
+ *    forced (and retained) by an unrelated chip render.
  */
 export function createSearchIndex(getDoc: () => Doc, getRev: () => number): SearchIndex {
-  // The revision this cache has been *told about* — via invalidate(), which
-  // rides store.subscribe() and knows which team changed. A rev that moves
-  // without a matching invalidate() is a change nobody described (store.
-  // updateNav() bumps rev but deliberately bypasses subscribe()), so the whole
-  // cache is dropped on the next search rather than trusted: an unexplained
-  // change could have touched anything.
+  // The revision these caches have been *told about* — via invalidate(),
+  // which rides store.subscribe() and knows which team changed. A rev that
+  // moves without a matching invalidate() is a change nobody described
+  // (store.updateNav() bumps rev but deliberately bypasses subscribe()), so
+  // both caches are dropped on the next read rather than trusted: an
+  // unexplained change could have touched anything.
   let knownRev = -1
-  const cache = new Map<string, TeamIndex>()
+  const backlinksCache = new Map<string, BacklinksByRef>()
+  const candidatesCache = new Map<string, PreparedCandidate[]>()
 
   function syncRev(): void {
     const rev = getRev()
     if (rev === knownRev) return
-    cache.clear()
+    backlinksCache.clear()
+    candidatesCache.clear()
     knownRev = rev
   }
 
-  // Builds both the search-side (stripped/normalized) and backlinks-side
-  // (raw-text mention scan) views of a team's candidates in one pass over
-  // collectCandidates — the same 6-field walk `search()` already paid for,
-  // now shared with `backlinks()` instead of that walk repeating per call.
-  function indexFor(team: Team, doc: Doc): TeamIndex {
-    const hit = cache.get(team.id)
+  /** Reverse mention index for one team — a raw-text scan only, no strip/normalize. */
+  function backlinksFor(team: Team, doc: Doc): BacklinksByRef {
+    const hit = backlinksCache.get(team.id)
     if (hit) return hit
-    const candidates: PreparedCandidate[] = []
-    const backlinksByRef = new Map<string, Backlink[]>()
+    const byRef: BacklinksByRef = new Map()
     const mentionPattern = refPattern()
     for (const c of collectCandidates(team, doc)) {
-      const stripped = stripMd(c.raw)
-      candidates.push({ ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) })
-
       mentionPattern.lastIndex = 0
       let m: RegExpExecArray | null
       while ((m = mentionPattern.exec(c.raw))) {
@@ -281,32 +281,48 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
           title: c.title,
           snippet: backlinkSnippet(c.raw, m.index, m[0].length),
         }
-        const list = backlinksByRef.get(key)
+        const list = byRef.get(key)
         if (list) list.push(bl)
-        else backlinksByRef.set(key, [bl])
+        else byRef.set(key, [bl])
       }
     }
-    const teamIndex: TeamIndex = { candidates, backlinksByRef }
-    cache.set(team.id, teamIndex)
-    return teamIndex
+    backlinksCache.set(team.id, byRef)
+    return byRef
+  }
+
+  /** `stripMd`ped + `normalize`d candidates for one team — the expensive half, built only when something actually searches this team. */
+  function candidatesFor(team: Team, doc: Doc): PreparedCandidate[] {
+    const hit = candidatesCache.get(team.id)
+    if (hit) return hit
+    const prepared: PreparedCandidate[] = []
+    for (const c of collectCandidates(team, doc)) {
+      const stripped = stripMd(c.raw)
+      prepared.push({ ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) })
+    }
+    candidatesCache.set(team.id, prepared)
+    return prepared
   }
 
   return {
     invalidate(scope: ChangeScope | null | undefined): void {
       // Whatever this scope describes, we've now accounted for the revision
       // it produced — so syncRev() won't also blanket-clear on the next
-      // search. Read before the early return below, or a non-searchable
+      // read. Read before the early return below, or a non-searchable
       // change (a template edit) would leave knownRev stale and trigger a
       // full clear anyway.
       knownRev = getRev()
       if (!scope || scope.teamId === undefined) {
         // No team named — "could be any/all teams" (this is also what
         // store.replaceDoc() sends). Nothing narrower is safe.
-        cache.clear()
+        backlinksCache.clear()
+        candidatesCache.clear()
         return
       }
+      // Both caches read from the same `collectCandidates` fields, so the
+      // same section gate applies to both.
       if (scope.sections !== undefined && !scope.sections.some((s) => SEARCHABLE.includes(s))) return
-      cache.delete(scope.teamId)
+      backlinksCache.delete(scope.teamId)
+      candidatesCache.delete(scope.teamId)
     },
 
     search(query: string, scopeTeamId: string | null): SearchResult[] {
@@ -321,7 +337,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       const hits: ScoredHit[] = []
 
       for (const team of teams) {
-        for (const candidate of indexFor(team, doc).candidates) {
+        for (const candidate of candidatesFor(team, doc)) {
           const hit = scoreCandidate(candidate, team.id, team.name, terms)
           if (hit) hits.push(hit)
         }
@@ -334,7 +350,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       const doc = getDoc()
       const team = doc.teams.find((tm) => tm.id === teamId)
       if (!team) return []
-      return indexFor(team, doc).backlinksByRef.get(`${kind}:${targetId}`) ?? []
+      return backlinksFor(team, doc).get(`${kind}:${targetId}`) ?? []
     },
   }
 }
