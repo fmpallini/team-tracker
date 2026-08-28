@@ -83,25 +83,32 @@ afterEach(() => {
 })
 
 describe('renderPersonNotes', () => {
-  test('renders the name and the title (role) as a secondary line, and loads existing notes into the editor', () => {
+  test('renders the name and a "classification · role" secondary line, and loads existing notes into the editor', () => {
     const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: '## Hi Bruno' }] })
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
 
     expect(headerName(container)).toBe('Bruno')
-    expect(headerTitle(container)?.textContent).toBe('Dev')
-    expect(headerTitle(container)?.hidden).toBe(false)
+    expect(headerTitle(container)?.textContent).toBe('Team member · Dev')
     expect(container.querySelector('.editor h2')?.textContent).toBe('Hi Bruno')
   })
 
-  test('header hides the title line when role is empty', () => {
+  test('the secondary line shows the classification alone when role is empty', () => {
     const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: '', parentId: null, order: 0, notes: '' }] })
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
     expect(headerName(container)).toBe('Bruno')
-    expect(headerTitle(container)?.hidden).toBe(true)
+    expect(headerTitle(container)?.textContent).toBe('Team member')
+  })
+
+  test('the secondary line reads "Stakeholder" for a stakeholder', () => {
+    const team = makeTeam({ stakeholders: [{ id: 'stk-1', name: 'Carla', role: 'Sponsor', parentId: null, order: 0, notes: '' }] })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }
+    render(container, loc, store, pm)
+    expect(headerTitle(container)?.textContent).toBe('Stakeholder · Sponsor')
   })
 
   test('the edit button opens the shared person modal prefilled, and a submit updates name + role and refreshes the header', () => {
@@ -123,7 +130,7 @@ describe('renderPersonNotes', () => {
     expect(store.doc.teams[0]!.members[0]!.name).toBe('Bruna')
     expect(store.doc.teams[0]!.members[0]!.role).toBe('Lead')
     expect(headerName(container)).toBe('Bruna')
-    expect(headerTitle(container)?.textContent).toBe('Lead')
+    expect(headerTitle(container)?.textContent).toBe('Team member · Lead')
   })
 
   test('the edit button submit is scoped to the team only (no sections), so @mention labels stay live', () => {
@@ -245,7 +252,7 @@ describe('renderPersonNotes', () => {
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
     expect(headerName(container)).toBe('Bruno')
-    expect(headerTitle(container)?.textContent).toBe('Dev')
+    expect(headerTitle(container)?.textContent).toBe('Team member · Dev')
 
     store.update((d) => {
       const p = d.teams[0]!.members.find((m) => m.id === 'mem-1')!
@@ -254,7 +261,7 @@ describe('renderPersonNotes', () => {
     })
 
     expect(headerName(container)).toBe('Bruna')
-    expect(headerTitle(container)?.textContent).toBe('Lead')
+    expect(headerTitle(container)?.textContent).toBe('Team member · Lead')
   })
 
   test('double render into the same container disposes the previous instance: no duplicate @ dropdowns', () => {

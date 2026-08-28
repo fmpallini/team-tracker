@@ -44,12 +44,12 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const initialBacklinks = ctx.searchIndex.backlinks(teamId, 'person', personId)
   const headerNameEl = el('span', { class: 'tt-person-header-name' })
   const headerTitleEl = el('span', { class: 'tt-person-header-title' })
-  // The role rides along as a muted second line — minor context, hidden
-  // outright when the person has no role rather than leaving an empty line.
+  const groupLabel = t(lc, group === 'members' ? 'person_group_member' : 'person_group_stakeholder')
+  // Muted second line: the person's classification (team member / stakeholder)
+  // always, plus their role after a "·" when they have one.
   function renderIdentity(p: Person): void {
     headerNameEl.textContent = p.name
-    headerTitleEl.textContent = p.role
-    headerTitleEl.hidden = p.role.trim() === ''
+    headerTitleEl.textContent = p.role.trim() ? `${groupLabel} · ${p.role}` : groupLabel
   }
   renderIdentity(person)
 
