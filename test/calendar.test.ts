@@ -39,6 +39,13 @@ describe('createCalendar grid math', () => {
     const root = createCalendar({ selected: '2028-02-10', locale: 'en-US', marks: noMarks(), onPick: () => {} })
     expect(dayButtons(root)).toHaveLength(29)
   })
+
+  test('each day cell carries its ISO date as data-date', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {} })
+    expect(dayButtonFor(root, 1).dataset.date).toBe('2026-07-01')
+    expect(dayButtonFor(root, 15).dataset.date).toBe('2026-07-15')
+    expect(dayButtonFor(root, 31).dataset.date).toBe('2026-07-31')
+  })
 })
 
 describe('createCalendar today ring', () => {

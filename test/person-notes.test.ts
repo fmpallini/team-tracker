@@ -108,6 +108,23 @@ describe('renderPersonNotes', () => {
     expect(store.doc.teams[0]!.members[0]!.notes).toBe('New notes')
   })
 
+  test('onChange scopes its store update to { teamId, sections: ["notes"] } — not "people", so the org tree is not rebuilt', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+
+    const seen: unknown[] = []
+    store.subscribe((scope) => seen.push(scope))
+
+    setBlockText(editorEl(container), 'New notes')
+    fireInput(editorEl(container))
+    vi.advanceTimersByTime(400)
+
+    expect(seen).toEqual([{ teamId: 'T1', sections: ['notes'] }])
+  })
+
   test('clearing the notes (whitespace-only) persists an empty string', () => {
     vi.useFakeTimers()
     const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: '', parentId: null, order: 0, notes: 'existing' }] })

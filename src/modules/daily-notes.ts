@@ -130,6 +130,21 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   }
   rebuildCalendar()
 
+  /**
+   * Toggles each rendered day cell's has-note tint from live `dailyNotes`
+   * without rebuilding the calendar — for a 'notes'-scoped change, whose
+   * only possible calendar effect is a day going empty↔non-empty. Every
+   * heavier mark (milestone flag, due dot) and the month layout are
+   * untouched, so those still go through rebuildCalendar().
+   */
+  function refreshCalendarNoteTints(): void {
+    const notes = findTeam(ctx, teamId)?.dailyNotes ?? {}
+    for (const cell of calendarSlot.querySelectorAll<HTMLElement>('.tt-calendar-day[data-date]')) {
+      const note = notes[cell.dataset.date!]
+      cell.classList.toggle('tt-calendar-day-has-note', typeof note === 'string' && note.trim() !== '')
+    }
+  }
+
   const calendarCol = el('div', {
     class: 'tt-daily-calendar-col',
   })
@@ -187,9 +202,23 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   // for rebuildBadge() below: the day's backlinks chip must react to a
   // mention of this date appearing/disappearing in any of those sections.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
+  // Sections whose change can alter a calendar *mark* (milestone flag,
+  // action-item due dot) or the month layout — those need a full
+  // rebuildCalendar(). A 'notes'-only change (this pane's own debounced
+  // keystroke, the hot path) can at most flip one day's has-note tint, so it
+  // takes the in-place refreshCalendarNoteTints() instead of tearing down and
+  // re-building two month grids. A scope touching only 'people'/'risks'
+  // reaches this listener (for rebuildBadge/refreshRefLabels) but can't
+  // change the calendar at all, so neither runs.
+  const CALENDAR_STRUCTURAL: readonly Section[] = ['teams', 'milestones', 'actions']
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
-    rebuildCalendar()
+    const sections = scope?.sections
+    if (sections === undefined || sections.some((s) => CALENDAR_STRUCTURAL.includes(s))) {
+      rebuildCalendar()
+    } else if (sections.includes('notes')) {
+      refreshCalendarNoteTints()
+    }
     rebuildBadge()
     // Patches this note's own @mention chips in place — safe even mid-typing
     // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the

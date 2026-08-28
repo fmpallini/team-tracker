@@ -60,7 +60,13 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
         const p = tm?.[group].find((pp) => pp.id === personId)
         if (!p) return
         p.notes = md.trim() === '' ? '' : md
-      }, { teamId, sections: ['people', 'notes'] })
+        // 'notes', not 'people': a person's notes are note content, same
+        // bucket as daily/general notes. people-tree watches 'people' and
+        // renders only name/role/hierarchy — none of it derived from notes —
+        // so scoping this 'people' rebuilt the whole org tree on every
+        // debounced keystroke. Backlinks to this person still refresh: every
+        // chip-bearing surface watches 'notes' too.
+      }, { teamId, sections: ['notes'] })
     },
     getTeam: () => findTeam(),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),
