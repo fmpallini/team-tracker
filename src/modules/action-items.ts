@@ -1169,6 +1169,30 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const deferredRebuild = createDeferredRebuild(renderAll)
 
+  /**
+   * Re-queries each card's backlinks and swaps its chip node in place. The
+   * subscribe handler uses this instead of a full `renderAll()` for a change
+   * confined to sibling sections (another pane's notes, a milestone, a
+   * risk): those can only reach a card through its backlinks chip. A
+   * 'people' change is deliberately NOT eligible — the card's assignee
+   * display and the assignee datalist both read team people — so it still
+   * takes the full rebuild path.
+   */
+  function refreshBacklinkChips(): void {
+    for (const card of boardEl.querySelectorAll<HTMLElement>('.tt-kanban-card')) {
+      const id = card.dataset.itemId
+      if (id === undefined) continue
+      const meta = card.querySelector('.tt-kanban-card-meta')
+      if (!meta) continue
+      const existing = meta.querySelector(':scope > .tt-backlinks-chip')
+      const backlinks = ctx.searchIndex.backlinks(teamId, 'action', id)
+      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      if (existing && next) existing.replaceWith(next)
+      else if (existing) existing.remove()
+      else if (next) meta.appendChild(next)
+    }
+  }
+
   // Every card's backlinks chip must react to a mention of it
   // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
   // a person's notes, a milestone or risk follow-up — not just edits to
@@ -1184,6 +1208,22 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // way daily/person notes do — safe even mid-typing (see
     // Editor.refreshRefLabels' doc comment).
     if (openBundle) { openBundle.richBundle.editor.refreshRefLabels(); openBundle.refreshAssignee() }
+    // A change confined to sibling sections (notes, milestones, risks) can
+    // only reach a card through its backlinks chip — nothing on the board
+    // itself changed. Patch the chips in place instead of rebuilding the
+    // whole board on each debounced foreign keystroke. 'people' is excluded
+    // (assignee display + datalist read it), as is a scope with no
+    // `sections` or one naming 'actions'/'teams' — all still rebuild.
+    const sections = scope?.sections
+    if (
+      sections !== undefined &&
+      !sections.includes('actions') &&
+      !sections.includes('teams') &&
+      !sections.includes('people')
+    ) {
+      refreshBacklinkChips()
+      return
+    }
     const active = focusedRenameInput()
     if (active) { deferredRebuild.arm(active); return }
     renderAll()

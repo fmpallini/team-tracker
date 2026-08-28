@@ -531,6 +531,28 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     renderList()
   }
 
+  /**
+   * Re-queries each visible row's backlinks and swaps its chip node in place.
+   * The subscribe handler uses this instead of a full `renderAll()` for a
+   * change confined to sibling sections (another pane's notes, an action
+   * item, a risk): those can only reach this module through backlinks chips,
+   * and rebuilding the list would tear down the timeline SVG and every row's
+   * date-picker on each debounced foreign keystroke. Leaves row order,
+   * inputs, and the timeline untouched.
+   */
+  function refreshBacklinkChips(): void {
+    for (const row of listEl.querySelectorAll<HTMLElement>('.tt-milestone-row')) {
+      const id = row.dataset.milestoneId
+      if (id === undefined) continue
+      const existing = row.querySelector('.tt-backlinks-chip, .tt-backlinks-chip-slot')
+      if (!existing) continue
+      const backlinks = ctx.searchIndex.backlinks(teamId, 'milestone', id)
+      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+        ?? el('span', { class: 'tt-backlinks-chip-slot' })
+      existing.replaceWith(next)
+    }
+  }
+
   function addMilestone(): void {
     const newId = crypto.randomUUID()
     focusMilestoneId = newId
@@ -602,6 +624,17 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // Editor.refreshRefLabels' doc comment), so this runs unconditionally
     // instead of waiting on the deferred full rebuild below.
     expandable.refreshAllLabels()
+    // A change confined to sibling sections can only reach this module
+    // through backlinks chips — nothing in the milestone list or timeline
+    // itself changed. Patch the chips in place instead of a full rebuild.
+    // A scope with no `sections`, or one naming 'milestones'/'teams', still
+    // falls through to the rebuild below (a title rename is scoped
+    // `{ teamId }` with no sections, so it takes the full path).
+    const sections = scope?.sections
+    if (sections !== undefined && !sections.includes('milestones') && !sections.includes('teams')) {
+      refreshBacklinkChips()
+      return
+    }
     const active = focusedCaretInput()
     if (active) {
       deferred.arm(active)

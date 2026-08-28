@@ -1456,3 +1456,56 @@ test('no chip when nothing mentions this risk', () => {
   render(container, loc, store, pm)
   expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')).toBeNull()
 })
+
+describe('backlink-only foreign changes patch chips in place (no full rebuild)', () => {
+  test('a notes-scoped edit that adds a mention shows the chip without rebuilding the row', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Backlog' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rowBefore = container.querySelector('[data-risk-id="r1"].tt-risk-row')
+    expect(rowBefore).not.toBeNull()
+    expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')).toBeNull()
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'watch @[Backlog](risk:r1)'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+    expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).toBe(rowBefore)
+  })
+
+  test('a notes-scoped edit that removes the last mention removes the chip in place', () => {
+    const team = makeTeam({
+      risks: [risk({ id: 'r1', title: 'Backlog' })],
+      dailyNotes: { '2026-02-02': 'watch @[Backlog](risk:r1)' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rowBefore = container.querySelector('[data-risk-id="r1"].tt-risk-row')
+    expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'watch it'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip')).toBeNull()
+    expect(container.querySelector('[data-risk-id="r1"] .tt-backlinks-chip-slot')).not.toBeNull()
+    expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).toBe(rowBefore)
+  })
+
+  test('a risks-scoped edit from elsewhere still rebuilds the list', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Backlog' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rowBefore = container.querySelector('[data-risk-id="r1"].tt-risk-row')
+    store.update((d) => {
+      d.teams[0]!.risks.push(risk({ id: 'r2', title: 'Vendor', order: 1 }))
+    }, { teamId: 'T1', sections: ['risks'] })
+
+    expect(container.querySelectorAll('.tt-risk-row:not(.tt-risk-row-closed)')).toHaveLength(2)
+    expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).not.toBe(rowBefore)
+  })
+})

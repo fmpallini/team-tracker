@@ -1959,3 +1959,68 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
     expect(idsAfter).toEqual(['a', 'b', 'c'])
   })
 })
+
+describe('backlink-only foreign changes patch chips in place (no full rebuild)', () => {
+  test('a notes-scoped edit that adds a mention shows the chip without rebuilding the card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'i1', summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    expect(cardBefore).not.toBeNull()
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')).toBeNull()
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'do @[Do thing](action:i1)'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).toBe(cardBefore)
+  })
+
+  test('a notes-scoped edit that removes the last mention removes the chip in place', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'i1', summary: 'Do thing' })],
+      dailyNotes: { '2026-02-02': 'do @[Do thing](action:i1)' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'do it'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')).toBeNull()
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).toBe(cardBefore)
+  })
+
+  test('an actions-scoped edit from elsewhere still rebuilds the board', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'i1', summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    store.update((d) => {
+      d.teams[0]!.actionItems.push(item({ id: 'i2', summary: 'Second', order: 1 }))
+    }, { teamId: 'T1', sections: ['actions'] })
+
+    expect(cards(container)).toHaveLength(2)
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).not.toBe(cardBefore)
+  })
+
+  test('a people-scoped edit from elsewhere still rebuilds the board (assignee display and datalist read people)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'i1', summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    store.update((d) => {
+      d.teams[0]!.members.push({ id: 'mem-2', name: 'Dana', role: 'Dev', parentId: null, order: 1, notes: '' })
+    }, { teamId: 'T1', sections: ['people'] })
+
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).not.toBe(cardBefore)
+  })
+})

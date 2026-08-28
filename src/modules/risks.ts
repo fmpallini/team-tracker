@@ -964,6 +964,28 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     exposureHeaderBtn.classList.toggle('active', sortMode !== 'none')
   }
 
+  /**
+   * Re-queries each open row's backlinks and swaps its chip node in place.
+   * The subscribe handler uses this instead of a full `renderAll()` for a
+   * change confined to sibling sections (another pane's notes, an action
+   * item, a milestone): those can only reach this module through backlinks
+   * chips, and rebuilding the list would tear down the quadrant SVG and
+   * every row's inputs on each debounced foreign keystroke. Closed rows
+   * carry no chip, so `listEl` (open rows only) is the whole surface.
+   */
+  function refreshBacklinkChips(): void {
+    for (const row of listEl.querySelectorAll<HTMLElement>('.tt-risk-row')) {
+      const id = row.dataset.riskId
+      if (id === undefined) continue
+      const existing = row.querySelector('.tt-backlinks-chip, .tt-backlinks-chip-slot')
+      if (!existing) continue
+      const backlinks = ctx.searchIndex.backlinks(teamId, 'risk', id)
+      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+        ?? el('span', { class: 'tt-backlinks-chip-slot' })
+      existing.replaceWith(next)
+    }
+  }
+
   function renderAll(): void {
     expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     listEl.innerHTML = ''
@@ -1073,6 +1095,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // Editor.refreshRefLabels' doc comment), so this runs unconditionally
     // instead of waiting on the deferred full rebuild below.
     expandable.refreshAllLabels()
+    // A change confined to sibling sections can only reach this module
+    // through backlinks chips — nothing in the risk list or quadrant itself
+    // changed. Patch the chips in place instead of a full rebuild. A scope
+    // with no `sections`, or one naming 'risks'/'teams', still falls through
+    // to the rebuild below (a title rename is scoped `{ teamId }` with no
+    // sections, so it takes the full path).
+    const sections = scope?.sections
+    if (sections !== undefined && !sections.includes('risks') && !sections.includes('teams')) {
+      refreshBacklinkChips()
+      return
+    }
     const active = focusedCaretElement()
     if (active) {
       deferred.arm(active)
