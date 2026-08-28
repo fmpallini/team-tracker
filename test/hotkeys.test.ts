@@ -1,7 +1,43 @@
-import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed } from '../src/ui/hotkeys'
+import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from '../src/ui/hotkeys'
 
 afterEach(() => {
   document.body.innerHTML = ''
+})
+
+function key(init: KeyboardEventInit): KeyboardEvent {
+  return new KeyboardEvent('keydown', init)
+}
+
+describe('matchKey — layout-independent letter shortcut matching', () => {
+  test('matches on the produced character (QWERTY / the mnemonic)', () => {
+    expect(matchKey(key({ key: 'x', code: 'KeyX' }), 'x')).toBe(true)
+    expect(matchKey(key({ key: 'X', code: 'KeyX' }), 'x')).toBe(true) // Shift held
+  })
+
+  test('matches on the physical key when the layout produces a different character', () => {
+    // Dvorak: the physical "KeyX" position types 'b'. A dead-key / AltGr
+    // layout under Ctrl can also report an unrelated e.key. The digit-row
+    // shortcuts already key off e.code; letters must too.
+    expect(matchKey(key({ key: 'b', code: 'KeyX' }), 'x')).toBe(true)
+  })
+
+  test('does not match an unrelated key', () => {
+    expect(matchKey(key({ key: 'y', code: 'KeyY' }), 'x')).toBe(false)
+  })
+})
+
+describe('matchDigit — layout-independent number shortcut matching', () => {
+  test('matches on the produced digit', () => {
+    expect(matchDigit(key({ key: '1', code: 'Digit1' }), 1)).toBe(true)
+  })
+
+  test('matches on the physical digit key when the row needs Shift for digits (AZERTY)', () => {
+    expect(matchDigit(key({ key: '&', code: 'Digit1' }), 1)).toBe(true)
+  })
+
+  test('does not match an unrelated digit', () => {
+    expect(matchDigit(key({ key: '2', code: 'Digit2' }), 1)).toBe(false)
+  })
 })
 
 function keydownOn(target: HTMLElement, init: KeyboardEventInit = {}): KeyboardEvent {

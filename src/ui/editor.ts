@@ -7,7 +7,7 @@ import { el, clampToViewport } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
-import { blockedByModal } from './hotkeys'
+import { blockedByModal, matchKey } from './hotkeys'
 
 export interface Editor {
   root: HTMLElement
@@ -310,6 +310,27 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return true
   }
 
+  /** The <li> a nested <ul>/<ol> is logically nested under. Usually just
+   * `list.parentElement`, but contenteditable editing at depth can leave the
+   * sub-list one step off from that: wrapped in a stray <div>/<p> inside the
+   * <li> (walk up past non-<li> element wrappers), or as a direct child of
+   * the ancestor list, sibling to the <li> it followed (take that previous
+   * <li> sibling). Mirrors core/markdown.ts's nestedListsOf() tolerance so
+   * Tab/Shift+Tab and htmlToMd agree on what counts as nested. null when the
+   * list is genuinely top-level. */
+  function listContainerLi(list: HTMLElement): HTMLElement | null {
+    let n: HTMLElement | null = list.parentElement
+    while (n && n !== editorEl && n.tagName !== 'LI') {
+      if (n.tagName === 'UL' || n.tagName === 'OL') {
+        let prev = list.previousElementSibling as HTMLElement | null
+        while (prev && prev.tagName !== 'LI') prev = prev.previousElementSibling as HTMLElement | null
+        return prev
+      }
+      n = n.parentElement
+    }
+    return n && n.tagName === 'LI' ? n : null
+  }
+
   /** Promotes `items` (sibling <li>s, in document order) out one level, into
    * the list they're nested under as new siblings right after the item they
    * were nested under. Any items after `items` in the same nested list move
@@ -322,8 +343,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const last = items[items.length - 1]
     if (!first || !last) return false
     const list = first.parentElement as HTMLElement
-    const parentLi = list.parentElement as HTMLElement | null
-    if (!parentLi || parentLi.tagName !== 'LI') return false
+    const parentLi = listContainerLi(list)
+    if (!parentLi) return false
     const grandList = parentLi.parentElement as HTMLElement
 
     const trailing: HTMLElement[] = []
@@ -857,12 +878,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
-    const key = e.key.toLowerCase()
 
     if (!e.shiftKey) {
-      if (key === 'b') { e.preventDefault(); exec('bold'); return }
-      if (key === 'i') { e.preventDefault(); exec('italic'); return }
-      if (key === 'u') { e.preventDefault(); exec('underline'); return }
+      if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
+      if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
+      if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
       if (e.code === 'Digit1') { e.preventDefault(); exec('formatBlock', '<h1>'); return }
       if (e.code === 'Digit2') { e.preventDefault(); exec('formatBlock', '<h2>'); return }
       if (e.code === 'Digit3') { e.preventDefault(); exec('formatBlock', '<h3>'); return }
@@ -870,7 +890,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
 
-    if (key === 'x') { e.preventDefault(); exec('strikeThrough'); return }
+    if (matchKey(e, 'x')) { e.preventDefault(); exec('strikeThrough'); return }
     if (e.code === 'Digit8') { e.preventDefault(); exec('insertUnorderedList'); return }
     if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
   }

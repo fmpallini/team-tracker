@@ -404,7 +404,14 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   const prefix = '  '.repeat(depth)
   let i = 0
   Array.from(list.children).forEach(child => {
-    if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
+    if (!(child instanceof HTMLElement)) return
+    const childTag = child.tagName.toLowerCase()
+    // A sub-list left as a direct child of this list (sibling to the <li>s
+    // rather than inside one) — a shape contenteditable editing can produce,
+    // same family as nestedListsOf's wrapper cases. Render it one level
+    // deeper instead of skipping it, so its items aren't silently dropped.
+    if (childTag === 'ul' || childTag === 'ol') { renderListMd(child, depth + 1, out); return }
+    if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
     const text = blockToMdNodes(liOwnContentNodes(child))
     if (tag === 'ol') {
@@ -443,7 +450,10 @@ function blockToText(node: HTMLElement): string {
 function renderListText(list: HTMLElement, out: string[], depth = 0): void {
   const prefix = '  '.repeat(depth)
   Array.from(list.children).forEach(child => {
-    if (!(child instanceof HTMLElement) || child.tagName.toLowerCase() !== 'li') return
+    if (!(child instanceof HTMLElement)) return
+    const childTag = child.tagName.toLowerCase()
+    if (childTag === 'ul' || childTag === 'ol') { renderListText(child, out, depth + 1); return }
+    if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
     const text = blockToTextNodes(liOwnContentNodes(child))
     out.push(text.split('\n').map(line => prefix + line).join('\n'))

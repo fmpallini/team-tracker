@@ -201,6 +201,17 @@ describe('nested list not a direct <li> child — stress cases', () => {
       '  1. B1'
     )
   })
+
+  // Even further off: the sub-list isn't inside its <li> at all — it sits as
+  // a direct child of the ancestor <ol>/<ul>, sibling to the item it should
+  // be nested under. renderListMd's `child.tagName !== 'li'` skip dropped it
+  // outright, so those items never reached the saved markdown at all.
+  test('a sub-list left as a direct child of the parent list still renders (not dropped)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ol><li>a</li><ol><li>b</li><li>c</li></ol></ol>'
+    expect(htmlToMd(div)).toBe('1. a\n  1. b\n  2. c')
+    expect(htmlToPlainText(div)).toBe('a\n  b\n  c')
+  })
 })
 
 test('ordered list numbers preserved', () => {

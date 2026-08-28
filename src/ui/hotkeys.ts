@@ -2,6 +2,33 @@
 const EDITABLE_SELECTOR = 'input,textarea,select,[contenteditable="true"]'
 
 /**
+ * True if `e` is the letter shortcut for `letter` (a single lowercase a–z),
+ * matched BOTH by the produced character (`e.key` — so it follows the user's
+ * layout and the mnemonic, e.g. Ctrl+B really is "B" on a Dvorak board) AND
+ * by the physical key (`e.code` === `Key<L>` — so it still fires on layouts
+ * where `e.key` for that position isn't the letter: Dvorak/Colemak, or a
+ * dead-key/AltGr layout that reports an unrelated `e.key` while Ctrl is
+ * held). The digit-row shortcuts (headings, lists) already keyed off
+ * `e.code` alone; this brings the letter shortcuts up to the same
+ * layout-independence — the reason Ctrl+Shift+X (strikethrough) silently did
+ * nothing on some international keyboards while Ctrl+Shift+7/8 worked.
+ */
+export function matchKey(e: KeyboardEvent, letter: string): boolean {
+  return e.key.toLowerCase() === letter || e.code === `Key${letter.toUpperCase()}`
+}
+
+/**
+ * True if `e` is the number shortcut for digit `n` (0–9), matched by the
+ * produced digit (`e.key`) or the physical number-row key (`e.code` ===
+ * `Digit<n>`) — the latter covers layouts (AZERTY) whose top row types
+ * symbols unless Shift is held, so `e.key` is `'&'`/`'é'`/… where `'1'`/`'2'`
+ * is expected.
+ */
+export function matchDigit(e: KeyboardEvent, n: number): boolean {
+  return e.key === String(n) || e.code === `Digit${n}`
+}
+
+/**
  * True while a modal dialog is open (see the `.tt-modal-overlay` class in
  * modal.ts). Shared by both guards below, and by update-notice.ts to keep
  * the relaunch-for-update button non-clickable behind an open modal.

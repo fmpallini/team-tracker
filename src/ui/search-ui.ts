@@ -7,7 +7,7 @@ import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
 import { normalize, KIND_ICON, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
-import { hotkeyAllowed, blockedByModal } from './hotkeys'
+import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
@@ -296,7 +296,7 @@ export function mountSearch(
     // Unlike hotkeyAllowed, these deliberately still fire while typing
     // elsewhere (e.g. in the rich-text editor) — that's the whole point of
     // the shortcut — so only the modal check applies, not the field one.
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && matchKey(e, 'f')) {
       if (blockedByModal()) return
       e.preventDefault()
       checkbox.checked = true
@@ -306,7 +306,7 @@ export function mountSearch(
       runSearch()
       return
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+    if ((e.ctrlKey || e.metaKey) && matchKey(e, 'f')) {
       if (blockedByModal()) return
       e.preventDefault()
       input.focus()
