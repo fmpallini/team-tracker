@@ -177,6 +177,11 @@ body { background: var(--bg); color: var(--fg); }
     -webkit-app-region: drag; app-region: drag;
   }
   .tt-header-left, .tt-header-center, .tt-header-right { -webkit-app-region: no-drag; app-region: no-drag; }
+  /* Fixed banner is otherwise pinned to top:0, landing under the browser's
+     caption-button overlay (widest in the collapsed state) — pointer events
+     there never reach the page, so the action button can't be clicked. Drop
+     it below the titlebar strip, same env var .tt-header uses above. */
+  .tt-update-banner { top: env(titlebar-area-height, 2.5rem); }
 }
 
 /* Sidebar collapse toggle: lives in the header (prepended before the app
