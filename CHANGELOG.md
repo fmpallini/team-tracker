@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.6.1] - 2026-08-28
+
+### Changed
+- Strikethrough moved from Ctrl+Shift+X to Ctrl+Shift+5. On some Windows setups the browser or a keyboard driver swallowed Ctrl+Shift+X before the editor ever received it, so the shortcut did nothing. The toolbar **S** button and `~~text~~` markdown still work as before.
+- "Clear formatting" (the 🧹 button) now also turns any heading in the selection back into a normal paragraph, matching Google Docs and Word — previously it only removed inline styling (bold, italic, strikethrough). List indentation is still left untouched.
+- Person notes: the edit (✎) and "show in org chart" (🗺️) buttons in the header now use the same bordered-button look as the printer and split buttons above them, instead of appearing as faint icons.
+
+### Fixed
+- Applying a heading (Ctrl+1 / Ctrl+2 / Ctrl+3, or the H1/H2/H3 toolbar buttons) to a selection that spanned several lines, or to a bullet or numbered list, made the text grow larger on every press instead of snapping to a fixed heading size.
+
 ## [2.6.0] - 2026-08-28
 
 ### Added

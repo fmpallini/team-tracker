@@ -10,8 +10,10 @@ const EDITABLE_SELECTOR = 'input,textarea,select,[contenteditable="true"]'
  * dead-key/AltGr layout that reports an unrelated `e.key` while Ctrl is
  * held). The digit-row shortcuts (headings, lists) already keyed off
  * `e.code` alone; this brings the letter shortcuts up to the same
- * layout-independence — the reason Ctrl+Shift+X (strikethrough) silently did
- * nothing on some international keyboards while Ctrl+Shift+7/8 worked.
+ * layout-independence — the reason Ctrl+B/I/U once did nothing on some
+ * international keyboards while the digit-row shortcuts worked. (Strikethrough
+ * moved off Ctrl+Shift+X to Ctrl+Shift+5 for a different reason: some Windows
+ * browsers/keyboard drivers swallow the Ctrl+Shift+X chord entirely.)
  */
 export function matchKey(e: KeyboardEvent, letter: string): boolean {
   return e.key.toLowerCase() === letter || e.code === `Key${letter.toUpperCase()}`

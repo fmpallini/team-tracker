@@ -681,7 +681,14 @@ body { background: var(--bg); color: var(--fg); }
   );
   background-attachment: local;
 }
-.editor h1, .editor h2, .editor h3 { font-family: var(--font-display); margin: .5em 0 .25em; line-height: 1.25; }
+/* Fixed rem sizes (not the UA's relative `2em`/`1.5em`/`1.17em`): a stray
+   nested <hN> — which Chromium's formatBlock can still produce on an odd
+   selection — must render at a fixed size, never compound to 2x/4x per
+   level. rem keeps the root font-size preference scaling them. */
+.editor h1, .editor h2, .editor h3 { font-family: var(--font-display); font-weight: 600; margin: .5em 0 .25em; line-height: 1.25; }
+.editor h1 { font-size: 1.6rem; }
+.editor h2 { font-size: 1.35rem; }
+.editor h3 { font-size: 1.15rem; }
 .editor ul, .editor ol { padding-left: 1.5em; }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
 .editor a.ref {
@@ -1398,12 +1405,11 @@ select option { background: var(--bg); color: var(--fg); }
   font-size: .8rem; color: var(--muted); line-height: 1.2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tt-person-header-right { display: flex; align-items: center; gap: .25rem; flex: none; }
-/* Same icon-button vocabulary as the milestone/risk row's right-side buttons
-   (borderless, dim, lit on hover/focus) — but resting a little more visible
-   since a header control has no parent row-hover to reveal it. */
-.tt-person-header-btn { opacity: .55; border: none; background: transparent; font-size: 1.3rem; line-height: 1; padding: .15rem .45rem; }
-.tt-person-header-btn:hover, .tt-person-header-btn:focus-visible { opacity: 1; }
+.tt-person-header-right { display: flex; align-items: center; gap: .35rem; flex: none; }
+/* Plain boxed .tt-btn, same as the pane bar's printer/split buttons — a
+   header control is always on show, so no borderless row-hover-reveal
+   treatment here. */
+.tt-person-header-btn { font-size: 1rem; }
 .tt-person-notes .tt-editor { flex: 1; }
 
 /* Preferences modal */
