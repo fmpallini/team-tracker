@@ -420,8 +420,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       }
 
       const input = el('input', {
-        type: 'text', class: 'tt-input tt-assignee-input', value,
-        onchange: (e: Event) => commit((e.target as HTMLInputElement).value),
+        type: 'text', class: 'tt-input tt-assignee-input', autocomplete: 'off', value,
+        // A pick rebuilds this field, removing this still-focused, still-dirty
+        // input — Chrome then fires a late `change` on it carrying the partial
+        // text typed so far, which would re-commit over the just-picked
+        // reference. Ignore any `change` once this input is detached.
+        onchange: (e: Event) => { if (input.isConnected) commit((e.target as HTMLInputElement).value) },
         oninput: () => openMenu(false),
         onkeydown: (e: Event) => onKeydown(e as KeyboardEvent),
       }) as HTMLInputElement

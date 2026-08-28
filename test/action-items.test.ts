@@ -803,6 +803,26 @@ describe('renderActionItems — board', () => {
     expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Bruno')
   })
 
+  test('a pick survives the late change event the removed input fires in Chrome (partial text must not clobber it)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const staleInput = assigneeInput()
+    staleInput.value = 'car'
+    staleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    Array.from(document.querySelectorAll<HTMLElement>('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item'))
+      .find((r) => r.textContent === 'Carla')!
+      .click()
+    // Chrome fires `change` on the now-removed, still-dirty input after the
+    // pick has already rebuilt the field — jsdom does not, so simulate it.
+    staleInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Carla')
+  })
+
   test('ArrowDown opens the picker and Enter picks the highlighted person without closing the modal', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
