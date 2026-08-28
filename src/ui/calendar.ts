@@ -110,7 +110,7 @@ export function createCalendar(opts: {
 
       const dayBtn = el(
         'button',
-        { class: classes.join(' '), type: 'button', onclick: () => opts.onPick(iso) },
+        { class: classes.join(' '), type: 'button', 'data-date': iso, onclick: () => opts.onPick(iso) },
         String(day)
       )
 

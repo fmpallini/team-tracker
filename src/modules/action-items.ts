@@ -20,7 +20,8 @@ import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
-import { BACKLINK_SECTIONS, normalize } from '../core/search'
+import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
+import { BACKLINK_SECTIONS, normalize, KIND_ICON } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
@@ -133,7 +134,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   if (loc.ref.kind !== 'actions') return // registered only for 'actions'; defensive
   const teamId = loc.teamId
   const lc = ctx.locale
-  const datalistId = `tt-kanban-people-${Math.random().toString(36).slice(2)}`
 
   function findTeam(): Team | undefined {
     return docFindTeam(ctx.store.doc, teamId)
@@ -285,7 +285,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
-  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle; unsubscribeSaveStatus: () => void; refreshAssignee: () => void }
+  interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle; unsubscribeSaveStatus: () => void; refreshAssignee: () => void; teardownAssignee: () => void }
   let openBundle: ModalBundle | null = null
 
   /** Single teardown for the edit modal's editor bundle (plus its header save-state subscription) — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
@@ -294,6 +294,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     openBundle.richBundle.dispose()
     openBundle.datePicker.destroy()
     openBundle.unsubscribeSaveStatus()
+    openBundle.teardownAssignee()
     openBundle = null
   }
 
@@ -341,10 +342,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       }, sections ? { teamId, sections } : { teamId })
     }
 
+    // Shown by beforeClose when the card has content but no name (see the
+    // showModal call below); cleared the moment the name field is non-blank.
+    const summaryError = el('div', { class: 'tt-field-error' })
+    // Delete button routes through closeModal(); this lets beforeClose tell a
+    // real delete apart from a plain close so it doesn't block the delete.
+    let deleting = false
     const summaryInput = el('input', {
       type: 'text', class: 'tt-input', value: existing?.summary ?? '',
+      oninput: (e: Event) => { if ((e.target as HTMLInputElement).value.trim() !== '') summaryError.textContent = '' },
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
+        if (value.trim() !== '') summaryError.textContent = ''
         // Unscoped beyond the team: `summary` is the label @[…](action:id)
         // mentions resolve through live — see the note at people-tree.ts's
         // rename site.
@@ -359,15 +368,28 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         patch((item) => { item.dueDate = dueDate }, ['actions'])
       },
     })
-    // Chip-or-input: a live person reference renders as a read-only chip
+    // Chip-or-combobox: a live person reference renders as a read-only chip
     // (icon + current name + clear button); anything else (plain hint text,
-    // or a former reference left behind by unlink-on-delete) renders as
-    // today's text+datalist input. Rebuilt in place — via renderAssigneeField,
-    // exposed on openBundle below — after every commit and after a foreign
-    // rename/delete while the modal stays open, same as the notes editor's
-    // refreshRefLabels().
+    // or a former reference left behind by unlink-on-delete) renders a text
+    // input paired with a ▾ button opening a grouped people picker. Rebuilt
+    // in place — via renderAssigneeField, exposed on openBundle below — after
+    // every commit and after a foreign rename/delete while the modal stays
+    // open, same as the notes editor's refreshRefLabels().
+    //
+    // The picker used to be a native <datalist>, but Chromium filters its
+    // <option>s by the current input text: a non-empty value that isn't a
+    // substring of any name collapsed the list, so the picker arrow looked
+    // dead until the field was cleared. And <option> is text-only, with no
+    // room to mark stakeholders apart from members. This custom list (same
+    // select-list.ts row mechanics as the @ picker and Ctrl+K palette) opens
+    // the full roster on ▾ regardless of the input text, and labels the two
+    // groups with their KIND_ICON glyphs.
+    let assigneeMenu: HTMLElement | null = null
+    let closeAssigneeMenu: () => void = () => {}
     const assigneeField = el('div', { class: 'tt-kanban-assignee-field' })
     function renderAssigneeField(): void {
+      closeAssigneeMenu()
+      closeAssigneeMenu = () => {}
       assigneeField.innerHTML = ''
       const tm = findTeam()
       const current = tm?.actionItems.find((i) => i.id === itemId)?.assignee ?? ''
@@ -388,17 +410,114 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         assigneeField.appendChild(el('span', { class: 'tt-kanban-assignee-chip' }, `🧑 ${display.name}`, clearBtn))
         return
       }
+
       const value = display.kind === 'unlinked' ? display.label : display.text
-      assigneeField.appendChild(el('input', {
-        type: 'text', class: 'tt-input', list: datalistId, value,
-        onchange: (e: Event) => {
-          const typed = (e.target as HTMLInputElement).value
-          const team2 = findTeam()
-          const match = team2 ? matchPersonByName(typed, team2) : null
-          patch((item) => { item.assignee = match ? formatPersonRef(match.id, match.name) : typed }, ['actions'])
-          renderAssigneeField()
-        },
-      }))
+      // A pick (row click / Enter) rebuilds this field into a chip, removing
+      // this still-focused, still-dirty input — Chrome then fires a late
+      // `change` on it carrying the partial text typed so far, which would
+      // re-commit over the reference just picked (the pick "doesn't take").
+      // One commit per rendered input: the latch swallows that trailing event.
+      let committed = false
+      const commit = (raw: string): void => {
+        if (committed) return
+        committed = true
+        const team2 = findTeam()
+        const match = team2 ? matchPersonByName(raw, team2) : null
+        patch((item) => { item.assignee = match ? formatPersonRef(match.id, match.name) : raw }, ['actions'])
+        renderAssigneeField()
+      }
+
+      const input = el('input', {
+        type: 'text', class: 'tt-input tt-assignee-input', autocomplete: 'off', value,
+        onchange: (e: Event) => commit((e.target as HTMLInputElement).value),
+        oninput: () => openMenu(false),
+        onkeydown: (e: Event) => onKeydown(e as KeyboardEvent),
+      }) as HTMLInputElement
+      const toggle = el('button', {
+        type: 'button', class: 'tt-assignee-toggle',
+        'aria-label': t(lc, 'kanban_assignee_open_list'), title: t(lc, 'kanban_assignee_open_list'),
+        onclick: () => { if (assigneeMenu) closeMenu(); else openMenu(true); input.focus() },
+      }, '▾')
+      const combo = el('div', { class: 'tt-assignee-combo' }, input, toggle)
+      assigneeField.appendChild(combo)
+
+      // --- picker menu: built lazily on open, removed on close ------------
+      // `showAll` (▾ / arrow-key open) lists the whole roster regardless of
+      // the input text; a keystroke reopens it filtered by that text.
+      let roster: { person: Person; group: 'stakeholders' | 'members' }[] = []
+      let showAll = false
+      let rowIdx = 0
+      const rows = (): typeof roster => {
+        if (showAll) return roster
+        const q = normalize(input.value.trim())
+        return roster.filter((r) => normalize(r.person.name).includes(q))
+      }
+      function renderRows(): void {
+        if (!assigneeMenu) return
+        assigneeMenu.innerHTML = ''
+        const list = rows()
+        rowIdx = Math.min(rowIdx, Math.max(0, list.length - 1))
+        let lastGroup: 'stakeholders' | 'members' | null = null
+        list.forEach((entry, i) => {
+          if (entry.group !== lastGroup) {
+            lastGroup = entry.group
+            const key = entry.group === 'stakeholders' ? 'module_stakeholders' : 'module_members'
+            assigneeMenu!.appendChild(el('div', { class: 'tt-atref-group-header' }, `${KIND_ICON[entry.group]} ${t(lc, key)}`))
+          }
+          assigneeMenu!.appendChild(el('div', selectableRowProps({
+            class: 'tt-atref-item',
+            selected: i === rowIdx,
+            onCommit: () => commit(entry.person.name),
+            onHover: () => { rowIdx = i; paintSelection(assigneeMenu, '.tt-atref-item', rowIdx) },
+          }), entry.person.name))
+        })
+      }
+      function onOutside(e: MouseEvent): void {
+        if (!combo.contains(e.target as Node)) closeMenu()
+      }
+      function closeMenu(): void {
+        if (!assigneeMenu) return
+        assigneeMenu.remove()
+        assigneeMenu = null
+        document.removeEventListener('mousedown', onOutside, true)
+      }
+      function openMenu(all: boolean): void {
+        const tm2 = findTeam()
+        roster = tm2
+          ? [
+              ...tm2.stakeholders.map((person) => ({ person, group: 'stakeholders' as const })),
+              ...tm2.members.map((person) => ({ person, group: 'members' as const })),
+            ]
+          : []
+        showAll = all
+        if (!assigneeMenu) {
+          assigneeMenu = el('div', { class: 'tt-assignee-menu' })
+          combo.appendChild(assigneeMenu)
+          document.addEventListener('mousedown', onOutside, true)
+        }
+        rowIdx = 0
+        renderRows()
+      }
+      function onKeydown(e: KeyboardEvent): void {
+        if (e.key === 'Escape') {
+          if (!assigneeMenu) return
+          e.preventDefault(); e.stopPropagation()
+          closeMenu()
+          return
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault()
+          if (!assigneeMenu) { openMenu(true); return }
+          rowIdx = clampMove(rowIdx, e.key === 'ArrowDown' ? 1 : -1, rows().length)
+          paintSelection(assigneeMenu, '.tt-atref-item', rowIdx)
+          return
+        }
+        if (e.key === 'Enter' && assigneeMenu) {
+          const hit = rows()[rowIdx]
+          if (hit) { e.preventDefault(); e.stopPropagation(); commit(hit.person.name) }
+        }
+      }
+      closeAssigneeMenu = closeMenu
     }
     renderAssigneeField()
     // New cards start with no color chosen — the color tag is optional, and
@@ -467,7 +586,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     )
     const headerExtra = el('div', { class: 'tt-kanban-modal-header-extra' }, savePillMini, expandBtn)
 
-    openBundle = { richBundle, datePicker, unsubscribeSaveStatus, refreshAssignee: renderAssigneeField }
+    openBundle = { richBundle, datePicker, unsubscribeSaveStatus, refreshAssignee: renderAssigneeField, teardownAssignee: () => closeAssigneeMenu() }
 
     const colorRow = el('div', { class: 'tt-kanban-color-row tt-kanban-tag-chips filtering' })
     function paintSelectedColor(): void {
@@ -500,13 +619,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const body = el(
       'div',
       { class: 'tt-kanban-form' },
-      el('label', { class: 'tt-field' }, t(lc, 'kanban_summary_label'), summaryInput),
+      el('label', { class: 'tt-field' }, t(lc, 'kanban_summary_label'), summaryInput, summaryError),
       el('div', { class: 'tt-field tt-kanban-notes-field' }, t(lc, 'kanban_notes_label'), editor.root),
       el(
         'div',
         { class: 'tt-kanban-form-row' },
         el('label', { class: 'tt-field' }, t(lc, 'kanban_due_label'), datePicker.root),
-        el('label', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeField)
+        // A div, not a label (like the notes field above): the assignee
+        // widget owns an input, a toggle button and a popup list, and label
+        // activation would forward a stray click from the list onto whichever
+        // control it wraps.
+        el('div', { class: 'tt-field' }, t(lc, 'kanban_assignee_label'), assigneeField)
       ),
       el('div', { class: 'tt-field' }, t(lc, 'kanban_color_label'), colorRow)
     )
@@ -517,7 +640,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
     const buttons: ModalButton[] = []
     if (existing !== null) {
-      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { closeModal(); requestDelete(existing) } })
+      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { deleting = true; closeModal(); requestDelete(existing) } })
     }
     buttons.push({ label: t(lc, 'kanban_close_btn'), onClick: () => closeModal() })
 
@@ -526,12 +649,28 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       body,
       buttons,
       headerExtra,
+      // A card with content but no name must not be closed — closing it would
+      // delete it (empty summary, below) and take the notes/assignee/due/color
+      // the user just entered with it. Hold the modal open, surface why, and
+      // put the cursor back on the name field. A real Delete (the button sets
+      // `deleting`) is always allowed through.
+      beforeClose: () => {
+        if (deleting) return true
+        const cur = items().find((i) => i.id === itemId)
+        if (!cur || cur.summary.trim() !== '') return true
+        const hasContent =
+          cur.notes.trim() !== '' || cur.assignee.trim() !== '' || cur.dueDate !== null || cur.color !== null
+        if (!hasContent) return true
+        summaryError.textContent = t(lc, 'kanban_name_required')
+        summaryInput.focus()
+        return false
+      },
       onClose: () => {
         disposeOpenBundle()
-        // Empty summary carries no meaningful content to lose — delete
-        // silently on close, same rule requestDelete() already applies to an
-        // explicit delete. Covers both a "+ Card" draft nothing was ever
-        // typed into and an existing card edited back down to blank.
+        // A blank summary that reached here carries nothing to lose (beforeClose
+        // blocks the case where it would) — delete silently, same rule
+        // requestDelete() applies to an explicit delete. Covers a "+ Card"
+        // draft nothing was typed into and an existing card cleared to blank.
         const current = items().find((i) => i.id === itemId)
         if (current && current.summary.trim() === '') {
           removeItem(itemId)
@@ -1068,7 +1207,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   const boardEl = el('div', { class: 'tt-kanban-board' })
-  const datalistEl = el('datalist', { id: datalistId })
 
   // Vertical mouse-wheel scroll becomes horizontal board scroll, but only
   // when the pointer isn't over a column body that itself needs to scroll
@@ -1109,20 +1247,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (found) requestDelete(found)
   })
 
-  function updateDatalist(tm: Team | undefined): void {
-    datalistEl.innerHTML = ''
-    const names = tm ? [...tm.stakeholders, ...tm.members].map((p) => p.name) : []
-    for (const name of Array.from(new Set(names))) {
-      datalistEl.appendChild(el('option', { value: name }))
-    }
-  }
-
   function renderAll(): void {
     rebuildBoard()
     const tm = findTeam()
     const today = todayIso()
     const tagNames = tm?.actionTagNames ?? {}
-    updateDatalist(tm)
     const byStatus: Record<string, ActionItem[]> = {}
     STATUSES.forEach((s) => { byStatus[s] = [] })
     // Counts feed the filter chips. Only the two live columns count: a chip
@@ -1169,12 +1298,36 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const deferredRebuild = createDeferredRebuild(renderAll)
 
+  /**
+   * Re-queries each card's backlinks and swaps its chip node in place. The
+   * subscribe handler uses this instead of a full `renderAll()` for a change
+   * confined to sibling sections (another pane's notes, a milestone, a
+   * risk): those can only reach a card through its backlinks chip. A
+   * 'people' change is deliberately NOT eligible — the card's assignee
+   * display and the assignee datalist both read team people — so it still
+   * takes the full rebuild path.
+   */
+  function refreshBacklinkChips(): void {
+    for (const card of boardEl.querySelectorAll<HTMLElement>('.tt-kanban-card')) {
+      const id = card.dataset.itemId
+      if (id === undefined) continue
+      const meta = card.querySelector('.tt-kanban-card-meta')
+      if (!meta) continue
+      const existing = meta.querySelector(':scope > .tt-backlinks-chip')
+      const backlinks = ctx.searchIndex.backlinks(teamId, 'action', id)
+      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      if (existing && next) existing.replaceWith(next)
+      else if (existing) existing.remove()
+      else if (next) meta.appendChild(next)
+    }
+  }
+
   // Every card's backlinks chip must react to a mention of it
   // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily note,
   // a person's notes, a milestone or risk follow-up — not just edits to
   // actions themselves, so the watch list is that full set rather than just
-  // 'actions'. 'people' also feeds updateDatalist() above, which reads
-  // stakeholders/members for the assignee autocomplete.
+  // 'actions'. 'people' also feeds the edit modal's assignee picker, which
+  // reads stakeholders/members.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
@@ -1184,6 +1337,22 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // way daily/person notes do — safe even mid-typing (see
     // Editor.refreshRefLabels' doc comment).
     if (openBundle) { openBundle.richBundle.editor.refreshRefLabels(); openBundle.refreshAssignee() }
+    // A change confined to sibling sections (notes, milestones, risks) can
+    // only reach a card through its backlinks chip — nothing on the board
+    // itself changed. Patch the chips in place instead of rebuilding the
+    // whole board on each debounced foreign keystroke. 'people' is excluded
+    // (assignee display + picker read it), as is a scope with no
+    // `sections` or one naming 'actions'/'teams' — all still rebuild.
+    const sections = scope?.sections
+    if (
+      sections !== undefined &&
+      !sections.includes('actions') &&
+      !sections.includes('teams') &&
+      !sections.includes('people')
+    ) {
+      refreshBacklinkChips()
+      return
+    }
     const active = focusedRenameInput()
     if (active) { deferredRebuild.arm(active); return }
     renderAll()
@@ -1205,7 +1374,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   )
   const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)
 
-  const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl, datalistEl)
+  const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl)
   container.appendChild(kanbanRootEl)
   // Lands focus on the first card (To Do, then the middle columns in order,
   // then Done, then Cancelled — same order as STATUSES/the board's DOM) the

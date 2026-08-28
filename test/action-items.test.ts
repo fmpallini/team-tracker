@@ -743,16 +743,116 @@ describe('renderActionItems — board', () => {
     expect(cards(container)).toHaveLength(1)
   })
 
-  test("the assignee input's datalist lists stakeholders and members by name", () => {
+  const assigneeInput = (): HTMLInputElement => document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement
+  const assigneeToggle = (): HTMLButtonElement => document.querySelector('.tt-kanban-form-row .tt-assignee-toggle') as HTMLButtonElement
+  const assigneeMenuRows = (): string[] =>
+    Array.from(document.querySelectorAll('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item')).map((r) => r.textContent ?? '')
+  const assigneeMenuHeaders = (): string[] =>
+    Array.from(document.querySelectorAll('.tt-kanban-form-row .tt-assignee-menu .tt-atref-group-header')).map((h) => h.textContent ?? '')
+
+  test('opening the assignee picker lists stakeholders and members in labelled groups with their icons', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
-    const assigneeInput = document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement
-    const datalist = document.getElementById(assigneeInput.getAttribute('list')!)!
-    const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
-    expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
+    assigneeToggle().click()
+
+    expect(assigneeMenuHeaders()).toEqual(['🧑‍💼 Stakeholders', '👥 Members'])
+    expect(assigneeMenuRows()).toEqual(['Carla', 'Bruno'])
+  })
+
+  test('the assignee picker opens the full people list even when the input already holds text', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: 'Some outside vendor' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    expect(assigneeInput().value).toBe('Some outside vendor')
+    assigneeToggle().click()
+
+    expect(assigneeMenuRows()).toEqual(['Carla', 'Bruno'])
+  })
+
+  test('typing in the assignee input filters the picker to matching people', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const input = assigneeInput()
+    input.value = 'car'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(assigneeMenuRows()).toEqual(['Carla'])
+    expect(assigneeMenuHeaders()).toEqual(['🧑‍💼 Stakeholders'])
+  })
+
+  test('picking a person from the assignee picker commits a live reference and shows the chip', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    assigneeToggle().click()
+    Array.from(document.querySelectorAll<HTMLElement>('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item'))
+      .find((r) => r.textContent === 'Bruno')!
+      .click()
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Bruno](person:mem-1)')
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Bruno')
+  })
+
+  test('a pick survives the late change event the removed input fires in Chrome (partial text must not clobber it)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const staleInput = assigneeInput()
+    staleInput.value = 'car'
+    staleInput.dispatchEvent(new Event('input', { bubbles: true }))
+    Array.from(document.querySelectorAll<HTMLElement>('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item'))
+      .find((r) => r.textContent === 'Carla')!
+      .click()
+    // Chrome fires `change` on the old, still-dirty input after the pick has
+    // already rebuilt the field — jsdom doesn't, so simulate it. Re-attach it
+    // first so the guard can't lean on isConnected (Chrome's timing varies).
+    document.body.appendChild(staleInput)
+    staleInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Carla')
+  })
+
+  test('ArrowDown opens the picker and Enter picks the highlighted person without closing the modal', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const input = assigneeInput()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Bruno](person:mem-1)')
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+  })
+
+  test('Escape closes the assignee picker but leaves the modal open', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    assigneeToggle().click()
+    expect(document.querySelector('.tt-kanban-form-row .tt-assignee-menu')).not.toBeNull()
+
+    assigneeInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    expect(document.querySelector('.tt-kanban-form-row .tt-assignee-menu')).toBeNull()
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
   })
 
   test('a backlink chip renders in the card meta row when another field mentions this action item', () => {
@@ -843,6 +943,80 @@ describe('renderActionItems — edit modal', () => {
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-field-error')).toBeNull()
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('a new card with notes but no name will not close — the modal stays, the name field takes focus, a hint shows', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
+    setBlockText(editorEl, 'A note I do not want to lose')
+    fireInput(editorEl)
+    vi.advanceTimersByTime(400)
+
+    clickByTitleOrText(document.body, 'Close')
+
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull() // still open
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1) // not discarded
+    expect(document.querySelector('.tt-kanban-form .tt-field-error')?.textContent).toBeTruthy()
+    expect(document.activeElement).toBe(document.querySelector('.tt-kanban-form input[type="text"]'))
+
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'named') // let afterEach close it
+    clickByTitleOrText(document.body, 'Close')
+  })
+
+  test('once a name is entered the blocked card closes normally and keeps its notes', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
+    setBlockText(editorEl, 'Keep me')
+    fireInput(editorEl)
+    vi.advanceTimersByTime(400)
+    clickByTitleOrText(document.body, 'Close') // blocked
+
+    const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
+    setValue(summaryInput, 'Now named')
+    expect(document.querySelector('.tt-kanban-form .tt-field-error')?.textContent).toBeFalsy() // hint cleared
+    clickByTitleOrText(document.body, 'Close')
+
+    expect(document.querySelector('.tt-kanban-form')).toBeNull() // closed
+    expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('Now named')
+    expect(store.doc.teams[0]!.actionItems[0]!.notes).toBe('Keep me')
+  })
+
+  test('a new card with only a due date picked cannot be closed nameless either', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 1))
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    pickDate(10)
+    clickByTitleOrText(document.body, 'Close')
+
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'named') // let afterEach close it
+    clickByTitleOrText(document.body, 'Close')
+  })
+
+  test('the Delete button on an existing card edited down to blank still closes (not blocked)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Had a name', notes: 'has notes' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, '')
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
   })
 
   test('a new card starts with no color chip pre-selected', () => {
@@ -1012,7 +1186,7 @@ describe('renderActionItems — edit modal live persistence', () => {
 
     clickByTitleOrText(container, '✎')
     pickDate(15)
-    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Something else')
+    setValue(document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement, 'Something else')
 
     const updated = store.doc.teams[0]!.actionItems[0]!
     expect(updated.assignee).toBe('Something else')
@@ -1043,12 +1217,12 @@ describe('renderActionItems — assignee reference chip', () => {
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '✎')
-    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Carla')
+    setValue(document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement, 'Carla')
 
     expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
     const chip = document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')
     expect(chip?.textContent).toContain('Carla')
-    expect(document.querySelector('.tt-kanban-form-row input[list]')).toBeNull() // input replaced by the chip
+    expect(document.querySelector('.tt-kanban-form-row .tt-assignee-input')).toBeNull() // input replaced by the chip
   })
 
   test('the chip shows the person\'s live name, updating in place when the person is renamed elsewhere while the modal stays open', () => {
@@ -1075,7 +1249,7 @@ describe('renderActionItems — assignee reference chip', () => {
 
     expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('')
     expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')).toBeNull()
-    expect((document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement).value).toBe('')
+    expect((document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement).value).toBe('')
   })
 
   test('the chip\'s name/icon is not interactive — the clear button is its only clickable control', () => {
@@ -1957,5 +2131,70 @@ describe('renderActionItems — custom columns: drag-and-drop reorder', () => {
 
     const idsAfter = store.doc.teams[0]!.actionColumns!.slice().sort((x, y) => x.order - y.order).map((c) => c.id)
     expect(idsAfter).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('backlink-only foreign changes patch chips in place (no full rebuild)', () => {
+  test('a notes-scoped edit that adds a mention shows the chip without rebuilding the card', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'i1', summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    expect(cardBefore).not.toBeNull()
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')).toBeNull()
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'do @[Do thing](action:i1)'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).toBe(cardBefore)
+  })
+
+  test('a notes-scoped edit that removes the last mention removes the chip in place', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'i1', summary: 'Do thing' })],
+      dailyNotes: { '2026-02-02': 'do @[Do thing](action:i1)' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'do it'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-item-id="i1"] .tt-backlinks-chip')).toBeNull()
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).toBe(cardBefore)
+  })
+
+  test('an actions-scoped edit from elsewhere still rebuilds the board', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'i1', summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    store.update((d) => {
+      d.teams[0]!.actionItems.push(item({ id: 'i2', summary: 'Second', order: 1 }))
+    }, { teamId: 'T1', sections: ['actions'] })
+
+    expect(cards(container)).toHaveLength(2)
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).not.toBe(cardBefore)
+  })
+
+  test('a people-scoped edit from elsewhere still rebuilds the board (assignee display and datalist read people)', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'i1', summary: 'Do thing' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const cardBefore = container.querySelector('[data-item-id="i1"].tt-kanban-card')
+    store.update((d) => {
+      d.teams[0]!.members.push({ id: 'mem-2', name: 'Dana', role: 'Dev', parentId: null, order: 1, notes: '' })
+    }, { teamId: 'T1', sections: ['people'] })
+
+    expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).not.toBe(cardBefore)
   })
 })

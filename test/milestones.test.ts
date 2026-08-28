@@ -988,3 +988,56 @@ describe('deferred rebuild while a field is focused', () => {
     expect(document.querySelector('.tt-date-picker-popover')).toBeNull()
   })
 })
+
+describe('backlink-only foreign changes patch chips in place (no full rebuild)', () => {
+  test('a notes-scoped edit that adds a mention shows the chip without rebuilding the row', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'm1', title: 'Beta', date: '2026-01-01' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rowBefore = container.querySelector('[data-milestone-id="m1"].tt-milestone-row')
+    expect(rowBefore).not.toBeNull()
+    expect(container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip')).toBeNull()
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'ship @[Beta](milestone:m1)'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+    expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).toBe(rowBefore)
+  })
+
+  test('a notes-scoped edit that removes the last mention removes the chip in place', () => {
+    const team = makeTeam({
+      milestones: [milestone({ id: 'm1', title: 'Beta', date: '2026-01-01' })],
+      dailyNotes: { '2026-02-02': 'ship @[Beta](milestone:m1)' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rowBefore = container.querySelector('[data-milestone-id="m1"].tt-milestone-row')
+    expect(container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip')?.textContent).toBe('↩ 1')
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-02-02'] = 'ship it'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip')).toBeNull()
+    expect(container.querySelector('[data-milestone-id="m1"] .tt-backlinks-chip-slot')).not.toBeNull()
+    expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).toBe(rowBefore)
+  })
+
+  test('a milestones-scoped edit from elsewhere still rebuilds the list', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'm1', title: 'Beta', date: '2026-01-01' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const rowBefore = container.querySelector('[data-milestone-id="m1"].tt-milestone-row')
+    store.update((d) => {
+      d.teams[0]!.milestones.push(milestone({ id: 'm2', title: 'Launch', date: '2026-03-01' }))
+    }, { teamId: 'T1', sections: ['milestones'] })
+
+    expect(rows(container)).toHaveLength(2)
+    expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).not.toBe(rowBefore)
+  })
+})

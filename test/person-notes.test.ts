@@ -5,20 +5,27 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Team } from '../src/core/types'
 
-function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
-  const calls: { idx: 0 | 1; loc: Loc }[] = []
+function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] } {
+  const calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] = []
   return {
     calls,
     openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
     openBothPanes: () => {},
     openInFocused: () => {},
-    openInSecondaryPane: () => 0,
+    openInSecondaryPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc, secondary: true }); return idx === 0 ? 1 : 0 },
     toggleSplit: () => {},
     renderAll: () => {},
     registerModule: () => {},
     setSplitSpaceConstrained: () => {},
     dispose: () => {},
   }
+}
+
+function headerName(container: HTMLElement): string | undefined {
+  return container.querySelector('.tt-person-header-name')?.textContent ?? undefined
+}
+function headerTitle(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('.tt-person-header-title')
 }
 
 function makeTeam(overrides: Partial<Team> = {}): Team {
@@ -76,22 +83,91 @@ afterEach(() => {
 })
 
 describe('renderPersonNotes', () => {
-  test('renders header as "name — role" and loads existing notes into the editor', () => {
+  test('renders the name and a "role · classification" secondary line, and loads existing notes into the editor', () => {
     const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: '## Hi Bruno' }] })
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
 
-    expect(container.querySelector('.tt-person-header')?.textContent).toBe('Bruno — Dev')
+    expect(headerName(container)).toBe('Bruno')
+    expect(headerTitle(container)?.textContent).toBe('Dev · Team member')
     expect(container.querySelector('.editor h2')?.textContent).toBe('Hi Bruno')
   })
 
-  test('header shows just the name when role is empty', () => {
+  test('the secondary line shows the classification alone when role is empty', () => {
     const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: '', parentId: null, order: 0, notes: '' }] })
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
-    expect(container.querySelector('.tt-person-header')?.textContent).toBe('Bruno')
+    expect(headerName(container)).toBe('Bruno')
+    expect(headerTitle(container)?.textContent).toBe('Team member')
+  })
+
+  test('the secondary line reads "Stakeholder" for a stakeholder', () => {
+    const team = makeTeam({ stakeholders: [{ id: 'stk-1', name: 'Carla', role: 'Sponsor', parentId: null, order: 0, notes: '' }] })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }
+    render(container, loc, store, pm)
+    expect(headerTitle(container)?.textContent).toBe('Sponsor · Stakeholder')
+  })
+
+  test('the edit button opens the shared person modal prefilled, and a submit updates name + role and refreshes the header', () => {
+    const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: '' }] })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+
+    container.querySelector<HTMLButtonElement>('.tt-person-header-edit-btn')!.click()
+    const nameInput = document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!
+    const roleInput = document.querySelector<HTMLInputElement>('input[name="tt-person-role"]')!
+    expect(nameInput.value).toBe('Bruno')
+    expect(roleInput.value).toBe('Dev')
+
+    nameInput.value = 'Bruna'
+    roleInput.value = 'Lead'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-buttons button')).find((b) => b.textContent === 'OK')!.click()
+
+    expect(store.doc.teams[0]!.members[0]!.name).toBe('Bruna')
+    expect(store.doc.teams[0]!.members[0]!.role).toBe('Lead')
+    expect(headerName(container)).toBe('Bruna')
+    expect(headerTitle(container)?.textContent).toBe('Lead · Team member')
+  })
+
+  test('the edit button submit is scoped to the team only (no sections), so @mention labels stay live', () => {
+    const team = makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes: '' }] })
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+
+    const seen: unknown[] = []
+    store.subscribe((scope) => seen.push(scope))
+
+    container.querySelector<HTMLButtonElement>('.tt-person-header-edit-btn')!.click()
+    ;(document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!).value = 'Bruna'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-buttons button')).find((b) => b.textContent === 'OK')!.click()
+
+    expect(seen).toEqual([{ teamId: 'T1' }])
+  })
+
+  test('the jump-to-org-chart button opens this person\'s group in the same pane', () => {
+    const team = makeTeam()
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+
+    container.querySelector<HTMLButtonElement>('.tt-person-header-goto-org-btn')!.click()
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'members' } } }])
+  })
+
+  test('the jump-to-org-chart button honors prefs.openRefsInSecondaryPane', () => {
+    const team = makeTeam({ stakeholders: [{ id: 'stk-1', name: 'Carla', role: 'Sponsor', parentId: null, order: 0, notes: '' }] })
+    const { container, store, pm } = setup(team)
+    store.update((d) => { d.prefs.openRefsInSecondaryPane = true })
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }
+    render(container, loc, store, pm)
+
+    container.querySelector<HTMLButtonElement>('.tt-person-header-goto-org-btn')!.click()
+    expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'stakeholders' } }, secondary: true }])
   })
 
   test('onChange persists the edited markdown into person.notes', () => {
@@ -106,6 +182,23 @@ describe('renderPersonNotes', () => {
     vi.advanceTimersByTime(400)
 
     expect(store.doc.teams[0]!.members[0]!.notes).toBe('New notes')
+  })
+
+  test('onChange scopes its store update to { teamId, sections: ["notes"] } — not "people", so the org tree is not rebuilt', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+    render(container, loc, store, pm)
+
+    const seen: unknown[] = []
+    store.subscribe((scope) => seen.push(scope))
+
+    setBlockText(editorEl(container), 'New notes')
+    fireInput(editorEl(container))
+    vi.advanceTimersByTime(400)
+
+    expect(seen).toEqual([{ teamId: 'T1', sections: ['notes'] }])
   })
 
   test('clearing the notes (whitespace-only) persists an empty string', () => {
@@ -158,7 +251,8 @@ describe('renderPersonNotes', () => {
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
-    expect(container.querySelector('.tt-person-header')?.textContent).toBe('Bruno — Dev')
+    expect(headerName(container)).toBe('Bruno')
+    expect(headerTitle(container)?.textContent).toBe('Dev · Team member')
 
     store.update((d) => {
       const p = d.teams[0]!.members.find((m) => m.id === 'mem-1')!
@@ -166,7 +260,8 @@ describe('renderPersonNotes', () => {
       p.role = 'Lead'
     })
 
-    expect(container.querySelector('.tt-person-header')?.textContent).toBe('Bruna — Lead')
+    expect(headerName(container)).toBe('Bruna')
+    expect(headerTitle(container)?.textContent).toBe('Lead · Team member')
   })
 
   test('double render into the same container disposes the previous instance: no duplicate @ dropdowns', () => {

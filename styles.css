@@ -177,6 +177,11 @@ body { background: var(--bg); color: var(--fg); }
     -webkit-app-region: drag; app-region: drag;
   }
   .tt-header-left, .tt-header-center, .tt-header-right { -webkit-app-region: no-drag; app-region: no-drag; }
+  /* Fixed banner is otherwise pinned to top:0, landing under the browser's
+     caption-button overlay (widest in the collapsed state) — pointer events
+     there never reach the page, so the action button can't be clicked. Drop
+     it below the titlebar strip, same env var .tt-header uses above. */
+  .tt-update-banner { top: env(titlebar-area-height, 2.5rem); }
 }
 
 /* Sidebar collapse toggle: lives in the header (prepended before the app
@@ -1060,6 +1065,21 @@ body { background: var(--bg); color: var(--fg); }
   border: none; background: none; cursor: pointer; color: inherit;
   font-size: 1rem; line-height: 1; padding: 0;
 }
+/* Assignee combobox: text input + ▾ toggle, with an absolutely-positioned
+   people picker. Rows/headers reuse the .tt-atref-* list styles (above). */
+.tt-assignee-combo { position: relative; display: flex; gap: .3rem; }
+.tt-assignee-combo .tt-assignee-input { flex: 1; }
+.tt-assignee-toggle {
+  flex: none; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--fg); cursor: pointer; padding: 0 .5rem; font-size: .8rem;
+}
+.tt-assignee-toggle:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-assignee-menu {
+  position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 1300;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  max-height: 240px; overflow-y: auto; padding: .25rem;
+}
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
 .tt-kanban-color-chip {
   min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
@@ -1368,10 +1388,22 @@ select option { background: var(--bg); color: var(--fg); }
 /* Person notes module */
 .tt-person-notes { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tt-person-header {
-  flex: none; padding: .5rem .75rem; font-weight: 700; font-family: var(--font-display); font-size: 1.05rem;
+  flex: none; padding: .5rem .75rem;
   background: var(--panel); border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
 }
+.tt-person-header-id { min-width: 0; display: flex; flex-direction: column; gap: .05rem; }
+.tt-person-header-name { font-weight: 700; font-family: var(--font-display); font-size: 1.05rem; line-height: 1.2; }
+.tt-person-header-title {
+  font-size: .8rem; color: var(--muted); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tt-person-header-right { display: flex; align-items: center; gap: .25rem; flex: none; }
+/* Same icon-button vocabulary as the milestone/risk row's right-side buttons
+   (borderless, dim, lit on hover/focus) — but resting a little more visible
+   since a header control has no parent row-hover to reveal it. */
+.tt-person-header-btn { opacity: .55; border: none; background: transparent; font-size: 1.3rem; line-height: 1; padding: .15rem .45rem; }
+.tt-person-header-btn:hover, .tt-person-header-btn:focus-visible { opacity: 1; }
 .tt-person-notes .tt-editor { flex: 1; }
 
 /* Preferences modal */

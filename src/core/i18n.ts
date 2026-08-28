@@ -109,6 +109,9 @@ const pt = {
   person_role_label: 'Cargo',
   person_name_required: 'Nome é obrigatório',
   person_notes_title: 'Abrir notas',
+  person_notes_goto_org_title: 'Ver no organograma',
+  person_group_member: 'Membro',
+  person_group_stakeholder: 'Stakeholder',
   person_add_child_title: 'Adicionar subordinado',
   person_delete_title: 'Excluir pessoa',
   person_delete_confirm: 'Excluir {name}? Os subordinados serão promovidos.',
@@ -140,6 +143,8 @@ const pt = {
   kanban_due_label: 'Prazo',
   kanban_assignee_label: 'Responsável',
   kanban_assignee_clear_btn: 'Remover responsável vinculado',
+  kanban_assignee_open_list: 'Escolher da lista de pessoas',
+  kanban_name_required: 'Dê um nome ao card antes de fechar.',
   kanban_color_label: 'Cor',
   kanban_color_slate: 'Ardósia',
   kanban_color_brass: 'Latão',
@@ -604,6 +609,9 @@ const en: Record<MsgKey, string> = {
   person_role_label: 'Role',
   person_name_required: 'Name is required',
   person_notes_title: 'Open notes',
+  person_notes_goto_org_title: 'Show in org chart',
+  person_group_member: 'Team member',
+  person_group_stakeholder: 'Stakeholder',
   person_add_child_title: 'Add report',
   person_delete_title: 'Delete person',
   person_delete_confirm: 'Delete {name}? Their reports will be promoted.',
@@ -635,6 +643,8 @@ const en: Record<MsgKey, string> = {
   kanban_due_label: 'Due date',
   kanban_assignee_label: 'Assignee',
   kanban_assignee_clear_btn: 'Remove linked assignee',
+  kanban_assignee_open_list: 'Choose from people list',
+  kanban_name_required: 'Name the card before closing.',
   kanban_color_label: 'Color',
   kanban_color_slate: 'Slate',
   kanban_color_brass: 'Brass',
@@ -992,13 +1002,16 @@ const dicts: Record<Locale, Record<MsgKey, string>> = {
 }
 
 export function t(locale: Locale, key: MsgKey, params?: Record<string, string>): string {
-  let msg = dicts[locale][key]
-  if (params) {
-    for (const [name, value] of Object.entries(params)) {
-      msg = msg.split(`{${name}}`).join(value)
-    }
-  }
-  return msg
+  const msg = dicts[locale][key]
+  if (!params) return msg
+  // One pass over the message, rather than a split()/join() allocation per
+  // param (t() runs hundreds of times per render). A `{name}` with no
+  // matching param is left verbatim — same as the old per-param loop, which
+  // simply never touched it. Single-pass, so an inserted value that happens
+  // to contain `{other}` is not itself re-substituted.
+  return msg.replace(/\{(\w+)\}/g, (whole, name: string) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? params[name]! : whole
+  )
 }
 
 export function formatDate(iso: string, locale: Locale): string {

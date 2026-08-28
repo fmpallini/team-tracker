@@ -30,7 +30,7 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
         const tm = d.teams.find((t2) => t2.id === teamId)
         if (!tm) return
         tm.generalNotes = md.trim() === '' ? '' : md
-      })
+      }, { teamId, sections: ['notes'] })
     },
     getTeam: () => findTeam(),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),

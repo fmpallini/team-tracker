@@ -201,6 +201,17 @@ describe('nested list not a direct <li> child — stress cases', () => {
       '  1. B1'
     )
   })
+
+  // Even further off: the sub-list isn't inside its <li> at all — it sits as
+  // a direct child of the ancestor <ol>/<ul>, sibling to the item it should
+  // be nested under. renderListMd's `child.tagName !== 'li'` skip dropped it
+  // outright, so those items never reached the saved markdown at all.
+  test('a sub-list left as a direct child of the parent list still renders (not dropped)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ol><li>a</li><ol><li>b</li><li>c</li></ol></ol>'
+    expect(htmlToMd(div)).toBe('1. a\n  1. b\n  2. c')
+    expect(htmlToPlainText(div)).toBe('a\n  b\n  c')
+  })
 })
 
 test('ordered list numbers preserved', () => {
@@ -506,4 +517,30 @@ test('script/style tag text does not leak into the output as visible content', (
   const div = document.createElement('div')
   div.innerHTML = '<div>before</div><script>alert(1)</script><div>after</div>'
   expect(htmlToMd(div)).not.toContain('alert(1)')
+})
+
+describe('htmlToMd / htmlToPlainText do not mutate the source DOM', () => {
+  test('single-line block (no <br>) round-trips without touching the source', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div>a <strong>b</strong> c</div><div>second</div>'
+    const before = div.innerHTML
+    expect(htmlToMd(div)).toBe('a **b** c\nsecond')
+    expect(div.innerHTML).toBe(before)
+  })
+
+  test('block with a <br> nested inside inline formatting round-trips without touching the source', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div><b>l1<br>l2</b></div>'
+    const before = div.innerHTML
+    expect(htmlToMd(div)).toBe('**l1**\n**l2**')
+    expect(div.innerHTML).toBe(before)
+  })
+
+  test('htmlToPlainText leaves the source DOM intact', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div>one</div><div><i>two<br>three</i></div>'
+    const before = div.innerHTML
+    expect(htmlToPlainText(div)).toBe('one\ntwo\nthree')
+    expect(div.innerHTML).toBe(before)
+  })
 })

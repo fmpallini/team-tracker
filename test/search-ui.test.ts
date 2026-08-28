@@ -243,6 +243,16 @@ test('Ctrl+F (no Shift) still just focuses the search input, without touching th
   expect((document.querySelector('.tt-search-all-teams input') as HTMLInputElement).checked).toBe(false)
 })
 
+test('Ctrl+F still focuses search when the layout reports a non-"f" e.key for the physical KeyF (Dvorak / dead-key layouts)', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const { input } = mount(store, fakePM())
+  input.blur()
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', code: 'KeyF', ctrlKey: true, bubbles: true, cancelable: true }))
+
+  expect(document.activeElement).toBe(input)
+})
+
 test('Ctrl+F and Ctrl+Shift+F do not steal focus into the search input while a modal is open', () => {
   const store = buildStore([oneNoteTeam], 'T1')
   const { input } = mount(store, fakePM())

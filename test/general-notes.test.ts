@@ -108,6 +108,23 @@ describe('renderGeneralNotes', () => {
     expect(store.doc.teams[0]!.generalNotes).toBe('New note')
   })
 
+  test('onChange scopes its store update to { teamId, sections: ["notes"] } so unrelated panes are not rebuilt', () => {
+    vi.useFakeTimers()
+    const team = makeTeam()
+    const { container, store, pm } = setup(team)
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'general' } }
+    render(container, loc, store, pm)
+
+    const seen: unknown[] = []
+    store.subscribe((scope) => seen.push(scope))
+
+    setBlockText(editorEl(container), 'New note')
+    fireInput(editorEl(container))
+    vi.advanceTimersByTime(400)
+
+    expect(seen).toEqual([{ teamId: 'T1', sections: ['notes'] }])
+  })
+
   test('clearing the notes (whitespace-only) persists an empty string', () => {
     vi.useFakeTimers()
     const team = makeTeam({ generalNotes: 'existing' })

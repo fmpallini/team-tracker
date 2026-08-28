@@ -457,3 +457,74 @@ test('renaming a milestone mentioned in this note live-updates its @mention chip
   expect(chipAfter).toBe(chip)
   expect(editorEl(container).textContent).toBe('See @New Title for details')
 })
+
+describe('calendar refresh is proportional to what changed', () => {
+  test('a notes-scoped edit updates the has-note tint in place, without rebuilding the calendar', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+
+    const calBefore = container.querySelector('.tt-calendar')
+    expect(calBefore).not.toBeNull()
+    const cell = (): HTMLElement => container.querySelector<HTMLElement>('.tt-calendar-day[data-date="2026-07-11"]')!
+    expect(cell().classList.contains('tt-calendar-day-has-note')).toBe(false)
+
+    store.update((d) => {
+      d.teams[0]!.dailyNotes['2026-07-11'] = 'something'
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    // Calendar container was not torn down and rebuilt...
+    expect(container.querySelector('.tt-calendar')).toBe(calBefore)
+    // ...but the tint for the edited day is now on.
+    expect(cell().classList.contains('tt-calendar-day-has-note')).toBe(true)
+  })
+
+  test('clearing a note removes its has-note tint in place', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-11': 'kept' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+
+    const calBefore = container.querySelector('.tt-calendar')
+    expect(container.querySelector<HTMLElement>('.tt-calendar-day[data-date="2026-07-11"]')!.classList.contains('tt-calendar-day-has-note')).toBe(true)
+
+    store.update((d) => {
+      delete d.teams[0]!.dailyNotes['2026-07-11']
+    }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(container.querySelector('.tt-calendar')).toBe(calBefore)
+    expect(container.querySelector<HTMLElement>('.tt-calendar-day[data-date="2026-07-11"]')!.classList.contains('tt-calendar-day-has-note')).toBe(false)
+  })
+
+  test('a milestones-scoped edit still rebuilds the calendar so flag marks appear', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+
+    const calBefore = container.querySelector('.tt-calendar')
+    store.update((d) => {
+      d.teams[0]!.milestones.push({ id: 'm9', date: '2026-07-11', title: 'Cut', done: false, followup: '' })
+    }, { teamId: 'T1', sections: ['milestones'] })
+
+    expect(container.querySelector('.tt-calendar')).not.toBe(calBefore)
+    expect(container.querySelector('.tt-calendar-day[data-date="2026-07-11"] .tt-calendar-flag')).not.toBeNull()
+  })
+
+  test('a risks-scoped edit touches neither the calendar nor its day cells', () => {
+    const team = makeTeam()
+    team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+
+    const calBefore = container.querySelector('.tt-calendar')
+    const cellBefore = container.querySelector('.tt-calendar-day[data-date="2026-07-11"]')
+
+    store.update((d) => {
+      d.teams[0]!.risks.find((r) => r.id === 'r1')!.followup = 'See @[Jul 11](day:2026-07-11)'
+    }, { teamId: 'T1', sections: ['risks'] })
+
+    expect(container.querySelector('.tt-calendar')).toBe(calBefore)
+    expect(container.querySelector('.tt-calendar-day[data-date="2026-07-11"]')).toBe(cellBefore)
+    // The day badge (backlinks chip for THIS pane's date) is unaffected — the
+    // mention is of a different day.
+  })
+})

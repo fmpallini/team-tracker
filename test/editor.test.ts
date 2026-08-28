@@ -422,6 +422,13 @@ describe('keyboard shortcuts', () => {
     [{ key: 'i', ctrlKey: true }, 'italic'],
     [{ key: 'u', ctrlKey: true }, 'underline'],
     [{ key: 'X', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    // Layout-independence: e.key for the physical position isn't the letter
+    // (Dvorak/Colemak, or a dead-key/AltGr layout under Ctrl), so the match
+    // must fall back to e.code — same as the digit-row shortcuts already do.
+    [{ key: 'ñ', code: 'KeyB', ctrlKey: true }, 'bold'],
+    [{ key: 'ç', code: 'KeyI', ctrlKey: true }, 'italic'],
+    [{ key: 'º', code: 'KeyU', ctrlKey: true }, 'underline'],
+    [{ key: 'b', code: 'KeyX', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
   ])('%o -> execCommand(%s)', (init, cmd) => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -610,6 +617,40 @@ describe('list nesting via Tab/Shift+Tab', () => {
     dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
 
     expect(editor.getMd()).toBe('- a\n- b\n  - c\n- d')
+    editor.destroy()
+  })
+
+  // Contenteditable editing at depth can leave a sub-list one level off from
+  // the direct-<li>-child shape setMd produces: wrapped in a stray <div>
+  // inside the <li>, or as a direct child of the ancestor list (sibling to
+  // the <li> it followed). htmlToMd's nestedListsOf already tolerates these;
+  // Shift+Tab's outdent must too, or it silently no-ops on a visibly nested
+  // item.
+  test('Shift+Tab promotes a nested item whose sub-list is wrapped in a stray <div>', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<ul><li>a<div><ul><li>b</li><li>c</li></ul></div></li></ul>'
+    expect(editor.getMd()).toBe('- a\n  - b\n  - c') // precondition
+    collapseInto(editorEl.querySelectorAll('li')[1]!) // "b"
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('- a\n- b\n  - c')
+    editor.destroy()
+  })
+
+  test('Shift+Tab promotes a nested item whose sub-list is a direct child of the parent list', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<ul><li>a</li><ul><li>b</li><li>c</li></ul></ul>'
+    expect(editor.getMd()).toBe('- a\n  - b\n  - c') // precondition
+    collapseInto(editorEl.querySelectorAll('li')[1]!) // "b"
+
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+
+    expect(editor.getMd()).toBe('- a\n- b\n  - c')
     editor.destroy()
   })
 

@@ -192,6 +192,49 @@ test('team scoping still applies through the index', () => {
   expect(index.search('shared', 't1')[0]!.teamName).toBe('Alpha')
 })
 
+describe('backlinks and search build independently on one index', () => {
+  function docWithBoth(): Doc {
+    const d = createEmptyDocument('en-US')
+    const t1 = team('t1', 'Alpha')
+    t1.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Launch', done: false, followup: '' })
+    t1.dailyNotes['2026-07-02'] = 'deploy the **release** and see @[Launch](milestone:m1)'
+    d.teams.push(t1)
+    return d
+  }
+
+  test('calling backlinks() first does not stop a later search() from working', () => {
+    const doc = docWithBoth()
+    const index = createSearchIndex(() => doc, () => 0)
+    expect(index.backlinks('t1', 'milestone', 'm1')).toHaveLength(1)
+    // The candidates half was never built by that call; search() must build it now.
+    const hits = index.search('release', null)
+    expect(hits).toHaveLength(1)
+    expect(hits[0]!.snippet).toContain('release')
+  })
+
+  test('calling search() first does not stop a later backlinks() from working', () => {
+    const doc = docWithBoth()
+    const index = createSearchIndex(() => doc, () => 0)
+    expect(index.search('release', null)).toHaveLength(1)
+    expect(index.backlinks('t1', 'milestone', 'm1')).toHaveLength(1)
+  })
+
+  test('a scoped invalidate drops both halves for that team', () => {
+    const doc = docWithBoth()
+    let rev = 0
+    const index = createSearchIndex(() => doc, () => rev)
+    expect(index.search('release', null)).toHaveLength(1)
+    expect(index.backlinks('t1', 'milestone', 'm1')).toHaveLength(1)
+
+    doc.teams[0]!.dailyNotes['2026-07-02'] = 'nothing here now'
+    rev = 1
+    index.invalidate({ teamId: 't1', sections: ['notes'] })
+
+    expect(index.search('release', null)).toHaveLength(0)
+    expect(index.backlinks('t1', 'milestone', 'm1')).toHaveLength(0)
+  })
+})
+
 describe('scope-driven cache invalidation', () => {
   function twoTeams(): Doc {
     const doc: Doc = createEmptyDocument('en-US')

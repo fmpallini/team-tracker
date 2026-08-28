@@ -781,6 +781,43 @@ describe('navigateToLoc', () => {
 
     window.requestAnimationFrame = originalRAF
   })
+
+  test('opts.focusItemId makes a stakeholders/members target schedule + apply the highlight to the landed pane', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    const originalRAF = window.requestAnimationFrame
+    const originalScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = () => {}
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    const paneBody = document.createElement('div')
+    paneBody.className = 'tt-pane-body'
+    paneBody.appendChild(Object.assign(document.createElement('div'), { className: 'tt-org-box' })).setAttribute('data-item-id', 'p1')
+    document.body.appendChild(paneBody)
+
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'members' } }, { secondary: false, focusItemId: 'p1' })
+    expect(raf).not.toBeNull()
+    ;(raf as unknown as FrameRequestCallback)(0)
+
+    expect(paneBody.querySelector('[data-item-id="p1"]')!.classList.contains('tt-search-target-flash')).toBe(true)
+
+    window.requestAnimationFrame = originalRAF
+    Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
+  test('without opts.focusItemId a stakeholders/members target schedules no highlight', () => {
+    const store = setupStore()
+    const pm = fakePM()
+    const originalRAF = window.requestAnimationFrame
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    navigateToLoc(store, pm, 0, { teamId: 'T1', ref: { kind: 'members' } }, { secondary: false })
+    expect(raf).toBeNull()
+
+    window.requestAnimationFrame = originalRAF
+  })
 })
 
 describe('makeRefLabelResolver', () => {

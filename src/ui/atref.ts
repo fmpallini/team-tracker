@@ -348,14 +348,18 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * pref/modifier — `store.doc.prefs.openRefsInSecondaryPane` or
  * `opts.secondary` (Ctrl/Meta/middle-click) routes through
  * `pm.openInSecondaryPane` instead of `pm.openInPane`, splitting the view if
- * needed — and, for an actions/milestones/risks `loc`, scrolling to and
+ * needed — and, for an actions/milestones/risks `loc` (or any `loc` when the
+ * caller passes an explicit `opts.focusItemId`), scrolling to and
  * flash-highlighting the specific card afterward (same dispatch-then-
- * highlight sequence as search-ui.ts's commit()). Shared by
+ * highlight sequence as search-ui.ts's commit()). `opts.focusItemId` is what
+ * the person-notes header's "show in org chart" jump uses: a
+ * stakeholders/members ref carries no itemId of its own, so the person id is
+ * handed in here to land the flash on that person's org box. Shared by
  * makeRefClickHandler below (forward @ref clicks) and
  * src/ui/backlinks-panel.ts (backlink row clicks), so both share one
  * implementation of "open this Loc, honoring the pref/modifier."
  */
-export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc: Loc, opts: { secondary: boolean }): void {
+export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc: Loc, opts: { secondary: boolean; focusItemId?: string }): void {
   const openSecondary = store.doc.prefs.openRefsInSecondaryPane || opts.secondary
   let landedIdx: 0 | 1
   if (openSecondary) {
@@ -366,8 +370,8 @@ export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc
   }
 
   const { ref } = loc
-  if (ref.kind !== 'actions' && ref.kind !== 'milestones' && ref.kind !== 'risks') return
-  const itemId = ref.itemId
+  const itemId = opts.focusItemId
+    ?? ((ref.kind === 'actions' || ref.kind === 'milestones' || ref.kind === 'risks') ? ref.itemId : undefined)
   if (!itemId) return
   requestAnimationFrame(() => {
     const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined

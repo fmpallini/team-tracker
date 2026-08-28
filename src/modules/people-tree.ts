@@ -5,7 +5,8 @@
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
-import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
+import { confirmDelete } from '../ui/modal'
+import { openPersonModal } from '../ui/person-modal'
 import { el } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
@@ -148,39 +149,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       })
     }
 
-    function openPersonModal(opts: { title: string; initialName: string; initialRole: string; onSubmit: (name: string, role: string) => void }): void {
-      const nameInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-person-name' })
-      nameInput.value = opts.initialName
-      const roleInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-person-role' })
-      roleInput.value = opts.initialRole
-      const errorEl = el('div', { class: 'tt-field-error' })
-      const body = el(
-        'div',
-        { class: 'tt-person-form' },
-        el('label', { class: 'tt-field' }, t(lc, 'person_name_label'), nameInput),
-        el('label', { class: 'tt-field' }, t(lc, 'person_role_label'), roleInput),
-        errorEl
-      )
-      const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
-      const okBtn: ModalButton = {
-        label: t(lc, 'ok'),
-        primary: true,
-        onClick: () => {
-          const name = nameInput.value.trim()
-          if (!name) {
-            errorEl.textContent = t(lc, 'person_name_required')
-            return
-          }
-          opts.onSubmit(name, roleInput.value.trim())
-          handle.close()
-        },
-      }
-      const handle: ModalHandle = showModal({ title: opts.title, body, buttons: [cancelBtn, okBtn] })
-      nameInput.focus()
-    }
-
     function openAddModal(parentId: string | null): void {
-      openPersonModal({
+      openPersonModal(lc, {
         title: t(lc, 'person_add_title'),
         initialName: '',
         initialRole: '',
@@ -197,7 +167,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     }
 
     function openEditModal(person: Person): void {
-      openPersonModal({
+      openPersonModal(lc, {
         title: t(lc, 'person_edit_title'),
         initialName: person.name,
         initialRole: person.role,
@@ -273,7 +243,11 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
       const box = el(
         'div',
-        { class: 'tt-org-box', draggable: 'true', 'data-person-id': person.id, title: t(lc, 'person_box_hint') },
+        // data-item-id (alongside data-person-id) is the anchor navigateToLoc's
+        // highlight pass scrolls to and flash-rings — e.g. the person-notes
+        // header's "show in org chart" jump. Same attribute the kanban/
+        // milestone/risk rows carry for the identical search/@ref highlight.
+        { class: 'tt-org-box', draggable: 'true', 'data-person-id': person.id, 'data-item-id': person.id, title: t(lc, 'person_box_hint') },
         el('div', { class: 'tt-org-name' }, person.name),
         el('div', { class: 'tt-org-role' }, person.role),
         actions

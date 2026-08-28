@@ -7,7 +7,7 @@ import { createStore, type Store } from './core/store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
-import { comboHotkeyAllowed, navHotkeyAllowed } from './ui/hotkeys'
+import { comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from './ui/hotkeys'
 import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
@@ -470,20 +470,20 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   )
 
   const onKeyDown = (e: KeyboardEvent): void => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    if ((e.ctrlKey || e.metaKey) && matchKey(e, 's')) {
       // Always claim Ctrl+S — even while focus is inside an editor field —
       // so the browser's own "save page" dialog never appears.
       e.preventDefault()
       void saveCtl.saveNow({ explicit: true })
       return
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    if ((e.ctrlKey || e.metaKey) && matchKey(e, 'k')) {
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
       palette.open()
       return
     }
-    if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
+    if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && matchKey(e, 'l')) {
       // Plain Ctrl+L is reserved by browser chrome (focus address bar) in
       // most tabs, outside the page's reach, and Ctrl+Shift+L is a common
       // password-manager autofill binding (e.g. Bitwarden) — Ctrl+Alt+L is
@@ -530,17 +530,22 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     // Alt+letter/bracket doesn't insert a character, so (like Alt+Arrow
     // above) this must reach the app even while typing in the rich-text
     // editor, hence navHotkeyAllowed rather than hotkeyAllowed.
-    if (e.key === '[' || e.key === ']' || e.key.toLowerCase() === 't') {
+    // Match the physical key as well as the produced character, so a layout
+    // where '['/']' sit behind AltGr/dead keys (or Dvorak's 't') still
+    // reaches this — same layout-independence as the letter/digit shortcuts.
+    const dayPrev = e.key === '[' || e.code === 'BracketLeft'
+    const dayNext = e.key === ']' || e.code === 'BracketRight'
+    const dayToday = matchKey(e, 't')
+    if (dayPrev || dayNext || dayToday) {
       const idx = store.doc.nav.focusedPane
       const loc = currentLoc(store.doc.nav.panes[idx])
       if (loc && loc.ref.kind === 'daily') {
         e.preventDefault()
-        const date =
-          e.key === '['
-            ? addDaysIso(loc.ref.date, -1)
-            : e.key === ']'
-              ? addDaysIso(loc.ref.date, 1)
-              : todayIso()
+        const date = dayPrev
+          ? addDaysIso(loc.ref.date, -1)
+          : dayNext
+            ? addDaysIso(loc.ref.date, 1)
+            : todayIso()
         pm.openInPane(idx, { teamId: loc.teamId, ref: { kind: 'daily', date } })
         return
       }
@@ -560,12 +565,17 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       if (swapPaneSides(store)) pm.renderAll()
       return
     }
-    const n = Number(e.key)
-    if (!Number.isInteger(n) || n < 1 || n > 9) return
-    const team = store.doc.teams[n - 1]
-    if (!team) return
-    e.preventDefault()
-    selectTeam(team.id)
+    for (let n = 1; n <= 9; n++) {
+      // matchDigit, not Number(e.key): on a layout whose top row types
+      // symbols unless Shift is held (AZERTY), e.key is '&'/'é'/… where a
+      // digit is expected — e.code stays 'Digit<n>'.
+      if (!matchDigit(e, n)) continue
+      const team = store.doc.teams[n - 1]
+      if (!team) return
+      e.preventDefault()
+      selectTeam(team.id)
+      return
+    }
   }
   document.addEventListener('keydown', onKeyDown)
   disposers.push(() => document.removeEventListener('keydown', onKeyDown))
