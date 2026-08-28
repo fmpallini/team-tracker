@@ -1399,8 +1399,11 @@ select option { background: var(--bg); color: var(--fg); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tt-person-header-right { display: flex; align-items: center; gap: .25rem; flex: none; }
-.tt-person-header-btn { padding: .1rem .35rem; font-size: .9rem; border: none; background: transparent; }
-.tt-person-header-btn:hover, .tt-person-header-btn:focus-visible { background: rgba(var(--accent-rgb), .12); }
+/* Same icon-button vocabulary as the milestone/risk row's right-side buttons
+   (borderless, dim, lit on hover/focus) — but resting a little more visible
+   since a header control has no parent row-hover to reveal it. */
+.tt-person-header-btn { opacity: .55; border: none; background: transparent; font-size: 1.3rem; line-height: 1; padding: .15rem .45rem; }
+.tt-person-header-btn:hover, .tt-person-header-btn:focus-visible { opacity: 1; }
 .tt-person-notes .tt-editor { flex: 1; }
 
 /* Preferences modal */
