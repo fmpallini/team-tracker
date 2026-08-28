@@ -1065,6 +1065,21 @@ body { background: var(--bg); color: var(--fg); }
   border: none; background: none; cursor: pointer; color: inherit;
   font-size: 1rem; line-height: 1; padding: 0;
 }
+/* Assignee combobox: text input + ▾ toggle, with an absolutely-positioned
+   people picker. Rows/headers reuse the .tt-atref-* list styles (above). */
+.tt-assignee-combo { position: relative; display: flex; gap: .3rem; }
+.tt-assignee-combo .tt-assignee-input { flex: 1; }
+.tt-assignee-toggle {
+  flex: none; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--fg); cursor: pointer; padding: 0 .5rem; font-size: .8rem;
+}
+.tt-assignee-toggle:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-assignee-menu {
+  position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 1300;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  max-height: 240px; overflow-y: auto; padding: .25rem;
+}
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
 .tt-kanban-color-chip {
   min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;

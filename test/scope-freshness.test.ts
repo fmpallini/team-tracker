@@ -254,21 +254,24 @@ test('deleting a risk clears its mention chip in the milestones pane', () => {
 // section the module "owns".
 // ---------------------------------------------------------------------------
 
-test("the action-items assignee datalist picks up a person added from another pane (WATCHED needs 'people')", () => {
-  setup({ kind: 'members' }, { kind: 'actions' })
+test("a card's assignee display refreshes when the linked person is renamed from another pane (WATCHED needs 'people')", () => {
+  setup({ kind: 'members' }, { kind: 'actions' }, (t) => {
+    t.actionItems[0]!.assignee = '@[Alice](person:p1)'
+  })
   const [left] = panes()
-  const options = (): string[] =>
-    Array.from(panes()[1].querySelectorAll<HTMLOptionElement>('datalist option')).map((o) => o.value)
-  expect(options()).toEqual(['Alice'])
+  const cardAssignee = (): string | undefined =>
+    panes()[1].querySelector('.tt-kanban-card-assignee')?.textContent ?? undefined
+  expect(cardAssignee()).toBe('🧑 Alice')
 
-  // Adding a person is scoped { teamId, sections: ['people'] } — correctly so,
-  // since nothing else stores a person's name. The kanban still reads people
-  // for its assignee autocomplete, which is why 'people' is in its WATCHED.
-  clickButtonLabelled(left, '+ Person')
-  document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!.value = 'Bruno'
+  // Renaming a person is scoped { teamId, sections: ['people'] } — correctly
+  // so, since nothing else stores a person's name. The kanban card meta
+  // resolves the assignee's *current* name live, which is why 'people' is in
+  // its WATCHED.
+  clickButtonLabelled(left, 'Edit person')
+  document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!.value = 'Alicia'
   clickButtonLabelled(document, 'OK')
 
-  expect(options()).toEqual(['Alice', 'Bruno'])
+  expect(cardAssignee()).toBe('🧑 Alicia')
 })
 
 test("the daily-notes calendar picks up a milestone added from another pane (WATCHED needs 'milestones')", () => {

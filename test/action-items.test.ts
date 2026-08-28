@@ -743,16 +743,94 @@ describe('renderActionItems — board', () => {
     expect(cards(container)).toHaveLength(1)
   })
 
-  test("the assignee input's datalist lists stakeholders and members by name", () => {
+  const assigneeInput = (): HTMLInputElement => document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement
+  const assigneeToggle = (): HTMLButtonElement => document.querySelector('.tt-kanban-form-row .tt-assignee-toggle') as HTMLButtonElement
+  const assigneeMenuRows = (): string[] =>
+    Array.from(document.querySelectorAll('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item')).map((r) => r.textContent ?? '')
+  const assigneeMenuHeaders = (): string[] =>
+    Array.from(document.querySelectorAll('.tt-kanban-form-row .tt-assignee-menu .tt-atref-group-header')).map((h) => h.textContent ?? '')
+
+  test('opening the assignee picker lists stakeholders and members in labelled groups with their icons', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
-    const assigneeInput = document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement
-    const datalist = document.getElementById(assigneeInput.getAttribute('list')!)!
-    const options = Array.from(datalist.querySelectorAll('option')).map((o) => o.getAttribute('value'))
-    expect(options).toEqual(expect.arrayContaining(['Carla', 'Bruno']))
+    assigneeToggle().click()
+
+    expect(assigneeMenuHeaders()).toEqual(['🧑‍💼 Stakeholders', '👥 Members'])
+    expect(assigneeMenuRows()).toEqual(['Carla', 'Bruno'])
+  })
+
+  test('the assignee picker opens the full people list even when the input already holds text', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', assignee: 'Some outside vendor' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    expect(assigneeInput().value).toBe('Some outside vendor')
+    assigneeToggle().click()
+
+    expect(assigneeMenuRows()).toEqual(['Carla', 'Bruno'])
+  })
+
+  test('typing in the assignee input filters the picker to matching people', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    const input = assigneeInput()
+    input.value = 'car'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(assigneeMenuRows()).toEqual(['Carla'])
+    expect(assigneeMenuHeaders()).toEqual(['🧑‍💼 Stakeholders'])
+  })
+
+  test('picking a person from the assignee picker commits a live reference and shows the chip', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    assigneeToggle().click()
+    Array.from(document.querySelectorAll<HTMLElement>('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item'))
+      .find((r) => r.textContent === 'Bruno')!
+      .click()
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Bruno](person:mem-1)')
+    expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Bruno')
+  })
+
+  test('ArrowDown opens the picker and Enter picks the highlighted person without closing the modal', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '✎')
+    const input = assigneeInput()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Bruno](person:mem-1)')
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+  })
+
+  test('Escape closes the assignee picker but leaves the modal open', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, '+ Card')
+    assigneeToggle().click()
+    expect(document.querySelector('.tt-kanban-form-row .tt-assignee-menu')).not.toBeNull()
+
+    assigneeInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    expect(document.querySelector('.tt-kanban-form-row .tt-assignee-menu')).toBeNull()
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
   })
 
   test('a backlink chip renders in the card meta row when another field mentions this action item', () => {
@@ -1012,7 +1090,7 @@ describe('renderActionItems — edit modal live persistence', () => {
 
     clickByTitleOrText(container, '✎')
     pickDate(15)
-    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Something else')
+    setValue(document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement, 'Something else')
 
     const updated = store.doc.teams[0]!.actionItems[0]!
     expect(updated.assignee).toBe('Something else')
@@ -1043,12 +1121,12 @@ describe('renderActionItems — assignee reference chip', () => {
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, '✎')
-    setValue(document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement, 'Carla')
+    setValue(document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement, 'Carla')
 
     expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
     const chip = document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')
     expect(chip?.textContent).toContain('Carla')
-    expect(document.querySelector('.tt-kanban-form-row input[list]')).toBeNull() // input replaced by the chip
+    expect(document.querySelector('.tt-kanban-form-row .tt-assignee-input')).toBeNull() // input replaced by the chip
   })
 
   test('the chip shows the person\'s live name, updating in place when the person is renamed elsewhere while the modal stays open', () => {
@@ -1075,7 +1153,7 @@ describe('renderActionItems — assignee reference chip', () => {
 
     expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('')
     expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')).toBeNull()
-    expect((document.querySelector('.tt-kanban-form-row input[list]') as HTMLInputElement).value).toBe('')
+    expect((document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement).value).toBe('')
   })
 
   test('the chip\'s name/icon is not interactive — the clear button is its only clickable control', () => {
