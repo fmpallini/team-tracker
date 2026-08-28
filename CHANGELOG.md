@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.6.0] - 2026-08-28
+
+### Changed
+- Action items: the assignee field's dropdown is now a custom list grouped into "Stakeholders" and "Members" (each with its icon), filters as you type, and is fully keyboard-navigable (arrows / Enter / Escape) — replacing the plain browser autocomplete. The ▾ button always opens the full roster, even when the field already has text.
+
+### Fixed
+- Action items: closing a card with no title but with notes, an assignee, a due date, or a color no longer silently discards it. The card stays open with a "name the card" hint instead. A genuinely empty new card still closes and is discarded as before.
+- Rich-text fields: Ctrl+Shift+X (strikethrough) and other Ctrl/Alt shortcuts did nothing on many international and non-QWERTY keyboard layouts. Shortcuts now match the physical key, so bold, italic, underline, strikethrough, save, the command palette, team switching, and daily-note navigation all work regardless of layout.
+- Rich-text fields: Shift+Tab to outdent a nested bullet or numbered item silently did nothing in some cases once the list had been edited. It now promotes the item as expected, and nested items are no longer dropped when the note is saved.
+- Installed app: the "update available" banner could sit under the window-controls overlay strip at the top of the window. It now stays clear of it.
+
 ## [2.5.2] - 2026-08-26
 
 ### Fixed
