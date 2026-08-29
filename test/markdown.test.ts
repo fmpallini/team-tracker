@@ -792,6 +792,24 @@ describe('blockquote', () => {
     const md = '> a\n> b'
     expect(roundTrip(roundTrip(md))).toBe(md)
   })
+
+  // Chromium's execCommand('formatBlock', '<blockquote>') on a multi-line
+  // selection yields <blockquote><div>l1</div><div>l2</div></blockquote>.
+  // htmlToMd's blockquote branch only splits inner lines on <br>, so on its
+  // own it merges those <div>s into one line ('> l1l2'). The editor's
+  // toggleBlockquote() normalizes <div>/<p> children to <br>-separated
+  // inline content (normalizeBlockquoteChildren in src/ui/editor.ts) BEFORE
+  // getMd() ever runs, so the real save path keeps the line breaks — see
+  // the matching test in test/editor.test.ts. Teaching htmlToMd itself to
+  // handle the raw <div>-built shape is a separate core change, out of
+  // scope for the button batch; this documents the current limitation and
+  // will flip loudly (prompting a rewrite to a plain assertion) if that
+  // change ever lands.
+  test.fails('htmlToMd alone does NOT split a <div>-built blockquote (editor normalizes first)', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote><div>a</div><div>b</div></blockquote>'
+    expect(htmlToMd(container)).toBe('> a\n> b')
+  })
 })
 
 describe('flattenNestedBlockquotes', () => {

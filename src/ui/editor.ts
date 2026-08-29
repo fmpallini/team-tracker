@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
@@ -432,6 +432,60 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.focus()
     document.execCommand('formatBlock', false, `<${tag}>`)
     flattenNestedHeadings(editorEl)
+    scheduleChange()
+  }
+
+  /**
+   * Normalizes every `<blockquote>` under `root` so it holds only inline
+   * content separated by `<br>` — exactly the shape `mdToHtml` emits
+   * (`<blockquote>line one<br>line two</blockquote>`). Chromium's
+   * `execCommand('formatBlock', '<blockquote>')` on a MULTI-LINE selection
+   * instead produces `<blockquote><div>l1</div><div>l2</div></blockquote>`,
+   * and `htmlToMd`'s blockquote branch only splits inner lines on `<br>`, so
+   * without this those `<div>`s merge into one line (`> l1l2`), losing the
+   * breaks. Each child `<div>`/`<p>` is replaced by its own child nodes
+   * followed by a `<br>`; a trailing `<br>` is dropped so there's no empty
+   * last line. Left untouched when the blockquote already has no block-level
+   * child (the common single-line / `<br>`-joined case).
+   */
+  function normalizeBlockquoteChildren(root: HTMLElement): void {
+    root.querySelectorAll('blockquote').forEach((bq) => {
+      const kids = Array.from(bq.childNodes)
+      const hasBlockChild = kids.some(
+        (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
+      )
+      if (!hasBlockChild) return
+      const frag = (root.ownerDocument ?? document).createDocumentFragment()
+      kids.forEach((n) => {
+        if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
+          while (n.firstChild) frag.appendChild(n.firstChild)
+          frag.appendChild((root.ownerDocument ?? document).createElement('br'))
+        } else {
+          frag.appendChild(n)
+        }
+      })
+      if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
+        frag.removeChild(frag.lastChild)
+      }
+      bq.replaceChildren()
+      bq.appendChild(frag)
+    })
+  }
+
+  /**
+   * The ❝ button / Ctrl+Shift+9. Chromium's formatBlock can nest a fresh
+   * <blockquote> inside an existing one on a repeat press or multi-line
+   * selection; this app's blockquote is flat, so flattenNestedBlockquotes
+   * collapses that right after — same pattern as formatBlockTag + headings.
+   * normalizeBlockquoteChildren then flattens any inner <div>/<p> lines
+   * (also a multi-line-selection artefact) to <br>-separated inline content
+   * so htmlToMd keeps the line breaks.
+   */
+  function toggleBlockquote(): void {
+    editorEl.focus()
+    document.execCommand('formatBlock', false, '<blockquote>')
+    flattenNestedBlockquotes(editorEl)
+    normalizeBlockquoteChildren(editorEl)
     scheduleChange()
   }
 
@@ -1142,6 +1196,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
+    toolbarButton('❝', t(locale, 'editor_quote_title'), () => toggleBlockquote()),
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),

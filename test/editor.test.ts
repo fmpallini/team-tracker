@@ -1078,6 +1078,38 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('❝ button runs formatBlock <blockquote> then flattens nesting', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+    toolbarButton(editor, t('en-US', 'editor_quote_title')).click()
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
+
+  test('❝ button collapses a nested blockquote to one level', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<blockquote>outer<blockquote>inner</blockquote></blockquote>'
+    toolbarButton(editor, t('en-US', 'editor_quote_title')).click()
+    expect(editorEl.querySelectorAll('blockquote').length).toBe(1)
+    editor.destroy()
+  })
+
+  test('❝ button normalizes a <div>-built multi-line blockquote to <br>-separated lines (getMd keeps the breaks)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<blockquote><div>a</div><div>b</div></blockquote>'
+    toolbarButton(editor, t('en-US', 'editor_quote_title')).click()
+    expect(editor.getMd()).toBe('> a\n> b')
+    editor.destroy()
+  })
+
 })
 
 describe('block-prefix auto-format on typing', () => {
