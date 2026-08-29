@@ -58,6 +58,7 @@ function setup(): Setup {
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
     backupStatus: vi.fn(async () => null),
+    checkBackupOrphaned: vi.fn(async () => false),
   }
   return { store, shell, appCtl, changePassword, currentPassword }
 }
@@ -627,6 +628,63 @@ test('backup tab: "Change location" live-refreshes the status block for the newl
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(statusMock.mock.calls.length).toBeGreaterThan(callsBeforeChange)
+})
+
+// The cross-browser scenario: a .tmv carries `backupHandleId` + the enabled
+// flag, but the handle it names only ever lived in the IndexedDB of the
+// machine/browser that picked it. Opening elsewhere, the id resolves to
+// nothing — `checkBackupOrphaned()` is true. The tab must self-heal (turn the
+// pref off, matching save-controller.ts) and show a re-setup notice instead of
+// a silently-empty status table.
+test('backup tab: an orphaned backup handle turns the pref off and shows the re-setup notice', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'gone-with-the-other-browser' })
+  appCtl.checkBackupOrphaned = vi.fn(async () => true)
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBe('gone-with-the-other-browser') // id kept, only the flag flips
+  const hint = document.querySelector('.tt-prefs-backup-orphaned-hint')
+  expect(hint).not.toBeNull()
+  const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…')
+  expect(setupBtn).toBeDefined()
+  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
+})
+
+test('backup tab: the orphaned notice\'s "Set up backup…" button re-picks a target and restores the enabled state', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'orphan' })
+  appCtl.checkBackupOrphaned = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…')!
+  setupBtn.dispatchEvent(new Event('click'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalled()
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+  expect(store.doc.prefs.backupHandleId).not.toBe('orphan')
+  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull()
+})
+
+test('backup tab: an orphaned backup handle in read-only mode shows the notice without flipping the pref', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'orphan' })
+  appCtl.checkBackupOrphaned = vi.fn(async () => true)
+  appCtl.isReadOnly = () => true
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true) // read-only tab must not mutate the doc
+  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).not.toBeNull()
+  const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…') as HTMLButtonElement
+  expect(setupBtn.disabled).toBe(true)
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
