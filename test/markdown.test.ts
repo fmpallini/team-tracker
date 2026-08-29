@@ -657,3 +657,44 @@ describe('safeHref', () => {
     expect(safeHref('  java script:alert(1)')).toBeNull()
   })
 })
+
+describe('inline code', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('renders <code> and round-trips', () => {
+    expect(mdToHtml('run `npm test` now')).toContain('<code>npm test</code>')
+    expect(roundTrip('run `npm test` now')).toBe('run `npm test` now')
+  })
+  test('content is literal — inner markdown is NOT parsed', () => {
+    const html = mdToHtml('see `**not bold** and *not italic*`')
+    expect(html).toContain('<code>**not bold** and *not italic*</code>')
+    expect(html).not.toContain('<strong>')
+    expect(html).not.toContain('<em>')
+    expect(roundTrip('see `**not bold** and *not italic*`')).toBe('see `**not bold** and *not italic*`')
+  })
+  test('code adjacent to a ref chip — both survive', () => {
+    const md = '`cfg` @[Ana](person:abc-1) `end`'
+    const html = mdToHtml(md)
+    expect(html).toContain('<code>cfg</code>')
+    expect(html).toContain('<code>end</code>')
+    expect(html).toContain('data-ref="person:abc-1"')
+    expect(roundTrip(md)).toBe(md)
+  })
+  test('html inside a code span is escaped, not live', () => {
+    const html = mdToHtml('danger `<img src=x onerror=y>` here')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('img')).toBeNull()
+    expect(probe.querySelector('code')!.textContent).toBe('<img src=x onerror=y>')
+  })
+  test('idempotent through two md->html->md cycles', () => {
+    const md = 'a `b` c'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+  test('inlineText / htmlToPlainText unwraps code to bare text', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('run `x` now')
+    expect(htmlToPlainText(div)).toBe('run x now')
+  })
+})
