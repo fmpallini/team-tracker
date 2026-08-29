@@ -1292,6 +1292,35 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('Ctrl+click on an external link opens it in a new tab; a plain click does not', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(openSpy).not.toHaveBeenCalled()
+
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener')
+    editor.destroy()
+  })
+
+  test('middle-click on an external link opens it in a new tab', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+
+    a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener')
+    editor.destroy()
+  })
+
   test('toolbar button order is locked', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

@@ -1259,21 +1259,43 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (parsed) hooks.onRefClick(parsed, { secondary: e.ctrlKey || e.metaKey || e.button === 1 })
   }
 
+  // A rendered external link (`<a href>` with no `.ref` class). Chromium
+  // does not activate an anchor inside a contenteditable on a plain click,
+  // and there's no default middle-click-opens behavior there either — so
+  // without this a link in a note is unreachable from the editing surface.
+  function linkElFromEvent(e: MouseEvent): HTMLAnchorElement | null {
+    const target = e.target as HTMLElement | null
+    return (target?.closest?.('a[href]:not(.ref)') as HTMLAnchorElement | null) ?? null
+  }
+
+  // Ctrl/Cmd+click or middle-click opens the link in a new tab (its href is
+  // already safeHref-gated at render + export). A plain click is left alone
+  // so the caret can still be placed inside the link text to edit it.
+  function handleExternalLinkActivate(e: MouseEvent): void {
+    const linkEl = linkElFromEvent(e)
+    if (!linkEl) return
+    if (!(e.ctrlKey || e.metaKey || e.button === 1)) return
+    e.preventDefault()
+    window.open(linkEl.href, '_blank', 'noopener')
+  }
+
   function onClick(e: MouseEvent): void {
     handleRefActivate(e)
+    handleExternalLinkActivate(e)
   }
 
   function onAuxClick(e: MouseEvent): void {
     if (e.button !== 1) return
     handleRefActivate(e)
+    handleExternalLinkActivate(e)
   }
 
-  // Middle-mousedown on a ref chip would otherwise trigger the browser's
-  // autoscroll-pan cursor (the chip has no real `href`, so there's no
-  // native middle-click-opens-in-new-tab behavior to preserve).
+  // Middle-mousedown on a ref chip or an external link would otherwise
+  // trigger the browser's autoscroll-pan cursor. (A ref chip has no real
+  // `href`; an external link's new-tab open is handled on auxclick above.)
   function onMouseDownForRef(e: MouseEvent): void {
     if (e.button !== 1) return
-    if (refElFromEvent(e)) e.preventDefault()
+    if (refElFromEvent(e) || linkElFromEvent(e)) e.preventDefault()
   }
 
   editorEl.addEventListener('input', onInput)
