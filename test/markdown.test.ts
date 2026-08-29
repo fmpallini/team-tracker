@@ -774,6 +774,58 @@ describe('external links', () => {
     const md = 'a [b](https://e.com) c'
     expect(roundTrip(roundTrip(md))).toBe(md)
   })
+
+  // The mark passes (bold/italic/…) run on the link text INSIDE the link
+  // callback and the whole <a>…</a> is frozen in one placeholder, so a
+  // marker inside link text can never pair with one after the link.
+  test('**bold** and *em* inside link text still format', () => {
+    const html = mdToHtml('[**b** and *i*](https://e.com)')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    const a = probe.querySelector('a')!
+    expect(a.querySelector('strong')!.textContent).toBe('b')
+    expect(a.querySelector('em')!.textContent).toBe('i')
+  })
+  test('a marker after a link no longer straddles the link text — round-trips AND is idempotent', () => {
+    const md = 'see [2*3](https://e.com/m) *later*'
+    expect(roundTrip(md)).toBe(md)
+    expect(roundTrip(roundTrip(md))).toBe(md)
+    const html = mdToHtml(md)
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('a')!.textContent).toBe('2*3')
+    expect(probe.querySelector('em')!.textContent).toBe('later')
+  })
+  test('a ref chip inside link text resolves (not left as a raw placeholder)', () => {
+    // The terminal splice order is LINK -> REF -> CODE precisely so a REF
+    // token sitting inside the frozen <a>…</a> is resolved after the link is
+    // spliced back. (The HTML parser splits the resulting nested <a> into
+    // siblings — an inherent nested-anchor limitation — so assert on the
+    // string and the top-level chip, not on DOM nesting.)
+    const html = mdToHtml('[see @[Ana](person:abc-1) here](https://e.com)')
+    expect(html).toContain('<a href="https://e.com"')
+    expect(html).toContain('<a class="ref" data-ref="person:abc-1"')
+    expect(html).toContain('@Ana')
+    expect(/[-]/.test(html)).toBe(false) // no leftover placeholder tokens
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:abc-1')
+  })
+  test('a `code` span inside link text renders', () => {
+    const html = mdToHtml('[run `npm test`](https://e.com)')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    const a = probe.querySelector('a[href]')!
+    expect(a.querySelector('code')!.textContent).toBe('npm test')
+  })
+  test('a balanced-paren URL round-trips (href and getMd)', () => {
+    const md = '[x](https://en.wikipedia.org/wiki/Foo_(bar))'
+    const probe = document.createElement('div'); probe.innerHTML = mdToHtml(md)
+    expect(probe.querySelector('a')!.getAttribute('href')).toBe('https://en.wikipedia.org/wiki/Foo_(bar)')
+    expect(roundTrip(md)).toBe(md)
+  })
+  test('a query-string URL round-trips (href and getMd)', () => {
+    const md = '[x](https://e.com/s?a=1&b=2)'
+    const probe = document.createElement('div'); probe.innerHTML = mdToHtml(md)
+    expect(probe.querySelector('a')!.getAttribute('href')).toBe('https://e.com/s?a=1&b=2')
+    expect(roundTrip(md)).toBe(md)
+  })
 })
 
 describe('blockquote', () => {
