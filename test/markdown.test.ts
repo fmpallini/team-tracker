@@ -815,7 +815,7 @@ describe('external links', () => {
     expect(html).toContain('<a href="https://e.com"')
     expect(html).toContain('<a class="ref" data-ref="person:abc-1"')
     expect(html).toContain('@Ana')
-    expect(/[-]/.test(html)).toBe(false) // no leftover placeholder tokens
+    expect(/[\uE000-\uE005]/.test(html)).toBe(false) // no leftover placeholder tokens
     const probe = document.createElement('div'); probe.innerHTML = html
     expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:abc-1')
   })
@@ -836,6 +836,72 @@ describe('external links', () => {
     const probe = document.createElement('div'); probe.innerHTML = mdToHtml(md)
     expect(probe.querySelector('a')!.getAttribute('href')).toBe('https://e.com/s?a=1&b=2')
     expect(roundTrip(md)).toBe(md)
+  })
+
+  // Regression for C1: a forged inline()-placeholder token (PUA U+E000–U+E005)
+  // smuggled into a link URL used to survive safeHref and get frozen into the
+  // <a href="…">, where the terminal REF/CODE/LINK splice passes (which now
+  // run AFTER the link splice) rescanned it and injected chip/code/anchor
+  // HTML — the literal `"` in that HTML broke out of the href and stripped
+  // `rel`. Fixed by stripping U+E000–U+E005 in esc() so the tokens are
+  // unforgeable. Each of these asserts: no chip/code HTML lands inside an
+  // href, `rel` stays intact, and the URL renders as the literal text with
+  // the PUA chars removed.
+  describe('a forged placeholder token in a link URL cannot break out of the href', () => {
+    const hrefOf = (html: string) => {
+      const probe = document.createElement('div'); probe.innerHTML = html
+      return probe.querySelector('a[href]')!.getAttribute('href')!
+    }
+    test('forged REF token in the URL', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0000\uE001) @[y](person:abc)')
+      const href = hrefOf(html)
+      expect(href).toBe('https://e.com/0')
+      expect(href).not.toContain('<a class="ref"')
+      expect(href).not.toContain('<')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      const link = probe.querySelector('a[href]')!
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+      // the real ref still renders as its own chip, elsewhere
+      expect(html).toContain('<a class="ref" data-ref="person:abc"')
+    })
+    test('forged CODE token in the URL (with a real code span so index 0 exists)', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0020\uE003) `c`')
+      const href = hrefOf(html)
+      expect(href).toBe('https://e.com/0')
+      expect(href).not.toContain('<code>')
+      expect(href).not.toContain('<')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      expect(probe.querySelector('a[href]')!.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+      // the real code span still renders
+      expect(probe.querySelector('code')!.textContent).toBe('c')
+    })
+    test('forged LINK token in the URL', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0040\uE005)')
+      const href = hrefOf(html)
+      expect(href).toBe('https://e.com/0')
+      expect(href).not.toContain('<')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      expect(probe.querySelectorAll('a[href]').length).toBe(1)
+      expect(probe.querySelector('a[href]')!.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    })
+    // Mirror direction (what 2250aab was vulnerable to): a forged token in a
+    // ref target / @[label] text must not inject an anchor into data-ref="…".
+    test('forged CODE token in a data-ref target cannot inject <code> into the attribute', () => {
+      const html = mdToHtml('@[y](person:abc\uE0020\uE003) `c`')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      const chip = probe.querySelector('a.ref')!
+      expect(chip.getAttribute('data-ref')).toBe('person:abc0')
+      expect(html).not.toContain('data-ref="person:abc<code>')
+      expect(probe.querySelector('code')!.textContent).toBe('c')
+    })
+    test('forged LINK token in @[label] text cannot inject an <a href> into the chip', () => {
+      const html = mdToHtml('@[lbl\uE0040\uE005](person:abc) [t](https://e.com)')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      const chip = probe.querySelector('a.ref')!
+      expect(chip.getAttribute('data-ref')).toBe('person:abc')
+      expect(chip.textContent).toBe('@lbl0')
+      expect(chip.querySelector('a[href]')).toBeNull()
+    })
   })
 })
 
