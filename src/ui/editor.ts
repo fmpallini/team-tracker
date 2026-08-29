@@ -869,7 +869,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    */
   async function insertLink(): Promise<void> {
     const sel = window.getSelection()
-    const selected = sel && !sel.isCollapsed ? sel.toString() : ''
+    // Collapse the selected text to a single line: the saved range is
+    // restored before `insertText`, so a selection spanning a line break
+    // would otherwise splice a literal `[a\nb](url)` onto the user's
+    // content — which inline() won't match as a link (brackets shown raw).
+    const selected = (sel && !sel.isCollapsed ? sel.toString() : '').replace(/\s+/g, ' ').trim()
     const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
     const raw = await promptLinkUrl()
     if (raw === null) return

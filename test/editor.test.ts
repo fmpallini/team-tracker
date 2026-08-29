@@ -1227,6 +1227,27 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('🔗 button collapses whitespace in a multi-line selection so the link text stays a single line', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const div = editorEl.querySelector('div')!
+    div.textContent = 'a\nb'
+    const textNode = div.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 0); range.setEnd(textNode, 3) // "a\nb"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLinkPrompt('https://example.com')
+
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[a b](https://example.com)')
+    editor.destroy()
+  })
+
   test('🔗 button with no selection uses the URL as the link text', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
