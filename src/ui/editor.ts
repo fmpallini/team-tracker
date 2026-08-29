@@ -845,21 +845,32 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /**
    * The 🔗 button. Prompts for a URL and inserts `[text](url)` markdown at
    * the caret — `text` is the current selection, or the URL itself when
-   * nothing is selected. A blank or disallowed-scheme URL is a no-op. The
-   * selection text is captured BEFORE the await: the modal steals focus and
-   * collapses the live selection, so reading it afterwards would always come
-   * back empty. Inserted via exec('insertText', …) so the same
-   * input->autoformat path a typed `[text](url)` takes turns it into a live
-   * link.
+   * nothing is selected. A blank or disallowed-scheme URL is a no-op. Both
+   * the selection text AND its Range are captured BEFORE the await: the
+   * modal steals focus into its own <input> and, on close, restores nothing
+   * — so afterwards neither the live selection nor `caretOrEndRange()`'s
+   * reuse-a-collapsed-editor-range check still holds, and the link would
+   * land appended to the last block (or not apply at all, with focus on
+   * <body>). Restore the saved Range if it still points inside the editor,
+   * else fall back to end-of-document. `insertText` replaces a non-collapsed
+   * selection, so the selected text becomes the link text — spec'd.
    */
   async function insertLink(): Promise<void> {
     const sel = window.getSelection()
     const selected = sel && !sel.isCollapsed ? sel.toString() : ''
+    const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
     const raw = await promptLinkUrl()
     if (raw === null) return
     const url = raw.trim()
     if (!url || !safeHref(url)) return
-    caretOrEndRange()
+    editorEl.focus()
+    const sel2 = window.getSelection()
+    if (sel2 && savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
+      sel2.removeAllRanges()
+      sel2.addRange(savedRange)
+    } else {
+      caretOrEndRange()
+    }
     exec('insertText', `[${selected || url}](${url})`)
   }
 

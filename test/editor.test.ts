@@ -1250,6 +1250,37 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('🔗 button inserts the link at the saved selection, not appended, after the modal steals focus', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    // jsdom's execCommand is inert; emulate just enough of insertText
+    // (replace the current selection with a text node) to observe WHERE the
+    // link lands — the spy-arg-only tests can't see the misplacement bug.
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd: string, _ui?: boolean, value?: string) => {
+      if (cmd === 'insertText' && typeof value === 'string') {
+        const s = window.getSelection()
+        if (s && s.rangeCount > 0) {
+          const r = s.getRangeAt(0)
+          r.deleteContents()
+          r.insertNode(document.createTextNode(value))
+        }
+      }
+      return true
+    })
+    editor.setMd('see docs here')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const textNode = editorEl.querySelector('div')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 4); range.setEnd(textNode, 8) // "docs"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLinkPrompt('https://example.com')
+
+    // Landed in place, replacing "docs" — NOT appended to the end.
+    expect(editor.getMd()).toBe('see [docs](https://example.com) here')
+  })
+
   test('🔗 button: a javascript: URL is rejected, nothing inserted', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
