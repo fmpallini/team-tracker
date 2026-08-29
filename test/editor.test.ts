@@ -1321,6 +1321,17 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('destroy() closes a still-open link-URL modal', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    editor.destroy()
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
   test('toolbar button order is locked', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

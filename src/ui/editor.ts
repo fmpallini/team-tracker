@@ -816,10 +816,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * plain promise-returning helper (not wired through EditorHooks) so tests
    * drive it through the real modal DOM, same as showEditorHelp.
    */
+  // The link-URL modal's handle while it's open, so destroy() (tab-lock
+  // handoff, external-change reload, update relaunch) can close it instead
+  // of leaving the overlay attached over a torn-down editor.
+  let pendingLinkModal: { close: () => void } | null = null
+
   function promptLinkUrl(): Promise<string | null> {
     return new Promise((resolve) => {
       let done = false
-      const finish = (v: string | null): void => { if (done) return; done = true; handle.close(); resolve(v) }
+      const finish = (v: string | null): void => {
+        if (done) return
+        done = true
+        pendingLinkModal = null
+        handle.close()
+        resolve(v)
+      }
       const input = el('input', {
         type: 'url',
         class: 'tt-input',
@@ -838,6 +849,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         // Escape / overlay close routes here too, so the promise never hangs.
         onClose: () => finish(null),
       })
+      pendingLinkModal = handle
       input.focus()
     })
   }
@@ -1404,6 +1416,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // off so ordering matches a normal debounce firing.
     flushChange()
     closeCopyMenu()
+    pendingLinkModal?.close()
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
