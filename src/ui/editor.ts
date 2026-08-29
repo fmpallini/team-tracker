@@ -582,6 +582,45 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
+  /**
+   * The — toolbar button. Inserts an <hr> right after the caret's current
+   * top-level block (or after the last block if the caret isn't inside one),
+   * and moves the caret to the block that follows the rule — reusing the
+   * next existing block when there is one, or a fresh empty <div> when the
+   * rule lands at the end of the document (an <hr> is a void element and
+   * can't hold a caret itself). Does not split a block mid-line — the typed
+   * "---" autoformat already handles "turn THIS line into a rule", and
+   * end-of-line is where the button is actually used.
+   *
+   * Only synthesizes the trailing empty <div> when nothing follows: an
+   * empty block between the rule and real content would serialize back as a
+   * stray blank markdown line (`---\n\ntext`).
+   */
+  function insertHr(): void {
+    editorEl.focus()
+    const ctx = currentBlockAndOffset()
+    const ref = ctx && ctx.block.parentElement === editorEl ? ctx.block : editorEl.lastElementChild
+    const hr = document.createElement('hr')
+    let caretTarget: HTMLElement
+    const following = ref?.nextElementSibling as HTMLElement | null
+    if (ref && following) {
+      ref.after(hr)
+      caretTarget = following
+    } else {
+      const next = document.createElement('div')
+      next.appendChild(document.createElement('br'))
+      if (ref) ref.after(hr, next)
+      else editorEl.append(hr, next)
+      caretTarget = next
+    }
+    const r = document.createRange()
+    r.selectNodeContents(caretTarget)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    scheduleChange()
+  }
+
   function replaceInlineMatch(block: HTMLElement, match: InlineMatch): void {
     const range = rangeForTextOffsets(block, match.start, match.end)
     // If the matched span crosses an element boundary (e.g. a ref chip or
@@ -1197,6 +1236,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
     toolbarButton('❝', t(locale, 'editor_quote_title'), () => toggleBlockquote()),
+    toolbarButton('—', t(locale, 'editor_hr_title'), () => insertHr()),
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),

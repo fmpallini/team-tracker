@@ -1110,6 +1110,23 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('— button inserts an <hr> after the current block and round-trips', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('first line\nsecond line')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const firstDiv = editorEl.querySelector('div')!
+    const range = document.createRange()
+    range.selectNodeContents(firstDiv); range.collapse(false)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_hr_title')).click()
+
+    expect(editorEl.querySelector('hr')).not.toBeNull()
+    expect(editor.getMd()).toBe('first line\n---\nsecond line')
+    editor.destroy()
+  })
+
 })
 
 describe('block-prefix auto-format on typing', () => {
