@@ -7,7 +7,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.7.0] - 2026-08-29
 
 ### Added
-- Rich-text notes now support inline code (`` `code` ``), blockquotes (`> text`), and external links (`[text](url)`), each with a toolbar button. Links always open in a new tab.
+- Rich-text notes now support inline code (`` `code` ``), blockquotes (`> text`), and external links (`[text](url)`), each with a toolbar button. To open a link, Ctrl/Cmd-click (or middle-click) it — it opens in a new tab; a plain click just puts the cursor in the link so you can edit it.
 - A toolbar button for inserting a horizontal divider line (previously only possible by typing `---`).
 - Keyboard shortcuts: Ctrl+E for inline code, Ctrl+Shift+9 for blockquote, Ctrl+K to insert a link.
 

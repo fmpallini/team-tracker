@@ -31,7 +31,7 @@ test('t leaves an unmatched placeholder untouched', () => {
 })
 test('editor code/quote/hr/link keys exist in both locales', () => {
   for (const loc of ['pt-BR', 'en-US'] as const) {
-    for (const k of ['editor_code_title', 'editor_quote_title', 'editor_hr_title', 'editor_link_title', 'editor_link_prompt', 'help_shortcut_code', 'help_shortcut_quote', 'help_shortcut_link', 'help_md_code', 'help_md_quote', 'help_md_link'] as const) {
+    for (const k of ['editor_code_title', 'editor_quote_title', 'editor_hr_title', 'editor_link_title', 'editor_link_prompt', 'help_shortcut_code', 'help_shortcut_quote', 'help_shortcut_link', 'help_shortcut_open_link', 'help_md_code', 'help_md_quote', 'help_md_link'] as const) {
       expect(t(loc, k).length).toBeGreaterThan(0)
     }
   }

@@ -108,6 +108,8 @@ test('editor help lists the new inline-code / blockquote / link shortcuts and sy
   expect(text).toContain('`código`') // markdown syntax row for inline code
   expect(text).toContain('> texto') // markdown syntax row for blockquote
   expect(text).toContain('[texto](url)') // markdown syntax row for link
+  expect(text).toContain('Ctrl+clique / clique do meio') // open-link gesture row
+  expect(text).toContain('Open link in a new tab')
 })
 
 test('editor help no longer carries the app-window recipe', () => {
