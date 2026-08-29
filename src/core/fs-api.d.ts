@@ -18,6 +18,8 @@ interface OpenFilePickerOptions {
   types?: Array<{ description?: string; accept: Record<string, string[]> }>
   excludeAcceptAllOption?: boolean
   multiple?: boolean
+  /** Ask for a read-write grant straight from the picker gesture, instead of the default read-only one. */
+  mode?: FsPermissionMode
   /** A file/directory handle to open the picker in the same folder as. */
   startIn?: FileSystemHandle
 }

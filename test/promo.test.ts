@@ -21,6 +21,7 @@ beforeEach(() => {
   document.body.innerHTML = ''
   localStorage.clear()
   resetPromoStateForTests()
+  window.location.hash = ''
 })
 
 describe('local variant (hosted invite)', () => {
@@ -30,18 +31,20 @@ describe('local variant (hosted invite)', () => {
     expect(card!.classList.contains('tt-promo-card')).toBe(true)
     expect(card!.textContent).toContain('Try the installable version')
     expect(card!.textContent).toContain('install automatically')
+    expect(card!.textContent).toContain('100% offline')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     card!.querySelector<HTMLButtonElement>('.tt-promo-action')!.click()
-    expect(open).toHaveBeenCalledWith(URL, '_blank', 'noopener')
+    // #install deep link: lands on the hosted build with the install card surfaced.
+    expect(open).toHaveBeenCalledWith(`${URL}#install`, '_blank', 'noopener')
     open.mockRestore()
   })
 
-  it('renders header button that opens the hosted URL', () => {
+  it('renders header button that opens the hosted URL with the #install deep link', () => {
     const btn = promoHeaderButton(LOCALE, { pwa: false, pagesUrl: URL })
     expect(btn).not.toBeNull()
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     btn!.click()
-    expect(open).toHaveBeenCalledWith(URL, '_blank', 'noopener')
+    expect(open).toHaveBeenCalledWith(`${URL}#install`, '_blank', 'noopener')
     open.mockRestore()
   })
 
@@ -149,6 +152,32 @@ describe('PWA variant (install offer)', () => {
       expect(() => initInstallCapture()).not.toThrow()
       expect(promoStartCard(LOCALE, { pwa: true })).not.toBeNull()
     })
+  })
+})
+
+describe('#install deep link (arriving from the local build on the hosted PWA)', () => {
+  afterEach(() => {
+    window.location.hash = ''
+  })
+
+  it('surfaces the install card past a prior dismissal and flashes it', () => {
+    localStorage.setItem('tt-promo-dismissed', '1')
+    window.location.hash = '#install'
+    const card = promoStartCard(LOCALE, { pwa: true })
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-promo-card-flash')).toBe(true)
+  })
+
+  it('still respects a dismissal when the hash is absent', () => {
+    localStorage.setItem('tt-promo-dismissed', '1')
+    expect(promoStartCard(LOCALE, { pwa: true })).toBeNull()
+  })
+
+  it('does not flash the local build card (nothing to install there)', () => {
+    window.location.hash = '#install'
+    const card = promoStartCard(LOCALE, { pwa: false, pagesUrl: URL })
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-promo-card-flash')).toBe(false)
   })
 })
 

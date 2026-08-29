@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.6.2] - 2026-08-28
+
+### Added
+- The Backup settings tab now detects when the configured backup file can't be reached from the browser or computer you're on — which happens when backups were set up on a different machine, or the backup was later pointed somewhere else from another browser. Automatic backup is switched off and a "Set up backup…" prompt appears, instead of the tab showing backups as still on with a blank status area.
+
+### Changed
+- Start screen: the hosted-version card lists its three benefits (automatic updates; its own window with a taskbar shortcut; works fully offline) on separate lines, and the "Open hosted version" button is reworded and centered. On the installable version, that button now jumps straight to the install card — bringing it back even if you'd dismissed it — and focuses the Install button.
+
+### Fixed
+- Saving could fail with a generic error and fall back to a full "Save as…" prompt — most often during an automatic save — when it should have offered the one-click "Grant access…" recovery. The file's write permission is now requested up front when you pick the file.
+
 ## [2.6.1] - 2026-08-28
 
 ### Changed

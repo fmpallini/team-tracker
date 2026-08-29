@@ -1,16 +1,21 @@
 import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
 
-function mockHandle(initialMtime: number) {
+function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
   let written: Uint8Array | null = null
+  const createWritable = vi.fn(async () => ({
+    async write(b: Uint8Array) { written = b },
+    async close() { mtime += 1000 },
+  }))
   const handle = {
     name: 'x.tmv',
     async getFile() { return { lastModified: mtime, async arrayBuffer() { return (written ?? new Uint8Array()).buffer } } },
-    async createWritable() {
-      return { async write(b: Uint8Array) { written = b }, async close() { mtime += 1000 } }
-    },
+    createWritable,
+    // Omitted entirely when no permission is given, so the pre-write
+    // `assertWritable()` check is skipped for the pre-existing tests.
+    ...(permission ? { queryPermission: vi.fn(async () => permission) } : {}),
   } as unknown as FileSystemFileHandle
-  return { handle, bump: () => { mtime += 5000 }, getWritten: () => written }
+  return { handle, createWritable, bump: () => { mtime += 5000 }, getWritten: () => written }
 }
 
 // idb é chamado dentro de writeFile — stub global mínimo p/ jsdom.
@@ -44,6 +49,27 @@ test('forceWrite ignores external change', async () => {
   bump()
   await forceWrite(s, new Uint8Array([9]))
   expect(getWritten()).toEqual(new Uint8Array([9]))
+})
+
+test('writeFile rejects with NotAllowedError before touching createWritable when the readwrite grant is missing', async () => {
+  const { handle, createWritable } = mockHandle(1000, 'prompt')
+  const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
+  await expect(writeFile(s, new Uint8Array([1]))).rejects.toMatchObject({ name: 'NotAllowedError' })
+  expect(createWritable).not.toHaveBeenCalled()
+})
+
+test('writeFile proceeds normally when queryPermission reports the grant is live', async () => {
+  const { handle, getWritten } = mockHandle(1000, 'granted')
+  const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
+  await writeFile(s, new Uint8Array([5]))
+  expect(getWritten()).toEqual(new Uint8Array([5]))
+})
+
+test('forceWrite also refuses, with NotAllowedError, when the readwrite grant is missing', async () => {
+  const { handle, createWritable } = mockHandle(1000, 'denied')
+  const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
+  await expect(forceWrite(s, new Uint8Array([1]))).rejects.toMatchObject({ name: 'NotAllowedError' })
+  expect(createWritable).not.toHaveBeenCalled()
 })
 
 function mockLaunchHandle(permission: 'granted' | 'prompt' | 'denied') {
