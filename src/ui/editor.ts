@@ -1097,6 +1097,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
       if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
       if (matchKey(e, 'e')) { e.preventDefault(); toggleInlineCode(); return }
+      if (matchKey(e, 'k')) { e.preventDefault(); void insertLink(); return }
       if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
       if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
       if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }

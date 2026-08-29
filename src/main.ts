@@ -478,7 +478,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       void saveCtl.saveNow({ explicit: true })
       return
     }
-    if ((e.ctrlKey || e.metaKey) && matchKey(e, 'k')) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && matchKey(e, 'k')) {
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
       palette.open()

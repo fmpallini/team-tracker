@@ -500,6 +500,24 @@ describe('keyboard shortcuts', () => {
     expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
     editor.destroy()
   })
+
+  test('Ctrl+K in the editor opens the link prompt and is consumed', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('x')
+
+    const e = dispatchKey(editorEl, { key: 'k', code: 'KeyK', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-dialog')).not.toBeNull()
+
+    // clean up the open modal
+    const cancel = Array.from(document.querySelectorAll('.tt-modal-dialog button')).find(b => b.textContent === t('en-US', 'cancel')) as HTMLButtonElement
+    cancel.click()
+    editor.destroy()
+  })
 })
 
 describe('Tab indent', () => {
