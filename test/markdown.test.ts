@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -751,5 +751,61 @@ describe('external links', () => {
   test('idempotent through two cycles', () => {
     const md = 'a [b](https://e.com) c'
     expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+})
+
+describe('blockquote', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('single line renders <blockquote> and round-trips', () => {
+    expect(mdToHtml('> a quote')).toBe('<blockquote>a quote</blockquote>')
+    expect(roundTrip('> a quote')).toBe('> a quote')
+  })
+  test('consecutive > lines merge into one blockquote, <br>-joined', () => {
+    expect(mdToHtml('> line one\n> line two')).toBe('<blockquote>line one<br>line two</blockquote>')
+    expect(roundTrip('> line one\n> line two')).toBe('> line one\n> line two')
+  })
+  test('a bare > line is a blank line inside the quote', () => {
+    expect(roundTrip('> a\n>\n> b')).toBe('> a\n>\n> b')
+    expect(mdToHtml('> a\n>\n> b')).toBe('<blockquote>a<br><br>b</blockquote>')
+  })
+  test('blockquote closes an open list first', () => {
+    expect(mdToHtml('- item\n> quote')).toBe('<ul><li>item</li></ul><blockquote>quote</blockquote>')
+  })
+  test('quote directly before and after a heading', () => {
+    expect(roundTrip('> q\n# H\n> q2')).toBe('> q\n# H\n> q2')
+  })
+  test('inline formatting and refs work inside a quote', () => {
+    const html = mdToHtml('> see **bold** and @[Ana](person:x)')
+    expect(html).toContain('<strong>bold</strong>')
+    expect(html).toContain('data-ref="person:x"')
+    expect(roundTrip('> see **bold** and @[Ana](person:x)')).toBe('> see **bold** and @[Ana](person:x)')
+  })
+  test('htmlToPlainText prefixes quote lines with "> "', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('> a\n> b')
+    expect(htmlToPlainText(div)).toBe('> a\n> b')
+  })
+  test('idempotent through two cycles', () => {
+    const md = '> a\n> b'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+})
+
+describe('flattenNestedBlockquotes', () => {
+  test('unwraps a blockquote nested inside another', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<blockquote>outer<blockquote>inner</blockquote></blockquote>'
+    flattenNestedBlockquotes(root)
+    expect(root.querySelectorAll('blockquote').length).toBe(1)
+    expect(root.querySelector('blockquote')!.textContent).toBe('outerinner')
+  })
+  test('leaves a single well-formed blockquote untouched', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<blockquote>just one</blockquote>'
+    flattenNestedBlockquotes(root)
+    expect(root.innerHTML).toBe('<blockquote>just one</blockquote>')
   })
 })
