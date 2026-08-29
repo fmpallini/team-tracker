@@ -1161,6 +1161,22 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('🧹 clear-formatting also drops blockquote styling', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('blockquote')!)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_clear_format_title')).click()
+
+    expect(editorEl.querySelector('blockquote')).toBeNull()
+    editor.destroy()
+  })
+
   test('— button inserts an <hr> after the current block and round-trips', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

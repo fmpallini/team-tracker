@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -586,6 +586,28 @@ describe('demoteHeadings ("clear formatting" also drops the heading style, like 
     const root = mount('<ul><li>a<ul><li>b</li></ul></li></ul>')
     demoteHeadings(root, selectAll(root))
     expect(htmlToMd(root)).toBe('- a\n  - b')
+    root.remove()
+  })
+})
+
+describe('demoteBlockquotes ("clear formatting" also drops blockquote styling)', () => {
+  const mount = (html: string): HTMLElement => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    document.body.appendChild(root)
+    return root
+  }
+  const selectAll = (root: HTMLElement): Range => {
+    const r = document.createRange()
+    r.selectNodeContents(root)
+    return r
+  }
+
+  test('demoteBlockquotes unwraps a blockquote the range touches', () => {
+    const root = mount('<blockquote>quoted line</blockquote>')
+    demoteBlockquotes(root, selectAll(root))
+    expect(root.querySelector('blockquote')).toBeNull()
+    expect(root.textContent).toBe('quoted line')
     root.remove()
   })
 })
