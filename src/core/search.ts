@@ -77,7 +77,7 @@ export interface TeamRefCandidates {
   risks: RefCandidate[]
 }
 
-/** Id+title extraction for the @ mention picker and the Ctrl+K palette — a lighter sibling of collectCandidates below, which also needs full note bodies for full-text search. */
+/** Id+title extraction for the @ mention picker and the Ctrl+Shift+K palette — a lighter sibling of collectCandidates below, which also needs full note bodies for full-text search. */
 export function teamRefCandidates(team: Team | undefined): TeamRefCandidates {
   if (!team) return { people: [], actionItems: [], milestones: [], risks: [] }
   return {
@@ -241,7 +241,7 @@ const SEARCHABLE: readonly Section[] = ['notes', 'people', 'actions', 'milestone
  *    render (milestone/risk/action/person/day) hits this, so it is built the
  *    moment any such module mounts.
  *  - `candidatesCache` — `stripMd`ped + `normalize`d text for full-text
- *    search. Expensive, and only the Ctrl+K palette ever reads it, so it is
+ *    search. Expensive, and only the Ctrl+Shift+K palette ever reads it, so it is
  *    built lazily on the first `search()` that touches a team rather than
  *    forced (and retained) by an unrelated chip render.
  */

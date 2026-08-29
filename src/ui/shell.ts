@@ -37,7 +37,7 @@ export interface Shell {
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
   onHelp(cb: () => void): void
-  /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+K). */
+  /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+Shift+K). */
   onAppNameClick(cb: () => void): void
   /**
    * Enables/disables the "Team Tracker" title button. Mirrors the search bar's

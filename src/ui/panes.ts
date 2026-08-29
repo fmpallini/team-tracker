@@ -90,7 +90,7 @@ export interface PaneManager {
   dispose(): void
 }
 
-/** Same item list feeds both the pane module dropdown and the Ctrl+K palette. */
+/** Same item list feeds both the pane module dropdown and the Ctrl+Shift+K palette. */
 export interface ModuleItem {
   label: string
   ref: ModuleRef
@@ -132,7 +132,7 @@ type PaneMenuRow = {
   labelKey: MsgKey
 }
 
-/** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems for the fuller Ctrl+K equivalent. */
+/** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems for the fuller Ctrl+Shift+K equivalent. */
 function paneMenuItems(): PaneMenuRow[] {
   return [
     { kind: 'daily', ref: { kind: 'daily', date: todayIso() }, labelKey: 'module_daily' },
@@ -371,7 +371,7 @@ export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: str
  * `focusedPane` is derived from `rememberedSplit`, never hardcoded — pane 1
  * is only ever visible while split, so focusing it while restoring a
  * single-pane layout would silently point every focused-pane action
- * (Ctrl+K palette picks, the due-date reminder list, Alt+arrow history) at a
+ * (Ctrl+Shift+K palette picks, the due-date reminder list, Alt+arrow history) at a
  * pane the user can't see, making it look like selecting an item did
  * nothing. Same invariant `toggleSplit` enforces when un-splitting.
  */

@@ -1,5 +1,5 @@
 // src/ui/select-list.ts — shared row/selection mechanics for the dropdown
-// list widgets (Ctrl+K palette, @ autocomplete, / template picker, header
+// list widgets (Ctrl+Shift+K palette, @ autocomplete, / template picker, header
 // search results). Three rules every consumer must keep:
 //
 // 1. Hover and arrow keys repaint the highlight via paintSelection() on the

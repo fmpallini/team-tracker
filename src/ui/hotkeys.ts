@@ -12,8 +12,8 @@ const EDITABLE_SELECTOR = 'input,textarea,select,[contenteditable="true"]'
  * `e.code` alone; this brings the letter shortcuts up to the same
  * layout-independence — the reason Ctrl+B/I/U once did nothing on some
  * international keyboards while the digit-row shortcuts worked. (Strikethrough
- * moved off Ctrl+Shift+X to Ctrl+Shift+5 for a different reason: some Windows
- * browsers/keyboard drivers swallow the Ctrl+Shift+X chord entirely.)
+ * also takes Ctrl+Shift+5 as a fallback, for the Windows browsers/keyboard
+ * drivers that swallow the Ctrl+Shift+X chord entirely.)
  */
 export function matchKey(e: KeyboardEvent, letter: string): boolean {
   return e.key.toLowerCase() === letter || e.code === `Key${letter.toUpperCase()}`
@@ -67,7 +67,7 @@ export function hotkeyAllowed(e: KeyboardEvent): boolean {
 
 /**
  * Like `hotkeyAllowed`, but for global hotkeys whose own combo requires
- * Ctrl/Cmd (e.g. Ctrl+K for the command palette). Unlike `hotkeyAllowed`,
+ * Ctrl/Cmd (e.g. Ctrl+Shift+K for the command palette). Unlike `hotkeyAllowed`,
  * this must still fire while focus is inside an input/textarea/
  * contenteditable — the palette needs to be reachable while typing notes in
  * the WYSIWYG editor. Only a modal dialog being open blocks it.
