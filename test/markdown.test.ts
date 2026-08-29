@@ -603,11 +603,22 @@ describe('demoteBlockquotes ("clear formatting" also drops blockquote styling)',
     return r
   }
 
-  test('demoteBlockquotes unwraps a blockquote the range touches', () => {
+  test('demoteBlockquotes unwraps a blockquote the range touches into a plain <div>', () => {
     const root = mount('<blockquote>quoted line</blockquote>')
     demoteBlockquotes(root, selectAll(root))
     expect(root.querySelector('blockquote')).toBeNull()
+    expect(root.innerHTML).toBe('<div>quoted line</div>')
     expect(root.textContent).toBe('quoted line')
+    root.remove()
+  })
+
+  test('a two-line <br> blockquote demotes to one <div> — break kept, no blank line', () => {
+    const root = mount('<blockquote>a<br>b</blockquote>')
+    demoteBlockquotes(root, selectAll(root))
+    expect(root.querySelector('blockquote')).toBeNull()
+    expect(root.children).toHaveLength(1)
+    expect(root.children[0]!.tagName).toBe('DIV')
+    expect(htmlToMd(root)).toBe('a\nb')
     root.remove()
   })
 })
