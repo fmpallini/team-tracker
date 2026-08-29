@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -632,5 +632,28 @@ describe('htmlToMd / htmlToPlainText do not mutate the source DOM', () => {
     const before = div.innerHTML
     expect(htmlToPlainText(div)).toBe('one\ntwo\nthree')
     expect(div.innerHTML).toBe(before)
+  })
+})
+
+describe('safeHref', () => {
+  test('accepts http/https/mailto unchanged', () => {
+    expect(safeHref('https://example.com/a?b=1')).toBe('https://example.com/a?b=1')
+    expect(safeHref('http://example.com')).toBe('http://example.com')
+    expect(safeHref('mailto:a@b.com')).toBe('mailto:a@b.com')
+    expect(safeHref('  https://example.com  ')).toBe('https://example.com')
+  })
+  test('rejects javascript/data/vbscript and scheme-relative/relative', () => {
+    expect(safeHref('javascript:alert(1)')).toBeNull()
+    expect(safeHref('JavaScript:alert(1)')).toBeNull()
+    expect(safeHref('data:text/html,x')).toBeNull()
+    expect(safeHref('vbscript:msgbox')).toBeNull()
+    expect(safeHref('/relative/path')).toBeNull()
+    expect(safeHref('#frag')).toBeNull()
+    expect(safeHref('example.com')).toBeNull()
+  })
+  test('rejects a scheme smuggled past a control character', () => {
+    expect(safeHref('java\tscript:alert(1)')).toBeNull()
+    expect(safeHref('java\nscript:alert(1)')).toBeNull()
+    expect(safeHref('  java script:alert(1)')).toBeNull()
   })
 })
