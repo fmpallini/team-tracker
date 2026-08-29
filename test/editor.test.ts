@@ -1044,6 +1044,40 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('<> button wraps the selection in <code> and getMd emits backticks', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('foo bar baz')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const textNode = editorEl.querySelector('div')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 4); range.setEnd(textNode, 7) // "bar"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_code_title')).click()
+
+    expect(editorEl.querySelector('code')?.textContent).toBe('bar')
+    expect(editor.getMd()).toBe('foo `bar` baz')
+    editor.destroy()
+  })
+
+  test('<> button on a selection already inside <code> unwraps it', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('foo `bar` baz')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const codeText = editorEl.querySelector('code')!.firstChild as Text
+    const range = document.createRange()
+    range.selectNodeContents(codeText)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_code_title')).click()
+
+    expect(editorEl.querySelector('code')).toBeNull()
+    expect(editor.getMd()).toBe('foo bar baz')
+    editor.destroy()
+  })
+
 })
 
 describe('block-prefix auto-format on typing', () => {

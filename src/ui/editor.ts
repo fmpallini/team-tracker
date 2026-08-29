@@ -454,6 +454,39 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
+   * The `<>` button. Wraps a non-empty selection in <code>, or unwraps it if
+   * it already sits fully inside one. Bails on a selection that crosses an
+   * element boundary (a ref chip, existing inline formatting) — same
+   * "text-only spans only" rule replaceInlineMatch uses, since rebuilding a
+   * <code> from plain text would silently destroy any element inside it.
+   */
+  function toggleInlineCode(): void {
+    editorEl.focus()
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const range = sel.getRangeAt(0)
+    if (!editorEl.contains(range.commonAncestorContainer)) return
+
+    const container = range.commonAncestorContainer
+    const host = container instanceof HTMLElement ? container : container.parentElement
+    const existing = host?.closest('code')
+    if (existing && editorEl.contains(existing)) {
+      const parent = existing.parentNode!
+      while (existing.firstChild) parent.insertBefore(existing.firstChild, existing)
+      parent.removeChild(existing)
+      scheduleChange()
+      return
+    }
+    if (range.cloneContents().querySelector('*')) return
+    const code = document.createElement('code')
+    code.textContent = range.toString()
+    range.deleteContents()
+    range.insertNode(code)
+    setCaretAfter(code)
+    scheduleChange()
+  }
+
+  /**
    * Replaces an emptied-out top-level block with a one-item `<ul>`/`<ol>`,
    * built directly rather than via document.execCommand('insertUnorderedList'
    * /'insertOrderedList'). Unlike formatBlock (used for headings, which
@@ -1072,7 +1105,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         tabindex: '-1',
         onmousedown: (e: Event) => e.preventDefault(),
         onclick: () => {
+          // `onmousedown` preventDefault keeps focus (and thus the live
+          // selection) in the editor when a real pointer clicks a toolbar
+          // button, so the `editorEl.focus()` below is a no-op there. But a
+          // synthetic `.click()` (jsdom, and any programmatic caller) skips
+          // mousedown, and jsdom's `focus()` COLLAPSES the current selection
+          // on the focus transition — which breaks selection-driven actions
+          // like `toggleInlineCode`. Snapshot the selection first and restore
+          // it after focus when it still points inside the editor.
+          const sel = window.getSelection()
+          const saved = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
           editorEl.focus()
+          if (sel && saved && editorEl.contains(saved.commonAncestorContainer)) {
+            sel.removeAllRanges()
+            sel.addRange(saved)
+          }
           action(btn)
         },
       },
@@ -1088,6 +1135,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
+    toolbarButton('<>', t(locale, 'editor_code_title'), () => toggleInlineCode()),
     toolbarButton('•', t(locale, 'editor_ul_title'), () => exec('insertUnorderedList')),
     toolbarButton('1.', t(locale, 'editor_ol_title'), () => exec('insertOrderedList')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
