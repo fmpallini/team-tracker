@@ -1194,6 +1194,34 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('toolbar button order is locked', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const titles = Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-toolbar button')).map(b => b.title)
+    expect(titles).toEqual([
+      t('en-US', 'editor_bold_title'),
+      t('en-US', 'editor_italic_title'),
+      t('en-US', 'editor_underline_title'),
+      t('en-US', 'editor_strike_title'),
+      t('en-US', 'editor_code_title'),
+      t('en-US', 'editor_ul_title'),
+      t('en-US', 'editor_ol_title'),
+      t('en-US', 'editor_h1_title'),
+      t('en-US', 'editor_h2_title'),
+      t('en-US', 'editor_h3_title'),
+      t('en-US', 'editor_paragraph_title'),
+      t('en-US', 'editor_quote_title'),
+      t('en-US', 'editor_hr_title'),
+      t('en-US', 'editor_clear_format_title'),
+      t('en-US', 'editor_templates_title'),
+      t('en-US', 'editor_insert_ref_title'),
+      t('en-US', 'editor_link_title'),
+      t('en-US', 'editor_copy_options_title'),
+      t('en-US', 'editor_help_title'),
+    ])
+    editor.destroy()
+  })
+
 })
 
 describe('block-prefix auto-format on typing', () => {
