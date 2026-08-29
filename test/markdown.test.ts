@@ -815,21 +815,39 @@ describe('blockquote', () => {
     expect(roundTrip(roundTrip(md))).toBe(md)
   })
 
-  // Chromium's execCommand('formatBlock', '<blockquote>') on a multi-line
-  // selection yields <blockquote><div>l1</div><div>l2</div></blockquote>.
-  // htmlToMd's blockquote branch only splits inner lines on <br>, so on its
-  // own it merges those <div>s into one line ('> l1l2'). The editor's
-  // toggleBlockquote() normalizes <div>/<p> children to <br>-separated
-  // inline content (normalizeBlockquoteChildren in src/ui/editor.ts) BEFORE
-  // getMd() ever runs, so the real save path keeps the line breaks — see
-  // the matching test in test/editor.test.ts. Teaching htmlToMd itself to
-  // handle the raw <div>-built shape is a separate core change, out of
-  // scope for the button batch; this documents the current limitation and
-  // will flip loudly (prompting a rewrite to a plain assertion) if that
-  // change ever lands.
-  test.fails('htmlToMd alone does NOT split a <div>-built blockquote (editor normalizes first)', () => {
+  // A blockquote with block-level children — <blockquote><div>a</div>
+  // <div>b</div></blockquote> from Chromium's execCommand, or
+  // <blockquote><p>a</p><p>b</p></blockquote> pasted off a web page / email
+  // — is now handled directly by htmlToMd's blockquote branch: it recurses
+  // through htmlToMd for that shape so each child block keeps its own quoted
+  // line, instead of merging them into one run-on line. The editor's
+  // toggleBlockquote() still normalizes <div>/<p> children to <br>-separated
+  // inline content before getMd() runs, but htmlToMd no longer depends on it.
+  test('htmlToMd splits a <div>-built blockquote into one quoted line per child', () => {
     const container = document.createElement('div')
     container.innerHTML = '<blockquote><div>a</div><div>b</div></blockquote>'
+    expect(htmlToMd(container)).toBe('> a\n> b')
+  })
+  test('htmlToMd splits a <p>-built blockquote (web-page / email paste) into one quoted line per child', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote><p>a</p><p>b</p></blockquote>'
+    expect(htmlToMd(container)).toBe('> a\n> b')
+  })
+  test('htmlToPlainText splits a <p>-built blockquote into one "> "-prefixed line per child', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote><p>a</p><p>b</p></blockquote>'
+    expect(htmlToPlainText(container)).toBe('> a\n> b')
+  })
+  test('a blockquote mixing bare text and a <div> child keeps each on its own quoted line', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote>intro<div>a</div><div>b</div></blockquote>'
+    expect(htmlToMd(container)).toBe('> intro\n> a\n> b')
+  })
+  test('the mdToHtml <br>-joined blockquote shape is untouched — round-trips and stays idempotent', () => {
+    expect(roundTrip('> a\n>\n> b')).toBe('> a\n>\n> b')
+    expect(roundTrip(roundTrip('> a\n>\n> b'))).toBe('> a\n>\n> b')
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote>a<br>b</blockquote>'
     expect(htmlToMd(container)).toBe('> a\n> b')
   })
 })
