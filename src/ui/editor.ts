@@ -671,6 +671,34 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       }
     }
 
+    // Typed link: [text](url) completed right at the caret. Built through
+    // mdToHtml so target/rel and any inner formatting match a loaded doc
+    // exactly. The URL sub-pattern is the CommonMark link-destination rule
+    // (one level of balanced parens) — kept identical to core/markdown.ts's
+    // inline() so this matches exactly what mdToHtml will accept, and a
+    // rejected scheme like javascript:alert(1) is consumed whole with no
+    // orphan ')' left behind. Text-only spans only (bail if the range holds
+    // elements), same rule replaceInlineMatch uses.
+    const linkM = /\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)$/.exec(text.slice(0, caretOffset))
+    if (linkM && safeHref(linkM[2]!)) {
+      const start = caretOffset - linkM[0]!.length
+      const range = rangeForTextOffsets(block, start, caretOffset)
+      if (!range.cloneContents().querySelector('*')) {
+        range.deleteContents()
+        const tmp = document.createElement('div')
+        tmp.innerHTML = mdToHtml(linkM[0]!, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
+        // mdToHtml wraps a bare line in <div>…</div>; lift its children out.
+        const frag = document.createDocumentFragment()
+        const wrapper = tmp.firstElementChild ?? tmp
+        while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+        const lastNode = frag.lastChild
+        range.insertNode(frag)
+        if (lastNode) setCaretAfter(lastNode)
+        scheduleChange()
+        return
+      }
+    }
+
     const inlineMatch = detectInlinePattern(text, caretOffset)
     if (inlineMatch) replaceInlineMatch(block, inlineMatch)
   }

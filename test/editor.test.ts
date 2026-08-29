@@ -1490,6 +1490,64 @@ describe('inline auto-format guards', () => {
   })
 })
 
+describe('typed link autoformat', () => {
+  function typeInto(editorEl: HTMLElement, text: string): void {
+    const div = editorEl.querySelector('div')!
+    div.textContent = text
+    const r = document.createRange()
+    r.selectNodeContents(div); r.collapse(false)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(r)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  test('a completed [text](https://…) becomes a live anchor', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    typeInto(editorEl, 'see [docs](https://example.com)')
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    expect(a).not.toBeNull()
+    expect(a.getAttribute('href')).toBe('https://example.com')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    expect(a.textContent).toBe('docs')
+    expect(editor.getMd()).toBe('see [docs](https://example.com)')
+    editor.destroy()
+  })
+
+  test('a javascript: URL is left as literal text', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    typeInto(editorEl, 'x [bad](javascript:alert(1))')
+    expect(editorEl.querySelector('a[href]')).toBeNull()
+    expect(editorEl.textContent).toBe('x [bad](javascript:alert(1))')
+    editor.destroy()
+  })
+
+  test('the matched span containing an embedded element is left untouched', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    // "[x](" + <strong>bold</strong> + ")" reads as a closed [text](url) in
+    // textContent, but the span holds an element — must not be rebuilt.
+    editorEl.innerHTML = '<div>[x](https://ex.com/<strong>b</strong>)</div>'
+    const block = editorEl.firstChild as HTMLElement
+    const trailing = block.lastChild as Text
+    const range = document.createRange()
+    range.setStart(trailing, trailing.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges(); sel.addRange(range)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(editorEl.querySelector('a[href]')).toBeNull()
+    expect(editorEl.querySelector('strong')).not.toBeNull()
+    editor.destroy()
+  })
+})
+
 describe('detectInlinePattern', () => {
   test('detects closed bold at caret', () => {
     expect(detectInlinePattern('a **b** ', 7)).toEqual({ start: 2, end: 7, marker: '**', content: 'b' })
