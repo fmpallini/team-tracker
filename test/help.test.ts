@@ -93,8 +93,21 @@ test('global help lists app-level shortcuts and the app-window recipe', () => {
   showGlobalHelp('en-US')
   const text = document.body.textContent!
   expect(text).toContain('Alt+1')
-  expect(text).toContain('Ctrl+K')
+  // Task 12 moved the command palette to Ctrl+Shift+K globally; the global
+  // help table must name that, not the old Ctrl+K.
+  expect(text).toContain('Ctrl+Shift+K')
   expect(text).toContain('chrome --app')
+})
+
+test('editor help lists the new inline-code / blockquote / link shortcuts and syntax', () => {
+  showEditorHelp('en-US')
+  const text = document.body.textContent!
+  expect(text).toContain('Ctrl+E') // inline code shortcut
+  expect(text).toContain('Ctrl+Shift+9') // blockquote shortcut
+  expect(text).toContain('Ctrl+K') // link shortcut (Task 12: Ctrl+K inserts a link in the editor)
+  expect(text).toContain('`código`') // markdown syntax row for inline code
+  expect(text).toContain('> texto') // markdown syntax row for blockquote
+  expect(text).toContain('[texto](url)') // markdown syntax row for link
 })
 
 test('editor help no longer carries the app-window recipe', () => {

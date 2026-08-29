@@ -18,7 +18,7 @@ const pt = {
   save_permission: 'Permissão necessária',
   save_fallback_hint: 'Ctrl+S para baixar o arquivo',
   fullscreen: 'Tela cheia',
-  app_name_button_title: 'Abrir troca rápida (Ctrl+K)',
+  app_name_button_title: 'Abrir troca rápida (Ctrl+Shift+K)',
   close_file_title: 'Salvar e fechar arquivo (Ctrl+Alt+L)',
   settings: 'Preferências',
   open_file: 'Abrir arquivo',
@@ -56,7 +56,7 @@ const pt = {
   mobile_block_reason_fs:
     '📁 Navegadores móveis não têm a File System Access API — o app não conseguiria abrir e salvar seu arquivo .tmv diretamente (cada salvamento viraria um novo download)',
   mobile_block_reason_ux:
-    '⌨️ A interface é feita para teclado e telas grandes — atalhos (Ctrl+S, Ctrl+K), visão dividida e painéis densos',
+    '⌨️ A interface é feita para teclado e telas grandes — atalhos (Ctrl+S, Ctrl+Shift+K), visão dividida e painéis densos',
   mobile_block_hint: 'Abra em um computador (Windows, macOS ou Linux) para usar o app.',
   start_open_ellipsis: '📂 Abrir arquivo…',
   start_create_ellipsis: '✨ Criar novo…',
@@ -231,7 +231,7 @@ const pt = {
   empty_no_teams_hint: 'Cada time guarda notas diárias, pessoas, tarefas, marcos e riscos.',
   toast_focus_other: 'Já aberto no outro painel — focando nele',
   toast_person_not_found: 'Pessoa não encontrada',
-  palette_placeholder: 'Buscar módulo, pessoa, tarefa, marco ou risco… (Ctrl+K)',
+  palette_placeholder: 'Buscar módulo, pessoa, tarefa, marco ou risco… (Ctrl+Shift+K)',
   search_placeholder: '🔍 Buscar…',
   search_all_teams: 'Todos os times',
   search_no_results: 'Nenhum resultado',
@@ -531,7 +531,7 @@ const en: Record<MsgKey, string> = {
   save_permission: 'Grant needed',
   save_fallback_hint: 'Ctrl+S to download the file',
   fullscreen: 'Fullscreen',
-  app_name_button_title: 'Open fast switch (Ctrl+K)',
+  app_name_button_title: 'Open fast switch (Ctrl+Shift+K)',
   close_file_title: 'Save and close file (Ctrl+Alt+L)',
   settings: 'Settings',
   open_file: 'Open file',
@@ -569,7 +569,7 @@ const en: Record<MsgKey, string> = {
   mobile_block_reason_fs:
     "📁 Mobile browsers lack the File System Access API — the app couldn't open and save your .tmv file directly (every save would become a new download)",
   mobile_block_reason_ux:
-    '⌨️ The interface is built for keyboard and large screens — shortcuts (Ctrl+S, Ctrl+K), split view, dense panes',
+    '⌨️ The interface is built for keyboard and large screens — shortcuts (Ctrl+S, Ctrl+Shift+K), split view, dense panes',
   mobile_block_hint: 'Open it on a desktop computer (Windows, macOS or Linux) to use the app.',
   start_open_ellipsis: '📂 Open file…',
   start_create_ellipsis: '✨ Create new…',
@@ -736,7 +736,7 @@ const en: Record<MsgKey, string> = {
   empty_no_teams_hint: 'Every team holds daily notes, people, tasks, milestones and risks.',
   toast_focus_other: 'Already open in the other pane — focusing it',
   toast_person_not_found: 'Person not found',
-  palette_placeholder: 'Search module, person, task, milestone or risk… (Ctrl+K)',
+  palette_placeholder: 'Search module, person, task, milestone or risk… (Ctrl+Shift+K)',
   search_placeholder: '🔍 Search…',
   search_all_teams: 'All teams',
   search_no_results: 'No results',

@@ -10,9 +10,12 @@ const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+B', 'help_shortcut_bold'],
   ['Ctrl+I', 'help_shortcut_italic'],
   ['Ctrl+U', 'help_shortcut_underline'],
+  ['Ctrl+E', 'help_shortcut_code'],
   ['Ctrl+Shift+X / Ctrl+Shift+5', 'help_shortcut_strike'],
   ['Ctrl+Shift+8', 'help_shortcut_ul'],
   ['Ctrl+Shift+7', 'help_shortcut_ol'],
+  ['Ctrl+Shift+9', 'help_shortcut_quote'],
+  ['Ctrl+K', 'help_shortcut_link'],
   ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'help_shortcut_heading'],
   ['Ctrl+0', 'help_shortcut_paragraph'],
 ]
@@ -25,11 +28,14 @@ const MD_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['- texto', 'help_md_ul'],
   ['1. texto', 'help_md_ol'],
   ['---', 'help_md_hr'],
+  ['`código`', 'help_md_code'],
+  ['> texto', 'help_md_quote'],
+  ['[texto](url)', 'help_md_link'],
 ]
 
 const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Alt+1 … Alt+9', 'help_global_teams'],
-  ['Ctrl+K', 'help_global_palette'],
+  ['Ctrl+Shift+K', 'help_global_palette'],
   ['Ctrl+S', 'help_global_save'],
   ['Ctrl+Alt+L / 🔒', 'help_global_close_file'],
   ['Ctrl+F ou /', 'help_global_search'],
