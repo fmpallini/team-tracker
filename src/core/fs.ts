@@ -23,6 +23,13 @@ async function readHandle(handle: FileSystemFileHandle): Promise<{ bytes: Uint8A
 export async function pickOpen(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
   try {
     const [handle] = await window.showOpenFilePicker({
+      // A bare showOpenFilePicker() grant is read-only, so the first save then
+      // has to upgrade `readwrite` from 'prompt' — and off a no-activation
+      // trigger (the auto-save interval) that upgrade can't prompt and fails
+      // with an opaque error. Asking for 'readwrite' here spends the picker's
+      // own user gesture on the full grant, matching what `openFromHandle`
+      // does for the reopen/relaunch path.
+      mode: 'readwrite',
       // Chromium expands a registered MIME type like application/octet-stream
       // into every OS-associated extension for that type, so the picker's
       // filter ends up listing far more than .tmv. An unregistered app-
@@ -159,9 +166,29 @@ export async function sameEntry(a: FileSession, b: FileSession): Promise<boolean
   return a.handle.isSameEntry(b.handle)
 }
 
+/**
+ * A `showOpenFilePicker()` handle carries only a read grant until `pickOpen`'s
+ * `mode: 'readwrite'` kicks in, and a persisted handle can have had its grant
+ * lapse mid-session. `createWritable()` in that state throws an opaque
+ * `NotAllowedError` — and off a no-activation trigger (the auto-save interval)
+ * Chromium can surface it as an even less specific failure that
+ * `save-controller.ts`'s `doSave()` can't tell apart from a generic write
+ * error, so it lands on the "Save as…" toast instead of "Grant access…".
+ * Querying first (never prompts, needs no activation — same pattern as
+ * `backup-controller.ts`'s `getHandle`) collapses every such case into one
+ * recognizable `NotAllowedError` that routes to the grant-recovery path.
+ */
+async function assertWritable(handle: FileSystemFileHandle): Promise<void> {
+  if (typeof handle.queryPermission !== 'function') return
+  if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+    throw new DOMException('write permission not granted for this file handle', 'NotAllowedError')
+  }
+}
+
 export async function writeFile(session: FileSession, bytes: Uint8Array): Promise<void> {
   const { handle } = session
   if (!handle) throw new Error('writeFile requires a file handle (fallback mode has no handle)')
+  await assertWritable(handle)
   const current = await handle.getFile()
   if (current.lastModified !== session.lastModified) throw new ExternalChangeError()
   const writable = await handle.createWritable()
@@ -175,6 +202,7 @@ export async function writeFile(session: FileSession, bytes: Uint8Array): Promis
 export async function forceWrite(session: FileSession, bytes: Uint8Array): Promise<void> {
   const { handle } = session
   if (!handle) throw new Error('forceWrite requires a file handle (fallback mode has no handle)')
+  await assertWritable(handle)
   const writable = await handle.createWritable()
   await writable.write(bytes as BufferSource)
   await writable.close()
