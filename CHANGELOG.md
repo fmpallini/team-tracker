@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.0] - 2026-08-29
+
+### Added
+- Rich-text notes now support inline code (`` `code` ``), blockquotes (`> text`), and external links (`[text](url)`), each with a toolbar button. Links always open in a new tab.
+- A toolbar button for inserting a horizontal divider line (previously only possible by typing `---`).
+- Keyboard shortcuts: Ctrl+E for inline code, Ctrl+Shift+9 for blockquote, Ctrl+K to insert a link.
+
+### Changed
+- The command palette shortcut moved from Ctrl+K to Ctrl+Shift+K, so Ctrl+K can insert a link while editing a note.
+- Strikethrough now also responds to Ctrl+Shift+X (in addition to Ctrl+Shift+5).
+
 ## [2.6.2] - 2026-08-28
 
 ### Added
