@@ -1283,12 +1283,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // Ctrl/Cmd+click or middle-click opens the link in a new tab (its href is
   // already safeHref-gated at render + export). A plain click is left alone
   // so the caret can still be placed inside the link text to edit it.
+  // `noopener,noreferrer` matches the anchor's own rel: `noopener` alone
+  // still sends the Referer header, which in the https PWA build would leak
+  // the app URL to the destination.
   function handleExternalLinkActivate(e: MouseEvent): void {
     const linkEl = linkElFromEvent(e)
     if (!linkEl) return
     if (!(e.ctrlKey || e.metaKey || e.button === 1)) return
     e.preventDefault()
-    window.open(linkEl.href, '_blank', 'noopener')
+    window.open(linkEl.href, '_blank', 'noopener,noreferrer')
   }
 
   function onClick(e: MouseEvent): void {

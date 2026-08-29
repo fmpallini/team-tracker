@@ -1304,8 +1304,12 @@ describe('toolbar', () => {
     expect(openSpy).not.toHaveBeenCalled()
 
     a.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
-    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener')
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener,noreferrer')
+
     editor.destroy()
+    // listeners are gone: a re-dispatched ctrl+click does nothing more
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    expect(openSpy).toHaveBeenCalledTimes(1)
   })
 
   test('middle-click on an external link opens it in a new tab', () => {
@@ -1317,8 +1321,12 @@ describe('toolbar', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
 
     a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 }))
-    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener')
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener,noreferrer')
+
     editor.destroy()
+    // listeners are gone: a re-dispatched middle-click does nothing more
+    a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(openSpy).toHaveBeenCalledTimes(1)
   })
 
   test('destroy() closes a still-open link-URL modal', async () => {
