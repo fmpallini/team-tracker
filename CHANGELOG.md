@@ -14,6 +14,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ### Changed
 - The command palette shortcut moved from Ctrl+K to Ctrl+Shift+K, so Ctrl+K can insert a link while editing a note.
 - Strikethrough now also responds to Ctrl+Shift+X (in addition to Ctrl+Shift+5).
+- Editor toolbar: the copy button now sits on the right, next to the help button, instead of mid-toolbar.
 
 ## [2.6.2] - 2026-08-28
 
