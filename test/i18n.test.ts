@@ -29,6 +29,17 @@ test('t leaves an unmatched placeholder untouched', () => {
   // unrelated param must not disturb {title}.
   expect(t('pt-BR', 'milestone_delete_confirm', { name: 'x' })).toBe('Excluir "{title}"?')
 })
+test('editor code/quote/hr/link keys exist in both locales', () => {
+  for (const loc of ['pt-BR', 'en-US'] as const) {
+    for (const k of ['editor_code_title', 'editor_quote_title', 'editor_hr_title', 'editor_link_title', 'editor_link_prompt', 'help_shortcut_code', 'help_shortcut_quote', 'help_shortcut_link', 'help_md_code', 'help_md_quote', 'help_md_link'] as const) {
+      expect(t(loc, k).length).toBeGreaterThan(0)
+    }
+  }
+})
+test('strike title now names both chords', () => {
+  expect(t('en-US', 'editor_strike_title')).toContain('Ctrl+Shift+X')
+  expect(t('en-US', 'editor_strike_title')).toContain('Ctrl+Shift+5')
+})
 test('formatDate per locale', () => {
   expect(formatDate('2026-07-02', 'pt-BR')).toBe('02/07/2026')
   expect(formatDate('2026-07-02', 'en-US')).toBe('07/02/2026')
