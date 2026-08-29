@@ -1096,6 +1096,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
       if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
       if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
+      if (matchKey(e, 'e')) { e.preventDefault(); toggleInlineCode(); return }
       if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
       if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
       if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }
@@ -1113,6 +1114,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (e.code === 'KeyX' || e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
     if (e.code === 'Digit8') { e.preventDefault(); exec('insertUnorderedList'); return }
     if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
+    if (e.code === 'Digit9') { e.preventDefault(); toggleBlockquote(); return }
   }
 
   /**

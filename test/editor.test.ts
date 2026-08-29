@@ -467,6 +467,39 @@ describe('keyboard shortcuts', () => {
     expect(execSpy).toHaveBeenCalledWith('insertUnorderedList', false, undefined)
     editor.destroy()
   })
+
+  test('Ctrl+E toggles inline code on the selection', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('foo bar')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    // Focus before selecting: jsdom's focus() collapses the live selection on
+    // the focus transition, and toggleInlineCode()'s first line is
+    // editorEl.focus() — in a real browser the editor already holds focus when
+    // Ctrl+E fires, so that call is a no-op there.
+    editorEl.focus()
+    const textNode = editorEl.querySelector('div')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 4); range.setEnd(textNode, 7)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'e', code: 'KeyE', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('code')?.textContent).toBe('bar')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+9 runs formatBlock <blockquote>', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, { key: '(', code: 'Digit9', ctrlKey: true, shiftKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
 })
 
 describe('Tab indent', () => {
