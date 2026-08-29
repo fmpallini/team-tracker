@@ -698,3 +698,58 @@ describe('inline code', () => {
     expect(htmlToPlainText(div)).toBe('run x now')
   })
 })
+
+describe('external links', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('renders a new-tab anchor and round-trips', () => {
+    const html = mdToHtml('see [the docs](https://example.com/x)')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    const a = probe.querySelector('a')!
+    expect(a.getAttribute('href')).toBe('https://example.com/x')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    expect(a.textContent).toBe('the docs')
+    expect(roundTrip('see [the docs](https://example.com/x)')).toBe('see [the docs](https://example.com/x)')
+  })
+  test('formatting inside link text is preserved', () => {
+    const html = mdToHtml('[**bold** text](https://e.com)')
+    expect(html).toContain('<strong>bold</strong>')
+    expect(roundTrip('[**bold** text](https://e.com)')).toBe('[**bold** text](https://e.com)')
+  })
+  test('disallowed schemes drop the link, keep the visible text', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'vbscript:x', '  javascript:alert(1)', 'java\tscript:alert(1)']) {
+      const html = mdToHtml(`click [here](${bad}) now`)
+      const probe = document.createElement('div'); probe.innerHTML = html
+      expect(probe.querySelector('a')).toBeNull()
+      expect(probe.textContent).toContain('click here now')
+    }
+  })
+  test('a url with markdown-special chars cannot break out of the href attribute', () => {
+    const md = '[x](https://e.com/~a~~b"onmouseover="1)'
+    const html = mdToHtml(md)
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('[onmouseover]')).toBeNull()
+    expect(probe.querySelectorAll('a').length).toBeLessThanOrEqual(1)
+  })
+  test('link text cannot contain a closing bracket (documented boundary)', () => {
+    // [a]b](url) — [^\]]+ stops at the first ], so this stays literal.
+    expect(mdToHtml('[a]b](https://e.com)')).not.toContain('<a ')
+  })
+  test('htmlToMd re-validates href on the way out (defence in depth)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div><a href="javascript:alert(1)">x</a></div>'
+    expect(htmlToMd(div)).toBe('x')
+  })
+  test('htmlToPlainText drops the URL, keeps the text', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('see [docs](https://e.com) here')
+    expect(htmlToPlainText(div)).toBe('see docs here')
+  })
+  test('idempotent through two cycles', () => {
+    const md = 'a [b](https://e.com) c'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+})
