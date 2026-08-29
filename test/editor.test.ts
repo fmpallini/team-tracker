@@ -1127,6 +1127,73 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  async function answerLinkPrompt(url: string | null): Promise<void> {
+    // one microtask for the modal to mount
+    await Promise.resolve()
+    const dialog = document.querySelector('.tt-modal-dialog') as HTMLElement
+    if (url === null) {
+      const cancel = Array.from(dialog.querySelectorAll('button')).find(b => b.textContent === t('en-US', 'cancel'))!
+      cancel.click()
+    } else {
+      ;(dialog.querySelector('input') as HTMLInputElement).value = url
+      const ok = Array.from(dialog.querySelectorAll('button')).find(b => b.textContent === t('en-US', 'ok'))!
+      ok.click()
+    }
+  }
+
+  test('🔗 button wraps the selection as a markdown link', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('see docs here')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const textNode = editorEl.querySelector('div')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 4); range.setEnd(textNode, 8) // "docs"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLinkPrompt('https://example.com')
+
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[docs](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button with no selection uses the URL as the link text', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLinkPrompt('https://example.com')
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[https://example.com](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button: cancelling the prompt inserts nothing', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLinkPrompt(null)
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    editor.destroy()
+  })
+
+  test('🔗 button: a javascript: URL is rejected, nothing inserted', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLinkPrompt('javascript:alert(1)')
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    editor.destroy()
+  })
+
 })
 
 describe('block-prefix auto-format on typing', () => {

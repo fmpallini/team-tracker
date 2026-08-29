@@ -4,8 +4,9 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
+import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 
@@ -781,6 +782,59 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
+   * Opens a one-field modal asking for a URL. Resolves the raw string on OK
+   * (or Enter in the field), null on Cancel/Escape/overlay close. Kept as a
+   * plain promise-returning helper (not wired through EditorHooks) so tests
+   * drive it through the real modal DOM, same as showEditorHelp.
+   */
+  function promptLinkUrl(): Promise<string | null> {
+    return new Promise((resolve) => {
+      let done = false
+      const finish = (v: string | null): void => { if (done) return; done = true; handle.close(); resolve(v) }
+      const input = el('input', {
+        type: 'url',
+        class: 'tt-input',
+        placeholder: 'https://',
+      }) as HTMLInputElement
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(input.value) }
+      })
+      const handle = showModal({
+        title: t(locale, 'editor_link_title'),
+        body: el('label', { class: 'tt-field' }, t(locale, 'editor_link_prompt'), input),
+        buttons: [
+          { label: t(locale, 'cancel'), onClick: () => finish(null) },
+          { label: t(locale, 'ok'), primary: true, onClick: () => finish(input.value) },
+        ],
+        // Escape / overlay close routes here too, so the promise never hangs.
+        onClose: () => finish(null),
+      })
+      input.focus()
+    })
+  }
+
+  /**
+   * The 🔗 button. Prompts for a URL and inserts `[text](url)` markdown at
+   * the caret — `text` is the current selection, or the URL itself when
+   * nothing is selected. A blank or disallowed-scheme URL is a no-op. The
+   * selection text is captured BEFORE the await: the modal steals focus and
+   * collapses the live selection, so reading it afterwards would always come
+   * back empty. Inserted via exec('insertText', …) so the same
+   * input->autoformat path a typed `[text](url)` takes turns it into a live
+   * link.
+   */
+  async function insertLink(): Promise<void> {
+    const sel = window.getSelection()
+    const selected = sel && !sel.isCollapsed ? sel.toString() : ''
+    const raw = await promptLinkUrl()
+    if (raw === null) return
+    const url = raw.trim()
+    if (!url || !safeHref(url)) return
+    caretOrEndRange()
+    exec('insertText', `[${selected || url}](${url})`)
+  }
+
+  /**
    * Copies the editor's current content to the clipboard as rich (formatted)
    * content. Writes a raw `text/html` string we build ourselves via the
    * async Clipboard API rather than selecting DOM + execCommand('copy') —
@@ -1240,6 +1294,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
+    toolbarButton('🔗', t(locale, 'editor_link_title'), () => { void insertLink() }),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
