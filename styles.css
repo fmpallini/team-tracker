@@ -695,6 +695,9 @@ body { background: var(--bg); color: var(--fg); }
 .editor h3 { font-size: 1.15rem; }
 .editor ul, .editor ol { padding-left: 1.5em; }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
+.editor code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; background: rgba(128, 128, 128, .14); padding: .1em .35em; border-radius: 4px; }
+.editor blockquote { margin: .5em 0; padding: .15em 0 .15em .9em; border-left: 3px solid var(--muted); color: var(--muted); }
+.editor a[href] { color: var(--accent); text-decoration: underline; cursor: pointer; }
 .editor a.ref {
   color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: 4px;
   padding: 0 .25em; cursor: pointer; text-decoration: none;
