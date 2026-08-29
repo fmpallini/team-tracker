@@ -10,7 +10,7 @@ const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+B', 'help_shortcut_bold'],
   ['Ctrl+I', 'help_shortcut_italic'],
   ['Ctrl+U', 'help_shortcut_underline'],
-  ['Ctrl+Shift+5', 'help_shortcut_strike'],
+  ['Ctrl+Shift+X / Ctrl+Shift+5', 'help_shortcut_strike'],
   ['Ctrl+Shift+8', 'help_shortcut_ul'],
   ['Ctrl+Shift+7', 'help_shortcut_ol'],
   ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'help_shortcut_heading'],

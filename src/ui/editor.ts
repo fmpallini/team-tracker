@@ -923,13 +923,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
 
-    // Ctrl+Shift+5 (not the old Ctrl+Shift+X): some Windows browsers / vendor
-    // keyboard drivers swallow the Ctrl+Shift+X chord before it reaches the
-    // page, so its keydown never fires at all. Digit5 sits with the
-    // Ctrl+Shift+7/8 list shortcuts and matched physically (e.code) rides
-    // over layout differences. Toolbar S button and `~~text~~` markdown are
-    // the mouse/typing alternatives.
-    if (e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
+    // Strikethrough takes both Ctrl+Shift+X (the cross-app convention: Google
+    // Docs, Slack, Discord, GitHub) and Ctrl+Shift+5. The X chord is the
+    // primary, but some Windows browsers / vendor keyboard drivers swallow it
+    // before it reaches the page, so its keydown never fires — Digit5 is the
+    // fallback that always lands, sits with the Ctrl+Shift+7/8 list shortcuts,
+    // and matched physically (e.code) rides over layout differences. Toolbar S
+    // button and `~~text~~` markdown are the mouse/typing alternatives.
+    if (e.code === 'KeyX' || e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
     if (e.code === 'Digit8') { e.preventDefault(); exec('insertUnorderedList'); return }
     if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
   }
@@ -1096,8 +1097,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
-    toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
+    toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )
 

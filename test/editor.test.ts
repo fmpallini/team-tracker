@@ -421,9 +421,11 @@ describe('keyboard shortcuts', () => {
     [{ key: 'b', ctrlKey: true }, 'bold'],
     [{ key: 'i', ctrlKey: true }, 'italic'],
     [{ key: 'u', ctrlKey: true }, 'underline'],
-    // Strikethrough is Ctrl+Shift+5 (some Windows browsers/drivers eat
-    // Ctrl+Shift+X before the page sees it); matched by physical key so
-    // Shift+5 producing '%' / '(' / etc. across layouts doesn't matter.
+    // Strikethrough takes Ctrl+Shift+X (cross-app convention) and Ctrl+Shift+5
+    // (fallback for Windows browsers/drivers that eat the X chord); both
+    // matched by physical key (e.code) so the produced e.key across layouts
+    // ('%' / '(' / a non-Latin X position) doesn't matter.
+    [{ key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     [{ key: '%', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     [{ key: '5', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     // Layout-independence: e.key for the physical position isn't the letter
