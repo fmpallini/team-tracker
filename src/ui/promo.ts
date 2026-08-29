@@ -25,6 +25,21 @@ interface BeforeInstallPromptEvent extends Event {
 
 const DISMISS_KEY = 'tt-promo-dismissed'
 
+// Deep link the local build's "open hosted" action carries into the PWA build:
+// the hosted page can't fire the native install prompt on its own (Chromium
+// requires a real click for `beforeinstallprompt.prompt()`), but this hash
+// lets it surface the install card front-and-centre — un-dismissed, flashed,
+// scrolled into view, button focused — so the very next keypress installs.
+const INSTALL_HASH = '#install'
+
+function wantsInstallDeepLink(): boolean {
+  try {
+    return window.location.hash === INSTALL_HASH
+  } catch {
+    return false
+  }
+}
+
 // The captured event is single-use: Chromium blocks re-prompting after the
 // user dismisses the native dialog, so triggerInstall() clears it and later
 // clicks fall through to the instructions modal.
@@ -135,7 +150,8 @@ function triggerInstall(locale: Locale): void {
 }
 
 function openHosted(pagesUrl: string): void {
-  window.open(pagesUrl, '_blank', 'noopener')
+  const url = pagesUrl.includes('#') ? pagesUrl : pagesUrl + INSTALL_HASH
+  window.open(url, '_blank', 'noopener')
 }
 
 function hiddenEverywhere(pwa: boolean, pagesUrl: string): boolean {
@@ -151,7 +167,11 @@ function promoAction(locale: Locale, pwa: boolean, pagesUrl: string): void {
 
 export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | null {
   const { pwa, pagesUrl } = resolve(opts)
-  if (hiddenEverywhere(pwa, pagesUrl) || isDismissed()) return null
+  // Arriving from the local build's "go to the installable version" link
+  // (INSTALL_HASH): force the card past a past dismissal so the install
+  // affordance is actually there when the user lands.
+  const deepLink = pwa && wantsInstallDeepLink()
+  if (hiddenEverywhere(pwa, pagesUrl) || (isDismissed() && !deepLink)) return null
 
   const action = el(
     'button',
@@ -184,11 +204,28 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
       'ul',
       { class: 'tt-promo-advantages' },
       el('li', {}, t(locale, 'promo_adv_updates')),
-      el('li', {}, t(locale, 'promo_adv_app'))
+      el('li', {}, t(locale, 'promo_adv_app')),
+      el('li', {}, t(locale, 'promo_adv_offline'))
     ),
     pwa ? null : el('p', { class: 'tt-promo-note' }, t(locale, 'promo_hosted_note')),
     action
   )
+  if (deepLink) {
+    card.classList.add('tt-promo-card-flash')
+    // After the start screen has mounted this node into the document.
+    queueMicrotask(() => {
+      if (typeof card.scrollIntoView === 'function') {
+        card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }
+      action.focus()
+      // Drop the hash so a later manual reload doesn't re-flash.
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      } catch {
+        // Opaque origin / disabled history API — the flash just repeats on reload.
+      }
+    })
+  }
   return card
 }
 
