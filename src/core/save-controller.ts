@@ -170,7 +170,27 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // just spent, so the backup file's own native prompt (if it needs one;
     // it's a separate file with its own grant) doesn't need a second gesture.
     await deps.backupCtl?.regrantPermission()
-    await saveNow({ explicit: true })
+    if (deps.store.dirty) {
+      await saveNow({ explicit: true })
+      return
+    }
+    // The primary file is already clean — this "Grant access…" click was
+    // fired only because the *backup* grant had lapsed (doSave()'s success
+    // tail flips the pill amber off `hasMissingGrant()` even when the primary
+    // write went through). `saveNow()` would no-op here on `!dirty`, leaving
+    // the just-regranted backup un-mirrored until the next interval-gated
+    // `maybeWriteBackup` — up to a day later. Push the current bytes straight
+    // to it now instead; `writeBackupNow()` self-no-ops if the grant is still
+    // missing (user dismissed the native prompt).
+    try {
+      const password = deps.getPassword()
+      const bytes = password === null ? serializePlain(deps.store.doc) : await encryptDocument(deps.store.doc, password)
+      await deps.backupCtl?.writeBackupNow(bytes)
+    } catch (e) {
+      console.error(e)
+    }
+    const stillMissing = (await deps.backupCtl?.hasMissingGrant()) ?? false
+    deps.shell.setSaveState(stillMissing ? 'permission' : 'saved')
   }
 
   /**
