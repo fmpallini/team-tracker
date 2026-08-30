@@ -837,6 +837,64 @@ describe('list nesting via Tab/Shift+Tab', () => {
   })
 })
 
+describe('heading on a nested list item', () => {
+  function caretInto(node: Node): void {
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('Ctrl+1 on a nested list item is a no-op — no formatBlock, structure intact', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- parent\n  - child')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    caretInto(editorEl.querySelectorAll('li')[1]!) // the nested "child"
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(editor.getMd()).toBe('- parent\n  - child')
+    editor.destroy()
+  })
+
+  test('the H1 toolbar button on a nested list item is a no-op too', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- parent\n  - child')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    caretInto(editorEl.querySelectorAll('li')[1]!)
+
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_h1_title')
+    ) as HTMLButtonElement
+    btn.click()
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(editor.getMd()).toBe('- parent\n  - child')
+    editor.destroy()
+  })
+
+  test('Ctrl+1 on a TOP-level list item still runs formatBlock (unchanged)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- only')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    caretInto(editorEl.querySelector('li')!)
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    editor.destroy()
+  })
+})
+
 function closestLiOf(node: Node): HTMLElement | null {
   let n: Node | null = node
   while (n) {
@@ -1931,6 +1989,27 @@ describe('code block editing', () => {
     expect(editorEl.querySelector('pre')).not.toBeNull()
     expect(editorEl.querySelector('div')).toBeNull()
     editor.destroy()
+  })
+
+  test('typing "```" then Enter also opens a code block (GitHub/Slack gesture)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>```</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  test('the ❝ quote button title lists Ctrl+Shift+Q as the alternate chord', () => {
+    for (const loc of ['en-US', 'pt-BR'] as const) {
+      expect(t(loc, 'editor_quote_title')).toMatch(/Ctrl\+Shift\+Q/)
+    }
   })
 
   test('typing "``` " inside a blockquote is left as literal text', () => {

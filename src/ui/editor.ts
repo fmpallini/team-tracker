@@ -564,8 +564,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function formatBlockTag(tag: 'h1' | 'h2' | 'h3' | 'div' | 'p'): void {
     // Block formatting is inert inside a blockquote or a fenced code block —
     // it can't round-trip through `> ` / ``` (see blockquoteAtCaret,
-    // preAtCaret). Same no-op stance as a heading on a nested-list item.
+    // preAtCaret).
     if (blockquoteAtCaret() || preAtCaret()) return
+    // Also a no-op on a NESTED list item: a heading there never round-trips
+    // (renderListMd flattens it), and Chromium's formatBlock splits the
+    // sub-list in two around the item and strands the caret on a sibling
+    // <ul> — flattenNestedHeadings then removes the heading but not the
+    // structural damage. A heading on a TOP-level list is left to the
+    // browser (it wraps the whole list — the "still works" case).
+    const sel = window.getSelection()
+    const caretNode = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
+    const li = caretNode ? closestLi(caretNode) : null
+    if (li && listItemDepth(li) > 0) return
     editorEl.focus()
     document.execCommand('formatBlock', false, `<${tag}>`)
     flattenNestedHeadings(editorEl)
@@ -1539,6 +1549,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (ctx && ctx.block.parentElement === editorEl && ctx.caretOffset === ctx.text.length && /^-{3,}$/.test(ctx.text)) {
         e.preventDefault()
         convertBlockToHr(ctx.block)
+        scheduleChange()
+        return
+      }
+      // ``` on its own line + Enter opens a code block too — the
+      // GitHub/Slack/Discord gesture, alongside the "``` " prefix. Only
+      // when the whole line is backticks and it's a plain top-level block.
+      if (ctx && ctx.block.parentElement === editorEl && !blockquoteAtCaret() && /^`{3,}$/.test(ctx.text.trim())) {
+        e.preventDefault()
+        convertBlockToPre(ctx.block)
         scheduleChange()
         return
       }
