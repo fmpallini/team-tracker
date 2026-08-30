@@ -360,6 +360,51 @@ describe('@ trigger', () => {
     editor.destroy()
   })
 
+  test('typing @ inside a fenced code block does NOT fire onAtTrigger', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<pre>hi @</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(hooks.atRanges.length).toBe(0)
+    editor.destroy()
+  })
+
+  test('the @ toolbar button with the caret in a fenced code block inserts nothing', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<pre>code</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const atBtn = Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-toolbar button'))
+      .find((b) => b.title === t('en-US', 'editor_insert_ref_title'))!
+    atBtn.click()
+
+    expect(editorEl.querySelector('pre')!.textContent).toBe('code')
+    expect(hooks.atRanges.length).toBe(0)
+    editor.destroy()
+  })
+
   // Regression: contenteditable's native "select all + delete" can leave
   // editorEl with zero element children — no wrapping <div>/<p> at all,
   // unlike a freshly loaded note (setMd always leaves at least one block,
@@ -1542,7 +1587,6 @@ describe('toolbar', () => {
       t('en-US', 'editor_italic_title'),
       t('en-US', 'editor_underline_title'),
       t('en-US', 'editor_strike_title'),
-      t('en-US', 'editor_codeblock_title'),
       t('en-US', 'editor_ul_title'),
       t('en-US', 'editor_ol_title'),
       t('en-US', 'editor_h1_title'),
@@ -1550,11 +1594,12 @@ describe('toolbar', () => {
       t('en-US', 'editor_h3_title'),
       t('en-US', 'editor_paragraph_title'),
       t('en-US', 'editor_quote_title'),
+      t('en-US', 'editor_codeblock_title'),
       t('en-US', 'editor_hr_title'),
+      t('en-US', 'editor_link_title'),
       t('en-US', 'editor_clear_format_title'),
       t('en-US', 'editor_templates_title'),
       t('en-US', 'editor_insert_ref_title'),
-      t('en-US', 'editor_link_title'),
       t('en-US', 'editor_copy_options_title'),
       t('en-US', 'editor_help_title'),
     ])
@@ -2162,6 +2207,35 @@ describe('code block editing', () => {
 
     expect(e.defaultPrevented).toBe(true)
     expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+6 is the digit-row backup for the code-block chord', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const e = dispatchKey(editorEl, { key: '6', code: 'Digit6', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+6 with the caret already in a <pre> unwraps it', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>quoted</pre>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('pre')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: '6', code: 'Digit6', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).toBeNull()
     editor.destroy()
   })
 

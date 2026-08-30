@@ -825,7 +825,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * The { } button / Ctrl+Shift+E / typed "``` ". Toggles a fenced code
+   * The { } button / Ctrl+Shift+E / Ctrl+Shift+6 / typed "``` ". Toggles a fenced code
    * block: caret already inside one → unwrap it (one `<div>` per line);
    * an empty top-level line → convert it directly; otherwise wrap the
    * line / selection via formatBlock('<pre>') and flatten any inner
@@ -1111,6 +1111,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function checkTriggers(): void {
+    // A fenced code block is literal text only — neither the @ reference
+    // picker nor the / template picker may open inside one (same rule that
+    // makes every formatting chord inert there; see preAtCaret).
+    if (preAtCaret()) return
     const ctx = currentBlockAndOffset()
     if (!ctx) return
     const { text, caretOffset } = ctx
@@ -1170,8 +1174,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * execCommand('insertText', ...) path real typing takes, so the native
    * 'input' event this fires drives checkTriggers() to open the @
    * autocomplete exactly as if the user had typed it themselves.
+   *
+   * Inert with the caret in a fenced code block — literal text only, so a
+   * ref chip can't live there (checkTriggers bails the same way, but this
+   * also skips inserting a stray bare "@").
    */
   function insertAtTrigger(): void {
+    if (preAtCaret()) return
     caretOrEndRange()
     exec('insertText', '@')
   }
@@ -1642,10 +1651,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
 
-    // Ctrl+Shift+E — fenced code block. Unbound in Chrome/Edge/Firefox on
-    // Windows. Placed before the code-block guard below so it still fires to
-    // EXIT a block. The { } button and typed "``` " are the alternatives.
-    if (matchKey(e, 'e')) { e.preventDefault(); toggleCodeBlock(); return }
+    // Fenced code block: Ctrl+Shift+E (Discord's chord, unbound in
+    // Chrome/Edge/Firefox on Windows) is primary; Ctrl+Shift+6 is the
+    // digit-row backup for the Windows keyboard drivers that swallow the
+    // letter chord before it reaches the page — same reason strike takes 5
+    // beside X, and it sits with the Ctrl+Shift+5/7/8/9 formatting digits.
+    // `e.key === '6'` also matches in case the driver reports the character
+    // but not `e.code`. Placed before the code-block guard below so either
+    // still fires to EXIT a block. The { } button and typed "``` " are the
+    // mouse/typing alternatives.
+    if (matchKey(e, 'e') || e.code === 'Digit6' || e.key === '6') { e.preventDefault(); toggleCodeBlock(); return }
     // Every other formatting chord is inert inside a fenced code block.
     if (preAtCaret()) {
       if (e.code === 'KeyX' || e.code === 'Digit5' || e.code === 'Digit8' || e.code === 'Digit7' ||
@@ -1888,7 +1903,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
-    toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton('•', t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
@@ -1896,12 +1910,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
     toolbarButton('❝', t(locale, 'editor_quote_title'), () => toggleBlockquote()),
+    toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton('—', t(locale, 'editor_hr_title'), () => insertHr()),
+    toolbarButton('🔗', t(locale, 'editor_link_title'), () => { void insertLink() }),
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
+    el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
-    toolbarButton('🔗', t(locale, 'editor_link_title'), () => { void insertLink() }),
-    el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )
