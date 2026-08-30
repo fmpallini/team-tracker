@@ -94,13 +94,13 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote'
   prefixLen: number
 }
 
 /* eslint-disable no-irregular-whitespace -- the character classes below intentionally contain a literal U+00A0 non-breaking space alongside the regular space; see the doc comment for why. */
 /**
- * Detects a markdown block-prefix (`# `, `- `, `1. `, ...) that makes up the
+ * Detects a markdown block-prefix (`# `, `- `, `1. `, `> `, ...) that makes up the
  * ENTIRE current block text. The trailing space is matched as `[  ]`,
  * not a literal space: real Chrome substitutes a non-breaking space for
  * whitespace at the edge of a text node (to stop HTML's normal whitespace
@@ -119,6 +119,8 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
 
   m = /^(-{3,})[  ]$/.exec(text)
   if (m) return { type: 'hr', prefixLen: m[0]!.length }
+
+  if (/^>[  ]$/.test(text)) return { type: 'blockquote', prefixLen: 2 }
 
   return null
 }
@@ -279,6 +281,83 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return null
   }
 
+  /**
+   * The `<blockquote>` the caret currently sits in, or null. Block-level
+   * formatting (headings, lists, rules, a nested quote) is suppressed inside
+   * one: a flat blockquote serializes as `> ` + inline content only
+   * (core/markdown.ts), so anything block-level applied in there is silently
+   * lost on the next reload. Same rationale as flattenNestedHeadings dropping
+   * a heading inside an `<li>`.
+   */
+  function blockquoteAtCaret(): HTMLElement | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    const start = sel.getRangeAt(0).startContainer
+    const host = start instanceof HTMLElement ? start : start.parentElement
+    const bq = host?.closest('blockquote') as HTMLElement | null
+    return bq && editorEl.contains(bq) ? bq : null
+  }
+
+  /**
+   * The node immediately before a collapsed caret, or null when the caret is
+   * at the very start of its container. A text node with characters before
+   * the caret returns itself — there IS content on this line, so callers
+   * testing "is the current line empty" see a non-`<br>`, non-null result.
+   */
+  function nodeBeforeCaret(range: Range): Node | null {
+    const { startContainer, startOffset } = range
+    if (startContainer.nodeType === Node.TEXT_NODE) {
+      return startOffset > 0 ? startContainer : startContainer.previousSibling
+    }
+    return startContainer.childNodes[startOffset - 1] ?? null
+  }
+
+  /**
+   * True when a plain Enter in `bq` should mean "leave the quote": the caret
+   * sits on an empty line (nothing before it on that line but a `<br>` or the
+   * quote's own edge) AND that line is the quote's last (nothing but blank /
+   * `<br>` follows). Slack behaves the same. An empty line in the MIDDLE of a
+   * quote just takes a `<br>` like any other Enter.
+   */
+  function caretAtBlockquoteEnd(bq: HTMLElement): boolean {
+    const sel = window.getSelection()
+    if (!sel || !sel.isCollapsed || sel.rangeCount === 0) return false
+    const caret = sel.getRangeAt(0)
+    if (caret.startContainer !== bq && !bq.contains(caret.startContainer)) return false
+    const toEnd = document.createRange()
+    toEnd.setStart(caret.startContainer, caret.startOffset)
+    toEnd.setEnd(bq, bq.childNodes.length)
+    if (toEnd.toString().replace(/\u00a0/g, ' ').trim() !== '') return false
+    const before = nodeBeforeCaret(caret)
+    return before === null || (before instanceof HTMLElement && before.tagName === 'BR')
+  }
+
+  /**
+   * Drops the empty trailing line the caret is on and moves the caret out of
+   * `bq` into a fresh empty `<div>` right after it — or in place of it when
+   * the quote would be left with no content at all.
+   */
+  function exitBlockquote(bq: HTMLElement): void {
+    const sel = window.getSelection()
+    const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    const opener = caret ? nodeBeforeCaret(caret) : null
+    const cut = document.createRange()
+    if (opener && opener.parentNode === bq) cut.setStartBefore(opener)
+    else cut.setStart(bq, 0)
+    cut.setEnd(bq, bq.childNodes.length)
+    cut.deleteContents()
+
+    const div = document.createElement('div')
+    div.appendChild(document.createElement('br'))
+    if ((bq.textContent ?? '').trim() === '') bq.replaceWith(div)
+    else bq.after(div)
+
+    const r = document.createRange()
+    r.selectNodeContents(div)
+    r.collapse(true)
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
   function listItemDepth(li: HTMLElement): number {
     let depth = 0
     let n: HTMLElement | null = li.parentElement
@@ -418,6 +497,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.focus()
     if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
     else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
+    else if (type === 'blockquote') toggleBlockquote()
     else { document.execCommand('formatBlock', false, `<${type}>`); flattenNestedHeadings(editorEl) }
   }
 
@@ -433,10 +513,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * heading left inside an <li>.
    */
   function formatBlockTag(tag: 'h1' | 'h2' | 'h3' | 'div' | 'p'): void {
+    // Block formatting is inert inside a blockquote — it can't round-trip
+    // through `> ` (see blockquoteAtCaret). Same no-op stance as a heading on
+    // a nested-list item.
+    if (blockquoteAtCaret()) return
     editorEl.focus()
     document.execCommand('formatBlock', false, `<${tag}>`)
     flattenNestedHeadings(editorEl)
     scheduleChange()
+  }
+
+  /**
+   * Ctrl+Shift+7/8 and the toolbar •/1. buttons. Also a no-op inside a
+   * blockquote, for the same reason headings are.
+   */
+  function insertList(kind: 'ul' | 'ol'): void {
+    if (blockquoteAtCaret()) return
+    exec(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList')
   }
 
   /**
@@ -477,16 +570,29 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * The ❝ button / Ctrl+Shift+9. Chromium's formatBlock can nest a fresh
-   * <blockquote> inside an existing one on a repeat press or multi-line
-   * selection; this app's blockquote is flat, so flattenNestedBlockquotes
-   * collapses that right after — same pattern as formatBlockTag + headings.
-   * normalizeBlockquoteChildren then flattens any inner <div>/<p> lines
-   * (also a multi-line-selection artefact) to <br>-separated inline content
-   * so htmlToMd keeps the line breaks.
+   * The ❝ button / Ctrl+Shift+9 / typed `> `. Toggles: when the caret is
+   * already inside a blockquote it unwraps it (same primitive the 🧹 button
+   * uses), matching Slack's Ctrl+Shift+9. Otherwise it wraps the block —
+   * Chromium's formatBlock can nest a fresh <blockquote> inside an existing
+   * one on a repeat press or multi-line selection; this app's blockquote is
+   * flat, so flattenNestedBlockquotes collapses that right after (same
+   * pattern as formatBlockTag + headings). normalizeBlockquoteChildren then
+   * flattens any inner <div>/<p> lines (also a multi-line-selection
+   * artefact) to <br>-separated inline content so htmlToMd keeps the breaks.
+   *
+   * The selection is snapshotted before editorEl.focus() because jsdom
+   * collapses the live selection on the focus transition (see clearFormatting).
    */
   function toggleBlockquote(): void {
+    const sel = window.getSelection()
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+    const bq = blockquoteAtCaret()
     editorEl.focus()
+    if (bq && range) {
+      demoteBlockquotes(editorEl, range)
+      scheduleChange()
+      return
+    }
     document.execCommand('formatBlock', false, '<blockquote>')
     flattenNestedBlockquotes(editorEl)
     normalizeBlockquoteChildren(editorEl)
@@ -602,6 +708,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * stray blank markdown line (`---\n\ntext`).
    */
   function insertHr(): void {
+    if (blockquoteAtCaret()) return
     editorEl.focus()
     const ctx = currentBlockAndOffset()
     const ref = ctx && ctx.block.parentElement === editorEl ? ctx.block : editorEl.lastElementChild
@@ -650,6 +757,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (caretOffset === text.length) {
       const blockMatch = detectBlockPrefix(text)
       if (blockMatch) {
+        const inQuote = blockquoteAtCaret() !== null
+        if (blockMatch.type === 'blockquote') {
+          // `> ` only ever OPENS a quote — typed inside one it stays literal
+          // (a nested blockquote can't round-trip through `> `). Strip the
+          // prefix and let toggleBlockquote wrap the block, same shape as the
+          // "- "/"# " paths below.
+          if (!inQuote && block.parentElement === editorEl) {
+            const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
+            range.deleteContents()
+            const sel = window.getSelection()
+            if (sel) { sel.removeAllRanges(); sel.addRange(range) }
+            toggleBlockquote()
+          }
+          return
+        }
+        // Headings / lists / rules don't survive a `> ` round trip, so a
+        // block prefix typed inside a quote is left as literal text.
+        if (inQuote) return
         if (blockMatch.type === 'hr') {
           // Unlike ul/ol (which fall through to the generic prefix-strip +
           // applyBlockFormat path below when not top-level, since that path
@@ -683,14 +808,20 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // rejected scheme like javascript:alert(1) is consumed whole with no
     // orphan ')' left behind. Text-only spans only (bail if the range holds
     // elements), same rule replaceInlineMatch uses.
+    //
+    // The destination runs through normalizeLinkUrl first — the same
+    // scheme-prepend the link dialog uses — so a bare host like
+    // `[docs](example.com)` converts to `https://example.com` instead of
+    // failing safeHref and staying as literal text.
     const linkM = /\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)$/.exec(text.slice(0, caretOffset))
-    if (linkM && safeHref(linkM[2]!)) {
+    const linkUrl = linkM ? normalizeLinkUrl(linkM[2]!) : ''
+    if (linkM && safeHref(linkUrl)) {
       const start = caretOffset - linkM[0]!.length
       const range = rangeForTextOffsets(block, start, caretOffset)
       if (!range.cloneContents().querySelector('*')) {
         range.deleteContents()
         const tmp = document.createElement('div')
-        tmp.innerHTML = mdToHtml(linkM[0]!, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+        tmp.innerHTML = mdToHtml(`[${linkM[1]!}](${linkUrl})`, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
         // mdToHtml wraps a bare line in <div>…</div>; lift its children out.
         const frag = document.createDocumentFragment()
         const wrapper = tmp.firstElementChild ?? tmp
@@ -909,8 +1040,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * markdown into the document:
    *
    * - caret inside an existing link  → modal pre-filled with that link's
-   *   text and href; OK replaces the whole `<a>` (its node is selected
-   *   before `insertText`).
+   *   text and href; OK swaps the whole `<a>` node for a freshly rendered
+   *   one. (Selecting the node + `insertText` can't be used here: Chromium
+   *   keeps the old `<a>` wrapper and drops the literal `[text](url)` string
+   *   inside it, which then serializes as `[[text](url)](url)`.)
    * - text selected                  → text field pre-filled with it; OK
    *   replaces the selection.
    * - nothing selected               → both fields empty; OK inserts at the
@@ -941,20 +1074,31 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!safeHref(url)) return // defensive — the modal already gates this
     const text = res.text.replace(/\s+/g, ' ').trim()
 
+    const md = `[${text || url}](${url})`
+
     editorEl.focus()
     const sel2 = window.getSelection()
     if (anchor && editorEl.contains(anchor)) {
-      const r = document.createRange()
-      r.selectNode(anchor)
-      sel2?.removeAllRanges()
-      sel2?.addRange(r)
-    } else if (sel2 && savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
+      // Swap the <a> node directly — see the doc comment for why insertText
+      // over a selectNode(anchor) selection can't do this cleanly.
+      const tmp = document.createElement('div')
+      tmp.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+      const wrapper = tmp.firstElementChild ?? tmp // mdToHtml wraps a bare line in <div>
+      const frag = document.createDocumentFragment()
+      while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+      const lastNode = frag.lastChild
+      anchor.replaceWith(frag)
+      if (lastNode) setCaretAfter(lastNode)
+      scheduleChange()
+      return
+    }
+    if (sel2 && savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
       sel2.removeAllRanges()
       sel2.addRange(savedRange)
     } else {
       caretOrEndRange()
     }
-    exec('insertText', `[${text || url}](${url})`)
+    exec('insertText', md)
   }
 
   /**
@@ -1175,6 +1319,19 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      // Inside a blockquote, take Enter over from the browser: its native
+      // insertParagraph splits the <blockquote> into two siblings, so the
+      // left border visibly breaks (it re-merges on reload, but looks broken
+      // while editing). Insert a <br> instead — one element, unbroken bar,
+      // same as Shift+Enter. Exception: a second Enter on an empty final line
+      // leaves the quote entirely (Slack does this too).
+      const bq = blockquoteAtCaret()
+      if (bq) {
+        e.preventDefault()
+        if (caretAtBlockquoteEnd(bq)) { exitBlockquote(bq); scheduleChange() }
+        else exec('insertLineBreak')
+        return
+      }
       const ctx = currentBlockAndOffset()
       if (ctx && ctx.block.parentElement === editorEl && ctx.caretOffset === ctx.text.length && /^-{3,}$/.test(ctx.text)) {
         e.preventDefault()
@@ -1236,9 +1393,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // and matched physically (e.code) rides over layout differences. Toolbar S
     // button and `~~text~~` markdown are the mouse/typing alternatives.
     if (e.code === 'KeyX' || e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
-    if (e.code === 'Digit8') { e.preventDefault(); exec('insertUnorderedList'); return }
-    if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
-    if (e.code === 'Digit9') { e.preventDefault(); toggleBlockquote(); return }
+    if (e.code === 'Digit8') { e.preventDefault(); insertList('ul'); return }
+    if (e.code === 'Digit7') { e.preventDefault(); insertList('ol'); return }
+    // Blockquote: Ctrl+Shift+9 is the cross-app convention (Slack), but the
+    // digit-row chord is exactly the kind some Windows keyboard drivers eat
+    // before it reaches the page (same reason Ctrl+Shift+5 backs up
+    // Ctrl+Shift+X for strikethrough). Ctrl+Shift+Q — Typora's blockquote
+    // chord, unbound in Chrome/Edge/Firefox on Windows — is the fallback that
+    // lands; `e.key === '9'`/`'('` also match in case the driver reports the
+    // character but not `e.code`. Toolbar ❝ and typed `> ` are the
+    // mouse/typing alternatives.
+    if (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') {
+      e.preventDefault()
+      toggleBlockquote()
+      return
+    }
   }
 
   /**
@@ -1434,8 +1603,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
     toolbarButton('<>', t(locale, 'editor_code_title'), () => toggleInlineCode()),
-    toolbarButton('•', t(locale, 'editor_ul_title'), () => exec('insertUnorderedList')),
-    toolbarButton('1.', t(locale, 'editor_ol_title'), () => exec('insertOrderedList')),
+    toolbarButton('•', t(locale, 'editor_ul_title'), () => insertList('ul')),
+    toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),

@@ -14,7 +14,7 @@ const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Shift+X / Ctrl+Shift+5', 'help_shortcut_strike'],
   ['Ctrl+Shift+8', 'help_shortcut_ul'],
   ['Ctrl+Shift+7', 'help_shortcut_ol'],
-  ['Ctrl+Shift+9', 'help_shortcut_quote'],
+  ['Ctrl+Shift+9 / Ctrl+Shift+Q', 'help_shortcut_quote'],
   ['Ctrl+K', 'help_shortcut_link'],
   ['Ctrl+clique / clique do meio', 'help_shortcut_open_link'],
   ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'help_shortcut_heading'],
