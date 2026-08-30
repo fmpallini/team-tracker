@@ -1747,14 +1747,39 @@ describe('blockquote editing', () => {
 
   test('typing "> " at the start of a top-level line turns it into a blockquote', () => {
     const { editor, editorEl } = mount()
-    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
     editorEl.innerHTML = '<div>> </div>'
     const textNode = editorEl.firstChild!.firstChild as Text
     caretIn(textNode, textNode.textContent!.length)
 
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    const bq = editorEl.querySelector('blockquote')!
+    expect(bq).not.toBeNull()
+    expect(bq.textContent).toBe('') // "> " prefix consumed, empty line ready for typing
+    expect(bq.innerHTML).toBe('<br>')
+    editor.destroy()
+  })
+
+  // Regression: "> " autoformat used to strip the prefix and then call
+  // execCommand('formatBlock', '<blockquote>') against a collapsed caret in
+  // the now-empty <div>. Chromium's formatBlock skips an empty block and
+  // wraps the NEXT one instead — so the following line got pulled into the
+  // quote and a stray empty <div> was left where the caret was.
+  test('typing "> " does not swallow the following line into the blockquote', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>> </div><div>next line</div><div>third line</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const bq = editorEl.querySelector('blockquote')!
+    expect(bq.textContent).toBe('')
+    expect(bq.nextElementSibling!.textContent).toBe('next line')
+    expect(bq.nextElementSibling!.nextElementSibling!.textContent).toBe('third line')
+    expect(editorEl.querySelectorAll('div')).toHaveLength(2) // no stray empty <div>
     editor.destroy()
   })
 
@@ -1836,6 +1861,33 @@ describe('blockquote editing', () => {
 
     expect(editorEl.querySelector('blockquote')).toBeNull()
     expect(editorEl.firstElementChild!.tagName).toBe('DIV')
+    editor.destroy()
+  })
+
+  // Regression: exit-Enter on a blockquote whose last line carried inline
+  // formatting used to delete the whole quote. `insertLineBreak` at the end
+  // of a bold run leaves the trailing <br> INSIDE the <strong>, so its
+  // parentNode is the <strong>, not the blockquote — exitFlatBlock's old
+  // `opener.parentNode === block` guard failed and the cut fell back to
+  // deleting from the block's start.
+  test('Enter to leave a blockquote whose last line is bold keeps the quote content', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    // DOM as it stands after one insertLineBreak past "bold": <br> nested in <strong>
+    editorEl.innerHTML = '<blockquote>a<br>b<br><strong>bold<br></strong></blockquote>'
+    const strong = editorEl.querySelector('strong')!
+    caretIn(strong, 2) // after "bold" text and the nested <br>, on the empty last line
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const quote = editorEl.querySelector('blockquote')!
+    expect(quote).not.toBeNull()
+    expect(quote.textContent).toBe('abbold') // nothing wiped
+    expect(quote.querySelector('strong')!.textContent).toBe('bold')
+    const after = quote.nextElementSibling as HTMLElement
+    expect(after.tagName).toBe('DIV')
+    expect(editor.getMd()).toBe('> a\n> b\n> **bold**\n')
     editor.destroy()
   })
 

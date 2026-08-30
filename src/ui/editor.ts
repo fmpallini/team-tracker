@@ -393,7 +393,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
     const opener = caret ? nodeBeforeCaret(caret) : null
     const cut = document.createRange()
-    if (opener && opener.parentNode === block) cut.setStartBefore(opener)
+    // `opener` is the trailing empty line's leading `<br>` (caretAtFlatBlockEnd
+    // guaranteed it's a `<br>` or null). It may be nested inside an inline
+    // wrapper rather than a direct child of `block` — e.g. `insertLineBreak`
+    // at the end of a bold run leaves `<strong>text<br></strong>`. setStartBefore
+    // still cuts from that `<br>` regardless of depth; only a null opener (the
+    // whole block is the empty line) starts the cut at the block's own edge.
+    // (An earlier `opener.parentNode === block` guard here fell through to
+    // setStart(block, 0) for the nested case and deleteContents wiped the
+    // entire block.)
+    if (opener) cut.setStartBefore(opener)
     else cut.setStart(block, 0)
     cut.setEnd(block, block.childNodes.length)
     cut.deleteContents()
@@ -696,6 +705,28 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
+   * Replaces an emptied-out top-level block with an empty `<blockquote>` and
+   * drops the caret inside it. The typed "> " autoformat path — mirrors
+   * convertBlockToPre / convertBlockToList / convertBlockToHr, and for the
+   * same reason: `execCommand('formatBlock', '<blockquote>')` against a
+   * collapsed caret in an empty block skips that block and wraps the NEXT
+   * one instead, pulling the following line into the quote and leaving a
+   * stray empty `<div>` behind. detectBlockPrefix has already checked the
+   * whole line is exactly "> ", so the block holds nothing else to keep.
+   */
+  function convertBlockToBlockquote(block: HTMLElement): void {
+    editorEl.focus()
+    const bq = document.createElement('blockquote')
+    bq.appendChild(document.createElement('br'))
+    block.replaceWith(bq)
+    const r = document.createRange()
+    r.selectNodeContents(bq)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
+  /**
    * Normalizes every `<pre>` under `root` to hold plain text with `<br>`
    * line breaks — the shape `mdToHtml` emits and `preLines` (core/markdown.ts)
    * reads. Chromium's `execCommand('formatBlock', '<pre>')` on a multi-line
@@ -953,16 +984,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         const inQuote = blockquoteAtCaret() !== null
         if (blockMatch.type === 'blockquote') {
           // `> ` only ever OPENS a quote — typed inside one it stays literal
-          // (a nested blockquote can't round-trip through `> `). Strip the
-          // prefix and let toggleBlockquote wrap the block, same shape as the
-          // "- "/"# " paths below.
-          if (!inQuote && block.parentElement === editorEl) {
-            const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
-            range.deleteContents()
-            const sel = window.getSelection()
-            if (sel) { sel.removeAllRanges(); sel.addRange(range) }
-            toggleBlockquote()
-          }
+          // (a nested blockquote can't round-trip through `> `). Build the
+          // <blockquote> directly, same as the "``` "/"- "/"--- " paths
+          // below (convertBlockToBlockquote's header explains why not
+          // formatBlock here).
+          if (!inQuote && block.parentElement === editorEl) convertBlockToBlockquote(block)
           return
         }
         if (blockMatch.type === 'codeblock') {
