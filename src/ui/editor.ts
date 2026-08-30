@@ -566,16 +566,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // it can't round-trip through `> ` / ``` (see blockquoteAtCaret,
     // preAtCaret).
     if (blockquoteAtCaret() || preAtCaret()) return
-    // Also a no-op on a NESTED list item: a heading there never round-trips
-    // (renderListMd flattens it), and Chromium's formatBlock splits the
-    // sub-list in two around the item and strands the caret on a sibling
-    // <ul> — flattenNestedHeadings then removes the heading but not the
-    // structural damage. A heading on a TOP-level list is left to the
-    // browser (it wraps the whole list — the "still works" case).
+    // Also a no-op on ANY list item. A bullet and a heading are different
+    // block types: no representation of "heading on a list item" survives a
+    // save (renderListMd flattens any <hN> in an <li> to plain text), and
+    // Chromium's formatBlock either splits a nested sub-list around the item
+    // or wraps the whole list in the heading. Take the line out of the list
+    // first (Shift+Tab) to make it a heading.
     const sel = window.getSelection()
     const caretNode = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
-    const li = caretNode ? closestLi(caretNode) : null
-    if (li && listItemDepth(li) > 0) return
+    if (caretNode && closestLi(caretNode)) return
     editorEl.focus()
     document.execCommand('formatBlock', false, `<${tag}>`)
     flattenNestedHeadings(editorEl)
@@ -995,6 +994,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           convertBlockToList(block, blockMatch.type)
           return
         }
+        // A heading can't coexist with a list bullet — no representation
+        // survives the save (renderListMd flattens any <hN> in an <li> to
+        // plain text). Leave the typed "# " as literal text inside a list
+        // item; formatBlockTag guards the buttons / Ctrl+1..3 the same way.
+        if ((blockMatch.type === 'h1' || blockMatch.type === 'h2' || blockMatch.type === 'h3') && closestLi(block)) return
         const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
         range.deleteContents()
         const sel = window.getSelection()

@@ -837,7 +837,7 @@ describe('list nesting via Tab/Shift+Tab', () => {
   })
 })
 
-describe('heading on a nested list item', () => {
+describe('headings do not apply to list items', () => {
   function caretInto(node: Node): void {
     const range = document.createRange()
     range.selectNodeContents(node)
@@ -847,22 +847,25 @@ describe('heading on a nested list item', () => {
     sel.addRange(range)
   }
 
-  test('Ctrl+1 on a nested list item is a no-op — no formatBlock, structure intact', () => {
+  test.each([
+    ['a nested', '- parent\n  - child', 1],
+    ['a top-level', '- only', 0],
+  ])('Ctrl+1 on %s list item is a no-op — no formatBlock, structure intact', (_label, md, liIndex) => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
-    editor.setMd('- parent\n  - child')
+    editor.setMd(md)
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
-    caretInto(editorEl.querySelectorAll('li')[1]!) // the nested "child"
+    caretInto(editorEl.querySelectorAll('li')[liIndex]!)
 
     dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
 
     expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
-    expect(editor.getMd()).toBe('- parent\n  - child')
+    expect(editor.getMd()).toBe(md)
     editor.destroy()
   })
 
-  test('the H1 toolbar button on a nested list item is a no-op too', () => {
+  test('the H1 toolbar button on a list item is a no-op too', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('- parent\n  - child')
@@ -880,13 +883,33 @@ describe('heading on a nested list item', () => {
     editor.destroy()
   })
 
-  test('Ctrl+1 on a TOP-level list item still runs formatBlock (unchanged)', () => {
+  test('typing "# " inside a list item leaves the literal text, no heading', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
-    editor.setMd('- only')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<ul><li># </li></ul>'
+    const li = editorEl.querySelector('li')!
+    caretInto(li)
+    // place caret at end of the "# " text
+    const tn = li.firstChild as Text
+    const r = document.createRange(); r.setStart(tn, tn.textContent!.length); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('h1')).toBeNull()
+    expect(editorEl.querySelector('li')!.textContent).toBe('# ')
+    editor.destroy()
+  })
+
+  test('Ctrl+1 on a plain (non-list) line still applies a heading', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('just text')
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
-    caretInto(editorEl.querySelector('li')!)
+    caretInto(editorEl.firstChild!)
 
     dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
 
