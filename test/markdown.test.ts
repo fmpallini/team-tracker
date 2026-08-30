@@ -1040,6 +1040,64 @@ describe('blockquote', () => {
   })
 })
 
+describe('fenced code block', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('``` fences render <pre> and round-trip', () => {
+    expect(mdToHtml('```\nline one\nline two\n```')).toBe('<pre>line one\nline two</pre>')
+    expect(roundTrip('```\nline one\nline two\n```')).toBe('```\nline one\nline two\n```')
+  })
+  test('content is literal — inner markdown / block prefixes are NOT parsed', () => {
+    const html = mdToHtml('```\n# not a heading\n- not a list\n> not a quote\n**not bold**\n```')
+    expect(html).toBe('<pre># not a heading\n- not a list\n&gt; not a quote\n**not bold**</pre>')
+    expect(html).not.toContain('<h1>')
+    expect(html).not.toContain('<li>')
+    expect(html).not.toContain('<blockquote>')
+    expect(html).not.toContain('<strong>')
+  })
+  test('< & > in code are escaped, not live markup', () => {
+    const html = mdToHtml('```\n<img src=x onerror=y> a & b\n```')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('img')).toBeNull()
+    expect(probe.querySelector('pre')!.textContent).toBe('<img src=x onerror=y> a & b')
+    expect(roundTrip('```\n<img src=x onerror=y> a & b\n```')).toBe('```\n<img src=x onerror=y> a & b\n```')
+  })
+  test('an unclosed fence still flushes at end of input', () => {
+    expect(mdToHtml('```\nstranded')).toBe('<pre>stranded</pre>')
+  })
+  test('an empty code block round-trips', () => {
+    expect(mdToHtml('```\n```')).toBe('<pre><br></pre>')
+    expect(roundTrip('```\n```')).toBe('```\n```')
+  })
+  test('a fence closes an open list first', () => {
+    expect(mdToHtml('- item\n```\ncode\n```')).toBe('<ul><li>item</li></ul><pre>code</pre>')
+  })
+  test('htmlToMd serializes an edited (<br>-joined) <pre> back to ``` fences', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<pre>a<br>b<br>c</pre>'
+    expect(htmlToMd(container)).toBe('```\na\nb\nc\n```')
+  })
+  test('htmlToMd flattens a <div>-lined <pre> (Chromium formatBlock artefact)', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<pre><div>a</div><div>b</div></pre>'
+    expect(htmlToMd(container)).toBe('```\na\nb\n```')
+  })
+  test('htmlToPlainText drops the fences, keeps the code lines', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('```\na\nb\n```')
+    expect(htmlToPlainText(div)).toBe('a\nb')
+  })
+  test('idempotent through two cycles', () => {
+    const md = '```\nx = 1\ny = 2\n```'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+  test('text on the opening fence line (a language tag) is discarded', () => {
+    expect(mdToHtml('```js\nconst a = 1\n```')).toBe('<pre>const a = 1</pre>')
+  })
+})
+
 describe('flattenNestedBlockquotes', () => {
   test('unwraps a blockquote nested inside another', () => {
     const root = document.createElement('div')

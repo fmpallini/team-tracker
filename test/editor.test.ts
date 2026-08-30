@@ -1517,6 +1517,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_underline_title'),
       t('en-US', 'editor_strike_title'),
       t('en-US', 'editor_code_title'),
+      t('en-US', 'editor_codeblock_title'),
       t('en-US', 'editor_ul_title'),
       t('en-US', 'editor_ol_title'),
       t('en-US', 'editor_h1_title'),
@@ -1902,6 +1903,247 @@ describe('blockquote editing', () => {
   })
 })
 
+describe('code block editing', () => {
+  function mount(): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const range = document.createRange()
+    range.setStart(node, offset)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('typing "``` " at the start of a top-level line turns it into a <pre>', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>``` </div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  test('typing "``` " inside a blockquote is left as literal text', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>``` </blockquote>'
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq.firstChild as Text, (bq.firstChild as Text).textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe('``` ')
+    editor.destroy()
+  })
+
+  test.each([
+    ['# ', 'h1'],
+    ['- ', 'ul'],
+    ['--- ', 'hr'],
+    ['> ', 'blockquote'],
+  ])('typing %o inside a <pre> is a no-op (a code block is literal text)', (prefix, tag) => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = `<pre>${prefix}</pre>`
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre.firstChild as Text, (pre.firstChild as Text).textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector(tag)).toBeNull()
+    expect(editorEl.querySelector('pre')!.textContent).toBe(prefix)
+    editor.destroy()
+  })
+
+  test('typed `x` inside a <pre> stays literal — no <code> wrap', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>run `x`</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('code')).toBeNull()
+    editor.destroy()
+  })
+
+  test('plain Enter inside a <pre> inserts a line break, not a paragraph split', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>alpha</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('insertLineBreak', false, undefined)
+    expect(execSpy).not.toHaveBeenCalledWith('insertParagraph', expect.anything(), expect.anything())
+    expect(editorEl.querySelectorAll('pre')).toHaveLength(1)
+    editor.destroy()
+  })
+
+  test('Enter on an empty final line leaves the <pre> for a fresh paragraph', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>code<br><br></pre>'
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre, 2) // after "code" and the first <br>, on the empty last line
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const block = editorEl.querySelector('pre')!
+    expect(block.textContent).toBe('code')
+    expect((block.nextElementSibling as HTMLElement).tagName).toBe('DIV')
+    expect(editor.getMd()).toBe('```\ncode\n```\n')
+    editor.destroy()
+  })
+
+  test('Enter on an otherwise-empty <pre> replaces it with a paragraph', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre><br></pre>'
+    caretIn(editorEl.querySelector('pre')!, 0)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.firstElementChild!.tagName).toBe('DIV')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E with the caret already in a <pre> unwraps it', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>quoted</pre>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('pre')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editor.getMd()).toBe('quoted')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E on an empty line creates a <pre>', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div><br></div>'
+    caretIn(editorEl.querySelector('div')!, 0)
+
+    dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E on a non-empty line runs formatBlock <pre>', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('Ctrl+B with the caret in a <pre> applies no bold', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>plain</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const e = dispatchKey(editorEl, { key: 'b', code: 'KeyB', ctrlKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).not.toHaveBeenCalledWith('bold', false, undefined)
+    editor.destroy()
+  })
+
+  test('Ctrl+1 with the caret in a <pre> applies no heading', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>plain</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    editor.destroy()
+  })
+
+  test('the { } toolbar button runs formatBlock <pre> on a plain line', () => {
+    const { editor } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_codeblock_title')
+    ) as HTMLButtonElement
+    btn.click()
+
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('paste inside a <pre> inserts plain text only, never markdown/HTML', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>x</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 1)
+
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, 'clipboardData', {
+      value: {
+        getData: (type: string) =>
+          type === 'text/html' ? '<strong>**bold**</strong>' : '**bold**',
+      },
+    })
+    editorEl.dispatchEvent(e)
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, '**bold**')
+    expect(execSpy).not.toHaveBeenCalledWith('insertHTML', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
+  test('typed `x` on a normal line auto-converts to <code>', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>run `x`</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const code = editorEl.querySelector('code')
+    expect(code).not.toBeNull()
+    expect(code!.textContent).toBe('x')
+    editor.destroy()
+  })
+})
+
 describe('inline auto-format guards', () => {
   test('skips auto-format when the matched span contains an embedded element (e.g. ref chip)', () => {
     const hooks = makeHooks()
@@ -2043,6 +2285,12 @@ describe('detectInlinePattern', () => {
   test('detects closed strike at caret', () => {
     expect(detectInlinePattern('a ~~b~~ ', 7)).toEqual({ start: 2, end: 7, marker: '~~', content: 'b' })
   })
+  test('detects closed inline code at caret', () => {
+    expect(detectInlinePattern('run `npm test`', 14)).toEqual({ start: 4, end: 14, marker: '`', content: 'npm test' })
+  })
+  test('inline code is not detected when unclosed', () => {
+    expect(detectInlinePattern('run `npm', 8)).toBeNull()
+  })
   test('returns null when unclosed', () => {
     expect(detectInlinePattern('a **b', 5)).toBeNull()
   })
@@ -2090,6 +2338,13 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('> ')).toEqual({ type: 'blockquote', prefixLen: 2 })
     expect(detectBlockPrefix('>' + nbsp)).toEqual({ type: 'blockquote', prefixLen: 2 })
     expect(detectBlockPrefix('> quoted')).toBeNull()
+  })
+  test('detects a "``` " code-block prefix, plain and NBSP variant', () => {
+    const nbsp = String.fromCharCode(0xa0)
+    expect(detectBlockPrefix('``` ')).toEqual({ type: 'codeblock', prefixLen: 4 })
+    expect(detectBlockPrefix('```' + nbsp)).toEqual({ type: 'codeblock', prefixLen: 4 })
+    expect(detectBlockPrefix('```js')).toBeNull()
+    expect(detectBlockPrefix('``')).toBeNull()
   })
 })
 

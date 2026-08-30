@@ -15,6 +15,7 @@ const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Shift+8', 'help_shortcut_ul'],
   ['Ctrl+Shift+7', 'help_shortcut_ol'],
   ['Ctrl+Shift+9 / Ctrl+Shift+Q', 'help_shortcut_quote'],
+  ['Ctrl+Shift+E', 'help_shortcut_codeblock'],
   ['Ctrl+K', 'help_shortcut_link'],
   ['Ctrl+clique / clique do meio', 'help_shortcut_open_link'],
   ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'help_shortcut_heading'],
@@ -30,6 +31,7 @@ const MD_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['1. texto', 'help_md_ol'],
   ['---', 'help_md_hr'],
   ['`código`', 'help_md_code'],
+  ['```', 'help_md_codeblock'],
   ['> texto', 'help_md_quote'],
   ['[texto](url)', 'help_md_link'],
 ]

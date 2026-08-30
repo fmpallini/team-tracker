@@ -240,7 +240,25 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     out.push(`<blockquote>${inner}</blockquote>`)
     bqBuf = null
   }
+  // Fenced code block: a ``` line opens a literal-text region that runs to
+  // the next ``` line (or end of input). Inner lines are NOT inline-parsed
+  // and NOT block-parsed — `> `, `- `, `**x**` inside a fence all stay
+  // verbatim, matching every mainstream markdown flavor. Any text after the
+  // opening ``` (a language tag like ```js) is discarded: this editor has
+  // no syntax highlighting to use it. htmlToMd emits the same bare fences.
+  let preBuf: string[] | null = null
+  const flushPre = () => {
+    if (preBuf === null) return
+    const body = preBuf.join('\n')
+    out.push(`<pre>${body === '' ? '<br>' : esc(body)}</pre>`)
+    preBuf = null
+  }
   for (const line of lines) {
+    if (preBuf !== null) {
+      if (/^```/.test(line)) { flushPre(); continue }
+      preBuf.push(line); continue
+    }
+    if (/^```/.test(line)) { flushBq(); closeList(); preBuf = []; continue }
     const bq = /^> ?(.*)$/.exec(line)
     if (bq) { closeList(); (bqBuf ??= []).push(bq[1]!); continue }
     flushBq()
@@ -254,7 +272,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     else if (hr) { closeList(); out.push('<hr>') }
     else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle, linkHint) : '<br>'}</div>`) }
   }
-  flushBq(); closeList(); return out.join('')
+  flushBq(); flushPre(); closeList(); return out.join('')
 }
 
 export interface RefInfo {
@@ -457,7 +475,7 @@ function blockToMd(node: HTMLElement): string {
 // Block-level tags htmlToMd's top-level walker recognizes as direct
 // children of its root. Also used by unwrapBlockContainers below to
 // detect a non-block wrapper that needs splitting.
-export const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr', 'table', 'blockquote'])
+export const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr', 'table', 'blockquote', 'pre'])
 
 function isBlockTag(el: Element): boolean {
   return BLOCK_TAGS.has(el.tagName.toLowerCase())
@@ -693,6 +711,40 @@ function blockToText(node: HTMLElement): string {
   return blockToTextNodes(Array.from(node.childNodes))
 }
 
+// Flattens a <pre> fenced code block to its literal lines. The mdToHtml
+// shape is a single text node with embedded '\n's; an edited one adds
+// <br>s (Enter inside the block) and, transiently, <div> line wrappers
+// from Chromium's formatBlock (ui/editor.ts's normalizePreChildren fixes
+// those before getMd, but stay defensive). nbsp normalises to a plain
+// space, same as everywhere else. A lone trailing empty line (from a
+// final <br>) is dropped; a single empty line is kept so an empty code
+// block round-trips.
+function preLines(node: HTMLElement): string[] {
+  const lines: string[] = ['']
+  const last = () => lines[lines.length - 1] ?? ''
+  const appendLast = (s: string) => { lines[lines.length - 1] = last() + s }
+  const walk = (n: Node) => {
+    if (n.nodeType === Node.TEXT_NODE) {
+      const parts = (n.textContent ?? '').replace(/\u00a0/g, ' ').split('\n')
+      appendLast(parts[0]!)
+      for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
+      return
+    }
+    if (!(n instanceof HTMLElement)) return
+    if (n.tagName.toLowerCase() === 'br') { lines.push(''); return }
+    const block = isBlockTag(n)
+    if (block && last() !== '') lines.push('')
+    Array.from(n.childNodes).forEach(walk)
+    if (block) lines.push('')
+  }
+  Array.from(node.childNodes).forEach(walk)
+  if (lines.length > 1 && last() === '') lines.pop()
+  // A <pre> holding only a caret-slot <br> (an empty code block) has no
+  // lines at all — serialize it as a bare ```/``` pair, not ```/blank/```.
+  if (lines.length === 1 && lines[0] === '') return []
+  return lines
+}
+
 // Text-only counterpart to renderListMd: walks nested <ul>/<ol> recursively
 // so copy-as-plain-text doesn't run sub-bullet text together with its
 // parent's, indenting 2 spaces per depth level (same convention as
@@ -736,6 +788,7 @@ export function htmlToPlainText(root: HTMLElement): string {
       const inner = Array.from(node.children).some(isBlockTag) ? htmlToPlainText(node) : blockToText(node)
       for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
     }
+    else if (tag === 'pre') for (const l of preLines(node)) out.push(l)
     else if (/^h[1-3]$/.test(tag) || tag === 'div' || tag === 'p') out.push(blockToText(node))
     else out.push(inlineText(node))
   }
@@ -768,6 +821,7 @@ export function htmlToMd(root: HTMLElement): string {
       for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
     }
     else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
+    else if (tag === 'pre') { out.push('```'); for (const l of preLines(node)) out.push(l); out.push('```') }
     else if (tag === 'hr') out.push('---')
     else if (tag === 'table') renderTableMd(node, out)
     else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))

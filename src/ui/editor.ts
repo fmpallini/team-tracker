@@ -65,7 +65,7 @@ const TAB_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 export interface InlineMatch {
   start: number
   end: number
-  marker: '**' | '*' | '~~'
+  marker: '**' | '*' | '~~' | '`'
   content: string
 }
 
@@ -83,6 +83,12 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
   m = /~~([^~\s](?:[^~]*[^~\s])?)~~$/.exec(before)
   if (m) return { start: m.index, end: caretOffset, marker: '~~', content: m[1]! }
 
+  // Inline code: `x` — same "closed span ending at the caret" contract as
+  // the others. Content is anything but a backtick or newline; a single
+  // backtick pair only (nothing fancier than mdToHtml's own `([^`]+)`).
+  m = /`([^`\n]+)`$/.exec(before)
+  if (m) return { start: m.index, end: caretOffset, marker: '`', content: m[1]! }
+
   m = /(?:^|[^*])(\*([^*\s](?:[^*]*[^*\s])?)\*)$/.exec(before)
   if (m) {
     const whole = m[1]!
@@ -94,7 +100,7 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote' | 'codeblock'
   prefixLen: number
 }
 
@@ -121,6 +127,8 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
   if (m) return { type: 'hr', prefixLen: m[0]!.length }
 
   if (/^>[  ]$/.test(text)) return { type: 'blockquote', prefixLen: 2 }
+
+  if (/^```[ \u00a0]$/.test(text)) return { type: 'codeblock', prefixLen: 4 }
 
   return null
 }
@@ -299,6 +307,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
+   * The `<pre>` fenced code block the caret sits in, or null. Everything
+   * formatting-related is suppressed inside one: a fenced code block is
+   * literal text only (core/markdown.ts serializes it as bare ``` fences
+   * with no inline parsing), so bold / links / @refs / headings / lists / a
+   * quote applied in there would be silently dropped on the next reload.
+   * Same rationale — and same shape — as blockquoteAtCaret.
+   */
+  function preAtCaret(): HTMLElement | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    const start = sel.getRangeAt(0).startContainer
+    const host = start instanceof HTMLElement ? start : start.parentElement
+    const pre = host?.closest('pre') as HTMLElement | null
+    return pre && editorEl.contains(pre) ? pre : null
+  }
+
+  /**
    * The node immediately before a collapsed caret, or null when the caret is
    * at the very start of its container. A text node with characters before
    * the caret returns itself — there IS content on this line, so callers
@@ -313,20 +338,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * True when a plain Enter in `bq` should mean "leave the quote": the caret
-   * sits on an empty line (nothing before it on that line but a `<br>` or the
-   * quote's own edge) AND that line is the quote's last (nothing but blank /
-   * `<br>` follows). Slack behaves the same. An empty line in the MIDDLE of a
-   * quote just takes a `<br>` like any other Enter.
+   * True when a plain Enter in the flat block `block` (a `<blockquote>` or a
+   * `<pre>` code block) should mean "leave the block": the caret sits on an
+   * empty line (nothing before it on that line but a `<br>` or the block's
+   * own edge) AND that line is the block's last (nothing but blank / `<br>`
+   * follows). Slack behaves the same for both. An empty line in the MIDDLE
+   * just takes a `<br>` like any other Enter.
    */
-  function caretAtBlockquoteEnd(bq: HTMLElement): boolean {
+  function caretAtFlatBlockEnd(block: HTMLElement): boolean {
     const sel = window.getSelection()
     if (!sel || !sel.isCollapsed || sel.rangeCount === 0) return false
     const caret = sel.getRangeAt(0)
-    if (caret.startContainer !== bq && !bq.contains(caret.startContainer)) return false
+    if (caret.startContainer !== block && !block.contains(caret.startContainer)) return false
     const toEnd = document.createRange()
     toEnd.setStart(caret.startContainer, caret.startOffset)
-    toEnd.setEnd(bq, bq.childNodes.length)
+    toEnd.setEnd(block, block.childNodes.length)
     if (toEnd.toString().replace(/\u00a0/g, ' ').trim() !== '') return false
     const before = nodeBeforeCaret(caret)
     return before === null || (before instanceof HTMLElement && before.tagName === 'BR')
@@ -334,23 +360,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   /**
    * Drops the empty trailing line the caret is on and moves the caret out of
-   * `bq` into a fresh empty `<div>` right after it — or in place of it when
-   * the quote would be left with no content at all.
+   * the flat block `block` (a `<blockquote>` or `<pre>`) into a fresh empty
+   * `<div>` right after it — or in place of it when the block would be left
+   * with no content at all.
    */
-  function exitBlockquote(bq: HTMLElement): void {
+  function exitFlatBlock(block: HTMLElement): void {
     const sel = window.getSelection()
     const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
     const opener = caret ? nodeBeforeCaret(caret) : null
     const cut = document.createRange()
-    if (opener && opener.parentNode === bq) cut.setStartBefore(opener)
-    else cut.setStart(bq, 0)
-    cut.setEnd(bq, bq.childNodes.length)
+    if (opener && opener.parentNode === block) cut.setStartBefore(opener)
+    else cut.setStart(block, 0)
+    cut.setEnd(block, block.childNodes.length)
     cut.deleteContents()
 
     const div = document.createElement('div')
     div.appendChild(document.createElement('br'))
-    if ((bq.textContent ?? '').trim() === '') bq.replaceWith(div)
-    else bq.after(div)
+    if ((block.textContent ?? '').trim() === '') block.replaceWith(div)
+    else block.after(div)
 
     const r = document.createRange()
     r.selectNodeContents(div)
@@ -498,6 +525,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
     else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
     else if (type === 'blockquote') toggleBlockquote()
+    else if (type === 'codeblock') toggleCodeBlock()
     else { document.execCommand('formatBlock', false, `<${type}>`); flattenNestedHeadings(editorEl) }
   }
 
@@ -513,10 +541,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * heading left inside an <li>.
    */
   function formatBlockTag(tag: 'h1' | 'h2' | 'h3' | 'div' | 'p'): void {
-    // Block formatting is inert inside a blockquote — it can't round-trip
-    // through `> ` (see blockquoteAtCaret). Same no-op stance as a heading on
-    // a nested-list item.
-    if (blockquoteAtCaret()) return
+    // Block formatting is inert inside a blockquote or a fenced code block —
+    // it can't round-trip through `> ` / ``` (see blockquoteAtCaret,
+    // preAtCaret). Same no-op stance as a heading on a nested-list item.
+    if (blockquoteAtCaret() || preAtCaret()) return
     editorEl.focus()
     document.execCommand('formatBlock', false, `<${tag}>`)
     flattenNestedHeadings(editorEl)
@@ -525,10 +553,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   /**
    * Ctrl+Shift+7/8 and the toolbar •/1. buttons. Also a no-op inside a
-   * blockquote, for the same reason headings are.
+   * blockquote or a fenced code block, for the same reason headings are.
    */
   function insertList(kind: 'ul' | 'ol'): void {
-    if (blockquoteAtCaret()) return
+    if (blockquoteAtCaret() || preAtCaret()) return
     exec(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList')
   }
 
@@ -584,6 +612,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * collapses the live selection on the focus transition (see clearFormatting).
    */
   function toggleBlockquote(): void {
+    // A quote can't live inside a fenced code block (literal text only).
+    if (preAtCaret()) return
     const sel = window.getSelection()
     const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
     const bq = blockquoteAtCaret()
@@ -596,6 +626,132 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     document.execCommand('formatBlock', false, '<blockquote>')
     flattenNestedBlockquotes(editorEl)
     normalizeBlockquoteChildren(editorEl)
+    scheduleChange()
+  }
+
+  /**
+   * Normalizes every `<pre>` under `root` to hold plain text with `<br>`
+   * line breaks — the shape `mdToHtml` emits and `preLines` (core/markdown.ts)
+   * reads. Chromium's `execCommand('formatBlock', '<pre>')` on a multi-line
+   * selection leaves `<pre><div>l1</div><div>l2</div></pre>`; each block
+   * child collapses to a text node + `<br>`, trailing `<br>` dropped. Left
+   * untouched when the `<pre>` already has no block-level child.
+   */
+  function normalizePreChildren(root: HTMLElement): void {
+    root.querySelectorAll('pre').forEach((pre) => {
+      const kids = Array.from(pre.childNodes)
+      const hasBlockChild = kids.some(
+        (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
+      )
+      if (!hasBlockChild) return
+      const doc = root.ownerDocument ?? document
+      const frag = doc.createDocumentFragment()
+      kids.forEach((n) => {
+        if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
+          frag.appendChild(doc.createTextNode(n.textContent ?? ''))
+          frag.appendChild(doc.createElement('br'))
+        } else {
+          frag.appendChild(n)
+        }
+      })
+      if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
+        frag.removeChild(frag.lastChild)
+      }
+      pre.replaceChildren()
+      pre.appendChild(frag)
+    })
+  }
+
+  /** The text lines of a `<pre>`: text nodes contribute their text (split on
+   * any literal `\n`), each `<br>` starts a new line, any element wrapper's
+   * text is folded in. A lone trailing empty line (final `<br>`) is dropped. */
+  function preTextLines(pre: HTMLElement): string[] {
+    const lines: string[] = ['']
+    const appendLast = (s: string) => { lines[lines.length - 1] = (lines[lines.length - 1] ?? '') + s }
+    pre.childNodes.forEach((n) => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        const parts = (n.textContent ?? '').split('\n')
+        appendLast(parts[0]!)
+        for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
+      } else if (n instanceof HTMLElement && n.tagName === 'BR') {
+        lines.push('')
+      } else if (n instanceof HTMLElement) {
+        appendLast(n.textContent ?? '')
+      }
+    })
+    if (lines.length > 1 && (lines[lines.length - 1] ?? '') === '') lines.pop()
+    return lines
+  }
+
+  /**
+   * Replaces an emptied-out top-level block with an empty `<pre>` fenced
+   * code block and drops the caret inside it. The "type ``` + space"
+   * autoformat path — mirrors convertBlockToList / convertBlockToHr.
+   */
+  function convertBlockToPre(block: HTMLElement): void {
+    editorEl.focus()
+    const pre = document.createElement('pre')
+    pre.appendChild(document.createElement('br'))
+    block.replaceWith(pre)
+    const r = document.createRange()
+    r.selectNodeContents(pre)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
+  /**
+   * Unwraps `pre` into one plain `<div>` per line (a `<br>` for a blank
+   * line), caret into the first. Inverse of convertBlockToPre / the ```
+   * autoformat — the "toggle off" half of toggleCodeBlock.
+   */
+  function unwrapPre(pre: HTMLElement): void {
+    const lines = preTextLines(pre)
+    const frag = document.createDocumentFragment()
+    const divs: HTMLElement[] = []
+    for (const line of lines.length ? lines : ['']) {
+      const div = document.createElement('div')
+      if (line === '') div.appendChild(document.createElement('br'))
+      else div.appendChild(document.createTextNode(line))
+      frag.appendChild(div)
+      divs.push(div)
+    }
+    pre.replaceWith(frag)
+    const first = divs[0]
+    if (first) {
+      const r = document.createRange()
+      r.selectNodeContents(first)
+      r.collapse(true)
+      const sel = window.getSelection()
+      if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    }
+  }
+
+  /**
+   * The { } button / Ctrl+Shift+E / typed "``` ". Toggles a fenced code
+   * block: caret already inside one → unwrap it (one `<div>` per line);
+   * an empty top-level line → convert it directly; otherwise wrap the
+   * line / selection via formatBlock('<pre>') and flatten any inner
+   * `<div>` lines (normalizePreChildren) so htmlToMd's ``` serialization
+   * keeps every break. Selection snapshot before focus() for the same
+   * jsdom reason as toggleBlockquote.
+   */
+  function toggleCodeBlock(): void {
+    const pre = preAtCaret()
+    const ctx = pre ? null : currentBlockAndOffset()
+    editorEl.focus()
+    if (pre) {
+      unwrapPre(pre)
+      scheduleChange()
+      return
+    }
+    if (ctx && ctx.block.parentElement === editorEl && (ctx.block.textContent ?? '') === '') {
+      convertBlockToPre(ctx.block)
+      scheduleChange()
+      return
+    }
+    document.execCommand('formatBlock', false, '<pre>')
+    normalizePreChildren(editorEl)
     scheduleChange()
   }
 
@@ -626,6 +782,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * <code> from plain text would silently destroy any element inside it.
    */
   function toggleInlineCode(): void {
+    // Inside a fenced code block everything is already literal — nothing to do.
+    if (preAtCaret()) return
     editorEl.focus()
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
@@ -708,7 +866,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * stray blank markdown line (`---\n\ntext`).
    */
   function insertHr(): void {
-    if (blockquoteAtCaret()) return
+    if (blockquoteAtCaret() || preAtCaret()) return
     editorEl.focus()
     const ctx = currentBlockAndOffset()
     const ref = ctx && ctx.block.parentElement === editorEl ? ctx.block : editorEl.lastElementChild
@@ -742,7 +900,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // auto-formatted.
     if (range.cloneContents().querySelector('*')) return
     range.deleteContents()
-    const tag = match.marker === '**' ? 'strong' : match.marker === '~~' ? 's' : 'em'
+    const tag =
+      match.marker === '**' ? 'strong' :
+      match.marker === '~~' ? 's' :
+      match.marker === '`' ? 'code' : 'em'
     const node = document.createElement(tag)
     node.textContent = match.content
     range.insertNode(node)
@@ -750,6 +911,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function handleAutoFormat(): void {
+    // Nothing auto-formats inside a fenced code block — it's literal text.
+    // (Typing "``` " to OPEN one fires while the caret is still in the plain
+    // <div>, so that path is unaffected by this guard.)
+    if (preAtCaret()) return
     const ctx = currentBlockAndOffset()
     if (!ctx) return
     const { block, text, caretOffset } = ctx
@@ -770,6 +935,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
             if (sel) { sel.removeAllRanges(); sel.addRange(range) }
             toggleBlockquote()
           }
+          return
+        }
+        if (blockMatch.type === 'codeblock') {
+          // "``` " only ever OPENS a code block from a plain top-level line;
+          // typed inside a quote it stays literal (detectBlockPrefix has
+          // already checked the whole line is exactly the prefix, so the
+          // block holds nothing else to preserve).
+          if (!inQuote && block.parentElement === editorEl) convertBlockToPre(block)
           return
         }
         // Headings / lists / rules don't survive a `> ` round trip, so a
@@ -1328,7 +1501,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const bq = blockquoteAtCaret()
       if (bq) {
         e.preventDefault()
-        if (caretAtBlockquoteEnd(bq)) { exitBlockquote(bq); scheduleChange() }
+        if (caretAtFlatBlockEnd(bq)) { exitFlatBlock(bq); scheduleChange() }
+        else exec('insertLineBreak')
+        return
+      }
+      // Same handling for a fenced code block: Enter inserts a literal line
+      // break; Enter on an empty final line leaves the block (Slack-style).
+      const pre = preAtCaret()
+      if (pre) {
+        e.preventDefault()
+        if (caretAtFlatBlockEnd(pre)) { exitFlatBlock(pre); scheduleChange() }
         else exec('insertLineBreak')
         return
       }
@@ -1373,6 +1555,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
 
     if (!e.shiftKey) {
+      if (preAtCaret()) {
+        // Literal text only inside a fenced code block: swallow the
+        // formatting chords this branch would run, leave the rest
+        // (Ctrl+C/V/X/Z/A — not handled here) to the browser.
+        if (matchKey(e, 'b') || matchKey(e, 'i') || matchKey(e, 'u') || matchKey(e, 'e') ||
+            matchKey(e, 'k') || /^Digit[0-3]$/.test(e.code)) e.preventDefault()
+        return
+      }
       if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
       if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
       if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
@@ -1382,6 +1572,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
       if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }
       if (e.code === 'Digit0') { e.preventDefault(); formatBlockTag('div'); return }
+      return
+    }
+
+    // Ctrl+Shift+E — fenced code block. Mirrors Ctrl+E (inline code) and is
+    // unbound in Chrome/Edge/Firefox on Windows. Placed before the
+    // code-block guard below so it still fires to EXIT a block. The { }
+    // button and typed "``` " are the mouse/typing alternatives.
+    if (matchKey(e, 'e')) { e.preventDefault(); toggleCodeBlock(); return }
+    // Every other formatting chord is inert inside a fenced code block.
+    if (preAtCaret()) {
+      if (e.code === 'KeyX' || e.code === 'Digit5' || e.code === 'Digit8' || e.code === 'Digit7' ||
+          e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') e.preventDefault()
       return
     }
 
@@ -1484,6 +1686,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onPaste(e: ClipboardEvent): void {
     e.preventDefault()
+    // Inside a fenced code block, paste is always literal text — never
+    // markdown / HTML — so a copied snippet keeps its own punctuation.
+    if (preAtCaret()) {
+      document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '')
+      scheduleChange()
+      return
+    }
     const html = e.clipboardData?.getData('text/html')
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
@@ -1603,6 +1812,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
     toolbarButton('<>', t(locale, 'editor_code_title'), () => toggleInlineCode()),
+    toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton('•', t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
