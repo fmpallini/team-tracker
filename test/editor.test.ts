@@ -2268,6 +2268,112 @@ describe('code block editing', () => {
   })
 })
 
+describe('code block collapse + copy', () => {
+  function mount(): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    return { editor, editorEl: editor.root.querySelector('.editor') as HTMLElement }
+  }
+  const longFence = '```\n' + Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n') + '\n```'
+  const shortFence = '```\na\nb\nc\n```'
+
+  test('setMd auto-collapses a code block over 8 lines and tags it', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(longFence)
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.hasAttribute('data-collapsed')).toBe(true)
+    expect(pre.dataset.lines).toBe('12')
+    expect(pre.dataset.moreLabel).toBe('+9 more lines')
+    editor.destroy()
+  })
+
+  test('setMd leaves a short code block expanded', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(shortFence)
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.hasAttribute('data-collapsed')).toBe(false)
+    expect(pre.dataset.lines).toBe('3')
+    editor.destroy()
+  })
+
+  test('collapse is view-only — getMd is byte-identical', () => {
+    const { editor } = mount()
+    editor.setMd(longFence)
+    expect(editor.getMd()).toBe(longFence)
+    editor.destroy()
+  })
+
+  test('clicking a collapsed block expands it', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(longFence)
+    const pre = editorEl.querySelector('pre')!
+    pre.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(pre.hasAttribute('data-collapsed')).toBe(false)
+    editor.destroy()
+  })
+
+  test('the hover copy button writes the raw block text to the clipboard', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const { editor, editorEl } = mount()
+      editor.setMd(shortFence)
+      const pre = editorEl.querySelector('pre')!
+      pre.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      const controls = editor.root.querySelector('.tt-cb-controls') as HTMLElement
+      expect(controls.hidden).toBe(false)
+      const copyBtn = controls.querySelectorAll('button')[0] as HTMLButtonElement
+      copyBtn.click()
+      expect(writeText).toHaveBeenCalledWith('a\nb\nc')
+      editor.destroy()
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'clipboard', orig)
+      else delete (navigator as unknown as { clipboard?: unknown }).clipboard
+    }
+  })
+
+  test('the hover toggle button collapses and re-expands the block', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(shortFence)
+    const pre = editorEl.querySelector('pre')!
+    pre.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    const toggleBtn = (editor.root.querySelector('.tt-cb-controls') as HTMLElement)
+      .querySelectorAll('button')[1] as HTMLButtonElement
+
+    toggleBtn.click()
+    expect(pre.hasAttribute('data-collapsed')).toBe(true)
+    toggleBtn.click()
+    expect(pre.hasAttribute('data-collapsed')).toBe(false)
+    editor.destroy()
+  })
+
+  test('a mid-session paste decorates only the new block, not one the user expanded', () => {
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
+      if (cmd === 'insertHTML' && typeof val === 'string') {
+        const editorEl = document.querySelector('.editor') as HTMLElement
+        editorEl.insertAdjacentHTML('beforeend', val)
+      }
+      return true
+    })
+    const { editor, editorEl } = mount()
+    editor.setMd(longFence)
+    const first = editorEl.querySelector('pre')!
+    first.removeAttribute('data-collapsed') // user expanded it
+
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, 'clipboardData', {
+      value: { getData: (tp: string) => (tp === 'text/html' ? `<pre>${Array.from({ length: 10 }, (_, i) => `x${i}`).join('\n')}</pre>` : '') },
+    })
+    editorEl.dispatchEvent(e)
+
+    const pres = editorEl.querySelectorAll('pre')
+    expect(first.hasAttribute('data-collapsed')).toBe(false) // untouched
+    expect(pres[pres.length - 1]!.hasAttribute('data-collapsed')).toBe(true) // new one collapsed
+    editor.destroy()
+  })
+})
+
 describe('inline auto-format caret exit', () => {
   function mountAt(hooksLoc: 'en-US' | 'pt-BR', html: string, caretOffsetFromEnd = 0): { editor: Editor; editorEl: HTMLElement } {
     const editor = createEditor(makeHooks(), hooksLoc)

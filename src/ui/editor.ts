@@ -60,6 +60,15 @@ export const SLASH_TRIGGER_EVENT = 'tt-slash-trigger'
 const CHANGE_DEBOUNCE_MS = 300
 const TAB_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 
+// Code-block collapse chrome (view-only, never persisted -- see the
+// "code-block collapse + copy chrome" section in createEditor).
+const CB_AUTO_COLLAPSE_OVER = 8 // blocks longer than this auto-collapse on load
+const CB_PEEK_LINES = 3 // lines still shown while collapsed
+const CB_COPY_GLYPH = '\u29c9'
+const CB_COPIED_GLYPH = '\u2713'
+const CB_COLLAPSE_GLYPH = '\u2303'
+const CB_EXPAND_GLYPH = '\u2304'
+
 // --- pure, unit-testable auto-format detection -----------------------------
 
 export interface InlineMatch {
@@ -733,7 +742,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const appendLast = (s: string) => { lines[lines.length - 1] = (lines[lines.length - 1] ?? '') + s }
     pre.childNodes.forEach((n) => {
       if (n.nodeType === Node.TEXT_NODE) {
-        const parts = (n.textContent ?? '').split('\n')
+        const parts = (n.textContent ?? '').replace(/\r/g, '').split('\n')
         appendLast(parts[0]!)
         for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
       } else if (n instanceof HTMLElement && n.tagName === 'BR') {
@@ -1775,6 +1784,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
       document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
+      decorateCodeBlocks()
       scheduleChange()
       return
     }
@@ -1822,6 +1832,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onClick(e: MouseEvent): void {
+    // Clicking anywhere in a collapsed code block (to read it or to place
+    // the caret and edit) expands it for the rest of the session. The
+    // hover ⌃ control re-collapses; a fresh file load re-auto-collapses.
+    const collapsed = (e.target as HTMLElement).closest?.('pre[data-collapsed]') as HTMLElement | null
+    if (collapsed && editorEl.contains(collapsed)) {
+      expandPre(collapsed)
+      if (cbActivePre === collapsed) { syncCbGlyphs(); positionCbControls() }
+    }
     handleRefActivate(e)
     handleExternalLinkActivate(e)
   }
@@ -1910,6 +1928,131 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl)
 
+  // --- code-block collapse + copy chrome --------------------------------
+  // A bare <pre> stays a direct editor child (keeps htmlToMd and every
+  // block-walking assumption untouched). "Collapsed" is a view-only
+  // `data-collapsed` attribute; auto-applied on load to blocks over
+  // CB_AUTO_COLLAPSE_OVER lines and freely toggled after that, but never
+  // written to markdown — getMd() is byte-identical with or without it.
+  // The copy / collapse buttons are ONE shared element floated over the
+  // hovered block from the .tt-editor chrome, never inside the editable
+  // surface.
+  const cbCopyBtn = el('button', {
+    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_copy'),
+    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbCopy,
+  }, CB_COPY_GLYPH)
+  const cbToggleBtn = el('button', {
+    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_collapse'),
+    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbToggle,
+  }, CB_COLLAPSE_GLYPH)
+  const cbControls = el('div', { class: 'tt-cb-controls', contenteditable: 'false' }, cbCopyBtn, cbToggleBtn)
+  cbControls.hidden = true
+  root.appendChild(cbControls)
+
+  let cbActivePre: HTMLElement | null = null
+  let cbHideTimer: ReturnType<typeof setTimeout> | null = null
+  let cbCopyResetTimer: ReturnType<typeof setTimeout> | null = null
+
+  function preLineCount(pre: HTMLElement): number {
+    return preTextLines(pre).length
+  }
+
+  /** Sets `data-lines` on every <pre> and auto-collapses the long ones.
+   * `all` re-runs it over blocks already seen this session (setMd, a fresh
+   * document); the default only touches blocks with no `data-lines` yet, so
+   * a mid-session paste can't re-collapse a block the user just expanded. */
+  function decorateCodeBlocks(all = false): void {
+    editorEl.querySelectorAll<HTMLElement>('pre').forEach((pre) => {
+      if (!all && pre.dataset.lines !== undefined) return
+      const n = preLineCount(pre)
+      pre.dataset.lines = String(n)
+      if (n > CB_AUTO_COLLAPSE_OVER) collapsePre(pre)
+      else expandPre(pre)
+    })
+  }
+
+  function collapsePre(pre: HTMLElement): void {
+    pre.setAttribute('data-collapsed', '')
+    const hidden = Math.max(1, preLineCount(pre) - CB_PEEK_LINES)
+    pre.dataset.moreLabel = t(locale, 'editor_cb_more', { n: String(hidden) })
+  }
+
+  function expandPre(pre: HTMLElement): void {
+    pre.removeAttribute('data-collapsed')
+  }
+
+  function syncCbGlyphs(): void {
+    const collapsed = !!cbActivePre?.hasAttribute('data-collapsed')
+    cbToggleBtn.textContent = collapsed ? CB_EXPAND_GLYPH : CB_COLLAPSE_GLYPH
+    cbToggleBtn.title = t(locale, collapsed ? 'editor_cb_expand' : 'editor_cb_collapse')
+  }
+
+  function positionCbControls(): void {
+    if (!cbActivePre) return
+    const pr = cbActivePre.getBoundingClientRect()
+    const rr = root.getBoundingClientRect()
+    cbControls.style.top = `${pr.top - rr.top + 4}px`
+    cbControls.style.left = `${pr.right - rr.left - cbControls.offsetWidth - 6}px`
+  }
+
+  function showCbControls(pre: HTMLElement): void {
+    if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
+    cbActivePre = pre
+    syncCbGlyphs()
+    cbControls.hidden = false
+    positionCbControls()
+  }
+
+  function hideCbControlsNow(): void {
+    if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
+    cbControls.hidden = true
+    cbActivePre = null
+  }
+
+  function hideCbControlsSoon(): void {
+    if (cbHideTimer) clearTimeout(cbHideTimer)
+    cbHideTimer = setTimeout(hideCbControlsNow, 140)
+  }
+
+  function onCbMouseOver(e: MouseEvent): void {
+    const pre = (e.target as HTMLElement).closest?.('pre') as HTMLElement | null
+    if (pre && editorEl.contains(pre)) showCbControls(pre)
+    else hideCbControlsSoon()
+  }
+
+  function copyText(text: string): void {
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
+    else copyViaTextarea(text)
+  }
+
+  function onCbCopy(): void {
+    if (!cbActivePre) return
+    copyText(preTextLines(cbActivePre).join('\n'))
+    cbCopyBtn.textContent = CB_COPIED_GLYPH
+    cbCopyBtn.title = t(locale, 'editor_cb_copied')
+    if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
+    cbCopyResetTimer = setTimeout(() => {
+      cbCopyBtn.textContent = CB_COPY_GLYPH
+      cbCopyBtn.title = t(locale, 'editor_cb_copy')
+    }, 900)
+  }
+
+  function onCbToggle(): void {
+    if (!cbActivePre) return
+    if (cbActivePre.hasAttribute('data-collapsed')) expandPre(cbActivePre)
+    else collapsePre(cbActivePre)
+    syncCbGlyphs()
+    positionCbControls()
+  }
+
+  editorEl.addEventListener('mouseover', onCbMouseOver)
+  editorEl.addEventListener('mouseleave', hideCbControlsSoon)
+  editorEl.addEventListener('scroll', hideCbControlsNow)
+  cbControls.addEventListener('mouseenter', () => {
+    if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
+  })
+  cbControls.addEventListener('mouseleave', hideCbControlsSoon)
+
   function getMd(): string {
     return htmlToMd(editorEl)
   }
@@ -1922,6 +2065,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // content that is being replaced outright.
     cancelChange()
     editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+    decorateCodeBlocks(true)
   }
 
   function refreshRefLabels(): void {
@@ -1954,6 +2098,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('click', onClick)
     editorEl.removeEventListener('auxclick', onAuxClick)
     editorEl.removeEventListener('mousedown', onMouseDownForRef)
+    editorEl.removeEventListener('mouseover', onCbMouseOver)
+    editorEl.removeEventListener('mouseleave', hideCbControlsSoon)
+    editorEl.removeEventListener('scroll', hideCbControlsNow)
+    if (cbHideTimer) clearTimeout(cbHideTimer)
+    if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
   }
 
   const registryEntry = { flush: flushChange }
