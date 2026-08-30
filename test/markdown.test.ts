@@ -737,44 +737,25 @@ describe('safeHref', () => {
   })
 })
 
-describe('inline code', () => {
+describe('backticks are plain text (this app has no inline-code syntax)', () => {
   const roundTrip = (md: string) => {
     const div = document.createElement('div')
     div.innerHTML = mdToHtml(md)
     return htmlToMd(div)
   }
-  test('renders <code> and round-trips', () => {
-    expect(mdToHtml('run `npm test` now')).toContain('<code>npm test</code>')
+  test('`text` is left literal — no <code>, and it round-trips unchanged', () => {
+    const html = mdToHtml('run `npm test` now')
+    expect(html).not.toContain('<code>')
+    expect(html).toContain('`npm test`')
     expect(roundTrip('run `npm test` now')).toBe('run `npm test` now')
   })
-  test('content is literal — inner markdown is NOT parsed', () => {
-    const html = mdToHtml('see `**not bold** and *not italic*`')
-    expect(html).toContain('<code>**not bold** and *not italic*</code>')
-    expect(html).not.toContain('<strong>')
-    expect(html).not.toContain('<em>')
-    expect(roundTrip('see `**not bold** and *not italic*`')).toBe('see `**not bold** and *not italic*`')
+  test('markdown inside backticks IS now parsed (no freeze)', () => {
+    expect(mdToHtml('see `**bold**`')).toContain('<strong>bold</strong>')
   })
-  test('code adjacent to a ref chip — both survive', () => {
-    const md = '`cfg` @[Ana](person:abc-1) `end`'
-    const html = mdToHtml(md)
-    expect(html).toContain('<code>cfg</code>')
-    expect(html).toContain('<code>end</code>')
-    expect(html).toContain('data-ref="person:abc-1"')
-    expect(roundTrip(md)).toBe(md)
-  })
-  test('html inside a code span is escaped, not live', () => {
-    const html = mdToHtml('danger `<img src=x onerror=y>` here')
-    const probe = document.createElement('div'); probe.innerHTML = html
-    expect(probe.querySelector('img')).toBeNull()
-    expect(probe.querySelector('code')!.textContent).toBe('<img src=x onerror=y>')
-  })
-  test('idempotent through two md->html->md cycles', () => {
-    const md = 'a `b` c'
-    expect(roundTrip(roundTrip(md))).toBe(md)
-  })
-  test('inlineText / htmlToPlainText unwraps code to bare text', () => {
-    const div = document.createElement('div'); div.innerHTML = mdToHtml('run `x` now')
-    expect(htmlToPlainText(div)).toBe('run x now')
+  test('a stray <code> from a paste degrades to plain text on the way out', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div>run <code>x</code> now</div>'
+    expect(htmlToMd(div)).toBe('run x now')
   })
 })
 
@@ -865,8 +846,8 @@ describe('external links', () => {
     expect(probe.querySelector('em')!.textContent).toBe('later')
   })
   test('a ref chip inside link text resolves (not left as a raw placeholder)', () => {
-    // The terminal splice order is LINK -> REF -> CODE precisely so a REF
-    // token sitting inside the frozen <a>…</a> is resolved after the link is
+    // The terminal splice order is LINK -> REF precisely so a REF token
+    // sitting inside the frozen <a>…</a> is resolved after the link is
     // spliced back. (The HTML parser splits the resulting nested <a> into
     // siblings — an inherent nested-anchor limitation — so assert on the
     // string and the top-level chip, not on DOM nesting.)
@@ -877,12 +858,6 @@ describe('external links', () => {
     expect(/[\uE000-\uE005]/.test(html)).toBe(false) // no leftover placeholder tokens
     const probe = document.createElement('div'); probe.innerHTML = html
     expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:abc-1')
-  })
-  test('a `code` span inside link text renders', () => {
-    const html = mdToHtml('[run `npm test`](https://e.com)')
-    const probe = document.createElement('div'); probe.innerHTML = html
-    const a = probe.querySelector('a[href]')!
-    expect(a.querySelector('code')!.textContent).toBe('npm test')
   })
   test('a balanced-paren URL round-trips (href and getMd)', () => {
     const md = '[x](https://en.wikipedia.org/wiki/Foo_(bar))'
@@ -899,13 +874,13 @@ describe('external links', () => {
 
   // Regression for C1: a forged inline()-placeholder token (PUA U+E000–U+E005)
   // smuggled into a link URL used to survive safeHref and get frozen into the
-  // <a href="…">, where the terminal REF/CODE/LINK splice passes (which now
-  // run AFTER the link splice) rescanned it and injected chip/code/anchor
-  // HTML — the literal `"` in that HTML broke out of the href and stripped
-  // `rel`. Fixed by stripping U+E000–U+E005 in esc() so the tokens are
-  // unforgeable. Each of these asserts: no chip/code HTML lands inside an
-  // href, `rel` stays intact, and the URL renders as the literal text with
-  // the PUA chars removed.
+  // <a href="…">, where the terminal REF/LINK splice passes (which now run
+  // AFTER the link splice) rescanned it and injected chip/anchor HTML — the
+  // literal `"` in that HTML broke out of the href and stripped `rel`. Fixed
+  // by stripping U+E000–U+E005 in esc() so the tokens are unforgeable. Each
+  // of these asserts: no chip/anchor HTML lands inside an href, `rel` stays
+  // intact, and the URL renders as the literal text with the PUA chars
+  // removed.
   describe('a forged placeholder token in a link URL cannot break out of the href', () => {
     const hrefOf = (html: string) => {
       const probe = document.createElement('div'); probe.innerHTML = html
@@ -923,16 +898,13 @@ describe('external links', () => {
       // the real ref still renders as its own chip, elsewhere
       expect(html).toContain('<a class="ref" data-ref="person:abc"')
     })
-    test('forged CODE token in the URL (with a real code span so index 0 exists)', () => {
-      const html = mdToHtml('[x](https://e.com/\uE0020\uE003) `c`')
+    test('a U+E002/E003 PUA pair in the URL is stripped, not smuggled through', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0020\uE003)')
       const href = hrefOf(html)
       expect(href).toBe('https://e.com/0')
-      expect(href).not.toContain('<code>')
       expect(href).not.toContain('<')
       const probe = document.createElement('div'); probe.innerHTML = html
       expect(probe.querySelector('a[href]')!.getAttribute('rel')).toBe('noopener noreferrer nofollow')
-      // the real code span still renders
-      expect(probe.querySelector('code')!.textContent).toBe('c')
     })
     test('forged LINK token in the URL', () => {
       const html = mdToHtml('[x](https://e.com/\uE0040\uE005)')
@@ -945,13 +917,13 @@ describe('external links', () => {
     })
     // Mirror direction (what 2250aab was vulnerable to): a forged token in a
     // ref target / @[label] text must not inject an anchor into data-ref="…".
-    test('forged CODE token in a data-ref target cannot inject <code> into the attribute', () => {
-      const html = mdToHtml('@[y](person:abc\uE0020\uE003) `c`')
+    test('a U+E002/E003 PUA pair in a data-ref target is stripped, not smuggled', () => {
+      const html = mdToHtml('@[y](person:abc' + String.fromCharCode(0xE002) + '0' + String.fromCharCode(0xE003) + ')')
       const probe = document.createElement('div'); probe.innerHTML = html
       const chip = probe.querySelector('a.ref')!
       expect(chip.getAttribute('data-ref')).toBe('person:abc0')
-      expect(html).not.toContain('data-ref="person:abc<code>')
-      expect(probe.querySelector('code')!.textContent).toBe('c')
+      expect(chip.querySelector('*')).toBeNull() // nothing smuggled into the chip
+      expect(html).not.toContain('data-ref="person:abc<')
     })
     test('forged LINK token in @[label] text cannot inject an <a href> into the chip', () => {
       const html = mdToHtml('@[lbl\uE0040\uE005](person:abc) [t](https://e.com)')

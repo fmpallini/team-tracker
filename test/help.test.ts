@@ -99,13 +99,14 @@ test('global help lists app-level shortcuts and the app-window recipe', () => {
   expect(text).toContain('chrome --app')
 })
 
-test('editor help lists the new inline-code / blockquote / link shortcuts and syntax', () => {
+test('editor help lists the code-block / blockquote / link shortcuts and syntax', () => {
   showEditorHelp('en-US')
   const text = document.body.textContent!
-  expect(text).toContain('Ctrl+E') // inline code shortcut
+  expect(text).not.toContain('Ctrl+E') // inline code was removed
+  expect(text).toContain('Ctrl+Shift+E') // code block shortcut
   expect(text).toContain('Ctrl+Shift+9') // blockquote shortcut
   expect(text).toContain('Ctrl+K') // link shortcut (Task 12: Ctrl+K inserts a link in the editor)
-  expect(text).toContain('`código`') // markdown syntax row for inline code
+  expect(text).toContain('```') // markdown syntax row for code block
   expect(text).toContain('> texto') // markdown syntax row for blockquote
   expect(text).toContain('[texto](url)') // markdown syntax row for link
   expect(text).toContain('Ctrl+clique / clique do meio') // open-link gesture row

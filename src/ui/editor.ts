@@ -74,7 +74,7 @@ const CB_EXPAND_GLYPH = '\u2304'
 export interface InlineMatch {
   start: number
   end: number
-  marker: '**' | '*' | '~~' | '`'
+  marker: '**' | '*' | '~~'
   content: string
 }
 
@@ -91,12 +91,6 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 
   m = /~~([^~\s](?:[^~]*[^~\s])?)~~$/.exec(before)
   if (m) return { start: m.index, end: caretOffset, marker: '~~', content: m[1]! }
-
-  // Inline code: `x` — same "closed span ending at the caret" contract as
-  // the others. Content is anything but a backtick or newline; a single
-  // backtick pair only (nothing fancier than mdToHtml's own `([^`]+)`).
-  m = /`([^`\n]+)`$/.exec(before)
-  if (m) return { start: m.index, end: caretOffset, marker: '`', content: m[1]! }
 
   m = /(?:^|[^*])(\*([^*\s](?:[^*]*[^*\s])?)\*)$/.exec(before)
   if (m) {
@@ -543,9 +537,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * the caret in a trailing NBSP: setStartAfter alone leaves the caret in
    * the element’s formatting context in every engine, so the next
    * keystroke — and Enter — keeps typing inside the new
-   * <code>/<strong>/<em>/<s> (typing `x` then more words gave one long
-   * `x more words` code span; Enter carried an empty <code> to the next
-   * line). The NBSP renders as a plain space and round-trips as one —
+   * <strong>/<em>/<s> (typing `**b**` then more words gave one long bold
+   * run; Enter carried an empty <strong> to the next line). The NBSP
+   * renders as a plain space and round-trips as one —
    * mdToHtml turns a block-trailing space after inline formatting back
    * into &nbsp;, the same mechanism the "**Label:** " template lines rely
    * on. When real text already follows `node` (a span wrapped mid-line),
@@ -847,41 +841,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * The `<>` button. Wraps a non-empty selection in <code>, or unwraps it if
-   * it already sits fully inside one. Bails on a selection that crosses an
-   * element boundary (a ref chip, existing inline formatting) — same
-   * "text-only spans only" rule replaceInlineMatch uses, since rebuilding a
-   * <code> from plain text would silently destroy any element inside it.
-   */
-  function toggleInlineCode(): void {
-    // Inside a fenced code block everything is already literal — nothing to do.
-    if (preAtCaret()) return
-    editorEl.focus()
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-    const range = sel.getRangeAt(0)
-    if (!editorEl.contains(range.commonAncestorContainer)) return
-
-    const container = range.commonAncestorContainer
-    const host = container instanceof HTMLElement ? container : container.parentElement
-    const existing = host?.closest('code')
-    if (existing && editorEl.contains(existing)) {
-      const parent = existing.parentNode!
-      while (existing.firstChild) parent.insertBefore(existing.firstChild, existing)
-      parent.removeChild(existing)
-      scheduleChange()
-      return
-    }
-    if (range.cloneContents().querySelector('*')) return
-    const code = document.createElement('code')
-    code.textContent = range.toString()
-    range.deleteContents()
-    range.insertNode(code)
-    caretPastInline(code)
-    scheduleChange()
-  }
-
-  /**
    * Replaces an emptied-out top-level block with a one-item `<ul>`/`<ol>`,
    * built directly rather than via document.execCommand('insertUnorderedList'
    * /'insertOrderedList'). Unlike formatBlock (used for headings, which
@@ -972,10 +931,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // auto-formatted.
     if (range.cloneContents().querySelector('*')) return
     range.deleteContents()
-    const tag =
-      match.marker === '**' ? 'strong' :
-      match.marker === '~~' ? 's' :
-      match.marker === '`' ? 'code' : 'em'
+    const tag = match.marker === '**' ? 'strong' : match.marker === '~~' ? 's' : 'em'
     const node = document.createElement(tag)
     node.textContent = match.content
     range.insertNode(node)
@@ -1645,14 +1601,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         // Literal text only inside a fenced code block: swallow the
         // formatting chords this branch would run, leave the rest
         // (Ctrl+C/V/X/Z/A — not handled here) to the browser.
-        if (matchKey(e, 'b') || matchKey(e, 'i') || matchKey(e, 'u') || matchKey(e, 'e') ||
+        if (matchKey(e, 'b') || matchKey(e, 'i') || matchKey(e, 'u') ||
             matchKey(e, 'k') || /^Digit[0-3]$/.test(e.code)) e.preventDefault()
         return
       }
       if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
       if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
       if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
-      if (matchKey(e, 'e')) { e.preventDefault(); toggleInlineCode(); return }
       if (matchKey(e, 'k')) { e.preventDefault(); void insertLink(); return }
       if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
       if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
@@ -1661,10 +1616,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
 
-    // Ctrl+Shift+E — fenced code block. Mirrors Ctrl+E (inline code) and is
-    // unbound in Chrome/Edge/Firefox on Windows. Placed before the
-    // code-block guard below so it still fires to EXIT a block. The { }
-    // button and typed "``` " are the mouse/typing alternatives.
+    // Ctrl+Shift+E — fenced code block. Unbound in Chrome/Edge/Firefox on
+    // Windows. Placed before the code-block guard below so it still fires to
+    // EXIT a block. The { } button and typed "``` " are the alternatives.
     if (matchKey(e, 'e')) { e.preventDefault(); toggleCodeBlock(); return }
     // Every other formatting chord is inert inside a fenced code block.
     if (preAtCaret()) {
@@ -1883,8 +1837,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           // synthetic `.click()` (jsdom, and any programmatic caller) skips
           // mousedown, and jsdom's `focus()` COLLAPSES the current selection
           // on the focus transition — which breaks selection-driven actions
-          // like `toggleInlineCode`. Snapshot the selection first and restore
-          // it after focus when it still points inside the editor.
+          // like `toggleBlockquote` or the link button. Snapshot the
+          // selection first and restore it after focus when it still points
+          // inside the editor.
           const sel = window.getSelection()
           const saved = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
           editorEl.focus()
@@ -1907,7 +1862,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
-    toolbarButton('<>', t(locale, 'editor_code_title'), () => toggleInlineCode()),
     toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton('•', t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),

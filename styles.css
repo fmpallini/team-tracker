@@ -696,10 +696,8 @@ body { background: var(--bg); color: var(--fg); }
 .editor h3 { font-size: 1.15rem; }
 .editor ul, .editor ol { padding-left: 1.5em; }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
-.editor code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; background: rgba(128, 128, 128, .14); padding: .1em .35em; border-radius: 4px; }
 .editor blockquote { margin: .5em 0; padding: .15em 0 .15em .9em; border-left: 3px solid var(--muted); color: var(--muted); }
 .editor pre { position: relative; margin: .5em 0; padding: .6em .8em; background: rgba(128, 128, 128, .14); border-radius: 6px; white-space: pre; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; }
-.editor pre code { background: none; padding: 0; }
 .editor pre[data-collapsed] { max-height: 6.2em; overflow: hidden; cursor: pointer; }
 .editor pre[data-collapsed]::after {
   content: attr(data-more-label);

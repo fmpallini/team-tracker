@@ -468,27 +468,6 @@ describe('keyboard shortcuts', () => {
     editor.destroy()
   })
 
-  test('Ctrl+E toggles inline code on the selection', () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    editor.setMd('foo bar')
-    const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    // Focus before selecting: jsdom's focus() collapses the live selection on
-    // the focus transition, and toggleInlineCode()'s first line is
-    // editorEl.focus() — in a real browser the editor already holds focus when
-    // Ctrl+E fires, so that call is a no-op there.
-    editorEl.focus()
-    const textNode = editorEl.querySelector('div')!.firstChild as Text
-    const range = document.createRange()
-    range.setStart(textNode, 4); range.setEnd(textNode, 7)
-    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
-
-    const e = dispatchKey(editorEl, { key: 'e', code: 'KeyE', ctrlKey: true })
-    expect(e.defaultPrevented).toBe(true)
-    expect(editorEl.querySelector('code')?.textContent).toBe('bar')
-    editor.destroy()
-  })
-
   test('Ctrl+Shift+9 runs formatBlock <blockquote>', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -1176,40 +1155,6 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
-  test('<> button wraps the selection in <code> and getMd emits backticks', () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    editor.setMd('foo bar baz')
-    const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    const textNode = editorEl.querySelector('div')!.firstChild as Text
-    const range = document.createRange()
-    range.setStart(textNode, 4); range.setEnd(textNode, 7) // "bar"
-    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
-
-    toolbarButton(editor, t('en-US', 'editor_code_title')).click()
-
-    expect(editorEl.querySelector('code')?.textContent).toBe('bar')
-    expect(editor.getMd()).toBe('foo `bar` baz')
-    editor.destroy()
-  })
-
-  test('<> button on a selection already inside <code> unwraps it', () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    editor.setMd('foo `bar` baz')
-    const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    const codeText = editorEl.querySelector('code')!.firstChild as Text
-    const range = document.createRange()
-    range.selectNodeContents(codeText)
-    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
-
-    toolbarButton(editor, t('en-US', 'editor_code_title')).click()
-
-    expect(editorEl.querySelector('code')).toBeNull()
-    expect(editor.getMd()).toBe('foo bar baz')
-    editor.destroy()
-  })
-
   test('❝ button runs formatBlock <blockquote> then flattens nesting', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -1597,7 +1542,6 @@ describe('toolbar', () => {
       t('en-US', 'editor_italic_title'),
       t('en-US', 'editor_underline_title'),
       t('en-US', 'editor_strike_title'),
-      t('en-US', 'editor_code_title'),
       t('en-US', 'editor_codeblock_title'),
       t('en-US', 'editor_ul_title'),
       t('en-US', 'editor_ol_title'),
@@ -2252,7 +2196,7 @@ describe('code block editing', () => {
     editor.destroy()
   })
 
-  test('typed `x` on a normal line auto-converts to <code>', () => {
+  test('typing `x` on a normal line does NOT auto-format — no inline code syntax', () => {
     const { editor, editorEl } = mount()
     vi.spyOn(document, 'execCommand').mockReturnValue(true)
     editorEl.innerHTML = '<div>run `x`</div>'
@@ -2261,9 +2205,8 @@ describe('code block editing', () => {
 
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    const code = editorEl.querySelector('code')
-    expect(code).not.toBeNull()
-    expect(code!.textContent).toBe('x')
+    expect(editorEl.querySelector('code')).toBeNull()
+    expect(editorEl.textContent).toBe('run `x`')
     editor.destroy()
   })
 })
@@ -2388,7 +2331,6 @@ describe('inline auto-format caret exit', () => {
   }
 
   test.each([
-    ['`x`', 'code'],
     ['**x**', 'strong'],
     ['*x*', 'em'],
     ['~~x~~', 's'],
@@ -2407,13 +2349,13 @@ describe('inline auto-format caret exit', () => {
     editor.destroy()
   })
 
-  test('typing `x` with text still after the caret adds no gap (would be a spurious space)', () => {
-    const { editor, editorEl } = mountAt('en-US', '<div>a `x` tail</div>', 5) // caret right after the closing `
+  test('typing **b** with text still after the caret adds no gap (would be a spurious space)', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a **b** tail</div>', 5) // caret right after the closing **
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    const code = editorEl.querySelector('code')!
-    expect(code.textContent).toBe('x')
-    expect(editor.getMd()).toBe('a `x` tail')
+    const strong = editorEl.querySelector('strong')!
+    expect(strong.textContent).toBe('b')
+    expect(editor.getMd()).toBe('a **b** tail')
     editor.destroy()
   })
 })
@@ -2558,12 +2500,6 @@ describe('detectInlinePattern', () => {
   })
   test('detects closed strike at caret', () => {
     expect(detectInlinePattern('a ~~b~~ ', 7)).toEqual({ start: 2, end: 7, marker: '~~', content: 'b' })
-  })
-  test('detects closed inline code at caret', () => {
-    expect(detectInlinePattern('run `npm test`', 14)).toEqual({ start: 4, end: 14, marker: '`', content: 'npm test' })
-  })
-  test('inline code is not detected when unclosed', () => {
-    expect(detectInlinePattern('run `npm', 8)).toBeNull()
   })
   test('returns null when unclosed', () => {
     expect(detectInlinePattern('a **b', 5)).toBeNull()

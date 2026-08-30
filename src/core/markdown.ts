@@ -1,11 +1,11 @@
 import { REF_KINDS, refPattern, type IdRefKind } from './refs'
 
 // Strip the Private-Use-Area code points inline() uses for its own
-// LINK/REF/CODE placeholder tokens (U+E000–U+E005) BEFORE anything else, so
+// LINK/REF placeholder tokens (U+E000–U+E005) BEFORE anything else, so
 // a token spliced into the text — via a crafted link URL, ref target or
 // @[label] — is unforgeable rather than merely unlikely. esc() runs on
 // every string inline() feeds downstream (the body, and thus the href /
-// ref target / code-span content, plus the resolver label and refTitle),
+// ref target content, plus the resolver label and refTitle),
 // so this one strip closes every direction at once. The REAL tokens are
 // emitted by inline() AFTER esc() using the *_OPEN/*_CLOSE consts, so they
 // are untouched.
@@ -51,15 +51,6 @@ const REF_OPEN = ''
 const REF_CLOSE = ''
 const REF_PLACEHOLDER = /(\d+)/g
 
-// Same PUA rationale as REF_OPEN/REF_CLOSE above: code points no
-// markdown/HTML pass below matches and esc() strips from its input, so a
-// forged token can't reach here. Code spans are extracted FIRST (before
-// refs) so their contents are frozen against every later pass — that
-// literalness is the whole point of an inline code span.
-const CODE_OPEN = ''
-const CODE_CLOSE = ''
-const CODE_PLACEHOLDER = new RegExp(`${CODE_OPEN}(\\d+)${CODE_CLOSE}`, 'g')
-
 // Same PUA rationale again (U+E004/U+E005). A link is FULLY frozen: the
 // mark passes (bold/italic/strike/tilde/underline) run on the link TEXT
 // alone inside the link callback, the whole `<a …>…</a>` is assembled
@@ -67,8 +58,8 @@ const CODE_PLACEHOLDER = new RegExp(`${CODE_OPEN}(\\d+)${CODE_CLOSE}`, 'g')
 // pair a marker inside the link text with one after the closing tag (which
 // used to silently rewrite saved markdown on every open/save cycle — spec
 // §2.1). esc(s) already ran, so the href carries no raw quote AND no
-// forged LINK/REF/CODE placeholder code point (esc() strips U+E000–U+E005)
-// — so the terminal REF/CODE passes that run AFTER this link splice cannot
+// forged LINK/REF placeholder code point (esc() strips U+E000–U+E005)
+// — so the terminal REF pass that runs AFTER this link splice cannot
 // find a token to resolve inside the frozen href.
 const LINK_OPEN = ''
 const LINK_CLOSE = ''
@@ -76,12 +67,6 @@ const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   let out = esc(s)
-  // Code spans first: their content must survive every pass below untouched.
-  const codeSpans: string[] = []
-  out = out.replace(/`([^`]+)`/g, (_m, code: string) => {
-    codeSpans.push(`<code>${code}</code>`)
-    return `${CODE_OPEN}${codeSpans.length - 1}${CODE_CLOSE}`
-  })
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
   //
   // Each match is extracted into a placeholder token here; the actual
@@ -99,8 +84,8 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // `data-ref="..."` attribute and break out of it, even though `esc(s)`
   // above already neutralizes any quote that was in the *original* text.
   // Deferring the real HTML to the last step handles the mark passes (they
-  // all run before the terminal splice). The terminal REF/CODE splices DO
-  // run after this chip is spliced back, so a forged CODE/LINK placeholder
+  // all run before the terminal splice). The terminal REF splice DOES
+  // run after this chip is spliced back, so a forged LINK placeholder
   // token smuggled into `ref` could otherwise be resolved inside the
   // rebuilt `data-ref="..."` — that direction is closed at the source by
   // esc() stripping U+E000–U+E005 from the input.
@@ -133,8 +118,8 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // of it in one placeholder — no later pass can reach inside or straddle it.
   // esc(s) at the top already turned any `"` in the URL into `&quot;` AND
   // stripped every U+E000–U+E005 code point, so a URL can neither break out
-  // of the href attribute nor smuggle a forged REF/CODE placeholder token
-  // that the terminal passes below (which run AFTER this splice) would
+  // of the href attribute nor smuggle a forged REF placeholder token
+  // that the terminal REF pass below (which runs AFTER this splice) would
   // resolve inside the frozen href; safeHref gates the scheme, and a
   // rejected URL drops the <a> and keeps only the visible text (its marks
   // then get applied by the body pass below).
@@ -159,11 +144,11 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
     return `${LINK_OPEN}${linkTags.length - 1}${LINK_CLOSE}`
   })
   out = applyMarks(out)
-  // Terminal splice order: LINK first, then REF, then CODE. Link text can
-  // contain a REF or CODE placeholder token (both are extracted before
-  // links), so the <a>…</a> HTML must be spliced back in before those
-  // tokens are resolved. Ref-chip and code-span HTML never contain a LINK
-  // token, so LINK-first is safe.
+  // Terminal splice order: LINK first, then REF. Link text can contain a
+  // REF placeholder token (refs are extracted before links), so the
+  // <a>…</a> HTML must be spliced back in before those tokens are
+  // resolved. Ref-chip HTML never contains a LINK token, so LINK-first is
+  // safe.
   //
   // Each pass falls back to the literal match (not e.g. an empty string) on
   // an index with no corresponding entry. esc() strips U+E000–U+E005 from
@@ -172,7 +157,6 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // fallback is a belt-and-braces inert default, not a reachable path.
   out = out.replace(LINK_PLACEHOLDER, (m, i: string) => linkTags[Number(i)] ?? m)
   out = out.replace(REF_PLACEHOLDER, (m, i: string) => refChips[Number(i)] ?? m)
-  out = out.replace(CODE_PLACEHOLDER, (m, i: string) => codeSpans[Number(i)] ?? m)
   return out
 }
 
@@ -346,8 +330,6 @@ function inlineMd(node: Node): string {
     return href ? `[${text}](${href})` : text
   }
   if (tag === 'br') return ''
-  // Literal content, no child recursion — mirrors inline()'s freeze.
-  if (tag === 'code') return '`' + (node.textContent ?? '').replace(/\u00a0/g, ' ') + '`'
   // Without this case, the generic handling below would unwrap the span and
   // drop the marker entirely — re-rendering a note through the rich editor
   // (even untouched) would silently flatten it back to bare text.
