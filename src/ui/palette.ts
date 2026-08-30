@@ -1,4 +1,4 @@
-// src/ui/palette.ts — Ctrl+K command palette: same module items as the pane
+// src/ui/palette.ts — Ctrl+Shift+K command palette: same module items as the pane
 // dropdown (src/ui/panes.ts), filtered by a normalized substring match, plus
 // one synthetic "Due" entry (src/ui/due-panel.ts) that isn't part of the
 // pane module list.
@@ -74,7 +74,7 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    // Ctrl+K itself already can't open the palette over a modal
+    // Ctrl+Shift+K itself already can't open the palette over a modal
     // (comboHotkeyAllowed), but an async modal (e.g. a save-conflict error)
     // can still appear while the palette is already open — this capturing
     // document listener must not act (in particular Enter's navigation)
@@ -102,7 +102,7 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
     // Every module row commits into the active team, so with no team the
     // palette can only list rows that no-op on Enter. Same rule the search bar
     // applies (src/ui/search-ui.ts syncEnabled) — the header button is disabled
-    // to match, and this guard also covers the Ctrl+K path.
+    // to match, and this guard also covers the Ctrl+Shift+K path.
     if (store.doc.teams.length === 0) return
     const teamId = store.doc.nav.activeTeamId
     const team = teamId ? store.doc.teams.find((tm) => tm.id === teamId) ?? null : null

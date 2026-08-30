@@ -201,7 +201,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   disposers.push(() => pm.dispose())
   // sidebarHandle isn't declared until mountSidebar() runs later in this
   // function — safe to reference here because this arrow function only ever
-  // executes later (Ctrl+K or the app-name click), by which point
+  // executes later (Ctrl+Shift+K or the app-name click), by which point
   // mountSidebar() has already returned it.
   const palette = createPalette(store, pm, () => sidebarHandle.openDuePanel())
   shell.onAppNameClick(() => palette.open())
@@ -478,7 +478,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       void saveCtl.saveNow({ explicit: true })
       return
     }
-    if ((e.ctrlKey || e.metaKey) && matchKey(e, 'k')) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && matchKey(e, 'k')) {
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
       palette.open()

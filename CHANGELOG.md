@@ -4,6 +4,25 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.0] - 2026-08-29
+
+### Fixed
+- When only the daily backup file's write permission had lapsed (the primary file was still saving fine), clicking "Grant access…" re-granted it but didn't actually write the backup — the backup stayed out of date until the next scheduled backup, up to a day later. It now writes the backup immediately once you re-grant access.
+- After typing `**bold**`, `*italic*`, or `~~strike~~` to auto-format a word, the cursor stayed stuck inside the formatting: whatever you typed next was still bold/italic, and pressing Enter carried the formatting onto the new line. The cursor now lands cleanly after the formatted word.
+- Applying a heading (H1/H2/H3, by shortcut, toolbar button, or typing `# `) to a bullet or numbered list item did nothing useful: on a nested item it split the list and jumped the cursor to another line, on a top-level item it flattened the whole list to plain text on the next save, and either way the heading was gone after reopening the file. A list item can't also be a heading, so headings now simply don't apply on a list line — take the line out of the list first (Shift+Tab) if you want it to be a heading.
+
+### Added
+- Rich-text notes now support blockquotes (`> text`) and external links (`[text](url)`), each with a toolbar button. The link button (or Ctrl+K) opens a dialog with **Link text** and **Link address** fields: it pre-fills the text from your selection, or — when the cursor is already inside a link — pre-fills both fields so you can edit that link in place. If you type an address with no scheme (`google.com`, `www.google.com`) it's saved as `https://…`. The address is checked when you confirm; a blank or unsupported one (only `http`, `https`, and `mailto` are allowed) shows an error and keeps the dialog open instead of silently doing nothing. Hovering a link shows its destination URL in a tooltip, plus how to open it (Ctrl/Cmd- or middle-click) and edit it (Ctrl+K). To open a link, Ctrl/Cmd-click (or middle-click) it — it opens in a new tab; a plain click just puts the cursor in the link so you can edit it.
+- A toolbar button for inserting a horizontal divider line (previously only possible by typing `---`).
+- Blockquotes: type `> ` at the start of a line to begin one; pressing Enter keeps the quote going on the next line with the bar unbroken, and Enter on an empty line ends the quote and drops you back into a normal paragraph. The quote shortcut (or the ❝ button) with the cursor already inside a quote now removes it. Headings, lists, and dividers don't apply inside a quote (they can't be saved there).
+- Code blocks: at the start of a line, type ```` ``` ```` followed by a space, or ```` ``` ```` then Enter, to begin a fenced code block (or use the new **{ }** toolbar button / Ctrl+Shift+E). Everything inside is kept as literal, monospaced text — Enter adds a plain line break, and Enter on an empty last line ends the block. No other formatting (bold, links, `@` mentions, headings, lists) applies inside a code block, and pasting into one always pastes plain text. A code block longer than 8 lines opens collapsed to a short preview with a "+N more lines" strip; click it to expand. Hovering any code block shows a copy button (copies the whole block) and a collapse/expand toggle in its top-right corner. The collapsed/expanded state is per-view only — it isn't saved to the file and resets to the preview when you reopen the note.
+- Keyboard shortcuts: Ctrl+Shift+E for a code block, Ctrl+Shift+9 (or Ctrl+Shift+Q, for keyboards where the browser or a driver swallows the first) for blockquote, Ctrl+K to insert a link.
+
+### Changed
+- The command palette shortcut moved from Ctrl+K to Ctrl+Shift+K, so Ctrl+K can insert a link while editing a note.
+- Strikethrough now also responds to Ctrl+Shift+X (in addition to Ctrl+Shift+5).
+- Editor toolbar: the copy button now sits on the right, next to the help button, instead of mid-toolbar.
+
 ## [2.6.2] - 2026-08-28
 
 ### Added

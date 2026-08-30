@@ -360,6 +360,51 @@ describe('@ trigger', () => {
     editor.destroy()
   })
 
+  test('typing @ inside a fenced code block does NOT fire onAtTrigger', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<pre>hi @</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild!
+    const range = document.createRange()
+    range.setStart(textNode, textNode.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(hooks.atRanges.length).toBe(0)
+    editor.destroy()
+  })
+
+  test('the @ toolbar button with the caret in a fenced code block inserts nothing', () => {
+    const hooks = makeHooks()
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<pre>code</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, textNode.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const atBtn = Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-toolbar button'))
+      .find((b) => b.title === t('en-US', 'editor_insert_ref_title'))!
+    atBtn.click()
+
+    expect(editorEl.querySelector('pre')!.textContent).toBe('code')
+    expect(hooks.atRanges.length).toBe(0)
+    editor.destroy()
+  })
+
   // Regression: contenteditable's native "select all + delete" can leave
   // editorEl with zero element children — no wrapping <div>/<p> at all,
   // unlike a freshly loaded note (setMd always leaves at least one block,
@@ -421,9 +466,11 @@ describe('keyboard shortcuts', () => {
     [{ key: 'b', ctrlKey: true }, 'bold'],
     [{ key: 'i', ctrlKey: true }, 'italic'],
     [{ key: 'u', ctrlKey: true }, 'underline'],
-    // Strikethrough is Ctrl+Shift+5 (some Windows browsers/drivers eat
-    // Ctrl+Shift+X before the page sees it); matched by physical key so
-    // Shift+5 producing '%' / '(' / etc. across layouts doesn't matter.
+    // Strikethrough takes Ctrl+Shift+X (cross-app convention) and Ctrl+Shift+5
+    // (fallback for Windows browsers/drivers that eat the X chord); both
+    // matched by physical key (e.code) so the produced e.key across layouts
+    // ('%' / '(' / a non-Latin X position) doesn't matter.
+    [{ key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     [{ key: '%', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     [{ key: '5', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
     // Layout-independence: e.key for the physical position isn't the letter
@@ -463,6 +510,36 @@ describe('keyboard shortcuts', () => {
 
     dispatchKey(editorEl, { key: '*', ctrlKey: true, shiftKey: true, code: 'Digit8' })
     expect(execSpy).toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+9 runs formatBlock <blockquote>', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, { key: '(', code: 'Digit9', ctrlKey: true, shiftKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
+
+  test('Ctrl+K in the editor opens the link prompt and is consumed', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('x')
+
+    const e = dispatchKey(editorEl, { key: 'k', code: 'KeyK', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-dialog')).not.toBeNull()
+
+    // clean up the open modal
+    const cancel = Array.from(document.querySelectorAll('.tt-modal-dialog button')).find(b => b.textContent === t('en-US', 'cancel')) as HTMLButtonElement
+    cancel.click()
     editor.destroy()
   })
 })
@@ -784,6 +861,87 @@ describe('list nesting via Tab/Shift+Tab', () => {
   })
 })
 
+describe('headings do not apply to list items', () => {
+  function caretInto(node: Node): void {
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test.each([
+    ['a nested', '- parent\n  - child', 1],
+    ['a top-level', '- only', 0],
+  ])('Ctrl+1 on %s list item is a no-op — no formatBlock, structure intact', (_label, md, liIndex) => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    caretInto(editorEl.querySelectorAll('li')[liIndex]!)
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(editor.getMd()).toBe(md)
+    editor.destroy()
+  })
+
+  test('the H1 toolbar button on a list item is a no-op too', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- parent\n  - child')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    caretInto(editorEl.querySelectorAll('li')[1]!)
+
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_h1_title')
+    ) as HTMLButtonElement
+    btn.click()
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(editor.getMd()).toBe('- parent\n  - child')
+    editor.destroy()
+  })
+
+  test('typing "# " inside a list item leaves the literal text, no heading', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<ul><li># </li></ul>'
+    const li = editorEl.querySelector('li')!
+    caretInto(li)
+    // place caret at end of the "# " text
+    const tn = li.firstChild as Text
+    const r = document.createRange(); r.setStart(tn, tn.textContent!.length); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('h1')).toBeNull()
+    expect(editorEl.querySelector('li')!.textContent).toBe('# ')
+    editor.destroy()
+  })
+
+  test('Ctrl+1 on a plain (non-list) line still applies a heading', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('just text')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    caretInto(editorEl.firstChild!)
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    editor.destroy()
+  })
+})
+
 function closestLiOf(node: Node): HTMLElement | null {
   let n: Node | null = node
   while (n) {
@@ -1042,6 +1200,412 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('❝ button runs formatBlock <blockquote> then flattens nesting', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+    toolbarButton(editor, t('en-US', 'editor_quote_title')).click()
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
+
+  test('❝ button collapses a nested blockquote to one level', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<blockquote>outer<blockquote>inner</blockquote></blockquote>'
+    toolbarButton(editor, t('en-US', 'editor_quote_title')).click()
+    expect(editorEl.querySelectorAll('blockquote').length).toBe(1)
+    editor.destroy()
+  })
+
+  test('❝ button normalizes a <div>-built multi-line blockquote to <br>-separated lines (getMd keeps the breaks)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<blockquote><div>a</div><div>b</div></blockquote>'
+    toolbarButton(editor, t('en-US', 'editor_quote_title')).click()
+    expect(editor.getMd()).toBe('> a\n> b')
+    editor.destroy()
+  })
+
+  test('🧹 clear-formatting also drops blockquote styling', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('blockquote')!)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_clear_format_title')).click()
+
+    expect(editorEl.querySelector('blockquote')).toBeNull()
+    editor.destroy()
+  })
+
+  test('— button inserts an <hr> after the current block and round-trips', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('first line\nsecond line')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const firstDiv = editorEl.querySelector('div')!
+    const range = document.createRange()
+    range.selectNodeContents(firstDiv); range.collapse(false)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_hr_title')).click()
+
+    expect(editorEl.querySelector('hr')).not.toBeNull()
+    expect(editor.getMd()).toBe('first line\n---\nsecond line')
+    editor.destroy()
+  })
+
+  const linkInput = (name: 'tt-link-text' | 'tt-link-url'): HTMLInputElement =>
+    document.querySelector(`.tt-modal-dialog input[name="${name}"]`) as HTMLInputElement
+  const linkModalButton = (key: 'ok' | 'cancel'): HTMLButtonElement =>
+    Array.from(document.querySelectorAll('.tt-modal-dialog button')).find(b => b.textContent === t('en-US', key)) as HTMLButtonElement
+
+  // Drive the two-field link modal. `text: undefined` leaves the text field
+  // at whatever it was pre-filled with; `text: ''` clears it.
+  async function answerLink(res: { text?: string; url: string } | null): Promise<void> {
+    // one microtask for the modal to mount
+    await Promise.resolve()
+    if (res === null) { linkModalButton('cancel').click(); return }
+    if (res.text !== undefined) linkInput('tt-link-text').value = res.text
+    linkInput('tt-link-url').value = res.url
+    linkModalButton('ok').click()
+  }
+
+  test('🔗 button wraps the selection as a markdown link', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('see docs here')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const textNode = editorEl.querySelector('div')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 4); range.setEnd(textNode, 8) // "docs"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    // The selected text pre-fills the text field.
+    expect(linkInput('tt-link-text').value).toBe('docs')
+    await answerLink({ url: 'https://example.com' })
+
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[docs](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button collapses whitespace in a multi-line selection so the link text stays a single line', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const div = editorEl.querySelector('div')!
+    div.textContent = 'a\nb'
+    const textNode = div.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 0); range.setEnd(textNode, 3) // "a\nb"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ url: 'https://example.com' })
+
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[a b](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button with no selection and no text entered uses the URL as the link text', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    // Both fields start empty when nothing is selected.
+    expect(linkInput('tt-link-text').value).toBe('')
+    expect(linkInput('tt-link-url').value).toBe('')
+    await answerLink({ url: 'https://example.com' })
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[https://example.com](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button with no selection: both fields filled in insert [text](url)', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'the site', url: 'https://example.com' })
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[the site](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button: a scheme-less address gets https:// prepended before validation', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    for (const [typed, expected] of [
+      ['google.com', 'https://google.com'],
+      ['www.google.com', 'https://www.google.com'],
+    ] as const) {
+      execSpy.mockClear()
+      toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+      await answerLink({ text: 'g', url: typed })
+      const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+      expect(inserted).toBe(`[g](${expected})`)
+    }
+    editor.destroy()
+  })
+
+  test('🔗 button: an explicit scheme is left untouched (mailto:, and javascript: still rejected)', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'mail', url: 'mailto:a@b.com' })
+    expect(execSpy.mock.calls.find(c => c[0] === 'insertText')![2]).toBe('[mail](mailto:a@b.com)')
+
+    execSpy.mockClear()
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ url: 'javascript:alert(1)' })
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    expect(document.querySelector('.tt-modal-dialog .tt-field-error')!.textContent)
+      .toBe(t('en-US', 'editor_link_invalid_url'))
+    linkModalButton('cancel').click()
+    editor.destroy()
+  })
+
+  test('🔗 button: cancelling the prompt inserts nothing', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink(null)
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    editor.destroy()
+  })
+
+  test('🔗 button inserts the link at the saved selection, not appended, after the modal steals focus', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    // jsdom's execCommand is inert; emulate just enough of insertText
+    // (replace the current selection with a text node) to observe WHERE the
+    // link lands — the spy-arg-only tests can't see the misplacement bug.
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd: string, _ui?: boolean, value?: string) => {
+      if (cmd === 'insertText' && typeof value === 'string') {
+        const s = window.getSelection()
+        if (s && s.rangeCount > 0) {
+          const r = s.getRangeAt(0)
+          r.deleteContents()
+          r.insertNode(document.createTextNode(value))
+        }
+      }
+      return true
+    })
+    editor.setMd('see docs here')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const textNode = editorEl.querySelector('div')!.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 4); range.setEnd(textNode, 8) // "docs"
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ url: 'https://example.com' })
+
+    // Landed in place, replacing "docs" — NOT appended to the end.
+    expect(editor.getMd()).toBe('see [docs](https://example.com) here')
+  })
+
+  test('🔗 button: a javascript: URL is rejected in-place — modal stays open with an error, nothing inserted', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ url: 'javascript:alert(1)' })
+
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    // Modal still open, input intact, error shown.
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(linkInput('tt-link-url').value).toBe('javascript:alert(1)')
+    expect(document.querySelector('.tt-modal-dialog .tt-field-error')!.textContent)
+      .toBe(t('en-US', 'editor_link_invalid_url'))
+    editor.destroy()
+  })
+
+  test('🔗 button: correcting a rejected URL then confirming inserts the link', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'site', url: 'not a url' })
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    // Fix it and confirm again — same still-open modal.
+    await answerLink({ url: 'https://example.com' })
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[site](https://example.com)')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    editor.destroy()
+  })
+
+  test('🔗 button: caret inside an existing link opens the modal pre-filled to edit it', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 3); caret.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-title')!.textContent).toBe(t('en-US', 'editor_link_edit_title'))
+    expect(linkInput('tt-link-text').value).toBe('the docs')
+    expect(linkInput('tt-link-url').value).toBe('https://example.com/x')
+
+    await answerLink({ url: 'https://example.com/y' })
+    // The whole <a> node was swapped, text kept — no nested [[…](…)](…).
+    expect(editor.getMd()).toBe('see [the docs](https://example.com/y)')
+    expect(editorEl.querySelectorAll('a[href]')).toHaveLength(1)
+    editor.destroy()
+  })
+
+  test('🔗 button: editing an existing link can change its text', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 3); caret.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'the manual', url: 'https://example.com/x' })
+    expect(editor.getMd()).toBe('see [the manual](https://example.com/x)')
+    editor.destroy()
+  })
+
+  test('🔗 button: re-editing a link built by typed markdown does not double-wrap it', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    // build the link the way the user did — by typing the markdown pattern
+    const div = editorEl.querySelector('div')!
+    div.textContent = 'go [site](https://example.com)'
+    const r = document.createRange(); r.selectNodeContents(div); r.collapse(false)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    expect(a).not.toBeNull()
+
+    // caret inside it, Ctrl+K, change only the URL
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 2); caret.collapse(true)
+    s.removeAllRanges(); s.addRange(caret)
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ url: 'https://example.com/next' })
+
+    expect(editor.getMd()).toBe('go [site](https://example.com/next)')
+    expect(editorEl.querySelectorAll('a[href]')).toHaveLength(1)
+    editor.destroy()
+  })
+
+  test('Ctrl+click on an external link opens it in a new tab; a plain click does not', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(openSpy).not.toHaveBeenCalled()
+
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener,noreferrer')
+
+    editor.destroy()
+    // listeners are gone: a re-dispatched ctrl+click does nothing more
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    expect(openSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('middle-click on an external link opens it in a new tab', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+
+    a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/x', '_blank', 'noopener,noreferrer')
+
+    editor.destroy()
+    // listeners are gone: a re-dispatched middle-click does nothing more
+    a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(openSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('destroy() closes a still-open link-URL modal', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    editor.destroy()
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('toolbar button order is locked', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const titles = Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-toolbar button')).map(b => b.title)
+    expect(titles).toEqual([
+      t('en-US', 'editor_bold_title'),
+      t('en-US', 'editor_italic_title'),
+      t('en-US', 'editor_underline_title'),
+      t('en-US', 'editor_strike_title'),
+      t('en-US', 'editor_ul_title'),
+      t('en-US', 'editor_ol_title'),
+      t('en-US', 'editor_h1_title'),
+      t('en-US', 'editor_h2_title'),
+      t('en-US', 'editor_h3_title'),
+      t('en-US', 'editor_paragraph_title'),
+      t('en-US', 'editor_quote_title'),
+      t('en-US', 'editor_codeblock_title'),
+      t('en-US', 'editor_hr_title'),
+      t('en-US', 'editor_link_title'),
+      t('en-US', 'editor_clear_format_title'),
+      t('en-US', 'editor_templates_title'),
+      t('en-US', 'editor_insert_ref_title'),
+      t('en-US', 'editor_copy_options_title'),
+      t('en-US', 'editor_help_title'),
+    ])
+    editor.destroy()
+  })
+
 })
 
 describe('block-prefix auto-format on typing', () => {
@@ -1210,6 +1774,718 @@ describe('block-prefix auto-format on typing', () => {
   })
 })
 
+describe('blockquote editing', () => {
+  function mount(): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const range = document.createRange()
+    range.setStart(node, offset)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('typing "> " at the start of a top-level line turns it into a blockquote', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>> </div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const bq = editorEl.querySelector('blockquote')!
+    expect(bq).not.toBeNull()
+    expect(bq.textContent).toBe('') // "> " prefix consumed, empty line ready for typing
+    expect(bq.innerHTML).toBe('<br>')
+    editor.destroy()
+  })
+
+  // Regression: "> " autoformat used to strip the prefix and then call
+  // execCommand('formatBlock', '<blockquote>') against a collapsed caret in
+  // the now-empty <div>. Chromium's formatBlock skips an empty block and
+  // wraps the NEXT one instead — so the following line got pulled into the
+  // quote and a stray empty <div> was left where the caret was.
+  test('typing "> " does not swallow the following line into the blockquote', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>> </div><div>next line</div><div>third line</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const bq = editorEl.querySelector('blockquote')!
+    expect(bq.textContent).toBe('')
+    expect(bq.nextElementSibling!.textContent).toBe('next line')
+    expect(bq.nextElementSibling!.nextElementSibling!.textContent).toBe('third line')
+    expect(editorEl.querySelectorAll('div')).toHaveLength(2) // no stray empty <div>
+    editor.destroy()
+  })
+
+  test('typing "> " inside a list item is left as literal text (a nested quote cannot round-trip)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<ul><li>> </li></ul>'
+    const li = editorEl.querySelector('li')!
+    caretIn(li.firstChild as Text, (li.firstChild as Text).textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('blockquote')).toBeNull()
+    expect(li.textContent).toBe('> ')
+    editor.destroy()
+  })
+
+  test.each([
+    ['# ', 'h1'],
+    ['- ', 'ul'],
+    ['--- ', 'hr'],
+  ])('typing %o inside a blockquote is a no-op (block formatting cannot round-trip through "> ")', (prefix, tag) => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = `<blockquote>${prefix}</blockquote>`
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq.firstChild as Text, (bq.firstChild as Text).textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector(tag)).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe(prefix)
+    editor.destroy()
+  })
+
+  test('plain Enter inside a blockquote inserts a line break, not a paragraph split', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>alpha</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('insertLineBreak', false, undefined)
+    expect(execSpy).not.toHaveBeenCalledWith('insertParagraph', expect.anything(), expect.anything())
+    expect(editorEl.querySelectorAll('blockquote')).toHaveLength(1)
+    editor.destroy()
+  })
+
+  test('Enter on an empty final line leaves the blockquote for a fresh paragraph', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>alpha<br><br></blockquote>'
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq, 2) // after "alpha" and the first <br>, on the empty last line
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const quote = editorEl.querySelector('blockquote')!
+    expect(quote.textContent).toBe('alpha')
+    const after = quote.nextElementSibling as HTMLElement
+    expect(after.tagName).toBe('DIV')
+    expect(window.getSelection()!.getRangeAt(0).startContainer === after || after.contains(window.getSelection()!.getRangeAt(0).startContainer)).toBe(true)
+    expect(editor.getMd()).toBe('> alpha\n')
+    editor.destroy()
+  })
+
+  test('Enter on an otherwise-empty blockquote replaces it with a paragraph', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote><br></blockquote>'
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq, 0)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('blockquote')).toBeNull()
+    expect(editorEl.firstElementChild!.tagName).toBe('DIV')
+    editor.destroy()
+  })
+
+  // Regression: exit-Enter on a blockquote whose last line carried inline
+  // formatting used to delete the whole quote. `insertLineBreak` at the end
+  // of a bold run leaves the trailing <br> INSIDE the <strong>, so its
+  // parentNode is the <strong>, not the blockquote — exitFlatBlock's old
+  // `opener.parentNode === block` guard failed and the cut fell back to
+  // deleting from the block's start.
+  test('Enter to leave a blockquote whose last line is bold keeps the quote content', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    // DOM as it stands after one insertLineBreak past "bold": <br> nested in <strong>
+    editorEl.innerHTML = '<blockquote>a<br>b<br><strong>bold<br></strong></blockquote>'
+    const strong = editorEl.querySelector('strong')!
+    caretIn(strong, 2) // after "bold" text and the nested <br>, on the empty last line
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const quote = editorEl.querySelector('blockquote')!
+    expect(quote).not.toBeNull()
+    expect(quote.textContent).toBe('abbold') // nothing wiped
+    expect(quote.querySelector('strong')!.textContent).toBe('bold')
+    const after = quote.nextElementSibling as HTMLElement
+    expect(after.tagName).toBe('DIV')
+    expect(editor.getMd()).toBe('> a\n> b\n> **bold**\n')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+9 with the caret already in a blockquote unwraps it', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('blockquote')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: '(', code: 'Digit9', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('blockquote')).toBeNull()
+    expect(editor.getMd()).toBe('quoted')
+    editor.destroy()
+  })
+
+  test('Ctrl+1 with the caret in a blockquote does not apply a heading', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+8 with the caret in a blockquote does not start a list', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    dispatchKey(editorEl, { key: '*', code: 'Digit8', ctrlKey: true, shiftKey: true })
+
+    expect(execSpy).not.toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    editor.destroy()
+  })
+
+  test('the — toolbar button with the caret in a blockquote inserts no rule', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const hrBtn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_hr_title')
+    ) as HTMLButtonElement
+    hrBtn.click()
+
+    expect(editorEl.querySelector('hr')).toBeNull()
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+Q is an alternate blockquote chord (for drivers that eat Ctrl+Shift+9)', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const e = dispatchKey(editorEl, { key: 'Q', code: 'KeyQ', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+Q with the caret already in a blockquote unwraps it too', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted</blockquote>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('blockquote')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchKey(editorEl, { key: 'Q', code: 'KeyQ', ctrlKey: true, shiftKey: true })
+
+    expect(editorEl.querySelector('blockquote')).toBeNull()
+    editor.destroy()
+  })
+})
+
+describe('code block editing', () => {
+  function mount(): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const range = document.createRange()
+    range.setStart(node, offset)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  test('typing "``` " at the start of a top-level line turns it into a <pre>', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>``` </div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  test('typing "```" then Enter also opens a code block (GitHub/Slack gesture)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>```</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  test('the ❝ quote button title lists Ctrl+Shift+Q as the alternate chord', () => {
+    for (const loc of ['en-US', 'pt-BR'] as const) {
+      expect(t(loc, 'editor_quote_title')).toMatch(/Ctrl\+Shift\+Q/)
+    }
+  })
+
+  test('typing "``` " inside a blockquote is left as literal text', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>``` </blockquote>'
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq.firstChild as Text, (bq.firstChild as Text).textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe('``` ')
+    editor.destroy()
+  })
+
+  test.each([
+    ['# ', 'h1'],
+    ['- ', 'ul'],
+    ['--- ', 'hr'],
+    ['> ', 'blockquote'],
+  ])('typing %o inside a <pre> is a no-op (a code block is literal text)', (prefix, tag) => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = `<pre>${prefix}</pre>`
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre.firstChild as Text, (pre.firstChild as Text).textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector(tag)).toBeNull()
+    expect(editorEl.querySelector('pre')!.textContent).toBe(prefix)
+    editor.destroy()
+  })
+
+  test('typed `x` inside a <pre> stays literal — no <code> wrap', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>run `x`</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('code')).toBeNull()
+    editor.destroy()
+  })
+
+  test('plain Enter inside a <pre> inserts a line break, not a paragraph split', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>alpha</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('insertLineBreak', false, undefined)
+    expect(execSpy).not.toHaveBeenCalledWith('insertParagraph', expect.anything(), expect.anything())
+    expect(editorEl.querySelectorAll('pre')).toHaveLength(1)
+    editor.destroy()
+  })
+
+  test('Enter on an empty final line leaves the <pre> for a fresh paragraph', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>code<br><br></pre>'
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre, 2) // after "code" and the first <br>, on the empty last line
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    const block = editorEl.querySelector('pre')!
+    expect(block.textContent).toBe('code')
+    expect((block.nextElementSibling as HTMLElement).tagName).toBe('DIV')
+    expect(editor.getMd()).toBe('```\ncode\n```\n')
+    editor.destroy()
+  })
+
+  test('Enter on an otherwise-empty <pre> replaces it with a paragraph', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre><br></pre>'
+    caretIn(editorEl.querySelector('pre')!, 0)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.firstElementChild!.tagName).toBe('DIV')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E with the caret already in a <pre> unwraps it', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>quoted</pre>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('pre')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editor.getMd()).toBe('quoted')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E on an empty line creates a <pre>', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div><br></div>'
+    caretIn(editorEl.querySelector('div')!, 0)
+
+    dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E on a non-empty line runs formatBlock <pre>', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+6 is the digit-row backup for the code-block chord', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const e = dispatchKey(editorEl, { key: '6', code: 'Digit6', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+6 with the caret already in a <pre> unwraps it', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>quoted</pre>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('pre')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: '6', code: 'Digit6', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).toBeNull()
+    editor.destroy()
+  })
+
+  test('Ctrl+B with the caret in a <pre> applies no bold', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>plain</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const e = dispatchKey(editorEl, { key: 'b', code: 'KeyB', ctrlKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).not.toHaveBeenCalledWith('bold', false, undefined)
+    editor.destroy()
+  })
+
+  test('Ctrl+1 with the caret in a <pre> applies no heading', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>plain</pre>'
+    const textNode = editorEl.querySelector('pre')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    editor.destroy()
+  })
+
+  test('the { } toolbar button runs formatBlock <pre> on a plain line', () => {
+    const { editor } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('a line')
+
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_codeblock_title')
+    ) as HTMLButtonElement
+    btn.click()
+
+    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('paste inside a <pre> inserts plain text only, never markdown/HTML', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre>x</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 1)
+
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, 'clipboardData', {
+      value: {
+        getData: (type: string) =>
+          type === 'text/html' ? '<strong>**bold**</strong>' : '**bold**',
+      },
+    })
+    editorEl.dispatchEvent(e)
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, '**bold**')
+    expect(execSpy).not.toHaveBeenCalledWith('insertHTML', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
+  test('paste over a selection that spans from a normal line into a <pre> is plain text too', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>intro</div><pre>code</pre>'
+    const range = document.createRange()
+    range.setStart(editorEl.querySelector('div')!.firstChild as Text, 2)
+    range.setEnd(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, 'clipboardData', {
+      value: { getData: (type: string) => (type === 'text/html' ? '<b>x</b>' : 'x') },
+    })
+    editorEl.dispatchEvent(e)
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, 'x')
+    expect(execSpy).not.toHaveBeenCalledWith('insertHTML', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
+  test('typing `x` on a normal line does NOT auto-format — no inline code syntax', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>run `x`</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('code')).toBeNull()
+    expect(editorEl.textContent).toBe('run `x`')
+    editor.destroy()
+  })
+})
+
+describe('code block collapse + copy', () => {
+  function mount(): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    return { editor, editorEl: editor.root.querySelector('.editor') as HTMLElement }
+  }
+  const longFence = '```\n' + Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n') + '\n```'
+  const shortFence = '```\na\nb\nc\n```'
+
+  test('setMd auto-collapses a code block over 8 lines and tags it', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(longFence)
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.hasAttribute('data-collapsed')).toBe(true)
+    expect(pre.dataset.lines).toBe('12')
+    expect(pre.dataset.moreLabel).toBe('+9 more lines')
+    editor.destroy()
+  })
+
+  test('setMd leaves a short code block expanded', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(shortFence)
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.hasAttribute('data-collapsed')).toBe(false)
+    expect(pre.dataset.lines).toBe('3')
+    editor.destroy()
+  })
+
+  test('collapse is view-only — getMd is byte-identical', () => {
+    const { editor } = mount()
+    editor.setMd(longFence)
+    expect(editor.getMd()).toBe(longFence)
+    editor.destroy()
+  })
+
+  test('clicking a collapsed block expands it', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(longFence)
+    const pre = editorEl.querySelector('pre')!
+    pre.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(pre.hasAttribute('data-collapsed')).toBe(false)
+    editor.destroy()
+  })
+
+  test('the hover copy button writes the raw block text to the clipboard', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const { editor, editorEl } = mount()
+      editor.setMd(shortFence)
+      const pre = editorEl.querySelector('pre')!
+      pre.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      const controls = editor.root.querySelector('.tt-cb-controls') as HTMLElement
+      expect(controls.hidden).toBe(false)
+      const copyBtn = controls.querySelectorAll('button')[0] as HTMLButtonElement
+      copyBtn.click()
+      expect(writeText).toHaveBeenCalledWith('a\nb\nc')
+      editor.destroy()
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'clipboard', orig)
+      else delete (navigator as unknown as { clipboard?: unknown }).clipboard
+    }
+  })
+
+  test('the hover toggle button collapses and re-expands the block', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd(shortFence)
+    const pre = editorEl.querySelector('pre')!
+    pre.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    const toggleBtn = (editor.root.querySelector('.tt-cb-controls') as HTMLElement)
+      .querySelectorAll('button')[1] as HTMLButtonElement
+
+    toggleBtn.click()
+    expect(pre.hasAttribute('data-collapsed')).toBe(true)
+    toggleBtn.click()
+    expect(pre.hasAttribute('data-collapsed')).toBe(false)
+    editor.destroy()
+  })
+
+  test('a mid-session paste decorates only the new block, not one the user expanded', () => {
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
+      if (cmd === 'insertHTML' && typeof val === 'string') {
+        const editorEl = document.querySelector('.editor') as HTMLElement
+        editorEl.insertAdjacentHTML('beforeend', val)
+      }
+      return true
+    })
+    const { editor, editorEl } = mount()
+    editor.setMd(longFence)
+    const first = editorEl.querySelector('pre')!
+    first.removeAttribute('data-collapsed') // user expanded it
+
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, 'clipboardData', {
+      value: { getData: (tp: string) => (tp === 'text/html' ? `<pre>${Array.from({ length: 10 }, (_, i) => `x${i}`).join('\n')}</pre>` : '') },
+    })
+    editorEl.dispatchEvent(e)
+
+    const pres = editorEl.querySelectorAll('pre')
+    expect(first.hasAttribute('data-collapsed')).toBe(false) // untouched
+    expect(pres[pres.length - 1]!.hasAttribute('data-collapsed')).toBe(true) // new one collapsed
+    editor.destroy()
+  })
+})
+
+describe('inline auto-format caret exit', () => {
+  function mountAt(hooksLoc: 'en-US' | 'pt-BR', html: string, caretOffsetFromEnd = 0): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), hooksLoc)
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = html
+    const tn = editorEl.firstChild!.firstChild as Text
+    const at = tn.textContent!.length - caretOffsetFromEnd
+    const r = document.createRange(); r.setStart(tn, at); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+    return { editor, editorEl }
+  }
+
+  test.each([
+    ['**x**', 'strong'],
+    ['*x*', 'em'],
+    ['~~x~~', 's'],
+  ])('typing %s at end of line parks the caret OUTSIDE the new <%s>, in a trailing gap', (typed, tag) => {
+    const { editor, editorEl } = mountAt('en-US', `<div>a ${typed}</div>`)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const mark = editorEl.querySelector(tag)!
+    expect(mark).not.toBeNull()
+    // a trailing text node (the caret's home) now follows the mark
+    expect(mark.nextSibling?.nodeType).toBe(Node.TEXT_NODE)
+    const sel = window.getSelection()!
+    expect(sel.anchorNode).toBe(mark.nextSibling)
+    // and it round-trips: the gap is a plain trailing space, nothing more
+    expect(editor.getMd()).toBe(`a ${typed} `)
+    editor.destroy()
+  })
+
+  test('typing **b** with text still after the caret adds no gap (would be a spurious space)', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a **b** tail</div>', 5) // caret right after the closing **
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const strong = editorEl.querySelector('strong')!
+    expect(strong.textContent).toBe('b')
+    expect(editor.getMd()).toBe('a **b** tail')
+    editor.destroy()
+  })
+})
+
 describe('inline auto-format guards', () => {
   test('skips auto-format when the matched span contains an embedded element (e.g. ref chip)', () => {
     const hooks = makeHooks()
@@ -1256,6 +2532,88 @@ describe('inline auto-format guards', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('typed link autoformat', () => {
+  function typeInto(editorEl: HTMLElement, text: string): void {
+    const div = editorEl.querySelector('div')!
+    div.textContent = text
+    const r = document.createRange()
+    r.selectNodeContents(div); r.collapse(false)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(r)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  test('a completed [text](https://…) becomes a live anchor', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    typeInto(editorEl, 'see [docs](https://example.com)')
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    expect(a).not.toBeNull()
+    expect(a.getAttribute('href')).toBe('https://example.com')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    expect(a.textContent).toBe('docs')
+    expect(editor.getMd()).toBe('see [docs](https://example.com)')
+    editor.destroy()
+  })
+
+  test('a javascript: URL is left as literal text', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    typeInto(editorEl, 'x [bad](javascript:alert(1))')
+    expect(editorEl.querySelector('a[href]')).toBeNull()
+    expect(editorEl.textContent).toBe('x [bad](javascript:alert(1))')
+    editor.destroy()
+  })
+
+  test('a scheme-less destination gets https:// prepended, same as the link dialog', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    typeInto(editorEl, 'see [docs](example.com)')
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    expect(a).not.toBeNull()
+    expect(a.getAttribute('href')).toBe('https://example.com')
+    expect(a.textContent).toBe('docs')
+    expect(editor.getMd()).toBe('see [docs](https://example.com)')
+    editor.destroy()
+  })
+
+  test('a www. destination converts too', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd('')
+    typeInto(editorEl, '[home](www.example.com)')
+    expect((editorEl.querySelector('a[href]') as HTMLAnchorElement).getAttribute('href')).toBe('https://www.example.com')
+    editor.destroy()
+  })
+
+  test('the matched span containing an embedded element is left untouched', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    // "[x](" + <strong>bold</strong> + ")" reads as a closed [text](url) in
+    // textContent, but the span holds an element — must not be rebuilt.
+    editorEl.innerHTML = '<div>[x](https://ex.com/<strong>b</strong>)</div>'
+    const block = editorEl.firstChild as HTMLElement
+    const trailing = block.lastChild as Text
+    const range = document.createRange()
+    range.setStart(trailing, trailing.textContent!.length)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges(); sel.addRange(range)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(editorEl.querySelector('a[href]')).toBeNull()
+    expect(editorEl.querySelector('strong')).not.toBeNull()
+    editor.destroy()
   })
 })
 
@@ -1310,6 +2668,19 @@ describe('detectBlockPrefix', () => {
   test('detects hr prefix with trailing NBSP too', () => {
     const nbsp = ' '
     expect(detectBlockPrefix('---' + nbsp)).toEqual({ type: 'hr', prefixLen: 4 })
+  })
+  test('detects a "> " blockquote prefix, plain and NBSP variant', () => {
+    const nbsp = String.fromCharCode(0xa0)
+    expect(detectBlockPrefix('> ')).toEqual({ type: 'blockquote', prefixLen: 2 })
+    expect(detectBlockPrefix('>' + nbsp)).toEqual({ type: 'blockquote', prefixLen: 2 })
+    expect(detectBlockPrefix('> quoted')).toBeNull()
+  })
+  test('detects a "``` " code-block prefix, plain and NBSP variant', () => {
+    const nbsp = String.fromCharCode(0xa0)
+    expect(detectBlockPrefix('``` ')).toEqual({ type: 'codeblock', prefixLen: 4 })
+    expect(detectBlockPrefix('```' + nbsp)).toEqual({ type: 'codeblock', prefixLen: 4 })
+    expect(detectBlockPrefix('```js')).toBeNull()
+    expect(detectBlockPrefix('``')).toBeNull()
   })
 })
 

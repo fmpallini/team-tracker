@@ -431,6 +431,51 @@ test('a successful primary save with a missing backup grant sets state to permis
   expect(opts.action?.label).toBe('Grant access…')
 })
 
+test('"Grant access..." for a backup-only lapse mirrors to the backup now instead of waiting for the interval', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const shell = makeShell()
+  const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
+  // Primary grant is fine throughout — queryPermission 'granted', so the
+  // primary requestPermission is never reached.
+  const queryPermission = vi.fn(async () => 'granted' as PermissionState)
+  const requestPermission = vi.fn(async () => 'granted' as PermissionState)
+  const handle = { queryPermission, requestPermission } as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
+  const backupCtl = {
+    writeBackupNow: vi.fn(async () => {}),
+    maybeWriteBackup: vi.fn(async () => {}),
+    regrantPermission: vi.fn(async () => {}),
+    // true during the initial save's success tail (pill goes amber), false
+    // once regrantPermission has run inside resolveGrants.
+    hasMissingGrant: vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false),
+    checkOrphaned: vi.fn(async () => false),
+    getStatus: vi.fn(async () => null),
+  }
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
+  })
+
+  await ctl.saveNow()
+  expect(store.dirty).toBe(false)
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  opts.action?.onClick()
+  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(backupCtl.regrantPermission).toHaveBeenCalledTimes(1)
+  // The current doc bytes are pushed straight to the .bck — not deferred.
+  expect(backupCtl.writeBackupNow).toHaveBeenCalledWith(expect.any(Uint8Array))
+  // No second primary write: the primary file was never dirty.
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  // Requesting the primary grant again is unnecessary — it never lapsed.
+  expect(requestPermission).not.toHaveBeenCalled()
+  expect(setSaveStateSpy.mock.calls.map((c) => c[0])).toEqual(['saving', 'permission', 'saved'])
+})
+
 test('repeated save attempts while a grant is still missing only toast once', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   store.update((d) => { d.prefs.autoSaveMin = 9 })

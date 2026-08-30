@@ -147,7 +147,7 @@ async function churnCycle(page: Page, i: number): Promise<void> {
   await page.keyboard.press('Alt+1')
 
   // Command palette + search: document-level listeners, dropdown overlays.
-  await page.keyboard.press('Control+k')
+  await page.keyboard.press('Control+Shift+k')
   await page.keyboard.press('Escape')
 
   await quiesce(page)
@@ -264,7 +264,7 @@ async function overlayCycle(page: Page): Promise<void> {
   await expect(dialog).toHaveCount(0)
 
   // Command palette, actually navigated rather than opened and dismissed.
-  await page.keyboard.press('Control+k')
+  await page.keyboard.press('Control+Shift+k')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Escape')
 }

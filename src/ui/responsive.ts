@@ -11,7 +11,7 @@ const SIDEBAR_HIDE_BELOW_PX = 650
 // settings (⚙) buttons — everything else (sidebar collapse toggle, app
 // name, search bar, the active-team indicator, the save-state pill,
 // fullscreen, help) has a keyboard equivalent (Ctrl+S still saves with the
-// pill hidden, Ctrl+K/Ctrl+F reopen the app-name/search actions) or simply
+// pill hidden, Ctrl+Shift+K/Ctrl+F reopen the app-name/search actions) or simply
 // isn't essential moment-to-moment. Below this width the two
 // floored-but-not-shrinkable clusters either side of them (headerRight's
 // icon buttons never shrink at all; headerLeft's app name/search bar bottom

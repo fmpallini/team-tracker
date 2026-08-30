@@ -4,8 +4,9 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
+import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 
@@ -59,6 +60,15 @@ export const SLASH_TRIGGER_EVENT = 'tt-slash-trigger'
 const CHANGE_DEBOUNCE_MS = 300
 const TAB_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 
+// Code-block collapse chrome (view-only, never persisted -- see the
+// "code-block collapse + copy chrome" section in createEditor).
+const CB_AUTO_COLLAPSE_OVER = 8 // blocks longer than this auto-collapse on load
+const CB_PEEK_LINES = 3 // lines still shown while collapsed
+const CB_COPY_GLYPH = '\u29c9'
+const CB_COPIED_GLYPH = '\u2713'
+const CB_COLLAPSE_GLYPH = '\u2303'
+const CB_EXPAND_GLYPH = '\u2304'
+
 // --- pure, unit-testable auto-format detection -----------------------------
 
 export interface InlineMatch {
@@ -93,13 +103,13 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote' | 'codeblock'
   prefixLen: number
 }
 
 /* eslint-disable no-irregular-whitespace -- the character classes below intentionally contain a literal U+00A0 non-breaking space alongside the regular space; see the doc comment for why. */
 /**
- * Detects a markdown block-prefix (`# `, `- `, `1. `, ...) that makes up the
+ * Detects a markdown block-prefix (`# `, `- `, `1. `, `> `, ...) that makes up the
  * ENTIRE current block text. The trailing space is matched as `[  ]`,
  * not a literal space: real Chrome substitutes a non-breaking space for
  * whitespace at the edge of a text node (to stop HTML's normal whitespace
@@ -118,6 +128,10 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
 
   m = /^(-{3,})[  ]$/.exec(text)
   if (m) return { type: 'hr', prefixLen: m[0]!.length }
+
+  if (/^>[  ]$/.test(text)) return { type: 'blockquote', prefixLen: 2 }
+
+  if (/^```[ \u00a0]$/.test(text)) return { type: 'codeblock', prefixLen: 4 }
 
   return null
 }
@@ -278,6 +292,132 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return null
   }
 
+  /**
+   * The `<blockquote>` the caret currently sits in, or null. Block-level
+   * formatting (headings, lists, rules, a nested quote) is suppressed inside
+   * one: a flat blockquote serializes as `> ` + inline content only
+   * (core/markdown.ts), so anything block-level applied in there is silently
+   * lost on the next reload. Same rationale as flattenNestedHeadings dropping
+   * a heading inside an `<li>`.
+   */
+  function blockquoteAtCaret(): HTMLElement | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    const start = sel.getRangeAt(0).startContainer
+    const host = start instanceof HTMLElement ? start : start.parentElement
+    const bq = host?.closest('blockquote') as HTMLElement | null
+    return bq && editorEl.contains(bq) ? bq : null
+  }
+
+  /**
+   * The `<pre>` fenced code block the caret sits in, or null. Everything
+   * formatting-related is suppressed inside one: a fenced code block is
+   * literal text only (core/markdown.ts serializes it as bare ``` fences
+   * with no inline parsing), so bold / links / @refs / headings / lists / a
+   * quote applied in there would be silently dropped on the next reload.
+   * Same rationale — and same shape — as blockquoteAtCaret.
+   */
+  function preAtCaret(): HTMLElement | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    const start = sel.getRangeAt(0).startContainer
+    const host = start instanceof HTMLElement ? start : start.parentElement
+    const pre = host?.closest('pre') as HTMLElement | null
+    return pre && editorEl.contains(pre) ? pre : null
+  }
+
+  /** The editor `<pre>` a node sits in, or null. */
+  function preOf(n: Node | null): HTMLElement | null {
+    const host = n instanceof HTMLElement ? n : n?.parentElement ?? null
+    const pre = host?.closest('pre') as HTMLElement | null
+    return pre && editorEl.contains(pre) ? pre : null
+  }
+
+  /**
+   * True when the current selection has an endpoint inside a fenced code
+   * block — even one that also reaches outside it. Paste uses this (not
+   * preAtCaret, which only looks at the selection's start) so a snippet
+   * dropped over a mixed selection still lands as literal text and can't
+   * splice block markup into the `<pre>`.
+   */
+  function selectionTouchesPre(): boolean {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return false
+    const r = sel.getRangeAt(0)
+    return !!(preOf(r.startContainer) || preOf(r.endContainer) || preOf(r.commonAncestorContainer))
+  }
+
+  /**
+   * The node immediately before a collapsed caret, or null when the caret is
+   * at the very start of its container. A text node with characters before
+   * the caret returns itself — there IS content on this line, so callers
+   * testing "is the current line empty" see a non-`<br>`, non-null result.
+   */
+  function nodeBeforeCaret(range: Range): Node | null {
+    const { startContainer, startOffset } = range
+    if (startContainer.nodeType === Node.TEXT_NODE) {
+      return startOffset > 0 ? startContainer : startContainer.previousSibling
+    }
+    return startContainer.childNodes[startOffset - 1] ?? null
+  }
+
+  /**
+   * True when a plain Enter in the flat block `block` (a `<blockquote>` or a
+   * `<pre>` code block) should mean "leave the block": the caret sits on an
+   * empty line (nothing before it on that line but a `<br>` or the block's
+   * own edge) AND that line is the block's last (nothing but blank / `<br>`
+   * follows). Slack behaves the same for both. An empty line in the MIDDLE
+   * just takes a `<br>` like any other Enter.
+   */
+  function caretAtFlatBlockEnd(block: HTMLElement): boolean {
+    const sel = window.getSelection()
+    if (!sel || !sel.isCollapsed || sel.rangeCount === 0) return false
+    const caret = sel.getRangeAt(0)
+    if (caret.startContainer !== block && !block.contains(caret.startContainer)) return false
+    const toEnd = document.createRange()
+    toEnd.setStart(caret.startContainer, caret.startOffset)
+    toEnd.setEnd(block, block.childNodes.length)
+    if (toEnd.toString().replace(/\u00a0/g, ' ').trim() !== '') return false
+    const before = nodeBeforeCaret(caret)
+    return before === null || (before instanceof HTMLElement && before.tagName === 'BR')
+  }
+
+  /**
+   * Drops the empty trailing line the caret is on and moves the caret out of
+   * the flat block `block` (a `<blockquote>` or `<pre>`) into a fresh empty
+   * `<div>` right after it — or in place of it when the block would be left
+   * with no content at all.
+   */
+  function exitFlatBlock(block: HTMLElement): void {
+    const sel = window.getSelection()
+    const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    const opener = caret ? nodeBeforeCaret(caret) : null
+    const cut = document.createRange()
+    // `opener` is the trailing empty line's leading `<br>` (caretAtFlatBlockEnd
+    // guaranteed it's a `<br>` or null). It may be nested inside an inline
+    // wrapper rather than a direct child of `block` — e.g. `insertLineBreak`
+    // at the end of a bold run leaves `<strong>text<br></strong>`. setStartBefore
+    // still cuts from that `<br>` regardless of depth; only a null opener (the
+    // whole block is the empty line) starts the cut at the block's own edge.
+    // (An earlier `opener.parentNode === block` guard here fell through to
+    // setStart(block, 0) for the nested case and deleteContents wiped the
+    // entire block.)
+    if (opener) cut.setStartBefore(opener)
+    else cut.setStart(block, 0)
+    cut.setEnd(block, block.childNodes.length)
+    cut.deleteContents()
+
+    const div = document.createElement('div')
+    div.appendChild(document.createElement('br'))
+    if ((block.textContent ?? '').trim() === '') block.replaceWith(div)
+    else block.after(div)
+
+    const r = document.createRange()
+    r.selectNodeContents(div)
+    r.collapse(true)
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
   function listItemDepth(li: HTMLElement): number {
     let depth = 0
     let n: HTMLElement | null = li.parentElement
@@ -400,6 +540,39 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     sel.addRange(r)
   }
 
+  /**
+   * Places the caret just past a freshly-inserted inline element but
+   * genuinely OUTSIDE it. When `node` is at the end of its block, park
+   * the caret in a trailing NBSP: setStartAfter alone leaves the caret in
+   * the element’s formatting context in every engine, so the next
+   * keystroke — and Enter — keeps typing inside the new
+   * <strong>/<em>/<s> (typing `**b**` then more words gave one long bold
+   * run; Enter carried an empty <strong> to the next line). The NBSP
+   * renders as a plain space and round-trips as one —
+   * mdToHtml turns a block-trailing space after inline formatting back
+   * into &nbsp;, the same mechanism the "**Label:** " template lines rely
+   * on. When real text already follows `node` (a span wrapped mid-line),
+   * no gap is added — it would be a spurious space — and a plain
+   * setStartAfter is used.
+   */
+  function caretPastInline(node: ChildNode): void {
+    const sel = window.getSelection()
+    if (!sel) return
+    const next = node.nextSibling
+    const hasFollowingText = !!next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? '').length > 0
+    const r = document.createRange()
+    if (hasFollowingText) {
+      r.setStartAfter(node)
+    } else {
+      const gap = document.createTextNode('\u00a0')
+      node.after(gap)
+      r.setStart(gap, 1)
+    }
+    r.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+
   /** Collapses the caret to a text offset within `block` (typically an `<li>`
    * just moved by indentListItems/outdentListItems). Moving list nodes via
    * insertBefore/appendChild invalidates the browser's live selection, which
@@ -417,6 +590,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.focus()
     if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
     else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
+    else if (type === 'blockquote') toggleBlockquote()
+    else if (type === 'codeblock') toggleCodeBlock()
     else { document.execCommand('formatBlock', false, `<${type}>`); flattenNestedHeadings(editorEl) }
   }
 
@@ -426,12 +601,254 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * list block, Chromium's formatBlock *nests* a fresh <hN> inside the block
    * instead of replacing it, and every repeat stacks another wrapper whose
    * relative `2em` size compounds — the heading visibly doubles on each
-   * keypress. flattenNestedHeadings() undoes that right after.
+   * keypress. On a list item it wraps the <hN> inside the <li>, where a
+   * second press (or the ¶ button) then couldn't change or clear it.
+   * flattenNestedHeadings() undoes both right after — it also dissolves any
+   * heading left inside an <li>.
    */
   function formatBlockTag(tag: 'h1' | 'h2' | 'h3' | 'div' | 'p'): void {
+    // Block formatting is inert inside a blockquote or a fenced code block —
+    // it can't round-trip through `> ` / ``` (see blockquoteAtCaret,
+    // preAtCaret).
+    if (blockquoteAtCaret() || preAtCaret()) return
+    // Also a no-op on ANY list item. A bullet and a heading are different
+    // block types: no representation of "heading on a list item" survives a
+    // save (renderListMd flattens any <hN> in an <li> to plain text), and
+    // Chromium's formatBlock either splits a nested sub-list around the item
+    // or wraps the whole list in the heading. Take the line out of the list
+    // first (Shift+Tab) to make it a heading.
+    const sel = window.getSelection()
+    const caretNode = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
+    if (caretNode && closestLi(caretNode)) return
     editorEl.focus()
     document.execCommand('formatBlock', false, `<${tag}>`)
     flattenNestedHeadings(editorEl)
+    scheduleChange()
+  }
+
+  /**
+   * Ctrl+Shift+7/8 and the toolbar •/1. buttons. Also a no-op inside a
+   * blockquote or a fenced code block, for the same reason headings are.
+   */
+  function insertList(kind: 'ul' | 'ol'): void {
+    if (blockquoteAtCaret() || preAtCaret()) return
+    exec(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList')
+  }
+
+  /**
+   * Normalizes every `<blockquote>` under `root` so it holds only inline
+   * content separated by `<br>` — exactly the shape `mdToHtml` emits
+   * (`<blockquote>line one<br>line two</blockquote>`). Chromium's
+   * `execCommand('formatBlock', '<blockquote>')` on a MULTI-LINE selection
+   * instead produces `<blockquote><div>l1</div><div>l2</div></blockquote>`,
+   * and `htmlToMd`'s blockquote branch only splits inner lines on `<br>`, so
+   * without this those `<div>`s merge into one line (`> l1l2`), losing the
+   * breaks. Each child `<div>`/`<p>` is replaced by its own child nodes
+   * followed by a `<br>`; a trailing `<br>` is dropped so there's no empty
+   * last line. Left untouched when the blockquote already has no block-level
+   * child (the common single-line / `<br>`-joined case).
+   */
+  function normalizeBlockquoteChildren(root: HTMLElement): void {
+    root.querySelectorAll('blockquote').forEach((bq) => {
+      const kids = Array.from(bq.childNodes)
+      const hasBlockChild = kids.some(
+        (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
+      )
+      if (!hasBlockChild) return
+      const frag = (root.ownerDocument ?? document).createDocumentFragment()
+      kids.forEach((n) => {
+        if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
+          while (n.firstChild) frag.appendChild(n.firstChild)
+          frag.appendChild((root.ownerDocument ?? document).createElement('br'))
+        } else {
+          frag.appendChild(n)
+        }
+      })
+      if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
+        frag.removeChild(frag.lastChild)
+      }
+      bq.replaceChildren()
+      bq.appendChild(frag)
+    })
+  }
+
+  /**
+   * The ❝ button / Ctrl+Shift+9 / typed `> `. Toggles: when the caret is
+   * already inside a blockquote it unwraps it (same primitive the 🧹 button
+   * uses), matching Slack's Ctrl+Shift+9. Otherwise it wraps the block —
+   * Chromium's formatBlock can nest a fresh <blockquote> inside an existing
+   * one on a repeat press or multi-line selection; this app's blockquote is
+   * flat, so flattenNestedBlockquotes collapses that right after (same
+   * pattern as formatBlockTag + headings). normalizeBlockquoteChildren then
+   * flattens any inner <div>/<p> lines (also a multi-line-selection
+   * artefact) to <br>-separated inline content so htmlToMd keeps the breaks.
+   *
+   * The selection is snapshotted before editorEl.focus() because jsdom
+   * collapses the live selection on the focus transition (see clearFormatting).
+   */
+  function toggleBlockquote(): void {
+    // A quote can't live inside a fenced code block (literal text only).
+    if (preAtCaret()) return
+    const sel = window.getSelection()
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+    const bq = blockquoteAtCaret()
+    editorEl.focus()
+    if (bq && range) {
+      demoteBlockquotes(editorEl, range)
+      scheduleChange()
+      return
+    }
+    document.execCommand('formatBlock', false, '<blockquote>')
+    flattenNestedBlockquotes(editorEl)
+    normalizeBlockquoteChildren(editorEl)
+    scheduleChange()
+  }
+
+  /**
+   * Replaces an emptied-out top-level block with an empty `<blockquote>` and
+   * drops the caret inside it. The typed "> " autoformat path — mirrors
+   * convertBlockToPre / convertBlockToList / convertBlockToHr, and for the
+   * same reason: `execCommand('formatBlock', '<blockquote>')` against a
+   * collapsed caret in an empty block skips that block and wraps the NEXT
+   * one instead, pulling the following line into the quote and leaving a
+   * stray empty `<div>` behind. detectBlockPrefix has already checked the
+   * whole line is exactly "> ", so the block holds nothing else to keep.
+   */
+  function convertBlockToBlockquote(block: HTMLElement): void {
+    editorEl.focus()
+    const bq = document.createElement('blockquote')
+    bq.appendChild(document.createElement('br'))
+    block.replaceWith(bq)
+    const r = document.createRange()
+    r.selectNodeContents(bq)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
+  /**
+   * Normalizes every `<pre>` under `root` to hold plain text with `<br>`
+   * line breaks — the shape `mdToHtml` emits and `preLines` (core/markdown.ts)
+   * reads. Chromium's `execCommand('formatBlock', '<pre>')` on a multi-line
+   * selection leaves `<pre><div>l1</div><div>l2</div></pre>`; each block
+   * child collapses to a text node + `<br>`, trailing `<br>` dropped. Left
+   * untouched when the `<pre>` already has no block-level child.
+   */
+  function normalizePreChildren(root: HTMLElement): void {
+    root.querySelectorAll('pre').forEach((pre) => {
+      const kids = Array.from(pre.childNodes)
+      const hasBlockChild = kids.some(
+        (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
+      )
+      if (!hasBlockChild) return
+      const doc = root.ownerDocument ?? document
+      const frag = doc.createDocumentFragment()
+      kids.forEach((n) => {
+        if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
+          frag.appendChild(doc.createTextNode(n.textContent ?? ''))
+          frag.appendChild(doc.createElement('br'))
+        } else {
+          frag.appendChild(n)
+        }
+      })
+      if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
+        frag.removeChild(frag.lastChild)
+      }
+      pre.replaceChildren()
+      pre.appendChild(frag)
+    })
+  }
+
+  /** The text lines of a `<pre>`: text nodes contribute their text (split on
+   * any literal `\n`), each `<br>` starts a new line, any element wrapper's
+   * text is folded in. A lone trailing empty line (final `<br>`) is dropped. */
+  function preTextLines(pre: HTMLElement): string[] {
+    const lines: string[] = ['']
+    const appendLast = (s: string) => { lines[lines.length - 1] = (lines[lines.length - 1] ?? '') + s }
+    pre.childNodes.forEach((n) => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        const parts = (n.textContent ?? '').replace(/\r/g, '').split('\n')
+        appendLast(parts[0]!)
+        for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
+      } else if (n instanceof HTMLElement && n.tagName === 'BR') {
+        lines.push('')
+      } else if (n instanceof HTMLElement) {
+        appendLast(n.textContent ?? '')
+      }
+    })
+    if (lines.length > 1 && (lines[lines.length - 1] ?? '') === '') lines.pop()
+    return lines
+  }
+
+  /**
+   * Replaces an emptied-out top-level block with an empty `<pre>` fenced
+   * code block and drops the caret inside it. The "type ``` + space"
+   * autoformat path — mirrors convertBlockToList / convertBlockToHr.
+   */
+  function convertBlockToPre(block: HTMLElement): void {
+    editorEl.focus()
+    const pre = document.createElement('pre')
+    pre.appendChild(document.createElement('br'))
+    block.replaceWith(pre)
+    const r = document.createRange()
+    r.selectNodeContents(pre)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+  }
+
+  /**
+   * Unwraps `pre` into one plain `<div>` per line (a `<br>` for a blank
+   * line), caret into the first. Inverse of convertBlockToPre / the ```
+   * autoformat — the "toggle off" half of toggleCodeBlock.
+   */
+  function unwrapPre(pre: HTMLElement): void {
+    const lines = preTextLines(pre)
+    const frag = document.createDocumentFragment()
+    const divs: HTMLElement[] = []
+    for (const line of lines.length ? lines : ['']) {
+      const div = document.createElement('div')
+      if (line === '') div.appendChild(document.createElement('br'))
+      else div.appendChild(document.createTextNode(line))
+      frag.appendChild(div)
+      divs.push(div)
+    }
+    pre.replaceWith(frag)
+    const first = divs[0]
+    if (first) {
+      const r = document.createRange()
+      r.selectNodeContents(first)
+      r.collapse(true)
+      const sel = window.getSelection()
+      if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    }
+  }
+
+  /**
+   * The { } button / Ctrl+Shift+E / Ctrl+Shift+6 / typed "``` ". Toggles a fenced code
+   * block: caret already inside one → unwrap it (one `<div>` per line);
+   * an empty top-level line → convert it directly; otherwise wrap the
+   * line / selection via formatBlock('<pre>') and flatten any inner
+   * `<div>` lines (normalizePreChildren) so htmlToMd's ``` serialization
+   * keeps every break. Selection snapshot before focus() for the same
+   * jsdom reason as toggleBlockquote.
+   */
+  function toggleCodeBlock(): void {
+    const pre = preAtCaret()
+    const ctx = pre ? null : currentBlockAndOffset()
+    editorEl.focus()
+    if (pre) {
+      unwrapPre(pre)
+      scheduleChange()
+      return
+    }
+    if (ctx && ctx.block.parentElement === editorEl && (ctx.block.textContent ?? '') === '') {
+      convertBlockToPre(ctx.block)
+      scheduleChange()
+      return
+    }
+    document.execCommand('formatBlock', false, '<pre>')
+    normalizePreChildren(editorEl)
     scheduleChange()
   }
 
@@ -450,6 +867,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.focus()
     document.execCommand('removeFormat', false, undefined)
     if (range) demoteHeadings(editorEl, range)
+    if (range) demoteBlockquotes(editorEl, range)
     scheduleChange()
   }
 
@@ -495,6 +913,46 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
+  /**
+   * The — toolbar button. Inserts an <hr> right after the caret's current
+   * top-level block (or after the last block if the caret isn't inside one),
+   * and moves the caret to the block that follows the rule — reusing the
+   * next existing block when there is one, or a fresh empty <div> when the
+   * rule lands at the end of the document (an <hr> is a void element and
+   * can't hold a caret itself). Does not split a block mid-line — the typed
+   * "---" autoformat already handles "turn THIS line into a rule", and
+   * end-of-line is where the button is actually used.
+   *
+   * Only synthesizes the trailing empty <div> when nothing follows: an
+   * empty block between the rule and real content would serialize back as a
+   * stray blank markdown line (`---\n\ntext`).
+   */
+  function insertHr(): void {
+    if (blockquoteAtCaret() || preAtCaret()) return
+    editorEl.focus()
+    const ctx = currentBlockAndOffset()
+    const ref = ctx && ctx.block.parentElement === editorEl ? ctx.block : editorEl.lastElementChild
+    const hr = document.createElement('hr')
+    let caretTarget: HTMLElement
+    const following = ref?.nextElementSibling as HTMLElement | null
+    if (ref && following) {
+      ref.after(hr)
+      caretTarget = following
+    } else {
+      const next = document.createElement('div')
+      next.appendChild(document.createElement('br'))
+      if (ref) ref.after(hr, next)
+      else editorEl.append(hr, next)
+      caretTarget = next
+    }
+    const r = document.createRange()
+    r.selectNodeContents(caretTarget)
+    r.collapse(true)
+    const sel = window.getSelection()
+    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    scheduleChange()
+  }
+
   function replaceInlineMatch(block: HTMLElement, match: InlineMatch): void {
     const range = rangeForTextOffsets(block, match.start, match.end)
     // If the matched span crosses an element boundary (e.g. a ref chip or
@@ -508,10 +966,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const node = document.createElement(tag)
     node.textContent = match.content
     range.insertNode(node)
-    setCaretAfter(node)
+    caretPastInline(node)
   }
 
   function handleAutoFormat(): void {
+    // Nothing auto-formats inside a fenced code block — it's literal text.
+    // (Typing "``` " to OPEN one fires while the caret is still in the plain
+    // <div>, so that path is unaffected by this guard.)
+    if (preAtCaret()) return
     const ctx = currentBlockAndOffset()
     if (!ctx) return
     const { block, text, caretOffset } = ctx
@@ -519,6 +981,27 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (caretOffset === text.length) {
       const blockMatch = detectBlockPrefix(text)
       if (blockMatch) {
+        const inQuote = blockquoteAtCaret() !== null
+        if (blockMatch.type === 'blockquote') {
+          // `> ` only ever OPENS a quote — typed inside one it stays literal
+          // (a nested blockquote can't round-trip through `> `). Build the
+          // <blockquote> directly, same as the "``` "/"- "/"--- " paths
+          // below (convertBlockToBlockquote's header explains why not
+          // formatBlock here).
+          if (!inQuote && block.parentElement === editorEl) convertBlockToBlockquote(block)
+          return
+        }
+        if (blockMatch.type === 'codeblock') {
+          // "``` " only ever OPENS a code block from a plain top-level line;
+          // typed inside a quote it stays literal (detectBlockPrefix has
+          // already checked the whole line is exactly the prefix, so the
+          // block holds nothing else to preserve).
+          if (!inQuote && block.parentElement === editorEl) convertBlockToPre(block)
+          return
+        }
+        // Headings / lists / rules don't survive a `> ` round trip, so a
+        // block prefix typed inside a quote is left as literal text.
+        if (inQuote) return
         if (blockMatch.type === 'hr') {
           // Unlike ul/ol (which fall through to the generic prefix-strip +
           // applyBlockFormat path below when not top-level, since that path
@@ -535,11 +1018,50 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           convertBlockToList(block, blockMatch.type)
           return
         }
+        // A heading can't coexist with a list bullet — no representation
+        // survives the save (renderListMd flattens any <hN> in an <li> to
+        // plain text). Leave the typed "# " as literal text inside a list
+        // item; formatBlockTag guards the buttons / Ctrl+1..3 the same way.
+        if ((blockMatch.type === 'h1' || blockMatch.type === 'h2' || blockMatch.type === 'h3') && closestLi(block)) return
         const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
         range.deleteContents()
         const sel = window.getSelection()
         if (sel) { sel.removeAllRanges(); sel.addRange(range) }
         applyBlockFormat(blockMatch.type)
+        return
+      }
+    }
+
+    // Typed link: [text](url) completed right at the caret. Built through
+    // mdToHtml so target/rel and any inner formatting match a loaded doc
+    // exactly. The URL sub-pattern is the CommonMark link-destination rule
+    // (one level of balanced parens) — kept identical to core/markdown.ts's
+    // inline() so this matches exactly what mdToHtml will accept, and a
+    // rejected scheme like javascript:alert(1) is consumed whole with no
+    // orphan ')' left behind. Text-only spans only (bail if the range holds
+    // elements), same rule replaceInlineMatch uses.
+    //
+    // The destination runs through normalizeLinkUrl first — the same
+    // scheme-prepend the link dialog uses — so a bare host like
+    // `[docs](example.com)` converts to `https://example.com` instead of
+    // failing safeHref and staying as literal text.
+    const linkM = /\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)$/.exec(text.slice(0, caretOffset))
+    const linkUrl = linkM ? normalizeLinkUrl(linkM[2]!) : ''
+    if (linkM && safeHref(linkUrl)) {
+      const start = caretOffset - linkM[0]!.length
+      const range = rangeForTextOffsets(block, start, caretOffset)
+      if (!range.cloneContents().querySelector('*')) {
+        range.deleteContents()
+        const tmp = document.createElement('div')
+        tmp.innerHTML = mdToHtml(`[${linkM[1]!}](${linkUrl})`, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+        // mdToHtml wraps a bare line in <div>…</div>; lift its children out.
+        const frag = document.createDocumentFragment()
+        const wrapper = tmp.firstElementChild ?? tmp
+        while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+        const lastNode = frag.lastChild
+        range.insertNode(frag)
+        if (lastNode) setCaretAfter(lastNode)
+        scheduleChange()
         return
       }
     }
@@ -589,6 +1111,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function checkTriggers(): void {
+    // A fenced code block is literal text only — neither the @ reference
+    // picker nor the / template picker may open inside one (same rule that
+    // makes every formatting chord inert there; see preAtCaret).
+    if (preAtCaret()) return
     const ctx = currentBlockAndOffset()
     if (!ctx) return
     const { text, caretOffset } = ctx
@@ -648,10 +1174,172 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * execCommand('insertText', ...) path real typing takes, so the native
    * 'input' event this fires drives checkTriggers() to open the @
    * autocomplete exactly as if the user had typed it themselves.
+   *
+   * Inert with the caret in a fenced code block — literal text only, so a
+   * ref chip can't live there (checkTriggers bails the same way, but this
+   * also skips inserting a stray bare "@").
    */
   function insertAtTrigger(): void {
+    if (preAtCaret()) return
     caretOrEndRange()
     exec('insertText', '@')
+  }
+
+  /**
+   * Opens the link modal — two fields, **Link text** and **Link address**,
+   * both pre-filled from `init`. Resolves `{ text, url }` on OK (or Enter in
+   * a field), null on Cancel/Escape/overlay close. The URL is validated
+   * through `safeHref` on OK: a blank or disallowed-scheme address shows an
+   * inline error and keeps the modal open with the fields intact, rather
+   * than silently discarding the input. `init.editing` only swaps the title
+   * ("Edit link" vs "Insert link"). Kept as a plain promise-returning helper
+   * (not wired through EditorHooks) so tests drive it through the real modal
+   * DOM, same as showEditorHelp.
+   */
+  // A URL typed without a scheme (`google.com`, `www.google.com`) gets
+  // `https://` prepended so it resolves as a real link instead of a
+  // same-page relative path. Anything already carrying a scheme is left
+  // exactly as typed — `http:`/`https:`/`mailto:` pass safeHref, a
+  // `javascript:` or other disallowed scheme still gets rejected by it. An
+  // empty string stays empty (and fails validation with the same error).
+  function normalizeLinkUrl(raw: string): string {
+    const url = raw.trim()
+    if (!url) return url
+    return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) ? url : `https://${url}`
+  }
+
+  // The link modal's handle while it's open, so destroy() (tab-lock handoff,
+  // external-change reload, update relaunch) can close it instead of leaving
+  // the overlay attached over a torn-down editor.
+  let pendingLinkModal: { close: () => void } | null = null
+
+  function promptLink(init: { text: string; url: string; editing: boolean }): Promise<{ text: string; url: string } | null> {
+    return new Promise((resolve) => {
+      let done = false
+      const finish = (v: { text: string; url: string } | null): void => {
+        if (done) return
+        done = true
+        pendingLinkModal = null
+        handle.close()
+        resolve(v)
+      }
+      const textInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-link-text' }) as HTMLInputElement
+      textInput.value = init.text
+      const urlInput = el('input', { type: 'url', class: 'tt-input', name: 'tt-link-url', placeholder: 'https://' }) as HTMLInputElement
+      urlInput.value = init.url
+      const errorEl = el('div', { class: 'tt-field-error' })
+      const submit = (): void => {
+        const url = normalizeLinkUrl(urlInput.value)
+        if (!safeHref(url)) {
+          errorEl.textContent = t(locale, 'editor_link_invalid_url')
+          urlInput.focus()
+          urlInput.select()
+          return
+        }
+        // Reflect the scheme we filled in, so the user sees exactly what got
+        // inserted rather than the bare host they typed.
+        urlInput.value = url
+        finish({ text: textInput.value, url })
+      }
+      const handle = showModal({
+        title: t(locale, init.editing ? 'editor_link_edit_title' : 'editor_link_title'),
+        body: el(
+          'div',
+          { class: 'tt-editor-link-form' },
+          el('label', { class: 'tt-field' }, t(locale, 'editor_link_text_label'), textInput),
+          el('label', { class: 'tt-field' }, t(locale, 'editor_link_prompt'), urlInput),
+          errorEl
+        ),
+        buttons: [
+          { label: t(locale, 'cancel'), onClick: () => finish(null) },
+          { label: t(locale, 'ok'), primary: true, onClick: submit },
+        ],
+        // Escape / overlay close routes here too, so the promise never hangs.
+        onClose: () => finish(null),
+      })
+      pendingLinkModal = handle
+      // Land on the field the user still needs to fill: the URL when the text
+      // is already known (a selection, or an existing link being edited),
+      // the text otherwise.
+      if (init.text) { urlInput.focus(); urlInput.select() } else { textInput.focus() }
+    })
+  }
+
+  // The external link (`<a href>`, not a ref chip) the selection sits in, or
+  // null. Used so 🔗 / Ctrl+K over an existing link opens the modal
+  // pre-filled to edit it rather than nesting a new link inside.
+  function linkAtSelection(sel: Selection | null): HTMLAnchorElement | null {
+    if (!sel || sel.rangeCount === 0) return null
+    const node = sel.getRangeAt(0).commonAncestorContainer
+    const host = node instanceof HTMLElement ? node : node.parentElement
+    const a = host?.closest('a[href]:not(.ref)') as HTMLAnchorElement | null
+    return a && editorEl.contains(a) ? a : null
+  }
+
+  /**
+   * The 🔗 button / Ctrl+K. Opens the link modal and splices `[text](url)`
+   * markdown into the document:
+   *
+   * - caret inside an existing link  → modal pre-filled with that link's
+   *   text and href; OK swaps the whole `<a>` node for a freshly rendered
+   *   one. (Selecting the node + `insertText` can't be used here: Chromium
+   *   keeps the old `<a>` wrapper and drops the literal `[text](url)` string
+   *   inside it, which then serializes as `[[text](url)](url)`.)
+   * - text selected                  → text field pre-filled with it; OK
+   *   replaces the selection.
+   * - nothing selected               → both fields empty; OK inserts at the
+   *   caret. Empty text falls back to the URL string.
+   *
+   * The anchor, the selection text AND its Range are all captured BEFORE the
+   * await: the modal steals focus into its own <input> and restores nothing
+   * on close, so afterwards neither the live selection nor
+   * `caretOrEndRange()`'s reuse-a-collapsed-editor-range check still holds,
+   * and the link would land appended to the last block. Restore the saved
+   * target if it still points inside the editor, else fall back to
+   * end-of-document. Link text is collapsed to a single line — the saved
+   * range is restored before `insertText`, so a newline would splice a
+   * literal `[a\nb](url)` that inline() won't match as a link.
+   */
+  async function insertLink(): Promise<void> {
+    const sel = window.getSelection()
+    const anchor = linkAtSelection(sel)
+    const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+    const initText = anchor
+      ? (anchor.textContent ?? '').replace(/\s+/g, ' ').trim()
+      : (sel && !sel.isCollapsed ? sel.toString() : '').replace(/\s+/g, ' ').trim()
+    const initUrl = anchor ? anchor.getAttribute('href') ?? '' : ''
+
+    const res = await promptLink({ text: initText, url: initUrl, editing: anchor !== null })
+    if (res === null) return
+    const url = res.url.trim()
+    if (!safeHref(url)) return // defensive — the modal already gates this
+    const text = res.text.replace(/\s+/g, ' ').trim()
+
+    const md = `[${text || url}](${url})`
+
+    editorEl.focus()
+    const sel2 = window.getSelection()
+    if (anchor && editorEl.contains(anchor)) {
+      // Swap the <a> node directly — see the doc comment for why insertText
+      // over a selectNode(anchor) selection can't do this cleanly.
+      const tmp = document.createElement('div')
+      tmp.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+      const wrapper = tmp.firstElementChild ?? tmp // mdToHtml wraps a bare line in <div>
+      const frag = document.createDocumentFragment()
+      while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+      const lastNode = frag.lastChild
+      anchor.replaceWith(frag)
+      if (lastNode) setCaretAfter(lastNode)
+      scheduleChange()
+      return
+    }
+    if (sel2 && savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
+      sel2.removeAllRanges()
+      sel2.addRange(savedRange)
+    } else {
+      caretOrEndRange()
+    }
+    exec('insertText', md)
   }
 
   /**
@@ -872,10 +1560,41 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      // Inside a blockquote, take Enter over from the browser: its native
+      // insertParagraph splits the <blockquote> into two siblings, so the
+      // left border visibly breaks (it re-merges on reload, but looks broken
+      // while editing). Insert a <br> instead — one element, unbroken bar,
+      // same as Shift+Enter. Exception: a second Enter on an empty final line
+      // leaves the quote entirely (Slack does this too).
+      const bq = blockquoteAtCaret()
+      if (bq) {
+        e.preventDefault()
+        if (caretAtFlatBlockEnd(bq)) { exitFlatBlock(bq); scheduleChange() }
+        else exec('insertLineBreak')
+        return
+      }
+      // Same handling for a fenced code block: Enter inserts a literal line
+      // break; Enter on an empty final line leaves the block (Slack-style).
+      const pre = preAtCaret()
+      if (pre) {
+        e.preventDefault()
+        if (caretAtFlatBlockEnd(pre)) { exitFlatBlock(pre); scheduleChange() }
+        else exec('insertLineBreak')
+        return
+      }
       const ctx = currentBlockAndOffset()
       if (ctx && ctx.block.parentElement === editorEl && ctx.caretOffset === ctx.text.length && /^-{3,}$/.test(ctx.text)) {
         e.preventDefault()
         convertBlockToHr(ctx.block)
+        scheduleChange()
+        return
+      }
+      // ``` on its own line + Enter opens a code block too — the
+      // GitHub/Slack/Discord gesture, alongside the "``` " prefix. Only
+      // when the whole line is backticks and it's a plain top-level block.
+      if (ctx && ctx.block.parentElement === editorEl && !blockquoteAtCaret() && /^`{3,}$/.test(ctx.text.trim())) {
+        e.preventDefault()
+        convertBlockToPre(ctx.block)
         scheduleChange()
         return
       }
@@ -913,9 +1632,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
 
     if (!e.shiftKey) {
+      if (preAtCaret()) {
+        // Literal text only inside a fenced code block: swallow the
+        // formatting chords this branch would run, leave the rest
+        // (Ctrl+C/V/X/Z/A — not handled here) to the browser.
+        if (matchKey(e, 'b') || matchKey(e, 'i') || matchKey(e, 'u') ||
+            matchKey(e, 'k') || /^Digit[0-3]$/.test(e.code)) e.preventDefault()
+        return
+      }
       if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
       if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
       if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
+      if (matchKey(e, 'k')) { e.preventDefault(); void insertLink(); return }
       if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
       if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
       if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }
@@ -923,15 +1651,46 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
 
-    // Ctrl+Shift+5 (not the old Ctrl+Shift+X): some Windows browsers / vendor
-    // keyboard drivers swallow the Ctrl+Shift+X chord before it reaches the
-    // page, so its keydown never fires at all. Digit5 sits with the
-    // Ctrl+Shift+7/8 list shortcuts and matched physically (e.code) rides
-    // over layout differences. Toolbar S button and `~~text~~` markdown are
-    // the mouse/typing alternatives.
-    if (e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
-    if (e.code === 'Digit8') { e.preventDefault(); exec('insertUnorderedList'); return }
-    if (e.code === 'Digit7') { e.preventDefault(); exec('insertOrderedList'); return }
+    // Fenced code block: Ctrl+Shift+E (Discord's chord, unbound in
+    // Chrome/Edge/Firefox on Windows) is primary; Ctrl+Shift+6 is the
+    // digit-row backup for the Windows keyboard drivers that swallow the
+    // letter chord before it reaches the page — same reason strike takes 5
+    // beside X, and it sits with the Ctrl+Shift+5/7/8/9 formatting digits.
+    // `e.key === '6'` also matches in case the driver reports the character
+    // but not `e.code`. Placed before the code-block guard below so either
+    // still fires to EXIT a block. The { } button and typed "``` " are the
+    // mouse/typing alternatives.
+    if (matchKey(e, 'e') || e.code === 'Digit6' || e.key === '6') { e.preventDefault(); toggleCodeBlock(); return }
+    // Every other formatting chord is inert inside a fenced code block.
+    if (preAtCaret()) {
+      if (e.code === 'KeyX' || e.code === 'Digit5' || e.code === 'Digit8' || e.code === 'Digit7' ||
+          e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') e.preventDefault()
+      return
+    }
+
+    // Strikethrough takes both Ctrl+Shift+X (the cross-app convention: Google
+    // Docs, Slack, Discord, GitHub) and Ctrl+Shift+5. The X chord is the
+    // primary, but some Windows browsers / vendor keyboard drivers swallow it
+    // before it reaches the page, so its keydown never fires — Digit5 is the
+    // fallback that always lands, sits with the Ctrl+Shift+7/8 list shortcuts,
+    // and matched physically (e.code) rides over layout differences. Toolbar S
+    // button and `~~text~~` markdown are the mouse/typing alternatives.
+    if (e.code === 'KeyX' || e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
+    if (e.code === 'Digit8') { e.preventDefault(); insertList('ul'); return }
+    if (e.code === 'Digit7') { e.preventDefault(); insertList('ol'); return }
+    // Blockquote: Ctrl+Shift+9 is the cross-app convention (Slack), but the
+    // digit-row chord is exactly the kind some Windows keyboard drivers eat
+    // before it reaches the page (same reason Ctrl+Shift+5 backs up
+    // Ctrl+Shift+X for strikethrough). Ctrl+Shift+Q — Typora's blockquote
+    // chord, unbound in Chrome/Edge/Firefox on Windows — is the fallback that
+    // lands; `e.key === '9'`/`'('` also match in case the driver reports the
+    // character but not `e.code`. Toolbar ❝ and typed `> ` are the
+    // mouse/typing alternatives.
+    if (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') {
+      e.preventDefault()
+      toggleBlockquote()
+      return
+    }
   }
 
   /**
@@ -1008,10 +1767,19 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onPaste(e: ClipboardEvent): void {
     e.preventDefault()
+    // A paste that touches a fenced code block is always literal text —
+    // never markdown / HTML — so a copied snippet keeps its own punctuation
+    // and no block markup gets spliced into the `<pre>`.
+    if (selectionTouchesPre()) {
+      document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '')
+      scheduleChange()
+      return
+    }
     const html = e.clipboardData?.getData('text/html')
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
-      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint')))
+      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
+      decorateCodeBlocks()
       scheduleChange()
       return
     }
@@ -1035,21 +1803,54 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (parsed) hooks.onRefClick(parsed, { secondary: e.ctrlKey || e.metaKey || e.button === 1 })
   }
 
+  // A rendered external link (`<a href>` with no `.ref` class). Chromium
+  // does not activate an anchor inside a contenteditable on a plain click,
+  // and there's no default middle-click-opens behavior there either — so
+  // without this a link in a note is unreachable from the editing surface.
+  function linkElFromEvent(e: MouseEvent): HTMLAnchorElement | null {
+    const target = e.target as HTMLElement | null
+    return (target?.closest?.('a[href]:not(.ref)') as HTMLAnchorElement | null) ?? null
+  }
+
+  // Ctrl/Cmd+click or middle-click opens the link in a new tab (its href is
+  // already safeHref-gated at render + export). A plain click is left alone
+  // so the caret can still be placed inside the link text to edit it.
+  // `noopener,noreferrer` matches the anchor's own rel: `noopener` alone
+  // still sends the Referer header, which in the https PWA build would leak
+  // the app URL to the destination.
+  function handleExternalLinkActivate(e: MouseEvent): void {
+    const linkEl = linkElFromEvent(e)
+    if (!linkEl) return
+    if (!(e.ctrlKey || e.metaKey || e.button === 1)) return
+    e.preventDefault()
+    window.open(linkEl.href, '_blank', 'noopener,noreferrer')
+  }
+
   function onClick(e: MouseEvent): void {
+    // Clicking anywhere in a collapsed code block (to read it or to place
+    // the caret and edit) expands it for the rest of the session. The
+    // hover ⌃ control re-collapses; a fresh file load re-auto-collapses.
+    const collapsed = (e.target as HTMLElement).closest?.('pre[data-collapsed]') as HTMLElement | null
+    if (collapsed && editorEl.contains(collapsed)) {
+      expandPre(collapsed)
+      if (cbActivePre === collapsed) { syncCbGlyphs(); positionCbControls() }
+    }
     handleRefActivate(e)
+    handleExternalLinkActivate(e)
   }
 
   function onAuxClick(e: MouseEvent): void {
     if (e.button !== 1) return
     handleRefActivate(e)
+    handleExternalLinkActivate(e)
   }
 
-  // Middle-mousedown on a ref chip would otherwise trigger the browser's
-  // autoscroll-pan cursor (the chip has no real `href`, so there's no
-  // native middle-click-opens-in-new-tab behavior to preserve).
+  // Middle-mousedown on a ref chip or an external link would otherwise
+  // trigger the browser's autoscroll-pan cursor. (A ref chip has no real
+  // `href`; an external link's new-tab open is handled on auxclick above.)
   function onMouseDownForRef(e: MouseEvent): void {
     if (e.button !== 1) return
-    if (refElFromEvent(e)) e.preventDefault()
+    if (refElFromEvent(e) || linkElFromEvent(e)) e.preventDefault()
   }
 
   editorEl.addEventListener('input', onInput)
@@ -1071,7 +1872,22 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         tabindex: '-1',
         onmousedown: (e: Event) => e.preventDefault(),
         onclick: () => {
+          // `onmousedown` preventDefault keeps focus (and thus the live
+          // selection) in the editor when a real pointer clicks a toolbar
+          // button, so the `editorEl.focus()` below is a no-op there. But a
+          // synthetic `.click()` (jsdom, and any programmatic caller) skips
+          // mousedown, and jsdom's `focus()` COLLAPSES the current selection
+          // on the focus transition — which breaks selection-driven actions
+          // like `toggleBlockquote` or the link button. Snapshot the
+          // selection first and restore it after focus when it still points
+          // inside the editor.
+          const sel = window.getSelection()
+          const saved = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
           editorEl.focus()
+          if (sel && saved && editorEl.contains(saved.commonAncestorContainer)) {
+            sel.removeAllRanges()
+            sel.addRange(saved)
+          }
           action(btn)
         },
       },
@@ -1087,21 +1903,150 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
-    toolbarButton('•', t(locale, 'editor_ul_title'), () => exec('insertUnorderedList')),
-    toolbarButton('1.', t(locale, 'editor_ol_title'), () => exec('insertOrderedList')),
+    toolbarButton('•', t(locale, 'editor_ul_title'), () => insertList('ul')),
+    toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
+    toolbarButton('❝', t(locale, 'editor_quote_title'), () => toggleBlockquote()),
+    toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
+    toolbarButton('—', t(locale, 'editor_hr_title'), () => insertHr()),
+    toolbarButton('🔗', t(locale, 'editor_link_title'), () => { void insertLink() }),
     toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
+    el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
     toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
-    el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl)
+
+  // --- code-block collapse + copy chrome --------------------------------
+  // A bare <pre> stays a direct editor child (keeps htmlToMd and every
+  // block-walking assumption untouched). "Collapsed" is a view-only
+  // `data-collapsed` attribute; auto-applied on load to blocks over
+  // CB_AUTO_COLLAPSE_OVER lines and freely toggled after that, but never
+  // written to markdown — getMd() is byte-identical with or without it.
+  // The copy / collapse buttons are ONE shared element floated over the
+  // hovered block from the .tt-editor chrome, never inside the editable
+  // surface.
+  const cbCopyBtn = el('button', {
+    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_copy'),
+    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbCopy,
+  }, CB_COPY_GLYPH)
+  const cbToggleBtn = el('button', {
+    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_collapse'),
+    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbToggle,
+  }, CB_COLLAPSE_GLYPH)
+  const cbControls = el('div', { class: 'tt-cb-controls', contenteditable: 'false' }, cbCopyBtn, cbToggleBtn)
+  cbControls.hidden = true
+  root.appendChild(cbControls)
+
+  let cbActivePre: HTMLElement | null = null
+  let cbHideTimer: ReturnType<typeof setTimeout> | null = null
+  let cbCopyResetTimer: ReturnType<typeof setTimeout> | null = null
+
+  function preLineCount(pre: HTMLElement): number {
+    return preTextLines(pre).length
+  }
+
+  /** Sets `data-lines` on every <pre> and auto-collapses the long ones.
+   * `all` re-runs it over blocks already seen this session (setMd, a fresh
+   * document); the default only touches blocks with no `data-lines` yet, so
+   * a mid-session paste can't re-collapse a block the user just expanded. */
+  function decorateCodeBlocks(all = false): void {
+    editorEl.querySelectorAll<HTMLElement>('pre').forEach((pre) => {
+      if (!all && pre.dataset.lines !== undefined) return
+      const n = preLineCount(pre)
+      pre.dataset.lines = String(n)
+      if (n > CB_AUTO_COLLAPSE_OVER) collapsePre(pre)
+      else expandPre(pre)
+    })
+  }
+
+  function collapsePre(pre: HTMLElement): void {
+    pre.setAttribute('data-collapsed', '')
+    const hidden = Math.max(1, preLineCount(pre) - CB_PEEK_LINES)
+    pre.dataset.moreLabel = t(locale, 'editor_cb_more', { n: String(hidden) })
+  }
+
+  function expandPre(pre: HTMLElement): void {
+    pre.removeAttribute('data-collapsed')
+  }
+
+  function syncCbGlyphs(): void {
+    const collapsed = !!cbActivePre?.hasAttribute('data-collapsed')
+    cbToggleBtn.textContent = collapsed ? CB_EXPAND_GLYPH : CB_COLLAPSE_GLYPH
+    cbToggleBtn.title = t(locale, collapsed ? 'editor_cb_expand' : 'editor_cb_collapse')
+  }
+
+  function positionCbControls(): void {
+    if (!cbActivePre) return
+    const pr = cbActivePre.getBoundingClientRect()
+    const rr = root.getBoundingClientRect()
+    cbControls.style.top = `${pr.top - rr.top + 4}px`
+    cbControls.style.left = `${pr.right - rr.left - cbControls.offsetWidth - 6}px`
+  }
+
+  function showCbControls(pre: HTMLElement): void {
+    if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
+    cbActivePre = pre
+    syncCbGlyphs()
+    cbControls.hidden = false
+    positionCbControls()
+  }
+
+  function hideCbControlsNow(): void {
+    if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
+    cbControls.hidden = true
+    cbActivePre = null
+  }
+
+  function hideCbControlsSoon(): void {
+    if (cbHideTimer) clearTimeout(cbHideTimer)
+    cbHideTimer = setTimeout(hideCbControlsNow, 140)
+  }
+
+  function onCbMouseOver(e: MouseEvent): void {
+    const pre = (e.target as HTMLElement).closest?.('pre') as HTMLElement | null
+    if (pre && editorEl.contains(pre)) showCbControls(pre)
+    else hideCbControlsSoon()
+  }
+
+  function copyText(text: string): void {
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
+    else copyViaTextarea(text)
+  }
+
+  function onCbCopy(): void {
+    if (!cbActivePre) return
+    copyText(preTextLines(cbActivePre).join('\n'))
+    cbCopyBtn.textContent = CB_COPIED_GLYPH
+    cbCopyBtn.title = t(locale, 'editor_cb_copied')
+    if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
+    cbCopyResetTimer = setTimeout(() => {
+      cbCopyBtn.textContent = CB_COPY_GLYPH
+      cbCopyBtn.title = t(locale, 'editor_cb_copy')
+    }, 900)
+  }
+
+  function onCbToggle(): void {
+    if (!cbActivePre) return
+    if (cbActivePre.hasAttribute('data-collapsed')) expandPre(cbActivePre)
+    else collapsePre(cbActivePre)
+    syncCbGlyphs()
+    positionCbControls()
+  }
+
+  editorEl.addEventListener('mouseover', onCbMouseOver)
+  editorEl.addEventListener('mouseleave', hideCbControlsSoon)
+  editorEl.addEventListener('scroll', hideCbControlsNow)
+  cbControls.addEventListener('mouseenter', () => {
+    if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
+  })
+  cbControls.addEventListener('mouseleave', hideCbControlsSoon)
 
   function getMd(): string {
     return htmlToMd(editorEl)
@@ -1114,7 +2059,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // not flush — unlike destroy(), the pending change here belongs to
     // content that is being replaced outright.
     cancelChange()
-    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
+    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+    decorateCodeBlocks(true)
   }
 
   function refreshRefLabels(): void {
@@ -1140,12 +2086,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // off so ordering matches a normal debounce firing.
     flushChange()
     closeCopyMenu()
+    pendingLinkModal?.close()
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
     editorEl.removeEventListener('click', onClick)
     editorEl.removeEventListener('auxclick', onAuxClick)
     editorEl.removeEventListener('mousedown', onMouseDownForRef)
+    editorEl.removeEventListener('mouseover', onCbMouseOver)
+    editorEl.removeEventListener('mouseleave', hideCbControlsSoon)
+    editorEl.removeEventListener('scroll', hideCbControlsNow)
+    if (cbHideTimer) clearTimeout(cbHideTimer)
+    if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
   }
 
   const registryEntry = { flush: flushChange }

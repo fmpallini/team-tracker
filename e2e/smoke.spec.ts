@@ -59,14 +59,14 @@ test.describe('create → main shell (fallback flow)', () => {
 
     // A brand-new doc has zero teams — the command palette (like the header
     // search/title button) is deliberately disabled in that state (nothing
-    // for it to open), so Ctrl+K is a no-op until a team exists.
+    // for it to open), so Ctrl+Shift+K is a no-op until a team exists.
     await page.getByRole('button', { name: /Create first team/ }).click()
     const teamDialog = page.getByRole('dialog')
     await teamDialog.locator('input[name="tt-team-name"]').fill('Smoke Test Team')
     await teamDialog.getByRole('button', { name: 'OK' }).click()
     await expect(teamDialog).toBeHidden()
 
-    await page.keyboard.press('Control+k')
+    await page.keyboard.press('Control+Shift+k')
     await expect(page.locator('.tt-palette-overlay')).toBeVisible()
     await expect(page.locator('.tt-palette-input')).toBeFocused()
 

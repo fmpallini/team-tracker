@@ -381,7 +381,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // substring of any name collapsed the list, so the picker arrow looked
     // dead until the field was cleared. And <option> is text-only, with no
     // room to mark stakeholders apart from members. This custom list (same
-    // select-list.ts row mechanics as the @ picker and Ctrl+K palette) opens
+    // select-list.ts row mechanics as the @ picker and Ctrl+Shift+K palette) opens
     // the full roster on ▾ regardless of the input text, and labels the two
     // groups with their KIND_ICON glyphs.
     let assigneeMenu: HTMLElement | null = null

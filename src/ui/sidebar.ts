@@ -50,7 +50,7 @@ export interface SidebarHandle {
    * so a resize alone never marks the file dirty.
    */
   setSpaceConstrained(hidden: boolean): void
-  /** Opens the global (all-teams) due-dates panel — used by the Ctrl+K palette's "Due" entry (src/ui/palette.ts). */
+  /** Opens the global (all-teams) due-dates panel — used by the Ctrl+Shift+K palette's "Due" entry (src/ui/palette.ts). */
   openDuePanel(): void
   /**
    * Tears down the store subscriptions and the document-level add-team

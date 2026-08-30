@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, unwrapBlockContainers, flattenNestedHeadings, demoteHeadings } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -542,6 +542,50 @@ describe('flattenNestedHeadings (undoes Chromium formatBlock nesting that makes 
     flattenNestedHeadings(div)
     expect(div.innerHTML).toBe('<h2>a real heading</h2><div>body</div>')
   })
+
+  // A heading on a list item never round-trips (renderListMd flattens it), so
+  // headings on list items aren't a real feature — but Chromium's formatBlock
+  // wraps one *inside the <li>* on Ctrl+1/2/3, and the old "outer heading
+  // wins" rule then trapped the item: a second Ctrl+2 kept the stale <h1>, and
+  // the ¶ button (a <p>/<div> nested in the <h1>) couldn't dislodge it either.
+  // Any heading inside an <li> is now dissolved.
+  test('a heading Chromium wrapped inside a list item is dissolved', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>parent<h1><ul><li>child</li></ul></h1></li></ul>'
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<ul><li>parent<ul><li>child</li></ul></li></ul>')
+  })
+
+  test('the ¶ button can escape a nested-list-item heading (<p> nested in the <h1>)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>parent<h1><p><ul><li>child</li></ul></p></h1></li></ul>'
+    flattenNestedHeadings(div)
+    expect(div.querySelectorAll('h1,h2,h3')).toHaveLength(0)
+    expect(htmlToMd(div)).toBe('- parent\n  - child')
+  })
+
+  test('changing heading level on a list item (Ctrl+1 then Ctrl+2) leaves no heading', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>parent</li></ul>'
+    // Chromium nests the new <h2> *inside* the existing <h1>, all inside the
+    // <li>; innerHTML can't express <h1><h2>, so build it via the DOM API.
+    const li = div.querySelector('li')!
+    const h1 = document.createElement('h1')
+    const h2 = document.createElement('h2')
+    h2.innerHTML = '<ul><li>child</li></ul>'
+    h1.appendChild(h2)
+    li.appendChild(h1)
+    flattenNestedHeadings(div)
+    expect(div.querySelectorAll('h1,h2,h3')).toHaveLength(0)
+    expect(htmlToMd(div)).toBe('- parent\n  - child')
+  })
+
+  test('a top-level heading wrapping a whole list is still kept (flat-list Ctrl+1)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<h1><ul><li>only item</li></ul></h1>'
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<h1><ul><li>only item</li></ul></h1>')
+  })
 })
 
 describe('demoteHeadings ("clear formatting" also drops the heading style, like Docs/Word)', () => {
@@ -590,6 +634,39 @@ describe('demoteHeadings ("clear formatting" also drops the heading style, like 
   })
 })
 
+describe('demoteBlockquotes ("clear formatting" also drops blockquote styling)', () => {
+  const mount = (html: string): HTMLElement => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    document.body.appendChild(root)
+    return root
+  }
+  const selectAll = (root: HTMLElement): Range => {
+    const r = document.createRange()
+    r.selectNodeContents(root)
+    return r
+  }
+
+  test('demoteBlockquotes unwraps a blockquote the range touches into a plain <div>', () => {
+    const root = mount('<blockquote>quoted line</blockquote>')
+    demoteBlockquotes(root, selectAll(root))
+    expect(root.querySelector('blockquote')).toBeNull()
+    expect(root.innerHTML).toBe('<div>quoted line</div>')
+    expect(root.textContent).toBe('quoted line')
+    root.remove()
+  })
+
+  test('a two-line <br> blockquote demotes to one <div> — break kept, no blank line', () => {
+    const root = mount('<blockquote>a<br>b</blockquote>')
+    demoteBlockquotes(root, selectAll(root))
+    expect(root.querySelector('blockquote')).toBeNull()
+    expect(root.children).toHaveLength(1)
+    expect(root.children[0]!.tagName).toBe('DIV')
+    expect(htmlToMd(root)).toBe('a\nb')
+    root.remove()
+  })
+})
+
 describe('pasted tables render as readable delimited text (this app has no native table syntax)', () => {
   test('cells join with " | ", one row per line', () => {
     const div = document.createElement('div')
@@ -632,5 +709,379 @@ describe('htmlToMd / htmlToPlainText do not mutate the source DOM', () => {
     const before = div.innerHTML
     expect(htmlToPlainText(div)).toBe('one\ntwo\nthree')
     expect(div.innerHTML).toBe(before)
+  })
+})
+
+describe('safeHref', () => {
+  test('accepts http/https/mailto unchanged', () => {
+    expect(safeHref('https://example.com/a?b=1')).toBe('https://example.com/a?b=1')
+    expect(safeHref('http://example.com')).toBe('http://example.com')
+    expect(safeHref('mailto:a@b.com')).toBe('mailto:a@b.com')
+    expect(safeHref('  https://example.com  ')).toBe('https://example.com')
+  })
+  test('rejects javascript/data/vbscript and scheme-relative/relative', () => {
+    expect(safeHref('javascript:alert(1)')).toBeNull()
+    expect(safeHref('JavaScript:alert(1)')).toBeNull()
+    expect(safeHref('data:text/html,x')).toBeNull()
+    expect(safeHref('vbscript:msgbox')).toBeNull()
+    expect(safeHref('/relative/path')).toBeNull()
+    expect(safeHref('#frag')).toBeNull()
+    expect(safeHref('example.com')).toBeNull()
+  })
+  test('rejects a scheme smuggled past a control character', () => {
+    expect(safeHref('java\tscript:alert(1)')).toBeNull()
+    expect(safeHref('java\nscript:alert(1)')).toBeNull()
+    expect(safeHref('  java script:alert(1)')).toBeNull()
+    expect(safeHref('https://e.com/a b')).toBeNull()
+    expect(safeHref('https://e.com/x' + String.fromCharCode(127))).toBeNull()
+  })
+})
+
+describe('backticks are plain text (this app has no inline-code syntax)', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('`text` is left literal — no <code>, and it round-trips unchanged', () => {
+    const html = mdToHtml('run `npm test` now')
+    expect(html).not.toContain('<code>')
+    expect(html).toContain('`npm test`')
+    expect(roundTrip('run `npm test` now')).toBe('run `npm test` now')
+  })
+  test('markdown inside backticks IS now parsed (no freeze)', () => {
+    expect(mdToHtml('see `**bold**`')).toContain('<strong>bold</strong>')
+  })
+  test('a stray <code> from a paste degrades to plain text on the way out', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div>run <code>x</code> now</div>'
+    expect(htmlToMd(div)).toBe('run x now')
+  })
+})
+
+describe('external links', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('renders a new-tab anchor and round-trips', () => {
+    const html = mdToHtml('see [the docs](https://example.com/x)')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    const a = probe.querySelector('a')!
+    expect(a.getAttribute('href')).toBe('https://example.com/x')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    expect(a.textContent).toBe('the docs')
+    expect(roundTrip('see [the docs](https://example.com/x)')).toBe('see [the docs](https://example.com/x)')
+  })
+  test('the anchor carries a title with the destination URL (shown on hover)', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('[label](https://example.com/deep/path)')
+    expect(probe.querySelector('a')!.getAttribute('title')).toBe('https://example.com/deep/path')
+  })
+  test('when a link hint is supplied, the title adds it on a second line', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('[label](https://e.com)', undefined, undefined, 'Ctrl+click to open')
+    expect(probe.querySelector('a')!.getAttribute('title')).toBe('https://e.com\nCtrl+click to open')
+  })
+  test('the title attribute does not survive the round trip (regenerated each render)', () => {
+    expect(roundTrip('[x](https://e.com)')).toBe('[x](https://e.com)')
+  })
+  test('formatting inside link text is preserved', () => {
+    const html = mdToHtml('[**bold** text](https://e.com)')
+    expect(html).toContain('<strong>bold</strong>')
+    expect(roundTrip('[**bold** text](https://e.com)')).toBe('[**bold** text](https://e.com)')
+  })
+  test('disallowed schemes drop the link, keep the visible text', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'vbscript:x', '  javascript:alert(1)', 'java\tscript:alert(1)']) {
+      const html = mdToHtml(`click [here](${bad}) now`)
+      const probe = document.createElement('div'); probe.innerHTML = html
+      expect(probe.querySelector('a')).toBeNull()
+      expect(probe.textContent).toContain('click here now')
+    }
+  })
+  test('a url with markdown-special chars cannot break out of the href attribute', () => {
+    const md = '[x](https://e.com/~a~~b"onmouseover="1)'
+    const html = mdToHtml(md)
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('[onmouseover]')).toBeNull()
+    expect(probe.querySelectorAll('a').length).toBeLessThanOrEqual(1)
+  })
+  test('link text cannot contain a closing bracket (documented boundary)', () => {
+    // [a]b](url) — [^\]]+ stops at the first ], so this stays literal.
+    expect(mdToHtml('[a]b](https://e.com)')).not.toContain('<a ')
+  })
+  test('htmlToMd re-validates href on the way out (defence in depth)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<div><a href="javascript:alert(1)">x</a></div>'
+    expect(htmlToMd(div)).toBe('x')
+  })
+  test('htmlToPlainText drops the URL, keeps the text', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('see [docs](https://e.com) here')
+    expect(htmlToPlainText(div)).toBe('see docs here')
+  })
+  test('idempotent through two cycles', () => {
+    const md = 'a [b](https://e.com) c'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+
+  // The mark passes (bold/italic/…) run on the link text INSIDE the link
+  // callback and the whole <a>…</a> is frozen in one placeholder, so a
+  // marker inside link text can never pair with one after the link.
+  test('**bold** and *em* inside link text still format', () => {
+    const html = mdToHtml('[**b** and *i*](https://e.com)')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    const a = probe.querySelector('a')!
+    expect(a.querySelector('strong')!.textContent).toBe('b')
+    expect(a.querySelector('em')!.textContent).toBe('i')
+  })
+  test('a marker after a link no longer straddles the link text — round-trips AND is idempotent', () => {
+    const md = 'see [2*3](https://e.com/m) *later*'
+    expect(roundTrip(md)).toBe(md)
+    expect(roundTrip(roundTrip(md))).toBe(md)
+    const html = mdToHtml(md)
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('a')!.textContent).toBe('2*3')
+    expect(probe.querySelector('em')!.textContent).toBe('later')
+  })
+  test('a ref chip inside link text resolves (not left as a raw placeholder)', () => {
+    // The terminal splice order is LINK -> REF precisely so a REF token
+    // sitting inside the frozen <a>…</a> is resolved after the link is
+    // spliced back. (The HTML parser splits the resulting nested <a> into
+    // siblings — an inherent nested-anchor limitation — so assert on the
+    // string and the top-level chip, not on DOM nesting.)
+    const html = mdToHtml('[see @[Ana](person:abc-1) here](https://e.com)')
+    expect(html).toContain('<a href="https://e.com"')
+    expect(html).toContain('<a class="ref" data-ref="person:abc-1"')
+    expect(html).toContain('@Ana')
+    expect(/[\uE000-\uE005]/.test(html)).toBe(false) // no leftover placeholder tokens
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('a.ref')!.getAttribute('data-ref')).toBe('person:abc-1')
+  })
+  test('a balanced-paren URL round-trips (href and getMd)', () => {
+    const md = '[x](https://en.wikipedia.org/wiki/Foo_(bar))'
+    const probe = document.createElement('div'); probe.innerHTML = mdToHtml(md)
+    expect(probe.querySelector('a')!.getAttribute('href')).toBe('https://en.wikipedia.org/wiki/Foo_(bar)')
+    expect(roundTrip(md)).toBe(md)
+  })
+  test('a query-string URL round-trips (href and getMd)', () => {
+    const md = '[x](https://e.com/s?a=1&b=2)'
+    const probe = document.createElement('div'); probe.innerHTML = mdToHtml(md)
+    expect(probe.querySelector('a')!.getAttribute('href')).toBe('https://e.com/s?a=1&b=2')
+    expect(roundTrip(md)).toBe(md)
+  })
+
+  // Regression for C1: a forged inline()-placeholder token (PUA U+E000–U+E005)
+  // smuggled into a link URL used to survive safeHref and get frozen into the
+  // <a href="…">, where the terminal REF/LINK splice passes (which now run
+  // AFTER the link splice) rescanned it and injected chip/anchor HTML — the
+  // literal `"` in that HTML broke out of the href and stripped `rel`. Fixed
+  // by stripping U+E000–U+E005 in esc() so the tokens are unforgeable. Each
+  // of these asserts: no chip/anchor HTML lands inside an href, `rel` stays
+  // intact, and the URL renders as the literal text with the PUA chars
+  // removed.
+  describe('a forged placeholder token in a link URL cannot break out of the href', () => {
+    const hrefOf = (html: string) => {
+      const probe = document.createElement('div'); probe.innerHTML = html
+      return probe.querySelector('a[href]')!.getAttribute('href')!
+    }
+    test('forged REF token in the URL', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0000\uE001) @[y](person:abc)')
+      const href = hrefOf(html)
+      expect(href).toBe('https://e.com/0')
+      expect(href).not.toContain('<a class="ref"')
+      expect(href).not.toContain('<')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      const link = probe.querySelector('a[href]')!
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+      // the real ref still renders as its own chip, elsewhere
+      expect(html).toContain('<a class="ref" data-ref="person:abc"')
+    })
+    test('a U+E002/E003 PUA pair in the URL is stripped, not smuggled through', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0020\uE003)')
+      const href = hrefOf(html)
+      expect(href).toBe('https://e.com/0')
+      expect(href).not.toContain('<')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      expect(probe.querySelector('a[href]')!.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    })
+    test('forged LINK token in the URL', () => {
+      const html = mdToHtml('[x](https://e.com/\uE0040\uE005)')
+      const href = hrefOf(html)
+      expect(href).toBe('https://e.com/0')
+      expect(href).not.toContain('<')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      expect(probe.querySelectorAll('a[href]').length).toBe(1)
+      expect(probe.querySelector('a[href]')!.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    })
+    // Mirror direction (what 2250aab was vulnerable to): a forged token in a
+    // ref target / @[label] text must not inject an anchor into data-ref="…".
+    test('a U+E002/E003 PUA pair in a data-ref target is stripped, not smuggled', () => {
+      const html = mdToHtml('@[y](person:abc' + String.fromCharCode(0xE002) + '0' + String.fromCharCode(0xE003) + ')')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      const chip = probe.querySelector('a.ref')!
+      expect(chip.getAttribute('data-ref')).toBe('person:abc0')
+      expect(chip.querySelector('*')).toBeNull() // nothing smuggled into the chip
+      expect(html).not.toContain('data-ref="person:abc<')
+    })
+    test('forged LINK token in @[label] text cannot inject an <a href> into the chip', () => {
+      const html = mdToHtml('@[lbl\uE0040\uE005](person:abc) [t](https://e.com)')
+      const probe = document.createElement('div'); probe.innerHTML = html
+      const chip = probe.querySelector('a.ref')!
+      expect(chip.getAttribute('data-ref')).toBe('person:abc')
+      expect(chip.textContent).toBe('@lbl0')
+      expect(chip.querySelector('a[href]')).toBeNull()
+    })
+  })
+})
+
+describe('blockquote', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('single line renders <blockquote> and round-trips', () => {
+    expect(mdToHtml('> a quote')).toBe('<blockquote>a quote</blockquote>')
+    expect(roundTrip('> a quote')).toBe('> a quote')
+  })
+  test('consecutive > lines merge into one blockquote, <br>-joined', () => {
+    expect(mdToHtml('> line one\n> line two')).toBe('<blockquote>line one<br>line two</blockquote>')
+    expect(roundTrip('> line one\n> line two')).toBe('> line one\n> line two')
+  })
+  test('a bare > line is a blank line inside the quote', () => {
+    expect(roundTrip('> a\n>\n> b')).toBe('> a\n>\n> b')
+    expect(mdToHtml('> a\n>\n> b')).toBe('<blockquote>a<br><br>b</blockquote>')
+  })
+  test('blockquote closes an open list first', () => {
+    expect(mdToHtml('- item\n> quote')).toBe('<ul><li>item</li></ul><blockquote>quote</blockquote>')
+  })
+  test('quote directly before and after a heading', () => {
+    expect(roundTrip('> q\n# H\n> q2')).toBe('> q\n# H\n> q2')
+  })
+  test('inline formatting and refs work inside a quote', () => {
+    const html = mdToHtml('> see **bold** and @[Ana](person:x)')
+    expect(html).toContain('<strong>bold</strong>')
+    expect(html).toContain('data-ref="person:x"')
+    expect(roundTrip('> see **bold** and @[Ana](person:x)')).toBe('> see **bold** and @[Ana](person:x)')
+  })
+  test('htmlToPlainText prefixes quote lines with "> "', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('> a\n> b')
+    expect(htmlToPlainText(div)).toBe('> a\n> b')
+  })
+  test('idempotent through two cycles', () => {
+    const md = '> a\n> b'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+
+  // A blockquote with block-level children — <blockquote><div>a</div>
+  // <div>b</div></blockquote> from Chromium's execCommand, or
+  // <blockquote><p>a</p><p>b</p></blockquote> pasted off a web page / email
+  // — is now handled directly by htmlToMd's blockquote branch: it recurses
+  // through htmlToMd for that shape so each child block keeps its own quoted
+  // line, instead of merging them into one run-on line. The editor's
+  // toggleBlockquote() still normalizes <div>/<p> children to <br>-separated
+  // inline content before getMd() runs, but htmlToMd no longer depends on it.
+  test('htmlToMd splits a <div>-built blockquote into one quoted line per child', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote><div>a</div><div>b</div></blockquote>'
+    expect(htmlToMd(container)).toBe('> a\n> b')
+  })
+  test('htmlToMd splits a <p>-built blockquote (web-page / email paste) into one quoted line per child', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote><p>a</p><p>b</p></blockquote>'
+    expect(htmlToMd(container)).toBe('> a\n> b')
+  })
+  test('htmlToPlainText splits a <p>-built blockquote into one "> "-prefixed line per child', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote><p>a</p><p>b</p></blockquote>'
+    expect(htmlToPlainText(container)).toBe('> a\n> b')
+  })
+  test('a blockquote mixing bare text and a <div> child keeps each on its own quoted line', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote>intro<div>a</div><div>b</div></blockquote>'
+    expect(htmlToMd(container)).toBe('> intro\n> a\n> b')
+  })
+  test('the mdToHtml <br>-joined blockquote shape is untouched — round-trips and stays idempotent', () => {
+    expect(roundTrip('> a\n>\n> b')).toBe('> a\n>\n> b')
+    expect(roundTrip(roundTrip('> a\n>\n> b'))).toBe('> a\n>\n> b')
+    const container = document.createElement('div')
+    container.innerHTML = '<blockquote>a<br>b</blockquote>'
+    expect(htmlToMd(container)).toBe('> a\n> b')
+  })
+})
+
+describe('fenced code block', () => {
+  const roundTrip = (md: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = mdToHtml(md)
+    return htmlToMd(div)
+  }
+  test('``` fences render <pre> and round-trip', () => {
+    expect(mdToHtml('```\nline one\nline two\n```')).toBe('<pre>line one\nline two</pre>')
+    expect(roundTrip('```\nline one\nline two\n```')).toBe('```\nline one\nline two\n```')
+  })
+  test('content is literal — inner markdown / block prefixes are NOT parsed', () => {
+    const html = mdToHtml('```\n# not a heading\n- not a list\n> not a quote\n**not bold**\n```')
+    expect(html).toBe('<pre># not a heading\n- not a list\n&gt; not a quote\n**not bold**</pre>')
+    expect(html).not.toContain('<h1>')
+    expect(html).not.toContain('<li>')
+    expect(html).not.toContain('<blockquote>')
+    expect(html).not.toContain('<strong>')
+  })
+  test('< & > in code are escaped, not live markup', () => {
+    const html = mdToHtml('```\n<img src=x onerror=y> a & b\n```')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('img')).toBeNull()
+    expect(probe.querySelector('pre')!.textContent).toBe('<img src=x onerror=y> a & b')
+    expect(roundTrip('```\n<img src=x onerror=y> a & b\n```')).toBe('```\n<img src=x onerror=y> a & b\n```')
+  })
+  test('an unclosed fence still flushes at end of input', () => {
+    expect(mdToHtml('```\nstranded')).toBe('<pre>stranded</pre>')
+  })
+  test('an empty code block round-trips', () => {
+    expect(mdToHtml('```\n```')).toBe('<pre><br></pre>')
+    expect(roundTrip('```\n```')).toBe('```\n```')
+  })
+  test('a fence closes an open list first', () => {
+    expect(mdToHtml('- item\n```\ncode\n```')).toBe('<ul><li>item</li></ul><pre>code</pre>')
+  })
+  test('htmlToMd serializes an edited (<br>-joined) <pre> back to ``` fences', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<pre>a<br>b<br>c</pre>'
+    expect(htmlToMd(container)).toBe('```\na\nb\nc\n```')
+  })
+  test('htmlToMd flattens a <div>-lined <pre> (Chromium formatBlock artefact)', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<pre><div>a</div><div>b</div></pre>'
+    expect(htmlToMd(container)).toBe('```\na\nb\n```')
+  })
+  test('htmlToPlainText drops the fences, keeps the code lines', () => {
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('```\na\nb\n```')
+    expect(htmlToPlainText(div)).toBe('a\nb')
+  })
+  test('idempotent through two cycles', () => {
+    const md = '```\nx = 1\ny = 2\n```'
+    expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+  test('text on the opening fence line (a language tag) is discarded', () => {
+    expect(mdToHtml('```js\nconst a = 1\n```')).toBe('<pre>const a = 1</pre>')
+  })
+})
+
+describe('flattenNestedBlockquotes', () => {
+  test('unwraps a blockquote nested inside another', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<blockquote>outer<blockquote>inner</blockquote></blockquote>'
+    flattenNestedBlockquotes(root)
+    expect(root.querySelectorAll('blockquote').length).toBe(1)
+    expect(root.querySelector('blockquote')!.textContent).toBe('outerinner')
+  })
+  test('leaves a single well-formed blockquote untouched', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<blockquote>just one</blockquote>'
+    flattenNestedBlockquotes(root)
+    expect(root.innerHTML).toBe('<blockquote>just one</blockquote>')
   })
 })

@@ -1,6 +1,37 @@
 import { REF_KINDS, refPattern, type IdRefKind } from './refs'
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+// Strip the Private-Use-Area code points inline() uses for its own
+// LINK/REF placeholder tokens (U+E000–U+E005) BEFORE anything else, so
+// a token spliced into the text — via a crafted link URL, ref target or
+// @[label] — is unforgeable rather than merely unlikely. esc() runs on
+// every string inline() feeds downstream (the body, and thus the href /
+// ref target content, plus the resolver label and refTitle),
+// so this one strip closes every direction at once. The REAL tokens are
+// emitted by inline() AFTER esc() using the *_OPEN/*_CLOSE consts, so they
+// are untouched.
+const esc = (s: string) =>
+  s.replace(/[\uE000-\uE005]/g, '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const ALLOWED_SCHEMES = ['http:', 'https:', 'mailto:']
+
+/**
+ * Returns `raw` (trimmed) when it is a safe external URL to put in an
+ * `href`, else `null`. Safe = an explicit `http:` / `https:` / `mailto:`
+ * scheme and no ASCII control or whitespace character anywhere (the latter
+ * blocks `java	script:` / `java
+script:` smuggling, which browsers
+ * tolerate in an href). Relative, scheme-relative and fragment-only URLs
+ * are rejected: this app has no server, so an in-doc relative link is
+ * always a mistake, and rejecting them keeps the allowlist total.
+ */
+export function safeHref(raw: string): string | null {
+  const url = raw.trim()
+  // eslint-disable-next-line no-control-regex
+  if (!url || /[\u0000-\u0020\u007f]/.test(url)) return null
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*:)/.exec(url)
+  if (!m) return null
+  return ALLOWED_SCHEMES.includes(m[1]!.toLowerCase()) ? url : null
+}
 
 export type LabelResolver = (target: RefInfo['target']) => string | null
 
@@ -12,14 +43,29 @@ export const MAX_LIST_DEPTH = 3
 
 // Delimiters for inline()'s ref-chip placeholder tokens — two Private Use
 // Area code points (U+E000/U+E001) no markdown/HTML syntax below ever
-// matches, and that esc() never produces from `&`/`<`/`>`/`"`, so none of
-// the bold/italic/strike/tilde/underline passes below can ever match into,
-// or split, a token.
+// matches, and that esc() strips out of its input (U+E000–U+E005) before
+// any pass runs — so these tokens are UNFORGEABLE from text, not merely
+// unlikely, and none of the bold/italic/strike/tilde/underline passes
+// below can ever match into, or split, a token.
 const REF_OPEN = ''
 const REF_CLOSE = ''
 const REF_PLACEHOLDER = /(\d+)/g
 
-function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): string {
+// Same PUA rationale again (U+E004/U+E005). A link is FULLY frozen: the
+// mark passes (bold/italic/strike/tilde/underline) run on the link TEXT
+// alone inside the link callback, the whole `<a …>…</a>` is assembled
+// there, and the entire thing is placeholder-frozen — so no later pass can
+// pair a marker inside the link text with one after the closing tag (which
+// used to silently rewrite saved markdown on every open/save cycle — spec
+// §2.1). esc(s) already ran, so the href carries no raw quote AND no
+// forged LINK/REF placeholder code point (esc() strips U+E000–U+E005)
+// — so the terminal REF pass that runs AFTER this link splice cannot
+// find a token to resolve inside the frozen href.
+const LINK_OPEN = ''
+const LINK_CLOSE = ''
+const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
+
+function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   let out = esc(s)
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
   //
@@ -37,8 +83,12 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
   // would let that injected `"` land inside the still-open
   // `data-ref="..."` attribute and break out of it, even though `esc(s)`
   // above already neutralizes any quote that was in the *original* text.
-  // Deferring the real HTML to the last step closes both paths at once:
-  // there is no longer a "later pass" left to corrupt it.
+  // Deferring the real HTML to the last step handles the mark passes (they
+  // all run before the terminal splice). The terminal REF splice DOES
+  // run after this chip is spliced back, so a forged LINK placeholder
+  // token smuggled into `ref` could otherwise be resolved inside the
+  // rebuilt `data-ref="..."` — that direction is closed at the source by
+  // esc() stripping U+E000–U+E005 from the input.
   const refChips: string[] = []
   out = out.replace(REF_PATTERN, (_, label: string, ref: string) => {
     const target = resolveLabel ? parseRef(ref) : null
@@ -48,20 +98,64 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
     refChips.push(`<a class="ref" data-ref="${ref}" contenteditable="false"${titleAttr}>@${shown}</a>`)
     return `${REF_OPEN}${refChips.length - 1}${REF_CLOSE}`
   })
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
-  out = out.replace(/~~([^~]+)~~/g, '<s>$1</s>')
-  // Former @-mention left behind by refs.ts's unlink-on-delete — single
-  // tilde, distinct from the double-tilde strike rule just above (which has
-  // already consumed every `~~...~~` pair by this point, so only genuine
-  // single-tilde spans remain to match here).
-  out = out.replace(/~([^~]+)~/g, '<span class="tt-unlinked-ref">$1</span>')
-  out = out.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
-  // Falls back to the literal match (not e.g. an empty string) on an index
-  // with no corresponding chip — unreachable through normal input, since
-  // every token this function itself ever produces has one, but input text
-  // could in principle already contain a literal U+E000/U+E001 pair typed
-  // or pasted from elsewhere; leaving it as-is is the safe, inert default.
+  // The five inline mark passes (bold / italic / strike / former-@-mention
+  // single-tilde / escaped <u>). Run on the link TEXT alone inside the link
+  // callback below (spec §2.1 step 4), then on the body after links are
+  // extracted — so a marker inside link text is never paired with one that
+  // sits after the link. The single-tilde pass is distinct from the
+  // double-tilde strike rule right above it: strike has already consumed
+  // every `~~...~~` pair by the time single-tilde runs, so only genuine
+  // single-tilde spans remain.
+  const applyMarks = (str: string): string => {
+    str = str.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    str = str.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+    str = str.replace(/~~([^~]+)~~/g, '<s>$1</s>')
+    str = str.replace(/~([^~]+)~/g, '<span class="tt-unlinked-ref">$1</span>')
+    str = str.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
+    return str
+  }
+  // Links: format the link text, assemble the whole <a>…</a>, and freeze all
+  // of it in one placeholder — no later pass can reach inside or straddle it.
+  // esc(s) at the top already turned any `"` in the URL into `&quot;` AND
+  // stripped every U+E000–U+E005 code point, so a URL can neither break out
+  // of the href attribute nor smuggle a forged REF placeholder token
+  // that the terminal REF pass below (which runs AFTER this splice) would
+  // resolve inside the frozen href; safeHref gates the scheme, and a
+  // rejected URL drops the <a> and keeps only the visible text (its marks
+  // then get applied by the body pass below).
+  //
+  // Link text is `[^\]]+` (no `]`); the URL is a run of non-paren chars with
+  // at most one level of *balanced* `(...)` — so a rejected scheme like
+  // `javascript:alert(1)` is consumed whole and degrades to just its text
+  // with no orphan `)` left behind. A URL still cannot contain an unbalanced
+  // `)` (that closes the link) — a documented boundary.
+  const linkTags: string[] = []
+  out = out.replace(/\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)/g, (_m, text: string, rawUrl: string) => {
+    const href = safeHref(rawUrl)
+    if (!href) return text
+    // `title` shows the destination on hover (the visible link text is often
+    // a label, not the URL). `linkHint`, when supplied by the editor, adds a
+    // second line spelling out the Ctrl/middle-click-to-open gesture — a
+    // plain click only places the caret so the link text stays editable.
+    // href is already safeHref-validated (no control chars, no `"`); esc()
+    // covers the hint. htmlToMd ignores `title`, so nothing persists.
+    const titleAttr = ` title="${esc(linkHint ? `${href}\n${linkHint}` : href)}"`
+    linkTags.push(`<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer nofollow">${applyMarks(text)}</a>`)
+    return `${LINK_OPEN}${linkTags.length - 1}${LINK_CLOSE}`
+  })
+  out = applyMarks(out)
+  // Terminal splice order: LINK first, then REF. Link text can contain a
+  // REF placeholder token (refs are extracted before links), so the
+  // <a>…</a> HTML must be spliced back in before those tokens are
+  // resolved. Ref-chip HTML never contains a LINK token, so LINK-first is
+  // safe.
+  //
+  // Each pass falls back to the literal match (not e.g. an empty string) on
+  // an index with no corresponding entry. esc() strips U+E000–U+E005 from
+  // the input up front, so a well-formed token here is always one this
+  // function itself just produced and always has a matching entry; the
+  // fallback is a belt-and-braces inert default, not a reachable path.
+  out = out.replace(LINK_PLACEHOLDER, (m, i: string) => linkTags[Number(i)] ?? m)
   out = out.replace(REF_PLACEHOLDER, (m, i: string) => refChips[Number(i)] ?? m)
   return out
 }
@@ -72,8 +166,8 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
 // shaped "**Label:** " hit this). A trailing &nbsp; keeps a real, visible
 // caret slot after the formatting; htmlToMd normalizes it back to a regular
 // space so documents never accumulate U+00A0.
-const blockInline = (s: string, resolveLabel?: LabelResolver, refTitle?: string) =>
-  inline(s, resolveLabel, refTitle).replace(/ $/, '&nbsp;')
+const blockInline = (s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string) =>
+  inline(s, resolveLabel, refTitle, linkHint).replace(/ $/, '&nbsp;')
 
 /**
  * A line's leading run of plain spaces (Tab-inserted indent — see
@@ -89,7 +183,7 @@ function preserveIndent(s: string): string {
   return '\u00a0'.repeat(m[1]!.length) + s.slice(m[1]!.length)
 }
 
-export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string): string {
+export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
   interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean }
   const stack: ListFrame[] = []
@@ -115,18 +209,54 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     out.push(`<li${valueAttr}>`, itemHtml)
     top!.hasOpenLi = true
   }
+  // Flat blockquote (no nesting — like H1–H3): consecutive `> ` lines buffer
+  // here and flush as one <blockquote>, inner lines joined by <br>; a bare
+  // `>` line contributes an empty inner line, so `> a` / `>` / `> b` becomes
+  // `a<br><br>b`. Every non-`>` branch flushes the buffer first, and the
+  // blockquote branch itself calls closeList() before buffering, exactly as
+  // the heading/hr branches do.
+  let bqBuf: string[] | null = null
+  const flushBq = () => {
+    if (bqBuf === null) return
+    const inner = bqBuf
+      .map(l => blockInline(preserveIndent(l), resolveLabel, refTitle, linkHint))
+      .join('<br>')
+    out.push(`<blockquote>${inner}</blockquote>`)
+    bqBuf = null
+  }
+  // Fenced code block: a ``` line opens a literal-text region that runs to
+  // the next ``` line (or end of input). Inner lines are NOT inline-parsed
+  // and NOT block-parsed — `> `, `- `, `**x**` inside a fence all stay
+  // verbatim, matching every mainstream markdown flavor. Any text after the
+  // opening ``` (a language tag like ```js) is discarded: this editor has
+  // no syntax highlighting to use it. htmlToMd emits the same bare fences.
+  let preBuf: string[] | null = null
+  const flushPre = () => {
+    if (preBuf === null) return
+    const body = preBuf.join('\n')
+    out.push(`<pre>${body === '' ? '<br>' : esc(body)}</pre>`)
+    preBuf = null
+  }
   for (const line of lines) {
+    if (preBuf !== null) {
+      if (/^```/.test(line)) { flushPre(); continue }
+      preBuf.push(line); continue
+    }
+    if (/^```/.test(line)) { flushBq(); closeList(); preBuf = []; continue }
+    const bq = /^> ?(.*)$/.exec(line)
+    if (bq) { closeList(); (bqBuf ??= []).push(bq[1]!); continue }
+    flushBq()
     const h = /^(#{1,3}) (.*)$/.exec(line)
     const ul = /^( *)- (.*)$/.exec(line)
     const ol = /^( *)(\d+)\. (.*)$/.exec(line)
     const hr = /^-{3,}$/.test(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle)}</h${h[1]!.length}>`) }
-    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle), '')
-    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle), ` value="${ol[2]}"`)
+    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
+    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), '')
+    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), ` value="${ol[2]}"`)
     else if (hr) { closeList(); out.push('<hr>') }
-    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle) : '<br>'}</div>`) }
+    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle, linkHint) : '<br>'}</div>`) }
   }
-  closeList(); return out.join('')
+  flushBq(); flushPre(); closeList(); return out.join('')
 }
 
 export interface RefInfo {
@@ -189,6 +319,15 @@ function inlineMd(node: Node): string {
     const label = (node.textContent ?? '').replace(/^@/, '')
     const safeLabel = label.replace(/[[\]()]/g, '')
     return `@[${safeLabel}](${node.dataset.ref})`
+  }
+  // External link (no data-ref). Re-validate the href through safeHref on the
+  // way out — a disallowed scheme drops the <a> and keeps only its text —
+  // and strip any [ ] from the link text so it can't reopen the [text](url)
+  // grammar on a later re-parse.
+  if (tag === 'a' && !node.dataset.ref) {
+    const href = safeHref(node.getAttribute('href') ?? '')
+    const text = kids().replace(/[[\]]/g, '')
+    return href ? `[${text}](${href})` : text
   }
   if (tag === 'br') return ''
   // Without this case, the generic handling below would unwrap the span and
@@ -318,7 +457,7 @@ function blockToMd(node: HTMLElement): string {
 // Block-level tags htmlToMd's top-level walker recognizes as direct
 // children of its root. Also used by unwrapBlockContainers below to
 // detect a non-block wrapper that needs splitting.
-export const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr', 'table'])
+export const BLOCK_TAGS = new Set(['div', 'p', 'ul', 'ol', 'h1', 'h2', 'h3', 'hr', 'table', 'blockquote', 'pre'])
 
 function isBlockTag(el: Element): boolean {
   return BLOCK_TAGS.has(el.tagName.toLowerCase())
@@ -385,11 +524,20 @@ export function unwrapBlockContainers(root: HTMLElement): void {
  * formatBlock: any heading nested inside another heading is unwrapped, so
  * repeated presses collapse back to a single heading (the outer one wins).
  *
- * Deliberately does NOT touch a lone heading that wraps a list/block —
- * that's the browser's own (if imperfect) answer to "make this list item a
- * heading", and dissolving it would make Ctrl+1 a no-op on any list. The
- * companion fixed-rem `.editor h1/h2/h3` sizing keeps even that shape from
- * compounding.
+ * Also dissolves any heading that sits INSIDE an `<li>`: on a list item
+ * Chromium wraps the new <hN> inside the item (often nested in a previous
+ * <hN>, so `<li><h1><h2>…</h2></h1></li>` after Ctrl+1 then Ctrl+2), and the
+ * "outer heading wins" rule above then trapped the item — a level change
+ * kept the stale outer heading, and the ¶ button (a <p>/<div> nested in the
+ * <h1>) couldn't dislodge it either. A heading on a list item never
+ * round-trips anyway (renderListMd flattens it), so it's purely a visual
+ * artifact; removing it lets re-formatting and ¶ work on nested list items.
+ *
+ * Deliberately does NOT touch a top-level heading that wraps a whole
+ * list/block — that heading is outside every `<li>`, it's the browser's own
+ * (if imperfect) answer to "make this list a heading", and dissolving it
+ * would make Ctrl+1 a no-op on a flat list. The companion fixed-rem
+ * `.editor h1/h2/h3` sizing keeps even that shape from compounding.
  *
  * Idempotent: a well-formed heading tree is left untouched.
  */
@@ -398,10 +546,32 @@ export function flattenNestedHeadings(root: HTMLElement): void {
   // Bounded loop — each iteration removes one heading element, so it always
   // terminates; the cap is just belt-and-braces against an unforeseen shape.
   for (let pass = 0; pass < 100; pass++) {
-    const nested = Array.from(root.querySelectorAll<HTMLElement>(HEADING)).find(
-      (h) => h.parentElement?.closest(HEADING)
+    const doomed = Array.from(root.querySelectorAll<HTMLElement>(HEADING)).find(
+      (h) => h.parentElement?.closest(HEADING) || h.closest('li')
+    )
+    if (!doomed) return
+    doomed.replaceWith(...doomed.childNodes)
+  }
+}
+
+/**
+ * The editor's ❝ button / Ctrl+Shift+9 route through
+ * `execCommand('formatBlock', '<blockquote>')`, which — like the heading
+ * case `flattenNestedHeadings` fixes — can NEST a fresh <blockquote> inside
+ * an existing one on a repeat press or a multi-line selection. This app's
+ * blockquote is flat (no nesting), so any blockquote inside another is
+ * unwrapped; repeated presses collapse to one. Idempotent.
+ */
+export function flattenNestedBlockquotes(root: HTMLElement): void {
+  for (let pass = 0; pass < 100; pass++) {
+    const nested = Array.from(root.querySelectorAll<HTMLElement>('blockquote')).find(
+      (b) => b.parentElement?.closest('blockquote')
     )
     if (!nested) return
+    // Bare unwrap is intentional here: `nested` sits inside an enclosing
+    // <blockquote>, so its child nodes land in that blockquote, not at the
+    // editor root — the "top-level nodes must be block elements" invariant
+    // the other unwrap sites guard is not in play.
     nested.replaceWith(...nested.childNodes)
   }
 }
@@ -432,6 +602,26 @@ export function demoteHeadings(root: HTMLElement, range: Range): void {
     const div = (root.ownerDocument ?? document).createElement('div')
     while (h.firstChild) div.appendChild(h.firstChild)
     h.replaceWith(div)
+  }
+}
+
+/**
+ * Companion to demoteHeadings for the editor's 🧹 button: "clear
+ * formatting" also drops blockquote styling (Google Docs / Word both do).
+ * Unwraps every <blockquote> the selection touches into its own children.
+ * List nesting is still left alone, same as demoteHeadings.
+ */
+export function demoteBlockquotes(root: HTMLElement, range: Range): void {
+  for (const b of Array.from(root.querySelectorAll<HTMLElement>('blockquote'))) {
+    if (!rangeHitsNode(range, b)) continue
+    // Re-wrap the contents in a <div> rather than dumping bare text nodes /
+    // <br>s straight into `editorEl` — same as demoteHeadings above. A bare
+    // run there breaks the "top-level children are blocks" invariant:
+    // `currentBlockAndOffset()` can't resolve a block for those lines, and
+    // htmlToMd would emit a spurious blank line between them.
+    const div = (root.ownerDocument ?? document).createElement('div')
+    while (b.firstChild) div.appendChild(b.firstChild)
+    b.replaceWith(div)
   }
 }
 
@@ -503,6 +693,40 @@ function blockToText(node: HTMLElement): string {
   return blockToTextNodes(Array.from(node.childNodes))
 }
 
+// Flattens a <pre> fenced code block to its literal lines. The mdToHtml
+// shape is a single text node with embedded '\n's; an edited one adds
+// <br>s (Enter inside the block) and, transiently, <div> line wrappers
+// from Chromium's formatBlock (ui/editor.ts's normalizePreChildren fixes
+// those before getMd, but stay defensive). nbsp normalises to a plain
+// space, same as everywhere else. A lone trailing empty line (from a
+// final <br>) is dropped; a single empty line is kept so an empty code
+// block round-trips.
+function preLines(node: HTMLElement): string[] {
+  const lines: string[] = ['']
+  const last = () => lines[lines.length - 1] ?? ''
+  const appendLast = (s: string) => { lines[lines.length - 1] = last() + s }
+  const walk = (n: Node) => {
+    if (n.nodeType === Node.TEXT_NODE) {
+      const parts = (n.textContent ?? '').replace(/\u00a0/g, ' ').split('\n')
+      appendLast(parts[0]!)
+      for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
+      return
+    }
+    if (!(n instanceof HTMLElement)) return
+    if (n.tagName.toLowerCase() === 'br') { lines.push(''); return }
+    const block = isBlockTag(n)
+    if (block && last() !== '') lines.push('')
+    Array.from(n.childNodes).forEach(walk)
+    if (block) lines.push('')
+  }
+  Array.from(node.childNodes).forEach(walk)
+  if (lines.length > 1 && last() === '') lines.pop()
+  // A <pre> holding only a caret-slot <br> (an empty code block) has no
+  // lines at all — serialize it as a bare ```/``` pair, not ```/blank/```.
+  if (lines.length === 1 && lines[0] === '') return []
+  return lines
+}
+
 // Text-only counterpart to renderListMd: walks nested <ul>/<ol> recursively
 // so copy-as-plain-text doesn't run sub-bullet text together with its
 // parent's, indenting 2 spaces per depth level (same convention as
@@ -538,6 +762,15 @@ export function htmlToPlainText(root: HTMLElement): string {
     const tag = node.tagName.toLowerCase()
     if (tag === 'ul' || tag === 'ol') renderListText(node, out)
     else if (tag === 'hr') out.push('---')
+    else if (tag === 'blockquote') {
+      // A quote pasted off a web page / email arrives with block children
+      // (<blockquote><p>a</p><p>b</p></blockquote>), which blockToText would
+      // merge onto one line. Recurse through htmlToPlainText for that shape;
+      // the mdToHtml <br>-joined shape (no block child) keeps the flat path.
+      const inner = Array.from(node.children).some(isBlockTag) ? htmlToPlainText(node) : blockToText(node)
+      for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
+    }
+    else if (tag === 'pre') for (const l of preLines(node)) out.push(l)
     else if (/^h[1-3]$/.test(tag) || tag === 'div' || tag === 'p') out.push(blockToText(node))
     else out.push(inlineText(node))
   }
@@ -557,7 +790,20 @@ export function htmlToMd(root: HTMLElement): string {
     if (!(node instanceof HTMLElement)) return
     const tag = node.tagName.toLowerCase()
     if (/^h[1-3]$/.test(tag)) out.push('#'.repeat(Number(tag[1])) + ' ' + blockToMd(node))
+    else if (tag === 'blockquote') {
+      // A quote copied off a web page / email reaches here whole as
+      // <blockquote><p>a</p><p>b</p></blockquote> (or <div>-built) — its
+      // block children would otherwise be merged onto one run-on line by
+      // blockToMd. Recurse through htmlToMd for that shape so each child
+      // block keeps its own line. The mdToHtml <br>-joined shape
+      // (<blockquote>a<br>b</blockquote> — 'br' is NOT in BLOCK_TAGS) has no
+      // block child, so it still takes the blockToMd path and idempotency is
+      // preserved.
+      const inner = Array.from(node.children).some(isBlockTag) ? htmlToMd(node) : blockToMd(node)
+      for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
+    }
     else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
+    else if (tag === 'pre') { out.push('```'); for (const l of preLines(node)) out.push(l); out.push('```') }
     else if (tag === 'hr') out.push('---')
     else if (tag === 'table') renderTableMd(node, out)
     else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))
