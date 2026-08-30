@@ -2128,6 +2128,28 @@ describe('code block editing', () => {
     editor.destroy()
   })
 
+  test('paste over a selection that spans from a normal line into a <pre> is plain text too', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>intro</div><pre>code</pre>'
+    const range = document.createRange()
+    range.setStart(editorEl.querySelector('div')!.firstChild as Text, 2)
+    range.setEnd(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, 'clipboardData', {
+      value: { getData: (type: string) => (type === 'text/html' ? '<b>x</b>' : 'x') },
+    })
+    editorEl.dispatchEvent(e)
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, 'x')
+    expect(execSpy).not.toHaveBeenCalledWith('insertHTML', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
   test('typed `x` on a normal line auto-converts to <code>', () => {
     const { editor, editorEl } = mount()
     vi.spyOn(document, 'execCommand').mockReturnValue(true)

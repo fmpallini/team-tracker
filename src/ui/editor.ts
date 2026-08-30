@@ -323,6 +323,27 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return pre && editorEl.contains(pre) ? pre : null
   }
 
+  /** The editor `<pre>` a node sits in, or null. */
+  function preOf(n: Node | null): HTMLElement | null {
+    const host = n instanceof HTMLElement ? n : n?.parentElement ?? null
+    const pre = host?.closest('pre') as HTMLElement | null
+    return pre && editorEl.contains(pre) ? pre : null
+  }
+
+  /**
+   * True when the current selection has an endpoint inside a fenced code
+   * block — even one that also reaches outside it. Paste uses this (not
+   * preAtCaret, which only looks at the selection's start) so a snippet
+   * dropped over a mixed selection still lands as literal text and can't
+   * splice block markup into the `<pre>`.
+   */
+  function selectionTouchesPre(): boolean {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return false
+    const r = sel.getRangeAt(0)
+    return !!(preOf(r.startContainer) || preOf(r.endContainer) || preOf(r.commonAncestorContainer))
+  }
+
   /**
    * The node immediately before a collapsed caret, or null when the caret is
    * at the very start of its container. A text node with characters before
@@ -1686,9 +1707,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onPaste(e: ClipboardEvent): void {
     e.preventDefault()
-    // Inside a fenced code block, paste is always literal text — never
-    // markdown / HTML — so a copied snippet keeps its own punctuation.
-    if (preAtCaret()) {
+    // A paste that touches a fenced code block is always literal text —
+    // never markdown / HTML — so a copied snippet keeps its own punctuation
+    // and no block markup gets spliced into the `<pre>`.
+    if (selectionTouchesPre()) {
       document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '')
       scheduleChange()
       return
