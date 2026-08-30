@@ -74,7 +74,7 @@ const LINK_OPEN = ''
 const LINK_CLOSE = ''
 const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 
-function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): string {
+function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   let out = esc(s)
   // Code spans first: their content must survive every pass below untouched.
   const codeSpans: string[] = []
@@ -148,7 +148,14 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
   out = out.replace(/\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)/g, (_m, text: string, rawUrl: string) => {
     const href = safeHref(rawUrl)
     if (!href) return text
-    linkTags.push(`<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${applyMarks(text)}</a>`)
+    // `title` shows the destination on hover (the visible link text is often
+    // a label, not the URL). `linkHint`, when supplied by the editor, adds a
+    // second line spelling out the Ctrl/middle-click-to-open gesture — a
+    // plain click only places the caret so the link text stays editable.
+    // href is already safeHref-validated (no control chars, no `"`); esc()
+    // covers the hint. htmlToMd ignores `title`, so nothing persists.
+    const titleAttr = ` title="${esc(linkHint ? `${href}\n${linkHint}` : href)}"`
+    linkTags.push(`<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer nofollow">${applyMarks(text)}</a>`)
     return `${LINK_OPEN}${linkTags.length - 1}${LINK_CLOSE}`
   })
   out = applyMarks(out)
@@ -175,8 +182,8 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string): str
 // shaped "**Label:** " hit this). A trailing &nbsp; keeps a real, visible
 // caret slot after the formatting; htmlToMd normalizes it back to a regular
 // space so documents never accumulate U+00A0.
-const blockInline = (s: string, resolveLabel?: LabelResolver, refTitle?: string) =>
-  inline(s, resolveLabel, refTitle).replace(/ $/, '&nbsp;')
+const blockInline = (s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string) =>
+  inline(s, resolveLabel, refTitle, linkHint).replace(/ $/, '&nbsp;')
 
 /**
  * A line's leading run of plain spaces (Tab-inserted indent — see
@@ -192,7 +199,7 @@ function preserveIndent(s: string): string {
   return '\u00a0'.repeat(m[1]!.length) + s.slice(m[1]!.length)
 }
 
-export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string): string {
+export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
   interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean }
   const stack: ListFrame[] = []
@@ -228,7 +235,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   const flushBq = () => {
     if (bqBuf === null) return
     const inner = bqBuf
-      .map(l => blockInline(preserveIndent(l), resolveLabel, refTitle))
+      .map(l => blockInline(preserveIndent(l), resolveLabel, refTitle, linkHint))
       .join('<br>')
     out.push(`<blockquote>${inner}</blockquote>`)
     bqBuf = null
@@ -241,11 +248,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     const ul = /^( *)- (.*)$/.exec(line)
     const ol = /^( *)(\d+)\. (.*)$/.exec(line)
     const hr = /^-{3,}$/.test(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle)}</h${h[1]!.length}>`) }
-    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle), '')
-    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle), ` value="${ol[2]}"`)
+    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
+    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), '')
+    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), ` value="${ol[2]}"`)
     else if (hr) { closeList(); out.push('<hr>') }
-    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle) : '<br>'}</div>`) }
+    else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle, linkHint) : '<br>'}</div>`) }
   }
   flushBq(); closeList(); return out.join('')
 }
@@ -517,11 +524,20 @@ export function unwrapBlockContainers(root: HTMLElement): void {
  * formatBlock: any heading nested inside another heading is unwrapped, so
  * repeated presses collapse back to a single heading (the outer one wins).
  *
- * Deliberately does NOT touch a lone heading that wraps a list/block —
- * that's the browser's own (if imperfect) answer to "make this list item a
- * heading", and dissolving it would make Ctrl+1 a no-op on any list. The
- * companion fixed-rem `.editor h1/h2/h3` sizing keeps even that shape from
- * compounding.
+ * Also dissolves any heading that sits INSIDE an `<li>`: on a list item
+ * Chromium wraps the new <hN> inside the item (often nested in a previous
+ * <hN>, so `<li><h1><h2>…</h2></h1></li>` after Ctrl+1 then Ctrl+2), and the
+ * "outer heading wins" rule above then trapped the item — a level change
+ * kept the stale outer heading, and the ¶ button (a <p>/<div> nested in the
+ * <h1>) couldn't dislodge it either. A heading on a list item never
+ * round-trips anyway (renderListMd flattens it), so it's purely a visual
+ * artifact; removing it lets re-formatting and ¶ work on nested list items.
+ *
+ * Deliberately does NOT touch a top-level heading that wraps a whole
+ * list/block — that heading is outside every `<li>`, it's the browser's own
+ * (if imperfect) answer to "make this list a heading", and dissolving it
+ * would make Ctrl+1 a no-op on a flat list. The companion fixed-rem
+ * `.editor h1/h2/h3` sizing keeps even that shape from compounding.
  *
  * Idempotent: a well-formed heading tree is left untouched.
  */
@@ -530,11 +546,11 @@ export function flattenNestedHeadings(root: HTMLElement): void {
   // Bounded loop — each iteration removes one heading element, so it always
   // terminates; the cap is just belt-and-braces against an unforeseen shape.
   for (let pass = 0; pass < 100; pass++) {
-    const nested = Array.from(root.querySelectorAll<HTMLElement>(HEADING)).find(
-      (h) => h.parentElement?.closest(HEADING)
+    const doomed = Array.from(root.querySelectorAll<HTMLElement>(HEADING)).find(
+      (h) => h.parentElement?.closest(HEADING) || h.closest('li')
     )
-    if (!nested) return
-    nested.replaceWith(...nested.childNodes)
+    if (!doomed) return
+    doomed.replaceWith(...doomed.childNodes)
   }
 }
 

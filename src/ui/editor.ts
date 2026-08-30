@@ -427,7 +427,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * list block, Chromium's formatBlock *nests* a fresh <hN> inside the block
    * instead of replacing it, and every repeat stacks another wrapper whose
    * relative `2em` size compounds — the heading visibly doubles on each
-   * keypress. flattenNestedHeadings() undoes that right after.
+   * keypress. On a list item it wraps the <hN> inside the <li>, where a
+   * second press (or the ¶ button) then couldn't change or clear it.
+   * flattenNestedHeadings() undoes both right after — it also dissolves any
+   * heading left inside an <li>.
    */
   function formatBlockTag(tag: 'h1' | 'h2' | 'h3' | 'div' | 'p'): void {
     editorEl.focus()
@@ -687,7 +690,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (!range.cloneContents().querySelector('*')) {
         range.deleteContents()
         const tmp = document.createElement('div')
-        tmp.innerHTML = mdToHtml(linkM[0]!, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
+        tmp.innerHTML = mdToHtml(linkM[0]!, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
         // mdToHtml wraps a bare line in <div>…</div>; lift its children out.
         const frag = document.createDocumentFragment()
         const wrapper = tmp.firstElementChild ?? tmp
@@ -811,83 +814,147 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * Opens a one-field modal asking for a URL. Resolves the raw string on OK
-   * (or Enter in the field), null on Cancel/Escape/overlay close. Kept as a
-   * plain promise-returning helper (not wired through EditorHooks) so tests
-   * drive it through the real modal DOM, same as showEditorHelp.
+   * Opens the link modal — two fields, **Link text** and **Link address**,
+   * both pre-filled from `init`. Resolves `{ text, url }` on OK (or Enter in
+   * a field), null on Cancel/Escape/overlay close. The URL is validated
+   * through `safeHref` on OK: a blank or disallowed-scheme address shows an
+   * inline error and keeps the modal open with the fields intact, rather
+   * than silently discarding the input. `init.editing` only swaps the title
+   * ("Edit link" vs "Insert link"). Kept as a plain promise-returning helper
+   * (not wired through EditorHooks) so tests drive it through the real modal
+   * DOM, same as showEditorHelp.
    */
-  // The link-URL modal's handle while it's open, so destroy() (tab-lock
-  // handoff, external-change reload, update relaunch) can close it instead
-  // of leaving the overlay attached over a torn-down editor.
+  // A URL typed without a scheme (`google.com`, `www.google.com`) gets
+  // `https://` prepended so it resolves as a real link instead of a
+  // same-page relative path. Anything already carrying a scheme is left
+  // exactly as typed — `http:`/`https:`/`mailto:` pass safeHref, a
+  // `javascript:` or other disallowed scheme still gets rejected by it. An
+  // empty string stays empty (and fails validation with the same error).
+  function normalizeLinkUrl(raw: string): string {
+    const url = raw.trim()
+    if (!url) return url
+    return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) ? url : `https://${url}`
+  }
+
+  // The link modal's handle while it's open, so destroy() (tab-lock handoff,
+  // external-change reload, update relaunch) can close it instead of leaving
+  // the overlay attached over a torn-down editor.
   let pendingLinkModal: { close: () => void } | null = null
 
-  function promptLinkUrl(): Promise<string | null> {
+  function promptLink(init: { text: string; url: string; editing: boolean }): Promise<{ text: string; url: string } | null> {
     return new Promise((resolve) => {
       let done = false
-      const finish = (v: string | null): void => {
+      const finish = (v: { text: string; url: string } | null): void => {
         if (done) return
         done = true
         pendingLinkModal = null
         handle.close()
         resolve(v)
       }
-      const input = el('input', {
-        type: 'url',
-        class: 'tt-input',
-        placeholder: 'https://',
-      }) as HTMLInputElement
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); finish(input.value) }
-      })
+      const textInput = el('input', { type: 'text', class: 'tt-input', name: 'tt-link-text' }) as HTMLInputElement
+      textInput.value = init.text
+      const urlInput = el('input', { type: 'url', class: 'tt-input', name: 'tt-link-url', placeholder: 'https://' }) as HTMLInputElement
+      urlInput.value = init.url
+      const errorEl = el('div', { class: 'tt-field-error' })
+      const submit = (): void => {
+        const url = normalizeLinkUrl(urlInput.value)
+        if (!safeHref(url)) {
+          errorEl.textContent = t(locale, 'editor_link_invalid_url')
+          urlInput.focus()
+          urlInput.select()
+          return
+        }
+        // Reflect the scheme we filled in, so the user sees exactly what got
+        // inserted rather than the bare host they typed.
+        urlInput.value = url
+        finish({ text: textInput.value, url })
+      }
       const handle = showModal({
-        title: t(locale, 'editor_link_title'),
-        body: el('label', { class: 'tt-field' }, t(locale, 'editor_link_prompt'), input),
+        title: t(locale, init.editing ? 'editor_link_edit_title' : 'editor_link_title'),
+        body: el(
+          'div',
+          { class: 'tt-editor-link-form' },
+          el('label', { class: 'tt-field' }, t(locale, 'editor_link_text_label'), textInput),
+          el('label', { class: 'tt-field' }, t(locale, 'editor_link_prompt'), urlInput),
+          errorEl
+        ),
         buttons: [
           { label: t(locale, 'cancel'), onClick: () => finish(null) },
-          { label: t(locale, 'ok'), primary: true, onClick: () => finish(input.value) },
+          { label: t(locale, 'ok'), primary: true, onClick: submit },
         ],
         // Escape / overlay close routes here too, so the promise never hangs.
         onClose: () => finish(null),
       })
       pendingLinkModal = handle
-      input.focus()
+      // Land on the field the user still needs to fill: the URL when the text
+      // is already known (a selection, or an existing link being edited),
+      // the text otherwise.
+      if (init.text) { urlInput.focus(); urlInput.select() } else { textInput.focus() }
     })
   }
 
+  // The external link (`<a href>`, not a ref chip) the selection sits in, or
+  // null. Used so 🔗 / Ctrl+K over an existing link opens the modal
+  // pre-filled to edit it rather than nesting a new link inside.
+  function linkAtSelection(sel: Selection | null): HTMLAnchorElement | null {
+    if (!sel || sel.rangeCount === 0) return null
+    const node = sel.getRangeAt(0).commonAncestorContainer
+    const host = node instanceof HTMLElement ? node : node.parentElement
+    const a = host?.closest('a[href]:not(.ref)') as HTMLAnchorElement | null
+    return a && editorEl.contains(a) ? a : null
+  }
+
   /**
-   * The 🔗 button. Prompts for a URL and inserts `[text](url)` markdown at
-   * the caret — `text` is the current selection, or the URL itself when
-   * nothing is selected. A blank or disallowed-scheme URL is a no-op. Both
-   * the selection text AND its Range are captured BEFORE the await: the
-   * modal steals focus into its own <input> and, on close, restores nothing
-   * — so afterwards neither the live selection nor `caretOrEndRange()`'s
-   * reuse-a-collapsed-editor-range check still holds, and the link would
-   * land appended to the last block (or not apply at all, with focus on
-   * <body>). Restore the saved Range if it still points inside the editor,
-   * else fall back to end-of-document. `insertText` replaces a non-collapsed
-   * selection, so the selected text becomes the link text — spec'd.
+   * The 🔗 button / Ctrl+K. Opens the link modal and splices `[text](url)`
+   * markdown into the document:
+   *
+   * - caret inside an existing link  → modal pre-filled with that link's
+   *   text and href; OK replaces the whole `<a>` (its node is selected
+   *   before `insertText`).
+   * - text selected                  → text field pre-filled with it; OK
+   *   replaces the selection.
+   * - nothing selected               → both fields empty; OK inserts at the
+   *   caret. Empty text falls back to the URL string.
+   *
+   * The anchor, the selection text AND its Range are all captured BEFORE the
+   * await: the modal steals focus into its own <input> and restores nothing
+   * on close, so afterwards neither the live selection nor
+   * `caretOrEndRange()`'s reuse-a-collapsed-editor-range check still holds,
+   * and the link would land appended to the last block. Restore the saved
+   * target if it still points inside the editor, else fall back to
+   * end-of-document. Link text is collapsed to a single line — the saved
+   * range is restored before `insertText`, so a newline would splice a
+   * literal `[a\nb](url)` that inline() won't match as a link.
    */
   async function insertLink(): Promise<void> {
     const sel = window.getSelection()
-    // Collapse the selected text to a single line: the saved range is
-    // restored before `insertText`, so a selection spanning a line break
-    // would otherwise splice a literal `[a\nb](url)` onto the user's
-    // content — which inline() won't match as a link (brackets shown raw).
-    const selected = (sel && !sel.isCollapsed ? sel.toString() : '').replace(/\s+/g, ' ').trim()
+    const anchor = linkAtSelection(sel)
     const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
-    const raw = await promptLinkUrl()
-    if (raw === null) return
-    const url = raw.trim()
-    if (!url || !safeHref(url)) return
+    const initText = anchor
+      ? (anchor.textContent ?? '').replace(/\s+/g, ' ').trim()
+      : (sel && !sel.isCollapsed ? sel.toString() : '').replace(/\s+/g, ' ').trim()
+    const initUrl = anchor ? anchor.getAttribute('href') ?? '' : ''
+
+    const res = await promptLink({ text: initText, url: initUrl, editing: anchor !== null })
+    if (res === null) return
+    const url = res.url.trim()
+    if (!safeHref(url)) return // defensive — the modal already gates this
+    const text = res.text.replace(/\s+/g, ' ').trim()
+
     editorEl.focus()
     const sel2 = window.getSelection()
-    if (sel2 && savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
+    if (anchor && editorEl.contains(anchor)) {
+      const r = document.createRange()
+      r.selectNode(anchor)
+      sel2?.removeAllRanges()
+      sel2?.addRange(r)
+    } else if (sel2 && savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
       sel2.removeAllRanges()
       sel2.addRange(savedRange)
     } else {
       caretOrEndRange()
     }
-    exec('insertText', `[${selected || url}](${url})`)
+    exec('insertText', `[${text || url}](${url})`)
   }
 
   /**
@@ -1251,7 +1318,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const html = e.clipboardData?.getData('text/html')
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
-      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint')))
+      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
       scheduleChange()
       return
     }
@@ -1397,7 +1464,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // not flush — unlike destroy(), the pending change here belongs to
     // content that is being replaced outright.
     cancelChange()
-    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'))
+    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
   }
 
   function refreshRefLabels(): void {

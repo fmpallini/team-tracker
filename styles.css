@@ -424,6 +424,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-modal-message { color: var(--fg); }
 .tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
+.tt-editor-link-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-field { display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; color: var(--muted); }
 .tt-input {
   padding: .4rem .5rem; border: 1px solid var(--border); border-radius: 4px;

@@ -542,6 +542,50 @@ describe('flattenNestedHeadings (undoes Chromium formatBlock nesting that makes 
     flattenNestedHeadings(div)
     expect(div.innerHTML).toBe('<h2>a real heading</h2><div>body</div>')
   })
+
+  // A heading on a list item never round-trips (renderListMd flattens it), so
+  // headings on list items aren't a real feature — but Chromium's formatBlock
+  // wraps one *inside the <li>* on Ctrl+1/2/3, and the old "outer heading
+  // wins" rule then trapped the item: a second Ctrl+2 kept the stale <h1>, and
+  // the ¶ button (a <p>/<div> nested in the <h1>) couldn't dislodge it either.
+  // Any heading inside an <li> is now dissolved.
+  test('a heading Chromium wrapped inside a list item is dissolved', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>parent<h1><ul><li>child</li></ul></h1></li></ul>'
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<ul><li>parent<ul><li>child</li></ul></li></ul>')
+  })
+
+  test('the ¶ button can escape a nested-list-item heading (<p> nested in the <h1>)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>parent<h1><p><ul><li>child</li></ul></p></h1></li></ul>'
+    flattenNestedHeadings(div)
+    expect(div.querySelectorAll('h1,h2,h3')).toHaveLength(0)
+    expect(htmlToMd(div)).toBe('- parent\n  - child')
+  })
+
+  test('changing heading level on a list item (Ctrl+1 then Ctrl+2) leaves no heading', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<ul><li>parent</li></ul>'
+    // Chromium nests the new <h2> *inside* the existing <h1>, all inside the
+    // <li>; innerHTML can't express <h1><h2>, so build it via the DOM API.
+    const li = div.querySelector('li')!
+    const h1 = document.createElement('h1')
+    const h2 = document.createElement('h2')
+    h2.innerHTML = '<ul><li>child</li></ul>'
+    h1.appendChild(h2)
+    li.appendChild(h1)
+    flattenNestedHeadings(div)
+    expect(div.querySelectorAll('h1,h2,h3')).toHaveLength(0)
+    expect(htmlToMd(div)).toBe('- parent\n  - child')
+  })
+
+  test('a top-level heading wrapping a whole list is still kept (flat-list Ctrl+1)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<h1><ul><li>only item</li></ul></h1>'
+    flattenNestedHeadings(div)
+    expect(div.innerHTML).toBe('<h1><ul><li>only item</li></ul></h1>')
+  })
 })
 
 describe('demoteHeadings ("clear formatting" also drops the heading style, like Docs/Word)', () => {
@@ -749,6 +793,19 @@ describe('external links', () => {
     expect(a.getAttribute('rel')).toBe('noopener noreferrer nofollow')
     expect(a.textContent).toBe('the docs')
     expect(roundTrip('see [the docs](https://example.com/x)')).toBe('see [the docs](https://example.com/x)')
+  })
+  test('the anchor carries a title with the destination URL (shown on hover)', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('[label](https://example.com/deep/path)')
+    expect(probe.querySelector('a')!.getAttribute('title')).toBe('https://example.com/deep/path')
+  })
+  test('when a link hint is supplied, the title adds it on a second line', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('[label](https://e.com)', undefined, undefined, 'Ctrl+click to open')
+    expect(probe.querySelector('a')!.getAttribute('title')).toBe('https://e.com\nCtrl+click to open')
+  })
+  test('the title attribute does not survive the round trip (regenerated each render)', () => {
+    expect(roundTrip('[x](https://e.com)')).toBe('[x](https://e.com)')
   })
   test('formatting inside link text is preserved', () => {
     const html = mdToHtml('[**bold** text](https://e.com)')

@@ -1194,18 +1194,20 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
-  async function answerLinkPrompt(url: string | null): Promise<void> {
+  const linkInput = (name: 'tt-link-text' | 'tt-link-url'): HTMLInputElement =>
+    document.querySelector(`.tt-modal-dialog input[name="${name}"]`) as HTMLInputElement
+  const linkModalButton = (key: 'ok' | 'cancel'): HTMLButtonElement =>
+    Array.from(document.querySelectorAll('.tt-modal-dialog button')).find(b => b.textContent === t('en-US', key)) as HTMLButtonElement
+
+  // Drive the two-field link modal. `text: undefined` leaves the text field
+  // at whatever it was pre-filled with; `text: ''` clears it.
+  async function answerLink(res: { text?: string; url: string } | null): Promise<void> {
     // one microtask for the modal to mount
     await Promise.resolve()
-    const dialog = document.querySelector('.tt-modal-dialog') as HTMLElement
-    if (url === null) {
-      const cancel = Array.from(dialog.querySelectorAll('button')).find(b => b.textContent === t('en-US', 'cancel'))!
-      cancel.click()
-    } else {
-      ;(dialog.querySelector('input') as HTMLInputElement).value = url
-      const ok = Array.from(dialog.querySelectorAll('button')).find(b => b.textContent === t('en-US', 'ok'))!
-      ok.click()
-    }
+    if (res === null) { linkModalButton('cancel').click(); return }
+    if (res.text !== undefined) linkInput('tt-link-text').value = res.text
+    linkInput('tt-link-url').value = res.url
+    linkModalButton('ok').click()
   }
 
   test('🔗 button wraps the selection as a markdown link', async () => {
@@ -1220,7 +1222,10 @@ describe('toolbar', () => {
     const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
 
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLinkPrompt('https://example.com')
+    await Promise.resolve()
+    // The selected text pre-fills the text field.
+    expect(linkInput('tt-link-text').value).toBe('docs')
+    await answerLink({ url: 'https://example.com' })
 
     const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
     expect(inserted).toBe('[docs](https://example.com)')
@@ -1241,22 +1246,76 @@ describe('toolbar', () => {
     const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
 
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLinkPrompt('https://example.com')
+    await answerLink({ url: 'https://example.com' })
 
     const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
     expect(inserted).toBe('[a b](https://example.com)')
     editor.destroy()
   })
 
-  test('🔗 button with no selection uses the URL as the link text', async () => {
+  test('🔗 button with no selection and no text entered uses the URL as the link text', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     editor.setMd('x')
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLinkPrompt('https://example.com')
+    await Promise.resolve()
+    // Both fields start empty when nothing is selected.
+    expect(linkInput('tt-link-text').value).toBe('')
+    expect(linkInput('tt-link-url').value).toBe('')
+    await answerLink({ url: 'https://example.com' })
     const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
     expect(inserted).toBe('[https://example.com](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button with no selection: both fields filled in insert [text](url)', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'the site', url: 'https://example.com' })
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[the site](https://example.com)')
+    editor.destroy()
+  })
+
+  test('🔗 button: a scheme-less address gets https:// prepended before validation', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    for (const [typed, expected] of [
+      ['google.com', 'https://google.com'],
+      ['www.google.com', 'https://www.google.com'],
+    ] as const) {
+      execSpy.mockClear()
+      toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+      await answerLink({ text: 'g', url: typed })
+      const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+      expect(inserted).toBe(`[g](${expected})`)
+    }
+    editor.destroy()
+  })
+
+  test('🔗 button: an explicit scheme is left untouched (mailto:, and javascript: still rejected)', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'mail', url: 'mailto:a@b.com' })
+    expect(execSpy.mock.calls.find(c => c[0] === 'insertText')![2]).toBe('[mail](mailto:a@b.com)')
+
+    execSpy.mockClear()
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ url: 'javascript:alert(1)' })
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    expect(document.querySelector('.tt-modal-dialog .tt-field-error')!.textContent)
+      .toBe(t('en-US', 'editor_link_invalid_url'))
+    linkModalButton('cancel').click()
     editor.destroy()
   })
 
@@ -1266,7 +1325,7 @@ describe('toolbar', () => {
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     editor.setMd('x')
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLinkPrompt(null)
+    await answerLink(null)
     expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
     editor.destroy()
   })
@@ -1296,20 +1355,102 @@ describe('toolbar', () => {
     const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
 
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLinkPrompt('https://example.com')
+    await answerLink({ url: 'https://example.com' })
 
     // Landed in place, replacing "docs" — NOT appended to the end.
     expect(editor.getMd()).toBe('see [docs](https://example.com) here')
   })
 
-  test('🔗 button: a javascript: URL is rejected, nothing inserted', async () => {
+  test('🔗 button: a javascript: URL is rejected in-place — modal stays open with an error, nothing inserted', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     editor.setMd('x')
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLinkPrompt('javascript:alert(1)')
+    await answerLink({ url: 'javascript:alert(1)' })
+
     expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    // Modal still open, input intact, error shown.
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(linkInput('tt-link-url').value).toBe('javascript:alert(1)')
+    expect(document.querySelector('.tt-modal-dialog .tt-field-error')!.textContent)
+      .toBe(t('en-US', 'editor_link_invalid_url'))
+    editor.destroy()
+  })
+
+  test('🔗 button: correcting a rejected URL then confirming inserts the link', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editor.setMd('x')
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'site', url: 'not a url' })
+    expect(execSpy.mock.calls.some(c => c[0] === 'insertText')).toBe(false)
+    // Fix it and confirm again — same still-open modal.
+    await answerLink({ url: 'https://example.com' })
+    const inserted = execSpy.mock.calls.find(c => c[0] === 'insertText')![2]
+    expect(inserted).toBe('[site](https://example.com)')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    editor.destroy()
+  })
+
+  test('🔗 button: caret inside an existing link opens the modal pre-filled to edit it', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd: string, _ui?: boolean, value?: string) => {
+      if (cmd === 'insertText' && typeof value === 'string') {
+        const s = window.getSelection()
+        if (s && s.rangeCount > 0) {
+          const r = s.getRangeAt(0)
+          r.deleteContents()
+          r.insertNode(document.createTextNode(value))
+        }
+      }
+      return true
+    })
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 3); caret.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-title')!.textContent).toBe(t('en-US', 'editor_link_edit_title'))
+    expect(linkInput('tt-link-text').value).toBe('the docs')
+    expect(linkInput('tt-link-url').value).toBe('https://example.com/x')
+
+    await answerLink({ url: 'https://example.com/y' })
+    // The whole <a> was replaced, text kept.
+    expect(editor.getMd()).toBe('see [the docs](https://example.com/y)')
+    editor.destroy()
+  })
+
+  test('🔗 button: editing an existing link can change its text', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd: string, _ui?: boolean, value?: string) => {
+      if (cmd === 'insertText' && typeof value === 'string') {
+        const s = window.getSelection()
+        if (s && s.rangeCount > 0) {
+          const r = s.getRangeAt(0)
+          r.deleteContents()
+          r.insertNode(document.createTextNode(value))
+        }
+      }
+      return true
+    })
+    editor.setMd('see [the docs](https://example.com/x)')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 3); caret.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await answerLink({ text: 'the manual', url: 'https://example.com/x' })
+    expect(editor.getMd()).toBe('see [the manual](https://example.com/x)')
     editor.destroy()
   })
 

@@ -6,8 +6,11 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ## [2.7.0] - 2026-08-29
 
+### Fixed
+- In a nested bullet or numbered list, applying a heading (H1/H2/H3) to an item left it stuck at heading size — you couldn't switch to another heading level or use the ¶ button to turn it back into normal text (only the 🧹 clear-formatting button could). Headings no longer apply to an item inside a nested list (they were never saved there anyway); applying a heading to a top-level list still works.
+
 ### Added
-- Rich-text notes now support inline code (`` `code` ``), blockquotes (`> text`), and external links (`[text](url)`), each with a toolbar button. To open a link, Ctrl/Cmd-click (or middle-click) it — it opens in a new tab; a plain click just puts the cursor in the link so you can edit it.
+- Rich-text notes now support inline code (`` `code` ``), blockquotes (`> text`), and external links (`[text](url)`), each with a toolbar button. The link button (or Ctrl+K) opens a dialog with **Link text** and **Link address** fields: it pre-fills the text from your selection, or — when the cursor is already inside a link — pre-fills both fields so you can edit that link in place. If you type an address with no scheme (`google.com`, `www.google.com`) it's saved as `https://…`. The address is checked when you confirm; a blank or unsupported one (only `http`, `https`, and `mailto` are allowed) shows an error and keeps the dialog open instead of silently doing nothing. Hovering a link shows its destination URL in a tooltip, plus how to open it (Ctrl/Cmd- or middle-click) and edit it (Ctrl+K). To open a link, Ctrl/Cmd-click (or middle-click) it — it opens in a new tab; a plain click just puts the cursor in the link so you can edit it.
 - A toolbar button for inserting a horizontal divider line (previously only possible by typing `---`).
 - Keyboard shortcuts: Ctrl+E for inline code, Ctrl+Shift+9 for blockquote, Ctrl+K to insert a link.
 
