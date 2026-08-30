@@ -528,6 +528,39 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     sel.addRange(r)
   }
 
+  /**
+   * Places the caret just past a freshly-inserted inline element but
+   * genuinely OUTSIDE it. When `node` is at the end of its block, park
+   * the caret in a trailing NBSP: setStartAfter alone leaves the caret in
+   * the element’s formatting context in every engine, so the next
+   * keystroke — and Enter — keeps typing inside the new
+   * <code>/<strong>/<em>/<s> (typing `x` then more words gave one long
+   * `x more words` code span; Enter carried an empty <code> to the next
+   * line). The NBSP renders as a plain space and round-trips as one —
+   * mdToHtml turns a block-trailing space after inline formatting back
+   * into &nbsp;, the same mechanism the "**Label:** " template lines rely
+   * on. When real text already follows `node` (a span wrapped mid-line),
+   * no gap is added — it would be a spurious space — and a plain
+   * setStartAfter is used.
+   */
+  function caretPastInline(node: ChildNode): void {
+    const sel = window.getSelection()
+    if (!sel) return
+    const next = node.nextSibling
+    const hasFollowingText = !!next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? '').length > 0
+    const r = document.createRange()
+    if (hasFollowingText) {
+      r.setStartAfter(node)
+    } else {
+      const gap = document.createTextNode('\u00a0')
+      node.after(gap)
+      r.setStart(gap, 1)
+    }
+    r.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+
   /** Collapses the caret to a text offset within `block` (typically an `<li>`
    * just moved by indentListItems/outdentListItems). Moving list nodes via
    * insertBefore/appendChild invalidates the browser's live selection, which
@@ -835,7 +868,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     code.textContent = range.toString()
     range.deleteContents()
     range.insertNode(code)
-    setCaretAfter(code)
+    caretPastInline(code)
     scheduleChange()
   }
 
@@ -937,7 +970,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const node = document.createElement(tag)
     node.textContent = match.content
     range.insertNode(node)
-    setCaretAfter(node)
+    caretPastInline(node)
   }
 
   function handleAutoFormat(): void {

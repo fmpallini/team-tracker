@@ -2268,6 +2268,50 @@ describe('code block editing', () => {
   })
 })
 
+describe('inline auto-format caret exit', () => {
+  function mountAt(hooksLoc: 'en-US' | 'pt-BR', html: string, caretOffsetFromEnd = 0): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), hooksLoc)
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = html
+    const tn = editorEl.firstChild!.firstChild as Text
+    const at = tn.textContent!.length - caretOffsetFromEnd
+    const r = document.createRange(); r.setStart(tn, at); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+    return { editor, editorEl }
+  }
+
+  test.each([
+    ['`x`', 'code'],
+    ['**x**', 'strong'],
+    ['*x*', 'em'],
+    ['~~x~~', 's'],
+  ])('typing %s at end of line parks the caret OUTSIDE the new <%s>, in a trailing gap', (typed, tag) => {
+    const { editor, editorEl } = mountAt('en-US', `<div>a ${typed}</div>`)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const mark = editorEl.querySelector(tag)!
+    expect(mark).not.toBeNull()
+    // a trailing text node (the caret's home) now follows the mark
+    expect(mark.nextSibling?.nodeType).toBe(Node.TEXT_NODE)
+    const sel = window.getSelection()!
+    expect(sel.anchorNode).toBe(mark.nextSibling)
+    // and it round-trips: the gap is a plain trailing space, nothing more
+    expect(editor.getMd()).toBe(`a ${typed} `)
+    editor.destroy()
+  })
+
+  test('typing `x` with text still after the caret adds no gap (would be a spurious space)', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a `x` tail</div>', 5) // caret right after the closing `
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const code = editorEl.querySelector('code')!
+    expect(code.textContent).toBe('x')
+    expect(editor.getMd()).toBe('a `x` tail')
+    editor.destroy()
+  })
+})
+
 describe('inline auto-format guards', () => {
   test('skips auto-format when the matched span contains an embedded element (e.g. ref chip)', () => {
     const hooks = makeHooks()

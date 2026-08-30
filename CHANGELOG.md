@@ -7,6 +7,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.7.0] - 2026-08-29
 
 ### Fixed
+- After typing `**bold**`, `*italic*`, `~~strike~~`, or `` `code` `` to auto-format a word, the cursor stayed stuck inside the formatting: whatever you typed next was still bold/italic/code, and pressing Enter carried the formatting onto the new line. The cursor now lands cleanly after the formatted word.
 - Applying a heading (H1/H2/H3, by shortcut, toolbar button, or typing `# `) to a bullet or numbered list item did nothing useful: on a nested item it split the list and jumped the cursor to another line, on a top-level item it flattened the whole list to plain text on the next save, and either way the heading was gone after reopening the file. A list item can't also be a heading, so headings now simply don't apply on a list line — take the line out of the list first (Shift+Tab) if you want it to be a heading.
 
 ### Added
