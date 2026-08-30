@@ -36,6 +36,26 @@ mkdirSync('dist/pwa', { recursive: true })
 // concurrently rather than back-to-back — esbuild's service process handles
 // both jobs in parallel instead of one waiting on the other.
 const [appJs, pwaJs] = await Promise.all([bundle(false), bundle(true)])
+
+// Guard: a raw C0 control byte or DEL in the bundle survives esbuild's
+// charset:'utf8' pass-through, and once inlined into app.html it makes
+// Chromium's file:// text decoder substitute U+FFFD — which silently
+// corrupts regex character classes (an out-of-order range then throws and
+// the whole app fails to boot) and string literals. jsdom-based unit tests
+// read the .ts source directly and never see this, so it has to be caught
+// here. Tab / LF / CR are legitimate inside minified template literals.
+for (const [name, js] of [['app', appJs], ['pwa', pwaJs]]) {
+  const m = js.match(new RegExp("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]"))
+  if (m) {
+    const at = js.indexOf(m[0])
+    const cp = m[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+    throw new Error(
+      `build: "${name}" bundle contains raw control byte U+${cp} at offset ${at} — ` +
+      `author it as a \\u escape in source. Context: ${JSON.stringify(js.slice(at - 40, at + 40))}`
+    )
+  }
+}
+
 writeFileSync('dist/app.html', page(appJs))
 writeFileSync('dist/pwa/index.html', withPwaHead(page(pwaJs)))
 

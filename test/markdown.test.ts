@@ -688,6 +688,8 @@ describe('safeHref', () => {
     expect(safeHref('java\tscript:alert(1)')).toBeNull()
     expect(safeHref('java\nscript:alert(1)')).toBeNull()
     expect(safeHref('  java script:alert(1)')).toBeNull()
+    expect(safeHref('https://e.com/a b')).toBeNull()
+    expect(safeHref('https://e.com/x' + String.fromCharCode(127))).toBeNull()
   })
 })
 
