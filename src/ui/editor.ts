@@ -1068,7 +1068,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
         const lastNode = frag.lastChild
         range.insertNode(frag)
-        if (lastNode) setCaretAfter(lastNode)
+        // Park the caret in a real trailing text node OUTSIDE the new <a>,
+        // exactly as replaceInlineMatch does for bold/italic/strike. A bare
+        // setCaretAfter leaves it at the block-child boundary right after the
+        // anchor — where Chromium both inherits the anchor's formatting
+        // context (the next Enter carries an empty <a> to the next line) and
+        // has to contend with the empty text node range.insertNode split off
+        // the end of the line; together those made the caret jump a line.
+        if (lastNode) caretPastInline(lastNode)
         scheduleChange()
         return
       }
@@ -1363,7 +1370,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
       const lastNode = frag.lastChild
       anchor.replaceWith(frag)
-      if (lastNode) setCaretAfter(lastNode)
+      // Same as the typed-link path: land the caret in a trailing gap outside
+      // the rebuilt <a>, not at the element boundary (see that comment).
+      if (lastNode) caretPastInline(lastNode)
       scheduleChange()
       return
     }
