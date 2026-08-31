@@ -683,18 +683,19 @@ function blockToText(node: HTMLElement): string {
 // Flattens a <pre> fenced code block to its literal lines. The mdToHtml
 // shape is a single text node with embedded '\n's; an edited one adds
 // <br>s (Enter inside the block) and, transiently, <div> line wrappers
-// from Chromium's formatBlock (ui/editor.ts's normalizePreChildren fixes
-// those before getMd, but stay defensive). nbsp normalises to a plain
-// space, same as everywhere else. A lone trailing empty line (from a
-// final <br>) is dropped; a single empty line is kept so an empty code
-// block round-trips.
-function preLines(node: HTMLElement): string[] {
+// from Chromium's formatBlock (ui/editor.ts's normalizeFlatBlockChildren
+// fixes those before getMd, but stay defensive). nbsp normalises to a
+// plain space and a stray '\r' (from a CRLF paste) is dropped, same as
+// everywhere else. A lone trailing empty line (from a final <br>) is
+// dropped; a single empty line is kept so an empty code block round-trips.
+// Shared with src/ui/editor.ts (collapse threshold, copy button, unwrap).
+export function preLines(node: HTMLElement): string[] {
   const lines: string[] = ['']
   const last = () => lines[lines.length - 1] ?? ''
   const appendLast = (s: string) => { lines[lines.length - 1] = last() + s }
   const walk = (n: Node) => {
     if (n.nodeType === Node.TEXT_NODE) {
-      const parts = (n.textContent ?? '').replace(/\u00a0/g, ' ').split('\n')
+      const parts = (n.textContent ?? '').replace(/\u00a0/g, ' ').replace(/\r/g, '').split('\n')
       appendLast(parts[0]!)
       for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
       return

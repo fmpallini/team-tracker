@@ -2613,6 +2613,37 @@ describe('code block collapse + copy', () => {
     }
   })
 
+  test('the copy button and line count read a <br>-edited block the same way htmlToMd serialises it', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const { editor, editorEl } = mount()
+      // the shape Enter-inside-a-block produces: <br> line breaks, not \n
+      editorEl.innerHTML = '<pre>one<br>two<br>three</pre>'
+      const pre = editorEl.querySelector('pre')!
+      pre.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      ;(editor.root.querySelector('.tt-cb-controls button') as HTMLButtonElement).click()
+      expect(writeText).toHaveBeenCalledWith('one\ntwo\nthree')
+      expect(editor.getMd()).toBe('```\none\ntwo\nthree\n```')
+      editor.destroy()
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'clipboard', orig)
+      else delete (navigator as unknown as { clipboard?: unknown }).clipboard
+    }
+  })
+
+  test('the collapse threshold counts a transient <div>-wrapped block by real lines (not folded to one)', () => {
+    const { editor, editorEl } = mount()
+    // Chromium formatBlock on a multi-line selection can leave this shape
+    // briefly; the count must still see 10 lines, not 1.
+    editorEl.innerHTML = '<pre>' + Array.from({ length: 10 }, (_, i) => `<div>l${i}</div>`).join('') + '</pre>'
+    editor.setMd(editor.getMd()) // re-render through the normal path
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.dataset.lines).toBe('10')
+    editor.destroy()
+  })
+
   test('the hover toggle button collapses and re-expands the block', () => {
     const { editor, editorEl } = mount()
     editor.setMd(shortFence)

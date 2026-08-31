@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
@@ -640,26 +640,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
-  /** The text lines of a `<pre>`: text nodes contribute their text (split on
-   * any literal `\n`), each `<br>` starts a new line, any element wrapper's
-   * text is folded in. A lone trailing empty line (final `<br>`) is dropped. */
-  function preTextLines(pre: HTMLElement): string[] {
-    const lines: string[] = ['']
-    const appendLast = (s: string) => { lines[lines.length - 1] = (lines[lines.length - 1] ?? '') + s }
-    pre.childNodes.forEach((n) => {
-      if (n.nodeType === Node.TEXT_NODE) {
-        const parts = (n.textContent ?? '').replace(/\r/g, '').split('\n')
-        appendLast(parts[0]!)
-        for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
-      } else if (n instanceof HTMLElement && n.tagName === 'BR') {
-        lines.push('')
-      } else if (n instanceof HTMLElement) {
-        appendLast(n.textContent ?? '')
-      }
-    })
-    if (lines.length > 1 && (lines[lines.length - 1] ?? '') === '') lines.pop()
-    return lines
-  }
+  // A <pre>'s literal text lines — collapse threshold, the copy button and
+  // unwrapPre all use core/markdown.ts's preLines, the same extraction
+  // htmlToMd serialises with, so the "+N more lines" count can't drift from
+  // what actually round-trips.
 
   /**
    * Replaces an emptied-out top-level block with an empty `<pre>` fenced
@@ -684,7 +668,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * autoformat — the "toggle off" half of toggleCodeBlock.
    */
   function unwrapPre(pre: HTMLElement): void {
-    const lines = preTextLines(pre)
+    const lines = preLines(pre)
     const frag = document.createDocumentFragment()
     const divs: HTMLElement[] = []
     for (const line of lines.length ? lines : ['']) {
@@ -1865,7 +1849,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   let cbCopyResetTimer: ReturnType<typeof setTimeout> | null = null
 
   function preLineCount(pre: HTMLElement): number {
-    return preTextLines(pre).length
+    return preLines(pre).length
   }
 
   /** Sets `data-lines` on every <pre> and auto-collapses the long ones.
@@ -1938,7 +1922,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onCbCopy(): void {
     if (!cbActivePre) return
-    copyText(preTextLines(cbActivePre).join('\n'))
+    copyText(preLines(cbActivePre).join('\n'))
     cbCopyBtn.textContent = CB_COPIED_GLYPH
     cbCopyBtn.title = t(locale, 'editor_cb_copied')
     if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
