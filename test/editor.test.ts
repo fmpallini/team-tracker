@@ -2239,6 +2239,57 @@ describe('code block editing', () => {
     editor.destroy()
   })
 
+  test('Ctrl+Shift+E with the caret in a blockquote makes no code block', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted line</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true) // chord still swallowed, like the other blocked block chords
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe('quoted line')
+    editor.destroy()
+  })
+
+  test('the { } toolbar button with the caret in a blockquote makes no code block', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted line</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_codeblock_title')
+    ) as HTMLButtonElement
+    btn.click()
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe('quoted line')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E with the caret in a <pre> nested in a blockquote still unwraps it (old-bug cleanup)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote><pre>trapped</pre></blockquote>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('pre')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).toBeNull()
+    editor.destroy()
+  })
+
   test('Ctrl+B with the caret in a <pre> applies no bold', () => {
     const { editor, editorEl } = mount()
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)

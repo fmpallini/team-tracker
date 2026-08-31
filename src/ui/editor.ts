@@ -832,9 +832,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * `<div>` lines (normalizePreChildren) so htmlToMd's ``` serialization
    * keeps every break. Selection snapshot before focus() for the same
    * jsdom reason as toggleBlockquote.
+   *
+   * Inert inside a blockquote (when not already in a `<pre>` — an existing
+   * one is still unwrapped, so the old-bug shape can be cleaned up): a flat
+   * `> ` serializes inline content only, so a `<pre>` wrapped in there
+   * degrades to quoted text with literal ``` fences on the next reload.
+   * Mirrors toggleBlockquote's `if (preAtCaret()) return` guard; the typed
+   * "``` " path (handleAutoFormat) already stays literal inside a quote.
    */
   function toggleCodeBlock(): void {
     const pre = preAtCaret()
+    if (!pre && blockquoteAtCaret()) return
     const ctx = pre ? null : currentBlockAndOffset()
     editorEl.focus()
     if (pre) {
