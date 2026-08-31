@@ -1,4 +1,4 @@
-import { blockAndCaret, rangeForTextOffsets } from '../src/ui/editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from '../src/ui/editor-dom'
 
 function mount(html: string): HTMLElement {
   const ed = document.createElement('div')
@@ -78,6 +78,52 @@ describe('blockAndCaret', () => {
     const ed = mount('<div>hello</div>')
     window.getSelection()!.removeAllRanges()
     expect(blockAndCaret(ed)).toBeNull()
+  })
+})
+
+describe('caretAfterInline', () => {
+  const NBSP = '\u00a0'
+
+  test("gap 'none' just parks the caret after the node — no filler", () => {
+    const ed = mount('<div>see <a>link</a></div>')
+    const a = ed.querySelector('a')!
+    caretAfterInline(a, 'none')
+    expect(ed.querySelector('div')!.childNodes.length).toBe(2) // "see " + <a>
+    const s = window.getSelection()!
+    expect(s.isCollapsed).toBe(true)
+    expect(s.getRangeAt(0).startContainer).toBe(ed.querySelector('div'))
+  })
+
+  test("gap 'always' inserts an NBSP slot and lands the caret in it", () => {
+    const ed = mount('<div><a>chip</a></div>')
+    const a = ed.querySelector('a')!
+    caretAfterInline(a, 'always')
+    const div = ed.querySelector('div')!
+    expect(div.childNodes.length).toBe(2)
+    expect(div.lastChild!.textContent).toBe(NBSP)
+    const s = window.getSelection()!
+    expect(s.getRangeAt(0).startContainer).toBe(div.lastChild)
+    expect(s.getRangeAt(0).startOffset).toBe(1)
+  })
+
+  test("gap 'auto' adds the NBSP only when nothing already follows the node", () => {
+    const ed = mount('<div><strong>bold</strong></div>')
+    caretAfterInline(ed.querySelector('strong')!, 'auto')
+    expect(ed.querySelector('div')!.lastChild!.textContent).toBe(NBSP)
+  })
+
+  test("gap 'auto' skips the NBSP when real text already follows the node", () => {
+    const ed = mount('<div><strong>bold</strong> and more</div>')
+    caretAfterInline(ed.querySelector('strong')!, 'auto')
+    // no extra node added — still <strong> + the original " and more" text
+    expect(ed.querySelector('div')!.childNodes.length).toBe(2)
+    expect(ed.querySelector('div')!.textContent).toBe('bold and more')
+  })
+
+  test("'auto' is the default", () => {
+    const ed = mount('<div><em>x</em></div>')
+    caretAfterInline(ed.querySelector('em')!)
+    expect(ed.querySelector('div')!.lastChild!.textContent).toBe(NBSP)
   })
 })
 

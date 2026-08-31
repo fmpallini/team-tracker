@@ -12,7 +12,7 @@ import type { Template } from '../core/types'
 import { t, type Locale } from '../core/i18n'
 import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
-import { blockAndCaret, type BlockCtx } from './editor-dom'
+import { blockAndCaret, caretAfterInline, type BlockCtx } from './editor-dom'
 
 export interface TemplatePickerHandle {
   /** Closes any open dropdown and removes all document/element listeners this instance attached. Idempotent. */
@@ -47,9 +47,6 @@ export function attachTemplatePicker(editor: Editor, opts: {
   // src/ui/atref.ts.
 
   function setCaretAfter(node: Node): void {
-    const sel = window.getSelection()
-    if (!sel) return
-    const r = document.createRange()
     // Several built-in templates end with an empty bullet meant for
     // immediate typing (e.g. "- " as the last line). Landing the caret after
     // the whole list would force an extra click/arrow-down before the user
@@ -57,6 +54,9 @@ export function attachTemplatePicker(editor: Editor, opts: {
     if (node instanceof HTMLElement && (node.tagName === 'UL' || node.tagName === 'OL')) {
       const lastLi = node.querySelector(':scope > li:last-child')
       if (lastLi) {
+        const sel = window.getSelection()
+        if (!sel) return
+        const r = document.createRange()
         r.selectNodeContents(lastLi)
         r.collapse(false)
         sel.removeAllRanges()
@@ -64,10 +64,9 @@ export function attachTemplatePicker(editor: Editor, opts: {
         return
       }
     }
-    r.setStartAfter(node)
-    r.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(r)
+    // A template block is never a formatting-context inline node — 'none',
+    // no filler. (Shared with editor.ts / atref.ts — see ./editor-dom.ts.)
+    caretAfterInline(node as ChildNode, 'none')
   }
 
   // --- dropdown rendering ---------------------------------------------------

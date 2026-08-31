@@ -14,7 +14,7 @@ import type { PaneManager } from './panes'
 import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
-import { blockAndCaret, rangeForTextOffsets } from './editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from './editor-dom'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -229,32 +229,14 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     chip.dataset.ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
     chip.textContent = `@${safeLabel}`
     range.insertNode(chip)
-    // A trailing space after the chip lets the user keep typing immediately
-    // without first tapping space themselves (mirrors Slack/GitHub/Notion
-    // mention-insert UX). Non-breaking (\u00a0), not a plain space: a
-    // mention is almost always the last thing typed on the line, and a
-    // plain space at the very end of a block is CSS-collapsed to zero width
-    // — same root cause as core/markdown.ts's blockInline trailing-&nbsp;
-    // fix — which left Chrome with no real caret slot to land the selection
-    // below on, so typing continued *inside* the chip's boundary instead of
-    // after it. htmlToMd (core/markdown.ts's inlineMd) normalizes it back
-    // to a plain space on save, so documents never accumulate it.
-    const space = document.createTextNode('\u00a0')
-    chip.after(space)
+    // 'always': a mention is almost always the last thing on the line, where
+    // a plain trailing space is CSS-collapsed to zero width and Chrome then
+    // has no real caret slot -- typing continued *inside* the chip.
+    // caretAfterInline drops a non-breaking space (htmlToMd normalizes it
+    // back to a plain space on save) and parks the caret past it, ready for
+    // the user to keep typing. Mirrors Slack/GitHub/Notion mention UX.
+    caretAfterInline(chip, 'always')
 
-    const sel = window.getSelection()
-    if (sel) {
-      const after = document.createRange()
-      after.setStartAfter(space)
-      after.collapse(true)
-      sel.removeAllRanges()
-      sel.addRange(after)
-    }
-
-    // Close (and detach the typing listeners) before notifying the editor of
-    // the change: the chip's own text starts with "@", so if onTypingInput
-    // were still attached it would immediately re-locate that "@" as a new,
-    // bogus trigger.
     close()
     editorEl!.dispatchEvent(new Event('input', { bubbles: true }))
     opts.onPick(item)
