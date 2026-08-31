@@ -14,6 +14,7 @@ import type { PaneManager } from './panes'
 import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { blockAndCaret, rangeForTextOffsets } from './editor-dom'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -102,56 +103,12 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   // each keystroke.
   let candidates: TeamRefCandidates | null = null
 
-  // --- caret/block helpers (mirrors src/ui/editor.ts's private helpers;
-  // duplicated rather than exported from there to keep this module fully
-  // decoupled from the editor's internals — it only depends on `.editor`
-  // being the contenteditable root and on the AT_TRIGGER_EVENT contract). ---
-
-  function blockAndCaret(): { block: HTMLElement; text: string; caretOffset: number } | null {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
-    const range = sel.getRangeAt(0)
-    if (!editorEl!.contains(range.startContainer)) return null
-    let block: HTMLElement | null = null
-    let n: Node | null = range.startContainer
-    while (n && n !== editorEl) {
-      if (n instanceof HTMLElement && (n.parentElement === editorEl || n.tagName === 'LI')) {
-        block = n
-        break
-      }
-      n = n.parentElement
-    }
-    if (!block) return null
-    const preRange = document.createRange()
-    preRange.selectNodeContents(block)
-    preRange.setEnd(range.startContainer, range.startOffset)
-    const caretOffset = preRange.toString().length
-    return { block, text: block.textContent ?? '', caretOffset }
-  }
-
-  function rangeForOffsets(block: HTMLElement, start: number, end: number): Range {
-    const range = document.createRange()
-    let remainingStart = start
-    let remainingEnd = end
-    let startSet = false
-    let endSet = false
-    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT)
-    let node: Node | null
-    while ((node = walker.nextNode())) {
-      const len = node.textContent?.length ?? 0
-      if (!startSet && remainingStart <= len) { range.setStart(node, remainingStart); startSet = true }
-      if (!endSet && remainingEnd <= len) { range.setEnd(node, remainingEnd); endSet = true; break }
-      remainingStart -= len
-      remainingEnd -= len
-    }
-    if (!startSet) range.setStart(block, block.childNodes.length)
-    if (!endSet) range.setEnd(block, block.childNodes.length)
-    return range
-  }
+  // The block-walk and the text-offset→Range mapping are shared with
+  // src/ui/editor.ts and src/ui/template-picker.ts — see ./editor-dom.ts.
 
   /** Finds the `@` nearest before the caret and the text typed since it. Null once the `@` itself has been deleted (or the caret left the block). */
   function locateAt(): AtLoc | null {
-    const ctx = blockAndCaret()
+    const ctx = blockAndCaret(editorEl!)
     if (!ctx || ctx.caretOffset === 0) return null
     const at = ctx.text.lastIndexOf('@', ctx.caretOffset - 1)
     if (at < 0) return null
@@ -252,7 +209,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   function commit(item: AtItem | undefined): void {
     if (!item || !lastLoc) return
     const { block, atOffset, caretOffset } = lastLoc
-    const range = rangeForOffsets(block, atOffset, caretOffset)
+    const range = rangeForTextOffsets(block, atOffset, caretOffset)
     range.deleteContents()
 
     const label = item.kind === 'person'

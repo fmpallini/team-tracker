@@ -9,6 +9,7 @@ import { showEditorHelp } from './help'
 import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
+import { blockAndCaret, rangeForTextOffsets, type BlockCtx } from './editor-dom'
 
 export interface Editor {
   root: HTMLElement
@@ -228,60 +229,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   // --- caret/block helpers --------------------------------------------------
+  // The block-walk and the text-offset→Range mapping now live in
+  // ./editor-dom.ts, shared with atref.ts / template-picker.ts. This wrapper
+  // just binds the editor's own root so the ~9 call sites stay unchanged.
 
-  interface BlockCtx { block: HTMLElement; text: string; caretOffset: number }
-
-  function currentBlockAndOffset(): BlockCtx | null {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
-    const range = sel.getRangeAt(0)
-    if (!editorEl.contains(range.startContainer)) return null
-
-    let block: HTMLElement | null = null
-    let n: Node | null = range.startContainer
-    while (n && n !== editorEl) {
-      if (n instanceof HTMLElement && (n.parentElement === editorEl || n.tagName === 'LI')) {
-        block = n
-        break
-      }
-      n = n.parentElement
-    }
-    if (!block) return null
-
-    const preRange = document.createRange()
-    preRange.selectNodeContents(block)
-    preRange.setEnd(range.startContainer, range.startOffset)
-    const caretOffset = preRange.toString().length
-    return { block, text: block.textContent ?? '', caretOffset }
-  }
-
-  /** Builds a Range spanning text offsets [start, end) within `block`'s text content. */
-  function rangeForTextOffsets(block: HTMLElement, start: number, end: number): Range {
-    const range = document.createRange()
-    let remainingStart = start
-    let remainingEnd = end
-    let startSet = false
-    let endSet = false
-    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT)
-    let node: Node | null
-    while ((node = walker.nextNode())) {
-      const len = node.textContent?.length ?? 0
-      if (!startSet && remainingStart <= len) {
-        range.setStart(node, remainingStart)
-        startSet = true
-      }
-      if (!endSet && remainingEnd <= len) {
-        range.setEnd(node, remainingEnd)
-        endSet = true
-        break
-      }
-      remainingStart -= len
-      remainingEnd -= len
-    }
-    if (!startSet) range.setStart(block, block.childNodes.length)
-    if (!endSet) range.setEnd(block, block.childNodes.length)
-    return range
-  }
+  const currentBlockAndOffset = (): BlockCtx | null => blockAndCaret(editorEl)
 
   function closestLi(node: Node): HTMLElement | null {
     let n: Node | null = node
