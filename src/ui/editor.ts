@@ -1592,6 +1592,55 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     keepCaretVisible()
   }
 
+  /**
+   * Every Ctrl / Ctrl+Shift editor shortcut in one table: the match
+   * predicate (layout-independent — `matchKey` folds in `e.code`, digit
+   * chords key off `e.code`/`e.key` for AZERTY & driver quirks), the action,
+   * and `runsInsidePre` — true only for the code-block toggle, which still
+   * fires with the caret in a fenced block so it can leave it. Everything
+   * else is swallowed there so a chord can't splice formatting into literal
+   * text. `onKeydown` walks this in order: first match wins, gets
+   * `preventDefault()`, then runs — or, inside a `<pre>`, is silently
+   * dropped. This replaced a hand-written `if` chain plus two separate
+   * `e.code` allow-lists that every new shortcut had to be added to by hand
+   * (and one of which had already drifted).
+   *
+   * Cross-app chord rationale — X vs 5 for strike, 9 vs Q for blockquote,
+   * E vs 6 for code block: the letter chord is the convention (Slack /
+   * Docs / Discord / Typora), the digit / alt-letter is the fallback for
+   * Windows browsers & vendor keyboard drivers that swallow the letter
+   * chord before it reaches the page. Toolbar buttons and the typed
+   * markdown (`~~x~~`, `> `, ```` ``` ````) are the mouse/typing routes.
+   */
+  interface EditorShortcut {
+    match: (e: KeyboardEvent) => boolean
+    run: () => void
+    runsInsidePre?: boolean
+  }
+  const SHORTCUTS: readonly EditorShortcut[] = [
+    { match: (e) => !e.shiftKey && matchKey(e, 'b'), run: () => exec('bold') },
+    { match: (e) => !e.shiftKey && matchKey(e, 'i'), run: () => exec('italic') },
+    { match: (e) => !e.shiftKey && matchKey(e, 'u'), run: () => exec('underline') },
+    { match: (e) => !e.shiftKey && matchKey(e, 'k'), run: () => void insertLink() },
+    { match: (e) => !e.shiftKey && e.code === 'Digit1', run: () => formatBlockTag('h1') },
+    { match: (e) => !e.shiftKey && e.code === 'Digit2', run: () => formatBlockTag('h2') },
+    { match: (e) => !e.shiftKey && e.code === 'Digit3', run: () => formatBlockTag('h3') },
+    { match: (e) => !e.shiftKey && e.code === 'Digit0', run: () => formatBlockTag('div') },
+    // Ahead of the in-pre swallow below: this one still runs inside a <pre>.
+    {
+      match: (e) => e.shiftKey && (matchKey(e, 'e') || e.code === 'Digit6' || e.key === '6'),
+      run: () => toggleCodeBlock(),
+      runsInsidePre: true,
+    },
+    { match: (e) => e.shiftKey && (e.code === 'KeyX' || e.code === 'Digit5'), run: () => exec('strikeThrough') },
+    { match: (e) => e.shiftKey && e.code === 'Digit8', run: () => insertList('ul') },
+    { match: (e) => e.shiftKey && e.code === 'Digit7', run: () => insertList('ol') },
+    {
+      match: (e) => e.shiftKey && (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '('),
+      run: () => toggleBlockquote(),
+    },
+  ]
+
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
@@ -1665,64 +1714,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
 
-    if (!e.shiftKey) {
-      if (preAtCaret()) {
-        // Literal text only inside a fenced code block: swallow the
-        // formatting chords this branch would run, leave the rest
-        // (Ctrl+C/V/X/Z/A — not handled here) to the browser.
-        if (matchKey(e, 'b') || matchKey(e, 'i') || matchKey(e, 'u') ||
-            matchKey(e, 'k') || /^Digit[0-3]$/.test(e.code)) e.preventDefault()
-        return
-      }
-      if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
-      if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
-      if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
-      if (matchKey(e, 'k')) { e.preventDefault(); void insertLink(); return }
-      if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
-      if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
-      if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }
-      if (e.code === 'Digit0') { e.preventDefault(); formatBlockTag('div'); return }
-      return
-    }
-
-    // Fenced code block: Ctrl+Shift+E (Discord's chord, unbound in
-    // Chrome/Edge/Firefox on Windows) is primary; Ctrl+Shift+6 is the
-    // digit-row backup for the Windows keyboard drivers that swallow the
-    // letter chord before it reaches the page — same reason strike takes 5
-    // beside X, and it sits with the Ctrl+Shift+5/7/8/9 formatting digits.
-    // `e.key === '6'` also matches in case the driver reports the character
-    // but not `e.code`. Placed before the code-block guard below so either
-    // still fires to EXIT a block. The { } button and typed "``` " are the
-    // mouse/typing alternatives.
-    if (matchKey(e, 'e') || e.code === 'Digit6' || e.key === '6') { e.preventDefault(); toggleCodeBlock(); return }
-    // Every other formatting chord is inert inside a fenced code block.
-    if (preAtCaret()) {
-      if (e.code === 'KeyX' || e.code === 'Digit5' || e.code === 'Digit8' || e.code === 'Digit7' ||
-          e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') e.preventDefault()
-      return
-    }
-
-    // Strikethrough takes both Ctrl+Shift+X (the cross-app convention: Google
-    // Docs, Slack, Discord, GitHub) and Ctrl+Shift+5. The X chord is the
-    // primary, but some Windows browsers / vendor keyboard drivers swallow it
-    // before it reaches the page, so its keydown never fires — Digit5 is the
-    // fallback that always lands, sits with the Ctrl+Shift+7/8 list shortcuts,
-    // and matched physically (e.code) rides over layout differences. Toolbar S
-    // button and `~~text~~` markdown are the mouse/typing alternatives.
-    if (e.code === 'KeyX' || e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
-    if (e.code === 'Digit8') { e.preventDefault(); insertList('ul'); return }
-    if (e.code === 'Digit7') { e.preventDefault(); insertList('ol'); return }
-    // Blockquote: Ctrl+Shift+9 is the cross-app convention (Slack), but the
-    // digit-row chord is exactly the kind some Windows keyboard drivers eat
-    // before it reaches the page (same reason Ctrl+Shift+5 backs up
-    // Ctrl+Shift+X for strikethrough). Ctrl+Shift+Q — Typora's blockquote
-    // chord, unbound in Chrome/Edge/Firefox on Windows — is the fallback that
-    // lands; `e.key === '9'`/`'('` also match in case the driver reports the
-    // character but not `e.code`. Toolbar ❝ and typed `> ` are the
-    // mouse/typing alternatives.
-    if (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') {
+    for (const sc of SHORTCUTS) {
+      if (!sc.match(e)) continue
+      // A chord this table owns never reaches the browser's own binding for
+      // it, in or out of a code block.
       e.preventDefault()
-      toggleBlockquote()
+      // Inside a fenced code block every chord is inert except the ones
+      // flagged runsInsidePre (just the code-block toggle, to leave the
+      // block) — literal text can't carry formatting/blocks.
+      if (preAtCaret() && !sc.runsInsidePre) return
+      sc.run()
       return
     }
   }

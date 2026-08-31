@@ -544,6 +544,115 @@ describe('keyboard shortcuts', () => {
   })
 })
 
+// Locks the full Ctrl/Ctrl+Shift shortcut set — every combo, its action, and
+// its behaviour with the caret inside a fenced code block — before the
+// dispatch ladder is refactored into a declarative table. Each row asserts
+// the exact execCommand / DOM effect the current hand-written `if` chain
+// produces, so the table version has to reproduce it byte for byte.
+describe('keyboard shortcuts — full combo matrix', () => {
+  function mount() {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const exec = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl, exec }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const r = document.createRange()
+    r.setStart(node, offset); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+  }
+
+  test.each([
+    ['Ctrl+2', { key: '2', code: 'Digit2', ctrlKey: true }, 'formatBlock', '<h2>'],
+    ['Ctrl+3', { key: '3', code: 'Digit3', ctrlKey: true }, 'formatBlock', '<h3>'],
+    ['Ctrl+0', { key: '0', code: 'Digit0', ctrlKey: true }, 'formatBlock', '<div>'],
+    ['Ctrl+Shift+7', { key: '&', code: 'Digit7', ctrlKey: true, shiftKey: true }, 'insertOrderedList', undefined],
+  ])('%s -> execCommand', (_label, init, cmd, arg) => {
+    const { editor, editorEl, exec } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, init)
+    expect(e.defaultPrevented).toBe(true)
+    expect(exec).toHaveBeenCalledWith(cmd, false, arg)
+    editor.destroy()
+  })
+
+  test.each([
+    ['Ctrl+Shift+Q (blockquote fallback)', { key: 'Q', code: 'KeyQ', ctrlKey: true, shiftKey: true }],
+    ['Ctrl+Shift+9 via e.key "9"', { key: '9', code: 'Digit9', ctrlKey: true, shiftKey: true }],
+  ])('%s runs formatBlock <blockquote>', (_label, init) => {
+    const { editor, editorEl, exec } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, init)
+    expect(e.defaultPrevented).toBe(true)
+    expect(exec).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
+
+  test('Ctrl+E without Shift is not a shortcut — not consumed, no execCommand', () => {
+    const { editor, editorEl, exec } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, { key: 'e', code: 'KeyE', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(false)
+    expect(exec).not.toHaveBeenCalled()
+    editor.destroy()
+  })
+
+  test('an unbound Ctrl+Shift chord (Ctrl+Shift+B) is left alone outside a code block', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, { key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true })
+    expect(e.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
+  // Inside a <pre>: every formatting chord is swallowed (defaultPrevented) but
+  // does nothing — except the code-block chord itself, which still fires to
+  // leave the block (covered in 'code block editing').
+  test.each([
+    ['Ctrl+B', { key: 'b', code: 'KeyB', ctrlKey: true }, 'bold'],
+    ['Ctrl+I', { key: 'i', code: 'KeyI', ctrlKey: true }, 'italic'],
+    ['Ctrl+U', { key: 'u', code: 'KeyU', ctrlKey: true }, 'underline'],
+    ['Ctrl+Shift+X', { key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    ['Ctrl+Shift+5', { key: '%', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    ['Ctrl+Shift+8', { key: '*', code: 'Digit8', ctrlKey: true, shiftKey: true }, 'insertUnorderedList'],
+    ['Ctrl+Shift+7', { key: '&', code: 'Digit7', ctrlKey: true, shiftKey: true }, 'insertOrderedList'],
+    ['Ctrl+Shift+9', { key: '(', code: 'Digit9', ctrlKey: true, shiftKey: true }, 'formatBlock'],
+    ['Ctrl+Shift+Q', { key: 'Q', code: 'KeyQ', ctrlKey: true, shiftKey: true }, 'formatBlock'],
+  ])('%s inside a <pre> is swallowed and inert', (_label, init, forbiddenCmd) => {
+    const { editor, editorEl, exec } = mount()
+    editorEl.innerHTML = '<pre>code</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    const e = dispatchKey(editorEl, init)
+    expect(e.defaultPrevented).toBe(true)
+    expect(exec.mock.calls.some(c => c[0] === forbiddenCmd)).toBe(false)
+    editor.destroy()
+  })
+
+  test('Ctrl+1/2/3/0 inside a <pre> are swallowed and apply no heading', () => {
+    const { editor, editorEl, exec } = mount()
+    editorEl.innerHTML = '<pre>code</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    for (const code of ['Digit1', 'Digit2', 'Digit3', 'Digit0']) {
+      const e = dispatchKey(editorEl, { key: code.slice(-1), code, ctrlKey: true })
+      expect(e.defaultPrevented).toBe(true)
+    }
+    expect(exec.mock.calls.some(c => c[0] === 'formatBlock')).toBe(false)
+    editor.destroy()
+  })
+
+  test('Ctrl+K inside a <pre> is swallowed and opens no link modal', async () => {
+    const { editor, editorEl } = mount()
+    editorEl.innerHTML = '<pre>code</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    const e = dispatchKey(editorEl, { key: 'k', code: 'KeyK', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-dialog')).toBeNull()
+    editor.destroy()
+  })
+})
+
 describe('Tab indent', () => {
   test('leadingIndentLen counts leading space/nbsp chars, capped at 4', () => {
     expect(leadingIndentLen('')).toBe(0)
