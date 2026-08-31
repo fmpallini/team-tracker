@@ -1221,10 +1221,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // the overlay attached over a torn-down editor.
   let pendingLinkModal: { close: () => void } | null = null
 
-  function promptLink(init: { text: string; url: string; editing: boolean }): Promise<{ text: string; url: string } | null> {
+  // promptLink resolves to a link spec on OK, `{ remove: true }` when the
+  // edit-mode "Remove link" button is pressed, or null on Cancel/Escape.
+  type LinkResult = { text: string; url: string } | { remove: true }
+
+  function promptLink(init: { text: string; url: string; editing: boolean }): Promise<LinkResult | null> {
     return new Promise((resolve) => {
       let done = false
-      const finish = (v: { text: string; url: string } | null): void => {
+      const finish = (v: LinkResult | null): void => {
         if (done) return
         done = true
         pendingLinkModal = null
@@ -1260,6 +1264,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         ),
         buttons: [
           { label: t(locale, 'cancel'), onClick: () => finish(null) },
+          // Only offered when editing an existing link: unwrap the <a>, keep
+          // its text (handled in insertLink).
+          ...(init.editing
+            ? [{ label: t(locale, 'editor_link_remove'), danger: true, onClick: () => finish({ remove: true }) }]
+            : []),
           { label: t(locale, 'ok'), primary: true, onClick: submit },
         ],
         // Escape / overlay close routes here too, so the promise never hangs.
@@ -1319,6 +1328,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
     const res = await promptLink({ text: initText, url: initUrl, editing: anchor !== null })
     if (res === null) return
+    if ('remove' in res) {
+      // "Remove link": replace the <a> with its own children (its text, plus
+      // any inner formatting), drop the caret after them, and merge adjacent
+      // text nodes so htmlToMd sees one clean run.
+      editorEl.focus()
+      if (anchor && editorEl.contains(anchor)) {
+        const parent = anchor.parentNode
+        const frag = document.createDocumentFragment()
+        while (anchor.firstChild) frag.appendChild(anchor.firstChild)
+        const lastNode = frag.lastChild
+        anchor.replaceWith(frag)
+        if (lastNode) setCaretAfter(lastNode)
+        if (parent instanceof HTMLElement) parent.normalize()
+        scheduleChange()
+      }
+      return
+    }
     const url = res.url.trim()
     if (!safeHref(url)) return // defensive — the modal already gates this
     const text = res.text.replace(/\s+/g, ' ').trim()

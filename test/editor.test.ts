@@ -1488,6 +1488,44 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('🔗 button: "Remove link" in edit mode unwraps the <a>, keeping its text', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x) now')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 3); caret.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    const removeBtn = Array.from(document.querySelectorAll('.tt-modal-dialog button'))
+      .find(b => b.textContent === t('en-US', 'editor_link_remove')) as HTMLButtonElement
+    expect(removeBtn).toBeTruthy()
+    removeBtn.click()
+    await Promise.resolve() // let insertLink's post-await continuation run
+    await Promise.resolve()
+
+    expect(editorEl.querySelector('a[href]')).toBeNull()
+    expect(editor.getMd()).toBe('see the docs now')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    editor.destroy()
+  })
+
+  test('🔗 button: no "Remove link" button when inserting a new link', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('plain text')
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    const removeBtn = Array.from(document.querySelectorAll('.tt-modal-dialog button'))
+      .find(b => b.textContent === t('en-US', 'editor_link_remove'))
+    expect(removeBtn).toBeUndefined()
+    editor.destroy()
+  })
+
   test('🔗 button: editing an existing link can change its text', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
