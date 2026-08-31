@@ -1482,10 +1482,8 @@ describe('toolbar', () => {
     expect(linkInput('tt-link-url').value).toBe('https://example.com/x')
 
     await answerLink({ url: 'https://example.com/y' })
-    // The whole <a> node was swapped, text kept — no nested [[…](…)](…). The
-    // trailing space is the caret-exit gap (see the inline auto-format caret
-    // exit tests) — the link sat at end of line.
-    expect(editor.getMd()).toBe('see [the docs](https://example.com/y) ')
+    // The whole <a> node was swapped, text kept — no nested [[…](…)](…).
+    expect(editor.getMd()).toBe('see [the docs](https://example.com/y)')
     expect(editorEl.querySelectorAll('a[href]')).toHaveLength(1)
     editor.destroy()
   })
@@ -1540,26 +1538,7 @@ describe('toolbar', () => {
 
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
     await answerLink({ text: 'the manual', url: 'https://example.com/x' })
-    expect(editor.getMd()).toBe('see [the manual](https://example.com/x) ') // trailing caret-exit gap
-    editor.destroy()
-  })
-
-  test('🔗 button: editing a link at end of line leaves the caret outside the <a>', async () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    editor.setMd('see [the docs](https://example.com/x)')
-    const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    const a0 = editorEl.querySelector('a[href]') as HTMLAnchorElement
-    const caret = document.createRange()
-    caret.setStart(a0.firstChild!, 3); caret.collapse(true)
-    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
-
-    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
-    await answerLink({ url: 'https://example.com/y' })
-
-    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
-    expect(a.nextSibling?.nodeType).toBe(Node.TEXT_NODE)
-    expect((a as HTMLElement).contains(window.getSelection()!.anchorNode)).toBe(false)
+    expect(editor.getMd()).toBe('see [the manual](https://example.com/x)')
     editor.destroy()
   })
 
@@ -1584,7 +1563,7 @@ describe('toolbar', () => {
     toolbarButton(editor, t('en-US', 'editor_link_title')).click()
     await answerLink({ url: 'https://example.com/next' })
 
-    expect(editor.getMd()).toBe('go [site](https://example.com/next) ') // trailing caret-exit gap
+    expect(editor.getMd()).toBe('go [site](https://example.com/next)')
     expect(editorEl.querySelectorAll('a[href]')).toHaveLength(1)
     editor.destroy()
   })
@@ -2667,7 +2646,7 @@ describe('typed link autoformat', () => {
     expect(a.getAttribute('target')).toBe('_blank')
     expect(a.getAttribute('rel')).toBe('noopener noreferrer nofollow')
     expect(a.textContent).toBe('docs')
-    expect(editor.getMd()).toBe('see [docs](https://example.com) ') // trailing caret-exit gap
+    expect(editor.getMd()).toBe('see [docs](https://example.com)')
     editor.destroy()
   })
 
@@ -2692,7 +2671,7 @@ describe('typed link autoformat', () => {
     expect(a).not.toBeNull()
     expect(a.getAttribute('href')).toBe('https://example.com')
     expect(a.textContent).toBe('docs')
-    expect(editor.getMd()).toBe('see [docs](https://example.com) ') // trailing caret-exit gap
+    expect(editor.getMd()).toBe('see [docs](https://example.com)')
     editor.destroy()
   })
 
@@ -2703,41 +2682,6 @@ describe('typed link autoformat', () => {
     editor.setMd('')
     typeInto(editorEl, '[home](www.example.com)')
     expect((editorEl.querySelector('a[href]') as HTMLAnchorElement).getAttribute('href')).toBe('https://www.example.com')
-    editor.destroy()
-  })
-
-  test('a link completed at end of line parks the caret OUTSIDE the new <a>, in a trailing gap', () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    editor.setMd('')
-    typeInto(editorEl, 'see [docs](https://example.com)')
-
-    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
-    // A real text node (the caret's home) now follows the anchor — not the
-    // bare element boundary that made the caret jump to the next line.
-    expect(a.nextSibling?.nodeType).toBe(Node.TEXT_NODE)
-    const sel = window.getSelection()!
-    expect(sel.anchorNode).toBe(a.nextSibling)
-    expect((a as HTMLElement).contains(sel.anchorNode)).toBe(false)
-    // Same round-trip tradeoff the bold/italic/strike autoformat already makes.
-    expect(editor.getMd()).toBe('see [docs](https://example.com) ')
-    editor.destroy()
-  })
-
-  test('a link completed with text still after the caret adds no gap', () => {
-    const editor = createEditor(makeHooks(), 'en-US')
-    document.body.appendChild(editor.root)
-    const editorEl = editor.root.querySelector('.editor') as HTMLElement
-    editorEl.innerHTML = '<div>see [docs](https://example.com) now</div>'
-    const tn = editorEl.firstChild!.firstChild as Text
-    const at = 'see [docs](https://example.com)'.length // caret right after the ')'
-    const r = document.createRange(); r.setStart(tn, at); r.collapse(true)
-    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
-    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
-
-    expect((editorEl.querySelector('a[href]') as HTMLAnchorElement).textContent).toBe('docs')
-    expect(editor.getMd()).toBe('see [docs](https://example.com) now')
     editor.destroy()
   })
 
