@@ -37,6 +37,12 @@ the background music)
 
 ## Why
 
+Team Tracker is a free alternative to Notion, Obsidian, or any note-taking
+app — free as in price, and free as in freedom: it's AGPL-3.0, and the whole
+app is a single HTML file you can read end to end. It deliberately doesn't
+try to match those tools feature for feature; it does one thing, tracking
+several project teams at once.
+
 Most team-tracking tools require an account, a server, and your data leaving
 your machine. Team Tracker doesn't:
 
