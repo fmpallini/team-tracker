@@ -2478,6 +2478,19 @@ describe('code block editing', () => {
     editor.destroy()
   })
 
+  test('the { } button normalizes a <div>-built multi-line <pre> to <br>-separated literal lines', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre><div>l1</div><div>l2</div></pre>'
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_codeblock_title')
+    ) as HTMLButtonElement
+    btn.click()
+    expect(editorEl.querySelector('pre')!.innerHTML).toBe('l1<br>l2')
+    expect(editor.getMd()).toBe('```\nl1\nl2\n```')
+    editor.destroy()
+  })
+
   test('paste inside a <pre> inserts plain text only, never markdown/HTML', () => {
     const { editor, editorEl } = mount()
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)

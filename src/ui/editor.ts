@@ -548,30 +548,32 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * Normalizes every `<blockquote>` under `root` so it holds only inline
-   * content separated by `<br>` — exactly the shape `mdToHtml` emits
-   * (`<blockquote>line one<br>line two</blockquote>`). Chromium's
-   * `execCommand('formatBlock', '<blockquote>')` on a MULTI-LINE selection
-   * instead produces `<blockquote><div>l1</div><div>l2</div></blockquote>`,
-   * and `htmlToMd`'s blockquote branch only splits inner lines on `<br>`, so
-   * without this those `<div>`s merge into one line (`> l1l2`), losing the
-   * breaks. Each child `<div>`/`<p>` is replaced by its own child nodes
-   * followed by a `<br>`; a trailing `<br>` is dropped so there's no empty
-   * last line. Left untouched when the blockquote already has no block-level
-   * child (the common single-line / `<br>`-joined case).
+   * Normalizes every flat block of `selector` (`<blockquote>` or `<pre>`)
+   * under `root` so it holds only `<br>`-separated lines — the shape
+   * `mdToHtml` emits and `htmlToMd` reads. Chromium's
+   * `execCommand('formatBlock', ...)` on a MULTI-LINE selection instead
+   * leaves `<…><div>l1</div><div>l2</div></…>`, which `htmlToMd` would merge
+   * onto one line, losing the breaks. Each child `<div>`/`<p>` becomes its
+   * own content + a `<br>`; a trailing `<br>` is dropped. `content: 'inline'`
+   * moves the child's nodes (a blockquote keeps its inline formatting);
+   * `'text'` flattens to a text node (a code block is literal). No-op when
+   * the block has no block-level child (the common single-line /
+   * already-`<br>`-joined case).
    */
-  function normalizeBlockquoteChildren(root: HTMLElement): void {
-    root.querySelectorAll('blockquote').forEach((bq) => {
-      const kids = Array.from(bq.childNodes)
+  function normalizeFlatBlockChildren(root: HTMLElement, selector: 'blockquote' | 'pre', content: 'inline' | 'text'): void {
+    const doc = root.ownerDocument ?? document
+    root.querySelectorAll(selector).forEach((host) => {
+      const kids = Array.from(host.childNodes)
       const hasBlockChild = kids.some(
         (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
       )
       if (!hasBlockChild) return
-      const frag = (root.ownerDocument ?? document).createDocumentFragment()
+      const frag = doc.createDocumentFragment()
       kids.forEach((n) => {
         if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
-          while (n.firstChild) frag.appendChild(n.firstChild)
-          frag.appendChild((root.ownerDocument ?? document).createElement('br'))
+          if (content === 'text') frag.appendChild(doc.createTextNode(n.textContent ?? ''))
+          else while (n.firstChild) frag.appendChild(n.firstChild)
+          frag.appendChild(doc.createElement('br'))
         } else {
           frag.appendChild(n)
         }
@@ -579,8 +581,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
         frag.removeChild(frag.lastChild)
       }
-      bq.replaceChildren()
-      bq.appendChild(frag)
+      host.replaceChildren()
+      host.appendChild(frag)
     })
   }
 
@@ -612,7 +614,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     document.execCommand('formatBlock', false, '<blockquote>')
     flattenNestedBlockquotes(editorEl)
-    normalizeBlockquoteChildren(editorEl)
+    normalizeFlatBlockChildren(editorEl, 'blockquote', 'inline')
     scheduleChange()
   }
 
@@ -636,39 +638,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     r.collapse(true)
     const sel = window.getSelection()
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
-  }
-
-  /**
-   * Normalizes every `<pre>` under `root` to hold plain text with `<br>`
-   * line breaks — the shape `mdToHtml` emits and `preLines` (core/markdown.ts)
-   * reads. Chromium's `execCommand('formatBlock', '<pre>')` on a multi-line
-   * selection leaves `<pre><div>l1</div><div>l2</div></pre>`; each block
-   * child collapses to a text node + `<br>`, trailing `<br>` dropped. Left
-   * untouched when the `<pre>` already has no block-level child.
-   */
-  function normalizePreChildren(root: HTMLElement): void {
-    root.querySelectorAll('pre').forEach((pre) => {
-      const kids = Array.from(pre.childNodes)
-      const hasBlockChild = kids.some(
-        (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
-      )
-      if (!hasBlockChild) return
-      const doc = root.ownerDocument ?? document
-      const frag = doc.createDocumentFragment()
-      kids.forEach((n) => {
-        if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
-          frag.appendChild(doc.createTextNode(n.textContent ?? ''))
-          frag.appendChild(doc.createElement('br'))
-        } else {
-          frag.appendChild(n)
-        }
-      })
-      if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
-        frag.removeChild(frag.lastChild)
-      }
-      pre.replaceChildren()
-      pre.appendChild(frag)
-    })
   }
 
   /** The text lines of a `<pre>`: text nodes contribute their text (split on
@@ -768,7 +737,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     document.execCommand('formatBlock', false, '<pre>')
-    normalizePreChildren(editorEl)
+    normalizeFlatBlockChildren(editorEl, 'pre', 'text')
     scheduleChange()
   }
 

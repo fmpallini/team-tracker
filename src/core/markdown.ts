@@ -541,39 +541,34 @@ export function unwrapBlockContainers(root: HTMLElement): void {
  *
  * Idempotent: a well-formed heading tree is left untouched.
  */
-export function flattenNestedHeadings(root: HTMLElement): void {
-  const HEADING = 'h1,h2,h3'
-  // Bounded loop — each iteration removes one heading element, so it always
-  // terminates; the cap is just belt-and-braces against an unforeseen shape.
+/**
+ * Chromium's `execCommand('formatBlock', '<hN>' | '<blockquote>')` can NEST a
+ * fresh element inside an existing one of the same kind on a repeat press or
+ * a multi-line selection (`<h1><h1>…`, `<blockquote><blockquote>…`). Both are
+ * flat in this app, so unwrap any nested one; repeated presses then collapse
+ * to a single wrapper. With `alsoInLi`, also dissolve one that landed inside
+ * an `<li>` — a heading can't be a list item (renderListMd flattens it) and
+ * Chromium wraps the `<hN>` in the item. Bounded loop (each pass removes one
+ * element, so it terminates; the cap guards an unforeseen shape). Idempotent.
+ */
+function flattenNested(root: HTMLElement, selector: string, alsoInLi = false): void {
   for (let pass = 0; pass < 100; pass++) {
-    const doomed = Array.from(root.querySelectorAll<HTMLElement>(HEADING)).find(
-      (h) => h.parentElement?.closest(HEADING) || h.closest('li')
+    const doomed = Array.from(root.querySelectorAll<HTMLElement>(selector)).find(
+      (el) => el.parentElement?.closest(selector) || (alsoInLi && el.closest('li'))
     )
     if (!doomed) return
     doomed.replaceWith(...doomed.childNodes)
   }
 }
 
-/**
- * The editor's ❝ button / Ctrl+Shift+9 route through
- * `execCommand('formatBlock', '<blockquote>')`, which — like the heading
- * case `flattenNestedHeadings` fixes — can NEST a fresh <blockquote> inside
- * an existing one on a repeat press or a multi-line selection. This app's
- * blockquote is flat (no nesting), so any blockquote inside another is
- * unwrapped; repeated presses collapse to one. Idempotent.
- */
+/** Undoes Chromium formatBlock heading-nesting (the "heading grows per keypress" bug); also dissolves any heading stuck inside an `<li>`. */
+export function flattenNestedHeadings(root: HTMLElement): void {
+  flattenNested(root, 'h1,h2,h3', true)
+}
+
+/** Undoes Chromium formatBlock blockquote-nesting — this app's blockquote is flat. */
 export function flattenNestedBlockquotes(root: HTMLElement): void {
-  for (let pass = 0; pass < 100; pass++) {
-    const nested = Array.from(root.querySelectorAll<HTMLElement>('blockquote')).find(
-      (b) => b.parentElement?.closest('blockquote')
-    )
-    if (!nested) return
-    // Bare unwrap is intentional here: `nested` sits inside an enclosing
-    // <blockquote>, so its child nodes land in that blockquote, not at the
-    // editor root — the "top-level nodes must be block elements" invariant
-    // the other unwrap sites guard is not in play.
-    nested.replaceWith(...nested.childNodes)
-  }
+  flattenNested(root, 'blockquote')
 }
 
 /** Standard `Range.intersectsNode` polyfill (jsdom's Range has no such
@@ -588,41 +583,33 @@ function rangeHitsNode(range: Range, node: Node): boolean {
 }
 
 /**
- * "Clear formatting" (the editor's 🧹 button) reverts every heading the
- * selection touches back to a plain paragraph — matching Google Docs / Word,
- * where clearing formatting drops the heading style, not just inline
- * bold/italic. `document.execCommand('removeFormat')` only ever touches
- * inline formatting, so without this an <h1>/<h2>/<h3> survives the broom.
- * List nesting is deliberately left alone (removing it isn't what "clear
- * formatting" means in those products either).
+ * "Clear formatting" (the editor's 🧹 button) drops the block styling the
+ * selection touches — headings and blockquotes alike — back to a plain
+ * `<div>`, matching Google Docs / Word (`execCommand('removeFormat')` only
+ * touches inline formatting, so an `<h1>`/`<blockquote>` survives the broom
+ * without this). The children are re-wrapped in a `<div>` rather than dumped
+ * bare so the editor's "top-level children are blocks" invariant holds
+ * (`blockAndCaret` needs a block ancestor; htmlToMd would otherwise emit a
+ * spurious blank line between the freed lines). List nesting is left alone —
+ * not what "clear formatting" means in those products either.
  */
-export function demoteHeadings(root: HTMLElement, range: Range): void {
-  for (const h of Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3'))) {
-    if (!rangeHitsNode(range, h)) continue
-    const div = (root.ownerDocument ?? document).createElement('div')
-    while (h.firstChild) div.appendChild(h.firstChild)
-    h.replaceWith(div)
-  }
-}
-
-/**
- * Companion to demoteHeadings for the editor's 🧹 button: "clear
- * formatting" also drops blockquote styling (Google Docs / Word both do).
- * Unwraps every <blockquote> the selection touches into its own children.
- * List nesting is still left alone, same as demoteHeadings.
- */
-export function demoteBlockquotes(root: HTMLElement, range: Range): void {
-  for (const b of Array.from(root.querySelectorAll<HTMLElement>('blockquote'))) {
+function demoteBlocks(root: HTMLElement, range: Range, selector: string): void {
+  for (const b of Array.from(root.querySelectorAll<HTMLElement>(selector))) {
     if (!rangeHitsNode(range, b)) continue
-    // Re-wrap the contents in a <div> rather than dumping bare text nodes /
-    // <br>s straight into `editorEl` — same as demoteHeadings above. A bare
-    // run there breaks the "top-level children are blocks" invariant:
-    // `currentBlockAndOffset()` can't resolve a block for those lines, and
-    // htmlToMd would emit a spurious blank line between them.
     const div = (root.ownerDocument ?? document).createElement('div')
     while (b.firstChild) div.appendChild(b.firstChild)
     b.replaceWith(div)
   }
+}
+
+/** "Clear formatting": revert every heading the range touches to a plain `<div>`. */
+export function demoteHeadings(root: HTMLElement, range: Range): void {
+  demoteBlocks(root, range, 'h1,h2,h3')
+}
+
+/** "Clear formatting": unwrap every blockquote the range touches into a plain `<div>`. */
+export function demoteBlockquotes(root: HTMLElement, range: Range): void {
+  demoteBlocks(root, range, 'blockquote')
 }
 
 /**
