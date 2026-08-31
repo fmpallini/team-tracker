@@ -59,8 +59,13 @@ test('Enter in a text input inside the modal triggers the primary button', () =>
       { label: 'OK', primary: true, onClick: () => { clicked = true } },
     ],
   })
-  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  input.dispatchEvent(ev)
   expect(clicked).toBe(true)
+  // preventDefault so the same Enter can't also act on whatever the primary
+  // action focuses next (e.g. the link modal, which focuses the editor and
+  // inserts a link, then had the default Enter split a stray paragraph).
+  expect(ev.defaultPrevented).toBe(true)
 })
 
 test('Enter does not trigger the primary button when there is none', () => {

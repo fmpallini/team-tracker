@@ -84,6 +84,13 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     // HTMLInputElement`, so this modal immediately clicked its own primary
     // button and closed itself before ever painting.
     if (e.key === 'Enter' && e.target instanceof HTMLInputElement && dialog.contains(e.target)) {
+      // preventDefault so the Enter can't also act on whatever the primary
+      // action focuses next. The link modal (src/ui/editor.ts insertLink)
+      // resolves its promise here, then a microtask later focuses the
+      // editor and inserts the link — without this, the browser's default
+      // Enter then ran on the now-focused contenteditable and split off a
+      // stray empty paragraph, leaving the caret adrift from the new link.
+      e.preventDefault()
       const primary = opts.buttons.find((b) => b.primary)
       primary?.onClick()
     }
