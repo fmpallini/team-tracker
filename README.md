@@ -30,8 +30,8 @@ the background music)
 | Daily notes + team hierarchy | Action items — kanban board |
 | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) | ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) |
 | Milestones — timeline + list | Risks — chance × impact exposure |
-| ![Ctrl+K fast switch for jumping to any team, person, or item](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
-| `Ctrl+K` fast switch | `Ctrl+Shift+F` search across every team |
+| ![Ctrl+Shift+K fast switch for jumping to any team, person, or item](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
+| `Ctrl+Shift+K` fast switch | `Ctrl+Shift+F` search across every team |
 
 </details>
 
@@ -60,7 +60,7 @@ your machine. Team Tracker doesn't:
   able to read it.
 - 🪶 **Tiny** — the entire app is a single HTML file, smaller than most
   web pages' hero image alone.
-- ⌨️ **Built keyboard-first** — `Ctrl+K` command palette, `Ctrl+F` /
+- ⌨️ **Built keyboard-first** — `Ctrl+Shift+K` fast switch, `Ctrl+F` /
   `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+←/→` pane
   history, split-view panes, and a full set of shortcuts for every module —
   the mouse is optional, not required. Desktop-only by design: phones and
@@ -241,7 +241,7 @@ whatever's useful to you. Nothing about the app assumes multiple people.
 
 **How many teams can I have?**
 No hard limit. `Alt+1` … `Alt+9` quick-switches the first nine; beyond that,
-the sidebar and `Ctrl+K` palette still get you anywhere.
+the sidebar and `Ctrl+Shift+K` fast switch still get you anywhere.
 
 **Can multiple people edit the same file at the same time?**
 No — this isn't a real-time collaboration tool. Only one browser tab can hold
@@ -329,7 +329,7 @@ go. It shows you the exact counts before you confirm — read them first.
   `(container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void` and is wired up
   in `src/main.ts` via `pm.registerModule(kind, renderFn)`.
 - **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane
-  history), command palette, search, modals, preferences. `ui/dom.ts`'s `el()`
+  history), fast switch, search, modals, preferences. `ui/dom.ts`'s `el()`
   helper is the one DOM-building primitive used everywhere — no templating
   engine, no virtual DOM.
 - **`src/main.ts`** — wires everything together: start screen →
@@ -342,8 +342,9 @@ go. It shows you the exact counts before you confirm — read them first.
 Because every pane is just a render function registered by string key, adding
 a new tracked entity (say, a "decisions log", kind `decisions`) is mostly
 additive. The one thing that's easy to half-do is wiring it into global search
-and the `Ctrl+K` palette — both are covered explicitly below, since they don't
-come for free just from registering the module.
+and the `Ctrl+Shift+K` fast switch (a.k.a. the command palette, `palette.ts`) —
+both are covered explicitly below, since they don't come for free just from
+registering the module.
 
 1. **Shape and schema.** Add its shape to `Team` (or `Doc`) in
    `src/core/types.ts`, add a `ModuleRef` variant (`{ kind: 'decisions';
@@ -394,17 +395,17 @@ come for free just from registering the module.
    return type, so TypeScript will refuse to compile a non-exhaustive switch
    and point you straight back here if you forget.
 
-4. **Pane switcher + palette (one list, both surfaces).** Add it to
+4. **Pane switcher + fast switch (one list, both surfaces).** Add it to
    `FIXED_MODULE_KEYS` in `src/ui/panes.ts` (its `kind` field is a closed
    union — widen that type alongside the new array entry, TypeScript will
    flag the mismatch either way). `buildModuleItems()` in that same file
    turns that list into the `ModuleItem[]` array shown in the pane's own "＋"
-   module dropdown — **and `src/ui/palette.ts`'s `Ctrl+K` palette calls this
-   exact same function.** There's no separate palette item list to maintain;
-   wiring the pane switcher wires the palette too.
+   module dropdown — **and `src/ui/palette.ts`'s `Ctrl+Shift+K` fast switch
+   calls this exact same function.** There's no separate fast-switch item list
+   to maintain; wiring the pane switcher wires the fast switch too.
    If individual items (not just the module as a whole) should get their own
-   palette entries — the way each action item/milestone/risk shows up as its
-   own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
+   fast-switch entries — the way each action item/milestone/risk shows up as
+   its own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
    `milestones`/`risks` do, sourcing the list from `teamRefCandidates()` (step
    6 below — you'll likely want that list anyway).
 
@@ -433,7 +434,7 @@ come for free just from registering the module.
    (drives the mention regex, auto-unlink-on-delete via `unlinkRefsInTeam` —
    call it from your delete path — and the `@`-picker's group header/icon),
    and add the item list to `teamRefCandidates()` in `src/core/search.ts` —
-   the same function step 4 mentioned, and what the `@` picker and palette
+   the same function step 4 mentioned, and what the `@` picker and fast switch
    both actually filter over.
 
 8. **Tests.** Add `test/<name>.test.ts`. Pure logic gets plain unit tests; the
