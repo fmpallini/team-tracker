@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.1] - 2026-08-31
+
+### Added
+- The link dialog now has a "Remove link" button when you open it on an existing link (Ctrl+K, or the 🔗 button with the cursor inside a link). It strips the link but keeps its text, and leaves the cursor right after it.
+
+### Fixed
+- Confirming the link dialog with Enter could split off a stray empty line and leave the cursor sitting on it, instead of just after the link you created.
+- Starting a code block inside a blockquote — with Ctrl+Shift+E / Ctrl+Shift+6 or the { } toolbar button — made a code block that turned back into plain quoted text with literal ``` fences the next time the file was opened. Those two now do nothing inside a blockquote, matching what typing ``` already did.
+- In a code block collapsed to its preview, the "+N more lines" count and the text copied by its copy button could disagree with the block's actual contents after certain edits.
+
 ## [2.7.0] - 2026-08-29
 
 ### Fixed

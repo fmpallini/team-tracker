@@ -4,11 +4,12 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { showEditorHelp } from './help'
 import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, type BlockCtx } from './editor-dom'
 
 export interface Editor {
   root: HTMLElement
@@ -228,60 +229,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   // --- caret/block helpers --------------------------------------------------
+  // The block-walk and the text-offset→Range mapping now live in
+  // ./editor-dom.ts, shared with atref.ts / template-picker.ts. This wrapper
+  // just binds the editor's own root so the ~9 call sites stay unchanged.
 
-  interface BlockCtx { block: HTMLElement; text: string; caretOffset: number }
-
-  function currentBlockAndOffset(): BlockCtx | null {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
-    const range = sel.getRangeAt(0)
-    if (!editorEl.contains(range.startContainer)) return null
-
-    let block: HTMLElement | null = null
-    let n: Node | null = range.startContainer
-    while (n && n !== editorEl) {
-      if (n instanceof HTMLElement && (n.parentElement === editorEl || n.tagName === 'LI')) {
-        block = n
-        break
-      }
-      n = n.parentElement
-    }
-    if (!block) return null
-
-    const preRange = document.createRange()
-    preRange.selectNodeContents(block)
-    preRange.setEnd(range.startContainer, range.startOffset)
-    const caretOffset = preRange.toString().length
-    return { block, text: block.textContent ?? '', caretOffset }
-  }
-
-  /** Builds a Range spanning text offsets [start, end) within `block`'s text content. */
-  function rangeForTextOffsets(block: HTMLElement, start: number, end: number): Range {
-    const range = document.createRange()
-    let remainingStart = start
-    let remainingEnd = end
-    let startSet = false
-    let endSet = false
-    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT)
-    let node: Node | null
-    while ((node = walker.nextNode())) {
-      const len = node.textContent?.length ?? 0
-      if (!startSet && remainingStart <= len) {
-        range.setStart(node, remainingStart)
-        startSet = true
-      }
-      if (!endSet && remainingEnd <= len) {
-        range.setEnd(node, remainingEnd)
-        endSet = true
-        break
-      }
-      remainingStart -= len
-      remainingEnd -= len
-    }
-    if (!startSet) range.setStart(block, block.childNodes.length)
-    if (!endSet) range.setEnd(block, block.childNodes.length)
-    return range
-  }
+  const currentBlockAndOffset = (): BlockCtx | null => blockAndCaret(editorEl)
 
   function closestLi(node: Node): HTMLElement | null {
     let n: Node | null = node
@@ -530,48 +482,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return siblings.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1)
   }
 
-  function setCaretAfter(node: Node): void {
-    const sel = window.getSelection()
-    if (!sel) return
-    const r = document.createRange()
-    r.setStartAfter(node)
-    r.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(r)
-  }
-
-  /**
-   * Places the caret just past a freshly-inserted inline element but
-   * genuinely OUTSIDE it. When `node` is at the end of its block, park
-   * the caret in a trailing NBSP: setStartAfter alone leaves the caret in
-   * the element’s formatting context in every engine, so the next
-   * keystroke — and Enter — keeps typing inside the new
-   * <strong>/<em>/<s> (typing `**b**` then more words gave one long bold
-   * run; Enter carried an empty <strong> to the next line). The NBSP
-   * renders as a plain space and round-trips as one —
-   * mdToHtml turns a block-trailing space after inline formatting back
-   * into &nbsp;, the same mechanism the "**Label:** " template lines rely
-   * on. When real text already follows `node` (a span wrapped mid-line),
-   * no gap is added — it would be a spurious space — and a plain
-   * setStartAfter is used.
-   */
-  function caretPastInline(node: ChildNode): void {
-    const sel = window.getSelection()
-    if (!sel) return
-    const next = node.nextSibling
-    const hasFollowingText = !!next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? '').length > 0
-    const r = document.createRange()
-    if (hasFollowingText) {
-      r.setStartAfter(node)
-    } else {
-      const gap = document.createTextNode('\u00a0')
-      node.after(gap)
-      r.setStart(gap, 1)
-    }
-    r.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(r)
-  }
+  // caret-after-inline placement (bare, auto-NBSP, always-NBSP) lives in
+  // ./editor-dom.ts as caretAfterInline — shared with atref.ts.
 
   /** Collapses the caret to a text offset within `block` (typically an `<li>`
    * just moved by indentListItems/outdentListItems). Moving list nodes via
@@ -636,30 +548,32 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * Normalizes every `<blockquote>` under `root` so it holds only inline
-   * content separated by `<br>` — exactly the shape `mdToHtml` emits
-   * (`<blockquote>line one<br>line two</blockquote>`). Chromium's
-   * `execCommand('formatBlock', '<blockquote>')` on a MULTI-LINE selection
-   * instead produces `<blockquote><div>l1</div><div>l2</div></blockquote>`,
-   * and `htmlToMd`'s blockquote branch only splits inner lines on `<br>`, so
-   * without this those `<div>`s merge into one line (`> l1l2`), losing the
-   * breaks. Each child `<div>`/`<p>` is replaced by its own child nodes
-   * followed by a `<br>`; a trailing `<br>` is dropped so there's no empty
-   * last line. Left untouched when the blockquote already has no block-level
-   * child (the common single-line / `<br>`-joined case).
+   * Normalizes every flat block of `selector` (`<blockquote>` or `<pre>`)
+   * under `root` so it holds only `<br>`-separated lines — the shape
+   * `mdToHtml` emits and `htmlToMd` reads. Chromium's
+   * `execCommand('formatBlock', ...)` on a MULTI-LINE selection instead
+   * leaves `<…><div>l1</div><div>l2</div></…>`, which `htmlToMd` would merge
+   * onto one line, losing the breaks. Each child `<div>`/`<p>` becomes its
+   * own content + a `<br>`; a trailing `<br>` is dropped. `content: 'inline'`
+   * moves the child's nodes (a blockquote keeps its inline formatting);
+   * `'text'` flattens to a text node (a code block is literal). No-op when
+   * the block has no block-level child (the common single-line /
+   * already-`<br>`-joined case).
    */
-  function normalizeBlockquoteChildren(root: HTMLElement): void {
-    root.querySelectorAll('blockquote').forEach((bq) => {
-      const kids = Array.from(bq.childNodes)
+  function normalizeFlatBlockChildren(root: HTMLElement, selector: 'blockquote' | 'pre', content: 'inline' | 'text'): void {
+    const doc = root.ownerDocument ?? document
+    root.querySelectorAll(selector).forEach((host) => {
+      const kids = Array.from(host.childNodes)
       const hasBlockChild = kids.some(
         (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
       )
       if (!hasBlockChild) return
-      const frag = (root.ownerDocument ?? document).createDocumentFragment()
+      const frag = doc.createDocumentFragment()
       kids.forEach((n) => {
         if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
-          while (n.firstChild) frag.appendChild(n.firstChild)
-          frag.appendChild((root.ownerDocument ?? document).createElement('br'))
+          if (content === 'text') frag.appendChild(doc.createTextNode(n.textContent ?? ''))
+          else while (n.firstChild) frag.appendChild(n.firstChild)
+          frag.appendChild(doc.createElement('br'))
         } else {
           frag.appendChild(n)
         }
@@ -667,8 +581,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
         frag.removeChild(frag.lastChild)
       }
-      bq.replaceChildren()
-      bq.appendChild(frag)
+      host.replaceChildren()
+      host.appendChild(frag)
     })
   }
 
@@ -700,7 +614,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     document.execCommand('formatBlock', false, '<blockquote>')
     flattenNestedBlockquotes(editorEl)
-    normalizeBlockquoteChildren(editorEl)
+    normalizeFlatBlockChildren(editorEl, 'blockquote', 'inline')
     scheduleChange()
   }
 
@@ -726,59 +640,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
-  /**
-   * Normalizes every `<pre>` under `root` to hold plain text with `<br>`
-   * line breaks — the shape `mdToHtml` emits and `preLines` (core/markdown.ts)
-   * reads. Chromium's `execCommand('formatBlock', '<pre>')` on a multi-line
-   * selection leaves `<pre><div>l1</div><div>l2</div></pre>`; each block
-   * child collapses to a text node + `<br>`, trailing `<br>` dropped. Left
-   * untouched when the `<pre>` already has no block-level child.
-   */
-  function normalizePreChildren(root: HTMLElement): void {
-    root.querySelectorAll('pre').forEach((pre) => {
-      const kids = Array.from(pre.childNodes)
-      const hasBlockChild = kids.some(
-        (n) => n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')
-      )
-      if (!hasBlockChild) return
-      const doc = root.ownerDocument ?? document
-      const frag = doc.createDocumentFragment()
-      kids.forEach((n) => {
-        if (n instanceof HTMLElement && (n.tagName === 'DIV' || n.tagName === 'P')) {
-          frag.appendChild(doc.createTextNode(n.textContent ?? ''))
-          frag.appendChild(doc.createElement('br'))
-        } else {
-          frag.appendChild(n)
-        }
-      })
-      if (frag.lastChild instanceof HTMLElement && frag.lastChild.tagName === 'BR') {
-        frag.removeChild(frag.lastChild)
-      }
-      pre.replaceChildren()
-      pre.appendChild(frag)
-    })
-  }
-
-  /** The text lines of a `<pre>`: text nodes contribute their text (split on
-   * any literal `\n`), each `<br>` starts a new line, any element wrapper's
-   * text is folded in. A lone trailing empty line (final `<br>`) is dropped. */
-  function preTextLines(pre: HTMLElement): string[] {
-    const lines: string[] = ['']
-    const appendLast = (s: string) => { lines[lines.length - 1] = (lines[lines.length - 1] ?? '') + s }
-    pre.childNodes.forEach((n) => {
-      if (n.nodeType === Node.TEXT_NODE) {
-        const parts = (n.textContent ?? '').replace(/\r/g, '').split('\n')
-        appendLast(parts[0]!)
-        for (let i = 1; i < parts.length; i++) lines.push(parts[i]!)
-      } else if (n instanceof HTMLElement && n.tagName === 'BR') {
-        lines.push('')
-      } else if (n instanceof HTMLElement) {
-        appendLast(n.textContent ?? '')
-      }
-    })
-    if (lines.length > 1 && (lines[lines.length - 1] ?? '') === '') lines.pop()
-    return lines
-  }
+  // A <pre>'s literal text lines — collapse threshold, the copy button and
+  // unwrapPre all use core/markdown.ts's preLines, the same extraction
+  // htmlToMd serialises with, so the "+N more lines" count can't drift from
+  // what actually round-trips.
 
   /**
    * Replaces an emptied-out top-level block with an empty `<pre>` fenced
@@ -803,7 +668,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * autoformat — the "toggle off" half of toggleCodeBlock.
    */
   function unwrapPre(pre: HTMLElement): void {
-    const lines = preTextLines(pre)
+    const lines = preLines(pre)
     const frag = document.createDocumentFragment()
     const divs: HTMLElement[] = []
     for (const line of lines.length ? lines : ['']) {
@@ -832,9 +697,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * `<div>` lines (normalizePreChildren) so htmlToMd's ``` serialization
    * keeps every break. Selection snapshot before focus() for the same
    * jsdom reason as toggleBlockquote.
+   *
+   * Inert inside a blockquote (when not already in a `<pre>` — an existing
+   * one is still unwrapped, so the old-bug shape can be cleaned up): a flat
+   * `> ` serializes inline content only, so a `<pre>` wrapped in there
+   * degrades to quoted text with literal ``` fences on the next reload.
+   * Mirrors toggleBlockquote's `if (preAtCaret()) return` guard; the typed
+   * "``` " path (handleAutoFormat) already stays literal inside a quote.
    */
   function toggleCodeBlock(): void {
     const pre = preAtCaret()
+    if (!pre && blockquoteAtCaret()) return
     const ctx = pre ? null : currentBlockAndOffset()
     editorEl.focus()
     if (pre) {
@@ -848,7 +721,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     document.execCommand('formatBlock', false, '<pre>')
-    normalizePreChildren(editorEl)
+    normalizeFlatBlockChildren(editorEl, 'pre', 'text')
     scheduleChange()
   }
 
@@ -966,7 +839,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const node = document.createElement(tag)
     node.textContent = match.content
     range.insertNode(node)
-    caretPastInline(node)
+    caretAfterInline(node)
   }
 
   function handleAutoFormat(): void {
@@ -1060,7 +933,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
         const lastNode = frag.lastChild
         range.insertNode(frag)
-        if (lastNode) setCaretAfter(lastNode)
+        if (lastNode) caretAfterInline(lastNode, 'none')
         scheduleChange()
         return
       }
@@ -1213,10 +1086,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // the overlay attached over a torn-down editor.
   let pendingLinkModal: { close: () => void } | null = null
 
-  function promptLink(init: { text: string; url: string; editing: boolean }): Promise<{ text: string; url: string } | null> {
+  // promptLink resolves to a link spec on OK, `{ remove: true }` when the
+  // edit-mode "Remove link" button is pressed, or null on Cancel/Escape.
+  type LinkResult = { text: string; url: string } | { remove: true }
+
+  function promptLink(init: { text: string; url: string; editing: boolean }): Promise<LinkResult | null> {
     return new Promise((resolve) => {
       let done = false
-      const finish = (v: { text: string; url: string } | null): void => {
+      const finish = (v: LinkResult | null): void => {
         if (done) return
         done = true
         pendingLinkModal = null
@@ -1252,6 +1129,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         ),
         buttons: [
           { label: t(locale, 'cancel'), onClick: () => finish(null) },
+          // Only offered when editing an existing link: unwrap the <a>, keep
+          // its text (handled in insertLink).
+          ...(init.editing
+            ? [{ label: t(locale, 'editor_link_remove'), danger: true, onClick: () => finish({ remove: true }) }]
+            : []),
           { label: t(locale, 'ok'), primary: true, onClick: submit },
         ],
         // Escape / overlay close routes here too, so the promise never hangs.
@@ -1311,6 +1193,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
     const res = await promptLink({ text: initText, url: initUrl, editing: anchor !== null })
     if (res === null) return
+    if ('remove' in res) {
+      // "Remove link": replace the <a> with its own children (its text, plus
+      // any inner formatting), drop the caret after them, and merge adjacent
+      // text nodes so htmlToMd sees one clean run.
+      editorEl.focus()
+      if (anchor && editorEl.contains(anchor)) {
+        const parent = anchor.parentNode
+        const frag = document.createDocumentFragment()
+        while (anchor.firstChild) frag.appendChild(anchor.firstChild)
+        const lastNode = frag.lastChild
+        anchor.replaceWith(frag)
+        if (lastNode) caretAfterInline(lastNode, 'none')
+        if (parent instanceof HTMLElement) parent.normalize()
+        scheduleChange()
+      }
+      return
+    }
     const url = res.url.trim()
     if (!safeHref(url)) return // defensive — the modal already gates this
     const text = res.text.replace(/\s+/g, ' ').trim()
@@ -1329,7 +1228,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
       const lastNode = frag.lastChild
       anchor.replaceWith(frag)
-      if (lastNode) setCaretAfter(lastNode)
+      if (lastNode) caretAfterInline(lastNode, 'none')
       scheduleChange()
       return
     }
@@ -1558,6 +1457,55 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     keepCaretVisible()
   }
 
+  /**
+   * Every Ctrl / Ctrl+Shift editor shortcut in one table: the match
+   * predicate (layout-independent — `matchKey` folds in `e.code`, digit
+   * chords key off `e.code`/`e.key` for AZERTY & driver quirks), the action,
+   * and `runsInsidePre` — true only for the code-block toggle, which still
+   * fires with the caret in a fenced block so it can leave it. Everything
+   * else is swallowed there so a chord can't splice formatting into literal
+   * text. `onKeydown` walks this in order: first match wins, gets
+   * `preventDefault()`, then runs — or, inside a `<pre>`, is silently
+   * dropped. This replaced a hand-written `if` chain plus two separate
+   * `e.code` allow-lists that every new shortcut had to be added to by hand
+   * (and one of which had already drifted).
+   *
+   * Cross-app chord rationale — X vs 5 for strike, 9 vs Q for blockquote,
+   * E vs 6 for code block: the letter chord is the convention (Slack /
+   * Docs / Discord / Typora), the digit / alt-letter is the fallback for
+   * Windows browsers & vendor keyboard drivers that swallow the letter
+   * chord before it reaches the page. Toolbar buttons and the typed
+   * markdown (`~~x~~`, `> `, ```` ``` ````) are the mouse/typing routes.
+   */
+  interface EditorShortcut {
+    match: (e: KeyboardEvent) => boolean
+    run: () => void
+    runsInsidePre?: boolean
+  }
+  const SHORTCUTS: readonly EditorShortcut[] = [
+    { match: (e) => !e.shiftKey && matchKey(e, 'b'), run: () => exec('bold') },
+    { match: (e) => !e.shiftKey && matchKey(e, 'i'), run: () => exec('italic') },
+    { match: (e) => !e.shiftKey && matchKey(e, 'u'), run: () => exec('underline') },
+    { match: (e) => !e.shiftKey && matchKey(e, 'k'), run: () => void insertLink() },
+    { match: (e) => !e.shiftKey && e.code === 'Digit1', run: () => formatBlockTag('h1') },
+    { match: (e) => !e.shiftKey && e.code === 'Digit2', run: () => formatBlockTag('h2') },
+    { match: (e) => !e.shiftKey && e.code === 'Digit3', run: () => formatBlockTag('h3') },
+    { match: (e) => !e.shiftKey && e.code === 'Digit0', run: () => formatBlockTag('div') },
+    // Ahead of the in-pre swallow below: this one still runs inside a <pre>.
+    {
+      match: (e) => e.shiftKey && (matchKey(e, 'e') || e.code === 'Digit6' || e.key === '6'),
+      run: () => toggleCodeBlock(),
+      runsInsidePre: true,
+    },
+    { match: (e) => e.shiftKey && (e.code === 'KeyX' || e.code === 'Digit5'), run: () => exec('strikeThrough') },
+    { match: (e) => e.shiftKey && e.code === 'Digit8', run: () => insertList('ul') },
+    { match: (e) => e.shiftKey && e.code === 'Digit7', run: () => insertList('ol') },
+    {
+      match: (e) => e.shiftKey && (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '('),
+      run: () => toggleBlockquote(),
+    },
+  ]
+
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
@@ -1631,64 +1579,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
 
-    if (!e.shiftKey) {
-      if (preAtCaret()) {
-        // Literal text only inside a fenced code block: swallow the
-        // formatting chords this branch would run, leave the rest
-        // (Ctrl+C/V/X/Z/A — not handled here) to the browser.
-        if (matchKey(e, 'b') || matchKey(e, 'i') || matchKey(e, 'u') ||
-            matchKey(e, 'k') || /^Digit[0-3]$/.test(e.code)) e.preventDefault()
-        return
-      }
-      if (matchKey(e, 'b')) { e.preventDefault(); exec('bold'); return }
-      if (matchKey(e, 'i')) { e.preventDefault(); exec('italic'); return }
-      if (matchKey(e, 'u')) { e.preventDefault(); exec('underline'); return }
-      if (matchKey(e, 'k')) { e.preventDefault(); void insertLink(); return }
-      if (e.code === 'Digit1') { e.preventDefault(); formatBlockTag('h1'); return }
-      if (e.code === 'Digit2') { e.preventDefault(); formatBlockTag('h2'); return }
-      if (e.code === 'Digit3') { e.preventDefault(); formatBlockTag('h3'); return }
-      if (e.code === 'Digit0') { e.preventDefault(); formatBlockTag('div'); return }
-      return
-    }
-
-    // Fenced code block: Ctrl+Shift+E (Discord's chord, unbound in
-    // Chrome/Edge/Firefox on Windows) is primary; Ctrl+Shift+6 is the
-    // digit-row backup for the Windows keyboard drivers that swallow the
-    // letter chord before it reaches the page — same reason strike takes 5
-    // beside X, and it sits with the Ctrl+Shift+5/7/8/9 formatting digits.
-    // `e.key === '6'` also matches in case the driver reports the character
-    // but not `e.code`. Placed before the code-block guard below so either
-    // still fires to EXIT a block. The { } button and typed "``` " are the
-    // mouse/typing alternatives.
-    if (matchKey(e, 'e') || e.code === 'Digit6' || e.key === '6') { e.preventDefault(); toggleCodeBlock(); return }
-    // Every other formatting chord is inert inside a fenced code block.
-    if (preAtCaret()) {
-      if (e.code === 'KeyX' || e.code === 'Digit5' || e.code === 'Digit8' || e.code === 'Digit7' ||
-          e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') e.preventDefault()
-      return
-    }
-
-    // Strikethrough takes both Ctrl+Shift+X (the cross-app convention: Google
-    // Docs, Slack, Discord, GitHub) and Ctrl+Shift+5. The X chord is the
-    // primary, but some Windows browsers / vendor keyboard drivers swallow it
-    // before it reaches the page, so its keydown never fires — Digit5 is the
-    // fallback that always lands, sits with the Ctrl+Shift+7/8 list shortcuts,
-    // and matched physically (e.code) rides over layout differences. Toolbar S
-    // button and `~~text~~` markdown are the mouse/typing alternatives.
-    if (e.code === 'KeyX' || e.code === 'Digit5') { e.preventDefault(); exec('strikeThrough'); return }
-    if (e.code === 'Digit8') { e.preventDefault(); insertList('ul'); return }
-    if (e.code === 'Digit7') { e.preventDefault(); insertList('ol'); return }
-    // Blockquote: Ctrl+Shift+9 is the cross-app convention (Slack), but the
-    // digit-row chord is exactly the kind some Windows keyboard drivers eat
-    // before it reaches the page (same reason Ctrl+Shift+5 backs up
-    // Ctrl+Shift+X for strikethrough). Ctrl+Shift+Q — Typora's blockquote
-    // chord, unbound in Chrome/Edge/Firefox on Windows — is the fallback that
-    // lands; `e.key === '9'`/`'('` also match in case the driver reports the
-    // character but not `e.code`. Toolbar ❝ and typed `> ` are the
-    // mouse/typing alternatives.
-    if (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '(') {
+    for (const sc of SHORTCUTS) {
+      if (!sc.match(e)) continue
+      // A chord this table owns never reaches the browser's own binding for
+      // it, in or out of a code block.
       e.preventDefault()
-      toggleBlockquote()
+      // Inside a fenced code block every chord is inert except the ones
+      // flagged runsInsidePre (just the code-block toggle, to leave the
+      // block) — literal text can't carry formatting/blocks.
+      if (preAtCaret() && !sc.runsInsidePre) return
+      sc.run()
       return
     }
   }
@@ -1949,7 +1849,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   let cbCopyResetTimer: ReturnType<typeof setTimeout> | null = null
 
   function preLineCount(pre: HTMLElement): number {
-    return preTextLines(pre).length
+    return preLines(pre).length
   }
 
   /** Sets `data-lines` on every <pre> and auto-collapses the long ones.
@@ -2022,7 +1922,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onCbCopy(): void {
     if (!cbActivePre) return
-    copyText(preTextLines(cbActivePre).join('\n'))
+    copyText(preLines(cbActivePre).join('\n'))
     cbCopyBtn.textContent = CB_COPIED_GLYPH
     cbCopyBtn.title = t(locale, 'editor_cb_copied')
     if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)

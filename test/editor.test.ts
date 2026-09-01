@@ -544,6 +544,115 @@ describe('keyboard shortcuts', () => {
   })
 })
 
+// Locks the full Ctrl/Ctrl+Shift shortcut set — every combo, its action, and
+// its behaviour with the caret inside a fenced code block — before the
+// dispatch ladder is refactored into a declarative table. Each row asserts
+// the exact execCommand / DOM effect the current hand-written `if` chain
+// produces, so the table version has to reproduce it byte for byte.
+describe('keyboard shortcuts — full combo matrix', () => {
+  function mount() {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const exec = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl, exec }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const r = document.createRange()
+    r.setStart(node, offset); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+  }
+
+  test.each([
+    ['Ctrl+2', { key: '2', code: 'Digit2', ctrlKey: true }, 'formatBlock', '<h2>'],
+    ['Ctrl+3', { key: '3', code: 'Digit3', ctrlKey: true }, 'formatBlock', '<h3>'],
+    ['Ctrl+0', { key: '0', code: 'Digit0', ctrlKey: true }, 'formatBlock', '<div>'],
+    ['Ctrl+Shift+7', { key: '&', code: 'Digit7', ctrlKey: true, shiftKey: true }, 'insertOrderedList', undefined],
+  ])('%s -> execCommand', (_label, init, cmd, arg) => {
+    const { editor, editorEl, exec } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, init)
+    expect(e.defaultPrevented).toBe(true)
+    expect(exec).toHaveBeenCalledWith(cmd, false, arg)
+    editor.destroy()
+  })
+
+  test.each([
+    ['Ctrl+Shift+Q (blockquote fallback)', { key: 'Q', code: 'KeyQ', ctrlKey: true, shiftKey: true }],
+    ['Ctrl+Shift+9 via e.key "9"', { key: '9', code: 'Digit9', ctrlKey: true, shiftKey: true }],
+  ])('%s runs formatBlock <blockquote>', (_label, init) => {
+    const { editor, editorEl, exec } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, init)
+    expect(e.defaultPrevented).toBe(true)
+    expect(exec).toHaveBeenCalledWith('formatBlock', false, '<blockquote>')
+    editor.destroy()
+  })
+
+  test('Ctrl+E without Shift is not a shortcut — not consumed, no execCommand', () => {
+    const { editor, editorEl, exec } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, { key: 'e', code: 'KeyE', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(false)
+    expect(exec).not.toHaveBeenCalled()
+    editor.destroy()
+  })
+
+  test('an unbound Ctrl+Shift chord (Ctrl+Shift+B) is left alone outside a code block', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('a line')
+    const e = dispatchKey(editorEl, { key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true })
+    expect(e.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
+  // Inside a <pre>: every formatting chord is swallowed (defaultPrevented) but
+  // does nothing — except the code-block chord itself, which still fires to
+  // leave the block (covered in 'code block editing').
+  test.each([
+    ['Ctrl+B', { key: 'b', code: 'KeyB', ctrlKey: true }, 'bold'],
+    ['Ctrl+I', { key: 'i', code: 'KeyI', ctrlKey: true }, 'italic'],
+    ['Ctrl+U', { key: 'u', code: 'KeyU', ctrlKey: true }, 'underline'],
+    ['Ctrl+Shift+X', { key: 'X', code: 'KeyX', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    ['Ctrl+Shift+5', { key: '%', code: 'Digit5', ctrlKey: true, shiftKey: true }, 'strikeThrough'],
+    ['Ctrl+Shift+8', { key: '*', code: 'Digit8', ctrlKey: true, shiftKey: true }, 'insertUnorderedList'],
+    ['Ctrl+Shift+7', { key: '&', code: 'Digit7', ctrlKey: true, shiftKey: true }, 'insertOrderedList'],
+    ['Ctrl+Shift+9', { key: '(', code: 'Digit9', ctrlKey: true, shiftKey: true }, 'formatBlock'],
+    ['Ctrl+Shift+Q', { key: 'Q', code: 'KeyQ', ctrlKey: true, shiftKey: true }, 'formatBlock'],
+  ])('%s inside a <pre> is swallowed and inert', (_label, init, forbiddenCmd) => {
+    const { editor, editorEl, exec } = mount()
+    editorEl.innerHTML = '<pre>code</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    const e = dispatchKey(editorEl, init)
+    expect(e.defaultPrevented).toBe(true)
+    expect(exec.mock.calls.some(c => c[0] === forbiddenCmd)).toBe(false)
+    editor.destroy()
+  })
+
+  test('Ctrl+1/2/3/0 inside a <pre> are swallowed and apply no heading', () => {
+    const { editor, editorEl, exec } = mount()
+    editorEl.innerHTML = '<pre>code</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    for (const code of ['Digit1', 'Digit2', 'Digit3', 'Digit0']) {
+      const e = dispatchKey(editorEl, { key: code.slice(-1), code, ctrlKey: true })
+      expect(e.defaultPrevented).toBe(true)
+    }
+    expect(exec.mock.calls.some(c => c[0] === 'formatBlock')).toBe(false)
+    editor.destroy()
+  })
+
+  test('Ctrl+K inside a <pre> is swallowed and opens no link modal', async () => {
+    const { editor, editorEl } = mount()
+    editorEl.innerHTML = '<pre>code</pre>'
+    caretIn(editorEl.querySelector('pre')!.firstChild as Text, 2)
+    const e = dispatchKey(editorEl, { key: 'k', code: 'KeyK', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    await Promise.resolve()
+    expect(document.querySelector('.tt-modal-dialog')).toBeNull()
+    editor.destroy()
+  })
+})
+
 describe('Tab indent', () => {
   test('leadingIndentLen counts leading space/nbsp chars, capped at 4', () => {
     expect(leadingIndentLen('')).toBe(0)
@@ -1488,6 +1597,44 @@ describe('toolbar', () => {
     editor.destroy()
   })
 
+  test('🔗 button: "Remove link" in edit mode unwraps the <a>, keeping its text', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('see [the docs](https://example.com/x) now')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const a = editorEl.querySelector('a[href]') as HTMLAnchorElement
+    const caret = document.createRange()
+    caret.setStart(a.firstChild!, 3); caret.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(caret)
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    const removeBtn = Array.from(document.querySelectorAll('.tt-modal-dialog button'))
+      .find(b => b.textContent === t('en-US', 'editor_link_remove')) as HTMLButtonElement
+    expect(removeBtn).toBeTruthy()
+    removeBtn.click()
+    await Promise.resolve() // let insertLink's post-await continuation run
+    await Promise.resolve()
+
+    expect(editorEl.querySelector('a[href]')).toBeNull()
+    expect(editor.getMd()).toBe('see the docs now')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    editor.destroy()
+  })
+
+  test('🔗 button: no "Remove link" button when inserting a new link', async () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('plain text')
+
+    toolbarButton(editor, t('en-US', 'editor_link_title')).click()
+    await Promise.resolve()
+    const removeBtn = Array.from(document.querySelectorAll('.tt-modal-dialog button'))
+      .find(b => b.textContent === t('en-US', 'editor_link_remove'))
+    expect(removeBtn).toBeUndefined()
+    editor.destroy()
+  })
+
   test('🔗 button: editing an existing link can change its text', async () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -2239,6 +2386,57 @@ describe('code block editing', () => {
     editor.destroy()
   })
 
+  test('Ctrl+Shift+E with the caret in a blockquote makes no code block', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted line</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true) // chord still swallowed, like the other blocked block chords
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe('quoted line')
+    editor.destroy()
+  })
+
+  test('the { } toolbar button with the caret in a blockquote makes no code block', () => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>quoted line</blockquote>'
+    const textNode = editorEl.querySelector('blockquote')!.firstChild as Text
+    caretIn(textNode, 3)
+
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_codeblock_title')
+    ) as HTMLButtonElement
+    btn.click()
+
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    expect(editorEl.querySelector('pre')).toBeNull()
+    expect(editorEl.querySelector('blockquote')!.textContent).toBe('quoted line')
+    editor.destroy()
+  })
+
+  test('Ctrl+Shift+E with the caret in a <pre> nested in a blockquote still unwraps it (old-bug cleanup)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote><pre>trapped</pre></blockquote>'
+    const range = document.createRange()
+    range.selectNodeContents(editorEl.querySelector('pre')!)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    const e = dispatchKey(editorEl, { key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).toBeNull()
+    editor.destroy()
+  })
+
   test('Ctrl+B with the caret in a <pre> applies no bold', () => {
     const { editor, editorEl } = mount()
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
@@ -2277,6 +2475,19 @@ describe('code block editing', () => {
     btn.click()
 
     expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<pre>')
+    editor.destroy()
+  })
+
+  test('the { } button normalizes a <div>-built multi-line <pre> to <br>-separated literal lines', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<pre><div>l1</div><div>l2</div></pre>'
+    const btn = Array.from(editor.root.querySelectorAll('.tt-editor-toolbar button')).find(
+      (b) => b.getAttribute('title') === t('en-US', 'editor_codeblock_title')
+    ) as HTMLButtonElement
+    btn.click()
+    expect(editorEl.querySelector('pre')!.innerHTML).toBe('l1<br>l2')
+    expect(editor.getMd()).toBe('```\nl1\nl2\n```')
     editor.destroy()
   })
 
@@ -2400,6 +2611,37 @@ describe('code block collapse + copy', () => {
       if (orig) Object.defineProperty(navigator, 'clipboard', orig)
       else delete (navigator as unknown as { clipboard?: unknown }).clipboard
     }
+  })
+
+  test('the copy button and line count read a <br>-edited block the same way htmlToMd serialises it', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const { editor, editorEl } = mount()
+      // the shape Enter-inside-a-block produces: <br> line breaks, not \n
+      editorEl.innerHTML = '<pre>one<br>two<br>three</pre>'
+      const pre = editorEl.querySelector('pre')!
+      pre.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      ;(editor.root.querySelector('.tt-cb-controls button') as HTMLButtonElement).click()
+      expect(writeText).toHaveBeenCalledWith('one\ntwo\nthree')
+      expect(editor.getMd()).toBe('```\none\ntwo\nthree\n```')
+      editor.destroy()
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'clipboard', orig)
+      else delete (navigator as unknown as { clipboard?: unknown }).clipboard
+    }
+  })
+
+  test('the collapse threshold counts a transient <div>-wrapped block by real lines (not folded to one)', () => {
+    const { editor, editorEl } = mount()
+    // Chromium formatBlock on a multi-line selection can leave this shape
+    // briefly; the count must still see 10 lines, not 1.
+    editorEl.innerHTML = '<pre>' + Array.from({ length: 10 }, (_, i) => `<div>l${i}</div>`).join('') + '</pre>'
+    editor.setMd(editor.getMd()) // re-render through the normal path
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.dataset.lines).toBe('10')
+    editor.destroy()
   })
 
   test('the hover toggle button collapses and re-expands the block', () => {

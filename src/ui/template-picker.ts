@@ -12,6 +12,7 @@ import type { Template } from '../core/types'
 import { t, type Locale } from '../core/i18n'
 import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { blockAndCaret, caretAfterInline, type BlockCtx } from './editor-dom'
 
 export interface TemplatePickerHandle {
   /** Closes any open dropdown and removes all document/element listeners this instance attached. Idempotent. */
@@ -42,40 +43,10 @@ export function attachTemplatePicker(editor: Editor, opts: {
   // time is still exactly where commit() needs to insert.
   let triggerCtx: BlockCtx | null = null
 
-  // --- caret/block helpers (mirrors src/ui/editor.ts's private helpers;
-  // duplicated rather than exported from there to keep this module fully
-  // decoupled from the editor's internals, same rationale as src/ui/atref.ts
-  // — it only depends on `.editor` being the contenteditable root and on the
-  // SLASH_TRIGGER_EVENT contract). ---
-
-  interface BlockCtx { block: HTMLElement; text: string; caretOffset: number }
-
-  function blockAndCaret(): BlockCtx | null {
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
-    const range = sel.getRangeAt(0)
-    if (!editorEl!.contains(range.startContainer)) return null
-    let block: HTMLElement | null = null
-    let n: Node | null = range.startContainer
-    while (n && n !== editorEl) {
-      if (n instanceof HTMLElement && (n.parentElement === editorEl || n.tagName === 'LI')) {
-        block = n
-        break
-      }
-      n = n.parentElement
-    }
-    if (!block) return null
-    const preRange = document.createRange()
-    preRange.selectNodeContents(block)
-    preRange.setEnd(range.startContainer, range.startOffset)
-    const caretOffset = preRange.toString().length
-    return { block, text: block.textContent ?? '', caretOffset }
-  }
+  // The block-walk lives in ./editor-dom.ts, shared with src/ui/editor.ts and
+  // src/ui/atref.ts.
 
   function setCaretAfter(node: Node): void {
-    const sel = window.getSelection()
-    if (!sel) return
-    const r = document.createRange()
     // Several built-in templates end with an empty bullet meant for
     // immediate typing (e.g. "- " as the last line). Landing the caret after
     // the whole list would force an extra click/arrow-down before the user
@@ -83,6 +54,9 @@ export function attachTemplatePicker(editor: Editor, opts: {
     if (node instanceof HTMLElement && (node.tagName === 'UL' || node.tagName === 'OL')) {
       const lastLi = node.querySelector(':scope > li:last-child')
       if (lastLi) {
+        const sel = window.getSelection()
+        if (!sel) return
+        const r = document.createRange()
         r.selectNodeContents(lastLi)
         r.collapse(false)
         sel.removeAllRanges()
@@ -90,10 +64,9 @@ export function attachTemplatePicker(editor: Editor, opts: {
         return
       }
     }
-    r.setStartAfter(node)
-    r.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(r)
+    // A template block is never a formatting-context inline node — 'none',
+    // no filler. (Shared with editor.ts / atref.ts — see ./editor-dom.ts.)
+    caretAfterInline(node as ChildNode, 'none')
   }
 
   // --- dropdown rendering ---------------------------------------------------
@@ -275,7 +248,7 @@ export function attachTemplatePicker(editor: Editor, opts: {
   function open(range: Range): void {
     close()
     anchorRange = range
-    triggerCtx = blockAndCaret()
+    triggerCtx = blockAndCaret(editorEl!)
     items = opts.getTemplates()
     selected = 0
     listEl = el('div', { class: 'tt-atref-list' })
