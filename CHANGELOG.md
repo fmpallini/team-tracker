@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.2] - 2026-09-01
+
+### Changed
+- Scrollbars across the app — the sidebar, panes, note editors, and dialog bodies — now take on the current color palette's accent tint instead of the plain grey operating-system scrollbar.
+
+### Fixed
+- In Preferences → Data, when the tab had enough content to scroll, the "Clear data" button at the bottom was jammed right against the scrollbar with no space around it. It now keeps a small margin from the scrollbar and the panel's bottom edge.
+
 ## [2.7.1] - 2026-08-31
 
 ### Added

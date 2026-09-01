@@ -1,7 +1,10 @@
 /* Fallback before shell.ts stamps data-theme; the attribute rules below must
-   win, or native widgets (select dropdown popups, scrollbars) follow the OS
-   scheme instead of the app theme — dark app + light OS gave the risk
-   chance/impact dropdowns a white popup with pale dark-theme text. */
+   win, or native widgets (select dropdown popups, form controls, and the
+   scrollbars of any element this file doesn't restyle) follow the OS scheme
+   instead of the app theme — dark app + light OS gave the risk chance/impact
+   dropdowns a white popup with pale dark-theme text. App scrollbars are
+   themed to the palette accent further down (see the ::-webkit-scrollbar
+   block after `body`). */
 :root { color-scheme: light dark; }
 [data-theme=light] { color-scheme: light; }
 [data-theme=dark] { color-scheme: dark; }
@@ -133,6 +136,27 @@ html[data-font=rounded] body { font-family: Candara, Corbel, sans-serif; }
 html[data-size=XS] { font-size: 12px; } html[data-size=S] { font-size: 13.5px; } html[data-size=M] { font-size: 15px; } html[data-size=L] { font-size: 16.5px; } html[data-size=XL] { font-size: 18px; }
 
 body { background: var(--bg); color: var(--fg); }
+
+/* Scroll areas carry the palette accent instead of the raw OS scrollbar.
+   The `scrollbar-*` shorthand (Firefox / standards) inherits, so setting it
+   once on :root covers every scroll container; the ::-webkit-scrollbar
+   pseudo-elements (Chromium — the userbase) don't inherit, so they go on `*`
+   to reach the sidebar, panes, editors, modal bodies and code blocks alike.
+   Translucent-accent thumb on a transparent track — the same rgba(accent,.3)
+   language the prefs scroll-fade gradients already use — resolving per
+   palette+theme from --accent-rgb with no per-palette duplication. Native
+   <select> popups keep the OS scrollbar (unstylable); fine, they're transient. */
+:root { scrollbar-width: thin; scrollbar-color: rgba(var(--accent-rgb), .42) transparent; }
+*::-webkit-scrollbar { width: 11px; height: 11px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(var(--accent-rgb), .32);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(var(--accent-rgb), .55); background-clip: padding-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
 
 /* App shell layout */
 .tt-shell { flex: 1; min-height: 0; display: grid; grid-template-rows: auto 1fr; grid-template-columns: 1fr; }
@@ -1475,6 +1499,11 @@ select option { background: var(--bg); color: var(--fg); }
    layers and slide away from them as the content moves. */
 .tt-prefs-content {
   display: flex; flex-direction: column; gap: 1.5rem; height: 55vh; overflow-y: auto;
+  /* Right/bottom insets so a tab that overflows doesn't butt its scrollbar
+     up against the last control (the Data tab's "Clear data" button most
+     visibly) — with no scrollbar the modal's own body padding already
+     supplies this gap, so it only shows once the scrollbar appears. */
+  padding-right: .6rem; padding-bottom: .35rem;
   background:
     linear-gradient(var(--bg) 40%, rgba(0, 0, 0, 0)) top / 100% 2rem no-repeat local,
     linear-gradient(rgba(0, 0, 0, 0), var(--bg) 60%) bottom / 100% 2rem no-repeat local,
