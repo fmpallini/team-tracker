@@ -480,7 +480,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             [t(locale, 'prefs_backup_status_filename_label'), status.fileName],
             [t(locale, 'prefs_backup_status_size_label'), formatBytes(status.size)],
             [t(locale, 'prefs_backup_status_last_label'), everWritten ? formatDateTime(status.lastBackupAt, locale) : t(locale, 'prefs_backup_status_never')],
-            [t(locale, 'prefs_backup_status_next_label'), everWritten ? formatDateTime(status.nextDueAt, locale) : t(locale, 'prefs_backup_status_never')],
           ]
           for (const [label, value] of rows) statusBody.appendChild(el('tr', {}, el('td', {}, label), el('td', {}, value)))
         })

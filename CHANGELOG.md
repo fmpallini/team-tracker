@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.3] - 2026-09-02
+
+### Changed
+- Preferences → Backup no longer shows a "Next backup" time. Backups don't run on a background timer — they're written when you save your file, at most once per the interval you pick. After restarting your computer with nothing edited since, that field just showed a time stuck hours in the past for a backup that was never actually scheduled. The tab now says backups happen on save.
+
 ## [2.7.2] - 2026-09-01
 
 ### Changed

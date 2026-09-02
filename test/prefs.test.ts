@@ -520,7 +520,7 @@ test('backup tab: no status table when enabled but no target picked yet', () => 
   expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
 })
 
-test('backup tab: shows filename, size, last and next backup time once status resolves', async () => {
+test('backup tab: shows filename, size, and last backup time once status resolves', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
   const lastBackupAt = new Date('2026-08-20T14:30:00').getTime()
@@ -528,7 +528,6 @@ test('backup tab: shows filename, size, last and next backup time once status re
     fileName: 'team-tracker.bck',
     size: 2048,
     lastBackupAt,
-    nextDueAt: lastBackupAt + 24 * 60 * 60 * 1000,
   }))
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
@@ -543,6 +542,27 @@ test('backup tab: shows filename, size, last and next backup time once status re
   expect(table?.textContent).toMatch(/KB/)
 })
 
+// Backups aren't scheduled — they ride along with saves, throttled to the
+// chosen interval — so the tab must not present a wall-clock "next backup"
+// time the app has no timer to honour (a stale one, hours in the past after
+// a machine restart with no edits since, is what made this misleading).
+test('backup tab: status table shows no "next backup" schedule row', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
+  appCtl.backupStatus = vi.fn(async () => ({
+    fileName: 'team-tracker.bck',
+    size: 2048,
+    lastBackupAt: new Date('2026-08-20T14:30:00').getTime(),
+  }))
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(document.querySelector('.tt-prefs-backup-status')?.textContent).not.toContain('Next backup')
+})
+
 test('backup tab: shows a "never backed up yet" state when lastBackupAt is 0', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
@@ -550,7 +570,6 @@ test('backup tab: shows a "never backed up yet" state when lastBackupAt is 0', a
     fileName: 'team-tracker.bck',
     size: 0,
     lastBackupAt: 0,
-    nextDueAt: 24 * 60 * 60 * 1000,
   }))
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')

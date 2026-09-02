@@ -468,7 +468,7 @@ describe('backup-controller', () => {
       await expect(ctl.getStatus()).resolves.toBeNull()
     })
 
-    test('returns the file name, size, and last/next backup times from the resolved handle', async () => {
+    test('returns the file name, size, and last backup time from the resolved handle', async () => {
       getFileMock.mockResolvedValue({ size: 12345, lastModified: Date.now() - 60 * 60 * 1000 }) // 1h ago
       const store = storeWithBackup(true)
       const ctl = createBackupController({ store })
@@ -477,16 +477,16 @@ describe('backup-controller', () => {
       expect(status?.fileName).toBe('team.bck')
       expect(status?.size).toBe(12345)
       expect(status?.lastBackupAt).toBeGreaterThan(0)
-      expect(status?.nextDueAt).toBe((status?.lastBackupAt ?? 0) + 24 * 60 * 60 * 1000)
     })
 
-    test('nextDueAt uses the hourly interval when backupFrequency is "hourly"', async () => {
+    test('reports no "next due" time — backups piggyback on save, they are not scheduled', async () => {
       getFileMock.mockResolvedValue({ size: 100, lastModified: Date.now() - 30 * 60 * 1000 })
       const store = storeWithBackup(true)
       store.update((d) => { d.prefs.backupFrequency = 'hourly' })
       const ctl = createBackupController({ store })
       const status = await ctl.getStatus()
-      expect(status?.nextDueAt).toBe((status?.lastBackupAt ?? 0) + 60 * 60 * 1000)
+      expect(status).not.toBeNull()
+      expect(status).not.toHaveProperty('nextDueAt')
     })
 
     test('lastBackupAt is 0 (never backed up) for a freshly-picked, still-empty .bck', async () => {
