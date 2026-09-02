@@ -3,3 +3,4 @@ dist/
 .superpowers/
 playwright-report/
 test-results/
+.video-tmp-*/
