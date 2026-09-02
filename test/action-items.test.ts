@@ -560,17 +560,34 @@ describe('edit modal is modeless — nav can close it without losing the edit', 
     await new Promise((resolve) => setTimeout(resolve, 0)) // let the deferred focus-restore run without throwing
   })
 
-  test('a renderer teardown force-closes even a nameless card that has content (the pane is already gone)', () => {
+  test('a nav hotkey over a nameless card that has content is a no-op — dismiss vetoes, card and content stay', () => {
     const team = makeTeam({ actionItems: [] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     clickByTitleOrText(container, '+ Card')
     setValue(document.querySelector('.tt-modal-dialog input.tt-assignee-input') as HTMLInputElement, 'Bruno')
-    // content but blank summary — beforeClose would veto a normal close
-    expect(dismissModelessModals()).toBe(false)
-    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
 
-    disposeContainer(container)
+    // This is exactly what every guarded nav path checks before switching.
+    expect(dismissModelessModals()).toBe(false)
+    // Card still open, content intact, so the caller aborts its switch.
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.actionItems[0]!.assignee).toContain('Bruno')
+
+    // Give it a name and the same check now lets the nav through.
+    setValue(document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement, 'Follow up with Bruno')
+    expect(dismissModelessModals()).toBe(true)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('Follow up with Bruno')
+  })
+
+  test('an unguarded teardown still force-closes a nameless card (the pane is already gone) — no orphan overlay', () => {
+    const team = makeTeam({ actionItems: [] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    setValue(document.querySelector('.tt-modal-dialog input.tt-assignee-input') as HTMLInputElement, 'Bruno')
+
+    disposeContainer(container) // e.g. a cross-tab control handoff, which no pre-guard covers
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 })

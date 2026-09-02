@@ -475,6 +475,13 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     })
   )
 
+  // Every hotkey below that re-targets a pane, moves pane focus, or tears the
+  // layout down first closes an open modeless card modal — its onClose flushes
+  // the notes editor, so nothing typed is lost. If the card can't close yet
+  // (content entered but no name) the hotkey becomes a no-op and focus returns
+  // to the name field, exactly as Escape behaves. See ui/modal.ts.
+  const navPastModelessCard = (): boolean => dismissModelessModals()
+
   const onKeyDown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && matchKey(e, 's')) {
       // Always claim Ctrl+S — even while focus is inside an editor field —
@@ -496,6 +503,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       // free of both, so this actually fires reliably.
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
+      if (!navPastModelessCard()) return
       closeFile()
       return
     }
@@ -507,9 +515,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       // in ui/hotkeys.ts).
       if (!navHotkeyAllowed(e)) return
       e.preventDefault()
-      // Close an open card modal first (its onClose flushes the notes
-      // editor); abort the jump if its required-name guard vetoes.
-      if (!dismissModelessModals()) return
+      if (!navPastModelessCard()) return
       openPaneModuleByIndex(pm, store, Number(fKeyMatch[1]) - 1)
       return
     }
@@ -525,11 +531,13 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     if (!navHotkeyAllowed(e)) return
     if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       navigateFocusedHistory(pm, store, e.key === 'ArrowLeft' ? -1 : 1)
       return
     }
     if (e.shiftKey && e.key === 'ArrowUp') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       jumpFocusedHistoryToLatest(pm, store)
       return
     }
@@ -561,16 +569,19 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       pm.toggleSplit()
       return
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       if (swapPaneSides(store)) pm.renderAll()
       return
     }
