@@ -1,4 +1,4 @@
-import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from '../src/ui/hotkeys'
+import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed, blockedByModal, blockedByBlockingModal, matchKey, matchDigit } from '../src/ui/hotkeys'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -128,6 +128,27 @@ test('comboHotkeyAllowed blocks the combo while a modal overlay is open', () => 
   document.addEventListener('keydown', (e) => { captured = e })
   keydownOn(document.body, { ctrlKey: true, key: 'k' })
   expect(comboHotkeyAllowed(captured!)).toBe(false)
+})
+
+test('a modeless modal overlay does not block the combo / nav hotkeys, but a plain one does', () => {
+  const modeless = document.createElement('div')
+  modeless.className = 'tt-modal-overlay tt-modal-modeless'
+  document.body.appendChild(modeless)
+  const e = key({ ctrlKey: false, altKey: true, key: '2' })
+
+  // blockedByModal still counts it (competing popovers, update notice);
+  // blockedByBlockingModal — what gates the hotkeys — does not.
+  expect(blockedByModal()).toBe(true)
+  expect(blockedByBlockingModal()).toBe(false)
+  expect(comboHotkeyAllowed(e)).toBe(true)
+  expect(navHotkeyAllowed(e)).toBe(true)
+
+  const plain = document.createElement('div')
+  plain.className = 'tt-modal-overlay'
+  document.body.appendChild(plain)
+  expect(blockedByBlockingModal()).toBe(true)
+  expect(comboHotkeyAllowed(e)).toBe(false)
+  expect(navHotkeyAllowed(e)).toBe(false)
 })
 
 test('navHotkeyAllowed allows the hotkey on a plain document target', () => {

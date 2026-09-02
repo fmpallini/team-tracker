@@ -25,7 +25,7 @@ import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
 import { forceWrite, readCurrent, sameEntry } from './core/fs'
-import { toast, showErrorModal } from './ui/modal'
+import { toast, showErrorModal, dismissModelessModals } from './ui/modal'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController } from './core/backup-controller'
@@ -450,6 +450,11 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // reset to today's daily notes. A team with no recorded session yet (first
   // visit) still gets the default split layout (daily + members).
   function selectTeam(id: string): void {
+    // A modeless card modal open in some pane must close (flushing its notes
+    // editor) before the team switch tears that pane's renderer down; if its
+    // required-name guard refuses, abort the switch and leave the user on it.
+    // Skipped when re-selecting the current team (no teardown happens).
+    if (id !== store.doc.nav.activeTeamId && !dismissModelessModals()) return
     if (!teamHasHistory(store, id)) {
       store.updateNav((d) => {
         d.nav.activeTeamId = id
@@ -502,6 +507,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       // in ui/hotkeys.ts).
       if (!navHotkeyAllowed(e)) return
       e.preventDefault()
+      // Close an open card modal first (its onClose flushes the notes
+      // editor); abort the jump if its required-name guard vetoes.
+      if (!dismissModelessModals()) return
       openPaneModuleByIndex(pm, store, Number(fKeyMatch[1]) - 1)
       return
     }

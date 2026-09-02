@@ -1,4 +1,6 @@
 import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard, moveColumn, resolveAssigneeDisplay, matchPersonByName } from '../src/modules/action-items'
+import { disposeContainer } from '../src/modules/lifecycle'
+import { dismissModelessModals } from '../src/ui/modal'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -531,6 +533,45 @@ describe('keyboard route to the card actions', () => {
 
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1) // empty draft silently discarded
     expect(document.activeElement).not.toBe(container.querySelector('[data-item-id="a"]'))
+  })
+})
+
+describe('edit modal is modeless — nav can close it without losing the edit', () => {
+  test('the card modal overlay is marked modeless', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    cards(container)[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(document.querySelector('.tt-modal-overlay.tt-modal-modeless')).not.toBeNull()
+  })
+
+  test('tearing the renderer down while a card is open closes it, flushes the edit, and leaves no orphan overlay', async () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', order: 0, summary: 'Old' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    cards(container)[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    setValue(document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement, 'Renamed')
+
+    disposeContainer(container) // what ui/panes.ts does on a module/team switch
+
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(store.doc.teams[0]!.actionItems[0]!.summary).toBe('Renamed')
+    await new Promise((resolve) => setTimeout(resolve, 0)) // let the deferred focus-restore run without throwing
+  })
+
+  test('a renderer teardown force-closes even a nameless card that has content (the pane is already gone)', () => {
+    const team = makeTeam({ actionItems: [] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    setValue(document.querySelector('.tt-modal-dialog input.tt-assignee-input') as HTMLInputElement, 'Bruno')
+    // content but blank summary — beforeClose would veto a normal close
+    expect(dismissModelessModals()).toBe(false)
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+
+    disposeContainer(container)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 })
 

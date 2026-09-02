@@ -287,6 +287,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   interface ModalBundle { richBundle: RichEditorBundle; datePicker: DatePickerHandle; unsubscribeSaveStatus: () => void; refreshAssignee: () => void; teardownAssignee: () => void }
   let openBundle: ModalBundle | null = null
+  // The card modal is modeless (edits commit live), so it doesn't block the
+  // nav hotkeys — but a switch they trigger tears this whole renderer down.
+  // The container disposer calls this to close the modal cleanly (flush +
+  // dispose via its onClose, bypassing the name-required veto) instead of
+  // leaving an orphaned overlay behind that would wedge blockedByModal()
+  // forever. Null when no card modal is open; reset by that same onClose.
+  let closeOpenCard: (() => void) | null = null
 
   /** Single teardown for the edit modal's editor bundle (plus its header save-state subscription) — called from both the modal's onClose and the container disposer, so the two can't drift. Idempotent. */
   function disposeOpenBundle(): void {
@@ -348,6 +355,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // Delete button routes through closeModal(); this lets beforeClose tell a
     // real delete apart from a plain close so it doesn't block the delete.
     let deleting = false
+    // Set only by the container disposer (via closeOpenCard below) when this
+    // whole renderer is being torn down — the pane is already gone, so the
+    // name-required veto must yield rather than leave an orphaned overlay
+    // wedging blockedByModal() forever. Every guarded navigation path
+    // (dismissModelessModals) still aborts *before* the teardown in that
+    // state, so this only bites on unguarded paths (e.g. a sidebar team
+    // click); disposeOpenBundle() has already flushed the notes editor.
+    let forceClose = false
     const summaryInput = el('input', {
       type: 'text', class: 'tt-input', value: existing?.summary ?? '',
       oninput: (e: Event) => { if ((e.target as HTMLInputElement).value.trim() !== '') summaryError.textContent = '' },
@@ -649,13 +664,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       body,
       buttons,
       headerExtra,
+      // Every field commits to the store as it's edited (see above), so this
+      // dialog isn't a blocking decision point — the palette, team switch,
+      // pane jumps and same-pane @ref clicks are all allowed over it and
+      // close it (flushing the notes editor) on their way through.
+      modeless: true,
       // A card with content but no name must not be closed — closing it would
       // delete it (empty summary, below) and take the notes/assignee/due/color
       // the user just entered with it. Hold the modal open, surface why, and
       // put the cursor back on the name field. A real Delete (the button sets
       // `deleting`) is always allowed through.
       beforeClose: () => {
-        if (deleting) return true
+        if (deleting || forceClose) return true
         const cur = items().find((i) => i.id === itemId)
         if (!cur || cur.summary.trim() !== '') return true
         const hasContent =
@@ -666,6 +686,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         return false
       },
       onClose: () => {
+        closeOpenCard = null
         disposeOpenBundle()
         // A blank summary that reached here carries nothing to lose (beforeClose
         // blocks the case where it would) — delete silently, same rule
@@ -707,6 +728,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         }, 0)
       },
     })
+    closeOpenCard = () => { forceClose = true; handle.close() }
     summaryInput.focus()
   }
 
@@ -1399,6 +1421,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   return () => {
     unsubscribe()
+    closeOpenCard?.()  // clean-close an open card modal (flush + remove overlay) before its host renderer goes
     disposeOpenBundle()
     disposeArrowFallback()
     deferredRebuild.dispose()

@@ -40,6 +40,17 @@ export function blockedByModal(): boolean {
 }
 
 /**
+ * Like `blockedByModal`, but a *modeless* dialog (`.tt-modal-modeless` — only
+ * the action-item card modal) doesn't count. That dialog edits live into the
+ * store and closing it isn't a commit, so it shouldn't swallow the palette /
+ * team-switch / pane-jump hotkeys; those instead close it on the way through
+ * (`dismissModelessModals()`), preserving whatever was being edited.
+ */
+export function blockedByBlockingModal(): boolean {
+  return document.querySelector('.tt-modal-overlay:not(.tt-modal-modeless)') !== null
+}
+
+/**
  * True while the user is typing in a form field/contenteditable, or while a
  * modal dialog is open. Used by `hotkeyAllowed` only — a hotkey whose own key
  * would otherwise insert a character (e.g. search-ui.ts's `/` to focus
@@ -70,10 +81,11 @@ export function hotkeyAllowed(e: KeyboardEvent): boolean {
  * Ctrl/Cmd (e.g. Ctrl+Shift+K for the command palette). Unlike `hotkeyAllowed`,
  * this must still fire while focus is inside an input/textarea/
  * contenteditable — the palette needs to be reachable while typing notes in
- * the WYSIWYG editor. Only a modal dialog being open blocks it.
+ * the WYSIWYG editor. Only a *blocking* modal dialog being open blocks it;
+ * the modeless card modal is closed on the way through instead.
  */
 export function comboHotkeyAllowed(_e: KeyboardEvent): boolean {
-  return !blockedByModal()
+  return !blockedByBlockingModal()
 }
 
 /**
@@ -90,7 +102,8 @@ export function comboHotkeyAllowed(_e: KeyboardEvent): boolean {
  * opening the window menu on some platforms, or — worse — F5's page
  * refresh, F6's address-bar focus, or Firefox's F7 caret-browsing prompt,
  * any of which could fire mid-edit. Still blocked by AltGr (reported as
- * ctrlKey+altKey) and by an open modal, same as `hotkeyAllowed`.
+ * ctrlKey+altKey) and by an open *blocking* modal (not the modeless card
+ * modal, which callers close on the way through).
  */
 export function navHotkeyAllowed(e: KeyboardEvent): boolean {
   return !e.ctrlKey && !e.metaKey && comboHotkeyAllowed(e)

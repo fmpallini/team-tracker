@@ -23,6 +23,16 @@ export interface ModalOptions {
   beforeClose?: () => boolean
   /** Rendered in the title row, right-aligned next to `title` — e.g. action-items.ts's expand-mode toggle and (once expanded) its mirrored save-state pill. Omit for the plain title-only header every other modal uses. */
   headerExtra?: HTMLElement
+  /**
+   * Marks this as a *modeless* dialog: one that edits live into the store
+   * (no OK/Cancel, closing isn't a commit) and so shouldn't wall off the
+   * app's navigation hotkeys the way a real blocking dialog does. The
+   * action-item card modal is the only one. `blockedByModal()` still counts
+   * it (competing popovers, the update notice), but `blockedByBlockingModal()`
+   * — which gates the palette / team-switch / pane hotkeys — ignores it, and
+   * `dismissModelessModals()` can close it on the way into such a switch.
+   */
+  modeless?: boolean
 }
 
 export interface ModalHandle {
@@ -54,23 +64,51 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
   })
 }
 
+interface OpenDialog {
+  dialog: HTMLElement
+  /** Same veto-respecting close as the returned handle's. */
+  close: () => void
+  modeless: boolean
+}
+
 // Every open dialog, oldest first. Each `renderDialog` pushes its own
-// dialog element here on open and removes it on close. Escape acts on the
-// topmost entry only: without this, a single Escape reaching `document`
-// fires *every* open modal's keydown listener, so closing the editor-help
-// modal (or the link dialog, a confirm, promptPassword…) stacked over the
+// entry here on open and removes it on close. Escape acts on the topmost
+// entry only: without this, a single Escape reaching `document` fires
+// *every* open modal's keydown listener, so closing the editor-help modal
+// (or the link dialog, a confirm, promptPassword…) stacked over the
 // action-item card modal would close the card modal underneath it too.
-const openDialogs: HTMLElement[] = []
+const openDialogs: OpenDialog[] = []
+
+/**
+ * Closes every currently-open *modeless* dialog (see `ModalOptions.modeless`),
+ * respecting each one's `beforeClose`. Returns `true` if they all closed (or
+ * there were none), `false` if any vetoed — the caller of a navigation that
+ * called this should then abort, leaving the user on the dialog that refused
+ * to close (e.g. the card modal parking the cursor back on a required-but-
+ * empty name field). Used by the palette / team-switch / pane hotkeys and by
+ * same-pane @ref navigation, all of which would otherwise tear the pane out
+ * from under an open card.
+ */
+export function dismissModelessModals(): boolean {
+  // Snapshot: close() mutates openDialogs. Topmost first is fine — there is
+  // only ever one modeless dialog today, and independent ones have no close
+  // ordering constraint.
+  for (const entry of [...openDialogs].reverse()) {
+    if (!entry.modeless) continue
+    entry.close()
+  }
+  return !openDialogs.some((e) => e.modeless)
+}
 
 function renderDialog(opts: ModalOptions): RenderedDialog {
-  const overlay = el('div', { class: 'tt-modal-overlay' })
+  const overlay = el('div', { class: opts.modeless ? 'tt-modal-overlay tt-modal-modeless' : 'tt-modal-overlay' })
 
   let closed = false
   function close(): void {
     if (closed) return
     if (opts.beforeClose && opts.beforeClose() === false) return
     closed = true
-    const i = openDialogs.indexOf(dialog)
+    const i = openDialogs.findIndex((e) => e.dialog === dialog)
     if (i !== -1) openDialogs.splice(i, 1)
     overlay.remove()
     document.removeEventListener('keydown', onKeydown)
@@ -85,7 +123,7 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
       // they float above. Topmost-only below covers modal-over-modal; this
       // covers popup-over-modal for any popup that marks the event handled.
       if (e.defaultPrevented) return
-      if (openDialogs[openDialogs.length - 1] !== dialog) return
+      if (openDialogs[openDialogs.length - 1]?.dialog !== dialog) return
       close()
       return
     }
@@ -163,7 +201,7 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   )
 
   overlay.appendChild(dialog)
-  openDialogs.push(dialog)
+  openDialogs.push({ dialog, close, modeless: opts.modeless ?? false })
   document.addEventListener('keydown', onKeydown)
   document.body.appendChild(overlay)
 

@@ -11,6 +11,7 @@ import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { buildModuleItems, type PaneManager } from './panes'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { blockedByModal } from './hotkeys'
+import { dismissModelessModals } from './modal'
 
 export interface Palette {
   open(): void
@@ -49,6 +50,10 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
 
   function commit(row: PaletteRow | undefined): void {
     if (!row) return
+    // A card modal open over the palette must close first (flushing its
+    // notes editor) — every row here re-targets a pane. If its required-name
+    // guard vetoes, keep the palette open on the still-open card.
+    if (!dismissModelessModals()) return
     close()
     row.commit()
   }

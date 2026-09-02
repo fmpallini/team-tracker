@@ -1,4 +1,4 @@
-import { showModal, promptPassword, toast, confirmDelete } from '../src/ui/modal'
+import { showModal, promptPassword, toast, confirmDelete, dismissModelessModals } from '../src/ui/modal'
 import { el } from '../src/ui/dom'
 
 function overlays(): NodeListOf<Element> {
@@ -185,6 +185,39 @@ test('Escape closes only the topmost of stacked modals, one press at a time', ()
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
   expect(overlays().length).toBe(0)
   expect(outerClose).toHaveBeenCalledOnce()
+})
+
+test('modeless: overlay carries tt-modal-modeless; dismissModelessModals closes it and returns true', () => {
+  const onClose = vi.fn()
+  showModal({ title: 'Card', body: el('div'), buttons: [], modeless: true, onClose })
+  showModal({ title: 'Plain', body: el('div'), buttons: [] })
+  expect(document.querySelector('.tt-modal-overlay.tt-modal-modeless')).not.toBeNull()
+
+  const result = dismissModelessModals()
+  expect(result).toBe(true)
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(document.querySelector('.tt-modal-modeless')).toBeNull()
+  // the plain modal is untouched
+  expect(overlays().length).toBe(1)
+  expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Plain')
+})
+
+test('dismissModelessModals returns true when there is nothing modeless open', () => {
+  showModal({ title: 'Plain', body: el('div'), buttons: [] })
+  expect(dismissModelessModals()).toBe(true)
+  expect(overlays().length).toBe(1)
+})
+
+test('dismissModelessModals returns false and leaves the modal open when its beforeClose vetoes', () => {
+  let allowClose = false
+  showModal({ title: 'Card', body: el('div'), buttons: [], modeless: true, beforeClose: () => allowClose })
+
+  expect(dismissModelessModals()).toBe(false)
+  expect(document.querySelector('.tt-modal-modeless')).not.toBeNull()
+
+  allowClose = true
+  expect(dismissModelessModals()).toBe(true)
+  expect(document.querySelector('.tt-modal-modeless')).toBeNull()
 })
 
 test('a modal ignores an Escape a nested popup already handled (defaultPrevented)', () => {
