@@ -7,14 +7,17 @@ view), and risks.
 **[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
 your browser, nothing to install.
 
-### 50-second tour
+### A one-minute tour
 
-Switching between teams (each fully separate), building an org chart, risks
-scored by chance × impact, `@`-references to a person and to an action item
-(one jumps into a dual-pane view, the other jumps to the item itself), one-click
-templates, and theming.
+Re-organising an org chart by drag and double-clicking a person to open their
+notes, rich text (keyboard shortcuts and markdown — headings, quotes, fenced
+code, links), collapsing to one wide pane, switching between teams (each fully
+separate), Fast Switch (`Ctrl+Shift+K`), `@`-references (one `Ctrl`+click opens
+in the second pane, one plain click jumps to the item), one-key templates, a
+kanban board with custom columns, dragging a risk on the chance × impact chart
+to re-score it, and dark mode.
 
-![50-second tour of Team Tracker: switching teams, org chart, @-references, templates, risks, and theming](docs/videos/feature-tour-short.gif)
+![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
 
 **[▶ Watch with sound](https://github.com/fmpallini/team-tracker/blob/main/docs/videos/feature-tour-short.webm)**
 (GitHub doesn't allow inline `<video>` in a rendered README — the GIF above
@@ -26,10 +29,12 @@ the background music)
 
 | | |
 |---|---|
-| ![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshots/daily-notes-and-org.png) | ![Action items kanban board with tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) |
-| Daily notes + team hierarchy | Action items — kanban board |
-| ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) | ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) |
-| Milestones — timeline + list | Risks — chance × impact exposure |
+| ![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshots/daily-notes-and-org.png) | ![Rich-text note with a heading, blockquote, fenced code block, and link](docs/screenshots/rich-text-editor.png) |
+| Daily notes + team hierarchy | Rich text — shortcuts + markdown |
+| ![Action items kanban board with a custom column, tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) |
+| Action items — kanban with custom columns | Milestones — timeline + list |
+| ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![A person's notes page with role, backlink badge, and a filled 1:1 template](docs/screenshots/person-notes.png) |
+| Risks — chance × impact exposure | Per-person notes + backlinks |
 | ![Ctrl+Shift+K fast switch for jumping to any team, person, or item](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
 | `Ctrl+Shift+K` fast switch | `Ctrl+Shift+F` search across every team |
 
@@ -94,7 +99,8 @@ Download `app.html` from the
 [latest release](https://github.com/fmpallini/team-tracker/releases/latest):
 on the release page, expand the **Assets** arrow at the bottom of the release
 notes and click `app.html` there — that single file is everything you need
-(or build it yourself, see [Build](#build), where it lands in `dist/app.html`).
+(or build it yourself — see [CONTRIBUTING.md](CONTRIBUTING.md) — where it
+lands in `dist/app.html`).
 Just double-click it, or open it from your browser's file picker. No install,
 no server required — the whole app (HTML, CSS, JS) is inlined into that one
 file. Its only network request is the once-a-day update check (see
@@ -317,167 +323,15 @@ done/cancelled action item, completed milestone, closed risk, and daily note
 older than the day count you set, across **all** teams in the file in one
 go. It shows you the exact counts before you confirm — read them first.
 
-## Architecture
+## Contributing
 
-- **`src/core/`** — headless logic, no DOM construction. Document shape and
-  schema migrations (`document.ts`, `types.ts`), the `.tmv` encryption format
-  (`crypto.ts`), the mutable document store (`store.ts`), the File System
-  Access API wrapper (`fs.ts`), and save orchestration (`save-controller.ts`).
-- **`src/modules/`** — one file per feature pane: daily notes, people trees
-  (stakeholders/members), person notes, action items, milestones, risks. Each
-  module exports a single render function with the signature
-  `(container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void` and is wired up
-  in `src/main.ts` via `pm.registerModule(kind, renderFn)`.
-- **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane
-  history), fast switch, search, modals, preferences. `ui/dom.ts`'s `el()`
-  helper is the one DOM-building primitive used everywhere — no templating
-  engine, no virtual DOM.
-- **`src/main.ts`** — wires everything together: start screen →
-  `onDocumentOpened` builds the shell/store/panes/save-controller, registers
-  hotkeys, and sets up cross-tab single-writer locking so only one tab can
-  write to a given file at a time.
+- Build & local development — **[CONTRIBUTING.md](CONTRIBUTING.md)**
+- How the code is organised — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+- Adding a new module/pane — [CONTRIBUTING.md § Adding a new module/pane](CONTRIBUTING.md#adding-a-new-modulepane)
 
-### Adding a new module/pane
-
-Because every pane is just a render function registered by string key, adding
-a new tracked entity (say, a "decisions log", kind `decisions`) is mostly
-additive. The one thing that's easy to half-do is wiring it into global search
-and the `Ctrl+Shift+K` fast switch (a.k.a. the command palette, `palette.ts`) —
-both are covered explicitly below, since they don't come for free just from
-registering the module.
-
-1. **Shape and schema.** Add its shape to `Team` (or `Doc`) in
-   `src/core/types.ts`, add a `ModuleRef` variant (`{ kind: 'decisions';
-   itemId?: string }` — the `itemId?` is only needed if items are individually
-   addressable, the way action items/milestones/risks are for deep-linking
-   from search and `@`-mentions). Bump `SCHEMA_VERSION` in
-   `src/core/document.ts` and add a step to the `MIGRATIONS` ladder there if
-   existing `.tmv` files need the field backfilled on open.
-
-2. **The renderer.** Write `src/modules/<name>.ts` exporting a function
-   matching `ModuleRenderer` — `(container: HTMLElement, loc: Loc, ctx:
-   ModuleCtx) => void`. `ctx` gives you `store`, `pm` (for opening other
-   locs), `paneIdx`, `locale`, and `searchIndex` (for backlink-chip lookups —
-   see `src/modules/milestones.ts` for an example consumer). Read the team via
-   `ctx.store.doc.teams.find(...)`, build DOM with `src/ui/dom.ts`'s `el()`
-   helper, mutate through `ctx.store.update((d) => { ... })`, and re-render on
-   every store change via `ctx.store.subscribe(renderAll)`. Conventions worth
-   matching rather than reinventing — look at `src/modules/action-items.ts`
-   (no live inputs → full rebuild on every change) or
-   `src/modules/milestones.ts` (has inline-editable fields → skips rebuild
-   while one is focused, so an in-progress edit's caret survives a foreign
-   store change):
-   - `store.update()` is for content (marks the doc dirty, fires
-     `subscribe()`); `store.updateNav()` is for navigation-only state (pane
-     focus, split %) and deliberately bypasses `subscribe()` so switching
-     panes doesn't blow away an in-progress edit elsewhere. Don't mix them up.
-   - **Wrap your exported renderer with `withDisposal()` from
-     `src/modules/lifecycle.ts`** — every existing module does (e.g.
-     `export const renderDecisions = withDisposal((container, loc, ctx) =>
-     { ... })`). `panes.ts` reuses one body element across module switches and
-     only clears `container`'s own DOM children between renders, so anything
-     your renderer attaches *outside* `container` — a document-level
-     listener, an overlay appended to `document.body` (see `src/ui/atref.ts`'s
-     `@`-mention dropdown) — would otherwise leak on every re-open or module
-     switch. To fix that, have your render function `return` a teardown
-     callback (`() => void`) when it attached anything external;
-     `withDisposal()` stores that callback in a shared `WeakMap` and calls it
-     automatically the next time that container is mounted into, so you don't
-     hand-roll any bookkeeping yourself.
-
-3. **Register it.** In `src/main.ts`, alongside the other
-   `pm.registerModule(...)` calls: `pm.registerModule('decisions',
-   renderDecisions)`. Do this before the post-registration `pm.renderAll()`
-   call a few lines down, or a pane whose saved nav state already points at
-   the new kind renders "Módulo em construção…" and never gets a second pass.
-   Also add a `case 'decisions':` to `titleFor()`'s switch in
-   `src/ui/panes.ts` (the pane header title) — it has an explicit `string`
-   return type, so TypeScript will refuse to compile a non-exhaustive switch
-   and point you straight back here if you forget.
-
-4. **Pane switcher + fast switch (one list, both surfaces).** Add it to
-   `FIXED_MODULE_KEYS` in `src/ui/panes.ts` (its `kind` field is a closed
-   union — widen that type alongside the new array entry, TypeScript will
-   flag the mismatch either way). `buildModuleItems()` in that same file
-   turns that list into the `ModuleItem[]` array shown in the pane's own "＋"
-   module dropdown — **and `src/ui/palette.ts`'s `Ctrl+Shift+K` fast switch
-   calls this exact same function.** There's no separate fast-switch item list
-   to maintain; wiring the pane switcher wires the fast switch too.
-   If individual items (not just the module as a whole) should get their own
-   fast-switch entries — the way each action item/milestone/risk shows up as
-   its own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
-   `milestones`/`risks` do, sourcing the list from `teamRefCandidates()` (step
-   6 below — you'll likely want that list anyway).
-
-5. **Global search.** The header search bar (`Ctrl+F` / `/`,
-   `src/ui/search-ui.ts`) is backed by `searchDocument()` in
-   `src/core/search.ts`, which works over a flat candidate list built by that
-   file's `collectCandidates()`. Add a loop over your module's items there:
-   ```ts
-   for (const d of team.decisions) {
-     out.push({ raw: `${d.title}\n${d.rationale}`, title: d.title, ref: { kind: 'decisions', itemId: d.id } })
-   }
-   ```
-   `raw` is whatever free text should be searchable — `searchDocument()`
-   strips markdown syntax from it and does a normalized (accent/case
-   insensitive), term-by-term substring match; if there's no free-text field,
-   `raw` can just equal `title`. Then add an icon to `KIND_ICON` (same file)
-   so results render with a matching glyph — that's the only other piece;
-   snippet highlighting and the results dropdown are already generic over
-   `ref.kind`.
-
-6. **i18n.** Add `pt-BR`/`en-US` strings to `src/core/i18n.ts` — every
-   user-visible string goes through `t(locale, key)`, in both locale blocks.
-
-7. **Optional: `@`-mentions.** If notes should be able to `@`-link to one of
-   your items, add an entry to the `REF_KINDS` registry in `src/core/refs.ts`
-   (drives the mention regex, auto-unlink-on-delete via `unlinkRefsInTeam` —
-   call it from your delete path — and the `@`-picker's group header/icon),
-   and add the item list to `teamRefCandidates()` in `src/core/search.ts` —
-   the same function step 4 mentioned, and what the `@` picker and fast switch
-   both actually filter over.
-
-8. **Tests.** Add `test/<name>.test.ts`. Pure logic gets plain unit tests; the
-   renderer gets exercised against a real `createStore(createEmptyDocument(locale))`
-   + jsdom the way `test/action-items.test.ts` does — mount, assert on
-   `container.querySelector(...)`, dispatch DOM events, assert on the mutated
-   `store.doc`.
-
-Beyond the explicit wiring above (steps 3–4: `registerModule`, `titleFor`,
-`FIXED_MODULE_KEYS`), no other module needs to know the new one exists — the
-pane manager's rendering, history, and print machinery all work off the
-registered module list and the `Loc` union generically. The two places that
-genuinely don't come for free just from that wiring are global search
-(`collectCandidates`/`KIND_ICON`) and, if wanted, `@`-mentions (`REF_KINDS`).
-
-## Build
-
-```
-npm install
-npm run build
-```
-
-This produces:
-
-- `dist/app.html` — a single self-contained HTML file with no external
-  references. Copy it anywhere and open it directly.
-- `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and `icon.svg`,
-  meant to be served over http(s) so it can be installed as a PWA.
-
-## Development
-
-```
-npm test              # run the test suite (vitest)
-npx vitest run test/store.test.ts   # run a single test file
-npm run test:watch    # vitest watch mode
-npm run typecheck     # tsc --noEmit, strict mode
-npm run lint          # eslint src test
-npm run test:e2e      # build, then run the Playwright suite against dist/
-npm run build          # produce dist/app.html and dist/pwa/
-```
-
-The codebase has zero runtime dependencies — `esbuild`, `typescript`,
-`vitest`, `jsdom`, and `@playwright/test` are dev-only tooling.
+The codebase has zero runtime dependencies (`esbuild`, `typescript`,
+`vitest`, `jsdom`, `@playwright/test` are dev-only) — keeping it that way is a
+hard rule.
 
 ## License
 

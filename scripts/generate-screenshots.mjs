@@ -19,9 +19,11 @@ const SHOT_DIR = path.resolve(HERE, '../docs/screenshots')
 // `palette: null` means "leave the default (ledger) untouched".
 const SCREENSHOTS = [
   { file: 'daily-notes-and-org.png', theme: 'light', palette: null, view: 'daily-and-org' },
+  { file: 'rich-text-editor.png', theme: 'light', palette: 'signal', view: 'rich-text' },
   { file: 'action-items-kanban.png', theme: 'dark', palette: 'ember', view: 'kanban' },
   { file: 'milestones.png', theme: 'light', palette: 'blueprint', view: 'milestones' },
   { file: 'risks.png', theme: 'dark', palette: 'synthwave', view: 'risks' },
+  { file: 'person-notes.png', theme: 'dark', palette: 'forest', view: 'person-notes' },
   { file: 'command-palette.png', theme: 'dark', palette: 'cosmic', view: 'command-palette' },
   { file: 'global-search.png', theme: 'light', palette: 'verdant', view: 'global-search' },
 ]
@@ -69,9 +71,39 @@ async function addChildPerson(page, paneIdx, parentName, childName, role) {
   await expect(dialog).toBeHidden()
 }
 
-async function typeIntoEditor(editor, text) {
+async function typeIntoEditor(editor, text, delay = 1) {
   await editor.click()
-  await editor.pressSequentially(text, { delay: 1 })
+  await editor.pressSequentially(text, { delay })
+}
+
+/**
+ * Adds a card to `columnName` on pane 0's board. The card modal has no Save
+ * button — cards persist live as you type (see src/modules/action-items.ts,
+ * task 2.3.2) — so this fills the fields and clicks Close.
+ */
+async function addKanbanCard(page, columnName, { title, date, assignee, chip }) {
+  const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
+  await pane0.locator('.tt-kanban-col', { hasText: columnName }).locator('.tt-kanban-add-btn').first().click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('.tt-kanban-form input.tt-input').first().fill(title)
+  if (date) {
+    await dialog.locator('.tt-date-picker-input').fill(date)
+    await dialog.locator('.tt-kanban-form input.tt-input').first().click() // close the date popover
+  }
+  if (assignee) await dialog.locator('.tt-kanban-form-row input.tt-input:not(.tt-date-picker-input)').fill(assignee)
+  if (chip !== undefined) await dialog.locator('.tt-kanban-color-chip').nth(chip).click()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+}
+
+/** Adds a custom middle column to pane 0's board and names it. */
+async function addKanbanColumn(page, name) {
+  const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
+  await pane0.locator('.tt-kanban-add-column-btn').click()
+  const renameInput = pane0.locator('.tt-kanban-col-rename-input').filter({ visible: true })
+  await expect(renameInput).toBeVisible({ timeout: 5000 })
+  await renameInput.fill(name)
+  await page.keyboard.press('Enter')
 }
 
 async function setThemePalette(page, theme, palette) {
@@ -116,6 +148,35 @@ async function blurAway(page) {
   await page.locator('body').click({ position: { x: 5, y: 5 } })
 }
 
+async function unsplitIfSplit(page) {
+  if (await page.locator('.tt-pane[data-pane-idx="1"]').isVisible()) {
+    await page.locator('.tt-pane-split-btn').first().click()
+  }
+}
+
+/**
+ * Types a heading + paragraph + blockquote + fenced code block + link into
+ * `editor` using the editor's own markdown gestures (typed `## `, `> `,
+ * ```` ``` ````, `[text](url)`), the same way generate-demo-video-short.mjs
+ * does — so the rich-text screenshot shows real rendered rich text, not
+ * literal markdown.
+ */
+async function typeRichSample(page, editor) {
+  await editor.click()
+  await editor.pressSequentially('## Migration status\n', { delay: 14 })
+  await editor.pressSequentially('New cluster is provisioned; ingress load-test still pending.\n', { delay: 10 })
+  await editor.pressSequentially('> Cutover window is Sat 02:00–04:00 UTC — freeze all deploys until then.', { delay: 14 })
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await editor.pressSequentially('```', { delay: 40 })
+  await page.keyboard.press('Enter')
+  await editor.pressSequentially('kubectl rollout undo deploy/auth -n platform\nkubectl get pods -n platform -w', { delay: 12 })
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter') // empty last line ends the code block
+  await editor.pressSequentially('Docs: [cutover runbook](https://wiki.example.com/cutover)', { delay: 12 })
+  await blurAway(page)
+}
+
 /**
  * Milestones/risks sort their list by date/manual-order — not insertion
  * order — so after clicking "+ Milestone"/"+ Risk" the new row is not
@@ -155,42 +216,28 @@ async function buildContent(page) {
   await addPerson(page, 1, 'Priya Anand', 'Engineering Manager', '.tt-people-add-btn')
   await switchPaneModule(page, 1, /Members/i)
 
-  // Daily note on pane0
+  // Daily note on pane0 — plain prose plus one blockquote and one link, so the
+  // daily-and-org screenshot shows the rich editor doing real work.
   await typeIntoEditor(
     page.locator('.tt-pane[data-pane-idx="0"] .editor').first(),
     'Kicked off the Q3 platform migration today. Walked Priya and Miguel through the new cluster topology; ' +
-    'Mei is pairing with SRE on the rollout plan. Next check-in Thursday.'
+    'Mei is pairing with SRE on the rollout plan. Next check-in Thursday.\n' +
+    '> Cutover window is Sat 02:00–04:00 UTC — freeze all deploys until then.\n\n' +
+    'Runbook: [cutover steps](https://wiki.example.com/cutover)',
+    12
   )
   await blurAway(page)
 
   // --- Tasks (kanban) on pane0 -------------------------------------------------
   await switchPaneModule(page, 0, /Tasks/i)
-  {
-    const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
-    const cards = [
-      { column: 'To Do', title: 'Cut over auth service to new K8s cluster', date: '08/20/2026', assignee: 'Miguel Fernandez', chip: 0 },
-      { column: 'To Do', title: 'Write postmortem template for cutover retro', date: '08/25/2026', assignee: 'Aisha Patel', chip: 3 },
-      { column: 'WIP', title: 'Draft rollback runbook for cutover weekend', date: '08/18/2026', assignee: 'Mei Chen', chip: 2 },
-      { column: 'WIP', title: 'Provision staging cluster for dry-run', date: '08/16/2026', assignee: 'Diego Silva', chip: 4 },
-    ]
-    for (const c of cards) {
-      await pane0.locator('.tt-kanban-col', { hasText: c.column }).locator('.tt-kanban-add-btn').click()
-      const dialog = page.getByRole('dialog')
-      await dialog.locator('.tt-kanban-form input.tt-input').first().fill(c.title)
-      // .fill() (not click + type-digits): the date field's mask logic
-      // (src/ui/date-picker.ts's onInput) reads digitsOnly() from the *whole*
-      // current field value, so typing digits at whatever cursor position a
-      // plain click leaves behind can interleave with any pre-existing text
-      // instead of replacing it. .fill() replaces the value outright, which
-      // the mask logic then parses cleanly regardless of what was there before.
-      await dialog.locator('.tt-date-picker-input').fill(c.date)
-      await dialog.locator('.tt-kanban-form input.tt-input').first().click()
-      await dialog.locator('.tt-kanban-form-row input.tt-input:not(.tt-date-picker-input)').fill(c.assignee)
-      await dialog.locator('.tt-kanban-color-chip').nth(c.chip).click()
-      await dialog.getByRole('button', { name: 'Save' }).click()
-      await expect(dialog).toBeHidden()
-    }
-  }
+  await addKanbanCard(page, 'To Do', { title: 'Cut over auth service to new K8s cluster', date: '08/20/2026', assignee: 'Miguel Fernandez', chip: 0 })
+  await addKanbanCard(page, 'To Do', { title: 'Write postmortem template for cutover retro', date: '08/25/2026', assignee: 'Aisha Patel', chip: 3 })
+  // A custom middle column between To Do and WIP, with a card, so the board
+  // screenshot shows the custom-column feature (task 2.4.0).
+  await addKanbanColumn(page, 'In Review')
+  await addKanbanCard(page, 'In Review', { title: 'Review rollback runbook with SRE', date: '08/22/2026', assignee: 'Aisha Patel', chip: 3 })
+  await addKanbanCard(page, 'WIP', { title: 'Draft rollback runbook for cutover weekend', date: '08/18/2026', assignee: 'Mei Chen', chip: 2 })
+  await addKanbanCard(page, 'WIP', { title: 'Provision staging cluster for dry-run', date: '08/16/2026', assignee: 'Diego Silva', chip: 4 })
 
   // --- Milestones on pane0 ------------------------------------------------------
   await switchPaneModule(page, 0, /Milestones/i)
@@ -316,11 +363,14 @@ async function main() {
           await switchPaneModule(page, 0, /Daily/i)
           await switchPaneModule(page, 1, /Members/i)
           break
+        case 'rich-text':
+          await switchPaneModule(page, 0, /General/i)
+          await unsplitIfSplit(page)
+          await typeRichSample(page, page.locator('.tt-pane[data-pane-idx="0"] .editor').first())
+          break
         case 'kanban':
           await switchPaneModule(page, 0, /Tasks/i)
-          if (await page.locator('.tt-pane[data-pane-idx="1"]').isVisible()) {
-            await page.locator('.tt-pane-split-btn').first().click() // unsplit for a full-width board
-          }
+          await unsplitIfSplit(page) // full-width board
           break
         case 'milestones':
           await switchPaneModule(page, 0, /Milestones/i)
@@ -329,11 +379,33 @@ async function main() {
           await switchPaneModule(page, 0, /Risks/i)
           await expandFirstRiskWithMitigation(page)
           break
+        case 'person-notes':
+          // Fast Switch (Ctrl+Shift+K) is the in-app way to jump straight to
+          // one person's notes page.
+          await unsplitIfSplit(page)
+          await page.keyboard.press('Control+Shift+k')
+          await expect(page.locator('.tt-palette-overlay')).toBeVisible()
+          await page.keyboard.type('Mei Chen', { delay: 20 })
+          await page.waitForTimeout(300)
+          await page.keyboard.press('Enter')
+          await expect(page.locator('.tt-person-notes')).toBeVisible({ timeout: 5000 })
+          // Only the first item is typed with a `- ` marker; once the list is
+          // going, Enter keeps it going, and a second `- ` mid-list breaks it.
+          await typeIntoEditor(
+            page.locator('.tt-person-notes .editor').first(),
+            '## Focus\nLeading the ingress load-testing workstream for the cutover.\n\n' +
+            '## Recent 1:1 — 08/28\n- Wants to own the staging dry-run end to end — agreed.\n' +
+            'Blocked briefly on vault access; unblocked by Nadia.\n' +
+            'Growth: pairing more with SRE before taking the on-call rotation.',
+            10
+          )
+          await blurAway(page)
+          break
         case 'command-palette':
           // Leave the query empty — filterModuleItems() (src/ui/palette.ts)
           // returns every fast-switch item unfiltered when the query is
           // blank, so the screenshot shows the full list instead of one match.
-          await page.keyboard.press('Control+k')
+          await page.keyboard.press('Control+Shift+k')
           await expect(page.locator('.tt-palette-overlay')).toBeVisible()
           break
         case 'global-search':
