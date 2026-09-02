@@ -1355,7 +1355,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // listener — without this guard Enter here would copy to the clipboard
     // behind the modal.
     if (blockedByModal()) return
-    if (e.key === 'Escape') { e.preventDefault(); closeCopyMenu(); return }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCopyMenu(); return }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       copyMenuSelected = clampMove(copyMenuSelected, e.key === 'ArrowDown' ? 1 : -1, copyMenuOptions.length)

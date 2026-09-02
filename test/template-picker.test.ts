@@ -179,6 +179,23 @@ describe('attachTemplatePicker', () => {
     expect(editorEl.textContent).toBe('/')
   })
 
+  test('Escape that closes the dropdown does not propagate to document (would close a modal underneath)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
+
+    const docSpy = vi.fn()
+    document.addEventListener('keydown', docSpy)
+    try {
+      fireKey(editorEl, 'Escape')
+      expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+      expect(docSpy).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', docSpy)
+    }
+  })
+
   test('clicking outside the dropdown closes it without inserting anything', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '/')

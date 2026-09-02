@@ -41,7 +41,8 @@ export function blurOnEnter(e: Event): void {
  * Wires the "dismiss on outside click or Escape" lifecycle shared by every
  * floating overlay in this app (context menus, popovers, the @-mention
  * dropdown): a capture-phase `mousedown` closes when `shouldClose(target)`
- * is true, and a capture-phase `keydown` closes on Escape unconditionally.
+ * is true, and a capture-phase `keydown` closes on Escape (stopping the
+ * event so a modal this overlay floats above doesn't also close).
  * Capture phase, not bubble: the overlay may itself remove elements from the
  * DOM on close, and a bubble-phase listener registered after the overlay's
  * own click handlers could otherwise be skipped if closing detaches the
@@ -55,7 +56,15 @@ export function bindOutsideDismiss(shouldClose: (target: Node) => boolean, onDis
     if (shouldClose(e.target as Node)) onDismiss()
   }
   const onKeydown = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') onDismiss()
+    if (e.key !== 'Escape') return
+    // Consume it: this Escape was for the floating overlay, not for anything
+    // underneath it. A modal that this popover floats above (e.g. a date
+    // picker or context menu opened from inside the action-item card modal)
+    // has its own document-level Escape-to-close listener, and without this
+    // the same keypress would close that modal too.
+    e.stopPropagation()
+    e.preventDefault()
+    onDismiss()
   }
   document.addEventListener('mousedown', onMousedown, true)
   document.addEventListener('keydown', onKeydown, true)

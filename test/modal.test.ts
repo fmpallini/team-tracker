@@ -10,9 +10,13 @@ afterEach(() => {
   // document-level keydown listener would otherwise leak into the next
   // test (wiping document.body doesn't remove it), so a later test's own
   // Tab/Enter dispatch could also trigger a stale, detached dialog's trap
-  // logic. Escape lets every still-open modal close itself and unregister
-  // its own listener before the DOM is wiped.
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  // logic. Escape lets a still-open modal close itself and unregister its
+  // own listener before the DOM is wiped — one press per modal now that
+  // Escape only closes the topmost, so loop until none remain.
+  let guard = 20
+  while (overlays().length > 0 && guard-- > 0) {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  }
   document.body.innerHTML = ''
 })
 
@@ -163,6 +167,38 @@ test('showModal closes on Escape', () => {
   expect(overlays().length).toBe(1)
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
   expect(overlays().length).toBe(0)
+})
+
+test('Escape closes only the topmost of stacked modals, one press at a time', () => {
+  const outerClose = vi.fn()
+  const innerClose = vi.fn()
+  showModal({ title: 'Outer', body: el('div'), buttons: [], onClose: outerClose })
+  showModal({ title: 'Inner', body: el('div'), buttons: [], onClose: innerClose })
+  expect(overlays().length).toBe(2)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  expect(overlays().length).toBe(1)
+  expect(innerClose).toHaveBeenCalledOnce()
+  expect(outerClose).not.toHaveBeenCalled()
+  expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Outer')
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  expect(overlays().length).toBe(0)
+  expect(outerClose).toHaveBeenCalledOnce()
+})
+
+test('a modal ignores an Escape a nested popup already handled (defaultPrevented)', () => {
+  showModal({ title: 'T', body: el('div'), buttons: [] })
+  // Mimics the @-mention dropdown / emoji picker: a capture-phase listener
+  // consumes its own Escape before the modal's document listener sees it.
+  const consume = (e: KeyboardEvent): void => { if (e.key === 'Escape') e.preventDefault() }
+  document.addEventListener('keydown', consume, true)
+  try {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    expect(overlays().length).toBe(1)
+  } finally {
+    document.removeEventListener('keydown', consume, true)
+  }
 })
 
 test('onClose fires once when closed via handle.close()', () => {

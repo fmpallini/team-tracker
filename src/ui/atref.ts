@@ -193,7 +193,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   }
 
   function onTypingKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') { e.preventDefault(); close(); return }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)

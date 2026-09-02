@@ -54,6 +54,14 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
   })
 }
 
+// Every open dialog, oldest first. Each `renderDialog` pushes its own
+// dialog element here on open and removes it on close. Escape acts on the
+// topmost entry only: without this, a single Escape reaching `document`
+// fires *every* open modal's keydown listener, so closing the editor-help
+// modal (or the link dialog, a confirm, promptPassword…) stacked over the
+// action-item card modal would close the card modal underneath it too.
+const openDialogs: HTMLElement[] = []
+
 function renderDialog(opts: ModalOptions): RenderedDialog {
   const overlay = el('div', { class: 'tt-modal-overlay' })
 
@@ -62,13 +70,25 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     if (closed) return
     if (opts.beforeClose && opts.beforeClose() === false) return
     closed = true
+    const i = openDialogs.indexOf(dialog)
+    if (i !== -1) openDialogs.splice(i, 1)
     overlay.remove()
     document.removeEventListener('keydown', onKeydown)
     opts.onClose?.()
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') { close(); return }
+    if (e.key === 'Escape') {
+      // A nested overlay that handled Escape itself (the @-mention
+      // dropdown, emoji/template pickers, a context menu — all of which
+      // preventDefault on their own Escape) shouldn't also close the modal
+      // they float above. Topmost-only below covers modal-over-modal; this
+      // covers popup-over-modal for any popup that marks the event handled.
+      if (e.defaultPrevented) return
+      if (openDialogs[openDialogs.length - 1] !== dialog) return
+      close()
+      return
+    }
     // Enter in a text field submits the modal via its primary action —
     // mirrors native <form> submit-on-Enter so every showModal() caller
     // (team/person add-edit, etc.) gets it for free instead of each needing
@@ -143,6 +163,7 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
   )
 
   overlay.appendChild(dialog)
+  openDialogs.push(dialog)
   document.addEventListener('keydown', onKeydown)
   document.body.appendChild(overlay)
 

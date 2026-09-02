@@ -39,6 +39,27 @@ test('Escape closes the menu', () => {
   expect(document.querySelector('.tt-context-menu')).toBeNull()
 })
 
+// The menu can be opened from inside a modal (a card's context menu over the
+// action-item edit modal). That modal has its own document-level Escape-to-
+// close listener, so the keypress that dismisses the menu must not travel on
+// to it.
+test('the Escape that closes the menu does not propagate to document', () => {
+  showContextMenu(0, 0, [{ label: 'Duplicate', onClick: () => {} }])
+  const docSpy = vi.fn()
+  document.addEventListener('keydown', docSpy) // bubble phase, on document
+  try {
+    // Dispatched from a node below document so the capture-phase
+    // bindOutsideDismiss listener runs first and can halt propagation before
+    // the bubble reaches docSpy — mirrors a real keypress from a focused
+    // field inside the menu/modal.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(document.querySelector('.tt-context-menu')).toBeNull()
+    expect(docSpy).not.toHaveBeenCalled()
+  } finally {
+    document.removeEventListener('keydown', docSpy)
+  }
+})
+
 // Regression: the menu used to render with no keyboard handling at all
 // ("every current use is mouse-driven"), so once a caller opened it via a
 // keyboard action (Space on a risk/milestone/action-item row), arrow keys
