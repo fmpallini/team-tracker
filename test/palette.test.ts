@@ -129,3 +129,32 @@ test('Enter does not navigate while a modal is open (e.g. an async save-conflict
   expect(document.querySelector('.tt-palette-overlay')).not.toBeNull() // still open, untouched
   expect(currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])).toBeNull() // never navigated
 })
+
+// The palette is deliberately opened over the modeless action-item card
+// modal (to switch panes). Unlike the blocking-modal case above, its own
+// keyboard navigation has to keep working there.
+test('keyboard nav still works with a modeless card modal open underneath', () => {
+  const { palette } = setup()
+  document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay tt-modal-modeless' }))
+  palette.open()
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+  const rows = Array.from(document.querySelectorAll('.tt-palette-item'))
+  expect(rows[1]!.classList.contains('selected')).toBe(true)
+  expect(rows[0]!.classList.contains('selected')).toBe(false)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+})
+
+test('Escape over a modeless card modal closes the palette and is consumed so the card underneath stays open', () => {
+  const { palette } = setup()
+  document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tt-modal-overlay tt-modal-modeless' }))
+  palette.open()
+
+  const evt = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  document.dispatchEvent(evt)
+
+  expect(document.querySelector('.tt-palette-overlay')).toBeNull() // palette closed
+  expect(evt.defaultPrevented).toBe(true) // preventDefault + stopPropagation → the card modal's own Escape guard skips it
+})
