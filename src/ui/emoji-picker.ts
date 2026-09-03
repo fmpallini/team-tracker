@@ -120,7 +120,7 @@ export function attachEmojiPicker(input: HTMLInputElement, locale: Locale): Emoj
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') { e.preventDefault(); close() }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close() }
   }
 
   function onFocus(): void {

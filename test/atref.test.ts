@@ -321,6 +321,25 @@ describe('attachAtAutocomplete', () => {
     expect(picks).toEqual([])
   })
 
+  test('Escape that closes the dropdown does not propagate to document (would close a modal underneath)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+    setBlockText(editorEl, '@An')
+    fireInput(editorEl)
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
+
+    const docSpy = vi.fn()
+    document.addEventListener('keydown', docSpy)
+    try {
+      fireKey(editorEl, 'Escape')
+      expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+      expect(docSpy).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', docSpy)
+    }
+  })
+
   test('a complete date typed after @ offers a "go to day" item and inserts a day chip', () => {
     const { editorEl, picks } = setup('pt-BR')
     setBlockText(editorEl, '@')

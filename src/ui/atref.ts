@@ -15,6 +15,7 @@ import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from './editor-dom'
+import { dismissModelessModals } from './modal'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -193,7 +194,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   }
 
   function onTypingKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') { e.preventDefault(); close(); return }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)
@@ -304,6 +305,12 @@ export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc
   if (openSecondary) {
     landedIdx = pm.openInSecondaryPane(paneIdx, loc)
   } else {
+    // Same-pane navigation replaces whatever module is in `paneIdx` — if a
+    // modeless card modal is open there (an @ref clicked inside its own
+    // notes editor), close it first so its editor flushes; abort the jump if
+    // its required-name guard vetoes. Routing to the secondary pane (pref or
+    // Ctrl/middle-click) leaves the card's pane alone, so it's skipped there.
+    if (!dismissModelessModals()) return
     pm.openInPane(paneIdx, loc)
     landedIdx = paneIdx
   }

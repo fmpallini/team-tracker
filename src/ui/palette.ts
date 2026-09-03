@@ -10,7 +10,8 @@ import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { buildModuleItems, type PaneManager } from './panes'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
-import { blockedByModal } from './hotkeys'
+import { blockedByBlockingModal } from './hotkeys'
+import { dismissModelessModals } from './modal'
 
 export interface Palette {
   open(): void
@@ -49,6 +50,10 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
 
   function commit(row: PaletteRow | undefined): void {
     if (!row) return
+    // A card modal open over the palette must close first (flushing its
+    // notes editor) — every row here re-targets a pane. If its required-name
+    // guard vetoes, keep the palette open on the still-open card.
+    if (!dismissModelessModals()) return
     close()
     row.commit()
   }
@@ -74,25 +79,30 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    // Ctrl+Shift+K itself already can't open the palette over a modal
-    // (comboHotkeyAllowed), but an async modal (e.g. a save-conflict error)
-    // can still appear while the palette is already open — this capturing
-    // document listener must not act (in particular Enter's navigation)
-    // behind it.
-    if (blockedByModal()) return
+    // A *blocking* modal (e.g. an async save-conflict error) can appear while
+    // the palette is already open — this capturing document listener must not
+    // act (in particular Enter's navigation) behind it. A *modeless* card
+    // modal is different: the palette deliberately opens over it (to switch
+    // panes), so its own arrow/Enter/Escape keys have to keep working — and
+    // stopPropagation below keeps Escape from also reaching that card's
+    // document listener underneath.
+    if (blockedByBlockingModal()) return
     if (e.key === 'Escape') {
       e.preventDefault()
+      e.stopPropagation()
       close()
       return
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
+      e.stopPropagation()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, filtered.length)
       paintSelection(listEl, '.tt-palette-item', selected)
       return
     }
     if (e.key === 'Enter') {
       e.preventDefault()
+      e.stopPropagation()
       commit(filtered[selected])
     }
   }

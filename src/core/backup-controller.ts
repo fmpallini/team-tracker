@@ -56,10 +56,12 @@ export interface BackupController {
    * file couldn't be read. `lastBackupAt` is 0 for a freshly-picked, never
    * actually written .bck (same "empty file" guard as the disk-seeded clock
    * in `loadHandle`) — callers render that as "never backed up yet" rather
-   * than a date. `nextDueAt` is simply `lastBackupAt + interval`, so with
-   * `lastBackupAt` at 0 it reads as "due now", which callers should treat
-   * the same as the never-backed-up case rather than displaying literally.
-   * Never prompts, never writes.
+   * than a date. Deliberately reports no "next due" time: backups are not
+   * scheduled, they piggyback on the primary save (interval-gated to at most
+   * once per `backupFrequency`), so there is no wall-clock moment the next
+   * one is actually promised for — surfacing `lastBackupAt + interval` as a
+   * date just showed a time hours in the past after a restart with no edits
+   * since. Never prompts, never writes.
    */
   getStatus(): Promise<BackupStatus | null>
 }
@@ -68,7 +70,6 @@ export interface BackupStatus {
   fileName: string
   size: number
   lastBackupAt: number
-  nextDueAt: number
 }
 
 export function createBackupController(deps: { store: Store }): BackupController {
@@ -238,12 +239,10 @@ export function createBackupController(deps: { store: Store }): BackupController
       const handle = await loadHandle()
       if (!handle) return null
       const file = await handle.getFile()
-      const intervalMs = deps.store.doc.prefs.backupFrequency === 'hourly' ? HOUR_MS : DAY_MS
       return {
         fileName: handle.name,
         size: file.size,
         lastBackupAt,
-        nextDueAt: lastBackupAt + intervalMs,
       }
     } catch (e) {
       console.error(e)

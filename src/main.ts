@@ -25,7 +25,7 @@ import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
 import { forceWrite, readCurrent, sameEntry } from './core/fs'
-import { toast, showErrorModal } from './ui/modal'
+import { toast, showErrorModal, dismissModelessModals } from './ui/modal'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController } from './core/backup-controller'
@@ -450,6 +450,11 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // reset to today's daily notes. A team with no recorded session yet (first
   // visit) still gets the default split layout (daily + members).
   function selectTeam(id: string): void {
+    // A modeless card modal open in some pane must close (flushing its notes
+    // editor) before the team switch tears that pane's renderer down; if its
+    // required-name guard refuses, abort the switch and leave the user on it.
+    // Skipped when re-selecting the current team (no teardown happens).
+    if (id !== store.doc.nav.activeTeamId && !dismissModelessModals()) return
     if (!teamHasHistory(store, id)) {
       store.updateNav((d) => {
         d.nav.activeTeamId = id
@@ -469,6 +474,13 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       setHeaderCompactSpaceHidden: (hidden) => shell.setHeaderCompactSpaceHidden(hidden),
     })
   )
+
+  // Every hotkey below that re-targets a pane, moves pane focus, or tears the
+  // layout down first closes an open modeless card modal — its onClose flushes
+  // the notes editor, so nothing typed is lost. If the card can't close yet
+  // (content entered but no name) the hotkey becomes a no-op and focus returns
+  // to the name field, exactly as Escape behaves. See ui/modal.ts.
+  const navPastModelessCard = (): boolean => dismissModelessModals()
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if ((e.ctrlKey || e.metaKey) && matchKey(e, 's')) {
@@ -491,6 +503,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       // free of both, so this actually fires reliably.
       if (!comboHotkeyAllowed(e)) return
       e.preventDefault()
+      if (!navPastModelessCard()) return
       closeFile()
       return
     }
@@ -502,6 +515,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       // in ui/hotkeys.ts).
       if (!navHotkeyAllowed(e)) return
       e.preventDefault()
+      if (!navPastModelessCard()) return
       openPaneModuleByIndex(pm, store, Number(fKeyMatch[1]) - 1)
       return
     }
@@ -517,11 +531,13 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     if (!navHotkeyAllowed(e)) return
     if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       navigateFocusedHistory(pm, store, e.key === 'ArrowLeft' ? -1 : 1)
       return
     }
     if (e.shiftKey && e.key === 'ArrowUp') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       jumpFocusedHistoryToLatest(pm, store)
       return
     }
@@ -553,16 +569,19 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       pm.toggleSplit()
       return
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      if (!navPastModelessCard()) return
       if (swapPaneSides(store)) pm.renderAll()
       return
     }

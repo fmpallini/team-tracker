@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { attachEmojiPicker, emojiCategories } from '../src/ui/emoji-picker'
 
 describe('emoji picker', () => {
@@ -22,6 +22,27 @@ describe('emoji picker', () => {
     expect(document.querySelector('.tt-emoji-popup')).toBeNull()
     handle.dispose()
   })
+  it('Escape closes the popup without the event reaching a modal underneath', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const handle = attachEmojiPicker(input, 'en-US')
+    input.dispatchEvent(new FocusEvent('focus'))
+    expect(document.querySelector('.tt-emoji-popup')).not.toBeNull()
+
+    const docSpy = vi.fn()
+    document.addEventListener('keydown', docSpy) // bubble phase, on document
+    try {
+      // From a node below document, so the picker's capture-phase listener
+      // runs first and stops propagation before the bubble reaches docSpy.
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      expect(document.querySelector('.tt-emoji-popup')).toBeNull()
+      expect(docSpy).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('keydown', docSpy)
+      handle.dispose()
+    }
+  })
+
   it('keeps only the last emoji when the OS picker appends a second one', () => {
     const input = document.createElement('input')
     document.body.appendChild(input)
