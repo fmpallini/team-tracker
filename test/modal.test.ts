@@ -342,15 +342,15 @@ test('promptPassword confirm mismatch shows inline error and does not resolve', 
 test('promptPassword without allowPlain has no "use without password" button', () => {
   void promptPassword('en-US', { confirm: true, title: 'Create' })
   const labels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
-  expect(labels).not.toContain('Use without password')
+  expect(labels).not.toContain('Create without password')
 })
 
 test('promptPassword with allowPlain shows the plain button and hint, resolves {plain:true} on click', async () => {
   const promise = promptPassword('en-US', { confirm: true, allowPlain: true, title: 'Create' })
   expect(document.querySelector('.tt-password-plain-hint')?.textContent).toBe(
-    'Stored as plain, unencrypted text — readable by anyone with access to the file, including automated scanning by cloud backup providers.'
+    'The file has no password and no encryption: it opens directly, without prompting. In exchange, anyone with access to the file can read its contents — including automated scans by cloud backup services.'
   )
-  const plainBtn = Array.from(document.querySelectorAll('.tt-modal-buttons button')).find((b) => b.textContent === 'Use without password') as HTMLButtonElement
+  const plainBtn = Array.from(document.querySelectorAll('.tt-password-plain-row button')).find((b) => b.textContent === 'Create without password') as HTMLButtonElement
   expect(plainBtn).toBeDefined()
   plainBtn.click()
   await expect(promise).resolves.toEqual({ plain: true })
@@ -358,8 +358,20 @@ test('promptPassword with allowPlain shows the plain button and hint, resolves {
 
 test('promptPassword with allowPlain: the plain button is unaffected by password-field validation', () => {
   void promptPassword('en-US', { confirm: true, allowPlain: true, title: 'Create' })
-  const plainBtn = Array.from(document.querySelectorAll('.tt-modal-buttons button')).find((b) => b.textContent === 'Use without password') as HTMLButtonElement
+  const plainBtn = Array.from(document.querySelectorAll('.tt-password-plain-row button')).find((b) => b.textContent === 'Create without password') as HTMLButtonElement
   expect(plainBtn.disabled).toBe(false) // unlike OK, which starts disabled until a password is typed
+})
+
+test('promptPassword with allowPlain keeps the plain option out of the primary Cancel/OK row', () => {
+  void promptPassword('en-US', { confirm: true, allowPlain: true, title: 'Create' })
+  const primaryLabels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
+  expect(primaryLabels).toEqual(['Cancel', 'OK'])
+  // the disclaimer sits with the plain button in its own row, not in the password form
+  const row = document.querySelector('.tt-password-plain-row') as HTMLElement
+  expect(row).toBeTruthy()
+  expect(row.querySelector('.tt-password-plain-hint')).toBeTruthy()
+  expect(row.querySelector('button')?.textContent).toBe('Create without password')
+  expect(document.querySelector('.tt-password-form .tt-password-plain-hint')).toBeNull()
 })
 
 test('promptPassword confirm mode renders a live strength meter under the password field', () => {

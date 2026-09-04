@@ -255,7 +255,7 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
   expect(openedPw).toBe('sekret')
 })
 
-test('create flow: "Use without password" writes serializePlain bytes and calls onOpen with password null', async () => {
+test('create flow: "Create without password" writes serializePlain bytes and calls onOpen with password null', async () => {
   const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.tmv', lastModified: 1 }
   fsMocks.pickCreate.mockResolvedValue(session)
 
@@ -265,7 +265,7 @@ test('create flow: "Use without password" writes serializePlain bytes and calls 
   clickByText('✨ Create new…')
   await flush()
 
-  clickByText('Use without password')
+  clickByText('Create without password')
   await flush()
   await flush()
 

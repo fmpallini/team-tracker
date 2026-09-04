@@ -2548,6 +2548,112 @@ describe('code block editing', () => {
   })
 })
 
+describe('code block syntax highlighting', () => {
+  function mount(): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const range = document.createRange()
+    range.setStart(node, offset)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  }
+  function caretCharOffset(pre: HTMLElement): number {
+    const r = window.getSelection()!.getRangeAt(0)
+    const probe = document.createRange()
+    probe.selectNodeContents(pre)
+    probe.setEnd(r.startContainer, r.startOffset)
+    return probe.toString().length
+  }
+
+  test('setMd colours a loaded code block with token spans', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('```\nconst x = 10\n```')
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.querySelector('.hl-kw')!.textContent).toBe('const')
+    expect(pre.querySelector('.hl-num')!.textContent).toBe('10')
+    editor.destroy()
+  })
+
+  test('placing the caret in the block strips the spans and preserves the caret offset', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('```\nconst x = 10\n```')
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre.querySelector('.hl-kw')!.firstChild!, 5) // just after "const"
+
+    expect(pre.querySelector('.hl-kw')).toBeNull()
+    expect(pre.textContent).toBe('const x = 10')
+    expect(caretCharOffset(pre)).toBe(5)
+    editor.destroy()
+  })
+
+  test('moving the caret out of the block re-applies highlighting', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('```\nreturn 1\n```\nprose')
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre.querySelector('.hl-kw')!.firstChild!, 0)
+    expect(pre.querySelector('.hl-kw')).toBeNull()
+
+    const prose = editorEl.querySelector('div')!
+    caretIn(prose.firstChild ?? prose, 0)
+    expect(pre.querySelector('.hl-kw')!.textContent).toBe('return')
+    editor.destroy()
+  })
+
+  test('a loaded code block has browser spellcheck / autocorrect turned off', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('```\nteh recieve\n```')
+    const pre = editorEl.querySelector('pre')!
+    expect(pre.getAttribute('spellcheck')).toBe('false')
+    expect(pre.getAttribute('autocorrect')).toBe('off')
+    expect(pre.getAttribute('autocapitalize')).toBe('off')
+    editor.destroy()
+  })
+
+  test('a code block created by the ``` autoformat also gets spellcheck off', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>``` </div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelector('pre')!.getAttribute('spellcheck')).toBe('false')
+    editor.destroy()
+  })
+
+  test('blurring the editor re-highlights a block that had the caret (selectionchange may not fire on blur)', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('```\nreturn 1\n```')
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre.querySelector('.hl-kw')!.firstChild!, 0)
+    expect(pre.querySelector('.hl-kw')).toBeNull()
+
+    editorEl.dispatchEvent(new Event('blur'))
+    expect(pre.querySelector('.hl-kw')!.textContent).toBe('return')
+    editor.destroy()
+  })
+
+  test('an edit made while the caret is in the block still round-trips through getMd', () => {
+    const { editor, editorEl } = mount()
+    editor.setMd('```\nconst x = 1\n```')
+    const pre = editorEl.querySelector('pre')!
+    caretIn(pre.querySelector('.hl-kw')!.firstChild!, 5)
+
+    pre.firstChild!.textContent = 'const x = 1 + 2' // simulate typing into the now-plain text node
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editor.getMd()).toBe('```\nconst x = 1 + 2\n```')
+    editor.destroy()
+  })
+})
+
 describe('code block collapse + copy', () => {
   function mount(): { editor: Editor; editorEl: HTMLElement } {
     const editor = createEditor(makeHooks(), 'en-US')

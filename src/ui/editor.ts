@@ -5,6 +5,7 @@ import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { highlightCode } from '../core/highlight'
 import { showEditorHelp } from './help'
 import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
@@ -1453,6 +1454,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     ensureBlock()
     handleAutoFormat()
     checkTriggers()
+    syncPreHighlight()
     scheduleChange()
     keepCaretVisible()
   }
@@ -1680,6 +1682,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (md.trim()) {
       document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
       decorateCodeBlocks()
+      syncPreHighlight()
       scheduleChange()
       return
     }
@@ -1756,6 +1759,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
+  // `selectionchange` only fires on `document`, never on an element.
+  document.addEventListener('selectionchange', syncPreHighlight)
+  editorEl.addEventListener('blur', onEditorBlur)
   editorEl.addEventListener('click', onClick)
   editorEl.addEventListener('auxclick', onAuxClick)
   editorEl.addEventListener('mousedown', onMouseDownForRef)
@@ -1858,6 +1864,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * a mid-session paste can't re-collapse a block the user just expanded. */
   function decorateCodeBlocks(all = false): void {
     editorEl.querySelectorAll<HTMLElement>('pre').forEach((pre) => {
+      markPre(pre)
       if (!all && pre.dataset.lines !== undefined) return
       const n = preLineCount(pre)
       pre.dataset.lines = String(n)
@@ -1874,6 +1881,97 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function expandPre(pre: HTMLElement): void {
     pre.removeAttribute('data-collapsed')
+  }
+
+  // --- code-block syntax highlighting ----------------------------------
+  // View-only, exactly like the collapse chrome: `mdToHtml` (core/markdown.ts)
+  // emits `<pre>` bodies already wrapped in `hl-*` token spans, and
+  // `preLines()` reads straight through them, so `getMd()` is byte-identical
+  // with or without the spans. The one thing they'd break is editing —
+  // typing inside re-tokenised DOM fights the caret — so the block the
+  // caret is in is stripped back to a plain text node while it's being
+  // edited and re-highlighted once the caret leaves.
+  const HL_SEL = '.hl-kw, .hl-str, .hl-num, .hl-com'
+
+  /** Turns off the browser's spell-check squiggle and touch-keyboard
+   * autocorrect/autocapitalize for a `<pre>` — code is not prose. Plain
+   * attributes, so `htmlToMd` / `preLines` ignore them and nothing reaches
+   * storage. Idempotent; runs from every path that renders or mutates a
+   * block (decorateCodeBlocks, syncPreHighlight). */
+  function markPre(pre: HTMLElement): void {
+    if (pre.getAttribute('spellcheck') === 'false') return
+    pre.setAttribute('spellcheck', 'false')
+    pre.setAttribute('autocorrect', 'off')
+    pre.setAttribute('autocapitalize', 'off')
+  }
+
+  /** Strips a highlighted `<pre>` back to one plain text node (or a
+   * caret-slot `<br>` when empty), keeping the caret's character offset
+   * within the block. No-op when the block carries no token spans. */
+  function stripPreHighlight(pre: HTMLElement): void {
+    if (!pre.querySelector(HL_SEL)) return
+    const doc = pre.ownerDocument
+    const sel = doc.getSelection()
+    const hasCaret =
+      !!sel && sel.rangeCount > 0 && preOf(sel.getRangeAt(0).startContainer) === pre
+    let offset = 0
+    if (hasCaret) {
+      const probe = doc.createRange()
+      probe.selectNodeContents(pre)
+      probe.setEnd(sel!.getRangeAt(0).startContainer, sel!.getRangeAt(0).startOffset)
+      offset = probe.toString().length
+    }
+    const lines = preLines(pre)
+    pre.replaceChildren(
+      lines.length === 0 ? doc.createElement('br') : doc.createTextNode(lines.join('\n')),
+    )
+    if (hasCaret && sel) {
+      const tn = pre.firstChild
+      const r = doc.createRange()
+      if (tn && tn.nodeType === Node.TEXT_NODE) {
+        r.setStart(tn, Math.min(offset, tn.textContent!.length))
+        r.collapse(true)
+      } else {
+        r.selectNodeContents(pre)
+        r.collapse(true)
+      }
+      sel.removeAllRanges()
+      sel.addRange(r)
+    }
+  }
+
+  /** (Re)builds a `<pre>`'s token spans from its literal lines. Skips an
+   * empty block (keeps its caret slot) and a no-op rewrite. The input to
+   * highlightCode is text already in the DOM, re-escaped there — no
+   * sanitisation concern.
+   * codeql[js/xss] */
+  function highlightPre(pre: HTMLElement): void {
+    const lines = preLines(pre)
+    if (lines.length === 0) return
+    const html = highlightCode(lines.join('\n'))
+    if (pre.innerHTML !== html) pre.innerHTML = html
+  }
+
+  /** Caret-in block → plain text; every other block → highlighted. Runs on
+   * every `selectionchange`; a non-collapsed selection (a drag-select that
+   * may span a block) is left entirely alone. */
+  function syncPreHighlight(): void {
+    const sel = editorEl.ownerDocument.getSelection()
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) return
+    const caretPre = sel && sel.rangeCount > 0 ? preOf(sel.getRangeAt(0).startContainer) : null
+    editorEl.querySelectorAll<HTMLElement>('pre').forEach((pre) => {
+      markPre(pre)
+      if (pre === caretPre) stripPreHighlight(pre)
+      else highlightPre(pre)
+    })
+  }
+
+  /** Focus left the editor entirely. `selectionchange` does not fire in that
+   * case in every browser (a contenteditable keeps its selection while
+   * blurred), so re-highlight every block unconditionally — none holds the
+   * caret now. */
+  function onEditorBlur(): void {
+    editorEl.querySelectorAll<HTMLElement>('pre').forEach(highlightPre)
   }
 
   function syncCbGlyphs(): void {
@@ -1990,6 +2088,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
+    document.removeEventListener('selectionchange', syncPreHighlight)
+    editorEl.removeEventListener('blur', onEditorBlur)
     editorEl.removeEventListener('click', onClick)
     editorEl.removeEventListener('auxclick', onAuxClick)
     editorEl.removeEventListener('mousedown', onMouseDownForRef)

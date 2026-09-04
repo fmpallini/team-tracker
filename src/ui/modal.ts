@@ -33,6 +33,8 @@ export interface ModalOptions {
    * `dismissModelessModals()` can close it on the way into such a switch.
    */
   modeless?: boolean
+  /** Rendered after the Cancel/OK button row, visually separated from it — e.g. promptPassword's "Use without password" escape hatch with its own disclaimer, kept apart from the primary encrypted flow. */
+  footer?: HTMLElement
 }
 
 export interface ModalHandle {
@@ -197,7 +199,8 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     { class: 'tt-modal-dialog', role: 'dialog', 'aria-modal': 'true' },
     titleRow,
     opts.body,
-    buttonsRow
+    buttonsRow,
+    opts.footer ?? null
   )
 
   overlay.appendChild(dialog)
@@ -287,16 +290,13 @@ export function promptPassword(
 
     const meter = opts.confirm ? createPasswordMeter(locale) : null
 
-    const plainHint = opts.allowPlain ? el('p', { class: 'tt-password-plain-hint' }, t(locale, 'create_plain_hint')) : null
-
     const body = el(
       'form',
       { class: 'tt-password-form', onsubmit: (e: Event) => e.preventDefault() },
       el('label', { class: 'tt-field' }, t(locale, 'password'), pwInput),
       meter ? meter.el : null,
       confirmInput ? el('label', { class: 'tt-field' }, t(locale, 'password_confirm'), confirmInput) : null,
-      errorEl,
-      plainHint
+      errorEl
     )
 
     const cancelBtn: ModalButton = {
@@ -307,18 +307,32 @@ export function promptPassword(
       },
     }
     const okBtn: ModalButton = { label: t(locale, 'ok'), primary: true, onClick: () => trySubmit() }
-    const plainBtn: ModalButton | null = opts.allowPlain
-      ? {
-          label: t(locale, 'create_plain_btn'),
-          onClick: () => {
-            finish({ plain: true })
-            close()
-          },
-        }
-      : null
 
-    const buttons = plainBtn ? [cancelBtn, plainBtn, okBtn] : [cancelBtn, okBtn]
-    const { close, buttonEls } = renderDialog({ title: opts.title, body, buttons })
+    // The password-less option is a separate flow, not a third primary
+    // action: it lives in its own row under the Cancel/OK pair, with the
+    // "plain text, no encryption" disclaimer sitting right next to the
+    // button it describes rather than floating above the password fields.
+    const plainFooter = opts.allowPlain
+      ? el(
+          'div',
+          { class: 'tt-password-plain-row' },
+          el('p', { class: 'tt-password-plain-hint' }, t(locale, 'create_plain_hint')),
+          el(
+            'button',
+            {
+              class: 'tt-btn',
+              type: 'button',
+              onclick: () => {
+                finish({ plain: true })
+                close()
+              },
+            },
+            t(locale, 'create_plain_btn')
+          )
+        )
+      : undefined
+
+    const { close, buttonEls } = renderDialog({ title: opts.title, body, buttons: [cancelBtn, okBtn], footer: plainFooter })
     const okEl = buttonEls[buttonEls.length - 1]!
     okEl.disabled = true
 

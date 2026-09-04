@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.4] - 2026-09-03
+
+### Added
+- Fenced code blocks in notes are now lightly syntax-highlighted. Comments, quoted strings, numbers, and common keywords (`if`, `return`, `function`, `const`, and the like) get their own colour, drawn from the current palette. It's language-agnostic — there's no language to pick and none is guessed — so it's a readability aid, not a full highlighter. The colouring steps aside to plain text while your cursor is inside a block and returns when you move out, and it never changes what's saved to the file. The browser's spell-check squiggles and touch-keyboard autocorrect are also turned off inside code blocks.
+
+### Changed
+- The "Create file" dialog is clearer about its two options. The "saved as plain text, no encryption" disclaimer used to sit above the password fields, where it read as a warning about the whole dialog, and the "Use without password" button was wedged between Cancel and OK. Now Cancel and OK stand alone as the normal encrypted-file flow, and the password-less option — button plus its disclaimer — sits in its own section below them. The button now reads "Create without password", the disclaimer spells out the trade-off (the file opens with no prompt, but anyone with the file — and cloud-backup scanners — can read it), and its text is smaller and less heavy.
+
 ## [2.7.3] - 2026-09-02
 
 ### Changed

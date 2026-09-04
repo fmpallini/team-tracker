@@ -77,7 +77,7 @@ test.describe('password change round trip', () => {
 
     await page.getByRole('button', { name: /Create new/ }).click()
     const createDialog = page.getByRole('dialog')
-    await createDialog.getByRole('button', { name: 'Use without password' }).click()
+    await createDialog.getByRole('button', { name: 'Create without password' }).click()
     await expect(page.locator('.tt-shell')).toBeVisible()
 
     await openSecurityTab(page)
