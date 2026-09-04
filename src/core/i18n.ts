@@ -32,9 +32,9 @@ const pt = {
   pwstrength_fair: 'Razoável',
   pwstrength_good: 'Boa',
   pwstrength_strong: 'Forte',
-  create_plain_btn: 'Usar sem senha',
+  create_plain_btn: 'Criar sem senha',
   create_plain_hint:
-    'Arquivo salvo como texto simples, sem criptografia — legível por qualquer um com acesso a ele, inclusive por varreduras automáticas de provedores de backup na nuvem.',
+    'O arquivo fica sem senha e sem criptografia: abre direto, sem pedir senha. Em troca, qualquer pessoa com acesso ao arquivo pode ler seu conteúdo — incluindo varreduras automáticas de serviços de backup na nuvem.',
   cancel: 'Cancelar',
   date_picker_clear_btn: 'Limpar data',
   date_picker_today_btn: 'Hoje',
@@ -555,9 +555,9 @@ const en: Record<MsgKey, string> = {
   pwstrength_fair: 'Fair',
   pwstrength_good: 'Good',
   pwstrength_strong: 'Strong',
-  create_plain_btn: 'Use without password',
+  create_plain_btn: 'Create without password',
   create_plain_hint:
-    'Stored as plain, unencrypted text — readable by anyone with access to the file, including automated scanning by cloud backup providers.',
+    'The file has no password and no encryption: it opens directly, without prompting. In exchange, anyone with access to the file can read its contents — including automated scans by cloud backup services.',
   cancel: 'Cancel',
   date_picker_clear_btn: 'Clear date',
   date_picker_today_btn: 'Today',
