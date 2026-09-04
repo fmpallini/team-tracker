@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.4] - 2026-09-03
+
+### Changed
+- The "Create file" dialog is clearer about its two options. The "saved as plain text, no encryption" disclaimer used to sit above the password fields, where it read as a warning about the whole dialog, and the "Use without password" button was wedged between Cancel and OK. Now Cancel and OK stand alone as the normal encrypted-file flow, and the password-less option — button plus its disclaimer — sits in its own section below them. The disclaimer text is also smaller and less heavy.
+
 ## [2.7.3] - 2026-09-02
 
 ### Changed

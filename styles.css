@@ -456,6 +456,18 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-field-error { color: var(--danger); font-size: .85rem; min-height: 1.1em; }
 
+/* Password-less escape hatch: sits below the Cancel/OK row, ruled off from
+   the encrypted flow above it, with its disclaimer next to the button it
+   describes. Hint uses the app's quiet-hint scale (.8rem / --muted). */
+.tt-password-plain-row {
+  display: flex; flex-direction: column; gap: .5rem; align-items: flex-end;
+  margin-top: .5rem; padding-top: .75rem; border-top: 1px solid var(--border);
+}
+.tt-password-plain-hint {
+  margin: 0; align-self: stretch;
+  font-size: .8rem; line-height: 1.45; color: var(--muted); max-width: 46ch;
+}
+
 /* Date picker (replaces native <input type=date> — see ui/date-picker.ts
    for why: the browser's own language controls that field's display
    format, not the page's) */
