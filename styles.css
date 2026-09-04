@@ -20,11 +20,16 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --bg:#eee7d6; --fg:#23241d; --muted:#5c5744; --accent:#3b5a6b; --accent-rgb:59,90,107;
   --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#4a6b45;
   --card-slate:#3b5a6b; --card-brass:#9c6b2e; --card-sage:#4a6b45; --card-rust:#a1402c; --card-plum:#6b4a7a; --card-ledger:#5c5744;
+  /* Code-block token colours (core/highlight.ts) — dedicated, not the muted
+     --accent/--card-* set, so they actually read against the grey <pre>
+     wash in every palette. */
+  --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
   --card-slate:#8fb6c4; --card-brass:#c99a4e; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a89a78;
+  --hl-kw:#c98fd6; --hl-str:#9cc47e; --hl-num:#d6a066; --hl-com:#8f8875;
 }
 
 /* Palette specimens (prefs "Color palette" picker). Each is a full
@@ -741,6 +746,12 @@ body { background: var(--bg); color: var(--fg); }
   padding: .25em .8em; font-size: .82em; color: var(--muted);
   background: var(--panel); border-top: 1px solid var(--border);
 }
+/* Heuristic code-block token colours — see the --hl-* custom properties. */
+.editor pre .hl-kw { color: var(--hl-kw); }
+.editor pre .hl-com { color: var(--hl-com); font-style: italic; }
+.editor pre .hl-str { color: var(--hl-str); }
+.editor pre .hl-num { color: var(--hl-num); }
+
 .tt-cb-controls { position: absolute; z-index: 6; display: flex; gap: 2px; }
 .tt-cb-controls[hidden] { display: none; }
 .tt-cb-btn {

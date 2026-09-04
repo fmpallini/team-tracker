@@ -1,4 +1,5 @@
 import { REF_KINDS, refPattern, type IdRefKind } from './refs'
+import { highlightCode } from './highlight'
 
 // Strip the Private-Use-Area code points inline() uses for its own
 // LINK/REF placeholder tokens (U+E000–U+E005) BEFORE anything else, so
@@ -228,13 +229,21 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // the next ``` line (or end of input). Inner lines are NOT inline-parsed
   // and NOT block-parsed — `> `, `- `, `**x**` inside a fence all stay
   // verbatim, matching every mainstream markdown flavor. Any text after the
-  // opening ``` (a language tag like ```js) is discarded: this editor has
-  // no syntax highlighting to use it. htmlToMd emits the same bare fences.
+  // opening ``` (a language tag like ```js) is discarded: the highlighter is
+  // language-agnostic (colours by token shape, not by a declared grammar),
+  // so it has no use for the tag. htmlToMd emits the same bare fences.
+  //
+  // highlightCode() does the same esc()-equivalent escaping this used to do
+  // inline, then wraps token runs in `<span class="hl-…">`. The spans are
+  // decoration only — preLines() reads straight through them, so htmlToMd
+  // and htmlToPlainText still serialise the literal text — and ui/editor.ts
+  // strips them from whichever block the caret is in so editing stays on
+  // plain text.
   let preBuf: string[] | null = null
   const flushPre = () => {
     if (preBuf === null) return
     const body = preBuf.join('\n')
-    out.push(`<pre>${body === '' ? '<br>' : esc(body)}</pre>`)
+    out.push(`<pre>${body === '' ? '<br>' : highlightCode(body)}</pre>`)
     preBuf = null
   }
   for (const line of lines) {

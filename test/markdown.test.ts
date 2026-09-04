@@ -1,4 +1,4 @@
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -1024,7 +1024,8 @@ describe('fenced code block', () => {
   })
   test('content is literal — inner markdown / block prefixes are NOT parsed', () => {
     const html = mdToHtml('```\n# not a heading\n- not a list\n> not a quote\n**not bold**\n```')
-    expect(html).toBe('<pre># not a heading\n- not a list\n&gt; not a quote\n**not bold**</pre>')
+    const probe = document.createElement('div'); probe.innerHTML = html
+    expect(probe.querySelector('pre')!.textContent).toBe('# not a heading\n- not a list\n> not a quote\n**not bold**')
     expect(html).not.toContain('<h1>')
     expect(html).not.toContain('<li>')
     expect(html).not.toContain('<blockquote>')
@@ -1066,7 +1067,32 @@ describe('fenced code block', () => {
     expect(roundTrip(roundTrip(md))).toBe(md)
   })
   test('text on the opening fence line (a language tag) is discarded', () => {
-    expect(mdToHtml('```js\nconst a = 1\n```')).toBe('<pre>const a = 1</pre>')
+    const div = document.createElement('div'); div.innerHTML = mdToHtml('```js\nconst a = 1\n```')
+    expect(div.querySelector('pre')!.textContent).toBe('const a = 1')
+    expect(roundTrip('```js\nconst a = 1\n```')).toBe('```\nconst a = 1\n```')
+  })
+
+  describe('syntax highlighting', () => {
+    test('keywords, strings and numbers in the code get token spans', () => {
+      const html = mdToHtml('```\nconst n = 42\ns = "hi"\n```')
+      expect(html).toContain('<span class="hl-kw">const</span>')
+      expect(html).toContain('<span class="hl-num">42</span>')
+      expect(html).toContain('<span class="hl-str">&quot;hi&quot;</span>')
+    })
+    test('the spans strip back out on the way to markdown', () => {
+      expect(roundTrip('```\nfunction f() { return 3 }\n```')).toBe('```\nfunction f() { return 3 }\n```')
+    })
+    test('preLines reads through the token spans to the literal lines', () => {
+      const div = document.createElement('div')
+      div.innerHTML = mdToHtml('```\nif (x) return 1\ny = 2\n```')
+      expect(preLines(div.querySelector('pre')!)).toEqual(['if (x) return 1', 'y = 2'])
+    })
+    test('a highlighted block stays literal — no real markup from angle brackets', () => {
+      const div = document.createElement('div')
+      div.innerHTML = mdToHtml('```\nvector<int> v; a && b\n```')
+      expect(div.querySelector('pre')!.querySelector('int')).toBeNull()
+      expect(div.querySelector('pre')!.textContent).toBe('vector<int> v; a && b')
+    })
   })
 })
 
