@@ -222,3 +222,83 @@ test('rev does not increment for a blocked (read-only) update', () => {
   s.update(() => {})
   expect(s.rev).toBe(start)
 })
+
+/**
+ * Every listener registration on the store returns an unsubscribe function —
+ * `subscribe`/`onMutate` always did, `onDirty`/`onBlockedUpdate` did not. The
+ * store is per-document, so the two latecomers never actually leaked; the
+ * point of the symmetry is that "some registrations are removable and some
+ * are not" is the kind of asymmetry a future caller gets wrong.
+ */
+describe('listener disposal', () => {
+  test('onDirty returns an unsubscribe that stops further notifications', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const fired: boolean[] = []
+    const unsubscribe = s.onDirty((d) => fired.push(d))
+
+    s.update((d) => { d.prefs.autoSaveMin = 3 })
+    expect(fired).toEqual([true])
+
+    unsubscribe()
+    s.markSaved()
+    s.update((d) => { d.prefs.autoSaveMin = 4 })
+    expect(fired).toEqual([true])
+  })
+
+  test('onDirty unsubscribe removes only its own listener', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const a: boolean[] = []
+    const b: boolean[] = []
+    const unsubscribeA = s.onDirty((d) => a.push(d))
+    s.onDirty((d) => b.push(d))
+
+    unsubscribeA()
+    s.update((d) => { d.prefs.autoSaveMin = 3 })
+
+    expect(a).toEqual([])
+    expect(b).toEqual([true])
+  })
+
+  test('onDirty unsubscribe is idempotent', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const fired: boolean[] = []
+    const unsubscribe = s.onDirty((d) => fired.push(d))
+    unsubscribe()
+    expect(() => unsubscribe()).not.toThrow()
+    s.update((d) => { d.prefs.autoSaveMin = 3 })
+    expect(fired).toEqual([])
+  })
+
+  test('onBlockedUpdate returns an unsubscribe that stops the read-only warning', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const warned: number[] = []
+    const unsubscribe = s.onBlockedUpdate(() => warned.push(1))
+
+    s.setReadOnly(true)
+    s.update((d) => { d.prefs.autoSaveMin = 3 })
+    expect(warned).toHaveLength(1)
+
+    unsubscribe()
+    // A fresh read-only session re-arms the one-shot warning, so this would
+    // fire again were the listener still registered.
+    s.setReadOnly(false)
+    s.setReadOnly(true)
+    s.update((d) => { d.prefs.autoSaveMin = 4 })
+    expect(warned).toHaveLength(1)
+  })
+
+  test('onBlockedUpdate unsubscribe removes only its own listener', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const a: number[] = []
+    const b: number[] = []
+    const unsubscribeA = s.onBlockedUpdate(() => a.push(1))
+    s.onBlockedUpdate(() => b.push(1))
+
+    unsubscribeA()
+    s.setReadOnly(true)
+    s.update((d) => { d.prefs.autoSaveMin = 3 })
+
+    expect(a).toEqual([])
+    expect(b).toEqual([1])
+  })
+})

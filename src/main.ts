@@ -304,10 +304,12 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // from the last write) left the UI silently lying about unsaved changes
   // until the next save cycle touched the indicator. This keeps both in sync
   // with `store.dirty` directly, independent of the save cycle.
-  store.onDirty((dirty) => {
-    shell.setSaveState(dirty ? 'dirty' : 'saved')
-    shell.setTitle(session.name, dirty)
-  })
+  disposers.push(
+    store.onDirty((dirty) => {
+      shell.setSaveState(dirty ? 'dirty' : 'saved')
+      shell.setTitle(session.name, dirty)
+    })
+  )
 
   // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes. Nav-only
   // changes (`updateNav`) don't notify `subscribe()`, and prefs are only ever
