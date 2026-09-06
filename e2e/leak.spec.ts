@@ -76,6 +76,53 @@ async function measure(cdp: CDPSession): Promise<Counters> {
   return { nodes: dom.nodes, listeners: dom.jsEventListeners, heapMB: heap.usedSize / 1024 / 1024 }
 }
 
+/**
+ * The node-count floor Chromium charges for driving a text `<input>`, measured
+ * on a throwaway input in this very page so it tracks the browser actually
+ * running the suite instead of a number pinned here.
+ *
+ * Typing into an input through the driver and then emptying it retains about
+ * one node per such session, permanently — the engine's own editing/undo
+ * bookkeeping, not anything the app holds. It is reproducible on a bare
+ * `<input>` appended to `document.body` with no application code involved, and
+ * it needs BOTH halves: an all-JS `value = …` / `value = ''` pair costs
+ * nothing, and a fill that never returns to empty costs nothing.
+ *
+ * `churnCycle` does exactly one such session per cycle (its `fill('')` at the
+ * top closing out the query `quiesce()` left behind), so this 1:1 control
+ * calibrates it exactly. Without subtracting it the cycle's node count climbs
+ * ~1/cycle forever, which forced the node budget wide enough (25/cycle) to
+ * hide the very thing this file exists to catch: a genuine handful-of-nodes
+ * per-navigation leak.
+ *
+ * Runs before the measured cycles, so whatever it retains is a constant offset
+ * on the samples that follow, never a slope.
+ */
+async function calibrateInputFloor(page: Page, cdp: CDPSession, cycles: number): Promise<number> {
+  await page.evaluate(() => {
+    const probe = document.createElement('input')
+    probe.id = 'tt-leak-calibration-probe'
+    // Out of the layout and off the a11y tree — it must not perturb the app's
+    // own DOM, only the engine-level counter this measures.
+    probe.style.cssText = 'position:absolute;left:-9999px;width:1px'
+    probe.setAttribute('aria-hidden', 'true')
+    document.body.appendChild(probe)
+  })
+  const probe = page.locator('#tt-leak-calibration-probe')
+  const session = async (i: number): Promise<void> => {
+    await probe.fill(`calibrate ${i}`)
+    await probe.fill('')
+  }
+  // Warm up the same way the measured run does — the first sessions pay
+  // one-time costs that never repeat.
+  for (let i = 0; i < 3; i++) await session(i)
+  const before = (await measure(cdp)).nodes
+  for (let i = 0; i < cycles; i++) await session(i)
+  const after = (await measure(cdp)).nodes
+  await page.evaluate(() => document.getElementById('tt-leak-calibration-probe')?.remove())
+  return (after - before) / cycles
+}
+
 async function addTeam(page: Page, name: string): Promise<void> {
   await page.locator('.tt-team-add-btn').click()
   const dialog = page.getByRole('dialog')
@@ -344,6 +391,10 @@ test.describe('resource growth over a long session', () => {
     // those as growth.
     const WARMUP = 3
     const MEASURED = 30
+    // What the browser itself charges per cycle for one driven input session
+    // — subtracted below so the budget applies to what the app retains. See
+    // calibrateInputFloor.
+    const inputFloor = await calibrateInputFloor(page, cdp, 20)
     const samples: Counters[] = []
 
     for (let i = 0; i < WARMUP + MEASURED; i++) {
@@ -357,8 +408,12 @@ test.describe('resource growth over a long session', () => {
     const perCycleListeners = perCycleGrowth(samples, 'listeners')
     const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
 
+    // What the app retains, with the browser's own input bookkeeping removed.
+    const appNodes = perCycleNodes - inputFloor
+
     console.log(
-      `[leak] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
+      `[leak] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle, ` +
+      `${appNodes.toFixed(1)}/cycle net of a ${inputFloor.toFixed(1)}/cycle browser input floor) | ` +
       `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
       `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
     )
@@ -368,7 +423,19 @@ test.describe('resource growth over a long session', () => {
     // nodes/listeners of drift per cycle for bounded caches and V8 noise,
     // while still failing loudly on "one module's worth per navigation"
     // (hundreds of nodes, dozens of listeners).
-    expect(perCycleNodes, 'DOM nodes retained per cycle').toBeLessThan(25)
+    //
+    // The node budget is tight because `inputFloor` has taken the browser's
+    // own per-cycle climb out of the number: what is left is the app's, and
+    // the app's is flat. It was 25 while that floor was still counted as
+    // growth, which is wide enough to hide a genuine few-nodes-per-navigation
+    // leak — precisely the class of bug this file exists to catch.
+    expect(appNodes, 'DOM nodes retained per cycle (net of the browser input floor)').toBeLessThan(4)
+    // Belt and braces: the calibration must actually be measuring the small
+    // constant it is meant to. A wild value means the probe stopped
+    // reproducing the artifact (browser change) and the subtraction above is
+    // no longer meaningful, so fail rather than silently widen the budget.
+    expect(inputFloor, 'measured browser input floor').toBeGreaterThanOrEqual(0)
+    expect(inputFloor, 'measured browser input floor').toBeLessThan(5)
     expect(perCycleListeners, 'JS event listeners retained per cycle').toBeLessThan(5)
     // Heap slope catches a pure-JS leak (a closure, a Map/array that grows
     // per cycle) that adds no DOM node and no listener, so the two counts
@@ -376,6 +443,69 @@ test.describe('resource growth over a long session', () => {
     // jitter across the run, tight enough that a retained per-cycle
     // structure of any real size trips it.
     expect(perCycleHeapMB, 'JS heap retained per cycle (MB)').toBeLessThan(1.0)
+  })
+
+  /**
+   * A test about the instrument, not about the app.
+   *
+   * The budget above is only worth its tightness if the measurement can
+   * actually resolve a leak of that size. This plants one of a known size — a
+   * handful of detached nodes retained by a growing array, the exact shape of
+   * a forgotten unsubscribe or an un-disposed overlay — and checks that
+   * `measure` + `perCycleGrowth` report it at roughly its true rate and that
+   * the budget rejects it.
+   *
+   * Without this, a change that quietly broke the measurement (a GC that stops
+   * being forced, a counter that stops counting detached nodes) would turn
+   * every leak test in this file green forever, and nothing would say so.
+   */
+  test('the node-slope measurement resolves a planted few-nodes-per-cycle leak', async ({ page }) => {
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('Runtime.enable')
+
+    const PLANTED_PER_CYCLE = 5
+    await page.evaluate(() => {
+      ;(window as unknown as { __planted: Node[] }).__planted = []
+    })
+    /** Retains `PLANTED_PER_CYCLE` detached nodes, reachable from JS so no GC can take them. */
+    const plantCycle = async (n: number): Promise<void> => {
+      await page.evaluate((count) => {
+        const kept = (window as unknown as { __planted: Node[] }).__planted
+        for (let i = 0; i < count; i++) kept.push(document.createElement('div'))
+      }, n)
+    }
+
+    const samples: Counters[] = []
+    for (let i = 0; i < 3; i++) await plantCycle(PLANTED_PER_CYCLE)
+    for (let i = 0; i < 20; i++) {
+      await plantCycle(PLANTED_PER_CYCLE)
+      samples.push(await measure(cdp))
+    }
+    const detected = perCycleGrowth(samples, 'nodes')
+    console.log(`[leak/self-check] planted ${PLANTED_PER_CYCLE}/cycle, measured ${detected.toFixed(1)}/cycle`)
+
+    // Resolution, not precision: the sampling is median-based and the renderer
+    // adds its own small noise, so this asserts the planted leak is seen at
+    // roughly its true size rather than to the node.
+    expect(detected, 'a planted leak must be measured at close to its real rate')
+      .toBeGreaterThan(PLANTED_PER_CYCLE * 0.7)
+    expect(detected, 'the measurement must not wildly overstate a known leak')
+      .toBeLessThan(PLANTED_PER_CYCLE * 1.5)
+    // And the budget the previous test applies must reject it.
+    expect(detected, 'the node budget must reject a leak of this size').toBeGreaterThanOrEqual(4)
+
+    // Releasing the references must bring the count back down — proof the
+    // counter is tracking reachability, not just counting allocations.
+    const beforeRelease = (await measure(cdp)).nodes
+    await page.evaluate(() => {
+      ;(window as unknown as { __planted: Node[] }).__planted = []
+    })
+    const afterRelease = (await measure(cdp)).nodes
+    console.log(`[leak/self-check] releasing the references: ${beforeRelease} -> ${afterRelease} nodes`)
+    expect(afterRelease, 'dropping the references must free the planted nodes').toBeLessThan(beforeRelease)
   })
 
   test('modals, popups and expandable rows release their DOM and listeners', async ({ page }) => {
