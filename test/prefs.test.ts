@@ -1,6 +1,7 @@
 import { openPrefs, onLocaleChanged, notifyLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
+import type { ChangeScope } from '../src/core/scope'
 import { createEmptyDocument } from '../src/core/document'
 import { builtinTemplates } from '../src/core/templates'
 import { SCHEMA_VERSION } from '../src/core/document'
@@ -109,6 +110,57 @@ test('theme radio updates store.prefs and calls shell.applyPrefs immediately', (
 
   expect(store.doc.prefs.theme).toBe('dark')
   expect(applySpy).toHaveBeenCalledWith(store.doc.prefs)
+})
+
+/**
+ * Scope guards. An unscoped `store.update` means "everything changed", which
+ * makes every mounted module tear down and rebuild — rich-editor bundles and
+ * all. Preference and template writes touch nothing any module renders, so
+ * they are scoped; `locale` is the deliberate exception, since it changes
+ * every string every module already drew. e2e/hotpath.spec.ts measures the
+ * rebuild these prevent.
+ */
+describe('change scopes', () => {
+  /** The `scope` argument of every `store.update()` made while `fn` runs. */
+  function scopesDuring(store: Store, fn: () => void): (ChangeScope | null | undefined)[] {
+    const seen: (ChangeScope | null | undefined)[] = []
+    const original = store.update.bind(store)
+    const spy = vi.spyOn(store, 'update').mockImplementation((mutate, scope) => {
+      seen.push(scope)
+      original(mutate, scope)
+    })
+    try { fn() } finally { spy.mockRestore() }
+    return seen
+  }
+
+  test('a theme change is scoped to prefs, so no module rebuilds', () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    const scopes = scopesDuring(store, () => radio('tt-prefs-theme', 'dark').click())
+    expect(scopes).toEqual([{ sections: ['prefs'] }])
+  })
+
+  test('font, size, palette and the secondary-pane toggle are all prefs-scoped', () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    const secondary = document.querySelector<HTMLInputElement>('.tt-prefs-open-refs-secondary-checkbox')!
+    const scopes = scopesDuring(store, () => {
+      radio('tt-prefs-font', 'mono').click()
+      radio('tt-prefs-size', 'L').click()
+      radio('tt-prefs-palette', 'forest').click()
+      secondary.checked = !secondary.checked
+      secondary.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(scopes).toHaveLength(4)
+    for (const s of scopes) expect(s).toEqual({ sections: ['prefs'] })
+  })
+
+  test('a locale change stays unscoped — it changes every string every module rendered', () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    const scopes = scopesDuring(store, () => radio('tt-prefs-locale', 'pt-BR').click())
+    expect(scopes).toEqual([undefined])
+  })
 })
 
 test('font and size radios update store.prefs and call shell.applyPrefs', () => {

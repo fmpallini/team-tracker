@@ -1539,6 +1539,10 @@ describe('toolbar', () => {
 
     // Landed in place, replacing "docs" — NOT appended to the end.
     expect(editor.getMd()).toBe('see [docs](https://example.com) here')
+    // Every other test in this file destroys its editor; skipping it here left
+    // this one in editor.ts's module-level `liveEditors` for the rest of the
+    // run, which the shared-selectionchange-listener test downstream can see.
+    editor.destroy()
   })
 
   test('🔗 button: a javascript: URL is rejected in-place — modal stays open with an error, nothing inserted', async () => {
@@ -2652,6 +2656,118 @@ describe('code block syntax highlighting', () => {
     expect(editor.getMd()).toBe('```\nconst x = 1 + 2\n```')
     editor.destroy()
   })
+})
+
+/**
+ * `selectionchange` fires on the document, so with a listener per editor every
+ * mounted editor re-tokenised all of its code blocks on every caret move
+ * anywhere on the page — see editor.ts's onDocumentSelectionChange. These pin
+ * the shared-dispatcher contract: exactly one listener, and only the editors
+ * gaining/losing the caret do any work.
+ */
+describe('code block highlighting across several mounted editors', () => {
+  function mount(md: string): { editor: Editor; editorEl: HTMLElement; pre: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    return { editor, editorEl, pre: editorEl.querySelector('pre')! }
+  }
+  function caretIn(node: Node, offset: number): void {
+    const range = document.createRange()
+    range.setStart(node, offset)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  }
+
+  test('every mounted editor registers ONE shared document selectionchange listener', () => {
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    const a = mount('```\nreturn 1\n```')
+    const b = mount('```\nreturn 2\n```')
+    const registrations = add.mock.calls.filter(([type]) => type === 'selectionchange')
+    expect(registrations).toHaveLength(1)
+
+    // ...and it comes off only once the LAST editor is destroyed.
+    a.editor.destroy()
+    expect(remove.mock.calls.filter(([type]) => type === 'selectionchange')).toHaveLength(0)
+    b.editor.destroy()
+    expect(remove.mock.calls.filter(([type]) => type === 'selectionchange')).toHaveLength(1)
+  })
+
+  test('an editor mounted while another holds the caret still highlights its own blocks', () => {
+    const a = mount('```\nreturn 1\n```')
+    caretIn(a.pre.querySelector('.hl-kw')!.firstChild!, 0)
+    expect(a.pre.querySelector('.hl-kw')).toBeNull() // caret block is plain
+
+    // b never receives the caret, and no selection change happens after it
+    // mounts — it has to paint itself.
+    const b = mount('```\nreturn 2\n```')
+    expect(b.pre.querySelector('.hl-kw')!.textContent).toBe('return')
+    a.editor.destroy()
+    b.editor.destroy()
+  })
+
+  test('a caret move inside one editor does not rebuild another editor’s blocks', () => {
+    const a = mount('```\nreturn 1\n```\nprose')
+    const b = mount('```\nreturn 2\n```')
+    const untouched = b.pre.querySelector('.hl-kw')!
+
+    // Move the caret around entirely within `a`.
+    caretIn(a.pre.querySelector('.hl-kw')!.firstChild!, 0)
+    caretIn(a.editorEl.querySelector('div')!, 0)
+
+    // highlightPre replaces the block's children, so surviving node identity
+    // is proof no re-highlight ran here.
+    expect(b.pre.querySelector('.hl-kw')).toBe(untouched)
+    a.editor.destroy()
+    b.editor.destroy()
+  })
+
+  test('moving the caret between editors strips the receiving block and restores the losing one', () => {
+    const a = mount('```\nreturn 1\n```')
+    const b = mount('```\nreturn 2\n```')
+
+    caretIn(a.pre.querySelector('.hl-kw')!.firstChild!, 0)
+    expect(a.pre.querySelector('.hl-kw')).toBeNull()
+    expect(b.pre.querySelector('.hl-kw')).not.toBeNull()
+
+    caretIn(b.pre.querySelector('.hl-kw')!.firstChild!, 0)
+    expect(b.pre.querySelector('.hl-kw')).toBeNull()
+    expect(a.pre.querySelector('.hl-kw')!.textContent).toBe('return')
+    a.editor.destroy()
+    b.editor.destroy()
+  })
+
+  test('destroying the editor that holds the caret leaves no stale owner to call back into', () => {
+    const a = mount('```\nreturn 1\n```')
+    const b = mount('```\nreturn 2\n```')
+    caretIn(a.pre.querySelector('.hl-kw')!.firstChild!, 0)
+    a.editor.destroy()
+
+    // The next selection change must not reach the destroyed editor.
+    expect(() => caretIn(b.pre.querySelector('.hl-kw')!.firstChild!, 0)).not.toThrow()
+    expect(b.pre.querySelector('.hl-kw')).toBeNull()
+    b.editor.destroy()
+  })
+})
+
+/**
+ * `scroll` is one of the event types a non-passive listener makes the browser
+ * wait on before committing the scroll. This handler only hides the code-block
+ * overlay, so it must stay declared passive — see editor.ts.
+ */
+test('the editor scroll listener is registered as passive', () => {
+  const spy = vi.spyOn(HTMLElement.prototype, 'addEventListener')
+  const editor = createEditor(makeHooks(), 'en-US')
+  const scrolls = spy.mock.calls.filter(([type]) => type === 'scroll')
+  expect(scrolls).toHaveLength(1)
+  expect(scrolls[0]![2]).toEqual({ passive: true })
+  spy.mockRestore()
+  editor.destroy()
 })
 
 describe('code block collapse + copy', () => {

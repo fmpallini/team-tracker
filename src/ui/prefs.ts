@@ -17,6 +17,27 @@ import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup } from 
 import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
+import type { Section } from '../core/scope'
+
+/**
+ * Every write in this file that only moves a preference. No module renders
+ * anything from `prefs` (theme/palette/font/size land on
+ * `document.documentElement`'s dataset via ui/shell.ts's `applyPrefs`;
+ * `dueSoonDays` is read by core/due.ts for the sidebar; `autoSaveMin` by
+ * main.ts's own scope-blind subscriber; `openRefsInSecondaryPane` by
+ * ui/atref.ts at click time, not render time), so narrowing these keeps
+ * ui/sidebar.ts — which watches 'prefs' — correct while sparing both panes a
+ * full module teardown and rebuild.
+ *
+ * `locale` is deliberately NOT in this set: it changes every string every
+ * module rendered, so its write stays unscoped. Neither are the three
+ * content-level writes (cross-team tag copy, team import, data cleanup).
+ * e2e/hotpath.spec.ts pins the theme case.
+ */
+const PREFS_ONLY: { sections: readonly Section[] } = { sections: ['prefs'] }
+
+/** Template CRUD touches `doc.templates` and nothing else — no module watches 'templates' (they read templates lazily, when the '/' picker opens). */
+const TEMPLATES_ONLY: { sections: readonly Section[] } = { sections: ['templates'] }
 
 export interface PrefsAppCtl {
   changePassword(newPw: string | null): Promise<void>
@@ -212,14 +233,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const themeField = radioField('tt-prefs-theme', 'prefs_theme_label', THEME_OPTIONS, prefs.theme, (value) => {
       store.update((d) => {
         d.prefs.theme = value as 'light' | 'dark' | 'system'
-      })
+      }, PREFS_ONLY)
       shell.applyPrefs(store.doc.prefs)
     })
 
     const paletteField = radioField('tt-prefs-palette', 'prefs_palette_label', PALETTE_OPTIONS, prefs.palette, (value) => {
       store.update((d) => {
         d.prefs.palette = value as Prefs['palette']
-      })
+      }, PREFS_ONLY)
       shell.applyPrefs(store.doc.prefs)
     })
 
@@ -239,14 +260,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const fontField = radioField('tt-prefs-font', 'prefs_font_label', FONT_OPTIONS, prefs.font, (value) => {
       store.update((d) => {
         d.prefs.font = value as Prefs['font']
-      })
+      }, PREFS_ONLY)
       shell.applyPrefs(store.doc.prefs)
     })
 
     const sizeField = radioField('tt-prefs-size', 'prefs_size_label', SIZE_OPTIONS, prefs.fontSize, (value) => {
       store.update((d) => {
         d.prefs.fontSize = value as Prefs['fontSize']
-      })
+      }, PREFS_ONLY)
       shell.applyPrefs(store.doc.prefs)
     })
 
@@ -262,7 +283,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         ;(e.target as HTMLInputElement).value = String(clamped)
         store.update((d) => {
           d.prefs.autoSaveMin = clamped
-        })
+        }, PREFS_ONLY)
       },
     })
     const autoSaveField = el(
@@ -284,7 +305,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         ;(e.target as HTMLInputElement).value = String(clamped)
         store.update((d) => {
           d.prefs.dueSoonDays = clamped
-        })
+        }, PREFS_ONLY)
       },
     })
     const dueSoonField = el(
@@ -301,7 +322,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         const checked = (e.target as HTMLInputElement).checked
         store.update((d) => {
           d.prefs.openRefsInSecondaryPane = checked
-        })
+        }, PREFS_ONLY)
       },
     })
     const openRefsSecondaryField = el(
@@ -351,7 +372,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             store.update((d) => {
               d.prefs.dailyBackupEnabled = true
               d.prefs.backupHandleId = id
-            })
+            }, PREFS_ONLY)
             return true
           })
         })
@@ -370,7 +391,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         const checked = (e.target as HTMLInputElement).checked
         if (!checked) {
           pickGeneration++ // supersede any in-flight pick — see pickGeneration's own comment
-          store.update((d) => { d.prefs.dailyBackupEnabled = false })
+          store.update((d) => { d.prefs.dailyBackupEnabled = false }, PREFS_ONLY)
           renderActiveTab() // hides the status block/Change-location button immediately, not just on next tab visit
           return
         }
@@ -426,7 +447,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       (value) => {
         store.update((d) => {
           d.prefs.backupFrequency = value as Prefs['backupFrequency']
-        })
+        }, PREFS_ONLY)
       },
       !backupAvailable
     )
@@ -464,7 +485,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           backupOrphanedNotice = true
           // Skipped when read-only: update() would no-op anyway, and the user
           // can't re-pick a target they have no write access to save against.
-          if (!appCtl.isReadOnly()) store.update((d) => { d.prefs.dailyBackupEnabled = false })
+          if (!appCtl.isReadOnly()) store.update((d) => { d.prefs.dailyBackupEnabled = false }, PREFS_ONLY)
           renderActiveTab()
         })
         .catch(() => {})
@@ -548,7 +569,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         const [moved] = d.templates.splice(index, 1)
         if (!moved) return
         d.templates.splice(target, 0, moved)
-      })
+      }, TEMPLATES_ONLY)
       refreshList()
     }
 
@@ -558,14 +579,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         if (!src) return
         const copy: Template = { id: crypto.randomUUID(), name: src.name, scope: src.scope, body: src.body }
         d.templates.splice(index + 1, 0, copy)
-      })
+      }, TEMPLATES_ONLY)
       refreshList()
     }
 
     function removeTemplate(id: string): void {
       store.update((d) => {
         d.templates = d.templates.filter((tp) => tp.id !== id)
-      })
+      }, TEMPLATES_ONLY)
       refreshList()
     }
 
@@ -610,11 +631,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
               found.name = name
               found.scope = scope
               found.body = newBody
-            })
+            }, TEMPLATES_ONLY)
           } else {
             store.update((d) => {
               d.templates.push({ id: crypto.randomUUID(), name, scope, body: newBody })
-            })
+            }, TEMPLATES_ONLY)
           }
           inner.close()
           refreshList()
@@ -634,7 +655,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         for (const tpl of builtinTemplates(d.prefs.locale)) {
           if (!existingNames.has(tpl.name)) d.templates.push(tpl)
         }
-      })
+      }, TEMPLATES_ONLY)
       refreshList()
     }
 
