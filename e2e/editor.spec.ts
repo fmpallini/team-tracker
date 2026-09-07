@@ -238,3 +238,46 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     expect(redone.length).toBeGreaterThan(undone.length) // chunk restored
   })
 })
+
+test.describe('rich-text editor — Ctrl+C / Ctrl+X carry no theme background', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
+
+  test('Ctrl+C out of the editor writes formatted HTML with no background-color', async ({ page }) => {
+    const editor = await openEditor(page)
+    await editor.click()
+    await page.keyboard.type('# Heading')
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('a line with ')
+    await page.keyboard.press('Control+b')
+    await page.keyboard.type('bold')
+    await page.keyboard.press('Control+b')
+    await page.waitForTimeout(350)
+
+    // Select everything in the editor and copy with the keyboard.
+    await page.evaluate(() => {
+      const ed = document.querySelector('.editor') as HTMLElement
+      ed.focus()
+      const r = document.createRange()
+      r.selectNodeContents(ed)
+      const sel = getSelection()!
+      sel.removeAllRanges()
+      sel.addRange(r)
+    })
+    await page.keyboard.press('Control+c')
+
+    const html = await page.evaluate(async () => {
+      const items = await navigator.clipboard.read()
+      for (const it of items) {
+        if (it.types.includes('text/html')) return (await (await it.getType('text/html')).text())
+      }
+      return null
+    })
+
+    expect(html).toBeTruthy()
+    expect(html!).toContain('<h1>')
+    expect(html!.toLowerCase()).toContain('bold')
+    // the actual bug: native copy inlined <body>'s themed background onto the fragment
+    expect(html!.toLowerCase()).not.toMatch(/background(-color)?\s*:/)
+  })
+})

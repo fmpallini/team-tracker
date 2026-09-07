@@ -245,6 +245,109 @@ describe('paste', () => {
   })
 })
 
+describe('copy / cut (Ctrl+C / Ctrl+X routed through the same background-free path as the toolbar button)', () => {
+  function mount(md: string): Editor {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    return editor
+  }
+  function selectAll(editor: Editor): void {
+    const ed = editor.root.querySelector('.editor') as HTMLElement
+    const r = document.createRange()
+    r.selectNodeContents(ed)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+  function dispatch(editor: Editor, type: 'copy' | 'cut'): { preventDefault: ReturnType<typeof vi.spyOn>; data: Record<string, string> } {
+    const data: Record<string, string> = {}
+    const clipboardData = {
+      setData: (fmt: string, val: string) => { data[fmt] = val },
+      getData: (fmt: string) => data[fmt] ?? '',
+    } as unknown as DataTransfer
+    const event = new Event(type, { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+    ;(editor.root.querySelector('.editor') as HTMLElement).dispatchEvent(event)
+    return { preventDefault, data }
+  }
+
+  test('copy writes the selected formatted HTML with no background style, plus plain text', () => {
+    const editor = mount('# Head\n\nplain **bold** and <u>u</u>')
+    selectAll(editor)
+    const { preventDefault, data } = dispatch(editor, 'copy')
+
+    expect(preventDefault).toHaveBeenCalled()
+    expect(data['text/html']).toContain('<h1>')
+    expect(data['text/html']).toContain('<strong>bold</strong>')
+    expect(data['text/html']).toContain('<u>u</u>')
+    expect(data['text/html']!.toLowerCase()).not.toContain('background')
+    expect(data['text/plain']).toContain('Head')
+    expect(data['text/plain']).toContain('bold')
+    editor.destroy()
+  })
+
+  test('a collapsed selection is left to the browser (no preventDefault, nothing written)', () => {
+    const editor = mount('hello')
+    const ed = editor.root.querySelector('.editor') as HTMLElement
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.setStart(ed, 0)
+    r.collapse(true)
+    sel.addRange(r)
+
+    const { preventDefault, data } = dispatch(editor, 'copy')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(data).toEqual({})
+    editor.destroy()
+  })
+
+  test('a selection outside this editor is left to the browser', () => {
+    const editor = mount('inside')
+    const outside = document.createElement('p')
+    outside.textContent = 'outside text'
+    document.body.appendChild(outside)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.selectNodeContents(outside)
+    sel.addRange(r)
+
+    const { preventDefault, data } = dispatch(editor, 'copy')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(data).toEqual({})
+    outside.remove()
+    editor.destroy()
+  })
+
+  test('cut writes the same clipboard payload and removes the selected content', () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('cut **me** out')
+      selectAll(editor)
+
+      const { preventDefault, data } = dispatch(editor, 'cut')
+      expect(preventDefault).toHaveBeenCalled()
+      expect(data['text/html']).toContain('<strong>me</strong>')
+
+      const ed = editor.root.querySelector('.editor') as HTMLElement
+      expect(ed.textContent).toBe('') // content gone, ensureBlock left an empty block
+      expect(ed.children.length).toBeGreaterThan(0)
+
+      vi.advanceTimersByTime(400)
+      expect(hooks.changes).toBeGreaterThan(0)
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('ref click', () => {
   test('clicking a ref chip calls onRefClick with the parsed target', () => {
     const hooks = makeHooks()

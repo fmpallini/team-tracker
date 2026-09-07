@@ -1803,6 +1803,53 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
+  /**
+   * The current selection Range when it lies entirely inside this editor and
+   * is not collapsed; otherwise null (let the browser's own copy/cut run).
+   */
+  function editorSelectionRange(): Range | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null
+    const range = sel.getRangeAt(0)
+    return editorEl.contains(range.commonAncestorContainer) ? range : null
+  }
+
+  /**
+   * Ctrl+C / Ctrl+X. The browser's native copy serializer inlines an
+   * "effective" background onto the copied fragment — it walks up through
+   * transparent ancestors to the first opaque paint, which is `<body>`'s
+   * themed `background: var(--bg)` — so a plain Ctrl+C out of the editor
+   * pasted the ruled-paper/theme colour into Word, Google Docs, etc. The
+   * toolbar "Copy → formatted" button already sidesteps this by writing a
+   * hand-built `text/html` string; this routes Ctrl+C/Ctrl+X through the same
+   * treatment, scoped to the selected fragment. `clipboardData` is writable
+   * inside a real `copy`/`cut` event, so no detached-selection dance is
+   * needed (unlike copyFormattedViaSelection's execCommand fallback).
+   */
+  function writeSelectionToClipboard(e: ClipboardEvent): boolean {
+    const range = editorSelectionRange()
+    if (!range || !e.clipboardData) return false
+    const holder = document.createElement('div')
+    holder.appendChild(range.cloneContents())
+    e.clipboardData.setData('text/html', holder.innerHTML)
+    e.clipboardData.setData('text/plain', htmlToPlainText(holder))
+    e.preventDefault()
+    return true
+  }
+
+  function onCopy(e: ClipboardEvent): void {
+    writeSelectionToClipboard(e)
+  }
+
+  function onCut(e: ClipboardEvent): void {
+    if (!writeSelectionToClipboard(e)) return
+    const sel = window.getSelection()
+    sel?.getRangeAt(0).deleteContents()
+    ensureBlock()
+    syncPreHighlight()
+    scheduleChange()
+  }
+
   function refElFromEvent(e: MouseEvent): HTMLAnchorElement | null {
     const target = e.target as HTMLElement | null
     return target?.closest?.('a.ref') as HTMLAnchorElement | null
@@ -1871,6 +1918,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
+  editorEl.addEventListener('copy', onCopy)
+  editorEl.addEventListener('cut', onCut)
   // `selectionchange` only fires on `document`, never on an element — it is
   // served by the ONE shared dispatcher above (see onDocumentSelectionChange),
   // not by a listener per editor.
@@ -2217,6 +2266,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
+    editorEl.removeEventListener('copy', onCopy)
+    editorEl.removeEventListener('cut', onCut)
     editorEl.removeEventListener('blur', onEditorBlur)
     editorEl.removeEventListener('click', onClick)
     editorEl.removeEventListener('auxclick', onAuxClick)
