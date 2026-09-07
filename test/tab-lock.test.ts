@@ -118,6 +118,33 @@ test('BroadcastChannel supported but Web Locks not (this repo\'s own jsdom test 
   expect(() => release()).not.toThrow()
 })
 
+/**
+ * `createTabLock` registers a `store.onBlockedUpdate` listener for the
+ * read-only toast. Releasing the tab lock (main.ts's close-file path) has to
+ * take it back off: the store outlives the release only briefly, but a
+ * listener that closes over this shell and store is exactly what a close-file
+ * → open-file cycle must not accumulate.
+ */
+test('releasing the tab lock unsubscribes the read-only toast listener', () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const release = createTabLock({
+    session: makeSession(), store, shell: makeShell(), saveCtl: makeSaveCtl(), locks: undefined,
+  })
+
+  store.setReadOnly(true)
+  store.update((d) => { d.prefs.autoSaveMin = 3 })
+  expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+
+  release()
+
+  // A fresh read-only session re-arms the store's one-shot warning, so this
+  // would toast again if the listener were still registered.
+  store.setReadOnly(false)
+  store.setReadOnly(true)
+  store.update((d) => { d.prefs.autoSaveMin = 4 })
+  expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+})
+
 test('sole tab: acquires the lock immediately, stays writable, no banner', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const shell = makeShell()

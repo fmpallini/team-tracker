@@ -14,8 +14,61 @@ export interface SearchResult {
 const RESULT_LIMIT = 50
 const SNIPPET_RADIUS = 80
 
-export function normalize(s: string): string {
+/** The general case: decompose, drop every combining mark, lowercase. */
+function decomposeAndFold(s: string): string {
   return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
+// Written as the positive range rather than as "not ASCII": spelling it
+// [^\u0000-\u007F] means naming control characters in a class, which
+// eslint's no-control-regex rejects. Every UTF-16 code unit outside ASCII
+// (lone surrogates included) falls in this range, so the two are equivalent.
+const NON_ASCII = /[\u0080-\uFFFF]/
+
+/**
+ * Latin-1 letters that carry an accent, mapped straight to the plain
+ * lowercase letter `decomposeAndFold` would leave.
+ *
+ * Built by running `decomposeAndFold` over the Latin-1 range at module load
+ * rather than typed out, so the table cannot drift from the behaviour it
+ * stands in for, and so the letters with *no* canonical decomposition are
+ * excluded by construction — ø, æ, ð, þ and ß are left alone by NFD, and must
+ * be left alone here too.
+ */
+const LATIN1_FOLD = new Map<string, string>()
+for (let codePoint = 0xa0; codePoint <= 0xff; codePoint++) {
+  const char = String.fromCharCode(codePoint)
+  const folded = decomposeAndFold(char)
+  if (folded !== char.toLowerCase()) LATIN1_FOLD.set(char, folded)
+}
+const LATIN1_FOLD_PATTERN = new RegExp(`[${[...LATIN1_FOLD.keys()].join('')}]`, 'g')
+
+/**
+ * Accent- and case-insensitive form used for every match and every cached
+ * candidate.
+ *
+ * Written to avoid `normalize('NFD')` wherever it can, for memory rather than
+ * speed. The accented letters this app's documents actually contain — the
+ * whole of Portuguese, and Latin-1 generally — live in the one-byte range, so
+ * a note sits on the heap as a one-byte string. NFD decomposes those letters
+ * into combining marks outside that range, which promotes the string to V8's
+ * two-byte representation, and stripping the marks afterwards does not demote
+ * it again: the derived copy the search cache retains ends up twice the size
+ * of the text it came from. Folding Latin-1 accents directly keeps it one
+ * byte wide, halving the cache on an accented corpus and running about twice
+ * as fast besides.
+ *
+ * The NFD path is still there, reached only when folding leaves something
+ * outside ASCII — anything beyond Latin-1, or already-decomposed input — so
+ * the result is the same string for every input either way. See
+ * test/search-normalize.test.ts, which asserts exactly that over the range
+ * these documents can hold.
+ */
+export function normalize(s: string): string {
+  if (!NON_ASCII.test(s)) return s.toLowerCase()
+  const folded = s.replace(LATIN1_FOLD_PATTERN, (char) => LATIN1_FOLD.get(char)!)
+  if (!NON_ASCII.test(folded)) return folded.toLowerCase()
+  return decomposeAndFold(folded)
 }
 
 // Strips the basic markdown syntax this app produces so search snippets read
@@ -151,19 +204,77 @@ function backlinkSnippet(raw: string, matchIndex: number, matchLen: number): str
   return out
 }
 
-/** A candidate with its markdown stripped and normalized once, ready to match against. */
+/**
+ * Field size at or above which a candidate's markdown-stripped text is kept
+ * instead of re-derived per query — see `PreparedCandidate`. Chosen so the
+ * stripping a single query can be asked to redo stays bounded at roughly
+ * RESULT_LIMIT x this many characters, which measures well under a
+ * millisecond, while ordinary notes (a couple of KB at most) stay on the
+ * cheap side of the trade.
+ */
+const EAGER_STRIP_MIN = 4096
+
+/**
+ * A candidate ready to match against.
+ *
+ * `raw` is the document's own string, held by reference — nothing new is
+ * allocated for it — and `normalized` is the one derived copy matching needs.
+ * The markdown-stripped text a result's snippet is cut from is normally *not*
+ * retained: on a large document it measured a full extra copy of the whole
+ * corpus (~1 byte per character on top of normalized's ~2), while at most
+ * RESULT_LIMIT candidates per query ever need it. `stripMd` is pure, so
+ * re-running it on the survivors reproduces exactly the string `normalized`
+ * was derived from, and the index alignment `makeSnippet` depends on holds.
+ *
+ * The exception is `stripped`, kept only for fields at least
+ * EAGER_STRIP_MIN characters long. Re-stripping is cheap per KB but the cost
+ * is paid per shown result per keystroke, so on a document holding a few very
+ * large fields — where all 50 shown results can be enormous notes — deriving
+ * it on demand cost more per query than storing it ever did (measured: a
+ * repeat query redoing a third of the whole index build). Above the
+ * threshold the old eager behaviour is simply kept, so neither axis is ever
+ * worse than it was before snippets went lazy.
+ *
+ * See test/search-memory.test.ts and test/search-large-fields.test.ts.
+ */
 interface PreparedCandidate {
   ref: ModuleRef
   title: string
-  stripped: string
+  raw: string
   normalized: string
+  /** Pre-stripped display text, present only for fields >= EAGER_STRIP_MIN. */
+  stripped?: string
+}
+
+/** The one place `raw` is turned into the forms matching and snippets need — shared by `createSearchIndex`'s cache and by the uncached `searchDocument`. */
+function prepareCandidate(candidate: Candidate): PreparedCandidate {
+  const stripped = stripMd(candidate.raw)
+  const prepared: PreparedCandidate = {
+    ref: candidate.ref, title: candidate.title, raw: candidate.raw, normalized: normalize(stripped),
+  }
+  // Free to keep at this point — it has just been computed either way.
+  if (candidate.raw.length >= EAGER_STRIP_MIN) prepared.stripped = stripped
+  return prepared
 }
 
 /** Backlinks' reverse index for one team, keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
 type BacklinksByRef = Map<string, Backlink[]>
 
-/** A match plus its ranking data — kept separate from the public `SearchResult` so `span`/`minPos` never leak into the UI-facing shape. */
-interface ScoredHit { result: SearchResult; span: number; minPos: number }
+/**
+ * A match plus its ranking data — kept separate from the public
+ * `SearchResult` so `span`/`minPos` never leak into the UI-facing shape.
+ * Holds the candidate itself rather than a finished result: the snippet is
+ * only cut once ranking has decided which hits are actually shown.
+ */
+interface ScoredHit {
+  candidate: PreparedCandidate
+  teamId: string
+  teamName: string
+  /** Each term's first-match index in `candidate.normalized` — where the snippet gets anchored. */
+  positions: number[]
+  span: number
+  minPos: number
+}
 
 /**
  * Scores one candidate against `terms` (already required to all match, via
@@ -182,23 +293,24 @@ function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: 
   if (!positions) return null
   const minPos = Math.min(...positions)
   const maxEnd = Math.max(...positions.map((p, i) => p + terms[i]!.length))
+  return { candidate, teamId, teamName, positions, span: maxEnd - minPos, minPos }
+}
+
+/** Cuts the displayed snippet — the one step that needs the markdown-stripped text, so it is paid per shown result rather than per cached candidate. */
+function toResult(hit: ScoredHit): SearchResult {
   return {
-    result: {
-      loc: { teamId, ref: candidate.ref },
-      moduleKind: candidate.ref.kind,
-      title: candidate.title,
-      snippet: makeSnippet(candidate.stripped, positions),
-      teamName,
-    },
-    span: maxEnd - minPos,
-    minPos,
+    loc: { teamId: hit.teamId, ref: hit.candidate.ref },
+    moduleKind: hit.candidate.ref.kind,
+    title: hit.candidate.title,
+    snippet: makeSnippet(hit.candidate.stripped ?? stripMd(hit.candidate.raw), hit.positions),
+    teamName: hit.teamName,
   }
 }
 
 /** Tightest-cluster-first, then earliest-match-first; JS's stable sort keeps same-score hits in `hits`' original (insertion) order as the final tiebreak. */
 function rankAndLimit(hits: ScoredHit[]): SearchResult[] {
   hits.sort((a, b) => (a.span - b.span) || (a.minPos - b.minPos))
-  return hits.slice(0, RESULT_LIMIT).map((h) => h.result)
+  return hits.slice(0, RESULT_LIMIT).map(toResult)
 }
 
 export interface SearchIndex {
@@ -256,12 +368,49 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   const backlinksCache = new Map<string, BacklinksByRef>()
   const candidatesCache = new Map<string, PreparedCandidate[]>()
 
+  /**
+   * The previous query's *complete* match set (pre-`RESULT_LIMIT`), kept so
+   * that extending that query re-scores only those hits instead of the whole
+   * document — see `narrowable` below for why that is sound.
+   *
+   * Storing the ranked-and-limited results here instead would be wrong: a hit
+   * ranked 51st for "ro" can rank 1st for "rollout", and truncating first
+   * would lose it for every query that follows.
+   *
+   * Holds `PreparedCandidate` references, so it retains nothing the
+   * candidates cache isn't already holding — and it must be dropped whenever
+   * that cache is, or it would keep serving candidates prepared from text
+   * the document no longer has.
+   */
+  let lastQuery: { normalizedQuery: string; scopeTeamId: string | null; hits: ScoredHit[] } | null = null
+
   function syncRev(): void {
     const rev = getRev()
     if (rev === knownRev) return
     backlinksCache.clear()
     candidatesCache.clear()
+    lastQuery = null
     knownRev = rev
+  }
+
+  /**
+   * Whether `normalizedQuery` can be answered by re-scoring the previous
+   * query's matches alone.
+   *
+   * Extending a query can only shrink the match set. Splitting on whitespace,
+   * a query that starts with the previous one has the same leading terms, and
+   * its final term has the previous final term as a prefix (or adds a new
+   * term outright). A candidate matching every new term therefore contains
+   * every old term too — so anything the new query matches was already in the
+   * old query's hits, and anything the old query rejected cannot match now.
+   *
+   * The scope has to be identical: a hit set collected for one team says
+   * nothing about candidates in the teams that scope excluded.
+   */
+  function narrowable(normalizedQuery: string, scopeTeamId: string | null): boolean {
+    return lastQuery !== null
+      && lastQuery.scopeTeamId === scopeTeamId
+      && normalizedQuery.startsWith(lastQuery.normalizedQuery)
   }
 
   /** Reverse mention index for one team — a raw-text scan only, no strip/normalize. */
@@ -294,11 +443,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   function candidatesFor(team: Team, doc: Doc): PreparedCandidate[] {
     const hit = candidatesCache.get(team.id)
     if (hit) return hit
-    const prepared: PreparedCandidate[] = []
-    for (const c of collectCandidates(team, doc)) {
-      const stripped = stripMd(c.raw)
-      prepared.push({ ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) })
-    }
+    const prepared = collectCandidates(team, doc).map(prepareCandidate)
     candidatesCache.set(team.id, prepared)
     return prepared
   }
@@ -311,6 +456,12 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       // change (a template edit) would leave knownRev stale and trigger a
       // full clear anyway.
       knownRev = getRev()
+      // Dropped unconditionally, even for a change no cache entry cares
+      // about. The previous query's hit set is the one thing here that can
+      // outlive its own team's cache entry, and re-deriving it costs a single
+      // full scan on the next keystroke — far cheaper than reasoning about
+      // whether this particular scope could have touched a hit.
+      lastQuery = null
       if (!scope || scope.teamId === undefined) {
         // No team named — "could be any/all teams" (this is also what
         // store.replaceDoc() sends). Nothing narrower is safe.
@@ -329,19 +480,31 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       syncRev()
       const trimmedQuery = query.trim()
       if (!trimmedQuery) return []
-      const terms = normalize(trimmedQuery).split(/\s+/).filter(Boolean)
+      const normalizedQuery = normalize(trimmedQuery)
+      const terms = normalizedQuery.split(/\s+/).filter(Boolean)
       if (terms.length === 0) return []
 
       const doc = getDoc()
-      const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
       const hits: ScoredHit[] = []
 
-      for (const team of teams) {
-        for (const candidate of candidatesFor(team, doc)) {
-          const hit = scoreCandidate(candidate, team.id, team.name, terms)
+      if (narrowable(normalizedQuery, scopeTeamId)) {
+        // Typing forward: re-score the previous query's matches only. Each
+        // hit already knows its team, so no team walk is needed here.
+        for (const previous of lastQuery!.hits) {
+          const hit = scoreCandidate(previous.candidate, previous.teamId, previous.teamName, terms)
           if (hit) hits.push(hit)
         }
+      } else {
+        const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
+        for (const team of teams) {
+          for (const candidate of candidatesFor(team, doc)) {
+            const hit = scoreCandidate(candidate, team.id, team.name, terms)
+            if (hit) hits.push(hit)
+          }
+        }
       }
+
+      lastQuery = { normalizedQuery, scopeTeamId, hits }
       return rankAndLimit(hits)
     },
 
@@ -366,9 +529,7 @@ export function searchDocument(doc: Doc, query: string, scopeTeamId: string | nu
 
   for (const team of teams) {
     for (const candidate of collectCandidates(team, doc)) {
-      const stripped = stripMd(candidate.raw)
-      const normalized = normalize(stripped)
-      const hit = scoreCandidate({ ref: candidate.ref, title: candidate.title, stripped, normalized }, team.id, team.name, terms)
+      const hit = scoreCandidate(prepareCandidate(candidate), team.id, team.name, terms)
       if (hit) hits.push(hit)
     }
   }

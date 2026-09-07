@@ -146,9 +146,18 @@ export function leadingIndentLen(text: string): number {
   return n
 }
 
+interface EditorRegistryEntry {
+  flush(): void
+  /** This editor's contenteditable root — used to find which editor owns the current selection. */
+  root: HTMLElement
+  /** Re-runs this editor's caret-aware code-block highlighting (`syncPreHighlight`). */
+  syncHighlight(): void
+}
+
 /**
- * Every editor currently alive, so `flushAllEditors()` can reach them.
- * Entries are added at construction and removed by `destroy()`.
+ * Every editor currently alive, so `flushAllEditors()` and the shared
+ * `selectionchange` dispatcher below can reach them. Entries are added at
+ * construction and removed by `destroy()`.
  *
  * A registry rather than a walk of the pane tree because editors also live
  * outside it — action-items.ts mounts one inside its card modal — and those
@@ -156,7 +165,71 @@ export function leadingIndentLen(text: string): number {
  * because membership is tied to construct/destroy, and closing a file destroys
  * every module (and so every editor) it mounted.
  */
-const liveEditors = new Set<{ flush(): void }>()
+const liveEditors = new Set<EditorRegistryEntry>()
+
+/**
+ * ONE document-level `selectionchange` listener shared by every live editor,
+ * rather than one registered per editor.
+ *
+ * Why this is load-bearing and not tidiness: `selectionchange` fires on the
+ * *document*, for every caret move and every keystroke anywhere on the page.
+ * With a listener per editor, a document holding N mounted editors ran N full
+ * re-highlight passes per keystroke — each one a `preLines()` DOM walk plus a
+ * `highlightCode()` re-tokenisation plus an `innerHTML` read — on editors the
+ * user was not typing in and whose blocks could not possibly have changed.
+ * N is not small: risks.ts and milestones.ts mount one rich-editor bundle per
+ * expanded follow-up row and their toolbars have an expand-all button, and
+ * both panes count. e2e/hotpath.spec.ts measured 30 expanded risks at 305
+ * block re-highlights per 5 typed characters, and typing in the *other*
+ * pane's daily note still paid 150 of them.
+ *
+ * Only two editors can ever need work on a selection change: the one that now
+ * owns the caret (its caret block is stripped to plain text so the caret stays
+ * put, its other blocks re-highlighted) and the one that owned it a moment ago
+ * (all of its blocks go back to highlighted, since the caret has left them).
+ * Every other editor's blocks are already in their correct state. `onEditorBlur`
+ * remains a second, independent safety net for the losing editor.
+ */
+let caretOwner: EditorRegistryEntry | null = null
+
+function onDocumentSelectionChange(): void {
+  const sel = document.getSelection()
+  const anchor = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
+  let owner: EditorRegistryEntry | null = null
+  if (anchor) {
+    for (const ed of liveEditors) {
+      if (ed.root.contains(anchor)) {
+        owner = ed
+        break
+      }
+    }
+  }
+  const previous = caretOwner
+  caretOwner = owner
+  // The editor losing the caret re-highlights the block the caret was in.
+  // Ordering matters only in that both run; each reads the live selection,
+  // which is already the new one.
+  if (previous && previous !== owner) previous.syncHighlight()
+  owner?.syncHighlight()
+}
+
+/**
+ * Installed with the first editor and removed with the last, so a document
+ * with no editor mounted (the start screen, a file closed) holds no
+ * `selectionchange` listener at all.
+ */
+function registerEditor(entry: EditorRegistryEntry): void {
+  if (liveEditors.size === 0) document.addEventListener('selectionchange', onDocumentSelectionChange)
+  liveEditors.add(entry)
+}
+
+function unregisterEditor(entry: EditorRegistryEntry): void {
+  liveEditors.delete(entry)
+  // A destroyed editor must never stay the caret owner: it would be handed a
+  // `syncHighlight()` call after teardown on the next selection change.
+  if (caretOwner === entry) caretOwner = null
+  if (liveEditors.size === 0) document.removeEventListener('selectionchange', onDocumentSelectionChange)
+}
 
 /**
  * Commits every live editor's pending debounced change into the store *now*.
@@ -1759,8 +1832,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
-  // `selectionchange` only fires on `document`, never on an element.
-  document.addEventListener('selectionchange', syncPreHighlight)
+  // `selectionchange` only fires on `document`, never on an element — it is
+  // served by the ONE shared dispatcher above (see onDocumentSelectionChange),
+  // not by a listener per editor.
   editorEl.addEventListener('blur', onEditorBlur)
   editorEl.addEventListener('click', onClick)
   editorEl.addEventListener('auxclick', onAuxClick)
@@ -2040,7 +2114,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   editorEl.addEventListener('mouseover', onCbMouseOver)
   editorEl.addEventListener('mouseleave', hideCbControlsSoon)
-  editorEl.addEventListener('scroll', hideCbControlsNow)
+  // Passive: `scroll` is one of the event types a non-passive listener makes
+  // the browser wait on before it can commit the scroll. This handler only
+  // hides a floating overlay and never calls preventDefault (which is not
+  // even meaningful on `scroll`), so declaring that up front lets scrolling a
+  // long note stay on the fast path. The matching removeEventListener needs no
+  // option: removal matches on type, listener and capture, not passivity.
+  editorEl.addEventListener('scroll', hideCbControlsNow, { passive: true })
   cbControls.addEventListener('mouseenter', () => {
     if (cbHideTimer) { clearTimeout(cbHideTimer); cbHideTimer = null }
   })
@@ -2059,6 +2139,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     cancelChange()
     editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
     decorateCodeBlocks(true)
+    // Paint the freshly-loaded blocks now. This used to happen by accident:
+    // with a `selectionchange` listener per editor, the very next caret move
+    // anywhere on the page ran every editor's pass, so a newly-mounted one got
+    // highlighted whether or not it had the caret. The shared dispatcher only
+    // visits the editor that owns the caret, so an editor that never receives
+    // it (any pane the user isn't in) has to paint itself. `syncPreHighlight`
+    // rather than a blanket highlight because setMd() can also run while this
+    // editor *does* hold the caret — it leaves the caret's own block as plain
+    // text, which is what keeps the caret placeable inside it.
+    syncPreHighlight()
   }
 
   function refreshRefLabels(): void {
@@ -2079,7 +2169,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function destroy(): void {
-    liveEditors.delete(registryEntry)
+    unregisterEditor(registryEntry)
     // Flush, don't drop — see flushChange(). Runs before the listeners come
     // off so ordering matches a normal debounce firing.
     flushChange()
@@ -2088,7 +2178,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
-    document.removeEventListener('selectionchange', syncPreHighlight)
     editorEl.removeEventListener('blur', onEditorBlur)
     editorEl.removeEventListener('click', onClick)
     editorEl.removeEventListener('auxclick', onAuxClick)
@@ -2100,8 +2189,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
   }
 
-  const registryEntry = { flush: flushChange }
-  liveEditors.add(registryEntry)
+  const registryEntry: EditorRegistryEntry = { flush: flushChange, root: editorEl, syncHighlight: syncPreHighlight }
+  registerEditor(registryEntry)
 
   return { root, getMd, setMd, refreshRefLabels, focus, destroy }
 }

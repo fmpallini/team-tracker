@@ -43,7 +43,16 @@ export interface Store {
    * others or corrupt the set while iterating.
    */
   onMutate(fn: (kind: MutationKind) => void): () => void
-  onDirty(fn: (dirty: boolean) => void): void
+  /**
+   * Fires whenever `dirty` flips. Returns an unsubscribe function, like
+   * `subscribe()` and `onMutate()` — every listener registration on this store
+   * is removable, with no exceptions to remember. Today both this and
+   * `onBlockedUpdate()` have exactly one registration apiece against a store
+   * that is discarded with its document, so nothing leaks either way; the
+   * symmetry is what keeps that true if a module renderer (which mounts and
+   * unmounts many times over one document's life) ever registers one.
+   */
+  onDirty(fn: (dirty: boolean) => void): () => void
   markSaved(): void
   /**
    * Wholesale-replaces the in-memory document (Task 25: used by the conflict
@@ -67,8 +76,8 @@ export interface Store {
    * is blocked.
    */
   setReadOnly(readOnly: boolean, opts?: { silent?: boolean }): void
-  /** Fires at most once per read-only "session" — see `setReadOnly`. */
-  onBlockedUpdate(fn: () => void): void
+  /** Fires at most once per read-only "session" — see `setReadOnly`. Returns an unsubscribe function, for the reason given on `onDirty`. */
+  onBlockedUpdate(fn: () => void): () => void
 }
 
 type ReadOnlyState =
@@ -145,8 +154,11 @@ export function createStore(initialDoc: Doc): Store {
         mutationListeners.delete(fn)
       }
     },
-    onDirty(fn: (dirty: boolean) => void): void {
+    onDirty(fn: (dirty: boolean) => void): () => void {
       dirtyCallbacks.add(fn)
+      return () => {
+        dirtyCallbacks.delete(fn)
+      }
     },
     markSaved(): void {
       setDirty(false)
@@ -168,8 +180,11 @@ export function createStore(initialDoc: Doc): Store {
         warned: roState.kind === 'blocked' ? roState.warned : false,
       }
     },
-    onBlockedUpdate(fn: () => void): void {
+    onBlockedUpdate(fn: () => void): () => void {
       blockedCallbacks.add(fn)
+      return () => {
+        blockedCallbacks.delete(fn)
+      }
     },
   }
 }

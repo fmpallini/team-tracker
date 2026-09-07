@@ -56,10 +56,14 @@ let mouseTrackerInstalled = false
 function ensureMouseTracker(): void {
   if (mouseTrackerInstalled) return
   mouseTrackerInstalled = true
+  // Passive: this one is installed for the life of the page (see above), and
+  // it only records coordinates — it has no reason to reserve the right to
+  // preventDefault, so it says so rather than leaving the browser to assume
+  // otherwise on every pointer move.
   document.addEventListener('mousemove', (e) => {
     lastMouseX = e.clientX
     lastMouseY = e.clientY
-  })
+  }, { passive: true })
 }
 
 /** The standard interactive attrs for a selectable row — spread into el(). */

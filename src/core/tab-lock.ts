@@ -106,7 +106,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
     requestLock(true)
   }
 
-  store.onBlockedUpdate(() => {
+  const unsubscribeBlocked = store.onBlockedUpdate(() => {
     toast(t(store.doc.prefs.locale, 'readonly_blocked_toast'))
   })
 
@@ -155,5 +155,6 @@ export function createTabLock(deps: TabLockDeps): () => void {
   return function releaseTabLock(): void {
     releaseLock?.()
     bc?.close()
+    unsubscribeBlocked()
   }
 }

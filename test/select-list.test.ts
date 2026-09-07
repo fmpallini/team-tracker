@@ -146,3 +146,28 @@ describe('selectableRowProps', () => {
     })
   })
 })
+
+/**
+ * The pointer tracker is installed once and never removed (see
+ * select-list.ts's own comment on that tradeoff), so it is one of the few
+ * listeners alive for the whole page. `mousemove` fires continuously, and a
+ * listener that never calls preventDefault should say so rather than leave the
+ * browser assuming it might.
+ *
+ * `vi.resetModules()` + a dynamic import is required: the install is guarded
+ * by module-level state, so a module already imported by the tests above has
+ * installed its tracker long before any spy could see it.
+ */
+describe('pointer tracker registration', () => {
+  test('the document mousemove tracker is registered as passive', async () => {
+    vi.resetModules()
+    const spy = vi.spyOn(document, 'addEventListener')
+    const { selectableRowProps: freshRowProps } = await import('../src/ui/select-list')
+    freshRowProps({ class: 'row', selected: false, onCommit: () => {}, onHover: () => {} })
+
+    const moves = spy.mock.calls.filter(([type]) => type === 'mousemove')
+    expect(moves).toHaveLength(1)
+    expect(moves[0]![2]).toEqual({ passive: true })
+    spy.mockRestore()
+  })
+})
