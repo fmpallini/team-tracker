@@ -361,6 +361,37 @@ test('nesting depth caps at 4 levels (0-3) even if indentation implies deeper', 
   expect(htmlToMd(div)).toBe('- a\n  - b\n    - c\n      - d\n      - e')
 })
 
+test('ordered items keep an ascending written number, so a deliberate gap and <ol start=N> both survive', () => {
+  expect(roundTrip('5. a\n6. b\n7. c')).toBe('5. a\n6. b\n7. c') // start at 5
+  expect(roundTrip('3. a\n5. b')).toBe('3. a\n5. b') // deliberate gap (also covered above)
+})
+
+test('ordered items with a non-advancing written number are renumbered "previous + 1"', () => {
+  // The shape a paste produces when list levels past the 4-level cap collapse
+  // onto one frame, each rendered "1." by renderListMd's per-list counter.
+  expect(roundTrip('1. a\n1. b\n1. c')).toBe('1. a\n2. b\n3. c')
+})
+
+test('a Google-Docs ordered list deeper than 4 levels flattens to level 4 with sequential numbers', () => {
+  // GDoc shape: each deeper <ol> is a sibling of the <li> it belongs under.
+  const div = document.createElement('div')
+  div.innerHTML =
+    '<ol><li><p>one</p></li>' +
+    '<ol><li><p>two</p></li>' +
+    '<ol><li><p>three</p></li>' +
+    '<ol><li><p>four</p></li>' +
+    '<ol><li><p>five</p></li>' +
+    '<ol><li><p>six</p></li></ol></ol></ol></ol></ol></ol>'
+  unwrapBlockContainers(div)
+  const md = htmlToMd(div)
+  // levels 5 and 6 clamp onto level 4, sharing its <ol>
+  expect(md).toBe('1. one\n  1. two\n    1. three\n      1. four\n      1. five\n      1. six')
+  // and mdToHtml renumbers that collapsed frame 1,2,3 rather than 1,1,1
+  const rebuilt = document.createElement('div')
+  rebuilt.innerHTML = mdToHtml(md)
+  expect(htmlToMd(rebuilt)).toBe('1. one\n  1. two\n    1. three\n      1. four\n      2. five\n      3. six')
+})
+
 test('a nested level that switches marker type mid-level round-trips without dropping the second list', () => {
   const md = '- a\n  - b\n  1. c'
   expect(roundTrip(md)).toBe(md)
