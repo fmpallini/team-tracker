@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.5] - 2026-09-06
+
+### Changed
+- Search is faster and uses far less memory on large files. On a file with around 18 MB of notes, what search keeps in memory dropped from 51 MB to 23 MB, and typing in the search box now narrows the results you already have instead of re-reading the whole file on every keystroke. Files written in Portuguese gained the most: accented text used to be stored at twice the size of unaccented text.
+- Typing no longer gets slower the more note editors are open on screen. With many risk or milestone follow-ups expanded, every keystroke — even in a completely different pane — was redoing code-block highlighting for every open editor.
+- Switching the theme no longer tears down and rebuilds every open pane.
+- Scrolling inside a note editor is smoother.
+
 ## [2.7.4] - 2026-09-03
 
 ### Added
