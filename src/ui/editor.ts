@@ -146,6 +146,41 @@ export function leadingIndentLen(text: string): number {
   return n
 }
 
+/**
+ * `document.execCommand('insertHTML', …)` with a collapsed caret inside an
+ * empty block nests the WHOLE inserted fragment inside that one block rather
+ * than splitting it into siblings — a multi-block paste into a fresh line
+ * lands as `<div><h1>H</h1><ul>…</ul><div>tail</div></div>`, one child of the
+ * editor root. Every other editor path keeps the root's children flat,
+ * block-level elements (`setMd` = `mdToHtml` output), and both `htmlToMd`
+ * (`getMd`) and the caret guards scattered through this file
+ * (`block.parentElement === editorEl`) depend on that: `htmlToMd` reads a
+ * `<div>`/`<p>` child via `blockToMd`, which flattens any nested blocks onto
+ * one run-on line, so on the next save/reopen the pasted headings and lists
+ * collapse to `Headingtail`.
+ *
+ * Called right after the paste `insertHTML` to put the root back in canonical
+ * shape: any direct child that is a `<div>`/`<p>` whose own children are ALL
+ * block-level (and which carries no loose non-whitespace text) is replaced by
+ * those children, hoisted to the root. Iterates so a doubly-wrapped fragment
+ * flattens fully. A `<ul>`/`<ol>`/`<blockquote>`/`<pre>` child is never a
+ * wrapper here — its block descendants are structural and have their own
+ * handling in core/markdown.ts.
+ */
+export function flattenTopLevelBlockWrappers(root: HTMLElement): void {
+  for (;;) {
+    const wrapper = Array.from(root.children).find((el): el is HTMLElement => {
+      if (!(el instanceof HTMLElement) || (el.tagName !== 'DIV' && el.tagName !== 'P')) return false
+      if (el.children.length === 0 || !Array.from(el.children).every((c) => BLOCK_TAGS.has(c.tagName.toLowerCase()))) return false
+      // Loose text alongside the blocks would become an orphan text-node child
+      // of the root — leave that shape for ensureBlock / normal editing to sort out.
+      return Array.from(el.childNodes).every((n) => n.nodeType === Node.ELEMENT_NODE || !n.textContent?.trim())
+    })
+    if (!wrapper) return
+    wrapper.replaceWith(...Array.from(wrapper.childNodes))
+  }
+}
+
 interface EditorRegistryEntry {
   flush(): void
   /** This editor's contenteditable root — used to find which editor owns the current selection. */
@@ -1754,6 +1789,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
       document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
+      // insertHTML nests a multi-block fragment inside the caret's block when
+      // that block was empty — restore the editor's flat-block-children shape
+      // before anything reads it back as markdown (see the fn's own comment).
+      flattenTopLevelBlockWrappers(editorEl)
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()

@@ -1,5 +1,5 @@
-import { createEditor, flushAllEditors, detectInlinePattern, detectBlockPrefix, leadingIndentLen, type Editor, type EditorHooks } from '../src/ui/editor'
-import type { RefInfo } from '../src/core/markdown'
+import { createEditor, flushAllEditors, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 
 function makeHooks(): EditorHooks & { changes: number; refs: RefInfo['target'][]; atRanges: Range[]; slashRanges: Range[] } {
@@ -3145,6 +3145,63 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('```' + nbsp)).toEqual({ type: 'codeblock', prefixLen: 4 })
     expect(detectBlockPrefix('```js')).toBeNull()
     expect(detectBlockPrefix('``')).toBeNull()
+  })
+})
+
+describe('flattenTopLevelBlockWrappers', () => {
+  const html = (s: string): HTMLElement => {
+    const d = document.createElement('div')
+    d.innerHTML = s
+    return d
+  }
+
+  test('hoists a <div> wrapping block children up to the root (the insertHTML paste shape)', () => {
+    const root = html('<div><h1>Heading</h1><ul><li>one</li><li>two</li></ul><div>tail</div></div>')
+    flattenTopLevelBlockWrappers(root)
+    expect(Array.from(root.children).map((c) => c.tagName)).toEqual(['H1', 'UL', 'DIV'])
+    expect(root.querySelector('h1')!.textContent).toBe('Heading')
+    expect(root.querySelector('div')!.textContent).toBe('tail')
+  })
+
+  test('reads back as structured markdown after flattening, not a run-on line', () => {
+    const root = html('<div><h1>Heading</h1><ul><li>one</li><li>two</li></ul><div>tail</div></div>')
+    flattenTopLevelBlockWrappers(root)
+    // htmlToMd (getMd) walks the root's DIRECT children as blocks — that's
+    // exactly why the un-flattened wrapper collapsed to "Headingonetwotail".
+    expect(htmlToMd(root)).toBe('# Heading\n- one\n- two\ntail')
+  })
+
+  test('fully unwraps a doubly-nested wrapper', () => {
+    const root = html('<div><div><h1>H</h1><div>x</div></div></div>')
+    flattenTopLevelBlockWrappers(root)
+    expect(Array.from(root.children).map((c) => c.tagName)).toEqual(['H1', 'DIV'])
+  })
+
+  test('leaves a normal flat editor untouched', () => {
+    const root = html('<div>line one</div><h2>head</h2><div><br></div>')
+    const before = root.innerHTML
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe(before)
+  })
+
+  test('never dissolves a <ul> whose <li> nests another list', () => {
+    const root = html('<ul><li>a<ul><li>b</li></ul></li></ul>')
+    const before = root.innerHTML
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe(before)
+  })
+
+  test('leaves a <div> that also holds loose text alongside blocks (would orphan the text)', () => {
+    const root = html('<div>loose<h1>H</h1></div>')
+    const before = root.innerHTML
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe(before)
+  })
+
+  test('a plain paragraph <div> (no block children) is not a wrapper', () => {
+    const root = html('<div>just a line</div>')
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe('<div>just a line</div>')
   })
 })
 
