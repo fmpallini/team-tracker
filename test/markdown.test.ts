@@ -498,6 +498,65 @@ describe('unwrapBlockContainers (Google-Docs-style whole-paste wrapper)', () => 
     unwrapBlockContainers(div)
     expect(htmlToMd(div)).toBe('cell')
   })
+
+  // Google Docs appends a bare <br> at the end of its <b id="docs-internal-guid">
+  // wrapper. That <br> is not a block tag, so an "every child is block" test
+  // rejected the whole wrapper — it stayed, htmlToMd saw one non-block child,
+  // and the entire paste (heading, list, nesting, per-item bold) collapsed to
+  // a single run-on line. The <br> is content-free and blocks self-delimit,
+  // so it is ignored for the decision and dropped on unwrap.
+  test('a trailing <br> among block children does not stop the wrapper unwrapping', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<b style="font-weight:normal" id="docs-internal-guid-x"><p>line1</p><p>line2</p><br></b>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('line1\nline2')
+  })
+
+  test('a <br> between blocks in the wrapper is dropped, blocks still split', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<span><h2>Head</h2><br><p>body</p></span>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('## Head\nbody')
+  })
+
+  test('a wrapper whose only children are <br>s is not treated as a block container', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<span>text<br><br></span>'
+    unwrapBlockContainers(div)
+    // left alone: htmlToMd reads it as one inline blob
+    expect(div.querySelector('span')).not.toBeNull()
+  })
+
+  test('a <ul>/<ol> child of the wrapper is hoisted intact, not with its <li>s buried in the re-wrap', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<i><p>intro</p><ul><li>a</li><li>b</li></ul></i>'
+    unwrapBlockContainers(div)
+    // <p> takes the wrapper's italic per-block; the list keeps its structure
+    expect(htmlToMd(div)).toBe('*intro*\n- a\n- b')
+  })
+
+  test('a full Google-Docs paste — heading, nested bullet list, per-item bold/italic, link — keeps its structure', () => {
+    const div = document.createElement('div')
+    div.innerHTML =
+      '<b style="font-weight:normal" id="docs-internal-guid-x">' +
+      '<h1><span style="font-weight:400">Vamos la</span></h1>' +
+      '<ul>' +
+      '<li><p role="presentation"><span>Aqui tenho uma lista</span></p></li>' +
+      '<ul>' +
+      '<li><p role="presentation"><span style="font-weight:700;font-style:italic">Com bullets</span></p></li>' +
+      '<li><p role="presentation"><a href="http://www.g1.com.br"><span>G1</span></a></p></li>' +
+      '</ul>' +
+      '<li><p role="presentation"><span>Teste</span></p></li>' +
+      '</ul><br></b>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe(
+      '# Vamos la\n' +
+        '- Aqui tenho uma lista\n' +
+        '  - ***Com bullets***\n' +
+        '  - [G1](http://www.g1.com.br)\n' +
+        '- Teste'
+    )
+  })
 })
 
 describe('flattenNestedHeadings (undoes Chromium formatBlock nesting that makes a heading "grow" per keypress)', () => {

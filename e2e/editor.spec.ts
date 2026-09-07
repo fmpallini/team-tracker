@@ -129,6 +129,37 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(reopened.getByText('tail')).toBeVisible()
   })
 
+  test('a real Google Docs paste keeps its heading, nested list and per-item formatting', async ({ page }) => {
+    const editor = await openEditor(page)
+
+    // The exact text/html Google Docs puts on the clipboard: whole fragment
+    // wrapped in <b id="docs-internal-guid">, a trailing <br>, headings as
+    // real <h1>, bold/italic/underline as inline style=, a sub-<ul> that is a
+    // direct child of the outer <ul>.
+    const gdocHtml =
+      '<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-x">' +
+      '<h1 dir="ltr"><span style="font-size:20pt;font-weight:400;">Vamos la</span></h1>' +
+      '<ul style="padding-inline-start:48px;">' +
+      '<li dir="ltr" style="font-weight:400;"><p role="presentation"><span style="font-weight:400;">Aqui tenho uma lista</span></p></li>' +
+      '<ul style="padding-inline-start:48px;">' +
+      '<li dir="ltr" style="font-weight:700;font-style:italic;"><p role="presentation"><span style="font-weight:700;font-style:italic;text-decoration:underline;">Com bullets</span></p></li>' +
+      '<li dir="ltr" style="font-weight:400;"><p role="presentation"><a href="http://www.g1.com.br"><span style="text-decoration:underline;">G1</span></a></p></li>' +
+      '</ul>' +
+      '<li dir="ltr" style="font-weight:400;"><p role="presentation"><span>Teste</span></p></li>' +
+      '</ul><br /></b>'
+
+    await pasteInto(page, { 'text/html': gdocHtml, 'text/plain': 'Vamos la Aqui tenho uma lista Com bullets G1 Teste' })
+
+    await expect(editor.locator('> h1')).toHaveText('Vamos la') // heading, as its own block
+    await expect(editor.locator('> ul')).toHaveCount(1)
+    await expect(editor.locator('> ul > li')).toHaveCount(2) // "Aqui tenho uma lista", "Teste"
+    await expect(editor.locator('ul ul li')).toHaveCount(2) // nested bullets
+    await expect(editor.getByText('Com bullets')).toBeVisible()
+    await expect(editor.locator('a[href="http://www.g1.com.br"]')).toHaveText('G1')
+    await expect(editor.locator('ul ul li').first().locator('strong, b')).toHaveCount(1) // per-item bold survived
+    await expect(editor.locator('ul ul li').first().locator('em, i')).toHaveCount(1) // and italic
+  })
+
   test('paste inside a fenced code block inserts literal text, not converted HTML', async ({ page }) => {
     const editor = await openEditor(page)
 

@@ -502,18 +502,35 @@ function isBlockTag(el: Element): boolean {
 // be block-level tags too.
 const STRUCTURAL_CONTAINERS = new Set(['li', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot'])
 
+// Block children of an unwrapped container that hold inline content, so
+// pushing a shallow clone of the container (an `<i>`/`<b>` carrying real
+// formatting) inside them keeps that formatting scoped per-block. `<ul>`,
+// `<ol>`, `<table>`, `<hr>`, `<pre>` are deliberately excluded — see the
+// call site.
+const REWRAPPABLE_BLOCKS = new Set(['div', 'p', 'h1', 'h2', 'h3', 'blockquote'])
+
 export function unwrapBlockContainers(root: HTMLElement): void {
   for (;;) {
-    const wrapper = Array.from(root.querySelectorAll<HTMLElement>('*')).find(
-      (el) =>
-        !isBlockTag(el) &&
-        !STRUCTURAL_CONTAINERS.has(el.tagName.toLowerCase()) &&
-        el.children.length > 0 &&
-        Array.from(el.children).every(isBlockTag)
-    )
+    const wrapper = Array.from(root.querySelectorAll<HTMLElement>('*')).find((el) => {
+      if (isBlockTag(el) || STRUCTURAL_CONTAINERS.has(el.tagName.toLowerCase())) return false
+      const kids = Array.from(el.children)
+      // A bare <br> among the block children — Google Docs appends one at the
+      // end of its `<b id="docs-internal-guid">` wrapper — must not disqualify
+      // the wrapper: it carries no content and blocks already break lines, so
+      // it is dropped on unwrap. Everything else must be block-level.
+      const blockKids = kids.filter(isBlockTag)
+      return blockKids.length > 0 && kids.every((c) => isBlockTag(c) || c.tagName === 'BR')
+    })
     if (!wrapper) return
-    const blocks = Array.from(wrapper.children) as HTMLElement[]
+    const blocks = Array.from(wrapper.children).filter(isBlockTag) as HTMLElement[]
     for (const block of blocks) {
+      // Push the wrapper's own formatting down into each block that holds
+      // inline content, so an `<i>`/`<b>` container's meaning survives
+      // per-block. A `<ul>`/`<ol>`/`<table>` child must be hoisted intact —
+      // wrapping its `<li>`/`<tr>` in the shell would break the structure
+      // renderListMd/renderTableMd walk, dropping every row. (`<hr>`/`<pre>`
+      // carry nothing an inline wrapper could style.)
+      if (!REWRAPPABLE_BLOCKS.has(block.tagName.toLowerCase())) continue
       const shell = wrapper.cloneNode(false) as HTMLElement
       while (block.firstChild) shell.appendChild(block.firstChild)
       block.appendChild(shell)
