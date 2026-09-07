@@ -1,5 +1,5 @@
-import { createEditor, flushAllEditors, detectInlinePattern, detectBlockPrefix, leadingIndentLen, type Editor, type EditorHooks } from '../src/ui/editor'
-import type { RefInfo } from '../src/core/markdown'
+import { createEditor, flushAllEditors, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 
 function makeHooks(): EditorHooks & { changes: number; refs: RefInfo['target'][]; atRanges: Range[]; slashRanges: Range[] } {
@@ -242,6 +242,109 @@ describe('paste', () => {
     expect(probe.querySelector('[contenteditable="true"]')).toBeNull()
     expect(probe.querySelectorAll('a').length).toBeLessThanOrEqual(1) // no tag-splitting from a broken-out attribute
     editor.destroy()
+  })
+})
+
+describe('copy / cut (Ctrl+C / Ctrl+X routed through the same background-free path as the toolbar button)', () => {
+  function mount(md: string): Editor {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    return editor
+  }
+  function selectAll(editor: Editor): void {
+    const ed = editor.root.querySelector('.editor') as HTMLElement
+    const r = document.createRange()
+    r.selectNodeContents(ed)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+  function dispatch(editor: Editor, type: 'copy' | 'cut'): { preventDefault: ReturnType<typeof vi.spyOn>; data: Record<string, string> } {
+    const data: Record<string, string> = {}
+    const clipboardData = {
+      setData: (fmt: string, val: string) => { data[fmt] = val },
+      getData: (fmt: string) => data[fmt] ?? '',
+    } as unknown as DataTransfer
+    const event = new Event(type, { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+    ;(editor.root.querySelector('.editor') as HTMLElement).dispatchEvent(event)
+    return { preventDefault, data }
+  }
+
+  test('copy writes the selected formatted HTML with no background style, plus plain text', () => {
+    const editor = mount('# Head\n\nplain **bold** and <u>u</u>')
+    selectAll(editor)
+    const { preventDefault, data } = dispatch(editor, 'copy')
+
+    expect(preventDefault).toHaveBeenCalled()
+    expect(data['text/html']).toContain('<h1>')
+    expect(data['text/html']).toContain('<strong>bold</strong>')
+    expect(data['text/html']).toContain('<u>u</u>')
+    expect(data['text/html']!.toLowerCase()).not.toContain('background')
+    expect(data['text/plain']).toContain('Head')
+    expect(data['text/plain']).toContain('bold')
+    editor.destroy()
+  })
+
+  test('a collapsed selection is left to the browser (no preventDefault, nothing written)', () => {
+    const editor = mount('hello')
+    const ed = editor.root.querySelector('.editor') as HTMLElement
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.setStart(ed, 0)
+    r.collapse(true)
+    sel.addRange(r)
+
+    const { preventDefault, data } = dispatch(editor, 'copy')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(data).toEqual({})
+    editor.destroy()
+  })
+
+  test('a selection outside this editor is left to the browser', () => {
+    const editor = mount('inside')
+    const outside = document.createElement('p')
+    outside.textContent = 'outside text'
+    document.body.appendChild(outside)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.selectNodeContents(outside)
+    sel.addRange(r)
+
+    const { preventDefault, data } = dispatch(editor, 'copy')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(data).toEqual({})
+    outside.remove()
+    editor.destroy()
+  })
+
+  test('cut writes the same clipboard payload and removes the selected content', () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('cut **me** out')
+      selectAll(editor)
+
+      const { preventDefault, data } = dispatch(editor, 'cut')
+      expect(preventDefault).toHaveBeenCalled()
+      expect(data['text/html']).toContain('<strong>me</strong>')
+
+      const ed = editor.root.querySelector('.editor') as HTMLElement
+      expect(ed.textContent).toBe('') // content gone, ensureBlock left an empty block
+      expect(ed.children.length).toBeGreaterThan(0)
+
+      vi.advanceTimersByTime(400)
+      expect(hooks.changes).toBeGreaterThan(0)
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -3145,6 +3248,63 @@ describe('detectBlockPrefix', () => {
     expect(detectBlockPrefix('```' + nbsp)).toEqual({ type: 'codeblock', prefixLen: 4 })
     expect(detectBlockPrefix('```js')).toBeNull()
     expect(detectBlockPrefix('``')).toBeNull()
+  })
+})
+
+describe('flattenTopLevelBlockWrappers', () => {
+  const html = (s: string): HTMLElement => {
+    const d = document.createElement('div')
+    d.innerHTML = s
+    return d
+  }
+
+  test('hoists a <div> wrapping block children up to the root (the insertHTML paste shape)', () => {
+    const root = html('<div><h1>Heading</h1><ul><li>one</li><li>two</li></ul><div>tail</div></div>')
+    flattenTopLevelBlockWrappers(root)
+    expect(Array.from(root.children).map((c) => c.tagName)).toEqual(['H1', 'UL', 'DIV'])
+    expect(root.querySelector('h1')!.textContent).toBe('Heading')
+    expect(root.querySelector('div')!.textContent).toBe('tail')
+  })
+
+  test('reads back as structured markdown after flattening, not a run-on line', () => {
+    const root = html('<div><h1>Heading</h1><ul><li>one</li><li>two</li></ul><div>tail</div></div>')
+    flattenTopLevelBlockWrappers(root)
+    // htmlToMd (getMd) walks the root's DIRECT children as blocks — that's
+    // exactly why the un-flattened wrapper collapsed to "Headingonetwotail".
+    expect(htmlToMd(root)).toBe('# Heading\n- one\n- two\ntail')
+  })
+
+  test('fully unwraps a doubly-nested wrapper', () => {
+    const root = html('<div><div><h1>H</h1><div>x</div></div></div>')
+    flattenTopLevelBlockWrappers(root)
+    expect(Array.from(root.children).map((c) => c.tagName)).toEqual(['H1', 'DIV'])
+  })
+
+  test('leaves a normal flat editor untouched', () => {
+    const root = html('<div>line one</div><h2>head</h2><div><br></div>')
+    const before = root.innerHTML
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe(before)
+  })
+
+  test('never dissolves a <ul> whose <li> nests another list', () => {
+    const root = html('<ul><li>a<ul><li>b</li></ul></li></ul>')
+    const before = root.innerHTML
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe(before)
+  })
+
+  test('leaves a <div> that also holds loose text alongside blocks (would orphan the text)', () => {
+    const root = html('<div>loose<h1>H</h1></div>')
+    const before = root.innerHTML
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe(before)
+  })
+
+  test('a plain paragraph <div> (no block children) is not a wrapper', () => {
+    const root = html('<div>just a line</div>')
+    flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe('<div>just a line</div>')
   })
 })
 

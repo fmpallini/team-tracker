@@ -1,4 +1,5 @@
-import { t, formatDate, parseLocaleDate } from '../src/core/i18n'
+import { t, formatDate, parseLocaleDate, dicts } from '../src/core/i18n'
+import type { MsgKey } from '../src/core/i18n'
 
 test('t interpolates', () => {
   expect(t('pt-BR', 'app_name')).toBe('Team Tracker')
@@ -49,4 +50,52 @@ test('parseLocaleDate valid and invalid', () => {
   expect(parseLocaleDate('07/02/2026', 'en-US')).toBe('2026-07-02')
   expect(parseLocaleDate('31/02/2026', 'pt-BR')).toBeNull()
   expect(parseLocaleDate('junk', 'pt-BR')).toBeNull()
+})
+
+describe('locale dictionary parity', () => {
+  // The `\w+` inside `{...}` — same shape t()'s substitution regex matches.
+  const placeholders = (msg: string): Set<string> => {
+    const out = new Set<string>()
+    for (const m of msg.matchAll(/\{(\w+)\}/g)) out.add(m[1]!)
+    return out
+  }
+  const ptKeys = Object.keys(dicts['pt-BR']) as MsgKey[]
+  const enKeys = Object.keys(dicts['en-US']) as MsgKey[]
+
+  test('both locales expose exactly the same set of keys', () => {
+    // `en: Record<MsgKey, string>` already makes a missing key a typecheck
+    // error; this catches a stray *extra* key in en, or a rename that only
+    // half-landed, at runtime too.
+    expect(new Set(enKeys)).toEqual(new Set(ptKeys))
+    expect(enKeys).toHaveLength(ptKeys.length)
+  })
+
+  test('every message carries the same {param} placeholders in both locales', () => {
+    const mismatches: string[] = []
+    for (const key of ptKeys) {
+      const ptP = placeholders(dicts['pt-BR'][key])
+      const enP = placeholders(dicts['en-US'][key])
+      if (ptP.size !== enP.size || [...ptP].some((p) => !enP.has(p))) {
+        mismatches.push(`${key}: pt={${[...ptP].sort().join(',')}} en={${[...enP].sort().join(',')}}`)
+      }
+    }
+    expect(mismatches).toEqual([])
+  })
+
+  test('no message left an unmatched placeholder that t() would leak to the UI', () => {
+    // A `{param}` only pays off if some call site passes it. We can't see call
+    // sites here, but we can catch the typo class: a placeholder whose name is
+    // not a plausible identifier (already guaranteed by \w+) is fine; a lone
+    // `{` or `}` with no partner usually means a broken template.
+    const broken: string[] = []
+    for (const loc of ['pt-BR', 'en-US'] as const) {
+      for (const key of ptKeys) {
+        const msg = dicts[loc][key]
+        const opens = (msg.match(/\{/g) ?? []).length
+        const closes = (msg.match(/\}/g) ?? []).length
+        if (opens !== closes) broken.push(`${loc}/${key}: ${JSON.stringify(msg)}`)
+      }
+    }
+    expect(broken).toEqual([])
+  })
 })

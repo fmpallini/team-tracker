@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.6] - 2026-09-07
+
+### Fixed
+- Pasting formatted content copied from Google Docs no longer loses its structure. A paste that included a heading and a bullet list used to collapse into a single run-on line, keeping only links and underlines; headings, lists, nesting, and per-item bold/italic now come through.
+- Pasting a bullet or numbered list more than four levels deep (from another app that allows deeper nesting) no longer scrambles the indentation and numbering. Levels beyond the fourth are flattened onto the fourth level with clean, sequential numbers.
+- Pasting a multi-part note (heading plus list plus paragraph) onto an empty line no longer collapses everything into one line the next time the file is saved and reopened.
+- Copying from a note with Ctrl+C (or Ctrl+X) and pasting into another app such as Word or Google Docs no longer carries the note's background colour along with the text. It now matches what the toolbar's "Copy → formatted" option already produced.
+
 ## [2.7.5] - 2026-09-06
 
 ### Changed

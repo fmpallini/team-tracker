@@ -361,6 +361,37 @@ test('nesting depth caps at 4 levels (0-3) even if indentation implies deeper', 
   expect(htmlToMd(div)).toBe('- a\n  - b\n    - c\n      - d\n      - e')
 })
 
+test('ordered items keep an ascending written number, so a deliberate gap and <ol start=N> both survive', () => {
+  expect(roundTrip('5. a\n6. b\n7. c')).toBe('5. a\n6. b\n7. c') // start at 5
+  expect(roundTrip('3. a\n5. b')).toBe('3. a\n5. b') // deliberate gap (also covered above)
+})
+
+test('ordered items with a non-advancing written number are renumbered "previous + 1"', () => {
+  // The shape a paste produces when list levels past the 4-level cap collapse
+  // onto one frame, each rendered "1." by renderListMd's per-list counter.
+  expect(roundTrip('1. a\n1. b\n1. c')).toBe('1. a\n2. b\n3. c')
+})
+
+test('a Google-Docs ordered list deeper than 4 levels flattens to level 4 with sequential numbers', () => {
+  // GDoc shape: each deeper <ol> is a sibling of the <li> it belongs under.
+  const div = document.createElement('div')
+  div.innerHTML =
+    '<ol><li><p>one</p></li>' +
+    '<ol><li><p>two</p></li>' +
+    '<ol><li><p>three</p></li>' +
+    '<ol><li><p>four</p></li>' +
+    '<ol><li><p>five</p></li>' +
+    '<ol><li><p>six</p></li></ol></ol></ol></ol></ol></ol>'
+  unwrapBlockContainers(div)
+  const md = htmlToMd(div)
+  // levels 5 and 6 clamp onto level 4, sharing its <ol>
+  expect(md).toBe('1. one\n  1. two\n    1. three\n      1. four\n      1. five\n      1. six')
+  // and mdToHtml renumbers that collapsed frame 1,2,3 rather than 1,1,1
+  const rebuilt = document.createElement('div')
+  rebuilt.innerHTML = mdToHtml(md)
+  expect(htmlToMd(rebuilt)).toBe('1. one\n  1. two\n    1. three\n      1. four\n      2. five\n      3. six')
+})
+
 test('a nested level that switches marker type mid-level round-trips without dropping the second list', () => {
   const md = '- a\n  - b\n  1. c'
   expect(roundTrip(md)).toBe(md)
@@ -497,6 +528,65 @@ describe('unwrapBlockContainers (Google-Docs-style whole-paste wrapper)', () => 
     div.innerHTML = '<table><tr><td><p>cell</p></td></tr></table>'
     unwrapBlockContainers(div)
     expect(htmlToMd(div)).toBe('cell')
+  })
+
+  // Google Docs appends a bare <br> at the end of its <b id="docs-internal-guid">
+  // wrapper. That <br> is not a block tag, so an "every child is block" test
+  // rejected the whole wrapper — it stayed, htmlToMd saw one non-block child,
+  // and the entire paste (heading, list, nesting, per-item bold) collapsed to
+  // a single run-on line. The <br> is content-free and blocks self-delimit,
+  // so it is ignored for the decision and dropped on unwrap.
+  test('a trailing <br> among block children does not stop the wrapper unwrapping', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<b style="font-weight:normal" id="docs-internal-guid-x"><p>line1</p><p>line2</p><br></b>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('line1\nline2')
+  })
+
+  test('a <br> between blocks in the wrapper is dropped, blocks still split', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<span><h2>Head</h2><br><p>body</p></span>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe('## Head\nbody')
+  })
+
+  test('a wrapper whose only children are <br>s is not treated as a block container', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<span>text<br><br></span>'
+    unwrapBlockContainers(div)
+    // left alone: htmlToMd reads it as one inline blob
+    expect(div.querySelector('span')).not.toBeNull()
+  })
+
+  test('a <ul>/<ol> child of the wrapper is hoisted intact, not with its <li>s buried in the re-wrap', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<i><p>intro</p><ul><li>a</li><li>b</li></ul></i>'
+    unwrapBlockContainers(div)
+    // <p> takes the wrapper's italic per-block; the list keeps its structure
+    expect(htmlToMd(div)).toBe('*intro*\n- a\n- b')
+  })
+
+  test('a full Google-Docs paste — heading, nested bullet list, per-item bold/italic, link — keeps its structure', () => {
+    const div = document.createElement('div')
+    div.innerHTML =
+      '<b style="font-weight:normal" id="docs-internal-guid-x">' +
+      '<h1><span style="font-weight:400">Vamos la</span></h1>' +
+      '<ul>' +
+      '<li><p role="presentation"><span>Aqui tenho uma lista</span></p></li>' +
+      '<ul>' +
+      '<li><p role="presentation"><span style="font-weight:700;font-style:italic">Com bullets</span></p></li>' +
+      '<li><p role="presentation"><a href="http://www.g1.com.br"><span>G1</span></a></p></li>' +
+      '</ul>' +
+      '<li><p role="presentation"><span>Teste</span></p></li>' +
+      '</ul><br></b>'
+    unwrapBlockContainers(div)
+    expect(htmlToMd(div)).toBe(
+      '# Vamos la\n' +
+        '- Aqui tenho uma lista\n' +
+        '  - ***Com bullets***\n' +
+        '  - [G1](http://www.g1.com.br)\n' +
+        '- Teste'
+    )
   })
 })
 

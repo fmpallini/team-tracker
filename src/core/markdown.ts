@@ -186,7 +186,7 @@ function preserveIndent(s: string): string {
 
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
-  interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean }
+  interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean; lastVal: number }
   const stack: ListFrame[] = []
   const closeFrame = (f: ListFrame) => { if (f.hasOpenLi) out.push('</li>'); out.push(`</${f.type}>`) }
   const closeList = () => { while (stack.length) closeFrame(stack.pop()!) }
@@ -195,7 +195,15 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // (stack.length — you can only ever nest one level deeper than whatever
   // is currently open) and MAX_LIST_DEPTH, so a malformed/hand-typed indent
   // jump never produces an orphaned list structure.
-  const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, valueAttr: string) => {
+  //
+  // `parsedVal` is the item's own written number (`null` for bullets). An
+  // ordered item keeps its written number only while the sequence is still
+  // ascending within the frame (so `3.` `5.` — a deliberate gap — and
+  // `<ol start=5>` both round-trip); a number that would not advance the
+  // count is replaced by "previous + 1". That is the case a paste hits when
+  // levels past MAX_LIST_DEPTH all collapse onto one frame each written
+  // `1.` — without this they would render `1. 1. 1.`.
+  const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null) => {
     const depth = Math.min(rawDepth, stack.length, MAX_LIST_DEPTH)
     while (stack.length && stack[stack.length - 1]!.depth > depth) closeFrame(stack.pop()!)
     let top = stack[stack.length - 1]
@@ -204,8 +212,14 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
       if (top.hasOpenLi) out.push('</li>')
     } else {
       out.push(`<${type}>`)
-      stack.push({ type, depth, hasOpenLi: false })
+      stack.push({ type, depth, hasOpenLi: false, lastVal: (parsedVal ?? 1) - 1 })
       top = stack[stack.length - 1]!
+    }
+    let valueAttr = ''
+    if (type === 'ol') {
+      const v = parsedVal !== null && parsedVal > top!.lastVal ? parsedVal : top!.lastVal + 1
+      top!.lastVal = v
+      valueAttr = ` value="${v}"`
     }
     out.push(`<li${valueAttr}>`, itemHtml)
     top!.hasOpenLi = true
@@ -260,8 +274,8 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     const ol = /^( *)(\d+)\. (.*)$/.exec(line)
     const hr = /^-{3,}$/.test(line)
     if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
-    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), '')
-    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), ` value="${ol[2]}"`)
+    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), null)
+    else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), Number(ol[2]))
     else if (hr) { closeList(); out.push('<hr>') }
     else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle, linkHint) : '<br>'}</div>`) }
   }
@@ -502,18 +516,35 @@ function isBlockTag(el: Element): boolean {
 // be block-level tags too.
 const STRUCTURAL_CONTAINERS = new Set(['li', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot'])
 
+// Block children of an unwrapped container that hold inline content, so
+// pushing a shallow clone of the container (an `<i>`/`<b>` carrying real
+// formatting) inside them keeps that formatting scoped per-block. `<ul>`,
+// `<ol>`, `<table>`, `<hr>`, `<pre>` are deliberately excluded — see the
+// call site.
+const REWRAPPABLE_BLOCKS = new Set(['div', 'p', 'h1', 'h2', 'h3', 'blockquote'])
+
 export function unwrapBlockContainers(root: HTMLElement): void {
   for (;;) {
-    const wrapper = Array.from(root.querySelectorAll<HTMLElement>('*')).find(
-      (el) =>
-        !isBlockTag(el) &&
-        !STRUCTURAL_CONTAINERS.has(el.tagName.toLowerCase()) &&
-        el.children.length > 0 &&
-        Array.from(el.children).every(isBlockTag)
-    )
+    const wrapper = Array.from(root.querySelectorAll<HTMLElement>('*')).find((el) => {
+      if (isBlockTag(el) || STRUCTURAL_CONTAINERS.has(el.tagName.toLowerCase())) return false
+      const kids = Array.from(el.children)
+      // A bare <br> among the block children — Google Docs appends one at the
+      // end of its `<b id="docs-internal-guid">` wrapper — must not disqualify
+      // the wrapper: it carries no content and blocks already break lines, so
+      // it is dropped on unwrap. Everything else must be block-level.
+      const blockKids = kids.filter(isBlockTag)
+      return blockKids.length > 0 && kids.every((c) => isBlockTag(c) || c.tagName === 'BR')
+    })
     if (!wrapper) return
-    const blocks = Array.from(wrapper.children) as HTMLElement[]
+    const blocks = Array.from(wrapper.children).filter(isBlockTag) as HTMLElement[]
     for (const block of blocks) {
+      // Push the wrapper's own formatting down into each block that holds
+      // inline content, so an `<i>`/`<b>` container's meaning survives
+      // per-block. A `<ul>`/`<ol>`/`<table>` child must be hoisted intact —
+      // wrapping its `<li>`/`<tr>` in the shell would break the structure
+      // renderListMd/renderTableMd walk, dropping every row. (`<hr>`/`<pre>`
+      // carry nothing an inline wrapper could style.)
+      if (!REWRAPPABLE_BLOCKS.has(block.tagName.toLowerCase())) continue
       const shell = wrapper.cloneNode(false) as HTMLElement
       while (block.firstChild) shell.appendChild(block.firstChild)
       block.appendChild(shell)
@@ -646,9 +677,16 @@ function renderTableMd(table: HTMLElement, out: string[]): void {
 // children) as indented markdown lines, 2 spaces per depth level. Each
 // <li>'s own text excludes its nested sub-list (rendered separately, right
 // after that item's own line, at depth + 1).
+//
+// Indent is capped at MAX_LIST_DEPTH: this app's lists (and its Tab-nest) go
+// four levels, and mdToHtml clamps the same way when reading markdown back.
+// Pasted content from an app with deeper lists (Google Docs) would otherwise
+// emit indent mdToHtml can't honour, collapsing levels 5+ into level 4 with
+// every ordered item stuck at "1." — clamping here instead flattens them to
+// level 4 cleanly, and mdToHtml's per-frame renumber makes the run sequential.
 function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   const tag = list.tagName.toLowerCase()
-  const prefix = '  '.repeat(depth)
+  const prefix = '  '.repeat(Math.min(depth, MAX_LIST_DEPTH))
   let i = 0
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement)) return

@@ -1040,7 +1040,11 @@ const en: Record<MsgKey, string> = {
     "You'll need to download the new file and run it manually to get the latest changes. For an always up-to-date app, install the PWA version on your computer instead — it updates itself.",
 }
 
-const dicts: Record<Locale, Record<MsgKey, string>> = {
+// Exported for test/i18n.test.ts's key/placeholder-parity checks. `en` gets
+// key parity from its `Record<MsgKey, string>` annotation at compile time;
+// the runtime test additionally guards that both locales carry the same
+// `{param}` placeholders per message.
+export const dicts: Record<Locale, Record<MsgKey, string>> = {
   'pt-BR': pt,
   'en-US': en,
 }

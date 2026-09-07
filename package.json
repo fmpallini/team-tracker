@@ -1,6 +1,6 @@
 {
   "name": "team-tracker",
-  "version": "2.7.5",
+  "version": "2.7.6",
   "homepage": "https://fmpallini.github.io/team-tracker/",
   "repository": "fmpallini/team-tracker",
   "private": true,
@@ -16,8 +16,10 @@
     "test:e2e:ui": "npm run build && playwright test --ui"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.0",
+    "axe-core": "^4.13.0",
     "esbuild": "^0.28.1",
     "eslint": "^10.9.1",
     "fake-indexeddb": "^6.2.5",

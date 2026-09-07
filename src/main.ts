@@ -7,7 +7,7 @@ import { createStore, type Store } from './core/store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
-import { comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from './ui/hotkeys'
+import { resolveAppHotkey } from './ui/app-hotkeys'
 import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
@@ -484,119 +484,65 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // to the name field, exactly as Escape behaves. See ui/modal.ts.
   const navPastModelessCard = (): boolean => dismissModelessModals()
 
+  // Routing table lives in ui/app-hotkeys.ts (pure, unit-tested); this half
+  // is the effects. `resolveAppHotkey` returning an action always means
+  // "consume the event", so preventDefault() fires unconditionally on a hit.
+  // `navPastModelessCard()` — an effect, not a routing input — runs after
+  // preventDefault on exactly the branches that ran it inline before.
   const onKeyDown = (e: KeyboardEvent): void => {
-    if ((e.ctrlKey || e.metaKey) && matchKey(e, 's')) {
-      // Always claim Ctrl+S — even while focus is inside an editor field —
-      // so the browser's own "save page" dialog never appears.
-      e.preventDefault()
-      void saveCtl.saveNow({ explicit: true })
-      return
-    }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && matchKey(e, 'k')) {
-      if (!comboHotkeyAllowed(e)) return
-      e.preventDefault()
-      palette.open()
-      return
-    }
-    if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && matchKey(e, 'l')) {
-      // Plain Ctrl+L is reserved by browser chrome (focus address bar) in
-      // most tabs, outside the page's reach, and Ctrl+Shift+L is a common
-      // password-manager autofill binding (e.g. Bitwarden) — Ctrl+Alt+L is
-      // free of both, so this actually fires reliably.
-      if (!comboHotkeyAllowed(e)) return
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      closeFile()
-      return
-    }
-    const fKeyMatch = /^F([1-7])$/.exec(e.key)
-    if (fKeyMatch) {
-      // navHotkeyAllowed, not hotkeyAllowed: must still fire while editing,
-      // or F5/F6/F7 fall through to the browser's own refresh/address-bar/
-      // caret-browsing default instead (see navHotkeyAllowed's doc comment
-      // in ui/hotkeys.ts).
-      if (!navHotkeyAllowed(e)) return
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      openPaneModuleByIndex(pm, store, Number(fKeyMatch[1]) - 1)
-      return
-    }
-    if (!e.altKey) return
-    // Alt+Shift+Left/Right/Up: pane history (back/forward/jump-to-latest).
-    // Plain Alt+Arrow are pane-layout actions instead (below) — Left/Right
-    // select a pane, Up cycles single/dual, Down swaps sides while split.
-    // All of these use navHotkeyAllowed rather than hotkeyAllowed: they must
-    // still fire while focus is inside a rich-text editor field, or the
-    // browser's own Alt+Arrow back/forward navigation eats the keystroke
-    // instead (see navHotkeyAllowed's doc comment in ui/hotkeys.ts). Checked
-    // once here since it doesn't vary by branch below.
-    if (!navHotkeyAllowed(e)) return
-    if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      navigateFocusedHistory(pm, store, e.key === 'ArrowLeft' ? -1 : 1)
-      return
-    }
-    if (e.shiftKey && e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      jumpFocusedHistoryToLatest(pm, store)
-      return
-    }
-    if (e.shiftKey) return
-    // Alt+[ / Alt+] / Alt+T: daily-notes day nav (prev/next/today). Only
-    // acts when the focused pane is currently showing a daily note — plain
-    // Alt+letter/bracket doesn't insert a character, so (like Alt+Arrow
-    // above) this must reach the app even while typing in the rich-text
-    // editor, hence navHotkeyAllowed rather than hotkeyAllowed.
-    // Match the physical key as well as the produced character, so a layout
-    // where '['/']' sit behind AltGr/dead keys (or Dvorak's 't') still
-    // reaches this — same layout-independence as the letter/digit shortcuts.
-    const dayPrev = e.key === '[' || e.code === 'BracketLeft'
-    const dayNext = e.key === ']' || e.code === 'BracketRight'
-    const dayToday = matchKey(e, 't')
-    if (dayPrev || dayNext || dayToday) {
-      const idx = store.doc.nav.focusedPane
-      const loc = currentLoc(store.doc.nav.panes[idx])
-      if (loc && loc.ref.kind === 'daily') {
-        e.preventDefault()
-        const date = dayPrev
-          ? addDaysIso(loc.ref.date, -1)
-          : dayNext
-            ? addDaysIso(loc.ref.date, 1)
-            : todayIso()
+    const focusedLoc = currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])
+    const action = resolveAppHotkey(e, {
+      teamCount: store.doc.teams.length,
+      focusedPaneShowsDailyNote: !!focusedLoc && focusedLoc.ref.kind === 'daily',
+    })
+    if (!action) return
+    e.preventDefault()
+    switch (action.type) {
+      case 'save':
+        void saveCtl.saveNow({ explicit: true })
+        return
+      case 'palette':
+        palette.open()
+        return
+      case 'closeFile':
+        if (navPastModelessCard()) closeFile()
+        return
+      case 'paneModule':
+        if (navPastModelessCard()) openPaneModuleByIndex(pm, store, action.index)
+        return
+      case 'historyStep':
+        if (navPastModelessCard()) navigateFocusedHistory(pm, store, action.dir)
+        return
+      case 'historyLatest':
+        if (navPastModelessCard()) jumpFocusedHistoryToLatest(pm, store)
+        return
+      case 'dayNav': {
+        const idx = store.doc.nav.focusedPane
+        const loc = currentLoc(store.doc.nav.panes[idx])
+        if (!loc || loc.ref.kind !== 'daily') return
+        const date =
+          action.to === 'prev'
+            ? addDaysIso(loc.ref.date, -1)
+            : action.to === 'next'
+              ? addDaysIso(loc.ref.date, 1)
+              : todayIso()
         pm.openInPane(idx, { teamId: loc.teamId, ref: { kind: 'daily', date } })
         return
       }
-    }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      if (setFocusedPane(store, e.key === 'ArrowLeft' ? 0 : 1)) pm.renderAll()
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      pm.toggleSplit()
-      return
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (!navPastModelessCard()) return
-      if (swapPaneSides(store)) pm.renderAll()
-      return
-    }
-    for (let n = 1; n <= 9; n++) {
-      // matchDigit, not Number(e.key): on a layout whose top row types
-      // symbols unless Shift is held (AZERTY), e.key is '&'/'é'/… where a
-      // digit is expected — e.code stays 'Digit<n>'.
-      if (!matchDigit(e, n)) continue
-      const team = store.doc.teams[n - 1]
-      if (!team) return
-      e.preventDefault()
-      selectTeam(team.id)
-      return
+      case 'selectPane':
+        if (navPastModelessCard() && setFocusedPane(store, action.index)) pm.renderAll()
+        return
+      case 'toggleSplit':
+        if (navPastModelessCard()) pm.toggleSplit()
+        return
+      case 'swapPanes':
+        if (navPastModelessCard() && swapPaneSides(store)) pm.renderAll()
+        return
+      case 'selectTeam': {
+        const team = store.doc.teams[action.index]
+        if (team) selectTeam(team.id)
+        return
+      }
     }
   }
   document.addEventListener('keydown', onKeyDown)
