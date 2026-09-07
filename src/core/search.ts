@@ -14,8 +14,61 @@ export interface SearchResult {
 const RESULT_LIMIT = 50
 const SNIPPET_RADIUS = 80
 
-export function normalize(s: string): string {
+/** The general case: decompose, drop every combining mark, lowercase. */
+function decomposeAndFold(s: string): string {
   return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
+// Written as the positive range rather than as "not ASCII": spelling it
+// [^\u0000-\u007F] means naming control characters in a class, which
+// eslint's no-control-regex rejects. Every UTF-16 code unit outside ASCII
+// (lone surrogates included) falls in this range, so the two are equivalent.
+const NON_ASCII = /[\u0080-\uFFFF]/
+
+/**
+ * Latin-1 letters that carry an accent, mapped straight to the plain
+ * lowercase letter `decomposeAndFold` would leave.
+ *
+ * Built by running `decomposeAndFold` over the Latin-1 range at module load
+ * rather than typed out, so the table cannot drift from the behaviour it
+ * stands in for, and so the letters with *no* canonical decomposition are
+ * excluded by construction — ø, æ, ð, þ and ß are left alone by NFD, and must
+ * be left alone here too.
+ */
+const LATIN1_FOLD = new Map<string, string>()
+for (let codePoint = 0xa0; codePoint <= 0xff; codePoint++) {
+  const char = String.fromCharCode(codePoint)
+  const folded = decomposeAndFold(char)
+  if (folded !== char.toLowerCase()) LATIN1_FOLD.set(char, folded)
+}
+const LATIN1_FOLD_PATTERN = new RegExp(`[${[...LATIN1_FOLD.keys()].join('')}]`, 'g')
+
+/**
+ * Accent- and case-insensitive form used for every match and every cached
+ * candidate.
+ *
+ * Written to avoid `normalize('NFD')` wherever it can, for memory rather than
+ * speed. The accented letters this app's documents actually contain — the
+ * whole of Portuguese, and Latin-1 generally — live in the one-byte range, so
+ * a note sits on the heap as a one-byte string. NFD decomposes those letters
+ * into combining marks outside that range, which promotes the string to V8's
+ * two-byte representation, and stripping the marks afterwards does not demote
+ * it again: the derived copy the search cache retains ends up twice the size
+ * of the text it came from. Folding Latin-1 accents directly keeps it one
+ * byte wide, halving the cache on an accented corpus and running about twice
+ * as fast besides.
+ *
+ * The NFD path is still there, reached only when folding leaves something
+ * outside ASCII — anything beyond Latin-1, or already-decomposed input — so
+ * the result is the same string for every input either way. See
+ * test/search-normalize.test.ts, which asserts exactly that over the range
+ * these documents can hold.
+ */
+export function normalize(s: string): string {
+  if (!NON_ASCII.test(s)) return s.toLowerCase()
+  const folded = s.replace(LATIN1_FOLD_PATTERN, (char) => LATIN1_FOLD.get(char)!)
+  if (!NON_ASCII.test(folded)) return folded.toLowerCase()
+  return decomposeAndFold(folded)
 }
 
 // Strips the basic markdown syntax this app produces so search snippets read

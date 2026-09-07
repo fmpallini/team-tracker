@@ -109,9 +109,19 @@ function cacheBytesPerChar(): number {
 }
 
 test('the warm search cache retains one derived copy of the corpus, not two', () => {
-  // Two retained copies measure ~3.0 bytes/char (a Latin-1 stripped copy at
-  // ~1, plus a two-byte normalized copy at ~2 — NFD decomposition forces the
-  // wide representation). One retained copy measures ~2.0. The 2.5 threshold
-  // sits between those with room to spare on either side.
+  // Two retained copies measured ~3.0 bytes/char (a Latin-1 stripped copy at
+  // ~1, plus the normalized copy). One copy is ~2.0 at worst — see the test
+  // below for why it is now lower still. The 2.5 threshold sits between the
+  // one-copy and two-copy worlds with room to spare on either side.
   expect(cacheBytesPerChar()).toBeLessThan(2.5)
+})
+
+test('the retained copy stays one byte per character for accented Latin text', () => {
+  // Portuguese accented letters are all Latin-1, so a note is a one-byte
+  // string on the heap. NFD decomposes them into combining marks outside
+  // Latin-1, which forces V8's two-byte representation — and mark-stripping
+  // does not undo it, so the normalized copy stayed twice the size of the
+  // text it came from. `normalize` folds Latin-1 accents directly for exactly
+  // this reason, keeping the one copy it retains one byte wide.
+  expect(cacheBytesPerChar()).toBeLessThan(1.6)
 })
