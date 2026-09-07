@@ -14,10 +14,10 @@ export interface SearchResult {
 const RESULT_LIMIT = 50
 const SNIPPET_RADIUS = 80
 
-export function normalize(s: string): string {
-  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-}
-
+export function normalize(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
 // Strips the basic markdown syntax this app produces so search snippets read
 // as plain text: heading/list/ordered-list markers, bold/italic/strike/underline,
 // @[label](ref) references (kept as their label), and refs.ts's
@@ -151,19 +151,77 @@ function backlinkSnippet(raw: string, matchIndex: number, matchLen: number): str
   return out
 }
 
-/** A candidate with its markdown stripped and normalized once, ready to match against. */
+/**
+ * Field size at or above which a candidate's markdown-stripped text is kept
+ * instead of re-derived per query — see `PreparedCandidate`. Chosen so the
+ * stripping a single query can be asked to redo stays bounded at roughly
+ * RESULT_LIMIT x this many characters, which measures well under a
+ * millisecond, while ordinary notes (a couple of KB at most) stay on the
+ * cheap side of the trade.
+ */
+const EAGER_STRIP_MIN = 4096
+
+/**
+ * A candidate ready to match against.
+ *
+ * `raw` is the document's own string, held by reference — nothing new is
+ * allocated for it — and `normalized` is the one derived copy matching needs.
+ * The markdown-stripped text a result's snippet is cut from is normally *not*
+ * retained: on a large document it measured a full extra copy of the whole
+ * corpus (~1 byte per character on top of normalized's ~2), while at most
+ * RESULT_LIMIT candidates per query ever need it. `stripMd` is pure, so
+ * re-running it on the survivors reproduces exactly the string `normalized`
+ * was derived from, and the index alignment `makeSnippet` depends on holds.
+ *
+ * The exception is `stripped`, kept only for fields at least
+ * EAGER_STRIP_MIN characters long. Re-stripping is cheap per KB but the cost
+ * is paid per shown result per keystroke, so on a document holding a few very
+ * large fields — where all 50 shown results can be enormous notes — deriving
+ * it on demand cost more per query than storing it ever did (measured: a
+ * repeat query redoing a third of the whole index build). Above the
+ * threshold the old eager behaviour is simply kept, so neither axis is ever
+ * worse than it was before snippets went lazy.
+ *
+ * See test/search-memory.test.ts and test/search-large-fields.test.ts.
+ */
 interface PreparedCandidate {
   ref: ModuleRef
   title: string
-  stripped: string
+  raw: string
   normalized: string
+  /** Pre-stripped display text, present only for fields >= EAGER_STRIP_MIN. */
+  stripped?: string
+}
+
+/** The one place `raw` is turned into the forms matching and snippets need — shared by `createSearchIndex`'s cache and by the uncached `searchDocument`. */
+function prepareCandidate(candidate: Candidate): PreparedCandidate {
+  const stripped = stripMd(candidate.raw)
+  const prepared: PreparedCandidate = {
+    ref: candidate.ref, title: candidate.title, raw: candidate.raw, normalized: normalize(stripped),
+  }
+  // Free to keep at this point — it has just been computed either way.
+  if (candidate.raw.length >= EAGER_STRIP_MIN) prepared.stripped = stripped
+  return prepared
 }
 
 /** Backlinks' reverse index for one team, keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
 type BacklinksByRef = Map<string, Backlink[]>
 
-/** A match plus its ranking data — kept separate from the public `SearchResult` so `span`/`minPos` never leak into the UI-facing shape. */
-interface ScoredHit { result: SearchResult; span: number; minPos: number }
+/**
+ * A match plus its ranking data — kept separate from the public
+ * `SearchResult` so `span`/`minPos` never leak into the UI-facing shape.
+ * Holds the candidate itself rather than a finished result: the snippet is
+ * only cut once ranking has decided which hits are actually shown.
+ */
+interface ScoredHit {
+  candidate: PreparedCandidate
+  teamId: string
+  teamName: string
+  /** Each term's first-match index in `candidate.normalized` — where the snippet gets anchored. */
+  positions: number[]
+  span: number
+  minPos: number
+}
 
 /**
  * Scores one candidate against `terms` (already required to all match, via
@@ -182,23 +240,24 @@ function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: 
   if (!positions) return null
   const minPos = Math.min(...positions)
   const maxEnd = Math.max(...positions.map((p, i) => p + terms[i]!.length))
+  return { candidate, teamId, teamName, positions, span: maxEnd - minPos, minPos }
+}
+
+/** Cuts the displayed snippet — the one step that needs the markdown-stripped text, so it is paid per shown result rather than per cached candidate. */
+function toResult(hit: ScoredHit): SearchResult {
   return {
-    result: {
-      loc: { teamId, ref: candidate.ref },
-      moduleKind: candidate.ref.kind,
-      title: candidate.title,
-      snippet: makeSnippet(candidate.stripped, positions),
-      teamName,
-    },
-    span: maxEnd - minPos,
-    minPos,
+    loc: { teamId: hit.teamId, ref: hit.candidate.ref },
+    moduleKind: hit.candidate.ref.kind,
+    title: hit.candidate.title,
+    snippet: makeSnippet(hit.candidate.stripped ?? stripMd(hit.candidate.raw), hit.positions),
+    teamName: hit.teamName,
   }
 }
 
 /** Tightest-cluster-first, then earliest-match-first; JS's stable sort keeps same-score hits in `hits`' original (insertion) order as the final tiebreak. */
 function rankAndLimit(hits: ScoredHit[]): SearchResult[] {
   hits.sort((a, b) => (a.span - b.span) || (a.minPos - b.minPos))
-  return hits.slice(0, RESULT_LIMIT).map((h) => h.result)
+  return hits.slice(0, RESULT_LIMIT).map(toResult)
 }
 
 export interface SearchIndex {
@@ -256,6 +315,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   const backlinksCache = new Map<string, BacklinksByRef>()
   const candidatesCache = new Map<string, PreparedCandidate[]>()
 
+
   function syncRev(): void {
     const rev = getRev()
     if (rev === knownRev) return
@@ -263,6 +323,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
     candidatesCache.clear()
     knownRev = rev
   }
+
 
   /** Reverse mention index for one team — a raw-text scan only, no strip/normalize. */
   function backlinksFor(team: Team, doc: Doc): BacklinksByRef {
@@ -294,11 +355,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   function candidatesFor(team: Team, doc: Doc): PreparedCandidate[] {
     const hit = candidatesCache.get(team.id)
     if (hit) return hit
-    const prepared: PreparedCandidate[] = []
-    for (const c of collectCandidates(team, doc)) {
-      const stripped = stripMd(c.raw)
-      prepared.push({ ref: c.ref, title: c.title, stripped, normalized: normalize(stripped) })
-    }
+    const prepared = collectCandidates(team, doc).map(prepareCandidate)
     candidatesCache.set(team.id, prepared)
     return prepared
   }
@@ -329,13 +386,14 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       syncRev()
       const trimmedQuery = query.trim()
       if (!trimmedQuery) return []
-      const terms = normalize(trimmedQuery).split(/\s+/).filter(Boolean)
+      const normalizedQuery = normalize(trimmedQuery)
+      const terms = normalizedQuery.split(/\s+/).filter(Boolean)
       if (terms.length === 0) return []
 
       const doc = getDoc()
-      const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
       const hits: ScoredHit[] = []
 
+      const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
       for (const team of teams) {
         for (const candidate of candidatesFor(team, doc)) {
           const hit = scoreCandidate(candidate, team.id, team.name, terms)
@@ -366,9 +424,7 @@ export function searchDocument(doc: Doc, query: string, scopeTeamId: string | nu
 
   for (const team of teams) {
     for (const candidate of collectCandidates(team, doc)) {
-      const stripped = stripMd(candidate.raw)
-      const normalized = normalize(stripped)
-      const hit = scoreCandidate({ ref: candidate.ref, title: candidate.title, stripped, normalized }, team.id, team.name, terms)
+      const hit = scoreCandidate(prepareCandidate(candidate), team.id, team.name, terms)
       if (hit) hits.push(hit)
     }
   }
