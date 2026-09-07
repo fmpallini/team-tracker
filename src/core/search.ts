@@ -14,10 +14,10 @@ export interface SearchResult {
 const RESULT_LIMIT = 50
 const SNIPPET_RADIUS = 80
 
-export function normalize(s: string): string {
-  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-}
-
+export function normalize(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
 // Strips the basic markdown syntax this app produces so search snippets read
 // as plain text: heading/list/ordered-list markers, bold/italic/strike/underline,
 // @[label](ref) references (kept as their label), and refs.ts's
@@ -315,15 +315,50 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
   const backlinksCache = new Map<string, BacklinksByRef>()
   const candidatesCache = new Map<string, PreparedCandidate[]>()
 
+  /**
+   * The previous query's *complete* match set (pre-`RESULT_LIMIT`), kept so
+   * that extending that query re-scores only those hits instead of the whole
+   * document — see `narrowable` below for why that is sound.
+   *
+   * Storing the ranked-and-limited results here instead would be wrong: a hit
+   * ranked 51st for "ro" can rank 1st for "rollout", and truncating first
+   * would lose it for every query that follows.
+   *
+   * Holds `PreparedCandidate` references, so it retains nothing the
+   * candidates cache isn't already holding — and it must be dropped whenever
+   * that cache is, or it would keep serving candidates prepared from text
+   * the document no longer has.
+   */
+  let lastQuery: { normalizedQuery: string; scopeTeamId: string | null; hits: ScoredHit[] } | null = null
 
   function syncRev(): void {
     const rev = getRev()
     if (rev === knownRev) return
     backlinksCache.clear()
     candidatesCache.clear()
+    lastQuery = null
     knownRev = rev
   }
 
+  /**
+   * Whether `normalizedQuery` can be answered by re-scoring the previous
+   * query's matches alone.
+   *
+   * Extending a query can only shrink the match set. Splitting on whitespace,
+   * a query that starts with the previous one has the same leading terms, and
+   * its final term has the previous final term as a prefix (or adds a new
+   * term outright). A candidate matching every new term therefore contains
+   * every old term too — so anything the new query matches was already in the
+   * old query's hits, and anything the old query rejected cannot match now.
+   *
+   * The scope has to be identical: a hit set collected for one team says
+   * nothing about candidates in the teams that scope excluded.
+   */
+  function narrowable(normalizedQuery: string, scopeTeamId: string | null): boolean {
+    return lastQuery !== null
+      && lastQuery.scopeTeamId === scopeTeamId
+      && normalizedQuery.startsWith(lastQuery.normalizedQuery)
+  }
 
   /** Reverse mention index for one team — a raw-text scan only, no strip/normalize. */
   function backlinksFor(team: Team, doc: Doc): BacklinksByRef {
@@ -368,6 +403,12 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       // change (a template edit) would leave knownRev stale and trigger a
       // full clear anyway.
       knownRev = getRev()
+      // Dropped unconditionally, even for a change no cache entry cares
+      // about. The previous query's hit set is the one thing here that can
+      // outlive its own team's cache entry, and re-deriving it costs a single
+      // full scan on the next keystroke — far cheaper than reasoning about
+      // whether this particular scope could have touched a hit.
+      lastQuery = null
       if (!scope || scope.teamId === undefined) {
         // No team named — "could be any/all teams" (this is also what
         // store.replaceDoc() sends). Nothing narrower is safe.
@@ -393,13 +434,24 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       const doc = getDoc()
       const hits: ScoredHit[] = []
 
-      const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
-      for (const team of teams) {
-        for (const candidate of candidatesFor(team, doc)) {
-          const hit = scoreCandidate(candidate, team.id, team.name, terms)
+      if (narrowable(normalizedQuery, scopeTeamId)) {
+        // Typing forward: re-score the previous query's matches only. Each
+        // hit already knows its team, so no team walk is needed here.
+        for (const previous of lastQuery!.hits) {
+          const hit = scoreCandidate(previous.candidate, previous.teamId, previous.teamName, terms)
           if (hit) hits.push(hit)
         }
+      } else {
+        const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
+        for (const team of teams) {
+          for (const candidate of candidatesFor(team, doc)) {
+            const hit = scoreCandidate(candidate, team.id, team.name, terms)
+            if (hit) hits.push(hit)
+          }
+        }
       }
+
+      lastQuery = { normalizedQuery, scopeTeamId, hits }
       return rankAndLimit(hits)
     },
 
