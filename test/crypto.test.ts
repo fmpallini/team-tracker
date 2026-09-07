@@ -140,6 +140,32 @@ test('empty file is reported as corrupt, not a crash', async () => {
   await expect(decryptDocument(new Uint8Array(0), 'pw')).rejects.toBeInstanceOf(CorruptFileError)
 })
 
+test('decryptDocument rejects a password-less (TMV-PLAIN) file as corrupt — the two format sniffers are mutually exclusive', async () => {
+  // The reverse of "parsePlain returns null for encrypted-file bytes": a
+  // plain file starts "TMV-PLAIN\n", so bytes[3] is '-' (0x2d) not '1'
+  // (0x31) — magic check fails before any password work.
+  const plain = serializePlain(createEmptyDocument('pt-BR'))
+  await expect(decryptDocument(plain, 'pw')).rejects.toBeInstanceOf(CorruptFileError)
+})
+
+test('a newer-schema payload inside an ENCRYPTED file surfaces as SchemaTooNewError, not CorruptFileError', async () => {
+  // decryptDocument's catch only maps SyntaxError to corrupt; migrate()'s
+  // SchemaTooNewError must pass straight through so the user is told to
+  // upgrade rather than that their file is broken. The plain path already
+  // has this test — this is the encrypted path.
+  const future = { ...createEmptyDocument('en-US'), schemaVersion: SCHEMA_VERSION + 1 }
+  const bytes = await encryptDocument(future as ReturnType<typeof createEmptyDocument>, 'pw')
+  await expect(decryptDocument(bytes, 'pw')).rejects.toBeInstanceOf(SchemaTooNewError)
+}, 20000)
+
+test('parsePlain throws CorruptFileError when only the tag is present and the body is empty', () => {
+  expect(() => parsePlain(new TextEncoder().encode('TMV-PLAIN\n'))).toThrow(CorruptFileError)
+})
+
+test('parsePlain returns null when the buffer is shorter than the tag itself', () => {
+  expect(parsePlain(new TextEncoder().encode('TMV-P'))).toBeNull()
+})
+
 // --- Password edge cases -------------------------------------------------
 
 test('empty-string password round-trips and is distinguishable from a non-empty one', async () => {
