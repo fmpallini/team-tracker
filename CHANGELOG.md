@@ -4,6 +4,13 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.7.7] - 2026-09-08
+
+### Added
+- In a daily note, scrolling past the top or bottom edge now jumps to the nearest earlier or later day that actually has a note. The note rubber-bands against the edge as you push, and an accent border builds up as you go; a light nudge just springs back, so only a deliberate push moves you. Empty days in between are skipped.
+- New shortcuts **Alt+,** and **Alt+.** jump to the previous or next day that has a note, skipping empty days — the keyboard equivalent of the edge-scroll gesture. The existing **Alt+[** / **Alt+]** still step one calendar day at a time.
+- When you land on a day via the edge-scroll gesture or Alt+, / Alt+. — where the day you end up on isn't obvious — the date in the pane's title bar briefly flashes. Picking a date on the calendar or stepping one day with Alt+[ / Alt+] doesn't flash, since you already know where you're going.
+
 ## [2.7.6] - 2026-09-07
 
 ### Fixed

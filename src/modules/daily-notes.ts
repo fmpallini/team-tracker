@@ -8,7 +8,8 @@ import type { ModuleCtx } from '../ui/panes'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
 import { nowHHMM, isWithinTwoMonthWindow } from '../core/date'
-import { findTeam as docFindTeam } from '../core/document'
+import { findTeam as docFindTeam, nearestDatedNote } from '../core/document'
+import { OVERSCROLL, rubberBand, easeOutCubic, overscrollCommits } from '../core/overscroll'
 import { scopeAffects, type Section } from '../core/scope'
 import type { Store } from '../core/store'
 import { el } from '../ui/dom'
@@ -226,6 +227,122 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     editor.refreshRefLabels()
   })
 
+  /**
+   * "Push past the top/bottom edge to jump to the nearest day that has a
+   * note." A macOS-style rubber band on the editor's own scroll element:
+   * once it is scrolled hard against an edge, further wheel travel is
+   * accumulated, shown through `rubberBand()`'s resistance curve as a
+   * `translateY` on the scroll element (clipped by `.tt-editor-overpull`),
+   * and — when the resisted travel passes the commit threshold — navigates
+   * the pane to `nearestDatedNote()` in that direction. Released below the
+   * threshold, it springs back. Constants + curve live in core/overscroll.ts
+   * (tuned in prototypes/daily-overscroll.html). Wheel only: no keyboard
+   * path, so the editor caret is never touched.
+   */
+  function attachDayOverscroll(scrollEl: HTMLElement): () => void {
+    const reduced =
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    const root = scrollEl.parentElement
+    let mode: -1 | 0 | 1 = 0 // -1 pulling at the top edge, +1 at the bottom
+    let raw = 0 // accumulated raw wheel travel past the edge, px, >= 0
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+    let springRAF = 0
+
+    // deltaMode 1 = lines, 2 = pages — normalise both to px so a non-pixel
+    // mouse wheel resists on the same curve as a trackpad.
+    const deltaPx = (e: WheelEvent): number =>
+      e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * scrollEl.clientHeight : e.deltaY
+
+    function paint(): void {
+      const resisted = mode ? rubberBand(raw, scrollEl.clientHeight) : 0
+      // Accent cue — an inset ring + edge bar that strengthens toward the
+      // commit threshold, so "force scroll is being applied" is visible even
+      // under prefers-reduced-motion (where the translate is suppressed).
+      const progress = mode ? Math.min(resisted / OVERSCROLL.commitThresholdPx, 1) : 0
+      root?.classList.toggle('tt-editor-overpull', mode !== 0)
+      root?.classList.toggle('tt-editor-overpull-top', mode === -1)
+      root?.classList.toggle('tt-editor-overpull-bottom', mode === 1)
+      root?.style.setProperty('--tt-overpull', mode ? String(0.2 + progress * 0.8) : '0')
+      if (reduced) return
+      scrollEl.style.transform = mode ? `translateY(${mode === 1 ? -resisted : resisted}px)` : ''
+    }
+
+    function reset(): void {
+      cancelAnimationFrame(springRAF)
+      clearTimeout(idleTimer)
+      idleTimer = undefined
+      mode = 0
+      raw = 0
+      scrollEl.style.transform = ''
+      scrollEl.style.willChange = ''
+      root?.classList.remove('tt-editor-overpull', 'tt-editor-overpull-top', 'tt-editor-overpull-bottom')
+      root?.style.removeProperty('--tt-overpull')
+    }
+
+    function settle(): void {
+      clearTimeout(idleTimer)
+      idleTimer = undefined
+      if (reduced || mode === 0) return reset()
+      cancelAnimationFrame(springRAF)
+      const from = raw
+      const dir = mode
+      const start = performance.now()
+      const step = (now: number): void => {
+        const p = Math.min((now - start) / OVERSCROLL.springBackMs, 1)
+        mode = dir
+        raw = from * (1 - easeOutCubic(p))
+        paint()
+        if (p < 1) springRAF = requestAnimationFrame(step)
+        else reset()
+      }
+      springRAF = requestAnimationFrame(step)
+    }
+
+    function targetFor(dir: -1 | 1): string | null {
+      const team = findTeam(ctx, teamId)
+      return team ? nearestDatedNote(team.dailyNotes, date, dir) : null
+    }
+
+    function onWheel(e: WheelEvent): void {
+      const d = deltaPx(e)
+      if (d === 0) return
+      if (mode === 0) {
+        const atTop = scrollEl.scrollTop <= 0
+        const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1
+        const dir: -1 | 0 | 1 = d < 0 && atTop ? -1 : d > 0 && atBottom ? 1 : 0
+        // No dated note that way → don't engage at all; the edge just sits.
+        if (dir === 0 || targetFor(dir) === null) return
+        mode = dir
+        raw = 0
+        scrollEl.style.willChange = 'transform'
+      }
+      e.preventDefault()
+      cancelAnimationFrame(springRAF)
+      raw += mode === 1 ? d : -d
+      if (raw <= 0) return reset()
+      paint()
+      if (overscrollCommits(raw, scrollEl.clientHeight)) {
+        const dir = mode
+        reset()
+        const target = targetFor(dir)
+        // flashTitle: the overscroll flip can skip several empty days, so the
+        // header is the signal for where you landed.
+        if (target) ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: target } }, { flashTitle: true })
+        return
+      }
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(settle, OVERSCROLL.idleReleaseMs)
+    }
+
+    scrollEl.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      scrollEl.removeEventListener('wheel', onWheel)
+      reset()
+    }
+  }
+  const overscrollScrollEl = editor.root.querySelector<HTMLElement>('.editor')
+  const detachDayOverscroll = overscrollScrollEl ? attachDayOverscroll(overscrollScrollEl) : () => {}
+
   const layout = el(
     'div',
     { class: 'tt-daily-layout' },
@@ -242,6 +359,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   return () => {
+    detachDayOverscroll()
     unsubscribe()
     bundle.dispose()
   }

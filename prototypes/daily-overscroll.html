@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Daily notes — overscroll-to-next-day tuning harness</title>
+<!--
+  THROWAWAY PROTOTYPE. Not wired into the app, not built, not shipped.
+  Purpose: fine-tune the rubber-band "push past the edge to jump to the next
+  day that has a note" feel before porting the tuned constants into
+  src/modules/daily-notes.ts.
+
+  Model: macOS rubber-band resistance + Chrome/Safari overscroll-to-go-back
+  commit gesture.
+    - At the top/bottom edge, further wheel/trackpad delta is accumulated as
+      "raw" overscroll and shown through a resistance curve so it never moves
+      far.
+    - An affordance bar at that edge fills with progress toward the commit
+      threshold.
+    - The moment resisted travel reaches the threshold it commits and loads
+      the nearest day in that direction that has a non-empty note (any gap,
+      stops at the first/last known note). "If the user insists, you get
+      there."
+    - If the wheel/trackpad goes idle *below* the threshold for
+      `releaseTimeout` ms, the pull springs back and nothing happens.
+    - Mouse wheels fire big discrete notches (often 100-150px) spaced
+      100-500ms apart; a mouse-friendly harness must (a) commit on threshold
+      crossing, not on release, and (b) not spring back before the next notch
+      lands. Trackpads stream many small deltas and would work either way.
+  Both directions: down at the bottom edge -> next dated note; up at the top
+  edge -> previous dated note.
+-->
+<style>
+  :root {
+    --bg: #f4f4f2;
+    --card: #ffffff;
+    --ink: #1d1d1f;
+    --muted: #8a8a8e;
+    --line: #e2e2df;
+    --accent: #2f6fed;
+    --accent-soft: #dbe6fd;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    padding: 32px;
+  }
+
+  /* ---- reading pane ---------------------------------------------------- */
+  .stage { flex: 0 0 640px; }
+  .daybar {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 4px 8px;
+  }
+  .daybar h1 { font-size: 16px; margin: 0; }
+  .daybar .sub { color: var(--muted); font-size: 12px; }
+
+  .viewport-wrap {
+    position: relative;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  }
+  .viewport {
+    height: 560px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .content {
+    padding: 28px 32px 40px;
+    will-change: transform;
+  }
+  .content h2 { font-size: 15px; margin: 0 0 4px; }
+  .content .day-meta { color: var(--muted); font-size: 12px; margin-bottom: 18px; }
+  .content p { margin: 0 0 14px; }
+  .content .empty { color: var(--muted); font-style: italic; }
+
+  /* ---- edge affordances --------------------------------------------- */
+  .edge {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    background: linear-gradient(var(--accent-soft), rgba(219, 230, 253, 0));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 90ms linear;
+  }
+  .edge.bottom { bottom: 0; transform: rotate(180deg); }
+  .edge.bottom .edge-label { transform: rotate(180deg); }
+  .edge .bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0%;
+    background: var(--accent);
+  }
+  .edge.ready { color: #0a7d33; }
+  .edge.ready .bar { background: #0a7d33; }
+
+  /* ---- toast ------------------------------------------------------------ */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%) translateY(12px);
+    background: var(--ink);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    opacity: 0;
+    transition: opacity 160ms, transform 160ms;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---- control panel ------------------------------------------------- */
+  .panel {
+    flex: 0 0 300px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 18px 20px;
+    position: sticky;
+    top: 32px;
+  }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 14px; color: var(--muted); }
+  .knob { margin-bottom: 16px; }
+  .knob label { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 6px; }
+  .knob label b { font-variant-numeric: tabular-nums; color: var(--accent); }
+  .knob input[type="range"] { width: 100%; }
+  .knob select { width: 100%; padding: 4px; font: inherit; }
+  .knob .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .readout {
+    margin-top: 6px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 10px;
+  }
+  .readout b { color: var(--ink); text-align: right; }
+
+  .actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { background: #ececea; }
+
+  .noteindex { margin-top: 14px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .noteindex code { background: var(--bg); padding: 1px 4px; border-radius: 4px; color: var(--ink); }
+
+  .hintbar {
+    font-size: 12.5px;
+    color: var(--muted);
+    padding: 0 4px 10px;
+  }
+  .hintbar b { color: var(--ink); }
+
+  /* ---- diagnostics (throwaway, remove before porting) --------------- */
+  .diag {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    width: 380px;
+    max-height: 200px;
+    overflow: auto;
+    background: #111;
+    color: #cfe8cf;
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border-radius: 8px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    z-index: 50;
+  }
+  .diag .err { color: #ff8f8f; }
+  .diag .hd { color: #9ecbff; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="daybar">
+      <h1 id="dayTitle">—</h1>
+      <span class="sub" id="daySub"></span>
+    </div>
+    <div class="hintbar">
+      Scroll to the <b>very bottom</b> of the note, then <b>keep scrolling down</b> — give it ~2 firm
+      wheel notches. The bar at the bottom edge fills; at 100% it flips to the next dated day.
+      Same going up.
+    </div>
+    <div class="viewport-wrap">
+      <div class="edge top" id="edgeTop">
+        <span class="bar" id="barTop"></span>
+        <span class="edge-label" id="labelTop"></span>
+      </div>
+      <div class="viewport" id="viewport">
+        <div class="content" id="content"></div>
+      </div>
+      <div class="edge bottom" id="edgeBottom">
+        <span class="bar" id="barBottom"></span>
+        <span class="edge-label" id="labelBottom"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Rubber-band knobs</h2>
+
+    <div class="knob">
+      <label>Resistance coefficient <b id="vC">0.55</b></label>
+      <input type="range" id="kC" min="0.10" max="1.00" step="0.01" value="0.55" />
+      <div class="hint">Initial stiffness: resisted px gained per raw px at the edge. macOS ≈ 0.55. Lower = firmer wall.</div>
+    </div>
+
+    <div class="knob">
+      <label>Commit threshold <b id="vT">90 px</b></label>
+      <input type="range" id="kT" min="24" max="200" step="2" value="90" />
+      <div class="hint">Resisted travel past the edge that flips the day on release.</div>
+    </div>
+
+    <div class="knob">
+      <label>Spring-back duration <b id="vS">320 ms</b></label>
+      <input type="range" id="kS" min="120" max="600" step="10" value="320" />
+    </div>
+
+    <div class="knob">
+      <label>Spring-back easing</label>
+      <select id="kEase">
+        <option value="cubic">ease-out cubic</option>
+        <option value="quint">ease-out quint (snappier)</option>
+        <option value="back">ease-out back (slight overshoot)</option>
+      </select>
+    </div>
+
+    <div class="knob">
+      <label>Spring-back after idle <b id="vI">350 ms</b></label>
+      <input type="range" id="kI" min="120" max="800" step="10" value="350" />
+      <div class="hint">Time with no wheel delta — while still below the threshold — before the pull springs back. Must outlast the gap between mouse-wheel notches or successive notches won't stack.</div>
+    </div>
+
+    <div class="readout">
+      <span>mode</span><b id="rMode">idle</b>
+      <span>raw overscroll</span><b id="rRaw">0</b>
+      <span>resisted</span><b id="rRes">0</b>
+      <span>progress</span><b id="rProg">0%</b>
+      <span>max raw @ threshold</span><b id="rMax">—</b>
+    </div>
+
+    <div class="actions">
+      <button id="btnReset">Reset to macOS defaults</button>
+      <button id="btnToday">Jump to the 8th</button>
+    </div>
+
+    <div class="noteindex" id="noteIndex"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="diag" id="diag"><span class="hd">diagnostics — throwaway</span>
+</div>
+
+<script>
+(() => {
+  // ---- on-page diagnostics (throwaway) ------------------------------
+  const diagEl = document.getElementById('diag');
+  function diag(msg, cls) {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    diagEl.appendChild(line);
+    diagEl.scrollTop = diagEl.scrollHeight;
+    while (diagEl.childElementCount > 40) diagEl.children[1].remove();
+  }
+  window.addEventListener('error', (e) => diag('ERROR: ' + e.message + ' @' + e.lineno + ':' + e.colno, 'err'));
+  window.addEventListener('unhandledrejection', (e) => diag('REJECT: ' + e.reason, 'err'));
+  // ---- fake data: September 2026, ~half the days carry a note -----------
+  const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const LOREM = [
+    'Standup ran long — deployment pipeline still flaky on the windows runner. Owner: infra.',
+    'Reviewed the migration ladder. Schema bump looks safe but needs a backfill note in the changelog.',
+    'Customer call: they want per-person export. Parked as a milestone, not this cycle.',
+    'Pair session on the editor paste path. Google Docs lists still collapse one level too far.',
+    'Risk logged: single maintainer for the crypto module. Mitigation: doc the .tmv format inline.',
+    'Quiet day. Cleared the action-item backlog down to four items, all blocked on review.',
+    'Retro: the split-pane history stepping confuses new users. Consider an onboarding hint.',
+  ];
+  function paras(seed, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(`${i + 1}. ` + LOREM[(seed + i * 3) % LOREM.length]);
+    return out;
+  }
+  /** date -> note text ('' or absent means "no note"). */
+  const days = {};
+  for (let d = 1; d <= 30; d++) {
+    const iso = `2026-09-${String(d).padStart(2, '0')}`;
+    // deterministic sparse pattern: a few missing, a couple present-but-blank,
+    // the rest carry a note long enough to always overflow the viewport.
+    if (d % 7 === 3) { days[iso] = ''; continue; }        // present but blank
+    if ((d * 5) % 9 < 2) continue;                         // no key at all
+    days[iso] = paras(d, 10 + ((d * 7) % 9)).join('\n\n'); // 10..18 paragraphs
+  }
+  const knownNoteDates = Object.keys(days)
+    .filter((k) => days[k].trim() !== '')
+    .sort();
+
+  function nearestNoteDate(from, dir) {
+    if (dir === 1) return knownNoteDates.find((k) => k > from) ?? null;
+    const before = knownNoteDates.filter((k) => k < from);
+    return before.length ? before[before.length - 1] : null;
+  }
+
+  // ---- knobs ----------------------------------------------------------
+  const cfg = { c: 0.55, threshold: 90, spring: 320, ease: 'cubic', idle: 350 };
+  const DEFAULTS = { ...cfg };
+
+  const $ = (id) => document.getElementById(id);
+  const vp = $('viewport');
+  const content = $('content');
+
+  // ---- overscroll state (declared up here: bindRange() -> updateReadout()
+  //      runs during init and reads these before the state-machine block) ---
+  let mode = 0;           // -1 pulling at top, +1 pulling at bottom, 0 idle
+  let raw = 0;            // accumulated raw overscroll (>= 0), in wheel px
+  let idleTimer = 0;
+  let springRAF = 0;
+
+  function bindRange(inputId, valId, key, fmt) {
+    const input = $(inputId);
+    const out = $(valId);
+    const sync = () => {
+      cfg[key] = parseFloat(input.value);
+      out.textContent = fmt(cfg[key]);
+      updateReadout();
+    };
+    input.addEventListener('input', sync);
+    sync();
+    return input;
+  }
+  const rC = bindRange('kC', 'vC', 'c', (v) => v.toFixed(2));
+  const rT = bindRange('kT', 'vT', 'threshold', (v) => `${v | 0} px`);
+  const rS = bindRange('kS', 'vS', 'spring', (v) => `${v | 0} ms`);
+  const rI = bindRange('kI', 'vI', 'idle', (v) => `${v | 0} ms`);
+  $('kEase').addEventListener('change', (e) => { cfg.ease = e.target.value; });
+
+  $('btnReset').addEventListener('click', () => {
+    Object.assign(cfg, DEFAULTS);
+    rC.value = DEFAULTS.c; rT.value = DEFAULTS.threshold;
+    rS.value = DEFAULTS.spring; rI.value = DEFAULTS.idle;
+    $('kEase').value = DEFAULTS.ease;
+    [rC, rT, rS, rI].forEach((el) => el.dispatchEvent(new Event('input')));
+  });
+
+  // ---- rubber-band curve -------------------------------------------
+  // resisted = (1 - 1/(raw*c/H + 1)) * H   — approaches H asymptotically.
+  function rubber(raw, c, H) {
+    return (1 - 1 / ((raw * c) / H + 1)) * H;
+  }
+  // inverse, for the readout: raw needed to reach a given resisted value
+  function rawForResisted(res, c, H) {
+    return (H / c) * (1 / (1 - res / H) - 1);
+  }
+
+  const EASES = {
+    cubic: (p) => 1 - Math.pow(1 - p, 3),
+    quint: (p) => 1 - Math.pow(1 - p, 5),
+    back: (p) => { const s = 1.70158; return 1 + (--p) * p * ((s + 1) * p + s); },
+  };
+
+  // ---- render --------------------------------------------------------
+  let currentDate = '2026-09-08'; // a day that always has a long note
+
+  function render(landingEdge /* 'top' | 'bottom' | null */) {
+    const note = days[currentDate];
+    const dObj = new Date(currentDate + 'T00:00:00');
+    $('dayTitle').textContent = currentDate;
+    $('daySub').textContent = WEEKDAY[dObj.getDay()] + (note && note.trim() ? '' : '  ·  no note');
+
+    content.style.transform = 'translateY(0)';
+    content.innerHTML = '';
+    const h = document.createElement('h2');
+    h.textContent = 'Daily note';
+    const meta = document.createElement('div');
+    meta.className = 'day-meta';
+    meta.textContent = currentDate + ' · ' + WEEKDAY[dObj.getDay()];
+    content.append(h, meta);
+    if (note && note.trim()) {
+      for (const p of note.split('\n\n')) {
+        const el = document.createElement('p');
+        el.textContent = p;
+        content.appendChild(el);
+      }
+    } else {
+      const el = document.createElement('p');
+      el.className = 'empty';
+      el.textContent = '(no note for this day — push past either edge to reach a dated note)';
+      content.appendChild(el);
+    }
+
+    // land at the edge the reader was travelling toward
+    vp.scrollTop = landingEdge === 'bottom' ? vp.scrollHeight : 0;
+    updateNoteIndex();
+    updateReadout();
+  }
+
+  function updateNoteIndex() {
+    const prev = nearestNoteDate(currentDate, -1);
+    const next = nearestNoteDate(currentDate, 1);
+    $('noteIndex').innerHTML =
+      `dated notes: ${knownNoteDates.map((d) => `<code>${d.slice(8)}</code>`).join(' ')}` +
+      `<br>prev-with-note: <code>${prev ?? '—'}</code> · next-with-note: <code>${next ?? '—'}</code>`;
+    $('labelTop').textContent = prev ? `▲  open ${prev}` : '▲  no earlier note';
+    $('labelBottom').textContent = next ? `▲  open ${next}` : '▲  no later note';
+  }
+
+  // ---- overscroll state machine ----------------------------------------
+  const edgeTop = $('edgeTop');
+  const edgeBottom = $('edgeBottom');
+  const barTop = $('barTop');
+  const barBottom = $('barBottom');
+
+  function paint() {
+    const H = vp.clientHeight;
+    const resisted = mode ? rubber(raw, cfg.c, H) : 0;
+    const progress = cfg.threshold > 0 ? Math.min(resisted / cfg.threshold, 1) : 0;
+    content.style.transform = `translateY(${mode === 1 ? -resisted : mode === -1 ? resisted : 0}px)`;
+
+    const activeEdge = mode === 1 ? edgeBottom : edgeTop;
+    const activeBar = mode === 1 ? barBottom : barTop;
+    for (const e of [edgeTop, edgeBottom]) {
+      if (e !== activeEdge || mode === 0) { e.style.opacity = 0; e.classList.remove('ready'); }
+    }
+    if (mode !== 0) {
+      activeEdge.style.opacity = String(Math.min(0.25 + progress * 0.75, 1));
+      activeEdge.classList.toggle('ready', progress >= 1);
+      activeBar.style.width = (progress * 100).toFixed(1) + '%';
+    } else {
+      barTop.style.width = barBottom.style.width = '0%';
+    }
+    updateReadout(resisted, progress);
+  }
+
+  function updateReadout(resisted, progress) {
+    const H = vp.clientHeight;
+    if (resisted === undefined) resisted = mode ? rubber(raw, cfg.c, H) : 0;
+    if (progress === undefined) progress = cfg.threshold > 0 ? Math.min(resisted / cfg.threshold, 1) : 0;
+    $('rMode').textContent = mode === 0 ? 'idle' : mode === 1 ? 'pull ↓ (next)' : 'pull ↑ (prev)';
+    $('rRaw').textContent = raw.toFixed(0);
+    $('rRes').textContent = resisted.toFixed(1);
+    $('rProg').textContent = (progress * 100).toFixed(0) + '%';
+    $('rMax').textContent = rawForResisted(cfg.threshold, cfg.c, H).toFixed(0) + ' px';
+  }
+
+  function exitPull() {
+    mode = 0;
+    raw = 0;
+    clearTimeout(idleTimer);
+    paint();
+  }
+
+  function springBack() {
+    cancelAnimationFrame(springRAF);
+    const start = performance.now();
+    const raw0 = raw;
+    const dur = cfg.spring;
+    const ease = EASES[cfg.ease] || EASES.cubic;
+    const startMode = mode;
+    function frame(now) {
+      const p = Math.min((now - start) / dur, 1);
+      raw = raw0 * (1 - ease(p));
+      if (raw < 0) raw = 0;
+      mode = startMode;
+      paint();
+      if (p < 1) springRAF = requestAnimationFrame(frame);
+      else exitPull();
+    }
+    springRAF = requestAnimationFrame(frame);
+  }
+
+  function commit() {
+    const dir = mode;
+    const target = nearestNoteDate(currentDate, dir);
+    if (!target) { springBack(); return; }
+    cancelAnimationFrame(springRAF);
+    clearTimeout(idleTimer);
+    mode = 0;
+    raw = 0;
+    currentDate = target;
+    render(dir === 1 ? 'top' : 'bottom'); // continue reading from the leading edge
+    showToast(`opened ${target}`);
+    paint();
+  }
+
+  function onIdle() {
+    // Threshold crossings commit synchronously in the wheel handler, so by
+    // the time this fires the pull is below threshold: just relax it.
+    springBack();
+  }
+
+  // Wheel delta comes in three units: 0 = pixels, 1 = lines, 2 = pages.
+  // Mice (especially on Windows/Firefox) often report lines or pages, where
+  // deltaY is a small integer — normalize to px so the curve behaves the
+  // same regardless of device.
+  function normalizeDelta(e) {
+    if (e.deltaMode === 1) return e.deltaY * 16;                 // ~1 line
+    if (e.deltaMode === 2) return e.deltaY * vp.clientHeight;    // 1 page
+    return e.deltaY;
+  }
+
+  vp.addEventListener('wheel', (e) => {
+    const d = normalizeDelta(e);
+    const atTop = vp.scrollTop <= 0;
+    const atBottom = vp.scrollTop + vp.clientHeight >= vp.scrollHeight - 1;
+    diag(`wheel dM=${e.deltaMode} dY=${e.deltaY.toFixed(0)} d=${d.toFixed(0)} `
+       + `sT=${vp.scrollTop.toFixed(0)}/${(vp.scrollHeight - vp.clientHeight).toFixed(0)} `
+       + `${atTop ? 'TOP ' : ''}${atBottom ? 'BOT ' : ''}mode=${mode}`);
+    if (d === 0) return;
+
+    if (mode === 0) {
+      if (d < 0 && atTop) mode = -1;
+      else if (d > 0 && atBottom) mode = 1;
+      else return; // let the browser scroll normally
+      raw = 0;
+    }
+
+    e.preventDefault();
+    cancelAnimationFrame(springRAF);
+
+    // pushing further into the pull direction grows raw; scrolling back shrinks it
+    raw += mode === 1 ? d : -d;
+    if (raw <= 0) { exitPull(); return; }
+
+    paint();
+    diag(`  pull mode=${mode} raw=${raw.toFixed(0)} resisted=${rubber(raw, cfg.c, vp.clientHeight).toFixed(0)} / thr=${cfg.threshold}`);
+
+    // Commit as soon as the resisted travel reaches the threshold — the user
+    // has "insisted". No wait for release: a mouse wheel has no release, and
+    // the next notch might be 500ms away.
+    if (rubber(raw, cfg.c, vp.clientHeight) >= cfg.threshold) {
+      commit();
+      return;
+    }
+
+    // Otherwise arm the spring-back: if no further wheel delta arrives before
+    // this fires, the pull relaxes and nothing happens.
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(onIdle, cfg.idle);
+  }, { passive: false });
+
+  // ---- toast --------------------------------------------------------
+  let toastTimer = 0;
+  function showToast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 1100);
+  }
+
+  $('btnToday').addEventListener('click', () => { currentDate = '2026-09-08'; render(null); });
+
+  render(null);
+  diag(`wired OK — day ${currentDate}, viewport ${vp.clientHeight}px, content ${vp.scrollHeight}px, `
+     + `scrollable=${vp.scrollHeight > vp.clientHeight}`);
+  diag(`if you scroll and see NO "wheel ..." lines here, the wheel event isn't reaching the box.`);
+})();
+</script>
+</body>
+</html>

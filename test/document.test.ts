@@ -1,4 +1,4 @@
-import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError, findTeam } from '../src/core/document'
+import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError, findTeam, nearestDatedNote } from '../src/core/document'
 
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
@@ -329,4 +329,41 @@ test('findTeam finds a team by id, undefined when missing', () => {
 test('createEmptyTeam seeds generalNotes as an empty string', () => {
   const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
   expect(team.generalNotes).toBe('')
+})
+
+describe('nearestDatedNote', () => {
+  const notes = {
+    '2026-09-03': 'a',
+    '2026-09-05': '   ',   // present but whitespace-only → not a dated note
+    '2026-09-10': 'b',
+    '2026-09-20': 'c',
+  }
+
+  it('jumps forward over any gap to the next non-empty note', () => {
+    expect(nearestDatedNote(notes, '2026-09-03', 1)).toBe('2026-09-10')
+    expect(nearestDatedNote(notes, '2026-09-01', 1)).toBe('2026-09-03')
+    expect(nearestDatedNote(notes, '2026-09-11', 1)).toBe('2026-09-20')
+  })
+
+  it('jumps backward over any gap to the previous non-empty note', () => {
+    expect(nearestDatedNote(notes, '2026-09-20', -1)).toBe('2026-09-10')
+    expect(nearestDatedNote(notes, '2026-09-10', -1)).toBe('2026-09-03')
+    expect(nearestDatedNote(notes, '2026-09-09', -1)).toBe('2026-09-03')
+  })
+
+  it('is exclusive of fromIso itself', () => {
+    expect(nearestDatedNote(notes, '2026-09-10', 1)).toBe('2026-09-20')
+    expect(nearestDatedNote(notes, '2026-09-10', -1)).toBe('2026-09-03')
+  })
+
+  it('returns null past the last / before the first dated note', () => {
+    expect(nearestDatedNote(notes, '2026-09-20', 1)).toBeNull()
+    expect(nearestDatedNote(notes, '2026-09-03', -1)).toBeNull()
+    expect(nearestDatedNote({}, '2026-09-10', 1)).toBeNull()
+  })
+
+  it('skips whitespace-only entries in both directions', () => {
+    expect(nearestDatedNote(notes, '2026-09-04', 1)).toBe('2026-09-10')
+    expect(nearestDatedNote(notes, '2026-09-06', -1)).toBe('2026-09-03')
+  })
 })

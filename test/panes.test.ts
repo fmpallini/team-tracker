@@ -1207,3 +1207,60 @@ test('dispose() during an in-flight divider drag tears down its listeners and pe
     window.cancelAnimationFrame = realCaf
   }
 })
+
+describe('title bar flash — only on an opt-in openInPane', () => {
+  function titleSpan(idx: 0 | 1): HTMLElement {
+    const el = document.querySelector(`[data-pane-idx="${idx}"] .tt-pane-title-text`)
+    if (!el) throw new Error(`title span not found for pane ${idx}`)
+    return el as HTMLElement
+  }
+
+  test('flashes when openInPane is called with { flashTitle: true }, then clears', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(false)
+
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-09' } }, { flashTitle: true })
+    expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(true)
+
+    pm.renderAll() // one-shot — gone on the next render
+    expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(false)
+  })
+
+  test('does not flash on a plain date change (calendar pick / Alt+[ ])', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } })
+    expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(false)
+  })
+
+  test('the flag is per pane', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    pm.toggleSplit()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-05' } })
+
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-20' } }, { flashTitle: true })
+    expect(titleSpan(1).classList.contains('tt-pane-title-flash')).toBe(true)
+    expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(false)
+  })
+
+  test('a focusOther conflict (split, same loc) does not arm the flash', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    pm.toggleSplit()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } })
+
+    // Ask pane 1 to open pane 0's exact loc with flashTitle — resolves to
+    // focusOther and returns before the real-navigation path that arms it.
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } }, { flashTitle: true })
+    expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(false)
+    expect(titleSpan(1).classList.contains('tt-pane-title-flash')).toBe(false)
+  })
+})
