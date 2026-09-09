@@ -46,6 +46,7 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Alt+←/→/↑/↓', 'help_global_pane_layout'],
   ['F1 … F7', 'help_global_pane_module'],
   ['Alt+[ / Alt+] / Alt+T', 'help_global_daily_nav'],
+  ['Alt+, / Alt+.', 'help_global_daily_nav_content'],
   ['F11 / ⛶', 'help_global_fullscreen'],
   // Enter and Space are deliberately two different actions on a focused row/
   // card (see the row/card builders in modules/risks.ts, milestones.ts and

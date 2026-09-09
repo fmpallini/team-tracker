@@ -5,11 +5,11 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Team } from '../src/core/types'
 
-function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc }[] } {
-  const calls: { idx: 0 | 1; loc: Loc }[] = []
+function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc; opts?: { force?: boolean; flashTitle?: boolean } }[] } {
+  const calls: { idx: 0 | 1; loc: Loc; opts?: { force?: boolean; flashTitle?: boolean } }[] = []
   return {
     calls,
-    openInPane: (idx: 0 | 1, loc: Loc) => { calls.push({ idx, loc }) },
+    openInPane: (idx: 0 | 1, loc: Loc, opts?: { force?: boolean; flashTitle?: boolean }) => { calls.push({ idx, loc, opts }) },
     openBothPanes: () => {},
     openInFocused: () => {},
     openInSecondaryPane: () => 0,
@@ -526,5 +526,91 @@ describe('calendar refresh is proportional to what changed', () => {
     expect(container.querySelector('.tt-calendar-day[data-date="2026-07-11"]')).toBe(cellBefore)
     // The day badge (backlinks chip for THIS pane's date) is unaffected — the
     // mention is of a different day.
+  })
+})
+
+describe('overscroll: push past an edge to jump to the nearest day with a note', () => {
+  function sizeEditor(editor: HTMLElement, clientHeight: number, scrollHeight: number, scrollTop: number): void {
+    for (const [k, v] of Object.entries({ clientHeight, scrollHeight, scrollTop })) {
+      Object.defineProperty(editor, k, { value: v, configurable: true, writable: true })
+    }
+  }
+  /** Returns false when a listener called preventDefault (i.e. the pull engaged). */
+  function wheel(editor: HTMLElement, deltaY: number): boolean {
+    return editor.dispatchEvent(new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true }))
+  }
+
+  test('a hard push at the bottom edge flips to the next dated note', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+    const editor = editorEl(container)
+    sizeEditor(editor, 600, 600, 600) // scrolled hard against the bottom
+
+    // rubberBand(900, 600, 0.31) ≈ 190px resisted ≥ 170px threshold
+    const notPrevented = wheel(editor, 900)
+
+    expect(notPrevented).toBe(false)
+    expect(pm.calls).toEqual([
+      { idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-20' } }, opts: { flashTitle: true } },
+    ])
+    expect(editor.style.transform).toBe('') // reset after commit
+  })
+
+  test('a hard push at the top edge flips to the previous dated note', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+    const editor = editorEl(container)
+    sizeEditor(editor, 600, 600, 0)
+
+    wheel(editor, -900)
+
+    expect(pm.calls).toEqual([
+      { idx: 0, loc: { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-05' } }, opts: { flashTitle: true } },
+    ])
+  })
+
+  test('does not engage when there is no dated note in that direction', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past' } }) // nothing after the 10th
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+    const editor = editorEl(container)
+    sizeEditor(editor, 600, 600, 600)
+
+    const notPrevented = wheel(editor, 900)
+
+    expect(notPrevented).toBe(true) // preventDefault never called — native scroll left alone
+    expect(pm.calls).toEqual([])
+    expect(editor.style.transform).toBe('')
+  })
+
+  test('a light push resists and does not flip the day', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+    const editor = editorEl(container)
+    sizeEditor(editor, 600, 600, 600)
+
+    // rubberBand(300, 600, 0.31) ≈ 80px resisted, well under 170px
+    const notPrevented = wheel(editor, 300)
+
+    expect(notPrevented).toBe(false) // engaged (rubber-banding) ...
+    expect(pm.calls).toEqual([])     // ... but no navigation
+    expect(editor.style.transform).toMatch(/translateY\(-\d/)
+    expect(editor.parentElement!.classList.contains('tt-editor-overpull')).toBe(true)
+  })
+
+  test('teardown removes the wheel listener', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    render(container, loc, store, pm)
+    const oldEditor = editorEl(container)
+    sizeEditor(oldEditor, 600, 600, 600)
+
+    render(container, loc, store, pm) // re-mount → withDisposal tears down the first instance
+
+    wheel(oldEditor, 900)
+    expect(pm.calls).toEqual([]) // the detached first-instance listener is gone
   })
 })

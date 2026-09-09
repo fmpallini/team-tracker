@@ -48,6 +48,33 @@ export function findTeam(doc: Doc, teamId: string): Team | undefined {
   return doc.teams.find((tm) => tm.id === teamId)
 }
 
+/**
+ * The date in `dailyNotes` nearest to `fromIso` (exclusive) whose note is
+ * non-empty, searching forward (`dir` 1) or backward (`dir` -1). Any run of
+ * empty or absent days in between is skipped; whitespace-only notes count as
+ * empty (same `.trim()` test the calendar's has-note tint uses). Returns
+ * null when there is no dated note in that direction.
+ *
+ * Shared by the daily-notes Alt+Shift+[ / Alt+Shift+] hotkey ("jump to the
+ * prev/next day that actually has content", main.ts's `dayNav` case).
+ */
+export function nearestDatedNote(
+  dailyNotes: Record<string, string>,
+  fromIso: string,
+  dir: -1 | 1,
+): string | null {
+  const dated = Object.entries(dailyNotes)
+    .filter(([, note]) => note.trim() !== '')
+    .map(([d]) => d)
+    .sort()
+  if (dir === 1) return dated.find((d) => d > fromIso) ?? null
+  for (let i = dated.length - 1; i >= 0; i--) {
+    const d = dated[i]!
+    if (d < fromIso) return d
+  }
+  return null
+}
+
 const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   1: (d) => {
     for (const team of (d.teams as Record<string, unknown>[]) ?? []) {

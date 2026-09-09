@@ -131,6 +131,33 @@ describe('Alt+[ / Alt+] / Alt+T — daily-note day nav', () => {
   })
 })
 
+describe('Alt+, / Alt+. — jump to prev/next day that has a note', () => {
+  test('claimed only when the focused pane shows a daily note', () => {
+    expect(resolve({ key: ',', code: 'Comma', altKey: true }, { focusedPaneShowsDailyNote: true }))
+      .toEqual({ type: 'dayNav', to: 'prevWithContent' })
+    expect(resolve({ key: '.', code: 'Period', altKey: true }, { focusedPaneShowsDailyNote: true }))
+      .toEqual({ type: 'dayNav', to: 'nextWithContent' })
+  })
+
+  test('left alone when the focused pane is not a daily note', () => {
+    expect(resolve({ key: ',', code: 'Comma', altKey: true }, { focusedPaneShowsDailyNote: false })).toBeNull()
+    expect(resolve({ key: '.', code: 'Period', altKey: true }, { focusedPaneShowsDailyNote: false })).toBeNull()
+  })
+
+  test('matches the physical key when e.key is a shifted char (< / >)', () => {
+    expect(resolve({ key: '<', code: 'Comma', altKey: true }, { focusedPaneShowsDailyNote: true }))
+      .toEqual({ type: 'dayNav', to: 'prevWithContent' })
+    expect(resolve({ key: '>', code: 'Period', altKey: true }, { focusedPaneShowsDailyNote: true }))
+      .toEqual({ type: 'dayNav', to: 'nextWithContent' })
+  })
+
+  test('Alt+Shift+[ / Alt+Shift+] no longer route anywhere (the ABNT2 bug)', () => {
+    // '}' from a shifted bracket, physical `]` reports code "Backslash" on ABNT2
+    expect(resolve({ key: '}', code: 'Backslash', altKey: true, shiftKey: true }, { focusedPaneShowsDailyNote: true })).toBeNull()
+    expect(resolve({ key: '{', code: 'BracketRight', altKey: true, shiftKey: true }, { focusedPaneShowsDailyNote: true })).toBeNull()
+  })
+})
+
 describe('Alt+1..9 — team switch', () => {
   test('switches to the team at that index when it exists', () => {
     expect(resolve({ key: '1', code: 'Digit1', altKey: true })).toEqual({ type: 'selectTeam', index: 0 })

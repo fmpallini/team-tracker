@@ -43,7 +43,7 @@ export interface ModuleCtx {
 }
 
 export interface PaneManager {
-  openInPane(paneIdx: 0 | 1, loc: Loc, opts?: { force?: boolean }): void
+  openInPane(paneIdx: 0 | 1, loc: Loc, opts?: { force?: boolean; flashTitle?: boolean }): void
   /**
    * Writes both panes' targets in one store update and renders once —
    * for programmatic full-layout writes (team switch, first-visit default
@@ -417,6 +417,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   const menuOpen: [boolean, boolean] = [false, false]
   const menuSelected: [number, number] = [0, 0]
   const menuListEls: [HTMLElement | null, HTMLElement | null] = [null, null]
+  /**
+   * One-shot "flash this pane's title on the next renderBar" flag, set by an
+   * `openInPane(..., { flashTitle: true })` call and consumed by renderBar.
+   * Only the non-obvious day moves opt in — the overscroll flip and the
+   * Alt+, / Alt+. content jump, which skip over empty days — so the header
+   * blink means "you landed somewhere you didn't pick by hand". A plain
+   * Alt+[/] step, a calendar pick, history nav etc. leave it false.
+   */
+  const pendingTitleFlash: [boolean, boolean] = [false, false]
   let splitPct = 50
   // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
   // not part of Doc, so it never persists and never marks the file dirty.
@@ -604,7 +613,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     renderAll()
   }
 
-  function openInPane(idx: 0 | 1, target: Loc, opts?: { force?: boolean }): void {
+  function openInPane(idx: 0 | 1, target: Loc, opts?: { force?: boolean; flashTitle?: boolean }): void {
     clearSearchHighlight()
     const nav = store.doc.nav
     const otherIdx = otherPaneIdx(idx)
@@ -658,6 +667,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     })
     // Real navigation into pane 0 — see core/pane-layout.ts.
     if (idx === 0) layout$.noteRealNavigation(0)
+    if (opts?.flashTitle) pendingTitleFlash[idx] = true
     // Only `idx` actually navigated — the other pane's Loc, and so its
     // mounted module instance, is untouched. Remounting it too (the old
     // unconditional renderAll()) tore down and rebuilt that instance from
@@ -878,6 +888,10 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     const canBack = navigateHistory(pane, -1, other) !== null
     const canFwd = navigateHistory(pane, 1, other) !== null
 
+    // Consume the one-shot flash flag (set by openInPane's `flashTitle` opt).
+    const flashTitle = pendingTitleFlash[idx]
+    pendingTitleFlash[idx] = false
+
     const backBtn = el(
       'button',
       {
@@ -910,7 +924,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
-      el('span', { class: 'tt-pane-title-text' }, cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty')),
+      el(
+        'span',
+        { class: flashTitle ? 'tt-pane-title-text tt-pane-title-flash' : 'tt-pane-title-text' },
+        cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty')
+      ),
       el('span', { class: 'tt-pane-title-chev' }, '▾')
     )
     const printBtn = el(

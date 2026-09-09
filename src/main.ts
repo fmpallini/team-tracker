@@ -15,6 +15,7 @@ import { mountSearch } from './ui/search-ui'
 import { t, todayIso } from './core/i18n'
 import { currentLoc } from './core/nav'
 import { addDaysIso } from './core/date'
+import { findTeam, nearestDatedNote } from './core/document'
 import { renderDailyNotes } from './modules/daily-notes'
 import { renderGeneralNotes } from './modules/general-notes'
 import { renderPeopleTree } from './modules/people-tree'
@@ -520,13 +521,26 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         const idx = store.doc.nav.focusedPane
         const loc = currentLoc(store.doc.nav.panes[idx])
         if (!loc || loc.ref.kind !== 'daily') return
-        const date =
-          action.to === 'prev'
-            ? addDaysIso(loc.ref.date, -1)
-            : action.to === 'next'
-              ? addDaysIso(loc.ref.date, 1)
-              : todayIso()
-        pm.openInPane(idx, { teamId: loc.teamId, ref: { kind: 'daily', date } })
+        let date: string
+        // Only the content jump (skips over empty days) flashes the header —
+        // where you land isn't obvious. A plain ±1 step or "today" doesn't.
+        let flashTitle = false
+        if (action.to === 'today') {
+          date = todayIso()
+        } else if (action.to === 'prev' || action.to === 'next') {
+          date = addDaysIso(loc.ref.date, action.to === 'prev' ? -1 : 1)
+        } else {
+          // 'prevWithContent' / 'nextWithContent': skip empty days entirely.
+          // No dated note in that direction → stay put, don't open a blank day.
+          const team = findTeam(store.doc, loc.teamId)
+          const target = team
+            ? nearestDatedNote(team.dailyNotes, loc.ref.date, action.to === 'prevWithContent' ? -1 : 1)
+            : null
+          if (!target) return
+          date = target
+          flashTitle = true
+        }
+        pm.openInPane(idx, { teamId: loc.teamId, ref: { kind: 'daily', date } }, { flashTitle })
         return
       }
       case 'selectPane':

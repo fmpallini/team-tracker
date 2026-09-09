@@ -23,8 +23,18 @@ export type AppHotkeyAction =
   | { type: 'historyStep'; dir: -1 | 1 }
   /** Alt+Shift+Up → jump the focused pane's history to its latest entry. */
   | { type: 'historyLatest' }
-  /** Alt+[ / Alt+] / Alt+T — only when the focused pane is showing a daily note. */
-  | { type: 'dayNav'; to: 'prev' | 'next' | 'today' }
+  /**
+   * Alt+[ / Alt+] / Alt+T step by one calendar day (or to today); Alt+, /
+   * Alt+. (`*WithContent`) skip straight to the prev/next day that actually
+   * has a note. All only when the focused pane is showing a daily note.
+   *
+   * `,` / `.` rather than Alt+Shift+[ / ]: a shifted bracket produces
+   * `{` / `}` for `e.key`, and the physical `]` key is `code` "Backslash"
+   * (not "BracketRight") on a Brazilian ABNT2 keyboard, so neither the
+   * character nor the code match reliably. Comma/period are unshifted with a
+   * stable `e.code` on every layout.
+   */
+  | { type: 'dayNav'; to: 'prev' | 'next' | 'today' | 'prevWithContent' | 'nextWithContent' }
   /** Alt+Left / Alt+Right → focus pane 0 / pane 1. */
   | { type: 'selectPane'; index: 0 | 1 }
   /** Alt+Up → toggle single/dual pane. */
@@ -103,6 +113,14 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
   if (dayPrev || dayNext || dayToday) {
     if (!ctx.focusedPaneShowsDailyNote) return null
     return { type: 'dayNav', to: dayPrev ? 'prev' : dayNext ? 'next' : 'today' }
+  }
+
+  // Alt+, / Alt+. — jump to the prev/next day that has a note (skip empties).
+  const dayPrevContent = e.key === ',' || e.code === 'Comma'
+  const dayNextContent = e.key === '.' || e.code === 'Period'
+  if (dayPrevContent || dayNextContent) {
+    if (!ctx.focusedPaneShowsDailyNote) return null
+    return { type: 'dayNav', to: dayPrevContent ? 'prevWithContent' : 'nextWithContent' }
   }
 
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
