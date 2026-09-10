@@ -601,6 +601,21 @@ describe('overscroll: push past an edge to jump to the nearest day with a note',
     expect(editor.parentElement!.classList.contains('tt-editor-overpull')).toBe(true)
   })
 
+  test('does not engage when prefs.dailyEdgeScroll is off — native scroll left alone', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    store.doc.prefs.dailyEdgeScroll = false
+    render(container, loc, store, pm)
+    const editor = editorEl(container)
+    sizeEditor(editor, 600, 600, 600)
+
+    const notPrevented = wheel(editor, 900)
+
+    expect(notPrevented).toBe(true) // preventDefault never called
+    expect(pm.calls).toEqual([])
+    expect(editor.style.transform).toBe('')
+  })
+
   test('teardown removes the wheel listener', () => {
     const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
     const { container, store, pm, loc } = setup(team, '2026-07-10')

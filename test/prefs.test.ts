@@ -283,6 +283,51 @@ test('the "open refs in secondary pane" checkbox reflects and updates the pref',
   expect(store.doc.prefs.openRefsInSecondaryPane).toBe(true)
 })
 
+test('the "Ctrl+wheel adjusts font size" checkbox reflects and updates the pref', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('.tt-prefs-ctrl-wheel-font-checkbox') as HTMLInputElement
+  expect(checkbox).not.toBeNull()
+  expect(checkbox.checked).toBe(true)
+
+  checkbox.checked = false
+  checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+
+  expect(store.doc.prefs.ctrlWheelFontSize).toBe(false)
+})
+
+test('the "edge-scroll to nearest day with a note" checkbox reflects and updates the pref', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+
+  const checkbox = document.querySelector('.tt-prefs-daily-edge-scroll-checkbox') as HTMLInputElement
+  expect(checkbox).not.toBeNull()
+  expect(checkbox.checked).toBe(true)
+
+  checkbox.checked = false
+  checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+
+  expect(store.doc.prefs.dailyEdgeScroll).toBe(false)
+})
+
+test('the two new General-tab toggles are prefs-scoped', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  const seen: unknown[] = []
+  const original = store.update.bind(store)
+  vi.spyOn(store, 'update').mockImplementation((mutate, scope) => {
+    seen.push(scope)
+    original(mutate, scope)
+  })
+  for (const cls of ['.tt-prefs-ctrl-wheel-font-checkbox', '.tt-prefs-daily-edge-scroll-checkbox']) {
+    const cb = document.querySelector(cls) as HTMLInputElement
+    cb.checked = !cb.checked
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  expect(seen).toEqual([{ sections: ['prefs'] }, { sections: ['prefs'] }])
+})
+
 test('an initialTab argument opens directly on that tab instead of defaulting to General', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl, 'backup')

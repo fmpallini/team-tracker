@@ -304,6 +304,12 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     }
 
     function onWheel(e: WheelEvent): void {
+      // Read live, not at mount: toggling the pref in prefs takes effect on the
+      // next wheel event without a re-render (the write is prefs-scoped).
+      if (!ctx.store.doc.prefs.dailyEdgeScroll) {
+        if (mode !== 0) reset()
+        return
+      }
       const d = deltaPx(e)
       if (d === 0) return
       if (mode === 0) {

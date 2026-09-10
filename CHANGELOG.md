@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.8.0] - 2026-09-10
+
+### Added
+- Holding **Ctrl** and turning the mouse wheel now steps the app's text size through its five sizes, instead of the browser's page zoom. A brief on-screen note shows the new size as you go. This can be switched off in Settings → General ("Ctrl+mouse wheel adjusts text size"), which returns the gesture to the browser's normal zoom.
+
+### Changed
+- The daily-note edge-scroll gesture — pushing a note past its top or bottom edge to jump to the nearest day that has a note — can now be turned off in Settings → General. The **Alt+,** and **Alt+.** shortcuts for the same jump are unaffected.
+
 ## [2.7.7] - 2026-09-08
 
 ### Added
