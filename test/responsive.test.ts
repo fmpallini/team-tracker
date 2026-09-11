@@ -26,17 +26,21 @@ function fakeHooks(): ResponsiveHooks & {
   splitCalls: boolean[]
   sidebarCalls: boolean[]
   headerCompactCalls: boolean[]
+  calendarCalls: boolean[]
 } {
   const splitCalls: boolean[] = []
   const sidebarCalls: boolean[] = []
   const headerCompactCalls: boolean[] = []
+  const calendarCalls: boolean[] = []
   return {
     splitCalls,
     sidebarCalls,
     headerCompactCalls,
+    calendarCalls,
     setSplitSpaceHidden: (hidden) => splitCalls.push(hidden),
     setSidebarSpaceHidden: (hidden) => sidebarCalls.push(hidden),
     setHeaderCompactSpaceHidden: (hidden) => headerCompactCalls.push(hidden),
+    setCalendarSpaceHidden: (hidden) => calendarCalls.push(hidden),
   }
 }
 
@@ -125,6 +129,21 @@ describe('with ResizeObserver available', () => {
     expect(hooks.splitCalls).toEqual([true, false])
     expect(hooks.headerCompactCalls).toEqual([true, false])
     expect(hooks.sidebarCalls).toEqual([true, false])
+  })
+
+  test('fires setCalendarSpaceHidden(true) crossing below 560px, below the sidebar threshold (650)', () => {
+    const hooks = fakeHooks()
+    setupResponsiveLayout(document.createElement('div'), hooks)
+    const ro = FakeResizeObserver.instances[0]!
+
+    ro.fire(600) // below sidebar (650) but still above the calendar threshold (560)
+    expect(hooks.calendarCalls).toEqual([])
+
+    ro.fire(500) // below 560
+    expect(hooks.calendarCalls).toEqual([true])
+
+    ro.fire(700) // widen back above 560
+    expect(hooks.calendarCalls).toEqual([true, false])
   })
 
   test('dispose() disconnects the observer', () => {

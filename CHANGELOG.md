@@ -11,6 +11,13 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Changed
 - The daily-note edge-scroll gesture — pushing a note past its top or bottom edge to jump to the nearest day that has a note — can now be turned off in Settings → General. The **Alt+,** and **Alt+.** shortcuts for the same jump are unaffected.
+- On a very narrow window the daily-note calendar now folds away on its own — after the team list and the second pane — and comes back when the window widens. A calendar you collapsed yourself stays collapsed.
+
+### Fixed
+- At the larger text sizes, an action-item card's detail line (due date, assignee, tag, reference count) was clipped at the card edge and the tag could break across lines mid-word. Board columns now widen with the chosen text size, and the detail line wraps to a second line instead of being cut off.
+- The date-picker calendar could open partly below the screen — and be unreachable — when its field sat low in a tall dialog or at a large text size. It now flips above the field when there isn't room below, and never spills past the window edge.
+- A closed risk could be found by search or the command switcher but jumping to it landed on nothing usable — the closed section stayed collapsed and the follow-up text that matched wasn't shown. Jumping now opens the closed section and reveals that risk's follow-up read-only (the risk stays closed until you reopen it); double-clicking a closed risk row also peeks its follow-up.
+- On a narrow window the Preferences dialog's tab row could run off the edge, leaving tabs like About unreachable. The tabs now wrap to a second row.
 
 ## [2.7.7] - 2026-09-08
 

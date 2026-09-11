@@ -941,6 +941,91 @@ describe('renderRisks', () => {
     })
   })
 
+  describe('closed risk: still reachable by search / fast-switch', () => {
+    test('a closed row carries a data-item-id so a jump can anchor to it', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const closedRow = container.querySelector('.tt-risk-row-closed') as HTMLElement
+      expect(closedRow.getAttribute('data-item-id')).toBe('r1')
+    })
+
+    test('search-focus on a closed risk opens the closed section and reveals its follow-up read-only', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'the buried reason' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const details = container.querySelector('details.tt-risks-closed') as HTMLDetailsElement
+      expect(details.open).toBe(false)
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      expect(details.open).toBe(true)
+      const preview = container.querySelector('.tt-risk-followup-readonly') as HTMLElement
+      expect(preview).not.toBeNull()
+      expect(preview.textContent).toContain('the buried reason')
+      expect(preview.querySelector('.editor')).toBeNull() // read-only — no contenteditable
+      expect(preview.getAttribute('data-item-id')).toBe('r1')
+      expect(store.doc.teams[0]!.risks[0]!.closed).toBe(true) // stays closed
+    })
+
+    test('search-focus on a closed risk with no follow-up still opens the section, with no preview row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      expect((container.querySelector('details.tt-risks-closed') as HTMLDetailsElement).open).toBe(true)
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+      expect(container.querySelector('.tt-risk-row-closed')).not.toBeNull()
+    })
+
+    test('double-clicking anywhere on the closed row toggles its follow-up peek', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'peek me' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = () => container.querySelector('.tt-risk-row-closed') as HTMLElement
+
+      row().querySelector('.tt-risk-title-text')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-readonly')?.textContent).toContain('peek me')
+
+      row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+    })
+
+    test('a double-click on the reopen button does not toggle the peek', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'x' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-reopen-btn') as HTMLButtonElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+    })
+
+    test('a closed row with no follow-up does not react to a double-click', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-row-closed') as HTMLElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+    })
+
+    test('the closed row can still be reopened', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'x' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      ;(container.querySelector('.tt-risk-reopen-btn') as HTMLButtonElement).click()
+
+      expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
+    })
+  })
+
   test('preserves an in-progress title edit (skips rebuild, defers to blur) when the store changes elsewhere while focused', () => {
     const team = makeTeam({
       risks: [risk({ id: 'a', title: 'A' }), risk({ id: 'b', title: 'B', order: 1 })],

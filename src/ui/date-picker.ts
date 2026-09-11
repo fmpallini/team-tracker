@@ -11,6 +11,7 @@
 // value, plus its own Today/Clear date shortcuts.
 import { t, formatDate, parseLocaleDate, todayIso, type Locale } from '../core/i18n'
 import { createCalendar, type CalendarMarks } from './calendar'
+import { placePopover } from '../core/popover-place'
 import { el, bindOutsideDismiss, blurOnEnter } from './dom'
 
 const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [] }
@@ -160,9 +161,19 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
     wrap.appendChild(actions)
 
     document.body.appendChild(wrap)
+    // Position after it's in the DOM so its own measured size feeds the
+    // viewport clamp — a tall modal or a large text-size setting can push the
+    // input low enough that a naive `bottom + 4` drops the calendar off the
+    // bottom of the screen; placePopover() flips it above the input instead.
     const rect = input.getBoundingClientRect()
-    wrap.style.left = `${rect.left}px`
-    wrap.style.top = `${rect.bottom + 4}px`
+    const pop = wrap.getBoundingClientRect()
+    const { left, top } = placePopover(
+      rect,
+      { width: pop.width, height: pop.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    )
+    wrap.style.left = `${left}px`
+    wrap.style.top = `${top}px`
     popover = wrap
     unbind = bindOutsideDismiss((target) => !!popover && !popover.contains(target) && target !== input, closePopover)
     closeCurrentPopover = closePopover

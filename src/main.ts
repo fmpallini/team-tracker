@@ -17,7 +17,7 @@ import { currentLoc } from './core/nav'
 import { addDaysIso } from './core/date'
 import { findTeam, nearestDatedNote } from './core/document'
 import { stepFontSize } from './core/font-size'
-import { renderDailyNotes } from './modules/daily-notes'
+import { renderDailyNotes, setDailyCalendarSpaceConstrained } from './modules/daily-notes'
 import { renderGeneralNotes } from './modules/general-notes'
 import { renderPeopleTree } from './modules/people-tree'
 import { renderPersonNotes } from './modules/person-notes'
@@ -476,6 +476,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       setSplitSpaceHidden: (hidden) => pm.setSplitSpaceConstrained(hidden),
       setSidebarSpaceHidden: (hidden) => sidebarHandle.setSpaceConstrained(hidden),
       setHeaderCompactSpaceHidden: (hidden) => shell.setHeaderCompactSpaceHidden(hidden),
+      setCalendarSpaceHidden: (hidden) => setDailyCalendarSpaceConstrained(hidden),
     })
   )
 

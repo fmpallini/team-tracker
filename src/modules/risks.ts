@@ -28,7 +28,8 @@ import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
+import { navigateToLoc, makeRefLabelResolver } from '../ui/atref'
+import { mdToHtml } from '../core/markdown'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -910,20 +911,67 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return row
   }
 
-  /** Condensed row for the collapsible closed-risks section: title, computed exposure and a reopen button — the full editable controls (chance/impact/plan/follow-up) aren't relevant once a risk is closed. */
+  /**
+   * Condensed row for the collapsible closed-risks section: title, computed
+   * exposure, an expand caret (only when there's a follow-up) and a reopen
+   * button — the editable controls (chance/impact/plan) aren't relevant once
+   * a risk is closed. The `data-item-id` is what a search hit / command-palette
+   * jump anchors its scroll+highlight to (search.ts indexes closed risks too),
+   * and expanding shows the follow-up read-only via renderClosedFollowupPreview.
+   */
   function renderClosedRow(r: Risk): HTMLElement {
     const exposure = computeExposure(r.chance, r.impact)
+    const hasFollowup = r.followup.trim() !== ''
+    const expandBtn = hasFollowup
+      ? el(
+          'button',
+          {
+            class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1',
+            title: t(lc, 'risk_followup_toggle_title'),
+            onclick: () => { expandable.toggle(r.id); renderAll() },
+          },
+          expandable.isExpanded(r.id) ? '▾' : '▸'
+        )
+      : el('span', { class: 'tt-risk-header-spacer' }) // keep the column aligned with rows that do have a caret
     const reopenBtn = el(
       'button',
       { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
       '♻️'
     )
-    return el(
+    const row = el(
       'div',
-      { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id },
+      { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id, 'data-item-id': r.id },
       el('span', { class: 'tt-risk-title-text' }, r.title),
       el('span', { class: 'tt-risk-exposure-badge' }, String(exposure)),
+      expandBtn,
       reopenBtn
+    )
+    // Double-click anywhere on the row toggles the follow-up peek — a bigger
+    // target than the caret. Skipped on the reopen button so it keeps its own
+    // job, and a no-op when there's no follow-up to show.
+    if (hasFollowup) {
+      row.addEventListener('dblclick', (e) => {
+        if ((e.target as HTMLElement).closest('button')) return
+        expandable.toggle(r.id)
+        renderAll()
+      })
+    }
+    return row
+  }
+
+  /** Read-only render of a closed risk's follow-up (mdToHtml, no editor) — closed risks are read-only, but their follow-up text is still what a search matched, so a jump has to be able to show it. */
+  function renderClosedFollowupPreview(r: Risk): HTMLElement {
+    const body = el('div', { class: 'tt-risk-followup-readonly-body' })
+    body.innerHTML = mdToHtml(
+      r.followup,
+      makeRefLabelResolver(ctx.store, teamId),
+      t(lc, 'editor_ref_hint'),
+      t(lc, 'editor_link_open_hint'),
+    )
+    return el(
+      'div',
+      { class: 'tt-risk-followup-row tt-risk-followup-readonly', 'data-risk-followup-id': r.id, 'data-item-id': r.id },
+      body
     )
   }
 
@@ -1005,7 +1053,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     closedEl.innerHTML = ''
     closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) })))
-    closed.forEach((r) => closedEl.appendChild(renderClosedRow(r)))
+    closed.forEach((r) => {
+      closedEl.appendChild(renderClosedRow(r))
+      if (expandable.isExpanded(r.id) && r.followup.trim() !== '') {
+        closedEl.appendChild(renderClosedFollowupPreview(r))
+      }
+    })
     closedEl.classList.toggle('tt-risks-closed-empty', closed.length === 0)
 
     if (focusRiskId) {
@@ -1117,7 +1170,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   /** Expands the risk a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's risks or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
   function onSearchFocusItem(e: Event): void {
     const itemId = (e as CustomEvent<string>).detail
-    if (!risks().some((r) => r.id === itemId)) return
+    const target = risks().find((r) => r.id === itemId)
+    if (!target) return
+    // A closed risk sits inside the collapsed <details> — open it so the
+    // jump's scroll/highlight (which queries [data-item-id]) has a visible
+    // anchor, and expand its read-only follow-up so the text the search
+    // matched is on screen.
+    if (target.closed) {
+      closedEl.open = true
+      expandable.expand(itemId)
+      renderAll()
+      return
+    }
     if (expandable.isExpanded(itemId)) return
     expandable.expand(itemId)
     renderAll()
