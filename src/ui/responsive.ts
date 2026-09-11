@@ -25,11 +25,19 @@ const SIDEBAR_HIDE_BELOW_PX = 650
 // sidebar collapse (which reveals the team indicator) can't reopen the gap
 // in the 650-820px band.
 const HEADER_COMPACT_BELOW_PX = 820
+// Below this, a single daily-notes pane no longer has room for both the
+// ~240px calendar column and a usable note width, so the calendar is folded
+// away on top of (never instead of) the user's own nav.calendarCollapsed —
+// it springs back to whatever they last chose once the window widens again.
+// Under the sidebar threshold: the sidebar is the bigger space win and
+// should go first.
+const CALENDAR_HIDE_BELOW_PX = 560
 
 export interface ResponsiveHooks {
   setSplitSpaceHidden(hidden: boolean): void
   setSidebarSpaceHidden(hidden: boolean): void
   setHeaderCompactSpaceHidden(hidden: boolean): void
+  setCalendarSpaceHidden(hidden: boolean): void
 }
 
 /** Returns a disposer. No-ops (and returns a no-op disposer) where ResizeObserver isn't available — e.g. jsdom in tests — same graceful-degradation the app already applies to Web Locks/BroadcastChannel. */
@@ -39,12 +47,14 @@ export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHook
   let splitHidden = false
   let sidebarHidden = false
   let headerCompactHidden = false
+  let calendarHidden = false
 
   const observer = new ResizeObserver((entries) => {
     const width = entries[0]?.contentRect.width ?? target.clientWidth
     const nextSplitHidden = width < SPLIT_HIDE_BELOW_PX
     const nextSidebarHidden = width < SIDEBAR_HIDE_BELOW_PX
     const nextHeaderCompactHidden = width < HEADER_COMPACT_BELOW_PX
+    const nextCalendarHidden = width < CALENDAR_HIDE_BELOW_PX
     if (nextSplitHidden !== splitHidden) {
       splitHidden = nextSplitHidden
       hooks.setSplitSpaceHidden(splitHidden)
@@ -56,6 +66,10 @@ export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHook
     if (nextHeaderCompactHidden !== headerCompactHidden) {
       headerCompactHidden = nextHeaderCompactHidden
       hooks.setHeaderCompactSpaceHidden(headerCompactHidden)
+    }
+    if (nextCalendarHidden !== calendarHidden) {
+      calendarHidden = nextCalendarHidden
+      hooks.setCalendarSpaceHidden(calendarHidden)
     }
   })
   observer.observe(target)

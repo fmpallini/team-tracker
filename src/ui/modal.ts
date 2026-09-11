@@ -388,6 +388,12 @@ interface ToastOptions {
   sticky?: boolean
   /** Task 25: e.g. the "Salvar como…" recovery action on a failed save. */
   action?: ToastAction
+  /**
+   * When set, any existing toast with the same key is removed before this one
+   * is shown — so a gesture that fires repeatedly (Ctrl+wheel font size) keeps
+   * a single, updating toast instead of stacking one per step.
+   */
+  key?: string
 }
 
 /**
@@ -416,7 +422,11 @@ export function toast(msg: string, opts?: ToastOptions): void {
     const action = opts.action
     children.push(el('button', { class: 'tt-toast-action', type: 'button', onclick: () => action.onClick() }, action.label))
   }
+  if (opts?.key) {
+    stack.querySelector(`.tt-toast[data-toast-key="${opts.key}"]`)?.remove()
+  }
   const node = el('div', { class: 'tt-toast' }, ...children)
+  if (opts?.key) node.dataset.toastKey = opts.key
   function dismiss(): void {
     node.remove()
   }

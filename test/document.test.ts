@@ -7,6 +7,7 @@ test('createEmptyDocument shape', () => {
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
     autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
     dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
+    ctrlWheelFontSize: true, dailyEdgeScroll: true,
   })
   expect(d.teams).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
@@ -277,6 +278,29 @@ describe('v12 → v13 migration (per-team custom kanban columns)', () => {
     }]
     const doc = migrate(d)
     expect(doc.teams[0]!.actionColumns).toEqual([{ id: 'custom-1', name: 'Review', order: 0 }])
+  })
+})
+
+describe('v13 → v14 migration (Ctrl+wheel font size + daily edge-scroll toggles)', () => {
+  it('defaults both toggles to true when missing', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 13
+    delete d.prefs.ctrlWheelFontSize
+    delete d.prefs.dailyEdgeScroll
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.prefs.ctrlWheelFontSize).toBe(true)
+    expect(doc.prefs.dailyEdgeScroll).toBe(true)
+  })
+
+  it('leaves toggles the user has turned off untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 13
+    d.prefs.ctrlWheelFontSize = false
+    d.prefs.dailyEdgeScroll = false
+    const doc = migrate(d)
+    expect(doc.prefs.ctrlWheelFontSize).toBe(false)
+    expect(doc.prefs.dailyEdgeScroll).toBe(false)
   })
 })
 

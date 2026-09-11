@@ -1,4 +1,4 @@
-import { renderDailyNotes } from '../src/modules/daily-notes'
+import { renderDailyNotes, setDailyCalendarSpaceConstrained } from '../src/modules/daily-notes'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -601,6 +601,21 @@ describe('overscroll: push past an edge to jump to the nearest day with a note',
     expect(editor.parentElement!.classList.contains('tt-editor-overpull')).toBe(true)
   })
 
+  test('does not engage when prefs.dailyEdgeScroll is off — native scroll left alone', () => {
+    const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
+    const { container, store, pm, loc } = setup(team, '2026-07-10')
+    store.doc.prefs.dailyEdgeScroll = false
+    render(container, loc, store, pm)
+    const editor = editorEl(container)
+    sizeEditor(editor, 600, 600, 600)
+
+    const notPrevented = wheel(editor, 900)
+
+    expect(notPrevented).toBe(true) // preventDefault never called
+    expect(pm.calls).toEqual([])
+    expect(editor.style.transform).toBe('')
+  })
+
   test('teardown removes the wheel listener', () => {
     const team = makeTeam({ dailyNotes: { '2026-07-05': 'past', '2026-07-20': 'future' } })
     const { container, store, pm, loc } = setup(team, '2026-07-10')
@@ -612,5 +627,71 @@ describe('overscroll: push past an edge to jump to the nearest day with a note',
 
     wheel(oldEditor, 900)
     expect(pm.calls).toEqual([]) // the detached first-instance listener is gone
+  })
+})
+
+describe('calendar auto-collapse when the window is space-constrained', () => {
+  afterEach(() => setDailyCalendarSpaceConstrained(false))
+
+  function calCol(container: HTMLElement): HTMLElement {
+    const el = container.querySelector<HTMLElement>('.tt-daily-calendar-col')
+    if (!el) throw new Error('.tt-daily-calendar-col not found')
+    return el
+  }
+  function calToggle(container: HTMLElement): HTMLElement {
+    const el = container.querySelector<HTMLElement>('.tt-daily-calendar-toggle')
+    if (!el) throw new Error('.tt-daily-calendar-toggle not found')
+    return el
+  }
+
+  test('folds the calendar and hides its toggle while constrained, without touching nav.calendarCollapsed', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
+
+    setDailyCalendarSpaceConstrained(true)
+
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+    expect(calToggle(container).hidden).toBe(true)
+    expect(store.doc.nav.calendarCollapsed).toBe(false) // transient only
+
+    setDailyCalendarSpaceConstrained(false)
+
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
+    expect(calToggle(container).hidden).toBe(false)
+  })
+
+  test('a pane mounted while already constrained comes up folded', () => {
+    setDailyCalendarSpaceConstrained(true)
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+  })
+
+  test('a manual collapse survives the constraint being lifted', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    store.doc.nav.calendarCollapsed = true
+    render(container, loc, store, pm)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+
+    setDailyCalendarSpaceConstrained(true)
+    setDailyCalendarSpaceConstrained(false)
+
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+  })
+
+  test('teardown unregisters the pane — the disposed instance is left alone', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    render(container, loc, store, pm) // re-invoke → withDisposal disposes the first
+    // The test's render() calls the module directly (no panes.ts DOM clear), so
+    // both the disposed and the live calendar column are in the container.
+    const cols = container.querySelectorAll<HTMLElement>('.tt-daily-calendar-col')
+    expect(cols).toHaveLength(2)
+
+    setDailyCalendarSpaceConstrained(true)
+
+    expect(cols[0]!.classList.contains('tt-daily-collapsed')).toBe(false) // disposed — not toggled
+    expect(cols[1]!.classList.contains('tt-daily-collapsed')).toBe(true) // live — folds
   })
 })

@@ -431,6 +431,23 @@ test('toast auto-dismisses after timeout unless sticky', () => {
   }
 })
 
+test('a keyed toast replaces the previous toast with the same key', () => {
+  toast('Text size: Medium', { key: 'font-size' })
+  toast('Text size: Large', { key: 'font-size' })
+
+  const texts = [...document.querySelectorAll('.tt-toast')].map((n) => n.textContent)
+  expect(texts).toEqual(['Text size: Large'])
+})
+
+test('a keyed toast leaves toasts with other keys (or none) in place', () => {
+  toast('a plain one', { sticky: true })
+  toast('Text size: Medium', { key: 'font-size' })
+  toast('Text size: Large', { key: 'font-size' })
+
+  const texts = [...document.querySelectorAll('.tt-toast')].map((n) => n.textContent)
+  expect(texts).toEqual(['a plain one', 'Text size: Large'])
+})
+
 // A sticky fallback notice plus one transient message was already enough to
 // wall off the lower-right corner of a note editor, and the stack had no
 // upper bound at all.

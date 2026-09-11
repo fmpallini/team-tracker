@@ -19,6 +19,14 @@ export interface Prefs {
   dailyBackupEnabled: boolean
   backupHandleId: string | null
   backupFrequency: 'daily' | 'hourly'
+  // When on, Ctrl+mouse-wheel steps `fontSize` through the five sizes instead
+  // of triggering the browser's own page zoom (main.ts's wheel handler). Off
+  // hands the gesture back to the browser.
+  ctrlWheelFontSize: boolean
+  // When on, pushing a daily note past its top/bottom edge rubber-bands and
+  // jumps to the nearest day with a note (src/modules/daily-notes.ts). Off
+  // leaves the editor's native scroll alone; the Alt+, / Alt+. hotkeys still work.
+  dailyEdgeScroll: boolean
 }
 export interface Person {
   id: string; name: string; role: string

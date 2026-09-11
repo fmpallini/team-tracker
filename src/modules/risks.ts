@@ -12,7 +12,7 @@
 // renderQuadrant below), mirroring milestones.ts's timeline: always rebuilt
 // in full alongside the list, since nothing inside an SVG can hold DOM focus.
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
-import { t, todayIso, type MsgKey } from '../core/i18n'
+import { t, todayIso, formatDateWithWeekday, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
@@ -28,7 +28,8 @@ import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
+import { navigateToLoc, makeRefLabelResolver } from '../ui/atref'
+import { mdToHtml } from '../core/markdown'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -53,6 +54,28 @@ export function exposureLevel(exposure: number): ExposureLevel {
 // anyway. The `.tt-risk-exposure-{level}` class the badge already carries now
 // drives the color from `--exposure-{level}` in styles.css, so the stamp
 // follows the theme like everything else.
+
+/**
+ * True when a risk row is a blank-title draft carrying nothing else worth
+ * keeping: every editable field still at its post-add default, and the
+ * follow-up either empty or holding only the auto-inserted creation line
+ * (`seededFollowup`, from newRiskFollowup below). The blank-name focus-out
+ * guard drops such a row on the spot — no confirm, the same treatment
+ * requestDelete already gives a blank row — mirroring how
+ * src/modules/action-items.ts silently discards an unnamed card when its
+ * modal closes. A row that has picked up any real content is kept and its
+ * missing name flagged instead.
+ */
+export function isBlankRiskDraft(r: Risk, seededFollowup: string): boolean {
+  return (
+    r.title.trim() === '' &&
+    r.chance === 1 &&
+    r.impact === 1 &&
+    r.plan === 'mitigate' &&
+    !r.closed &&
+    (r.followup.trim() === '' || r.followup === seededFollowup)
+  )
+}
 
 export type ExposureSort = 'none' | 'desc' | 'asc'
 
@@ -289,6 +312,25 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return findTeam()?.risks ?? []
   }
 
+  // A risk has no due date, so the only trace of when it was raised would be
+  // outside the file. Seed every new risk's follow-up with a dated line that
+  // links to that day's daily note (@[…](day:iso) — re-resolved to the
+  // current locale's date on render, so the stored label is just a readable
+  // fallback for plain-text export and search).
+  function newRiskFollowup(): string {
+    const iso = todayIso()
+    return t(lc, 'risk_created_on', { date: `@[${formatDateWithWeekday(iso, lc)}](day:${iso})` })
+  }
+
+  /** Shows the "needs a name" note on a row (idempotent); it clears on its own at the next renderAll(), which rebuilds the row from scratch. */
+  function showNameError(row: HTMLElement): void {
+    if (row.querySelector('.tt-risk-name-error')) return
+    row.appendChild(el('div', { class: 'tt-risk-name-error tt-field-error' }, t(lc, 'risk_name_required')))
+  }
+  function clearNameError(row: HTMLElement): void {
+    row.querySelector('.tt-risk-name-error')?.remove()
+  }
+
   let draggedId: string | null = null
   let sortMode: ExposureSort = 'none'
   // Every currently-expanded row's follow-up editor is mounted at once —
@@ -320,7 +362,20 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function setClosed(id: string, closed: boolean): void {
-    if (closed) expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
+    if (closed) {
+      // The inline equivalent of action-items.ts's beforeClose veto: an
+      // unnamed risk can't be filed away closed — flag the row and stop.
+      const target = risks().find((rr) => rr.id === id)
+      if (target && target.title.trim() === '') {
+        const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
+        if (row) {
+          showNameError(row)
+          row.querySelector<HTMLInputElement>('.tt-risk-title-input')?.focus()
+        }
+        return
+      }
+      expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
+    }
     ctx.store.update((d) => {
       const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
       if (found) found.closed = closed
@@ -866,6 +921,45 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, rect.left + 16, rect.bottom)
     })
 
+    // Blank-name guard, the inline-row stand-in for action-items.ts's
+    // modal-close behaviour. When focus has genuinely left the risks list
+    // with the title still blank, an untouched draft (isBlankRiskDraft:
+    // every other field at its default) is dropped silently — exactly as
+    // requestDelete treats a blank row — and a row that has gathered real
+    // content is kept with its missing name flagged instead.
+    row.addEventListener('focusout', () => {
+      // Deferred a tick on purpose: clicking the row's own caret / close /
+      // delete button, or any edit that re-renders the row, all resettle
+      // focus within the tick, and a tabindex="-1" button doesn't reliably
+      // hold focus. Judging synchronously (or off relatedTarget, which is
+      // null on those in headless Chromium) would fire the guard on them.
+      setTimeout(() => {
+        if (!row.isConnected) return // module torn down, or row already rebuilt
+        const active = document.activeElement
+        // Focus still sits inside the risks list (another row, or the
+        // follow-up editor that just opened): not done with this row.
+        if (active && active !== document.body && listEl.contains(active)) return
+        // Focus went nowhere real — a stray blur, not a deliberate move
+        // away. Leave the row on screen to be finished or deleted.
+        if (!active || active === document.body) return
+        const cur = risks().find((rr) => rr.id === r.id)
+        if (!cur) return
+        if (cur.title.trim() !== '') { clearNameError(row); return }
+        if (isBlankRiskDraft(cur, newRiskFollowup())) removeRisk(cur.id)
+        else showNameError(row)
+      }, 0)
+    })
+
+    // Double-click any dead space on the row toggles the follow-up — a bigger
+    // target than the caret, matching the closed-risk row. Skipped when the
+    // double-click landed on one of the row's own controls (a field edit, a
+    // word-select in the title, a button press).
+    row.addEventListener('dblclick', (e) => {
+      if ((e.target as HTMLElement).closest('input, select, button, a')) return
+      expandable.toggle(r.id)
+      renderAll()
+    })
+
     // Drag reorder only makes sense against the manual `order` sequence — a
     // display-only exposure sort has no manual position to reorder into, so
     // dragging is disabled while one is active (mirrors the `draggable`
@@ -910,20 +1004,67 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return row
   }
 
-  /** Condensed row for the collapsible closed-risks section: title, computed exposure and a reopen button — the full editable controls (chance/impact/plan/follow-up) aren't relevant once a risk is closed. */
+  /**
+   * Condensed row for the collapsible closed-risks section: title, computed
+   * exposure, an expand caret (only when there's a follow-up) and a reopen
+   * button — the editable controls (chance/impact/plan) aren't relevant once
+   * a risk is closed. The `data-item-id` is what a search hit / command-palette
+   * jump anchors its scroll+highlight to (search.ts indexes closed risks too),
+   * and expanding shows the follow-up read-only via renderClosedFollowupPreview.
+   */
   function renderClosedRow(r: Risk): HTMLElement {
     const exposure = computeExposure(r.chance, r.impact)
+    const hasFollowup = r.followup.trim() !== ''
+    const expandBtn = hasFollowup
+      ? el(
+          'button',
+          {
+            class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1',
+            title: t(lc, 'risk_followup_toggle_title'),
+            onclick: () => { expandable.toggle(r.id); renderAll() },
+          },
+          expandable.isExpanded(r.id) ? '▾' : '▸'
+        )
+      : el('span', { class: 'tt-risk-header-spacer' }) // keep the column aligned with rows that do have a caret
     const reopenBtn = el(
       'button',
       { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
       '♻️'
     )
-    return el(
+    const row = el(
       'div',
-      { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id },
+      { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id, 'data-item-id': r.id },
       el('span', { class: 'tt-risk-title-text' }, r.title),
       el('span', { class: 'tt-risk-exposure-badge' }, String(exposure)),
+      expandBtn,
       reopenBtn
+    )
+    // Double-click anywhere on the row toggles the follow-up peek — a bigger
+    // target than the caret. Skipped on the reopen button so it keeps its own
+    // job, and a no-op when there's no follow-up to show.
+    if (hasFollowup) {
+      row.addEventListener('dblclick', (e) => {
+        if ((e.target as HTMLElement).closest('button')) return
+        expandable.toggle(r.id)
+        renderAll()
+      })
+    }
+    return row
+  }
+
+  /** Read-only render of a closed risk's follow-up (mdToHtml, no editor) — closed risks are read-only, but their follow-up text is still what a search matched, so a jump has to be able to show it. */
+  function renderClosedFollowupPreview(r: Risk): HTMLElement {
+    const body = el('div', { class: 'tt-risk-followup-readonly-body' })
+    body.innerHTML = mdToHtml(
+      r.followup,
+      makeRefLabelResolver(ctx.store, teamId),
+      t(lc, 'editor_ref_hint'),
+      t(lc, 'editor_link_open_hint'),
+    )
+    return el(
+      'div',
+      { class: 'tt-risk-followup-row tt-risk-followup-readonly', 'data-risk-followup-id': r.id, 'data-item-id': r.id },
+      body
     )
   }
 
@@ -1005,7 +1146,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     closedEl.innerHTML = ''
     closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) })))
-    closed.forEach((r) => closedEl.appendChild(renderClosedRow(r)))
+    closed.forEach((r) => {
+      closedEl.appendChild(renderClosedRow(r))
+      if (expandable.isExpanded(r.id) && r.followup.trim() !== '') {
+        closedEl.appendChild(renderClosedFollowupPreview(r))
+      }
+    })
     closedEl.classList.toggle('tt-risks-closed-empty', closed.length === 0)
 
     if (focusRiskId) {
@@ -1025,7 +1171,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
       const maxOrder = tm.risks.length === 0 ? -1 : Math.max(...tm.risks.map((r) => r.order))
-      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: maxOrder + 1, closed: false })
+      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: newRiskFollowup(), order: maxOrder + 1, closed: false })
     }, { teamId, sections: ['risks'] })
   }
 
@@ -1117,7 +1263,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   /** Expands the risk a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's risks or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
   function onSearchFocusItem(e: Event): void {
     const itemId = (e as CustomEvent<string>).detail
-    if (!risks().some((r) => r.id === itemId)) return
+    const target = risks().find((r) => r.id === itemId)
+    if (!target) return
+    // A closed risk sits inside the collapsed <details> — open it so the
+    // jump's scroll/highlight (which queries [data-item-id]) has a visible
+    // anchor, and expand its read-only follow-up so the text the search
+    // matched is on screen.
+    if (target.closed) {
+      closedEl.open = true
+      expandable.expand(itemId)
+      renderAll()
+      return
+    }
     if (expandable.isExpanded(itemId)) return
     expandable.expand(itemId)
     renderAll()

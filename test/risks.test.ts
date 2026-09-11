@@ -7,6 +7,7 @@ import {
   moveRisk,
   computeQuadrantLayout,
   cellFromPoint,
+  isBlankRiskDraft,
   type ExposureSort,
 } from '../src/modules/risks'
 import { createStore, type Store } from '../src/core/store'
@@ -15,6 +16,7 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Risk, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
+import { formatDateWithWeekday } from '../src/core/i18n'
 
 // jsdom has no layout engine, so Element.prototype.scrollIntoView doesn't
 // exist at all (see test/scope-freshness.test.ts's identical guard).
@@ -332,6 +334,41 @@ describe('pure helpers', () => {
       }
     })
   })
+
+  describe('isBlankRiskDraft', () => {
+    const SEED = 'Created on @[Wed, 09/10/2026](day:2026-09-10)'
+
+    test('true for a blank title with every other field at its post-add default', () => {
+      expect(isBlankRiskDraft(risk({ title: '' }), SEED)).toBe(true)
+    })
+
+    test('true when the follow-up still holds only the auto-inserted creation line', () => {
+      expect(isBlankRiskDraft(risk({ title: '', followup: SEED }), SEED)).toBe(true)
+    })
+
+    test('true when the title is only whitespace', () => {
+      expect(isBlankRiskDraft(risk({ title: '   ' }), SEED)).toBe(true)
+    })
+
+    test('false once the title has real text', () => {
+      expect(isBlankRiskDraft(risk({ title: 'Vendor delay' }), SEED)).toBe(false)
+    })
+
+    test('false when chance, impact or plan has been changed off its default', () => {
+      expect(isBlankRiskDraft(risk({ title: '', chance: 2 }), SEED)).toBe(false)
+      expect(isBlankRiskDraft(risk({ title: '', impact: 3 }), SEED)).toBe(false)
+      expect(isBlankRiskDraft(risk({ title: '', plan: 'accept' }), SEED)).toBe(false)
+    })
+
+    test('false when the follow-up carries anything beyond the creation line', () => {
+      expect(isBlankRiskDraft(risk({ title: '', followup: `${SEED}\n\nreal note` }), SEED)).toBe(false)
+      expect(isBlankRiskDraft(risk({ title: '', followup: 'hand-written note' }), SEED)).toBe(false)
+    })
+
+    test('false for a blank-title row that has already been closed', () => {
+      expect(isBlankRiskDraft(risk({ title: '', closed: true }), SEED)).toBe(false)
+    })
+  })
 })
 
 describe('renderRisks', () => {
@@ -557,7 +594,7 @@ describe('renderRisks', () => {
     expect(added.chance).toBe(1)
     expect(added.impact).toBe(1)
     expect(added.plan).toBe('mitigate')
-    expect(added.followup).toBe('')
+    expect(added.followup).toMatch(/^Created on @\[.+\]\(day:\d{4}-\d{2}-\d{2}\)$/)
 
     const focused = document.activeElement as HTMLInputElement
     expect(focused.classList.contains('tt-risk-title-input')).toBe(true)
@@ -666,6 +703,108 @@ describe('renderRisks', () => {
     clickByTitleOrText(container, 'Delete risk')
     clickByTitleOrText(document.body, 'Cancel')
     expect(store.doc.teams[0]!.risks).toHaveLength(1)
+  })
+
+  describe('a new risk carries its creation date', () => {
+    test('the follow-up is pre-filled with today, linking to that daily note', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 8, 10, 9, 0, 0))
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+
+      clickByTitleOrText(container, '+ Risk')
+
+      expect(store.doc.teams[0]!.risks[0]!.followup)
+        .toBe(`Created on @[${formatDateWithWeekday('2026-09-10', 'en-US')}](day:2026-09-10)`)
+    })
+
+    test('expanding the new risk shows that date as a live day-reference chip', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 8, 10, 9, 0, 0))
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+
+      const chip = container.querySelector('.tt-risk-followup-row .editor .ref') as HTMLElement
+      expect(chip.dataset.ref).toBe('day:2026-09-10')
+    })
+  })
+
+  describe('blank-name guard mirrors the action-item card', () => {
+    // The guard defers a tick and then judges by where focus actually
+    // landed, so a test has to move focus to a real target and flush timers.
+    let outside: HTMLButtonElement
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 8, 10, 9, 0, 0))
+      outside = document.body.appendChild(document.createElement('button'))
+    })
+    function leaveRow(row: HTMLElement, to: HTMLElement = outside): void {
+      to.focus()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
+    }
+
+    test('a just-added risk left with no name is dropped once focus leaves the list', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+
+      leaveRow(container.querySelector('.tt-risk-row') as HTMLElement)
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    })
+
+    test('moving focus to another control in the same list does not drop the draft', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      leaveRow(row, row.querySelector('.tt-risk-chance-select') as HTMLElement)
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    })
+
+    test('a stray blur to nowhere (no new focus target) leaves the draft alone', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    })
+
+    test('a nameless row that has picked up content is kept and flagged instead of dropped', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '', chance: 3, followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      leaveRow(row)
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+      expect(row.querySelector('.tt-risk-name-error')?.textContent).toBe('This risk needs a name.')
+    })
+
+    test('closing a nameless risk is refused and flags the missing name', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      clickByTitleOrText(container, 'Close risk')
+
+      expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      expect(row.querySelector('.tt-risk-name-error')?.textContent).toBe('This risk needs a name.')
+    })
   })
 
   test('deleting a risk unlinks every reference to it across the team\'s notes', () => {
@@ -894,6 +1033,41 @@ describe('renderRisks', () => {
     })
   })
 
+  describe('double-click toggles an open row\'s follow-up', () => {
+    test('a double-click on a non-interactive part of the row expands, then collapses, the editor', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', followup: 'notes' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = () => container.querySelector('.tt-risk-row:not(.tt-risk-row-closed)') as HTMLElement
+
+      row().querySelector('.tt-risk-exposure-badge')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-row .editor')).not.toBeNull()
+
+      row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-row .editor')).toBeNull()
+    })
+
+    test('a double-click on the title input (word-select) does not toggle the editor', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', followup: 'notes' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-title-input') as HTMLInputElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+    })
+
+    test('a double-click on a select does not toggle the editor', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-chance-select') as HTMLSelectElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+    })
+  })
+
   describe('search-focus-item event', () => {
     test('expands a collapsed risk and mounts its follow-up editor', () => {
       const team = makeTeam({ risks: [risk({ id: 'r1', followup: 'buried text' })] })
@@ -938,6 +1112,91 @@ describe('renderRisks', () => {
 
       const followupRow = container.querySelector('.tt-risk-followup-row') as HTMLElement
       expect(followupRow.getAttribute('data-item-id')).toBe('r1')
+    })
+  })
+
+  describe('closed risk: still reachable by search / fast-switch', () => {
+    test('a closed row carries a data-item-id so a jump can anchor to it', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const closedRow = container.querySelector('.tt-risk-row-closed') as HTMLElement
+      expect(closedRow.getAttribute('data-item-id')).toBe('r1')
+    })
+
+    test('search-focus on a closed risk opens the closed section and reveals its follow-up read-only', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'the buried reason' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const details = container.querySelector('details.tt-risks-closed') as HTMLDetailsElement
+      expect(details.open).toBe(false)
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      expect(details.open).toBe(true)
+      const preview = container.querySelector('.tt-risk-followup-readonly') as HTMLElement
+      expect(preview).not.toBeNull()
+      expect(preview.textContent).toContain('the buried reason')
+      expect(preview.querySelector('.editor')).toBeNull() // read-only — no contenteditable
+      expect(preview.getAttribute('data-item-id')).toBe('r1')
+      expect(store.doc.teams[0]!.risks[0]!.closed).toBe(true) // stays closed
+    })
+
+    test('search-focus on a closed risk with no follow-up still opens the section, with no preview row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      expect((container.querySelector('details.tt-risks-closed') as HTMLDetailsElement).open).toBe(true)
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+      expect(container.querySelector('.tt-risk-row-closed')).not.toBeNull()
+    })
+
+    test('double-clicking anywhere on the closed row toggles its follow-up peek', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'peek me' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = () => container.querySelector('.tt-risk-row-closed') as HTMLElement
+
+      row().querySelector('.tt-risk-title-text')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-readonly')?.textContent).toContain('peek me')
+
+      row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+    })
+
+    test('a double-click on the reopen button does not toggle the peek', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'x' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-reopen-btn') as HTMLButtonElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+    })
+
+    test('a closed row with no follow-up does not react to a double-click', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-row-closed') as HTMLElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-risk-followup-readonly')).toBeNull()
+    })
+
+    test('the closed row can still be reopened', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: 'x' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      ;(container.querySelector('.tt-risk-reopen-btn') as HTMLButtonElement).click()
+
+      expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
     })
   })
 

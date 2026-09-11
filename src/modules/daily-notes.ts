@@ -57,6 +57,33 @@ function resolveCalendarAnchor(store: Store, paneIdx: 0 | 1, date: string): stri
   return anchor
 }
 
+/**
+ * Transient "the window is too narrow for the calendar column" flag, set by
+ * main.ts's responsive layout (ui/responsive.ts's CALENDAR_HIDE_BELOW_PX). It
+ * folds the calendar on top of — never instead of — the user's own
+ * `nav.calendarCollapsed`: while it's on the column is collapsed and its
+ * toggle button hidden regardless of the pref, and when it clears each
+ * mounted pane reverts to whatever the pref says. Module-level (window width
+ * is global) with one entry per mounted daily pane so each can read its own
+ * store's pref; entries are dropped by the renderer's teardown.
+ */
+let calendarSpaceConstrained = false
+interface CalendarColEntry { col: HTMLElement; toggleBtn: HTMLElement; store: Store }
+const mountedCalendarCols = new Set<CalendarColEntry>()
+
+function applyCalendarCollapsed(entry: CalendarColEntry): void {
+  entry.col.classList.toggle(
+    'tt-daily-collapsed',
+    calendarSpaceConstrained || entry.store.doc.nav.calendarCollapsed,
+  )
+  entry.toggleBtn.hidden = calendarSpaceConstrained
+}
+
+export function setDailyCalendarSpaceConstrained(constrained: boolean): void {
+  calendarSpaceConstrained = constrained
+  for (const entry of mountedCalendarCols) applyCalendarCollapsed(entry)
+}
+
 export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'daily') return // registered only for 'daily'; defensive
   const date = loc.ref.date
@@ -149,7 +176,6 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   const calendarCol = el('div', {
     class: 'tt-daily-calendar-col',
   })
-  calendarCol.classList.toggle('tt-daily-collapsed', ctx.store.doc.nav.calendarCollapsed)
   const toggleBtn = el(
     'button',
     {
@@ -159,11 +185,17 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
       onclick: () => {
         const collapsed = !ctx.store.doc.nav.calendarCollapsed
         ctx.store.updateNav((d) => { d.nav.calendarCollapsed = collapsed })
-        calendarCol.classList.toggle('tt-daily-collapsed', collapsed)
+        applyCalendarCollapsed(calendarColEntry)
       },
     },
     '📅'
   )
+  // Registered for the lifetime of this mount so setDailyCalendarSpaceConstrained()
+  // can fold/unfold it as the window crosses the narrow threshold; unregistered
+  // in the teardown below.
+  const calendarColEntry: CalendarColEntry = { col: calendarCol, toggleBtn, store: ctx.store }
+  mountedCalendarCols.add(calendarColEntry)
+  applyCalendarCollapsed(calendarColEntry)
   const badgeSlot = el('div', { class: 'tt-daily-badge-slot' })
   function rebuildBadge(): void {
     badgeSlot.innerHTML = ''
@@ -304,6 +336,12 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     }
 
     function onWheel(e: WheelEvent): void {
+      // Read live, not at mount: toggling the pref in prefs takes effect on the
+      // next wheel event without a re-render (the write is prefs-scoped).
+      if (!ctx.store.doc.prefs.dailyEdgeScroll) {
+        if (mode !== 0) reset()
+        return
+      }
       const d = deltaPx(e)
       if (d === 0) return
       if (mode === 0) {
@@ -359,6 +397,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   return () => {
+    mountedCalendarCols.delete(calendarColEntry)
     detachDayOverscroll()
     unsubscribe()
     bundle.dispose()

@@ -1,7 +1,9 @@
 // src/core/cleanup.ts — cross-team data cleanup for the Prefs → Data tab
-// (src/ui/prefs.ts). Removes terminal-state action items/milestones/risks
-// (regardless of age) and daily notes older than a user-chosen number of
-// days, across every team in the document in one pass.
+// (src/ui/prefs.ts). In one pass across every team it removes: done/cancelled
+// action items and closed risks regardless of age (neither has a single date
+// to gauge age by), plus the two things that do carry a date — completed
+// milestones and daily notes — once that date is older than a user-chosen
+// number of days.
 import type { Doc } from './types'
 import { diffDays } from './date'
 import { unlinkRefsInTeam } from './refs'
@@ -13,8 +15,8 @@ export interface CleanupCounts {
   dailyNotes: number
 }
 
-/** True when a daily-note date is strictly more than `days` days before `today`. */
-function isStaleDailyNote(date: string, days: number, today: string): boolean {
+/** True when a date is strictly more than `days` days before `today` — the shared age test for daily notes and completed milestones. */
+function isOlderThan(date: string, days: number, today: string): boolean {
   return diffDays(today, date) > days
 }
 
@@ -25,13 +27,13 @@ export function countCleanupTargets(doc: Doc, days: number, today: string): Clea
       if (a.status === 'done' || a.status === 'cancelled') counts.actions++
     }
     for (const m of team.milestones) {
-      if (m.done) counts.milestones++
+      if (m.done && isOlderThan(m.date, days, today)) counts.milestones++
     }
     for (const r of team.risks) {
       if (r.closed) counts.risks++
     }
     for (const date of Object.keys(team.dailyNotes)) {
-      if (isStaleDailyNote(date, days, today)) counts.dailyNotes++
+      if (isOlderThan(date, days, today)) counts.dailyNotes++
     }
   }
   return counts
@@ -49,16 +51,17 @@ export function applyCleanup(doc: Doc, days: number, today: string): void {
     unlinkRefsInTeam(team, 'action', removedActions)
     team.actionItems = team.actionItems.filter((a) => a.status !== 'done' && a.status !== 'cancelled')
 
-    const removedMilestones = new Map(team.milestones.filter((m) => m.done).map((m) => [m.id, m.title]))
+    const isPurgeableMilestone = (m: { done: boolean; date: string }): boolean => m.done && isOlderThan(m.date, days, today)
+    const removedMilestones = new Map(team.milestones.filter(isPurgeableMilestone).map((m) => [m.id, m.title]))
     unlinkRefsInTeam(team, 'milestone', removedMilestones)
-    team.milestones = team.milestones.filter((m) => !m.done)
+    team.milestones = team.milestones.filter((m) => !isPurgeableMilestone(m))
 
     const removedRisks = new Map(team.risks.filter((r) => r.closed).map((r) => [r.id, r.title]))
     unlinkRefsInTeam(team, 'risk', removedRisks)
     team.risks = team.risks.filter((r) => !r.closed)
 
     for (const date of Object.keys(team.dailyNotes)) {
-      if (isStaleDailyNote(date, days, today)) delete team.dailyNotes[date]
+      if (isOlderThan(date, days, today)) delete team.dailyNotes[date]
     }
   }
 }

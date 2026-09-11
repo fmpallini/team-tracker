@@ -331,7 +331,45 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
     )
 
-    container.append(autoSaveField, themeField, paletteField, localeField, fontField, sizeField, dueSoonField, openRefsSecondaryField)
+    // Both toggles are read live by their handlers — main.ts's wheel listener
+    // for Ctrl+wheel, daily-notes.ts's onWheel for edge-scroll — so neither
+    // needs an applyPrefs() or a re-render here; flipping the pref is enough.
+    const ctrlWheelFontInput = el('input', {
+      type: 'checkbox',
+      class: 'tt-prefs-ctrl-wheel-font-checkbox',
+      checked: prefs.ctrlWheelFontSize,
+      onchange: (e: Event) => {
+        const checked = (e.target as HTMLInputElement).checked
+        store.update((d) => {
+          d.prefs.ctrlWheelFontSize = checked
+        }, PREFS_ONLY)
+      },
+    })
+    const ctrlWheelFontField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-checkbox-label' }, ctrlWheelFontInput, t(locale, 'prefs_ctrl_wheel_font_label')),
+      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_ctrl_wheel_font_hint'))
+    )
+
+    const dailyEdgeScrollInput = el('input', {
+      type: 'checkbox',
+      class: 'tt-prefs-daily-edge-scroll-checkbox',
+      checked: prefs.dailyEdgeScroll,
+      onchange: (e: Event) => {
+        const checked = (e.target as HTMLInputElement).checked
+        store.update((d) => {
+          d.prefs.dailyEdgeScroll = checked
+        }, PREFS_ONLY)
+      },
+    })
+    const dailyEdgeScrollField = el(
+      'div',
+      { class: 'tt-prefs-field' },
+      el('label', { class: 'tt-prefs-checkbox-label' }, dailyEdgeScrollInput, t(locale, 'prefs_daily_edge_scroll_label'))
+    )
+
+    container.append(autoSaveField, themeField, paletteField, localeField, fontField, sizeField, dueSoonField, openRefsSecondaryField, ctrlWheelFontField, dailyEdgeScrollField)
   }
 
   // --- Tab 1b: Backup -----------------------------------------------------

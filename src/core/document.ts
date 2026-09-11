@@ -2,14 +2,14 @@ import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 13
+export const SCHEMA_VERSION = 14
 
 export class SchemaTooNewError extends Error {}
 
 export function createEmptyDocument(locale: Locale): Doc {
   return {
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily' },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily', ctrlWheelFontSize: true, dailyEdgeScroll: true },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false },
@@ -160,6 +160,13 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
       if (!Array.isArray(team.actionColumns)) {
         team.actionColumns = [{ id: 'wip', name: t(locale, 'kanban_wip_default_name'), order: 0 }]
       }
+    }
+  },
+  13: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs) {
+      prefs.ctrlWheelFontSize = prefs.ctrlWheelFontSize ?? true
+      prefs.dailyEdgeScroll = prefs.dailyEdgeScroll ?? true
     }
   },
 }
