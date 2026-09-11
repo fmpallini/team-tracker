@@ -922,23 +922,32 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     })
 
     // Blank-name guard, the inline-row stand-in for action-items.ts's
-    // modal-close behaviour. Once focus leaves the row entirely, a row still
-    // missing a title is either an abandoned draft (isBlankRiskDraft: every
-    // other field untouched) — dropped silently, exactly as requestDelete
-    // treats a blank row — or a row that has gathered real content, which
-    // can't be discarded, so its missing name is flagged and left in place.
-    row.addEventListener('focusout', (e) => {
-      // renderAll()'s `listEl.innerHTML = ''` blurs the focused child and
-      // fires this after the row is already detached — nothing to guard.
-      if (!row.isConnected) return
-      // Focus only hopped to another control in the same row (title -> a
-      // select, or one of the row's icon buttons): still editing this row.
-      if (row.contains((e as FocusEvent).relatedTarget as Node | null)) return
-      const cur = risks().find((rr) => rr.id === r.id)
-      if (!cur) return
-      if (cur.title.trim() !== '') { clearNameError(row); return }
-      if (isBlankRiskDraft(cur, newRiskFollowup())) removeRisk(cur.id)
-      else showNameError(row)
+    // modal-close behaviour. When focus has genuinely left the risks list
+    // with the title still blank, an untouched draft (isBlankRiskDraft:
+    // every other field at its default) is dropped silently — exactly as
+    // requestDelete treats a blank row — and a row that has gathered real
+    // content is kept with its missing name flagged instead.
+    row.addEventListener('focusout', () => {
+      // Deferred a tick on purpose: clicking the row's own caret / close /
+      // delete button, or any edit that re-renders the row, all resettle
+      // focus within the tick, and a tabindex="-1" button doesn't reliably
+      // hold focus. Judging synchronously (or off relatedTarget, which is
+      // null on those in headless Chromium) would fire the guard on them.
+      setTimeout(() => {
+        if (!row.isConnected) return // module torn down, or row already rebuilt
+        const active = document.activeElement
+        // Focus still sits inside the risks list (another row, or the
+        // follow-up editor that just opened): not done with this row.
+        if (active && active !== document.body && listEl.contains(active)) return
+        // Focus went nowhere real — a stray blur, not a deliberate move
+        // away. Leave the row on screen to be finished or deleted.
+        if (!active || active === document.body) return
+        const cur = risks().find((rr) => rr.id === r.id)
+        if (!cur) return
+        if (cur.title.trim() !== '') { clearNameError(row); return }
+        if (isBlankRiskDraft(cur, newRiskFollowup())) removeRisk(cur.id)
+        else showNameError(row)
+      }, 0)
     })
 
     // Double-click any dead space on the row toggles the follow-up — a bigger

@@ -467,29 +467,50 @@ describe('renderMilestones', () => {
   })
 
   describe('blank-name guard mirrors the action-item card', () => {
-    function blur(el: HTMLElement, relatedTarget: HTMLElement | null = null): void {
-      el.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget }))
+    // The guard defers a tick and then judges by where focus actually
+    // landed, so a test has to move focus to a real target and flush timers.
+    let outside: HTMLButtonElement
+    beforeEach(() => {
+      vi.useFakeTimers()
+      outside = document.body.appendChild(document.createElement('button'))
+    })
+    function leaveRow(row: HTMLElement, to: HTMLElement = outside): void {
+      to.focus()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
     }
 
-    test('a just-added milestone left with no name is dropped once focus leaves the row', () => {
+    test('a just-added milestone left with no name is dropped once focus leaves the list', () => {
       const { container, store, pm, loc } = setup(makeTeam())
       render(container, loc, store, pm)
       clickByTitleOrText(container, '+ Milestone')
       expect(store.doc.teams[0]!.milestones).toHaveLength(1)
 
-      const row = container.querySelector('.tt-milestone-row') as HTMLElement
-      blur(row)
+      leaveRow(container.querySelector('.tt-milestone-row') as HTMLElement)
 
       expect(store.doc.teams[0]!.milestones).toHaveLength(0)
     })
 
-    test('moving focus to a control inside the row does not drop the draft', () => {
+    test('moving focus to a control inside the same list does not drop the draft', () => {
       const { container, store, pm, loc } = setup(makeTeam())
       render(container, loc, store, pm)
       clickByTitleOrText(container, '+ Milestone')
 
       const row = container.querySelector('.tt-milestone-row') as HTMLElement
-      blur(row, row.querySelector('.tt-milestone-done-checkbox') as HTMLElement)
+      leaveRow(row, row.querySelector('.tt-milestone-done-checkbox') as HTMLElement)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    })
+
+    test('a stray blur to nowhere (no new focus target) leaves the draft alone', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
 
       expect(store.doc.teams[0]!.milestones).toHaveLength(1)
     })
@@ -500,7 +521,7 @@ describe('renderMilestones', () => {
       render(container, loc, store, pm)
 
       const row = container.querySelector('.tt-milestone-row') as HTMLElement
-      blur(row)
+      leaveRow(row)
 
       expect(store.doc.teams[0]!.milestones).toHaveLength(1)
       expect(row.querySelector('.tt-milestone-name-error')?.textContent).toBe('This milestone needs a name.')

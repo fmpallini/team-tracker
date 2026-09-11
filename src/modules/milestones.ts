@@ -538,15 +538,20 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
     // Blank-name guard, the inline-row stand-in for action-items.ts's
     // modal-close behaviour — see the identically-shaped handler in
-    // src/modules/risks.ts for the full rationale.
-    row.addEventListener('focusout', (e) => {
-      if (!row.isConnected) return // detached by renderAll()'s innerHTML reset
-      if (row.contains((e as FocusEvent).relatedTarget as Node | null)) return
-      const cur = milestones().find((mm) => mm.id === m.id)
-      if (!cur) return
-      if (cur.title.trim() !== '') { clearNameError(row); return }
-      if (isBlankMilestoneDraft(cur)) removeMilestone(cur.id)
-      else showNameError(row)
+    // src/modules/risks.ts for the full rationale (deferred a tick;
+    // acts only once focus has genuinely left the milestone list).
+    row.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (!row.isConnected) return
+        const active = document.activeElement
+        if (active && active !== document.body && listEl.contains(active)) return
+        if (!active || active === document.body) return
+        const cur = milestones().find((mm) => mm.id === m.id)
+        if (!cur) return
+        if (cur.title.trim() !== '') { clearNameError(row); return }
+        if (isBlankMilestoneDraft(cur)) removeMilestone(cur.id)
+        else showNameError(row)
+      }, 0)
     })
 
     // Double-click any dead space on the row toggles the follow-up — see the

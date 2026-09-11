@@ -626,6 +626,11 @@ test.describe('resource growth over a long session', () => {
     await addTeam(page, 'Alpha')
     await switchModule(page, /Risks/i)
     await page.locator('.tt-risk-add-btn').click()
+    // Named, not left blank: risks.ts drops an unnamed row once focus moves
+    // on, and this cycle's whole point is exercising close/reopen with the
+    // row still there to right-click.
+    await page.locator('.tt-risk-title-input').first().fill('Leaked risk')
+    await page.locator('.tt-risk-title-input').first().blur()
 
     // context-menu.ts (and backlinks-panel.ts, same shape) is a module-level
     // popover singleton, not owned by any pane/module the pane tree's own

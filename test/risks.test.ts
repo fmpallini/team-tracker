@@ -733,33 +733,51 @@ describe('renderRisks', () => {
   })
 
   describe('blank-name guard mirrors the action-item card', () => {
-    function blur(el: HTMLElement, relatedTarget: HTMLElement | null = null): void {
-      el.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget }))
-    }
-
-    test('a just-added risk left with no name is dropped once focus leaves the row', () => {
+    // The guard defers a tick and then judges by where focus actually
+    // landed, so a test has to move focus to a real target and flush timers.
+    let outside: HTMLButtonElement
+    beforeEach(() => {
       vi.useFakeTimers()
       vi.setSystemTime(new Date(2026, 8, 10, 9, 0, 0))
+      outside = document.body.appendChild(document.createElement('button'))
+    })
+    function leaveRow(row: HTMLElement, to: HTMLElement = outside): void {
+      to.focus()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
+    }
+
+    test('a just-added risk left with no name is dropped once focus leaves the list', () => {
       const { container, store, pm, loc } = setup(makeTeam())
       render(container, loc, store, pm)
       clickByTitleOrText(container, '+ Risk')
       expect(store.doc.teams[0]!.risks).toHaveLength(1)
 
-      const row = container.querySelector('.tt-risk-row') as HTMLElement
-      blur(row)
+      leaveRow(container.querySelector('.tt-risk-row') as HTMLElement)
 
       expect(store.doc.teams[0]!.risks).toHaveLength(0)
     })
 
-    test('moving focus between fields inside the row does not drop the draft', () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date(2026, 8, 10, 9, 0, 0))
+    test('moving focus to another control in the same list does not drop the draft', () => {
       const { container, store, pm, loc } = setup(makeTeam())
       render(container, loc, store, pm)
       clickByTitleOrText(container, '+ Risk')
 
       const row = container.querySelector('.tt-risk-row') as HTMLElement
-      blur(row, row.querySelector('.tt-risk-chance-select') as HTMLElement)
+      leaveRow(row, row.querySelector('.tt-risk-chance-select') as HTMLElement)
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    })
+
+    test('a stray blur to nowhere (no new focus target) leaves the draft alone', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
 
       expect(store.doc.teams[0]!.risks).toHaveLength(1)
     })
@@ -770,7 +788,7 @@ describe('renderRisks', () => {
       render(container, loc, store, pm)
 
       const row = container.querySelector('.tt-risk-row') as HTMLElement
-      blur(row)
+      leaveRow(row)
 
       expect(store.doc.teams[0]!.risks).toHaveLength(1)
       expect(row.querySelector('.tt-risk-name-error')?.textContent).toBe('This risk needs a name.')
