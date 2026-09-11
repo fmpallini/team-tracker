@@ -12,7 +12,7 @@
 // renderQuadrant below), mirroring milestones.ts's timeline: always rebuilt
 // in full alongside the list, since nothing inside an SVG can hold DOM focus.
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
-import { t, todayIso, type MsgKey } from '../core/i18n'
+import { t, todayIso, formatDateWithWeekday, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
@@ -54,6 +54,28 @@ export function exposureLevel(exposure: number): ExposureLevel {
 // anyway. The `.tt-risk-exposure-{level}` class the badge already carries now
 // drives the color from `--exposure-{level}` in styles.css, so the stamp
 // follows the theme like everything else.
+
+/**
+ * True when a risk row is a blank-title draft carrying nothing else worth
+ * keeping: every editable field still at its post-add default, and the
+ * follow-up either empty or holding only the auto-inserted creation line
+ * (`seededFollowup`, from newRiskFollowup below). The blank-name focus-out
+ * guard drops such a row on the spot — no confirm, the same treatment
+ * requestDelete already gives a blank row — mirroring how
+ * src/modules/action-items.ts silently discards an unnamed card when its
+ * modal closes. A row that has picked up any real content is kept and its
+ * missing name flagged instead.
+ */
+export function isBlankRiskDraft(r: Risk, seededFollowup: string): boolean {
+  return (
+    r.title.trim() === '' &&
+    r.chance === 1 &&
+    r.impact === 1 &&
+    r.plan === 'mitigate' &&
+    !r.closed &&
+    (r.followup.trim() === '' || r.followup === seededFollowup)
+  )
+}
 
 export type ExposureSort = 'none' | 'desc' | 'asc'
 
@@ -290,6 +312,25 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return findTeam()?.risks ?? []
   }
 
+  // A risk has no due date, so the only trace of when it was raised would be
+  // outside the file. Seed every new risk's follow-up with a dated line that
+  // links to that day's daily note (@[…](day:iso) — re-resolved to the
+  // current locale's date on render, so the stored label is just a readable
+  // fallback for plain-text export and search).
+  function newRiskFollowup(): string {
+    const iso = todayIso()
+    return t(lc, 'risk_created_on', { date: `@[${formatDateWithWeekday(iso, lc)}](day:${iso})` })
+  }
+
+  /** Shows the "needs a name" note on a row (idempotent); it clears on its own at the next renderAll(), which rebuilds the row from scratch. */
+  function showNameError(row: HTMLElement): void {
+    if (row.querySelector('.tt-risk-name-error')) return
+    row.appendChild(el('div', { class: 'tt-risk-name-error tt-field-error' }, t(lc, 'risk_name_required')))
+  }
+  function clearNameError(row: HTMLElement): void {
+    row.querySelector('.tt-risk-name-error')?.remove()
+  }
+
   let draggedId: string | null = null
   let sortMode: ExposureSort = 'none'
   // Every currently-expanded row's follow-up editor is mounted at once —
@@ -321,7 +362,20 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function setClosed(id: string, closed: boolean): void {
-    if (closed) expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
+    if (closed) {
+      // The inline equivalent of action-items.ts's beforeClose veto: an
+      // unnamed risk can't be filed away closed — flag the row and stop.
+      const target = risks().find((rr) => rr.id === id)
+      if (target && target.title.trim() === '') {
+        const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
+        if (row) {
+          showNameError(row)
+          row.querySelector<HTMLInputElement>('.tt-risk-title-input')?.focus()
+        }
+        return
+      }
+      expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
+    }
     ctx.store.update((d) => {
       const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
       if (found) found.closed = closed
@@ -867,6 +921,36 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, rect.left + 16, rect.bottom)
     })
 
+    // Blank-name guard, the inline-row stand-in for action-items.ts's
+    // modal-close behaviour. Once focus leaves the row entirely, a row still
+    // missing a title is either an abandoned draft (isBlankRiskDraft: every
+    // other field untouched) — dropped silently, exactly as requestDelete
+    // treats a blank row — or a row that has gathered real content, which
+    // can't be discarded, so its missing name is flagged and left in place.
+    row.addEventListener('focusout', (e) => {
+      // renderAll()'s `listEl.innerHTML = ''` blurs the focused child and
+      // fires this after the row is already detached — nothing to guard.
+      if (!row.isConnected) return
+      // Focus only hopped to another control in the same row (title -> a
+      // select, or one of the row's icon buttons): still editing this row.
+      if (row.contains((e as FocusEvent).relatedTarget as Node | null)) return
+      const cur = risks().find((rr) => rr.id === r.id)
+      if (!cur) return
+      if (cur.title.trim() !== '') { clearNameError(row); return }
+      if (isBlankRiskDraft(cur, newRiskFollowup())) removeRisk(cur.id)
+      else showNameError(row)
+    })
+
+    // Double-click any dead space on the row toggles the follow-up — a bigger
+    // target than the caret, matching the closed-risk row. Skipped when the
+    // double-click landed on one of the row's own controls (a field edit, a
+    // word-select in the title, a button press).
+    row.addEventListener('dblclick', (e) => {
+      if ((e.target as HTMLElement).closest('input, select, button, a')) return
+      expandable.toggle(r.id)
+      renderAll()
+    })
+
     // Drag reorder only makes sense against the manual `order` sequence — a
     // display-only exposure sort has no manual position to reorder into, so
     // dragging is disabled while one is active (mirrors the `draggable`
@@ -1078,7 +1162,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       const tm = d.teams.find((t2) => t2.id === teamId)
       if (!tm) return
       const maxOrder = tm.risks.length === 0 ? -1 : Math.max(...tm.risks.map((r) => r.order))
-      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: maxOrder + 1, closed: false })
+      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: newRiskFollowup(), order: maxOrder + 1, closed: false })
     }, { teamId, sections: ['risks'] })
   }
 

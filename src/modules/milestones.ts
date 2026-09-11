@@ -67,6 +67,20 @@ export function truncateTitle(title: string): string {
   return title.length > 16 ? `${title.slice(0, 16)}…` : title
 }
 
+/**
+ * True when a milestone row is a blank-title draft carrying nothing else
+ * worth keeping: not done and no follow-up. `date` is deliberately ignored —
+ * a milestone always has one (defaults to today at add), so it can never be
+ * the thing that makes a nameless row worth keeping. The blank-name
+ * focus-out guard drops such a row on the spot (no confirm, exactly as
+ * requestDelete treats a blank row), mirroring how
+ * src/modules/action-items.ts discards an unnamed card when its modal
+ * closes; a row that has picked up real content is kept and flagged instead.
+ */
+export function isBlankMilestoneDraft(m: Milestone): boolean {
+  return m.title.trim() === '' && !m.done && m.followup.trim() === ''
+}
+
 export interface TimelineLayout {
   /** Milestone id -> x position (px), in a [0, innerWidth] coordinate space (no H_PADDING baked in — callers add their own margin). */
   x: Record<string, number>
@@ -172,6 +186,15 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
   function milestones(): Milestone[] {
     return findTeam()?.milestones ?? []
+  }
+
+  /** Shows the "needs a name" note on a row (idempotent); it clears on its own at the next renderAll(), which rebuilds the row from scratch. */
+  function showNameError(row: HTMLElement): void {
+    if (row.querySelector('.tt-milestone-name-error')) return
+    row.appendChild(el('div', { class: 'tt-milestone-name-error tt-field-error' }, t(lc, 'milestone_name_required')))
+  }
+  function clearNameError(row: HTMLElement): void {
+    row.querySelector('.tt-milestone-name-error')?.remove()
   }
 
   let focusMilestoneId: string | null = null
@@ -424,7 +447,18 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const doneCheckbox = el('input', {
       type: 'checkbox', class: 'tt-milestone-done-checkbox', title: t(lc, 'milestone_done_title'), checked: m.done,
       onchange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked
+        const input = e.target as HTMLInputElement
+        const cur = milestones().find((mm) => mm.id === m.id)
+        // The inline equivalent of action-items.ts's beforeClose veto: a
+        // nameless milestone can't be marked done — revert the tick, flag
+        // the row, and point at the title.
+        if (input.checked && cur && cur.title.trim() === '') {
+          input.checked = false
+          showNameError(row)
+          titleInput.focus()
+          return
+        }
+        const checked = input.checked
         ctx.store.update((d) => {
           const found = d.teams.find((t2) => t2.id === teamId)?.milestones.find((mm) => mm.id === m.id)
           if (found) found.done = checked
@@ -501,6 +535,28 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       const rect = row.getBoundingClientRect()
       openRowContextMenu(m.id, rect.left + 16, rect.bottom)
     })
+
+    // Blank-name guard, the inline-row stand-in for action-items.ts's
+    // modal-close behaviour — see the identically-shaped handler in
+    // src/modules/risks.ts for the full rationale.
+    row.addEventListener('focusout', (e) => {
+      if (!row.isConnected) return // detached by renderAll()'s innerHTML reset
+      if (row.contains((e as FocusEvent).relatedTarget as Node | null)) return
+      const cur = milestones().find((mm) => mm.id === m.id)
+      if (!cur) return
+      if (cur.title.trim() !== '') { clearNameError(row); return }
+      if (isBlankMilestoneDraft(cur)) removeMilestone(cur.id)
+      else showNameError(row)
+    })
+
+    // Double-click any dead space on the row toggles the follow-up — see the
+    // identically-shaped handler in src/modules/risks.ts.
+    row.addEventListener('dblclick', (e) => {
+      if ((e.target as HTMLElement).closest('input, select, button, a')) return
+      expandable.toggle(m.id)
+      renderAll()
+    })
+
     return row
   }
 

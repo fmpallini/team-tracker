@@ -3,6 +3,7 @@ import {
   computeTimelineLayout,
   sortByDate,
   truncateTitle,
+  isBlankMilestoneDraft,
 } from '../src/modules/milestones'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -99,6 +100,27 @@ describe('pure helpers', () => {
   test('sortByDate sorts ascending and keeps ties in original order', () => {
     const items = [milestone({ id: 'b', date: '2026-02-01' }), milestone({ id: 'a', date: '2026-01-01' }), milestone({ id: 'c', date: '2026-01-01' })]
     expect(sortByDate(items).map((m) => m.id)).toEqual(['a', 'c', 'b'])
+  })
+
+  describe('isBlankMilestoneDraft', () => {
+    test('true for a blank title with the row otherwise untouched', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '' }))).toBe(true)
+    })
+    test('true even for a far-past date — the date alone never makes a nameless row worth keeping', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '', date: '2001-01-01' }))).toBe(true)
+    })
+    test('true when the title is only whitespace', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '  ' }))).toBe(true)
+    })
+    test('false once the title has real text', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: 'Kickoff' }))).toBe(false)
+    })
+    test('false when the row is marked done', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '', done: true }))).toBe(false)
+    })
+    test('false when a follow-up has been written', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '', followup: 'notes' }))).toBe(false)
+    })
   })
 
   describe('truncateTitle', () => {
@@ -444,6 +466,62 @@ describe('renderMilestones', () => {
     expect(store.doc.teams[0]!.milestones).toHaveLength(0)
   })
 
+  describe('blank-name guard mirrors the action-item card', () => {
+    function blur(el: HTMLElement, relatedTarget: HTMLElement | null = null): void {
+      el.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget }))
+    }
+
+    test('a just-added milestone left with no name is dropped once focus leaves the row', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      blur(row)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    })
+
+    test('moving focus to a control inside the row does not drop the draft', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      blur(row, row.querySelector('.tt-milestone-done-checkbox') as HTMLElement)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    })
+
+    test('a nameless row that has a follow-up is kept and flagged instead of dropped', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', followup: 'some plan' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      blur(row)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+      expect(row.querySelector('.tt-milestone-name-error')?.textContent).toBe('This milestone needs a name.')
+    })
+
+    test('marking a nameless milestone done is refused and flags the missing name', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const checkbox = container.querySelector('.tt-milestone-done-checkbox') as HTMLInputElement
+      checkbox.checked = true
+      checkbox.dispatchEvent(new Event('change'))
+
+      expect(store.doc.teams[0]!.milestones[0]!.done).toBe(false)
+      expect(checkbox.checked).toBe(false)
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      expect(row.querySelector('.tt-milestone-name-error')?.textContent).toBe('This milestone needs a name.')
+    })
+  })
+
   test('canceling the delete confirmation keeps the milestone', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
@@ -544,6 +622,30 @@ describe('renderMilestones', () => {
       expect(container.querySelector('.editor')).not.toBeNull()
       toggle().click()
       expect(container.querySelector('.editor')).toBeNull()
+    })
+
+    test('a double-click on a non-interactive part of the row toggles the editor', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A', followup: 'notes' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      const row = () => container.querySelector('.tt-milestone-row') as HTMLElement
+
+      row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-milestone-followup-row .editor')).not.toBeNull()
+
+      row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-milestone-followup-row .editor')).toBeNull()
+    })
+
+    test('a double-click on the title input or the done checkbox does not toggle the editor', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A', followup: 'notes' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-milestone-title-input') as HTMLInputElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      ;(container.querySelector('.tt-milestone-done-checkbox') as HTMLInputElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+      expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
     })
 
     test('multiple rows can have their follow-up editors expanded simultaneously', () => {

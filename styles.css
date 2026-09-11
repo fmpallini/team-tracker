@@ -1405,6 +1405,13 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-row[draggable="false"] { cursor: default; }
 .tt-risk-row.tt-risk-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-risk-row.tt-risk-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
+/* Blank-name note drops onto its own line under the row's flex controls.
+   The row is a non-wrapping flex line by default, so it has to be told to
+   wrap while the note is present — otherwise the 100%-basis note just
+   competes for width and squeezes the title field. */
+.tt-risk-row:has(> .tt-risk-name-error),
+.tt-milestone-row:has(> .tt-milestone-name-error) { flex-wrap: wrap; row-gap: .3rem; }
+.tt-risk-row > .tt-risk-name-error, .tt-milestone-row > .tt-milestone-name-error { flex-basis: 100%; margin: 0; }
 .tt-risk-exposure-cell { display: flex; align-items: center; justify-content: center; }
 /* "Stamp" treatment — the signature Field Ledger element: exposure reads as
    a hand-stamped mark, not a UI pill — a hollow ink-colored circle (color
