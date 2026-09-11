@@ -12,6 +12,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ### Changed
 - The daily-note edge-scroll gesture — pushing a note past its top or bottom edge to jump to the nearest day that has a note — can now be turned off in Settings → General. The **Alt+,** and **Alt+.** shortcuts for the same jump are unaffected.
 - On a very narrow window the daily-note calendar now folds away on its own — after the team list and the second pane — and comes back when the window widens. A calendar you collapsed yourself stays collapsed.
+- Data cleanup (Settings → Data) now only removes a completed milestone once its date is older than the chosen number of days, matching how it already treats daily notes — a milestone you just finished is no longer swept away. Done/cancelled tasks and closed risks are still removed regardless of age.
 
 ### Fixed
 - At the larger text sizes, an action-item card's detail line (due date, assignee, tag, reference count) was clipped at the card edge and the tag could break across lines mid-word. Board columns now widen with the chosen text size, and the detail line wraps to a second line instead of being cut off.

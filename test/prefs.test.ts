@@ -1289,7 +1289,7 @@ describe('Data tab (export/import)', () => {
     expect(hints).toEqual([
       'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, tasks, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
       'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
-      'Removes done/cancelled tasks, completed milestones, and closed risks, plus old daily notes — across every team in this file. This cannot be undone.',
+      'Removes done/cancelled tasks and closed risks, plus completed milestones and daily notes dated older than the chosen number of days — across every team in this file. This cannot be undone.',
     ])
   })
 
@@ -1394,7 +1394,7 @@ describe('Data tab (export/import)', () => {
       store.update((d) => {
         const teamA = sampleTeam()
         teamA.actionItems.push({ id: 'done1', summary: 'x', notes: '', status: 'done', dueDate: null, assignee: '', color: 'ledger', order: 1 })
-        teamA.milestones.push({ id: 'm2', date: '2026-07-01', title: 'Old launch', done: true, followup: '' })
+        teamA.milestones.push({ id: 'm2', date: '2026-05-01', title: 'Old launch', done: true, followup: '' }) // done + well over the default 60-day window
         teamA.risks.push({ id: 'r2', title: 'Stale risk', chance: 1, impact: 1, plan: 'accept', followup: '', order: 1, closed: true })
         teamA.dailyNotes['2000-01-01'] = 'ancient note'
         const teamB: Team = { id: 't2', name: 'Support', emoji: '🛟', stakeholders: [], members: [],

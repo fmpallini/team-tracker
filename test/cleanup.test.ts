@@ -40,13 +40,29 @@ test('counts and removes done/cancelled action items, keeps active ones', () => 
   expect(d.teams[0]!.actionItems.map((a) => a.id)).toEqual(['todo', 'wip'])
 })
 
-test('counts and removes completed milestones, keeps open ones', () => {
+test('removes a completed milestone only when it is also older than `days`', () => {
   const d = doc([team({
-    milestones: [milestone({ id: 'open', done: false }), milestone({ id: 'closed', done: true })],
+    milestones: [
+      milestone({ id: 'open-old', done: false, date: '2026-01-01' }), // open → kept whatever its age
+      milestone({ id: 'done-recent', done: true, date: '2026-07-20' }), // done but 6 days old → kept
+      milestone({ id: 'done-old', done: true, date: '2026-05-01' }), // done and 86 days old → removed
+    ],
   })])
   expect(countCleanupTargets(d, 30, TODAY).milestones).toBe(1)
   applyCleanup(d, 30, TODAY)
-  expect(d.teams[0]!.milestones.map((m) => m.id)).toEqual(['open'])
+  expect(d.teams[0]!.milestones.map((m) => m.id)).toEqual(['open-old', 'done-recent'])
+})
+
+test('a completed milestone exactly `days` old survives; one day older is removed', () => {
+  const d = doc([team({
+    milestones: [
+      milestone({ id: 'exact', done: true, date: '2026-06-26' }), // exactly 30 days → survives
+      milestone({ id: 'older', done: true, date: '2026-06-25' }), // 31 days → removed
+    ],
+  })])
+  expect(countCleanupTargets(d, 30, TODAY).milestones).toBe(1)
+  applyCleanup(d, 30, TODAY)
+  expect(d.teams[0]!.milestones.map((m) => m.id)).toEqual(['exact'])
 })
 
 test('counts and removes closed risks, keeps open ones', () => {
@@ -89,7 +105,7 @@ test('purging a done action item unlinks its @mentions elsewhere in the team', (
 
 test('purging a done milestone unlinks its @mentions using the milestone\'s current title', () => {
   const d = doc([team({
-    milestones: [milestone({ id: 'm1', title: 'Ship v2', done: true })],
+    milestones: [milestone({ id: 'm1', title: 'Ship v2', done: true, date: '2026-05-01' })],
     risks: [risk({ id: 'r1', followup: 'tracked by @[Ship v1](milestone:m1)' })], // stale label from before a rename
   })])
   applyCleanup(d, 30, TODAY)
@@ -110,7 +126,7 @@ test('purging a closed risk unlinks its @mentions', () => {
 test('applies across multiple teams independently', () => {
   const d = doc([
     team({ id: 'A', actionItems: [item({ id: 'a', status: 'done' })] }),
-    team({ id: 'B', actionItems: [item({ id: 'b', status: 'todo' })], milestones: [milestone({ id: 'm', done: true })] }),
+    team({ id: 'B', actionItems: [item({ id: 'b', status: 'todo' })], milestones: [milestone({ id: 'm', done: true, date: '2026-05-01' })] }),
   ])
   const counts = countCleanupTargets(d, 30, TODAY)
   expect(counts.actions).toBe(1)
