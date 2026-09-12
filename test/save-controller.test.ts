@@ -20,7 +20,7 @@ const cryptoMocks = vi.hoisted(() => ({
 }))
 vi.mock('../src/core/crypto', () => cryptoMocks)
 
-const modalMocks = vi.hoisted(() => ({ toast: vi.fn() }))
+const modalMocks = vi.hoisted(() => ({ toast: vi.fn(), dismissToast: vi.fn() }))
 vi.mock('../src/ui/modal', () => modalMocks)
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.

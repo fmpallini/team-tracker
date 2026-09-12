@@ -9,7 +9,11 @@ import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
 import type { BackupController } from './backup-controller'
 import { backupHealthPillState } from './backup-controller'
-import { toast } from '../ui/modal'
+import { toast, dismissToast } from '../ui/modal'
+
+/** `toast()` keys for the two permission-lapse notices, shared between the toast() calls that raise them and the dismissToast() calls that clear them once the lapse is fixed through some other path than the toast's own action button (the save-state pill, or a prefs-modal regrant). */
+const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
+const BACKUP_PERMISSION_TOAST_KEY = 'backup-permission'
 
 export interface SaveController {
   /**
@@ -145,6 +149,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     const lc = deps.locale()
     toast(t(lc, 'save_permission_toast'), {
       sticky: true,
+      key: SAVE_PERMISSION_TOAST_KEY,
       action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
     })
   }
@@ -156,6 +161,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     const lc = deps.locale()
     toast(t(lc, 'backup_permission_toast'), {
       sticky: true,
+      key: BACKUP_PERMISSION_TOAST_KEY,
       action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
     })
   }
@@ -225,7 +231,10 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // The regrant above just fixed the lapse that got us here — reset the
     // latch so a genuinely NEW backup-permission lapse before the next full
     // save cycle still gets its own toast instead of a silent pill change.
-    if (health !== 'permission') backupPermissionEpisodeToasted = false
+    if (health !== 'permission') {
+      backupPermissionEpisodeToasted = false
+      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
+    }
     deps.shell.setSaveState(backupHealthPillState(health))
   }
 
@@ -314,6 +323,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // the primary latch resets unconditionally here rather than only in some
     // of the branches beneath it.
     permissionEpisodeToasted = false
+    dismissToast(SAVE_PERMISSION_TOAST_KEY)
     const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
     if (health === 'orphaned') {
       // The moved-computer case: `backupHandleId` travelled inside the .tmv
@@ -336,6 +346,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupPermissionEpisodeToasted = false
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
+      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
       deps.shell.setSaveState('saved')
     } else if (health === 'permission') {
       reportBackupPermissionNeeded()
@@ -347,6 +358,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupPermissionEpisodeToasted = false
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
+      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
       deps.shell.setSaveState('saved')
     }
     deps.shell.setTitle(deps.session.name, false)

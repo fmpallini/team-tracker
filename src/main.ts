@@ -433,7 +433,13 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     fileSchemaVersion: doc.schemaVersion,
     backupStatus: () => backupCtl.getStatus(),
     backupHealth: () => backupCtl.currentHealth(),
-    regrantBackupPermission: () => backupCtl.regrantPermission(),
+    // Routed through resolveGrants() rather than calling backupCtl directly:
+    // resolveGrants() is what the save-pill's own "Grant access…" click uses,
+    // and it's the one place that also rewrites the backup file, recomputes
+    // health, refreshes the pill, and dismisses the now-stale permission
+    // toast — a bare backupCtl.regrantPermission() call would fix the grant
+    // but leave the pill/toast showing the lapse until the next save cycle.
+    regrantBackupPermission: () => saveCtl.resolveGrants(),
     retryBackupWrite,
   }
   shell.onSettings(() => {

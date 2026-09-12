@@ -445,3 +445,15 @@ export function toast(msg: string, opts?: ToastOptions): void {
     setTimeout(dismiss, 4000)
   }
 }
+
+/**
+ * Removes a still-open toast by its `key`, if one is showing — no-op
+ * otherwise. For a condition a sticky toast warned about that gets fixed
+ * through a path other than the toast's own action button (e.g. the
+ * save-state pill click, or a prefs-modal retry) — that fix has no new
+ * toast of its own to replace the old one via `key`, so it must reach in
+ * and remove it directly instead.
+ */
+export function dismissToast(key: string): void {
+  toastStack?.querySelector(`.tt-toast[data-toast-key="${key}"]`)?.remove()
+}
