@@ -322,16 +322,28 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     })
   )
 
-  // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes. Nav-only
-  // changes (`updateNav`) don't notify `subscribe()`, and prefs are only ever
-  // touched via `store.update` (see ui/prefs.ts), so this is a simple,
-  // single-point hook that doesn't need to widen ui/prefs.ts's contract.
+  // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes, and
+  // re-sync the header pill's backup tab whenever `dailyBackupEnabled` or
+  // `backupFrequency` does (ui/prefs.ts's Backup tab toggles/radios flip
+  // these with a plain `store.update`, with no direct reference to `shell` —
+  // without this, the tab stayed visible/wrong-labeled until some *other*
+  // reason happened to call `shell.applyPrefs()`, e.g. a locale switch).
+  // Nav-only changes (`updateNav`) don't notify `subscribe()`, and prefs are
+  // only ever touched via `store.update`, so this is a simple, single-point
+  // hook that doesn't need to widen ui/prefs.ts's contract.
   let lastAutoSaveMin = store.doc.prefs.autoSaveMin
+  let lastDailyBackupEnabled = store.doc.prefs.dailyBackupEnabled
+  let lastBackupFrequency = store.doc.prefs.backupFrequency
   disposers.push(
     store.subscribe(() => {
       if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
         lastAutoSaveMin = store.doc.prefs.autoSaveMin
         saveCtl.scheduleFrom(store.doc.prefs)
+      }
+      if (store.doc.prefs.dailyBackupEnabled !== lastDailyBackupEnabled || store.doc.prefs.backupFrequency !== lastBackupFrequency) {
+        lastDailyBackupEnabled = store.doc.prefs.dailyBackupEnabled
+        lastBackupFrequency = store.doc.prefs.backupFrequency
+        shell.applyPrefs(store.doc.prefs)
       }
     })
   )
