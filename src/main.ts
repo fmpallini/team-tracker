@@ -427,7 +427,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
     backupStatus: () => backupCtl.getStatus(),
-    checkBackupOrphaned: () => backupCtl.checkOrphaned(),
+    backupHealth: () => backupCtl.currentHealth(),
+    regrantBackupPermission: () => backupCtl.regrantPermission(),
+    retryBackupWrite,
   }
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)

@@ -8,6 +8,7 @@ import { SCHEMA_VERSION } from '../src/core/document'
 import { buildExport } from '../src/core/team-export'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
+import type { BackupHealth } from '../src/core/backup-controller'
 
 const fsMocks = vi.hoisted(() => ({ pickCreateBackup: vi.fn() }))
 vi.mock('../src/core/fs', async (importOriginal) => {
@@ -59,7 +60,9 @@ function setup(): Setup {
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
     backupStatus: vi.fn(async () => null),
-    checkBackupOrphaned: vi.fn(async () => false),
+    backupHealth: vi.fn(async () => 'ok' as BackupHealth),
+    regrantBackupPermission: vi.fn(async () => {}),
+    retryBackupWrite: vi.fn(async () => {}),
   }
   return { store, shell, appCtl, changePassword, currentPassword }
 }
@@ -749,13 +752,13 @@ test('backup tab: "Change location" live-refreshes the status block for the newl
 // The cross-browser scenario: a .tmv carries `backupHandleId` + the enabled
 // flag, but the handle it names only ever lived in the IndexedDB of the
 // machine/browser that picked it. Opening elsewhere, the id resolves to
-// nothing — `checkBackupOrphaned()` is true. The tab must self-heal (turn the
+// nothing — `backupHealth()` resolves 'orphaned'. The tab must self-heal (turn the
 // pref off, matching save-controller.ts) and show a re-setup notice instead of
 // a silently-empty status table.
 test('backup tab: an orphaned backup handle turns the pref off and shows the re-setup notice', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'gone-with-the-other-browser' })
-  appCtl.checkBackupOrphaned = vi.fn(async () => true)
+  appCtl.backupHealth = vi.fn(async () => 'orphaned' as BackupHealth)
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -772,7 +775,7 @@ test('backup tab: an orphaned backup handle turns the pref off and shows the re-
 test('backup tab: the orphaned notice\'s "Set up backup…" button re-picks a target and restores the enabled state', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'orphan' })
-  appCtl.checkBackupOrphaned = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('orphaned').mockResolvedValue('ok')
   fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
@@ -791,7 +794,7 @@ test('backup tab: the orphaned notice\'s "Set up backup…" button re-picks a ta
 test('backup tab: an orphaned backup handle in read-only mode shows the notice without flipping the pref', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'orphan' })
-  appCtl.checkBackupOrphaned = vi.fn(async () => true)
+  appCtl.backupHealth = vi.fn(async () => 'orphaned' as BackupHealth)
   appCtl.isReadOnly = () => true
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
@@ -801,6 +804,56 @@ test('backup tab: an orphaned backup handle in read-only mode shows the notice w
   expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).not.toBeNull()
   const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…') as HTMLButtonElement
   expect(setupBtn.disabled).toBe(true)
+})
+
+test('backup tab: a lapsed backup grant shows a permission notice with a regrant action', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
+  appCtl.backupHealth = vi.fn(async () => 'permission' as BackupHealth)
+  appCtl.regrantBackupPermission = vi.fn(async () => {})
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const hint = document.querySelector('.tt-prefs-backup-orphaned-hint')
+  expect(hint).not.toBeNull()
+  const btn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  btn.dispatchEvent(new Event('click'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(appCtl.regrantBackupPermission).toHaveBeenCalledTimes(1)
+})
+
+test('backup tab: a stale backup password shows a retry action', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
+  appCtl.backupHealth = vi.fn(async () => 'password-mismatch' as BackupHealth)
+  appCtl.retryBackupWrite = vi.fn(async () => {})
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const btn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  btn.dispatchEvent(new Event('click'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(appCtl.retryBackupWrite).toHaveBeenCalledTimes(1)
+})
+
+test('backup tab: a generic backup error shows a retry action', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
+  appCtl.backupHealth = vi.fn(async () => 'error' as BackupHealth)
+  appCtl.retryBackupWrite = vi.fn(async () => {})
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const btn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
+  btn.dispatchEvent(new Event('click'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(appCtl.retryBackupWrite).toHaveBeenCalledTimes(1)
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
