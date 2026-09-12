@@ -363,28 +363,34 @@ function prefsWith(dailyBackupEnabled: boolean): Parameters<Shell['applyPrefs']>
   }
 }
 
-// The backup tab is a plain child of .tt-save-pill (not a sibling with its
-// own handler) specifically so the whole compound pill stays one click
-// target — Task/backup-resilience follow-up: "prolongate the background
-// pill" design. Its color is driven by BACKUP_TAB_HEALTH, independent of
-// the main pill's own state/label (which keeps reporting backup-* states
-// exactly as before — this tab is additive, not a replacement).
+// The backup tab is a sibling of .tt-save-pill under a shared .tt-save-pill-
+// wrap (not a child of the pill, and not a separate control) — a sibling so
+// it can visually tuck behind the main pill's own border/background as a
+// second pill, a shared wrap so both bubble their clicks to one handler and
+// the compound shape stays one click target. Its color is driven by
+// BACKUP_TAB_HEALTH, independent of the main pill's own state/label (which
+// keeps reporting backup-* states exactly as before — this tab is additive,
+// not a replacement).
 describe('backup indicator tab', () => {
   function tab(shell: Shell): HTMLElement {
     return shell.root.querySelector('.tt-save-pill-backup-tab') as HTMLElement
   }
 
+  // Not `.hidden`: `.tt-save-pill-backup-tab`'s own `display: inline-flex`
+  // rule beats the browser's `[hidden]{display:none}` default (same
+  // specificity, declared later) — action-items.ts's mini pill hit the same
+  // trap first. `style.display` is what shell.ts actually toggles.
   test('hidden when dailyBackupEnabled is off (the default)', () => {
     const shell = setup()
-    expect(tab(shell).hidden).toBe(true)
+    expect(tab(shell).style.display).toBe('none')
   })
 
   test('applyPrefs(dailyBackupEnabled: true) shows it; false hides it again', () => {
     const shell = setup()
     shell.applyPrefs(prefsWith(true))
-    expect(tab(shell).hidden).toBe(false)
+    expect(tab(shell).style.display).not.toBe('none')
     shell.applyPrefs(prefsWith(false))
-    expect(tab(shell).hidden).toBe(true)
+    expect(tab(shell).style.display).toBe('none')
   })
 
   test('reads "ok" for every non-backup state, including a plain primary-file error', () => {

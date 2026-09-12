@@ -190,30 +190,45 @@ export function createShell(locale: Locale): Shell {
   // flips it from `fallbackHint`.
   const savePillFallbackMark = el('span', { class: 'tt-save-pill-fallback-mark', 'aria-hidden': 'true' }, '⤓')
   savePillFallbackMark.hidden = true
-  // A second, narrower pill tucked behind the main pill's right edge —
-  // present whenever prefs.dailyBackupEnabled is on, independent of it.
-  // Its color carries backup health on its own (the same brass/danger/accent
-  // tokens the pill's backup-* states already use) so there's always a
-  // glance-able signal even when backup is perfectly healthy and the main
-  // pill's own state/label has nothing backup-specific to say. It's a plain
-  // child of saveIndicator, not a separate control, so the whole pill stays
-  // one click target — no separate handler wiring needed here.
+  // A second, narrower pill tucked BEHIND the main pill's right edge (lower
+  // z-index, pulled under it with a negative margin) — present whenever
+  // prefs.dailyBackupEnabled is on, independent of it. Its color carries
+  // backup health on its own (the same brass/danger/accent tokens the
+  // pill's backup-* states already use) so there's always a glance-able
+  // signal even when backup is perfectly healthy and the main pill's own
+  // state/label has nothing backup-specific to say. Must be a *sibling* of
+  // saveIndicator, not a child of it: saveIndicator draws its own
+  // border/background/border-radius as one box, so nesting the tab inside
+  // that box would draw the tab as a second little chip stranded inside the
+  // parent's padding instead of a second pill hiding behind the first one.
   const savePillBackupTab = el('span', { class: 'tt-save-pill-backup-tab', 'aria-hidden': 'true' })
   savePillBackupTab.innerHTML =
     '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="7.4" height="7.4" rx="1.5"/><path d="M5.6 5.4V3.6A1.6 1.6 0 0 1 7.2 2H11.8A1.6 1.6 0 0 1 13.4 3.6V8.2A1.6 1.6 0 0 1 11.8 9.8H10.4"/></svg>'
-  savePillBackupTab.hidden = true
+  // Not the plain `hidden` attribute: `.tt-save-pill-backup-tab` sets its own
+  // `display: inline-flex` (same specificity as the UA `[hidden]{display:
+  // none}` rule, and later in the cascade), so `hidden` would be silently
+  // ignored — action-items.ts's mini pill hit this exact trap first, for the
+  // same reason (`.tt-save-pill` also sets `display` unconditionally).
+  // `style.display` always wins instead.
+  savePillBackupTab.style.display = 'none'
   let saveRequestHandler: (() => void) | null = null
   let grantRequestHandler: (() => void) | null = null
   let backupRetryRequestHandler: (() => void) | null = null
   const saveIndicator = el(
     'span',
-    {
-      class: 'tt-save-pill',
-      onclick: () => requestSaveNow(),
-    },
+    { class: 'tt-save-pill' },
     savePillIcon,
     savePillText,
-    savePillFallbackMark,
+    savePillFallbackMark
+  )
+  // The click target: both saveIndicator and the backup tab are its
+  // children, so clicking either one (or the sliver of the tab peeking out
+  // from behind saveIndicator) bubbles up to this single onclick — the
+  // compound shape reads and behaves as one control.
+  const savePillWrap = el(
+    'span',
+    { class: 'tt-save-pill-wrap', onclick: () => requestSaveNow() },
+    saveIndicator,
     savePillBackupTab
   )
 
@@ -241,7 +256,7 @@ export function createShell(locale: Locale): Shell {
     '❓'
   )
 
-  headerRight.append(saveIndicator, fullscreenBtn, helpBtn, closeFileBtn, settingsBtn)
+  headerRight.append(savePillWrap, fullscreenBtn, helpBtn, closeFileBtn, settingsBtn)
 
   const header = el('header', { class: 'tt-header' }, headerLeft, headerCenter, headerRight)
   const sidebar = el('aside', { class: 'tt-sidebar' })
@@ -308,17 +323,21 @@ export function createShell(locale: Locale): Shell {
     savePillFallbackMark.hidden = !fallbackHint
     saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
     saveIndicator.dataset.state = currentState
-    savePillBackupTab.hidden = !backupEnabled
+    savePillBackupTab.style.display = backupEnabled ? '' : 'none'
     if (backupEnabled) {
       const health = BACKUP_TAB_HEALTH[currentState]
       savePillBackupTab.dataset.backup = health
       savePillBackupTab.title = health === 'ok' ? t(currentLocale, 'save_backup_tab_ok_title') : t(currentLocale, SAVE_STATE_KEY[currentState])
     }
-    saveIndicator.classList.toggle(
-      'tt-save-pill-clickable',
+    const clickable =
       currentState === 'dirty' || currentState === 'error' || currentState === 'permission' ||
       currentState === 'backup-permission' || currentState === 'backup-password-mismatch'
-    )
+    saveIndicator.classList.toggle('tt-save-pill-clickable', clickable)
+    // Same class on the tab too (it's a sibling of saveIndicator now, not a
+    // descendant) so hovering the sliver peeking out from behind the main
+    // pill gets the same pointer cursor + dim-on-hover as the rest of the
+    // compound shape, instead of only saveIndicator reacting.
+    savePillBackupTab.classList.toggle('tt-save-pill-clickable', clickable)
     for (const sub of saveStateSubscribers) sub(info)
   }
 

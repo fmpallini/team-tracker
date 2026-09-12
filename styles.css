@@ -392,6 +392,13 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
+/* The header slot for the save pill: an invisible flex wrapper, not a
+   visible box of its own. Its only jobs are (1) hosting the single onclick
+   both .tt-save-pill and .tt-save-pill-backup-tab bubble up to, so the
+   compound shape acts as one control, and (2) being what settings.ts's
+   size options (html[data-size]) resize *through* — every dimension below
+   is in rem specifically so XS through XL keep the same proportions. */
+.tt-save-pill-wrap { display: inline-flex; align-items: center; }
 /* Backup indicator tab: a second, narrower pill tucked behind the main
    pill's right edge whenever prefs.dailyBackupEnabled is on, showing at a
    glance even while the main pill has nothing backup-specific to say
@@ -400,16 +407,22 @@ body { background: var(--bg); color: var(--fg); }
    independent of the main pill's — the two can disagree, e.g. primary
    "Saved" next to a red backup tab if only the mirror write failed.
    margin-left's magnitude must clear the main pill's own corner radius
-   (height/2, ~13px at this font-size) so the tab's rounded left cap sits
-   behind the main pill's flat side rather than still inside its curve —
-   anything less leaks a sliver of the tab's color top/bottom-left. */
+   (roughly height/2) so the tab's rounded left cap sits behind the main
+   pill's flat side rather than still inside its curve — anything less
+   leaks a sliver of the tab's color top/bottom-left. Both margin-left and
+   padding-left are rem (not px): the main pill's height — and so its
+   corner radius — scales with html[data-size]'s root font-size (12px at
+   XS to 18px at XL), so a fixed px overlap tuned for one size falls short
+   at the larger ones and over-hides at the smaller ones. rem keeps the
+   ratio, and so the "fully tucked in" look, constant across all five. */
 .tt-save-pill-backup-tab {
   position: relative; z-index: 1;
   display: inline-flex; align-items: center; justify-content: flex-end;
-  margin-left: -23px;
+  margin-left: -1.44rem;
   padding: .3rem .55rem .3rem 1.75rem;
   border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  font-size: .78rem; cursor: default;
   transition: background-color .2s ease, border-color .2s ease, color .2s ease;
 }
 .tt-save-pill-backup-tab svg { display: block; }
