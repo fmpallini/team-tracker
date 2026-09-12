@@ -9,9 +9,22 @@ import { t } from './i18n'
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
+export type BackupHealth = 'ok' | 'orphaned' | 'permission' | 'error' | 'password-mismatch'
+
+/**
+ * 'ok' and 'orphaned' both mean "nothing backup-related to show right now" —
+ * orphaned self-disables the pref elsewhere (save-controller.ts's doSave()
+ * tail) and has nothing left to flag on the pill once that's done. The other
+ * three health values map 1:1 onto their SaveState.
+ */
+export function backupHealthPillState(health: BackupHealth): 'saved' | 'backup-permission' | 'backup-error' | 'backup-password-mismatch' {
+  if (health === 'ok' || health === 'orphaned') return 'saved'
+  return `backup-${health}`
+}
+
 export interface BackupController {
-  /** Writes now and resets the elapsed-time clock. Never rejects. No-op if the pref is off, no handle is stored yet, or the stored handle's write permission has lapsed. */
-  writeBackupNow(bytes: Uint8Array): Promise<void>
+  /** Writes now and resets the elapsed-time clock. Never rejects. No-op if the pref is off, no handle is stored yet, or the stored handle's write permission has lapsed. Resolves true iff the write actually happened. */
+  writeBackupNow(bytes: Uint8Array): Promise<boolean>
   /** Writes only if the interval implied by `prefs.backupFrequency` ('daily' => 24h, 'hourly' => 1h) has elapsed since the last backup write — seeded from the .bck file's own on-disk lastModified on the first check each session, so the gate survives a reopen instead of always writing on the next save. */
   maybeWriteBackup(bytes: Uint8Array): Promise<void>
   /**
@@ -64,6 +77,16 @@ export interface BackupController {
    * since. Never prompts, never writes.
    */
   getStatus(): Promise<BackupStatus | null>
+  /** Flags that the most recent password-change's immediate backup write did not go through — the backup file may still be encrypted under the previous password. Cleared automatically by the next successful writeBackupNow, or by backupHandleId changing to a new target. */
+  markPasswordMismatch(): void
+  /**
+   * Single priority-ordered health summary — orphaned, then a lapsed grant,
+   * then a generic write failure, then a stale password, else 'ok'. The one
+   * source of truth save-controller.ts's pill, change-password.ts's
+   * post-write pill update, and the Prefs Backup tab all read instead of
+   * each deriving backup state their own way.
+   */
+  currentHealth(): Promise<BackupHealth>
 }
 
 export interface BackupStatus {
@@ -81,6 +104,8 @@ export function createBackupController(deps: { store: Store }): BackupController
   let cachedHandleId: string | null = null
   let lastBackupAt = 0
   let warnedThisSession = false
+  let lastWriteFailed = false
+  let passwordMismatch = false
 
   async function loadHandle(): Promise<FileSystemFileHandle | null> {
     const id = deps.store.doc.prefs.backupHandleId
@@ -90,8 +115,16 @@ export function createBackupController(deps: { store: Store }): BackupController
       return null
     }
     if (!cachedHandle || cachedHandleId !== id) {
+      // Only a genuine reassignment (not the first-ever resolution, where
+      // there's nothing stale to clear) invalidates a write-failure/password
+      // latch set before any handle was ever loaded this session.
+      const isIdChange = cachedHandleId !== null && cachedHandleId !== id
       cachedHandle = (await idbGet<FileSystemFileHandle>(id)) ?? null
       cachedHandleId = id
+      if (isIdChange) {
+        lastWriteFailed = false
+        passwordMismatch = false
+      }
       // Seeds the elapsed-time clock from the .bck file's own on-disk
       // lastModified, once per resolved handle, so `maybeWriteBackup`'s
       // interval gate survives a reopen instead of resetting to "never"
@@ -183,19 +216,24 @@ export function createBackupController(deps: { store: Store }): BackupController
    * its own (IndexedDB blocked/unavailable/private-mode), and that failure is
    * no more fatal than a failed write.
    */
-  async function writeBackupNow(bytes: Uint8Array): Promise<void> {
-    if (!deps.store.doc.prefs.dailyBackupEnabled) return
+  async function writeBackupNow(bytes: Uint8Array): Promise<boolean> {
+    if (!deps.store.doc.prefs.dailyBackupEnabled) return false
     try {
       const handle = await getHandle()
-      if (!handle) return
+      if (!handle) return false
       await writeBackupBytes(handle, bytes)
       lastBackupAt = Date.now()
+      lastWriteFailed = false
+      passwordMismatch = false
+      return true
     } catch (e) {
       console.error(e)
+      lastWriteFailed = true
       if (!warnedThisSession) {
         warnedThisSession = true
         toast(t(deps.store.doc.prefs.locale, 'backup_write_failed_toast'), { sticky: false })
       }
+      return false
     }
   }
 
@@ -250,5 +288,18 @@ export function createBackupController(deps: { store: Store }): BackupController
     }
   }
 
-  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant, checkOrphaned, getStatus }
+  function markPasswordMismatch(): void {
+    passwordMismatch = true
+  }
+
+  async function currentHealth(): Promise<BackupHealth> {
+    if (!deps.store.doc.prefs.dailyBackupEnabled) return 'ok'
+    if (await checkOrphaned()) return 'orphaned'
+    if (await hasMissingGrant()) return 'permission'
+    if (lastWriteFailed) return 'error'
+    if (passwordMismatch) return 'password-mismatch'
+    return 'ok'
+  }
+
+  return { writeBackupNow, maybeWriteBackup, regrantPermission, hasMissingGrant, checkOrphaned, getStatus, markPasswordMismatch, currentHealth }
 }
