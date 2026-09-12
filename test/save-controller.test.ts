@@ -328,12 +328,14 @@ test('"Grant access..." toast action also re-grants the backup file\'s permissio
   const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
   fsMocks.writeFile.mockImplementationOnce(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
   const backupCtl = {
-    writeBackupNow: vi.fn(async () => {}),
+    writeBackupNow: vi.fn(async () => true),
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => { order.push('backup') }),
     hasMissingGrant: vi.fn(async () => false),
     checkOrphaned: vi.fn(async () => false),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as const),
   }
 
   const ctl = createSaveController({
@@ -360,7 +362,7 @@ test('the backup file\'s permission is left untouched when the primary re-reques
   const handle = { queryPermission, requestPermission } as unknown as FileSystemFileHandle
   const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
   fsMocks.writeFile.mockImplementation(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
-  const backupCtl = { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null) }
+  const backupCtl = { writeBackupNow: vi.fn(async () => true), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null), markPasswordMismatch: vi.fn(), currentHealth: vi.fn(async () => 'ok' as const) }
 
   const ctl = createSaveController({
     store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
@@ -407,12 +409,14 @@ test('a successful primary save with a missing backup grant sets state to permis
   const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
   const session = makeSession()
   const backupCtl = {
-    writeBackupNow: vi.fn(async () => {}),
+    writeBackupNow: vi.fn(async () => true),
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => {}),
     hasMissingGrant: vi.fn(async () => true),
     checkOrphaned: vi.fn(async () => false),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as const),
   }
 
   const ctl = createSaveController({
@@ -443,7 +447,7 @@ test('"Grant access..." for a backup-only lapse mirrors to the backup now instea
   const handle = { queryPermission, requestPermission } as unknown as FileSystemFileHandle
   const session: FileSession = { handle, name: 'x.tmv', lastModified: 1 }
   const backupCtl = {
-    writeBackupNow: vi.fn(async () => {}),
+    writeBackupNow: vi.fn(async () => true),
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => {}),
     // true during the initial save's success tail (pill goes amber), false
@@ -451,6 +455,8 @@ test('"Grant access..." for a backup-only lapse mirrors to the backup now instea
     hasMissingGrant: vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false),
     checkOrphaned: vi.fn(async () => false),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as const),
   }
 
   const ctl = createSaveController({
@@ -887,7 +893,7 @@ test('a successful save calls backupCtl.maybeWriteBackup with the same bytes jus
   store.update((d) => { d.prefs.autoSaveMin = 9 })
   const shell = makeShell()
   const session = makeSession()
-  const backupCtl = { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null) }
+  const backupCtl = { writeBackupNow: vi.fn(async () => true), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null), markPasswordMismatch: vi.fn(), currentHealth: vi.fn(async () => 'ok' as const) }
   const ctl = createSaveController({
     store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
   })
@@ -908,7 +914,7 @@ test('a successful primary save with an orphaned backup reference disables the p
   const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
   const session = makeSession()
   const backupCtl = {
-    writeBackupNow: vi.fn(async () => {}),
+    writeBackupNow: vi.fn(async () => true),
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => {}),
     hasMissingGrant: vi.fn(async () => false),
@@ -917,6 +923,8 @@ test('a successful primary save with an orphaned backup reference disables the p
     // looping the trailing-save chain forever.
     checkOrphaned: vi.fn(async () => store.doc.prefs.dailyBackupEnabled),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as const),
   }
 
   const ctl = createSaveController({
@@ -944,12 +952,14 @@ test('the orphaned-backup toast omits its action when onOpenBackupPrefs is not w
   const shell = makeShell()
   const session = makeSession()
   const backupCtl = {
-    writeBackupNow: vi.fn(async () => {}),
+    writeBackupNow: vi.fn(async () => true),
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => {}),
     hasMissingGrant: vi.fn(async () => false),
     checkOrphaned: vi.fn(async () => store.doc.prefs.dailyBackupEnabled),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as const),
   }
   const ctl = createSaveController({
     store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
@@ -972,12 +982,14 @@ test('the orphaned-backup toast action opens backup prefs when onOpenBackupPrefs
   const shell = makeShell()
   const session = makeSession()
   const backupCtl = {
-    writeBackupNow: vi.fn(async () => {}),
+    writeBackupNow: vi.fn(async () => true),
     maybeWriteBackup: vi.fn(async () => {}),
     regrantPermission: vi.fn(async () => {}),
     hasMissingGrant: vi.fn(async () => false),
     checkOrphaned: vi.fn(async () => store.doc.prefs.dailyBackupEnabled),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as const),
   }
   const onOpenBackupPrefs = vi.fn()
   const ctl = createSaveController({
@@ -1011,7 +1023,7 @@ test('a failed write does not call backupCtl.maybeWriteBackup', async () => {
   const shell = makeShell()
   const session = makeSession()
   fsMocks.writeFile.mockImplementation(async () => { throw new Error('disk full') })
-  const backupCtl = { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null) }
+  const backupCtl = { writeBackupNow: vi.fn(async () => true), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null), markPasswordMismatch: vi.fn(), currentHealth: vi.fn(async () => 'ok' as const) }
   const ctl = createSaveController({
     store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
   })
