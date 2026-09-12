@@ -231,6 +231,14 @@ same bytes as the primary file. To recover from it, just rename it from
 `.bck` to `.tmv` and open it normally — it uses the exact same format as the
 file it was copied from, encrypted or plain.
 
+The save indicator at the top of the app shows a small marker next to the
+usual Saved/Unsaved status naming your backup cadence ("Daily backup
+enabled", "Hourly backup enabled"), so you can tell at a glance it's running
+— and it switches to naming the problem instead (lost permission, a write
+that didn't go through, or a backup still under an old password) if backup
+ever needs attention, independently of whether the primary file itself is
+saving fine.
+
 ## FAQ
 
 **Where do notes or action items go if they aren't about one specific team?**
@@ -250,10 +258,15 @@ No hard limit. `Alt+1` … `Alt+9` quick-switches the first nine; beyond that,
 the sidebar and `Ctrl+Shift+K` fast switch still get you anywhere.
 
 **Can multiple people edit the same file at the same time?**
-No — this isn't a real-time collaboration tool. Only one browser tab can hold
-write access to a given file at a time (a cross-tab lock enforces this);
-opening it elsewhere shows a read-only view with a "take control" option.
-Think of it as one manager's tracking tool, not a shared team workspace.
+No — this isn't a real-time collaboration tool. Within the same browser,
+opening the file in a second tab (or the installed app alongside a browser
+tab) automatically hands write access to just one of them — the others show
+a read-only view with a "take control" button. Opened somewhere that can't
+coordinate that way — a different browser, or another computer, say from a
+synced copy on Google Drive — the app simply checks for that at save time:
+if the file changed elsewhere since you opened it, you're asked whether to
+reload the newer version or save yours over it. Think of it as one manager's
+tracking tool, not a shared team workspace.
 
 **Can I use it across my phone and laptop?**
 Not on the phone — mobile browsers get a blocking screen instead of the app,
@@ -273,9 +286,10 @@ it anywhere, the data is gone too. See [Backing up your team
 file](#backing-up-your-team-file).
 
 **Can I skip the password entirely?**
-Yes — "Use without password" at creation, or Settings → Security → "Migrate
-to password-less" later (trade-offs in [Data file](#data-file)). You can also
-set a password on a password-less file at any time from the same tab.
+Yes — "Create without password" at creation, or Settings → Security →
+"Migrate to password-less" later (trade-offs in [Data file](#data-file)). You
+can also set a password on a password-less file at any time from the same
+tab.
 
 **What's the `.bck` file next to my `.tmv` file?**
 An optional automatic backup, daily or hourly (see [Automatic backup
