@@ -120,6 +120,26 @@ const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
   'backup-password-mismatch': 'save_backup_password_mismatch',
 }
 
+/**
+ * Maps every `SaveState` to the backup tab's own color, independent of what
+ * the main pill's color/label are doing. A `backup-*` state already means
+ * the main pill's own text/color is showing that problem (SAVE_STATE_KEY
+ * above) — the tab echoes the same severity so it's legible without reading
+ * the label. Every other state (including plain 'error', a primary-file
+ * write failure with no bearing on backup health) reads as 'ok' here: the
+ * tab's job is backup health specifically, not a mirror of primary status.
+ */
+const BACKUP_TAB_HEALTH: Record<SaveState, 'ok' | 'permission' | 'error' | 'mismatch'> = {
+  saved: 'ok',
+  dirty: 'ok',
+  saving: 'ok',
+  error: 'ok',
+  permission: 'ok',
+  'backup-error': 'error',
+  'backup-permission': 'permission',
+  'backup-password-mismatch': 'mismatch',
+}
+
 function toggleFullscreen(): void {
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {})
@@ -170,6 +190,18 @@ export function createShell(locale: Locale): Shell {
   // flips it from `fallbackHint`.
   const savePillFallbackMark = el('span', { class: 'tt-save-pill-fallback-mark', 'aria-hidden': 'true' }, '⤓')
   savePillFallbackMark.hidden = true
+  // A second, narrower pill tucked behind the main pill's right edge —
+  // present whenever prefs.dailyBackupEnabled is on, independent of it.
+  // Its color carries backup health on its own (the same brass/danger/accent
+  // tokens the pill's backup-* states already use) so there's always a
+  // glance-able signal even when backup is perfectly healthy and the main
+  // pill's own state/label has nothing backup-specific to say. It's a plain
+  // child of saveIndicator, not a separate control, so the whole pill stays
+  // one click target — no separate handler wiring needed here.
+  const savePillBackupTab = el('span', { class: 'tt-save-pill-backup-tab', 'aria-hidden': 'true' })
+  savePillBackupTab.innerHTML =
+    '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="7.4" height="7.4" rx="1.5"/><path d="M5.6 5.4V3.6A1.6 1.6 0 0 1 7.2 2H11.8A1.6 1.6 0 0 1 13.4 3.6V8.2A1.6 1.6 0 0 1 11.8 9.8H10.4"/></svg>'
+  savePillBackupTab.hidden = true
   let saveRequestHandler: (() => void) | null = null
   let grantRequestHandler: (() => void) | null = null
   let backupRetryRequestHandler: (() => void) | null = null
@@ -181,7 +213,8 @@ export function createShell(locale: Locale): Shell {
     },
     savePillIcon,
     savePillText,
-    savePillFallbackMark
+    savePillFallbackMark,
+    savePillBackupTab
   )
 
   const fullscreenBtn = el(
@@ -232,6 +265,7 @@ export function createShell(locale: Locale): Shell {
 
   let currentState: SaveState = 'saved'
   let fallbackHint = false
+  let backupEnabled = false
   // Raw hours/minutes, not a pre-formatted string — formatting happens in
   // computeSaveInfo() so a locale switch reformats the last-saved time
   // immediately (12h/24h), instead of leaving it stuck in whatever format
@@ -274,6 +308,12 @@ export function createShell(locale: Locale): Shell {
     savePillFallbackMark.hidden = !fallbackHint
     saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
     saveIndicator.dataset.state = currentState
+    savePillBackupTab.hidden = !backupEnabled
+    if (backupEnabled) {
+      const health = BACKUP_TAB_HEALTH[currentState]
+      savePillBackupTab.dataset.backup = health
+      savePillBackupTab.title = health === 'ok' ? t(currentLocale, 'save_backup_tab_ok_title') : t(currentLocale, SAVE_STATE_KEY[currentState])
+    }
     saveIndicator.classList.toggle(
       'tt-save-pill-clickable',
       currentState === 'dirty' || currentState === 'error' || currentState === 'permission' ||
@@ -298,8 +338,10 @@ export function createShell(locale: Locale): Shell {
 
   function applyPrefs(prefs: Prefs): void {
     const localeChanged = prefs.locale !== currentLocale
+    const backupEnabledChanged = prefs.dailyBackupEnabled !== backupEnabled
     currentLocale = prefs.locale
     currentTheme = prefs.theme
+    backupEnabled = prefs.dailyBackupEnabled
     applyTheme(prefs.theme)
     document.documentElement.dataset.palette = prefs.palette
     document.documentElement.dataset.font = prefs.font
@@ -311,8 +353,8 @@ export function createShell(locale: Locale): Shell {
       closeFileBtn.title = t(currentLocale, 'close_file_title')
       settingsBtn.title = t(currentLocale, 'settings')
       helpBtn.title = t(currentLocale, 'help_global_title')
-      renderSaveIndicator()
     }
+    if (localeChanged || backupEnabledChanged) renderSaveIndicator()
   }
 
   function setTitle(fileName: string | null, dirty: boolean): void {

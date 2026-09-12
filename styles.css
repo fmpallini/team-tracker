@@ -340,6 +340,9 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid var(--border); background: var(--panel); color: var(--muted);
   font-size: .78rem; font-weight: 600; white-space: nowrap; cursor: default;
   transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+  /* Stacks above .tt-save-pill-backup-tab, which tucks its rounded left
+     cap behind this pill's flat side (see that rule below). */
+  position: relative; z-index: 2;
 }
 .tt-save-pill-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .tt-save-pill-icon svg { display: block; }
@@ -385,6 +388,47 @@ body { background: var(--bg); color: var(--fg); }
   border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
 }
 .tt-save-pill[data-state="backup-password-mismatch"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+/* Backup indicator tab: a second, narrower pill tucked behind the main
+   pill's right edge whenever prefs.dailyBackupEnabled is on, showing at a
+   glance even while the main pill has nothing backup-specific to say
+   ("saved" tells you nothing about whether the backup mirror is healthy).
+   Its color is its own severity signal (BACKUP_TAB_HEALTH in shell.ts),
+   independent of the main pill's — the two can disagree, e.g. primary
+   "Saved" next to a red backup tab if only the mirror write failed.
+   margin-left's magnitude must clear the main pill's own corner radius
+   (height/2, ~13px at this font-size) so the tab's rounded left cap sits
+   behind the main pill's flat side rather than still inside its curve —
+   anything less leaks a sliver of the tab's color top/bottom-left. */
+.tt-save-pill-backup-tab {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: flex-end;
+  margin-left: -23px;
+  padding: .3rem .55rem .3rem 1.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+.tt-save-pill-backup-tab svg { display: block; }
+.tt-save-pill-backup-tab[data-backup="ok"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.tt-save-pill-backup-tab[data-backup="permission"] {
+  color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
+}
+.tt-save-pill-backup-tab[data-backup="error"] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.tt-save-pill-backup-tab[data-backup="mismatch"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));

@@ -356,6 +356,70 @@ describe('backup-specific states', () => {
   })
 })
 
+function prefsWith(dailyBackupEnabled: boolean): Parameters<Shell['applyPrefs']>[0] {
+  return {
+    locale: 'en-US', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
+    openRefsInSecondaryPane: false, dailyBackupEnabled, backupHandleId: null, backupFrequency: 'daily', ctrlWheelFontSize: true, dailyEdgeScroll: true,
+  }
+}
+
+// The backup tab is a plain child of .tt-save-pill (not a sibling with its
+// own handler) specifically so the whole compound pill stays one click
+// target — Task/backup-resilience follow-up: "prolongate the background
+// pill" design. Its color is driven by BACKUP_TAB_HEALTH, independent of
+// the main pill's own state/label (which keeps reporting backup-* states
+// exactly as before — this tab is additive, not a replacement).
+describe('backup indicator tab', () => {
+  function tab(shell: Shell): HTMLElement {
+    return shell.root.querySelector('.tt-save-pill-backup-tab') as HTMLElement
+  }
+
+  test('hidden when dailyBackupEnabled is off (the default)', () => {
+    const shell = setup()
+    expect(tab(shell).hidden).toBe(true)
+  })
+
+  test('applyPrefs(dailyBackupEnabled: true) shows it; false hides it again', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    expect(tab(shell).hidden).toBe(false)
+    shell.applyPrefs(prefsWith(false))
+    expect(tab(shell).hidden).toBe(true)
+  })
+
+  test('reads "ok" for every non-backup state, including a plain primary-file error', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    for (const state of ['saved', 'dirty', 'saving', 'error', 'permission'] as const) {
+      shell.setSaveState(state)
+      expect(tab(shell).dataset.backup).toBe('ok')
+    }
+  })
+
+  test.each([
+    ['backup-permission', 'permission'],
+    ['backup-error', 'error'],
+    ['backup-password-mismatch', 'mismatch'],
+  ] as const)('setSaveState(%s) colors the tab %s', (state, health) => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    shell.setSaveState(state)
+    expect(tab(shell).dataset.backup).toBe(health)
+  })
+
+  test('clicking the tab itself fires the same handler as clicking the pill — one entity, not two', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    const grantCb = vi.fn()
+    shell.onGrantRequest(grantCb)
+    shell.setSaveState('backup-permission')
+
+    tab(shell).click()
+
+    expect(grantCb).toHaveBeenCalledOnce()
+  })
+})
+
 // The shell's OS-theme listener lives on a matchMedia MediaQueryList, which
 // outlives any one document. Left attached, it kept the whole shell — and via
 // createShell's shared closure scope, its entire DOM tree — reachable for the
