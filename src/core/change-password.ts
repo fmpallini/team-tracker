@@ -12,6 +12,7 @@ import { toast } from '../ui/modal'
 import { t } from './i18n'
 import type { Shell } from '../ui/shell'
 import type { BackupController } from './backup-controller'
+import { backupHealthPillState } from './backup-controller'
 
 export interface ChangePasswordDeps {
   store: Store
@@ -63,10 +64,14 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // actively harmful — the primary file is already written under the new
       // password, so bailing here would leave the in-memory password holding
       // the old one while the user is told the change failed.
-      await deps.backupCtl.writeBackupNow(bytes).catch((e: unknown) => console.error(e))
+      const backupOk = await deps.backupCtl.writeBackupNow(bytes).catch((e: unknown) => {
+        console.error(e)
+        return false
+      })
+      if (!backupOk) deps.backupCtl.markPasswordMismatch()
       deps.setPassword(newPw)
       deps.store.markSaved()
-      deps.shell.setSaveState('saved')
+      deps.shell.setSaveState(backupHealthPillState(await deps.backupCtl.currentHealth()))
       deps.shell.setTitle(deps.session.name, false)
     })
   }
