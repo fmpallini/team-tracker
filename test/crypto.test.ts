@@ -1,4 +1,4 @@
-import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain } from '../src/core/crypto'
+import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain, peekPlainSchemaVersion, peekEncryptedSchemaVersion } from '../src/core/crypto'
 import { createEmptyDocument, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
 
 test('round-trip', async () => {
@@ -277,4 +277,39 @@ test('parsePlain rejects a plain file claiming a newer schema than this build su
   const futureDoc = { ...createEmptyDocument('en-US'), schemaVersion: SCHEMA_VERSION + 1 }
   const bytes = new TextEncoder().encode('TMV-PLAIN\n' + JSON.stringify(futureDoc))
   expect(() => parsePlain(bytes)).toThrow(SchemaTooNewError)
+})
+
+test('peekEncryptedSchemaVersion reads the pre-migration schema version without migrating', async () => {
+  const oldDoc = { ...createEmptyDocument('pt-BR'), schemaVersion: SCHEMA_VERSION - 1 }
+  const bytes = await encryptDocument(oldDoc, 'pw')
+  await expect(peekEncryptedSchemaVersion(bytes, 'pw')).resolves.toBe(SCHEMA_VERSION - 1)
+  // decryptDocument on the same bytes still migrates all the way up, unaffected.
+  const decrypted = await decryptDocument(bytes, 'pw')
+  expect(decrypted.schemaVersion).toBe(SCHEMA_VERSION)
+}, 20000)
+
+test('peekEncryptedSchemaVersion returns the current version for an up-to-date file', async () => {
+  const bytes = await encryptDocument(createEmptyDocument('pt-BR'), 'pw')
+  await expect(peekEncryptedSchemaVersion(bytes, 'pw')).resolves.toBe(SCHEMA_VERSION)
+}, 20000)
+
+test('peekEncryptedSchemaVersion rejects with WrongPasswordError, same as decryptDocument', async () => {
+  const bytes = await encryptDocument(createEmptyDocument('pt-BR'), 'right')
+  await expect(peekEncryptedSchemaVersion(bytes, 'wrong')).rejects.toBeInstanceOf(WrongPasswordError)
+}, 20000)
+
+test('peekPlainSchemaVersion reads the pre-migration schema version for a plain file', () => {
+  const oldDoc = { ...createEmptyDocument('en-US'), schemaVersion: SCHEMA_VERSION - 1 }
+  const bytes = serializePlain(oldDoc)
+  expect(peekPlainSchemaVersion(bytes)).toBe(SCHEMA_VERSION - 1)
+})
+
+test('peekPlainSchemaVersion returns null for a non-plain (encrypted) file', async () => {
+  const bytes = await encryptDocument(createEmptyDocument('en-US'), 'pw')
+  expect(peekPlainSchemaVersion(bytes)).toBeNull()
+}, 20000)
+
+test('peekPlainSchemaVersion returns null for a plain file with corrupt JSON', () => {
+  const bytes = new TextEncoder().encode('TMV-PLAIN\n{not json')
+  expect(peekPlainSchemaVersion(bytes)).toBeNull()
 })

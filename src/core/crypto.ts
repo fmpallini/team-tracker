@@ -77,7 +77,7 @@ export async function encryptDocument(doc: Doc, password: string): Promise<Uint8
   return out
 }
 
-export async function decryptDocument(bytes: Uint8Array, password: string): Promise<Doc> {
+async function decryptRaw(bytes: Uint8Array, password: string): Promise<Record<string, unknown>> {
   if (bytes.length < 78 || MAGIC.some((b, i) => bytes[i] !== b) || bytes[4] !== FORMAT_VERSION)
     throw new CorruptFileError()
   const salt = bytes.slice(5, 21), ivKcv = bytes.slice(21, 33)
@@ -88,8 +88,27 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
   let plain: ArrayBuffer
   try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivData }, key, data) }
   catch { throw new CorruptFileError() }
-  try { return migrate(JSON.parse(new TextDecoder().decode(plain))) }
-  catch (e) { if (e instanceof Error && e.constructor.name !== 'SyntaxError') throw e; throw new CorruptFileError() }
+  try { return JSON.parse(new TextDecoder().decode(plain)) as Record<string, unknown> }
+  catch { throw new CorruptFileError() }
+}
+
+export async function decryptDocument(bytes: Uint8Array, password: string): Promise<Doc> {
+  return migrate(await decryptRaw(bytes, password))
+}
+
+/**
+ * Read-only peek at the schema version a file is at *before* migration —
+ * used only to decide whether to fire a one-off pre-migration backup
+ * snapshot on open (see main.ts's onDocumentOpened). Always called
+ * immediately after a successful decryptDocument() on the same bytes and
+ * password, so its own error paths never actually trigger in practice; kept
+ * type-honest (same errors as decryptDocument) rather than assumed away.
+ */
+export async function peekEncryptedSchemaVersion(bytes: Uint8Array, password: string): Promise<number> {
+  const parsed = await decryptRaw(bytes, password)
+  const schemaVersion = parsed.schemaVersion
+  if (typeof schemaVersion !== 'number') throw new CorruptFileError()
+  return schemaVersion
 }
 
 export function serializePlain(doc: Doc): Uint8Array {
@@ -115,4 +134,24 @@ export function parsePlain(bytes: Uint8Array): Doc | null {
     throw new CorruptFileError()
   }
   return migrate(parsed)
+}
+
+/**
+ * Same tag-sniff as parsePlain, but stops short of migrate() — best-effort
+ * only (returns null rather than throwing on corrupt JSON): the real
+ * parsePlain() call made alongside this one is still the authoritative
+ * error path, this is purely advisory for the pre-migration snapshot decision.
+ */
+export function peekPlainSchemaVersion(bytes: Uint8Array): number | null {
+  if (bytes.length < PLAIN_TAG_BYTES.length) return null
+  for (let i = 0; i < PLAIN_TAG_BYTES.length; i++) {
+    if (bytes[i] !== PLAIN_TAG_BYTES[i]) return null
+  }
+  const json = new TextDecoder().decode(bytes.slice(PLAIN_TAG_BYTES.length))
+  try {
+    const parsed = JSON.parse(json) as { schemaVersion?: unknown }
+    return typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : null
+  } catch {
+    return null
+  }
 }
