@@ -281,6 +281,7 @@ export function createShell(locale: Locale): Shell {
   let currentState: SaveState = 'saved'
   let fallbackHint = false
   let backupEnabled = false
+  let backupFrequency: Prefs['backupFrequency'] = 'daily'
   // Raw hours/minutes, not a pre-formatted string — formatting happens in
   // computeSaveInfo() so a locale switch reformats the last-saved time
   // immediately (12h/24h), instead of leaving it stuck in whatever format
@@ -327,7 +328,10 @@ export function createShell(locale: Locale): Shell {
     if (backupEnabled) {
       const health = BACKUP_TAB_HEALTH[currentState]
       savePillBackupTab.dataset.backup = health
-      savePillBackupTab.title = health === 'ok' ? t(currentLocale, 'save_backup_tab_ok_title') : t(currentLocale, SAVE_STATE_KEY[currentState])
+      savePillBackupTab.title =
+        health === 'ok'
+          ? t(currentLocale, backupFrequency === 'hourly' ? 'save_backup_tab_ok_title_hourly' : 'save_backup_tab_ok_title_daily')
+          : t(currentLocale, SAVE_STATE_KEY[currentState])
     }
     const clickable =
       currentState === 'dirty' || currentState === 'error' || currentState === 'permission' ||
@@ -358,9 +362,11 @@ export function createShell(locale: Locale): Shell {
   function applyPrefs(prefs: Prefs): void {
     const localeChanged = prefs.locale !== currentLocale
     const backupEnabledChanged = prefs.dailyBackupEnabled !== backupEnabled
+    const backupFrequencyChanged = prefs.backupFrequency !== backupFrequency
     currentLocale = prefs.locale
     currentTheme = prefs.theme
     backupEnabled = prefs.dailyBackupEnabled
+    backupFrequency = prefs.backupFrequency
     applyTheme(prefs.theme)
     document.documentElement.dataset.palette = prefs.palette
     document.documentElement.dataset.font = prefs.font
@@ -373,7 +379,7 @@ export function createShell(locale: Locale): Shell {
       settingsBtn.title = t(currentLocale, 'settings')
       helpBtn.title = t(currentLocale, 'help_global_title')
     }
-    if (localeChanged || backupEnabledChanged) renderSaveIndicator()
+    if (localeChanged || backupEnabledChanged || backupFrequencyChanged) renderSaveIndicator()
   }
 
   function setTitle(fileName: string | null, dirty: boolean): void {

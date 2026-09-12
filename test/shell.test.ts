@@ -356,10 +356,10 @@ describe('backup-specific states', () => {
   })
 })
 
-function prefsWith(dailyBackupEnabled: boolean): Parameters<Shell['applyPrefs']>[0] {
+function prefsWith(dailyBackupEnabled: boolean, backupFrequency: 'daily' | 'hourly' = 'daily'): Parameters<Shell['applyPrefs']>[0] {
   return {
     locale: 'en-US', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
-    openRefsInSecondaryPane: false, dailyBackupEnabled, backupHandleId: null, backupFrequency: 'daily', ctrlWheelFontSize: true, dailyEdgeScroll: true,
+    openRefsInSecondaryPane: false, dailyBackupEnabled, backupHandleId: null, backupFrequency, ctrlWheelFontSize: true, dailyEdgeScroll: true,
   }
 }
 
@@ -400,6 +400,14 @@ describe('backup indicator tab', () => {
       shell.setSaveState(state)
       expect(tab(shell).dataset.backup).toBe('ok')
     }
+  })
+
+  test('the "ok" tooltip names the actual backupFrequency pref, not a hardcoded "daily"', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true, 'daily'))
+    expect(tab(shell).title).toBe(t('en-US', 'save_backup_tab_ok_title_daily'))
+    shell.applyPrefs(prefsWith(true, 'hourly'))
+    expect(tab(shell).title).toBe(t('en-US', 'save_backup_tab_ok_title_hourly'))
   })
 
   test.each([
