@@ -4,10 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
-## [Unreleased]
+## [2.8.1] - 2026-09-12
 
-### Fixed
-- A lapsed backup permission or a stale backup password no longer look identical to a primary-file save problem — the save indicator and the Backup preferences tab now say specifically which file needs attention.
+### Added
+- Backup problems no longer look identical to primary-file problems: a lapsed backup permission, a failed backup write, or a stale backup password each get their own colored badge and message on the save indicator and in the Backup preferences tab, naming exactly which file needs attention. Clicking the badge grants access again or updates a stale backup password; a failed write can be retried from the Backup preferences tab. Either way, the notice clears itself once the problem's actually fixed.
+- The save indicator now shows at a glance whether automatic backup is turned on, as a small marker next to the usual Saved/Unsaved status — tinted to match backup's own health, and naming whether it's set to daily or hourly, so a backup problem stays visible even while your primary file is saving just fine.
 - Opening a file saved by an older app version now snapshots the original file to your backup before any edits, in case the update introduces a problem.
 
 ## [2.8.0] - 2026-09-10
