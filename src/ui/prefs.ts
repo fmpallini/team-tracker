@@ -580,9 +580,15 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
                     })
                     .catch(() => {})
                 } else if (backupHealthNotice === 'permission') {
-                  appCtl.regrantBackupPermission().then(() => renderActiveTab()).catch(() => {})
+                  appCtl.regrantBackupPermission().then(() => {
+                    backupHealthNotice = null
+                    renderActiveTab()
+                  }).catch(() => {})
                 } else {
-                  appCtl.retryBackupWrite().then(() => renderActiveTab()).catch(() => {})
+                  appCtl.retryBackupWrite().then(() => {
+                    backupHealthNotice = null
+                    renderActiveTab()
+                  }).catch(() => {})
                 }
               },
             },

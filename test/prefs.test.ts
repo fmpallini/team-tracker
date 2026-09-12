@@ -809,7 +809,7 @@ test('backup tab: an orphaned backup handle in read-only mode shows the notice w
 test('backup tab: a lapsed backup grant shows a permission notice with a regrant action', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn(async () => 'permission' as BackupHealth)
+  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('permission').mockResolvedValue('ok')
   appCtl.regrantBackupPermission = vi.fn(async () => {})
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
@@ -822,12 +822,13 @@ test('backup tab: a lapsed backup grant shows a permission notice with a regrant
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(appCtl.regrantBackupPermission).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the regrant resolves
 })
 
 test('backup tab: a stale backup password shows a retry action', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn(async () => 'password-mismatch' as BackupHealth)
+  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('password-mismatch').mockResolvedValue('ok')
   appCtl.retryBackupWrite = vi.fn(async () => {})
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
@@ -838,12 +839,13 @@ test('backup tab: a stale backup password shows a retry action', async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(appCtl.retryBackupWrite).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the retry resolves
 })
 
 test('backup tab: a generic backup error shows a retry action', async () => {
   const { store, shell, appCtl } = setup()
   store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn(async () => 'error' as BackupHealth)
+  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('error').mockResolvedValue('ok')
   appCtl.retryBackupWrite = vi.fn(async () => {})
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Backup')
@@ -854,6 +856,7 @@ test('backup tab: a generic backup error shows a retry action', async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(appCtl.retryBackupWrite).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the retry resolves
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
