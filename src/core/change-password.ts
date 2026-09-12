@@ -68,7 +68,13 @@ export function createChangePassword(deps: ChangePasswordDeps) {
         console.error(e)
         return false
       })
-      if (!backupOk) deps.backupCtl.markPasswordMismatch()
+      // writeBackupNow() returns false for three different reasons — the
+      // backup pref being off, no handle configured yet, or a genuine write
+      // failure — and only the last one means the backup file itself might
+      // still be under the old password. Marking the mismatch for the first
+      // two would flag a backup that was never written in the first place.
+      const p = deps.store.doc.prefs
+      if (!backupOk && p.dailyBackupEnabled && p.backupHandleId) deps.backupCtl.markPasswordMismatch()
       deps.setPassword(newPw)
       deps.store.markSaved()
       deps.shell.setSaveState(backupHealthPillState(await deps.backupCtl.currentHealth()))

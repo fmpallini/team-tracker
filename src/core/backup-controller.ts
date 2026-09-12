@@ -231,7 +231,12 @@ export function createBackupController(deps: { store: Store }): BackupController
       lastWriteFailed = true
       if (!warnedThisSession) {
         warnedThisSession = true
-        toast(t(deps.store.doc.prefs.locale, 'backup_write_failed_toast'), { sticky: false })
+        // Same key as save-controller.ts's reportBackupError() toast — both
+        // fire off the same underlying failure (this one first, from inside
+        // writeBackupNow(); that one right after, once doSave()'s tail reads
+        // currentHealth() back as 'error') and would otherwise stack two
+        // identical toasts for a single episode.
+        toast(t(deps.store.doc.prefs.locale, 'backup_write_failed_toast'), { sticky: false, key: 'backup-write-failed' })
       }
       return false
     }

@@ -164,7 +164,10 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     deps.shell.setSaveState('backup-error')
     if (backupErrorEpisodeToasted) return
     backupErrorEpisodeToasted = true
-    toast(t(deps.locale(), 'backup_write_failed_toast'), { sticky: false })
+    // Same key as backup-controller.ts's writeBackupNow() toast — see its
+    // comment. Whichever fires second replaces the first in the stack rather
+    // than stacking a duplicate of the same message.
+    toast(t(deps.locale(), 'backup_write_failed_toast'), { sticky: false, key: 'backup-write-failed' })
   }
 
   function reportBackupPasswordMismatch(): void {
@@ -218,7 +221,12 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     } catch (e) {
       console.error(e)
     }
-    deps.shell.setSaveState(backupHealthPillState((await deps.backupCtl?.currentHealth()) ?? 'ok'))
+    const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    // The regrant above just fixed the lapse that got us here — reset the
+    // latch so a genuinely NEW backup-permission lapse before the next full
+    // save cycle still gets its own toast instead of a silent pill change.
+    if (health !== 'permission') backupPermissionEpisodeToasted = false
+    deps.shell.setSaveState(backupHealthPillState(health))
   }
 
   /**
@@ -301,6 +309,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
+    // Reaching this point at all means the primary write just succeeded —
+    // true regardless of what the BACKUP's health turns out to be below — so
+    // the primary latch resets unconditionally here rather than only in some
+    // of the branches beneath it.
+    permissionEpisodeToasted = false
     const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
     if (health === 'orphaned') {
       // The moved-computer case: `backupHandleId` travelled inside the .tmv
@@ -317,7 +330,12 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
         sticky: true,
         ...(openBackupPrefs ? { action: { label: t(deps.locale(), 'backup_orphaned_action'), onClick: () => openBackupPrefs() } } : {}),
       })
-      permissionEpisodeToasted = false
+      // "Orphaned" means the backup situation is now resolved (the pref just
+      // got disabled) — clear its three latches too, so a *different* backup
+      // issue detected after the user re-enables it gets its own toast.
+      backupPermissionEpisodeToasted = false
+      backupErrorEpisodeToasted = false
+      backupPasswordMismatchEpisodeToasted = false
       deps.shell.setSaveState('saved')
     } else if (health === 'permission') {
       reportBackupPermissionNeeded()
@@ -326,7 +344,6 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     } else if (health === 'password-mismatch') {
       reportBackupPasswordMismatch()
     } else {
-      permissionEpisodeToasted = false
       backupPermissionEpisodeToasted = false
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false

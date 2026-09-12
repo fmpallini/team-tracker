@@ -404,7 +404,10 @@ test('"Grant access..." toast action stays dirty when the user denies the re-req
 
 test('a backup grant lapse (primary fine) sets backup-permission, not permission, and toasts backup-specific copy', async () => {
   const store = createStore(createEmptyDocument('en-US'))
-  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  // The real BackupController.currentHealth() short-circuits to 'ok' whenever
+  // dailyBackupEnabled is false, regardless of everything else — an honest
+  // fixture for a mocked non-'ok' currentHealth() needs the pref on too.
+  store.update((d) => { d.prefs.autoSaveMin = 9; d.prefs.dailyBackupEnabled = true })
   const shell = makeShell()
   const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
   const session = makeSession()
@@ -432,7 +435,8 @@ test('a backup grant lapse (primary fine) sets backup-permission, not permission
 
 test('a generic backup write error sets backup-error', async () => {
   const store = createStore(createEmptyDocument('en-US'))
-  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  // See the matching comment on the backup-permission test above.
+  store.update((d) => { d.prefs.autoSaveMin = 9; d.prefs.dailyBackupEnabled = true })
   const shell = makeShell()
   const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
   const session = makeSession()
@@ -458,7 +462,8 @@ test('a generic backup write error sets backup-error', async () => {
 
 test('a stale backup password sets backup-password-mismatch', async () => {
   const store = createStore(createEmptyDocument('en-US'))
-  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  // See the matching comment on the backup-permission test above.
+  store.update((d) => { d.prefs.autoSaveMin = 9; d.prefs.dailyBackupEnabled = true })
   const shell = makeShell()
   const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
   const session = makeSession()
@@ -484,7 +489,7 @@ test('a stale backup password sets backup-password-mismatch', async () => {
 
 test('each backup-permission toast fires once per episode, independently of the primary permission toast latch', async () => {
   const store = createStore(createEmptyDocument('en-US'))
-  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  store.update((d) => { d.prefs.autoSaveMin = 9; d.prefs.dailyBackupEnabled = true })
   const shell = makeShell()
   const session = makeSession()
   const backupCtl = {
@@ -507,6 +512,35 @@ test('each backup-permission toast fires once per episode, independently of the 
   await ctl.saveNow({ explicit: true })
 
   expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+
+  // A PRIMARY permission lapse, on top of the already-fired (and still
+  // unhealthy) backup-permission episode above, must still get its own toast
+  // — the two latches are independent.
+  fsMocks.writeFile.mockImplementationOnce(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+  store.update((d) => { d.prefs.autoSaveMin = 7 })
+  await ctl.saveNow({ explicit: true })
+
+  expect(modalMocks.toast).toHaveBeenCalledTimes(2)
+  expect((modalMocks.toast.mock.calls[1] as [string])[0]).toBe('Write access was lost — your data is still safe in memory')
+
+  // The primary write recovers on the next attempt (writeFile falls back to
+  // its default resolved implementation) while backup health stays
+  // 'permission' throughout — this is the case the fix targets: reaching
+  // doSave()'s success tail at all means the primary write just succeeded,
+  // so its own latch must reset here regardless of the backup branch taken.
+  store.update((d) => { d.prefs.autoSaveMin = 6 })
+  await ctl.saveNow({ explicit: true })
+
+  expect(modalMocks.toast).toHaveBeenCalledTimes(2) // still healed; nothing new to report
+
+  // A brand-new primary permission lapse must toast again — proof the latch
+  // actually reset above rather than staying spent forever.
+  fsMocks.writeFile.mockImplementationOnce(async () => { throw new DOMException('permission revoked', 'NotAllowedError') })
+  store.update((d) => { d.prefs.autoSaveMin = 5 })
+  await ctl.saveNow({ explicit: true })
+
+  expect(modalMocks.toast).toHaveBeenCalledTimes(3)
+  expect((modalMocks.toast.mock.calls[2] as [string])[0]).toBe('Write access was lost — your data is still safe in memory')
 })
 
 test('orphaned still disables the pref and returns the pill to saved (unchanged behavior)', async () => {

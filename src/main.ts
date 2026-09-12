@@ -30,7 +30,7 @@ import { forceWrite, readCurrent, sameEntry } from './core/fs'
 import { toast, showErrorModal, dismissModelessModals } from './ui/modal'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
-import { createBackupController } from './core/backup-controller'
+import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { installBlurSave } from './core/blur-save'
@@ -405,6 +405,11 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     } catch (e) {
       console.error(e)
     }
+    // Whether the retry succeeded or not, currentHealth() now reflects the
+    // truth — the pill otherwise keeps showing the pre-retry state until the
+    // next full save cycle, which a password change (this button's usual
+    // trigger) just pushed off by calling markSaved().
+    shell.setSaveState(backupHealthPillState(await backupCtl.currentHealth()))
   }
 
   const prefsAppCtl: PrefsAppCtl = {

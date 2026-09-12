@@ -859,6 +859,33 @@ test('backup tab: a generic backup error shows a retry action', async () => {
   expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the retry resolves
 })
 
+// A permission/error/password-mismatch health must not remove the user's
+// only escape hatch for a target that's actually gone (e.g. a moved/deleted
+// .bck file, which the 'error' hint text itself suggests checking) — only
+// 'orphaned' hides this button, since re-picking IS that notice's own action.
+test('backup tab: the "Change backup location" button stays visible and usable for a non-orphan (error) health', async () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
+  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('error').mockResolvedValue('ok')
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  // `.click()` is a no-op on a genuinely `disabled` element (matches real
+  // browser behavior) — dispatchEvent bypasses that, same workaround the
+  // other changeBackupBtn tests use, since `supportsFsApi` (and so
+  // `backupAvailable`) is false under jsdom regardless of `hasFileHandle()`.
+  const relocateBtn = document.querySelector('.tt-prefs-backup-relocate-btn') as HTMLButtonElement | null
+  expect(relocateBtn).not.toBeNull()
+
+  relocateBtn!.dispatchEvent(new Event('click'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(fsMocks.pickCreateBackup).toHaveBeenCalled()
+  expect(store.doc.prefs.backupHandleId).not.toBe('backup-1')
+})
+
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')

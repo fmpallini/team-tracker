@@ -178,8 +178,36 @@ test('runs the whole write+backup+bookkeeping sequence inside runExclusive', asy
   expect(calls).toHaveLength(1)
 })
 
-test('marks the password-mismatch latch and reflects it on the pill when the immediate backup write fails', async () => {
+test('does NOT mark the password-mismatch latch when the immediate backup write "fails" because no backup is configured', async () => {
+  // writeBackupNow() returns false for three different reasons — backups off,
+  // no handle configured yet, or a genuine write failure — and only the last
+  // one means the backup file itself might still be under the old password.
+  // createEmptyDocument()'s default prefs (dailyBackupEnabled: false, no
+  // backupHandleId) is exactly the "nothing configured" case, so a false
+  // return here must NOT be read as a stale-password signal.
   const store = createStore(createEmptyDocument('en-US'))
+  const session = makeSession()
+  const shell = makeShell()
+  const backupCtl = makeBackupCtl({
+    writeBackupNow: vi.fn(async () => false),
+    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
+  })
+  const changePassword = createChangePassword({
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+  })
+
+  await changePassword('new-password')
+
+  expect(backupCtl.markPasswordMismatch).not.toHaveBeenCalled()
+  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
+})
+
+test('marks the password-mismatch latch and reflects it on the pill when a configured backup write genuinely fails', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => {
+    d.prefs.dailyBackupEnabled = true
+    d.prefs.backupHandleId = 'backup-1'
+  })
   const session = makeSession()
   const shell = makeShell()
   const backupCtl = makeBackupCtl({
