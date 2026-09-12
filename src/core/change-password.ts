@@ -12,6 +12,7 @@ import { toast } from '../ui/modal'
 import { t } from './i18n'
 import type { Shell } from '../ui/shell'
 import type { BackupController } from './backup-controller'
+import { backupHealthPillState } from './backup-controller'
 
 export interface ChangePasswordDeps {
   store: Store
@@ -63,10 +64,20 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // actively harmful — the primary file is already written under the new
       // password, so bailing here would leave the in-memory password holding
       // the old one while the user is told the change failed.
-      await deps.backupCtl.writeBackupNow(bytes).catch((e: unknown) => console.error(e))
+      const backupOk = await deps.backupCtl.writeBackupNow(bytes).catch((e: unknown) => {
+        console.error(e)
+        return false
+      })
+      // writeBackupNow() returns false for three different reasons — the
+      // backup pref being off, no handle configured yet, or a genuine write
+      // failure — and only the last one means the backup file itself might
+      // still be under the old password. Marking the mismatch for the first
+      // two would flag a backup that was never written in the first place.
+      const p = deps.store.doc.prefs
+      if (!backupOk && p.dailyBackupEnabled && p.backupHandleId) deps.backupCtl.markPasswordMismatch()
       deps.setPassword(newPw)
       deps.store.markSaved()
-      deps.shell.setSaveState('saved')
+      deps.shell.setSaveState(backupHealthPillState(await deps.backupCtl.currentHealth()))
       deps.shell.setTitle(deps.session.name, false)
     })
   }

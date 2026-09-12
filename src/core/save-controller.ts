@@ -8,7 +8,12 @@ import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeE
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
 import type { BackupController } from './backup-controller'
-import { toast } from '../ui/modal'
+import { backupHealthPillState } from './backup-controller'
+import { toast, dismissToast } from '../ui/modal'
+
+/** `toast()` keys for the two permission-lapse notices, shared between the toast() calls that raise them and the dismissToast() calls that clear them once the lapse is fixed through some other path than the toast's own action button (the save-state pill, or a prefs-modal regrant). */
+const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
+const BACKUP_PERMISSION_TOAST_KEY = 'backup-permission'
 
 export interface SaveController {
   /**
@@ -122,6 +127,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   // fully granted again (see the success tail of doSave()), so a *later*,
   // unrelated lapse still gets its own toast.
   let permissionEpisodeToasted = false
+  let backupPermissionEpisodeToasted = false
+  let backupErrorEpisodeToasted = false
+  let backupPasswordMismatchEpisodeToasted = false
 
   /**
    * Chromium can drop a file handle's write permission mid-session (tab
@@ -130,9 +138,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
    * throws `NotAllowedError` in that case. Recovery is re-requesting
    * permission on the *same* handle, not "Save as…": the file the user
    * already has open is still the right file, it just needs re-granting.
-   * The same toast (and the same recovery, `resolveGrants()`) also covers a
-   * backup-only lapse discovered after a successful primary save — see the
-   * end of doSave().
+   * A backup-only lapse gets its own state and toast (`reportBackupPermissionNeeded`,
+   * below) so the two are never conflated — `resolveGrants()` is the shared
+   * recovery for both.
    */
   function reportPermissionNeeded(): void {
     deps.shell.setSaveState('permission')
@@ -141,8 +149,38 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     const lc = deps.locale()
     toast(t(lc, 'save_permission_toast'), {
       sticky: true,
+      key: SAVE_PERMISSION_TOAST_KEY,
       action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
     })
+  }
+
+  function reportBackupPermissionNeeded(): void {
+    deps.shell.setSaveState('backup-permission')
+    if (backupPermissionEpisodeToasted) return
+    backupPermissionEpisodeToasted = true
+    const lc = deps.locale()
+    toast(t(lc, 'backup_permission_toast'), {
+      sticky: true,
+      key: BACKUP_PERMISSION_TOAST_KEY,
+      action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
+    })
+  }
+
+  function reportBackupError(): void {
+    deps.shell.setSaveState('backup-error')
+    if (backupErrorEpisodeToasted) return
+    backupErrorEpisodeToasted = true
+    // Same key as backup-controller.ts's writeBackupNow() toast — see its
+    // comment. Whichever fires second replaces the first in the stack rather
+    // than stacking a duplicate of the same message.
+    toast(t(deps.locale(), 'backup_write_failed_toast'), { sticky: false, key: 'backup-write-failed' })
+  }
+
+  function reportBackupPasswordMismatch(): void {
+    deps.shell.setSaveState('backup-password-mismatch')
+    if (backupPasswordMismatchEpisodeToasted) return
+    backupPasswordMismatchEpisodeToasted = true
+    toast(t(deps.locale(), 'backup_password_mismatch_toast'), { sticky: true })
   }
 
   async function resolveGrants(): Promise<void> {
@@ -176,7 +214,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     // The primary file is already clean — this "Grant access…" click was
     // fired only because the *backup* grant had lapsed (doSave()'s success
-    // tail flips the pill amber off `hasMissingGrant()` even when the primary
+    // tail flips the pill amber off `currentHealth()` even when the primary
     // write went through). `saveNow()` would no-op here on `!dirty`, leaving
     // the just-regranted backup un-mirrored until the next interval-gated
     // `maybeWriteBackup` — up to a day later. Push the current bytes straight
@@ -189,8 +227,15 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     } catch (e) {
       console.error(e)
     }
-    const stillMissing = (await deps.backupCtl?.hasMissingGrant()) ?? false
-    deps.shell.setSaveState(stillMissing ? 'permission' : 'saved')
+    const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    // The regrant above just fixed the lapse that got us here — reset the
+    // latch so a genuinely NEW backup-permission lapse before the next full
+    // save cycle still gets its own toast instead of a silent pill change.
+    if (health !== 'permission') {
+      backupPermissionEpisodeToasted = false
+      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
+    }
+    deps.shell.setSaveState(backupHealthPillState(health))
   }
 
   /**
@@ -273,16 +318,20 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
-    // The moved-computer case: `backupHandleId` travelled inside the .tmv
-    // itself, but the handle it names only ever lived in the old machine's
-    // IndexedDB. Left alone this fails silently forever — `hasMissingGrant()`
-    // below reports "no lapse" for a handle that's simply absent, so nothing
-    // would ever tell the user their backups quietly stopped. Disabling the
-    // pref here (rather than just toasting) also self-heals: the pref flip is
-    // itself a mutation, so the dirty guard schedules a trailing save that
-    // persists `dailyBackupEnabled: false` to the primary file.
-    const backupOrphaned = (await deps.backupCtl?.checkOrphaned()) ?? false
-    if (backupOrphaned) {
+    // Reaching this point at all means the primary write just succeeded —
+    // true regardless of what the BACKUP's health turns out to be below — so
+    // the primary latch resets unconditionally here rather than only in some
+    // of the branches beneath it.
+    permissionEpisodeToasted = false
+    dismissToast(SAVE_PERMISSION_TOAST_KEY)
+    const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    if (health === 'orphaned') {
+      // The moved-computer case: `backupHandleId` travelled inside the .tmv
+      // itself, but the handle it names only ever lived in the old machine's
+      // IndexedDB. Left alone this fails silently forever. Disabling the pref
+      // here (rather than just toasting) also self-heals: the pref flip is
+      // itself a mutation, so the dirty guard schedules a trailing save that
+      // persists `dailyBackupEnabled: false` to the primary file.
       deps.store.update((d) => {
         d.prefs.dailyBackupEnabled = false
       })
@@ -291,21 +340,26 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
         sticky: true,
         ...(openBackupPrefs ? { action: { label: t(deps.locale(), 'backup_orphaned_action'), onClick: () => openBackupPrefs() } } : {}),
       })
-      permissionEpisodeToasted = false
+      // "Orphaned" means the backup situation is now resolved (the pref just
+      // got disabled) — clear its three latches too, so a *different* backup
+      // issue detected after the user re-enables it gets its own toast.
+      backupPermissionEpisodeToasted = false
+      backupErrorEpisodeToasted = false
+      backupPasswordMismatchEpisodeToasted = false
+      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
       deps.shell.setSaveState('saved')
+    } else if (health === 'permission') {
+      reportBackupPermissionNeeded()
+    } else if (health === 'error') {
+      reportBackupError()
+    } else if (health === 'password-mismatch') {
+      reportBackupPasswordMismatch()
     } else {
-      // The primary write just succeeded, but the backup mirror (if enabled) is
-      // interval-gated — up to a day could pass before it's next attempted for
-      // real, during which a lapsed grant would otherwise go undetected. This
-      // check is a cheap, prompt-free `queryPermission`, cheap enough to run on
-      // every successful save rather than waiting for that next attempt.
-      const backupMissingGrant = (await deps.backupCtl?.hasMissingGrant()) ?? false
-      if (backupMissingGrant) {
-        reportPermissionNeeded()
-      } else {
-        permissionEpisodeToasted = false
-        deps.shell.setSaveState('saved')
-      }
+      backupPermissionEpisodeToasted = false
+      backupErrorEpisodeToasted = false
+      backupPasswordMismatchEpisodeToasted = false
+      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
+      deps.shell.setSaveState('saved')
     }
     deps.shell.setTitle(deps.session.name, false)
   }

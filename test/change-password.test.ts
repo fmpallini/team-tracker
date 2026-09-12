@@ -3,7 +3,7 @@ import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Shell } from '../src/ui/shell'
-import type { BackupController } from '../src/core/backup-controller'
+import type { BackupController, BackupHealth } from '../src/core/backup-controller'
 import { t } from '../src/core/i18n'
 
 const fsMocks = vi.hoisted(() => ({
@@ -29,8 +29,18 @@ function makeShell(): Shell {
   return { setSaveState: vi.fn(), setTitle: vi.fn() } as unknown as Shell
 }
 
-function makeBackupCtl(): BackupController {
-  return { writeBackupNow: vi.fn(async () => {}), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}), hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null) }
+function makeBackupCtl(overrides?: Partial<BackupController>): BackupController {
+  return {
+    writeBackupNow: vi.fn(async () => true),
+    maybeWriteBackup: vi.fn(async () => {}),
+    regrantPermission: vi.fn(async () => {}),
+    hasMissingGrant: vi.fn(async () => false),
+    checkOrphaned: vi.fn(async () => false),
+    getStatus: vi.fn(async () => null),
+    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
+    markPasswordMismatch: vi.fn(),
+    ...overrides,
+  }
 }
 
 beforeEach(() => {
@@ -118,6 +128,8 @@ test('a rejecting backup write is swallowed — password still flips and the doc
     hasMissingGrant: vi.fn(async () => false),
     checkOrphaned: vi.fn(async () => false),
     getStatus: vi.fn(async () => null),
+    markPasswordMismatch: vi.fn(),
+    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
   }
   const setPassword = vi.fn()
   const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -164,4 +176,65 @@ test('runs the whole write+backup+bookkeeping sequence inside runExclusive', asy
   await changePassword('newpw')
 
   expect(calls).toHaveLength(1)
+})
+
+test('does NOT mark the password-mismatch latch when the immediate backup write "fails" because no backup is configured', async () => {
+  // writeBackupNow() returns false for three different reasons — backups off,
+  // no handle configured yet, or a genuine write failure — and only the last
+  // one means the backup file itself might still be under the old password.
+  // createEmptyDocument()'s default prefs (dailyBackupEnabled: false, no
+  // backupHandleId) is exactly the "nothing configured" case, so a false
+  // return here must NOT be read as a stale-password signal.
+  const store = createStore(createEmptyDocument('en-US'))
+  const session = makeSession()
+  const shell = makeShell()
+  const backupCtl = makeBackupCtl({
+    writeBackupNow: vi.fn(async () => false),
+    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
+  })
+  const changePassword = createChangePassword({
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+  })
+
+  await changePassword('new-password')
+
+  expect(backupCtl.markPasswordMismatch).not.toHaveBeenCalled()
+  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
+})
+
+test('marks the password-mismatch latch and reflects it on the pill when a configured backup write genuinely fails', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => {
+    d.prefs.dailyBackupEnabled = true
+    d.prefs.backupHandleId = 'backup-1'
+  })
+  const session = makeSession()
+  const shell = makeShell()
+  const backupCtl = makeBackupCtl({
+    writeBackupNow: vi.fn(async () => false),
+    currentHealth: vi.fn(async () => 'password-mismatch' as BackupHealth),
+  })
+  const changePassword = createChangePassword({
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+  })
+
+  await changePassword('new-password')
+
+  expect(backupCtl.markPasswordMismatch).toHaveBeenCalledTimes(1)
+  expect(shell.setSaveState).toHaveBeenCalledWith('backup-password-mismatch')
+})
+
+test('does not mark the password-mismatch latch when the immediate backup write succeeds', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const session = makeSession()
+  const shell = makeShell()
+  const backupCtl = makeBackupCtl({ writeBackupNow: vi.fn(async () => true), currentHealth: vi.fn(async () => 'ok' as BackupHealth) })
+  const changePassword = createChangePassword({
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+  })
+
+  await changePassword('new-password')
+
+  expect(backupCtl.markPasswordMismatch).not.toHaveBeenCalled()
+  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
 })

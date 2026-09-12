@@ -7,7 +7,7 @@ import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
 import { t, todayIso, formatDateTime, type Locale, type MsgKey } from '../core/i18n'
-import type { BackupStatus } from '../core/backup-controller'
+import type { BackupStatus, BackupHealth } from '../core/backup-controller'
 import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
@@ -60,15 +60,16 @@ export interface PrefsAppCtl {
   /** Read-only snapshot of the configured backup (filename/size/last/next), for the Backup tab's status display. Null when nothing is configured/resolvable — see BackupController.getStatus. */
   backupStatus(): Promise<BackupStatus | null>
   /**
-   * True when a backup is configured (`prefs.backupHandleId` set + the pref on)
-   * but that id has no matching handle in this browser's IndexedDB — the .tmv
-   * was opened on a different browser/machine than the one that picked the
-   * backup target (e.g. the target was later re-pointed elsewhere). Lets the
-   * Backup tab self-heal (turn the pref off, same as save-controller.ts) and
-   * show a re-setup notice instead of a silently-empty status table. See
-   * BackupController.checkOrphaned.
+   * Single priority-ordered backup health summary (orphaned / lapsed grant /
+   * generic write error / stale password / ok) — see BackupController.currentHealth.
+   * Replaces the old orphan-only checkBackupOrphaned() so the Backup tab and
+   * the save pill read from the same source of truth.
    */
-  checkBackupOrphaned(): Promise<boolean>
+  backupHealth(): Promise<BackupHealth>
+  /** Re-requests write permission on the configured backup handle — the Backup tab's action for a "permission" health notice. */
+  regrantBackupPermission(): Promise<void>
+  /** Encrypts/serializes the current document under the live password and writes it straight to the backup handle — the Backup tab's action for an "error" or "password-mismatch" health notice. */
+  retryBackupWrite(): Promise<void>
 }
 
 /**
@@ -182,12 +183,14 @@ function scopeLabel(locale: Locale, scope: Template['scope']): string {
 
 export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: PrefsAppCtl, initialTab: TabId = 'general'): void {
   let activeTab: TabId = initialTab
-  // Sticky across a renderBackup() rebuild: once checkBackupOrphaned() has come
-  // back true we flip the pref off and re-render, which would otherwise lose
-  // the re-setup notice (the rebuild reads the now-off pref and shows nothing).
-  // Also gates the orphan check itself off on that second pass so it can't loop.
-  // Cleared when a fresh target is picked from the notice's button.
-  let backupOrphanedNotice = false
+  // Sticky across a renderBackup() rebuild: once backupHealth() has come back
+  // non-'ok' we hold onto it and re-render, which would otherwise lose the
+  // notice (the rebuild would just re-issue the same check and briefly show
+  // nothing while it resolves again). Also gates the health check itself off
+  // on that second pass so it can't loop. Cleared when a fresh target is
+  // picked (orphaned) or the underlying condition is fixed (permission/error/
+  // password-mismatch).
+  let backupHealthNotice: Exclude<BackupHealth, 'ok'> | null = null
 
   function radioField(
     name: string,
@@ -455,11 +458,21 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     // Placed at the very bottom of the tab (see container.append below) —
     // it's a secondary action, subordinate to the toggle/frequency/status
     // controls above it.
-    const changeBackupBtn = prefs.dailyBackupEnabled && prefs.backupHandleId && !backupOrphanedNotice
+    // Stays visible for the permission/error/password-mismatch notices too —
+    // only 'orphaned' hides it, since re-picking a target IS that notice's
+    // own action already offered by healthNoticeField below. Otherwise a
+    // user whose real problem is e.g. a deleted/moved .bck file (which the
+    // 'error' hint text itself suggests checking) would have no in-UI way to
+    // point the app at a new file except toggling the pref off and back on.
+    const changeBackupBtn = prefs.dailyBackupEnabled && prefs.backupHandleId && backupHealthNotice !== 'orphaned'
       ? el(
           'button',
           {
-            class: 'tt-btn tt-prefs-backup-change-btn',
+            // Second class distinguishes this from the health-notice action
+            // button below, which reuses `tt-prefs-backup-change-btn` for its
+            // own styling — the two can now render side by side (any
+            // non-orphan health notice), so tests need to tell them apart.
+            class: 'tt-btn tt-prefs-backup-change-btn tt-prefs-backup-relocate-btn',
             type: 'button',
             disabled: !backupAvailable,
             onclick: () => {
@@ -503,30 +516,34 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       backupAvailable ? null : el('p', { class: 'tt-data-hint tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint'))
     )
 
-    // Only fetched/shown once there's an actual target configured — nothing
-    // to report otherwise. Rendered as an (initially empty) table appended
-    // in the right DOM slot immediately, then filled in once the async
-    // `backupStatus()` read resolves, so the surrounding layout doesn't
-    // jump once the data arrives.
-    let statusWrap: HTMLElement | null = null
-    if (prefs.dailyBackupEnabled && prefs.backupHandleId && !backupOrphanedNotice) {
-      // The .tmv's `backupHandleId` may name a handle that only ever lived in
-      // another browser/machine's IndexedDB — nothing writes backups then, and
-      // the status table below would just sit empty. Detect it and self-heal
-      // the same way save-controller.ts does: flip the pref off (a mutation, so
-      // a trailing save persists it) and re-render to show the re-setup notice.
-      // The `!backupOrphanedNotice` guard above stops the re-render re-checking.
+    // Fired only while no notice is pinned yet — once backupHealthNotice is
+    // set, this must NOT run again on the next renderActiveTab() it itself
+    // triggers below, or a non-'ok' health would refetch/re-render forever.
+    if (prefs.dailyBackupEnabled && prefs.backupHandleId && !backupHealthNotice) {
       appCtl
-        .checkBackupOrphaned()
-        .then((orphaned) => {
-          if (!orphaned) return
-          backupOrphanedNotice = true
-          // Skipped when read-only: update() would no-op anyway, and the user
-          // can't re-pick a target they have no write access to save against.
-          if (!appCtl.isReadOnly()) store.update((d) => { d.prefs.dailyBackupEnabled = false }, PREFS_ONLY)
+        .backupHealth()
+        .then((health) => {
+          if (health === 'ok') return
+          backupHealthNotice = health
+          if (health === 'orphaned' && !appCtl.isReadOnly()) {
+            store.update((d) => { d.prefs.dailyBackupEnabled = false }, PREFS_ONLY)
+          }
           renderActiveTab()
         })
         .catch(() => {})
+    }
+
+    // Visibility is independent of the health-check trigger above (it stays
+    // on across re-renders once a permission/error/password-mismatch notice
+    // is pinned, unlike that one-shot fetch) — only 'orphaned' hides it,
+    // matching changeBackupBtn's own reasoning: re-picking a target is
+    // 'orphaned's own notice action, but the other three health states leave
+    // the existing target configured and worth still showing stats for.
+    // Rendered as an (initially empty) table appended in the right DOM slot
+    // immediately, then filled in once the async `backupStatus()` read
+    // resolves, so the surrounding layout doesn't jump once the data arrives.
+    let statusWrap: HTMLElement | null = null
+    if (prefs.dailyBackupEnabled && prefs.backupHandleId && backupHealthNotice !== 'orphaned') {
       const statusBody = el('tbody', {})
       statusWrap = el('div', { class: 'tt-prefs-backup-status' }, el('table', { class: 'tt-help-table' }, statusBody))
       appCtl
@@ -545,15 +562,29 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         .catch(() => {})
     }
 
-    // Shown in place of the status table when the configured backup handle is
-    // orphaned (see the checkBackupOrphaned() branch above). The pref is
-    // already off by now; this tells the user why and offers a one-click
-    // re-pick, which mints a fresh handle id and turns the pref back on.
-    const orphanedField = backupOrphanedNotice
+    // Shown alongside the status table (not in place of it, except for
+    // 'orphaned' where the table is hidden — see above) when backupHealth()
+    // reports anything but 'ok'. For 'orphaned' the pref is already off by
+    // now; the other three states leave it on and just need the underlying
+    // condition fixed (regrant permission / retry the write / change the
+    // target via changeBackupBtn, still visible for those three).
+    const HEALTH_NOTICE_HINT_KEY: Record<Exclude<BackupHealth, 'ok'>, MsgKey> = {
+      orphaned: 'prefs_backup_orphaned_hint',
+      permission: 'prefs_backup_permission_hint',
+      error: 'prefs_backup_error_hint',
+      'password-mismatch': 'prefs_backup_password_mismatch_hint',
+    }
+    const HEALTH_NOTICE_ACTION_KEY: Record<Exclude<BackupHealth, 'ok'>, MsgKey> = {
+      orphaned: 'backup_orphaned_action',
+      permission: 'prefs_backup_permission_action',
+      error: 'prefs_backup_retry_action',
+      'password-mismatch': 'prefs_backup_retry_action',
+    }
+    const healthNoticeField = backupHealthNotice
       ? el(
           'div',
           { class: 'tt-prefs-field tt-prefs-backup-orphaned' },
-          el('p', { class: 'tt-data-hint tt-prefs-backup-orphaned-hint' }, t(locale, 'prefs_backup_orphaned_hint')),
+          el('p', { class: 'tt-data-hint tt-prefs-backup-orphaned-hint' }, t(locale, HEALTH_NOTICE_HINT_KEY[backupHealthNotice])),
           el(
             'button',
             {
@@ -561,23 +592,35 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
               type: 'button',
               disabled: !backupAvailable || appCtl.isReadOnly(),
               onclick: () => {
-                pickAndStoreBackupTarget()
-                  .then((picked) => {
-                    if (picked) {
-                      backupOrphanedNotice = false
-                      renderActiveTab()
-                    }
-                  })
-                  .catch(() => {})
+                if (backupHealthNotice === 'orphaned') {
+                  pickAndStoreBackupTarget()
+                    .then((picked) => {
+                      if (picked) {
+                        backupHealthNotice = null
+                        renderActiveTab()
+                      }
+                    })
+                    .catch(() => {})
+                } else if (backupHealthNotice === 'permission') {
+                  appCtl.regrantBackupPermission().then(() => {
+                    backupHealthNotice = null
+                    renderActiveTab()
+                  }).catch(() => {})
+                } else {
+                  appCtl.retryBackupWrite().then(() => {
+                    backupHealthNotice = null
+                    renderActiveTab()
+                  }).catch(() => {})
+                }
               },
             },
-            t(locale, 'backup_orphaned_action')
+            t(locale, HEALTH_NOTICE_ACTION_KEY[backupHealthNotice])
           )
         )
       : null
 
     const children: HTMLElement[] = [backupToggleField, frequencyField]
-    if (orphanedField) children.push(orphanedField)
+    if (healthNoticeField) children.push(healthNoticeField)
     if (statusWrap) children.push(statusWrap)
     if (changeBackupBtn) children.push(changeBackupBtn)
     container.append(...children)

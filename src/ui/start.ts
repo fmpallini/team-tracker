@@ -15,8 +15,8 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
-import { decryptDocument, encryptDocument, serializePlain, parsePlain, WrongPasswordError, CorruptFileError } from '../core/crypto'
-import { createEmptyDocument, SchemaTooNewError } from '../core/document'
+import { decryptDocument, encryptDocument, serializePlain, parsePlain, peekPlainSchemaVersion, peekEncryptedSchemaVersion, WrongPasswordError, CorruptFileError } from '../core/crypto'
+import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
@@ -77,7 +77,7 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
 
 export function showStartScreen(
   locale: Locale,
-  onOpen: (session: FileSession, doc: Doc, password: string | null) => void,
+  onOpen: (session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null) => void,
   opts?: { skipAutoLoad?: boolean }
 ): void {
   const container = document.getElementById('app') ?? document.body
@@ -93,7 +93,7 @@ export function showStartScreen(
     showErrorModal(locale, t(locale, 'err_unexpected'))
   }
 
-  async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string } | null> {
+  async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string; migratedFrom: Uint8Array | null } | null> {
     for (;;) {
       const result = await promptPassword(locale, { title: t(locale, 'open_file') })
       if (result === null) return null
@@ -101,7 +101,8 @@ export function showStartScreen(
       const password = (result as { password: string }).password
       try {
         const doc = await decryptDocument(bytes, password)
-        return { doc, password }
+        const preSchemaVersion = await peekEncryptedSchemaVersion(bytes, password)
+        return { doc, password, migratedFrom: preSchemaVersion < SCHEMA_VERSION ? bytes : null }
       } catch (e) {
         if (e instanceof WrongPasswordError) {
           toast(t(locale, 'err_wrong_password'))
@@ -142,11 +143,12 @@ export function showStartScreen(
       throw e
     }
     if (plainDoc) {
-      onOpen(result.session, plainDoc, null)
+      const preSchemaVersion = peekPlainSchemaVersion(result.bytes)
+      onOpen(result.session, plainDoc, null, preSchemaVersion !== null && preSchemaVersion < SCHEMA_VERSION ? result.bytes : null)
       return
     }
     const outcome = await decryptLoop(result.bytes)
-    if (outcome) onOpen(result.session, outcome.doc, outcome.password)
+    if (outcome) onOpen(result.session, outcome.doc, outcome.password, outcome.migratedFrom)
   }
 
   const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
@@ -172,11 +174,12 @@ export function showStartScreen(
       throw e
     }
     if (plainDoc) {
-      onOpen(session, plainDoc, null)
+      const preSchemaVersion = peekPlainSchemaVersion(bytes)
+      onOpen(session, plainDoc, null, preSchemaVersion !== null && preSchemaVersion < SCHEMA_VERSION ? bytes : null)
       return
     }
     const outcome = await decryptLoop(bytes)
-    if (outcome) onOpen(session, outcome.doc, outcome.password)
+    if (outcome) onOpen(session, outcome.doc, outcome.password, outcome.migratedFrom)
   }
 
   async function handleCreate(): Promise<void> {
@@ -188,7 +191,7 @@ export function showStartScreen(
       const doc = createEmptyDocument(locale)
       const bytes = 'plain' in result ? serializePlain(doc) : await encryptDocument(doc, result.password)
       await writeFile(session, bytes)
-      onOpen(session, doc, 'plain' in result ? null : result.password)
+      onOpen(session, doc, 'plain' in result ? null : result.password, null)
     } else {
       const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
@@ -201,7 +204,7 @@ export function showStartScreen(
       // a sticky toast here outlived the start screen and sat over the app.
       toast(t(locale, 'fallback_notice'))
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
-      onOpen(session, doc, 'plain' in result ? null : result.password)
+      onOpen(session, doc, 'plain' in result ? null : result.password, null)
     }
   }
 
@@ -356,7 +359,10 @@ export function showStartScreen(
     // just chose to leave this exact file, so re-opening it right back
     // would trap them (open/create would be unreachable). The checkbox still
     // reflects/edits the pref; only the immediate re-open is suppressed.
-    if (autoLoad && !opts?.skipAutoLoad) onOpen(result.session, plainDoc, null)
+    if (autoLoad && !opts?.skipAutoLoad) {
+      const preSchemaVersion = peekPlainSchemaVersion(result.bytes)
+      onOpen(result.session, plainDoc, null, preSchemaVersion !== null && preSchemaVersion < SCHEMA_VERSION ? result.bytes : null)
+    }
   }
   checkAutoLoad().catch((e: unknown) => console.error(e))
 

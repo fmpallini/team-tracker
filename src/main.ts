@@ -30,7 +30,7 @@ import { forceWrite, readCurrent, sameEntry } from './core/fs'
 import { toast, showErrorModal, dismissModelessModals } from './ui/modal'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
-import { createBackupController } from './core/backup-controller'
+import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { installBlurSave } from './core/blur-save'
@@ -77,8 +77,8 @@ let app: AppController | null = null
 // showStartScreen's onOpen callback is typed `=> void` — this adapts
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
-function openDocument(session: FileSession, doc: Doc, password: string | null): void {
-  onDocumentOpened(session, doc, password).catch((e: unknown) => {
+function openDocument(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null): void {
+  onDocumentOpened(session, doc, password, migratedFrom).catch((e: unknown) => {
     console.error(e)
     // Previously silent (console.error only) — a throw here left the user
     // staring at whatever partially rendered before it, with no feedback at
@@ -121,7 +121,7 @@ function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
 }
 
-async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null): Promise<void> {
+async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null): Promise<void> {
   // A second file can be opened while one is already open — e.g. the File
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
@@ -223,6 +223,15 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
 
   const backupCtl = createBackupController({ store })
 
+  // A migration just ran on open (see start.ts's peekPlainSchemaVersion/
+  // peekEncryptedSchemaVersion) — snapshot the original, unmigrated bytes to
+  // the backup mirror once, before any edit/autosave can overwrite it with
+  // post-migration state. Fire-and-forget: writeBackupNow never throws, and
+  // nothing downstream depends on this completing before the shell renders.
+  if (migratedFrom) {
+    void backupCtl.writeBackupNow(migratedFrom)
+  }
+
   // Task 25: save orchestration. `getPassword`/`onExternalChange` read live
   // state (never the closed-over `password`/`doc` params) so they stay
   // correct across password changes and re-renders.
@@ -313,16 +322,28 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     })
   )
 
-  // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes. Nav-only
-  // changes (`updateNav`) don't notify `subscribe()`, and prefs are only ever
-  // touched via `store.update` (see ui/prefs.ts), so this is a simple,
-  // single-point hook that doesn't need to widen ui/prefs.ts's contract.
+  // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes, and
+  // re-sync the header pill's backup tab whenever `dailyBackupEnabled` or
+  // `backupFrequency` does (ui/prefs.ts's Backup tab toggles/radios flip
+  // these with a plain `store.update`, with no direct reference to `shell` —
+  // without this, the tab stayed visible/wrong-labeled until some *other*
+  // reason happened to call `shell.applyPrefs()`, e.g. a locale switch).
+  // Nav-only changes (`updateNav`) don't notify `subscribe()`, and prefs are
+  // only ever touched via `store.update`, so this is a simple, single-point
+  // hook that doesn't need to widen ui/prefs.ts's contract.
   let lastAutoSaveMin = store.doc.prefs.autoSaveMin
+  let lastDailyBackupEnabled = store.doc.prefs.dailyBackupEnabled
+  let lastBackupFrequency = store.doc.prefs.backupFrequency
   disposers.push(
     store.subscribe(() => {
       if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
         lastAutoSaveMin = store.doc.prefs.autoSaveMin
         saveCtl.scheduleFrom(store.doc.prefs)
+      }
+      if (store.doc.prefs.dailyBackupEnabled !== lastDailyBackupEnabled || store.doc.prefs.backupFrequency !== lastBackupFrequency) {
+        lastDailyBackupEnabled = store.doc.prefs.dailyBackupEnabled
+        lastBackupFrequency = store.doc.prefs.backupFrequency
+        shell.applyPrefs(store.doc.prefs)
       }
     })
   )
@@ -387,6 +408,22 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       if (app) app.password = newPw
     },
   })
+
+  async function retryBackupWrite(): Promise<void> {
+    try {
+      const currentPw = app ? app.password : password
+      const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
+      await backupCtl.writeBackupNow(bytes)
+    } catch (e) {
+      console.error(e)
+    }
+    // Whether the retry succeeded or not, currentHealth() now reflects the
+    // truth — the pill otherwise keeps showing the pre-retry state until the
+    // next full save cycle, which a password change (this button's usual
+    // trigger) just pushed off by calling markSaved().
+    shell.setSaveState(backupHealthPillState(await backupCtl.currentHealth()))
+  }
+
   const prefsAppCtl: PrefsAppCtl = {
     changePassword,
     currentPassword(): string | null {
@@ -407,7 +444,15 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
     backupStatus: () => backupCtl.getStatus(),
-    checkBackupOrphaned: () => backupCtl.checkOrphaned(),
+    backupHealth: () => backupCtl.currentHealth(),
+    // Routed through resolveGrants() rather than calling backupCtl directly:
+    // resolveGrants() is what the save-pill's own "Grant access…" click uses,
+    // and it's the one place that also rewrites the backup file, recomputes
+    // health, refreshes the pill, and dismisses the now-stale permission
+    // toast — a bare backupCtl.regrantPermission() call would fix the grant
+    // but leave the pill/toast showing the lapse until the next save cycle.
+    regrantBackupPermission: () => saveCtl.resolveGrants(),
+    retryBackupWrite,
   }
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)
@@ -447,6 +492,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   shell.onCloseFile(closeFile)
   shell.onSaveRequest(() => void saveCtl.saveNow({ explicit: true }))
   shell.onGrantRequest(() => void saveCtl.resolveGrants())
+  shell.onBackupRetryRequest(() => void retryBackupWrite())
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was

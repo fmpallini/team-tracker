@@ -1,4 +1,4 @@
-import { createBackupController } from '../src/core/backup-controller'
+import { createBackupController, backupHealthPillState } from '../src/core/backup-controller'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
@@ -258,7 +258,7 @@ describe('backup-controller', () => {
     idbMocks.idbGet.mockRejectedValue(new Error('IndexedDB unavailable'))
     const store = storeWithBackup(true)
     const ctl = createBackupController({ store })
-    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBeUndefined()
+    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBe(false)
     expect(writeMock).not.toHaveBeenCalled()
     expect(modalMocks.toast).toHaveBeenCalledTimes(1)
   })
@@ -279,7 +279,7 @@ describe('backup-controller', () => {
     queryPermissionMock.mockResolvedValue('prompt')
     const store = storeWithBackup(true)
     const ctl = createBackupController({ store })
-    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBeUndefined()
+    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBe(false)
     expect(queryPermissionMock).toHaveBeenCalledWith({ mode: 'readwrite' })
     expect(createWritableMock).not.toHaveBeenCalled()
     expect(writeMock).not.toHaveBeenCalled()
@@ -545,5 +545,115 @@ describe('backup-controller', () => {
     const second = await ctl.getStatus()
     expect(second?.fileName).toBe('second.bck')
     expect(secondGetFile).toHaveBeenCalled()
+  })
+
+  test('writeBackupNow resolves true on a successful write', async () => {
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBe(true)
+  })
+
+  test('writeBackupNow resolves false when the pref is off', async () => {
+    const store = storeWithBackup(false)
+    const ctl = createBackupController({ store })
+    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBe(false)
+  })
+
+  test('writeBackupNow resolves false on a write failure', async () => {
+    writeMock.mockRejectedValue(new Error('disk full'))
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.writeBackupNow(new Uint8Array([1]))).resolves.toBe(false)
+  })
+
+  describe('currentHealth', () => {
+    test('is "ok" when backups are off', async () => {
+      const store = storeWithBackup(false)
+      const ctl = createBackupController({ store })
+      await expect(ctl.currentHealth()).resolves.toBe('ok')
+    })
+
+    test('is "ok" when everything is fine', async () => {
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      await expect(ctl.currentHealth()).resolves.toBe('ok')
+    })
+
+    test('is "orphaned" when the configured handle has no matching IDB entry', async () => {
+      idbMocks.idbGet.mockResolvedValue(undefined)
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      await expect(ctl.currentHealth()).resolves.toBe('orphaned')
+    })
+
+    test('is "permission" when the grant has lapsed (and not orphaned)', async () => {
+      queryPermissionMock.mockResolvedValue('prompt')
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      await expect(ctl.currentHealth()).resolves.toBe('permission')
+    })
+
+    test('is "error" after a write failure that is not a permission or orphan issue', async () => {
+      writeMock.mockRejectedValue(new Error('disk full'))
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      await ctl.writeBackupNow(new Uint8Array([1]))
+      await expect(ctl.currentHealth()).resolves.toBe('error')
+    })
+
+    test('"error" clears after a subsequent successful write', async () => {
+      writeMock.mockRejectedValueOnce(new Error('disk full'))
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      await ctl.writeBackupNow(new Uint8Array([1]))
+      await expect(ctl.currentHealth()).resolves.toBe('error')
+      await ctl.writeBackupNow(new Uint8Array([2]))
+      await expect(ctl.currentHealth()).resolves.toBe('ok')
+    })
+
+    test('is "password-mismatch" after markPasswordMismatch(), and clears on a successful write', async () => {
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      ctl.markPasswordMismatch()
+      await expect(ctl.currentHealth()).resolves.toBe('password-mismatch')
+      await ctl.writeBackupNow(new Uint8Array([1]))
+      await expect(ctl.currentHealth()).resolves.toBe('ok')
+    })
+
+    test('"orphaned" takes priority over a pending password-mismatch', async () => {
+      idbMocks.idbGet.mockResolvedValue(undefined)
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      ctl.markPasswordMismatch()
+      await expect(ctl.currentHealth()).resolves.toBe('orphaned')
+    })
+
+    test('a lapsed grant takes priority over a pending password-mismatch', async () => {
+      queryPermissionMock.mockResolvedValue('prompt')
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      ctl.markPasswordMismatch()
+      await expect(ctl.currentHealth()).resolves.toBe('permission')
+    })
+
+    test.each([
+      ['ok', 'saved'],
+      ['orphaned', 'saved'],
+      ['permission', 'backup-permission'],
+      ['error', 'backup-error'],
+      ['password-mismatch', 'backup-password-mismatch'],
+    ] as const)('backupHealthPillState(%s) is %s', (health, expected) => {
+      expect(backupHealthPillState(health)).toBe(expected)
+    })
+
+    test('markPasswordMismatch and the error latch both reset when backupHandleId changes to a new id', async () => {
+      writeMock.mockRejectedValueOnce(new Error('disk full'))
+      const store = storeWithBackup(true, 'backup-1')
+      const ctl = createBackupController({ store })
+      await ctl.writeBackupNow(new Uint8Array([1]))
+      ctl.markPasswordMismatch()
+      store.update((d) => { d.prefs.backupHandleId = 'backup-2' })
+      await expect(ctl.currentHealth()).resolves.toBe('ok')
+    })
   })
 })

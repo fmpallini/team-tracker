@@ -304,6 +304,136 @@ describe('subscribeSaveState / requestSaveNow', () => {
   })
 })
 
+describe('backup-specific states', () => {
+  test.each(['backup-error', 'backup-permission', 'backup-password-mismatch'] as const)(
+    'setSaveState(%s) stamps data-state',
+    (state) => {
+      const shell = setup()
+      shell.setSaveState(state)
+      expect(shell.root.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe(state)
+    }
+  )
+
+  test('the pill is clickable in backup-permission and backup-password-mismatch, not in backup-error', () => {
+    const shell = setup()
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+    shell.setSaveState('backup-permission')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+    shell.setSaveState('backup-password-mismatch')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+    shell.setSaveState('backup-error')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+  })
+
+  test('clicking the pill in backup-permission fires onGrantRequest, not onBackupRetryRequest', () => {
+    const shell = setup()
+    const grantCb = vi.fn()
+    const backupRetryCb = vi.fn()
+    shell.onGrantRequest(grantCb)
+    shell.onBackupRetryRequest(backupRetryCb)
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('backup-permission')
+    pill.click()
+
+    expect(grantCb).toHaveBeenCalledOnce()
+    expect(backupRetryCb).not.toHaveBeenCalled()
+  })
+
+  test('clicking the pill in backup-password-mismatch fires onBackupRetryRequest, not onGrantRequest', () => {
+    const shell = setup()
+    const grantCb = vi.fn()
+    const backupRetryCb = vi.fn()
+    shell.onGrantRequest(grantCb)
+    shell.onBackupRetryRequest(backupRetryCb)
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('backup-password-mismatch')
+    pill.click()
+
+    expect(backupRetryCb).toHaveBeenCalledOnce()
+    expect(grantCb).not.toHaveBeenCalled()
+  })
+})
+
+function prefsWith(dailyBackupEnabled: boolean, backupFrequency: 'daily' | 'hourly' = 'daily'): Parameters<Shell['applyPrefs']>[0] {
+  return {
+    locale: 'en-US', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
+    openRefsInSecondaryPane: false, dailyBackupEnabled, backupHandleId: null, backupFrequency, ctrlWheelFontSize: true, dailyEdgeScroll: true,
+  }
+}
+
+// The backup tab is a sibling of .tt-save-pill under a shared .tt-save-pill-
+// wrap (not a child of the pill, and not a separate control) — a sibling so
+// it can visually tuck behind the main pill's own border/background as a
+// second pill, a shared wrap so both bubble their clicks to one handler and
+// the compound shape stays one click target. Its color is driven by
+// BACKUP_TAB_HEALTH, independent of the main pill's own state/label (which
+// keeps reporting backup-* states exactly as before — this tab is additive,
+// not a replacement).
+describe('backup indicator tab', () => {
+  function tab(shell: Shell): HTMLElement {
+    return shell.root.querySelector('.tt-save-pill-backup-tab') as HTMLElement
+  }
+
+  // Not `.hidden`: `.tt-save-pill-backup-tab`'s own `display: inline-flex`
+  // rule beats the browser's `[hidden]{display:none}` default (same
+  // specificity, declared later) — action-items.ts's mini pill hit the same
+  // trap first. `style.display` is what shell.ts actually toggles.
+  test('hidden when dailyBackupEnabled is off (the default)', () => {
+    const shell = setup()
+    expect(tab(shell).style.display).toBe('none')
+  })
+
+  test('applyPrefs(dailyBackupEnabled: true) shows it; false hides it again', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    expect(tab(shell).style.display).not.toBe('none')
+    shell.applyPrefs(prefsWith(false))
+    expect(tab(shell).style.display).toBe('none')
+  })
+
+  test('reads "ok" for every non-backup state, including a plain primary-file error', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    for (const state of ['saved', 'dirty', 'saving', 'error', 'permission'] as const) {
+      shell.setSaveState(state)
+      expect(tab(shell).dataset.backup).toBe('ok')
+    }
+  })
+
+  test('the "ok" tooltip names the actual backupFrequency pref, not a hardcoded "daily"', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true, 'daily'))
+    expect(tab(shell).title).toBe(t('en-US', 'save_backup_tab_ok_title_daily'))
+    shell.applyPrefs(prefsWith(true, 'hourly'))
+    expect(tab(shell).title).toBe(t('en-US', 'save_backup_tab_ok_title_hourly'))
+  })
+
+  test.each([
+    ['backup-permission', 'permission'],
+    ['backup-error', 'error'],
+    ['backup-password-mismatch', 'mismatch'],
+  ] as const)('setSaveState(%s) colors the tab %s', (state, health) => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    shell.setSaveState(state)
+    expect(tab(shell).dataset.backup).toBe(health)
+  })
+
+  test('clicking the tab itself fires the same handler as clicking the pill — one entity, not two', () => {
+    const shell = setup()
+    shell.applyPrefs(prefsWith(true))
+    const grantCb = vi.fn()
+    shell.onGrantRequest(grantCb)
+    shell.setSaveState('backup-permission')
+
+    tab(shell).click()
+
+    expect(grantCb).toHaveBeenCalledOnce()
+  })
+})
+
 // The shell's OS-theme listener lives on a matchMedia MediaQueryList, which
 // outlives any one document. Left attached, it kept the whole shell — and via
 // createShell's shared closure scope, its entire DOM tree — reachable for the

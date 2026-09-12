@@ -1396,6 +1396,26 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('dirty')
   })
 
+  test('the mini pill is clickable for backup-permission and backup-password-mismatch, not backup-error', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    openModal(container)
+    document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
+
+    const pill = document.querySelector('.tt-save-pill')!
+
+    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed' })
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+
+    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password' })
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+
+    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error' })
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+  })
+
   test('clicking the mini pill triggers ctx.saveStatus.requestSaveNow(), the same explicit-save action Ctrl+S uses', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
