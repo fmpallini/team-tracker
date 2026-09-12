@@ -31,6 +31,8 @@ const cryptoMocks = vi.hoisted(() => {
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
     serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
     parsePlain: vi.fn(() => null as unknown),
+    peekPlainSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
+    peekEncryptedSchemaVersion: vi.fn(async (_bytes: Uint8Array, _password: string) => SCHEMA_VERSION),
   }
 })
 vi.mock('../src/core/crypto', () => cryptoMocks)
@@ -56,6 +58,8 @@ beforeEach(() => {
   cryptoMocks.encryptDocument.mockReset().mockImplementation(async () => new Uint8Array([1, 2, 3]))
   cryptoMocks.serializePlain.mockReset().mockReturnValue(new Uint8Array([9, 9, 9]))
   cryptoMocks.parsePlain.mockReset().mockReturnValue(null)
+  cryptoMocks.peekPlainSchemaVersion.mockReset().mockReturnValue(SCHEMA_VERSION)
+  cryptoMocks.peekEncryptedSchemaVersion.mockReset().mockResolvedValue(SCHEMA_VERSION)
 })
 
 function clickByText(text: string): void {
@@ -311,6 +315,84 @@ test('open flow: a non-plain file (parsePlain returns null) still goes through t
   await flush()
 
   expect(document.querySelector('input[name="tt-password"]')).not.toBeNull()
+})
+
+test('open flow: a plain file below the current schema version calls onOpen with the raw bytes as migratedFrom', async () => {
+  const session: FileSession = { handle: null, name: 'old.tmv', lastModified: 1 }
+  const bytes = new Uint8Array([9])
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes })
+  const plainDoc = createEmptyDocument('en-US')
+  cryptoMocks.parsePlain.mockReturnValue(plainDoc)
+  cryptoMocks.peekPlainSchemaVersion.mockReturnValue(SCHEMA_VERSION - 1)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  expect(onOpen).toHaveBeenCalledTimes(1)
+  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
+  expect(migratedFrom).toBe(bytes)
+})
+
+test('open flow: a plain file already at the current schema version calls onOpen with migratedFrom null', async () => {
+  const session: FileSession = { handle: null, name: 'current.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
+  cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+  cryptoMocks.peekPlainSchemaVersion.mockReturnValue(SCHEMA_VERSION)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
+  expect(migratedFrom).toBeNull()
+})
+
+test('open flow: an encrypted file below the current schema version calls onOpen with the raw bytes as migratedFrom', async () => {
+  const session: FileSession = { handle: null, name: 'old-enc.tmv', lastModified: 1 }
+  const bytes = new Uint8Array([9])
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes })
+  cryptoMocks.parsePlain.mockReturnValue(null)
+  cryptoMocks.decryptDocument.mockResolvedValue(createEmptyDocument('en-US'))
+  cryptoMocks.peekEncryptedSchemaVersion.mockResolvedValue(SCHEMA_VERSION - 1)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+  pwInput.value = 'right'
+  pwInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+  await flush()
+  await flush()
+
+  expect(onOpen).toHaveBeenCalledTimes(1)
+  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
+  expect(migratedFrom).toBe(bytes)
+})
+
+test('create flow: always calls onOpen with migratedFrom null (a brand-new document is never migrated)', async () => {
+  const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.tmv', lastModified: 1 }
+  fsMocks.pickCreate.mockResolvedValue(session)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('✨ Create new…')
+  await flush()
+  clickByText('Create without password')
+  await flush()
+  await flush()
+
+  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
+  expect(migratedFrom).toBeNull()
 })
 
 test('fallback mode (no FS API): open uses hidden file input', async () => {

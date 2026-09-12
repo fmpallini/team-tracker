@@ -77,8 +77,8 @@ let app: AppController | null = null
 // showStartScreen's onOpen callback is typed `=> void` — this adapts
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
-function openDocument(session: FileSession, doc: Doc, password: string | null): void {
-  onDocumentOpened(session, doc, password).catch((e: unknown) => {
+function openDocument(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null): void {
+  onDocumentOpened(session, doc, password, migratedFrom).catch((e: unknown) => {
     console.error(e)
     // Previously silent (console.error only) — a throw here left the user
     // staring at whatever partially rendered before it, with no feedback at
@@ -121,7 +121,7 @@ function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
 }
 
-async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null): Promise<void> {
+async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null): Promise<void> {
   // A second file can be opened while one is already open — e.g. the File
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
@@ -222,6 +222,15 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   let conflictOpen = false
 
   const backupCtl = createBackupController({ store })
+
+  // A migration just ran on open (see start.ts's peekPlainSchemaVersion/
+  // peekEncryptedSchemaVersion) — snapshot the original, unmigrated bytes to
+  // the backup mirror once, before any edit/autosave can overwrite it with
+  // post-migration state. Fire-and-forget: writeBackupNow never throws, and
+  // nothing downstream depends on this completing before the shell renders.
+  if (migratedFrom) {
+    void backupCtl.writeBackupNow(migratedFrom)
+  }
 
   // Task 25: save orchestration. `getPassword`/`onExternalChange` read live
   // state (never the closed-over `password`/`doc` params) so they stay
