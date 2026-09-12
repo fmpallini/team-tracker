@@ -8,6 +8,7 @@ import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeE
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
 import type { BackupController } from './backup-controller'
+import { backupHealthPillState } from './backup-controller'
 import { toast } from '../ui/modal'
 
 export interface SaveController {
@@ -122,6 +123,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   // fully granted again (see the success tail of doSave()), so a *later*,
   // unrelated lapse still gets its own toast.
   let permissionEpisodeToasted = false
+  let backupPermissionEpisodeToasted = false
+  let backupErrorEpisodeToasted = false
+  let backupPasswordMismatchEpisodeToasted = false
 
   /**
    * Chromium can drop a file handle's write permission mid-session (tab
@@ -130,9 +134,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
    * throws `NotAllowedError` in that case. Recovery is re-requesting
    * permission on the *same* handle, not "Save as…": the file the user
    * already has open is still the right file, it just needs re-granting.
-   * The same toast (and the same recovery, `resolveGrants()`) also covers a
-   * backup-only lapse discovered after a successful primary save — see the
-   * end of doSave().
+   * A backup-only lapse gets its own state and toast (`reportBackupPermissionNeeded`,
+   * below) so the two are never conflated — `resolveGrants()` is the shared
+   * recovery for both.
    */
   function reportPermissionNeeded(): void {
     deps.shell.setSaveState('permission')
@@ -143,6 +147,31 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       sticky: true,
       action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
     })
+  }
+
+  function reportBackupPermissionNeeded(): void {
+    deps.shell.setSaveState('backup-permission')
+    if (backupPermissionEpisodeToasted) return
+    backupPermissionEpisodeToasted = true
+    const lc = deps.locale()
+    toast(t(lc, 'backup_permission_toast'), {
+      sticky: true,
+      action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
+    })
+  }
+
+  function reportBackupError(): void {
+    deps.shell.setSaveState('backup-error')
+    if (backupErrorEpisodeToasted) return
+    backupErrorEpisodeToasted = true
+    toast(t(deps.locale(), 'backup_write_failed_toast'), { sticky: false })
+  }
+
+  function reportBackupPasswordMismatch(): void {
+    deps.shell.setSaveState('backup-password-mismatch')
+    if (backupPasswordMismatchEpisodeToasted) return
+    backupPasswordMismatchEpisodeToasted = true
+    toast(t(deps.locale(), 'backup_password_mismatch_toast'), { sticky: true })
   }
 
   async function resolveGrants(): Promise<void> {
@@ -176,7 +205,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     // The primary file is already clean — this "Grant access…" click was
     // fired only because the *backup* grant had lapsed (doSave()'s success
-    // tail flips the pill amber off `hasMissingGrant()` even when the primary
+    // tail flips the pill amber off `currentHealth()` even when the primary
     // write went through). `saveNow()` would no-op here on `!dirty`, leaving
     // the just-regranted backup un-mirrored until the next interval-gated
     // `maybeWriteBackup` — up to a day later. Push the current bytes straight
@@ -189,8 +218,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     } catch (e) {
       console.error(e)
     }
-    const stillMissing = (await deps.backupCtl?.hasMissingGrant()) ?? false
-    deps.shell.setSaveState(stillMissing ? 'permission' : 'saved')
+    deps.shell.setSaveState(backupHealthPillState((await deps.backupCtl?.currentHealth()) ?? 'ok'))
   }
 
   /**
@@ -273,16 +301,14 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
     deps.store.markSaved()
-    // The moved-computer case: `backupHandleId` travelled inside the .tmv
-    // itself, but the handle it names only ever lived in the old machine's
-    // IndexedDB. Left alone this fails silently forever — `hasMissingGrant()`
-    // below reports "no lapse" for a handle that's simply absent, so nothing
-    // would ever tell the user their backups quietly stopped. Disabling the
-    // pref here (rather than just toasting) also self-heals: the pref flip is
-    // itself a mutation, so the dirty guard schedules a trailing save that
-    // persists `dailyBackupEnabled: false` to the primary file.
-    const backupOrphaned = (await deps.backupCtl?.checkOrphaned()) ?? false
-    if (backupOrphaned) {
+    const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    if (health === 'orphaned') {
+      // The moved-computer case: `backupHandleId` travelled inside the .tmv
+      // itself, but the handle it names only ever lived in the old machine's
+      // IndexedDB. Left alone this fails silently forever. Disabling the pref
+      // here (rather than just toasting) also self-heals: the pref flip is
+      // itself a mutation, so the dirty guard schedules a trailing save that
+      // persists `dailyBackupEnabled: false` to the primary file.
       deps.store.update((d) => {
         d.prefs.dailyBackupEnabled = false
       })
@@ -293,19 +319,18 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       })
       permissionEpisodeToasted = false
       deps.shell.setSaveState('saved')
+    } else if (health === 'permission') {
+      reportBackupPermissionNeeded()
+    } else if (health === 'error') {
+      reportBackupError()
+    } else if (health === 'password-mismatch') {
+      reportBackupPasswordMismatch()
     } else {
-      // The primary write just succeeded, but the backup mirror (if enabled) is
-      // interval-gated — up to a day could pass before it's next attempted for
-      // real, during which a lapsed grant would otherwise go undetected. This
-      // check is a cheap, prompt-free `queryPermission`, cheap enough to run on
-      // every successful save rather than waiting for that next attempt.
-      const backupMissingGrant = (await deps.backupCtl?.hasMissingGrant()) ?? false
-      if (backupMissingGrant) {
-        reportPermissionNeeded()
-      } else {
-        permissionEpisodeToasted = false
-        deps.shell.setSaveState('saved')
-      }
+      permissionEpisodeToasted = false
+      backupPermissionEpisodeToasted = false
+      backupErrorEpisodeToasted = false
+      backupPasswordMismatchEpisodeToasted = false
+      deps.shell.setSaveState('saved')
     }
     deps.shell.setTitle(deps.session.name, false)
   }

@@ -331,6 +331,8 @@ const pt = {
   person_box_hint: 'Duplo clique para abrir as notas da pessoa',
   person_root_drop_hint: '⬆️ Solte aqui para mover ao nível principal',
   backup_write_failed_toast: 'Falha ao gravar o backup automático — verifique o local do arquivo .bck',
+  backup_permission_toast: 'Permissão de escrita do backup perdida — os dados seguem salvos no arquivo principal',
+  backup_password_mismatch_toast: 'O backup pode ainda estar criptografado com a senha anterior — clique para atualizá-lo agora',
   backup_orphaned_toast: 'Backup automático desativado — o arquivo de backup configurado não foi encontrado neste computador',
   backup_orphaned_action: 'Configurar backup…',
   // An empty tree used to borrow `pane_empty` ("Nenhum módulo aberto"), which
@@ -856,6 +858,8 @@ const en: Record<MsgKey, string> = {
   milestone_followup_toggle_title: 'Expand/collapse follow-up',
   about_github_link: 'Source code on GitHub ↗',
   backup_write_failed_toast: 'Automatic backup failed — check the .bck file\'s location',
+  backup_permission_toast: 'Backup file write access was lost — your data is still saved to the primary file',
+  backup_password_mismatch_toast: 'The backup may still be encrypted with your previous password — click to update it now',
   backup_orphaned_toast: 'Automatic backup disabled — the configured backup file wasn\'t found on this computer',
   backup_orphaned_action: 'Set up backup…',
   person_box_hint: 'Double-click to open person notes',
