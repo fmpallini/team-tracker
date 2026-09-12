@@ -396,6 +396,17 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       if (app) app.password = newPw
     },
   })
+
+  async function retryBackupWrite(): Promise<void> {
+    try {
+      const currentPw = app ? app.password : password
+      const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
+      await backupCtl.writeBackupNow(bytes)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const prefsAppCtl: PrefsAppCtl = {
     changePassword,
     currentPassword(): string | null {
@@ -456,6 +467,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   shell.onCloseFile(closeFile)
   shell.onSaveRequest(() => void saveCtl.saveNow({ explicit: true }))
   shell.onGrantRequest(() => void saveCtl.resolveGrants())
+  shell.onBackupRetryRequest(() => void retryBackupWrite())
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was
