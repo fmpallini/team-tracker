@@ -370,6 +370,25 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--brass) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
 }
+/* Backup-specific pill states — same severity-coded tokens as the primary
+   file's states (danger=broken, brass=needs a grant), so color still means
+   the same thing everywhere; the pill's "Backup:" label prefix is what
+   disambiguates which file a given state is about. */
+.tt-save-pill[data-state="backup-error"] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.tt-save-pill[data-state="backup-permission"] {
+  color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
+}
+.tt-save-pill[data-state="backup-password-mismatch"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
 /* Fallback mode (no File System Access API — every save is a download). The
    mark replaces a sticky toast that used to sit over the app for the whole
    session; the pill's tooltip carries the full sentence. */

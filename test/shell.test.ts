@@ -304,6 +304,58 @@ describe('subscribeSaveState / requestSaveNow', () => {
   })
 })
 
+describe('backup-specific states', () => {
+  test.each(['backup-error', 'backup-permission', 'backup-password-mismatch'] as const)(
+    'setSaveState(%s) stamps data-state',
+    (state) => {
+      const shell = setup()
+      shell.setSaveState(state)
+      expect(shell.root.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe(state)
+    }
+  )
+
+  test('the pill is clickable in backup-permission and backup-password-mismatch, not in backup-error', () => {
+    const shell = setup()
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+    shell.setSaveState('backup-permission')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+    shell.setSaveState('backup-password-mismatch')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
+    shell.setSaveState('backup-error')
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+  })
+
+  test('clicking the pill in backup-permission fires onGrantRequest, not onBackupRetryRequest', () => {
+    const shell = setup()
+    const grantCb = vi.fn()
+    const backupRetryCb = vi.fn()
+    shell.onGrantRequest(grantCb)
+    shell.onBackupRetryRequest(backupRetryCb)
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('backup-permission')
+    pill.click()
+
+    expect(grantCb).toHaveBeenCalledOnce()
+    expect(backupRetryCb).not.toHaveBeenCalled()
+  })
+
+  test('clicking the pill in backup-password-mismatch fires onBackupRetryRequest, not onGrantRequest', () => {
+    const shell = setup()
+    const grantCb = vi.fn()
+    const backupRetryCb = vi.fn()
+    shell.onGrantRequest(grantCb)
+    shell.onBackupRetryRequest(backupRetryCb)
+    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
+
+    shell.setSaveState('backup-password-mismatch')
+    pill.click()
+
+    expect(backupRetryCb).toHaveBeenCalledOnce()
+    expect(grantCb).not.toHaveBeenCalled()
+  })
+})
+
 // The shell's OS-theme listener lives on a matchMedia MediaQueryList, which
 // outlives any one document. Left attached, it kept the whole shell — and via
 // createShell's shared closure scope, its entire DOM tree — reachable for the

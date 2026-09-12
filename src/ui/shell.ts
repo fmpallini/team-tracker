@@ -4,7 +4,7 @@ import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { formatHHMM } from '../core/date'
 
-export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission'
+export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission' | 'backup-error' | 'backup-permission' | 'backup-password-mismatch'
 
 /** Already-formatted (current-locale) snapshot of the save-state pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of SAVE_STATE_KEY/renderSaveIndicator's formatting rules. */
 export interface SaveStatusInfo {
@@ -58,6 +58,13 @@ export interface Shell {
    */
   onGrantRequest(cb: () => void): void
   /**
+   * Registers the click handler for the save-state pill while it's in the
+   * 'backup-password-mismatch' state — the backup mirror is known to still be
+   * encrypted under a previous password. Separate from onGrantRequest: the
+   * fix here is a fresh write, not a permission re-grant.
+   */
+  onBackupRetryRequest(cb: () => void): void
+  /**
    * Same effect as clicking the real save-state pill — an explicit save while
    * a save is pending ('dirty'/'error'), the grant-recovery action while
    * 'permission', a no-op otherwise — for a caller that mirrors the pill in
@@ -108,6 +115,9 @@ const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
   saving: 'save_saving',
   error: 'save_error',
   permission: 'save_permission',
+  'backup-error': 'save_backup_error',
+  'backup-permission': 'save_backup_permission',
+  'backup-password-mismatch': 'save_backup_password_mismatch',
 }
 
 function toggleFullscreen(): void {
@@ -162,6 +172,7 @@ export function createShell(locale: Locale): Shell {
   savePillFallbackMark.hidden = true
   let saveRequestHandler: (() => void) | null = null
   let grantRequestHandler: (() => void) | null = null
+  let backupRetryRequestHandler: (() => void) | null = null
   const saveIndicator = el(
     'span',
     {
@@ -265,7 +276,8 @@ export function createShell(locale: Locale): Shell {
     saveIndicator.dataset.state = currentState
     saveIndicator.classList.toggle(
       'tt-save-pill-clickable',
-      currentState === 'dirty' || currentState === 'error' || currentState === 'permission'
+      currentState === 'dirty' || currentState === 'error' || currentState === 'permission' ||
+      currentState === 'backup-permission' || currentState === 'backup-password-mismatch'
     )
     for (const sub of saveStateSubscribers) sub(info)
   }
@@ -336,9 +348,17 @@ export function createShell(locale: Locale): Shell {
     grantRequestHandler = cb
   }
 
+  function onBackupRetryRequest(cb: () => void): void {
+    backupRetryRequestHandler = cb
+  }
+
   function requestSaveNow(): void {
-    if (currentState === 'permission') {
+    if (currentState === 'permission' || currentState === 'backup-permission') {
       grantRequestHandler?.()
+      return
+    }
+    if (currentState === 'backup-password-mismatch') {
+      backupRetryRequestHandler?.()
       return
     }
     if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
@@ -360,5 +380,5 @@ export function createShell(locale: Locale): Shell {
     mq.removeEventListener('change', onSystemThemeChange)
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
 }
