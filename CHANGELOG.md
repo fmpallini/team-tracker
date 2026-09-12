@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [Unreleased]
+
+### Fixed
+- A lapsed backup permission or a stale backup password no longer look identical to a primary-file save problem — the save indicator and the Backup preferences tab now say specifically which file needs attention.
+- Opening a file saved by an older app version now snapshots the original file to your backup before any edits, in case the update introduces a problem.
+
 ## [2.8.0] - 2026-09-10
 
 ### Added
