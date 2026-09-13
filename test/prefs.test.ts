@@ -1505,6 +1505,11 @@ describe('Data tab (export/import)', () => {
 
       clickByText('Clean up data')
 
+      // Data cleanup deliberately offers no undo (the warning above says so
+      // instead) — this locks that decision in against a future "helpful"
+      // re-addition of an undo button for cleanup.
+      expect(document.querySelector('.tt-toast-action')).toBeNull()
+
       const teams = store.doc.teams
       expect(teams[0]!.actionItems.map((a) => a.id)).toEqual(['a1'])
       expect(teams[0]!.dailyNotes).toEqual({ '2026-07-16': 'private daily note' })

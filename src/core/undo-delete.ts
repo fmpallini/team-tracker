@@ -14,6 +14,19 @@
 // re-parents the deleted node's children and renumbers their siblings'
 // `order`. An inverse would have to recompute and reverse all of that;
 // restoring a deep copy gets it right by construction.
+//
+// Adding a new delete site: capture deep enough to include every in-place
+// rewrite your delete performs, not just the array the deleted entity lived
+// in — a shallow copy of that one array (e.g. `[...tm.risks]`) restores the
+// entity but leaves unlinkRefsInTeam's rewrites (or any other in-place edit
+// made alongside the removal) permanently applied, which is silent data loss
+// wearing the shape of a correct restore. And a test that never plants an
+// `@`-mention of the deleted item in a field unlinkRefsInTeam sweeps (a daily
+// note, a person's notes, another item's notes/followup — see refs.ts) proves
+// nothing either way: a too-shallow capture and a correct one produce
+// byte-identical results on a fixture with no mentions to lose. Every
+// existing site's own test happens to plant one for exactly this reason —
+// match that when adding a new one.
 import type { Doc } from './types'
 import type { Store } from './store'
 import type { ChangeScope } from './scope'
