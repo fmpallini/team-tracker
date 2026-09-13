@@ -27,7 +27,8 @@ import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
 import { forceWrite, readCurrent, sameEntry, pickCreate } from './core/fs'
-import { toast, showErrorModal, dismissModelessModals } from './ui/modal'
+import { toast, showErrorModal, dismissModelessModals, dismissToast } from './ui/modal'
+import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController, backupHealthPillState } from './core/backup-controller'
@@ -115,6 +116,12 @@ async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose
   closeAnyContextMenu()
   closeAnyBacklinksPanel()
   resetSessionKey()
+  // A still-showing undo toast (src/ui/undo-toast.ts) holds an UndoOffer
+  // whose restore closure captured a structuredClone of a team from THIS
+  // document — exactly the retention class panes.ts's dispose() doc comment
+  // exists to prevent. Left alone, it would sit over the start screen for up
+  // to ten more seconds, bound to the store/Doc just discarded above.
+  dismissToast(UNDO_TOAST_KEY)
 }
 
 function detectBrowserLocale(): Locale {

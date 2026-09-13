@@ -45,6 +45,12 @@ const pt = {
   date_picker_today_btn: 'Hoje',
   date_picker_placeholder: 'DD/MM/AAAA',
   ok: 'OK',
+  // Shared chrome for every delete site's undo toast (src/ui/undo-toast.ts),
+  // not specific to any one item kind — kept with the other cross-feature
+  // strings rather than parked inside whichever module happened to add it.
+  undo: 'Desfazer',
+  undo_restored: 'Restaurado',
+  undo_unavailable: 'Não é mais possível desfazer',
   start_tagline: 'Gestão de times 100% offline — seus dados, seu controle.',
   start_adv_offline: '🔌 100% offline — funciona sem internet, tudo roda localmente na sua máquina',
   start_adv_ownership: '🗄️ Um único arquivo .tmv que você guarda onde quiser',
@@ -230,8 +236,6 @@ const pt = {
   risk_delete_confirm: 'Excluir "{title}"?',
   risk_delete_btn: 'Excluir',
   risk_deleted_toast: 'Risco "{title}" excluído',
-  undo: 'Desfazer',
-  undo_restored: 'Restaurado',
   risk_empty: 'Nenhum risco',
   pane_back_title: 'Voltar',
   pane_forward_title: 'Avançar',
@@ -597,6 +601,12 @@ const en: Record<MsgKey, string> = {
   create_plain_hint:
     'The file has no password and no encryption: it opens directly, without prompting. In exchange, anyone with access to the file can read its contents — including automated scans by cloud backup services.',
   cancel: 'Cancel',
+  // Shared chrome for every delete site's undo toast (src/ui/undo-toast.ts),
+  // not specific to any one item kind — kept with the other cross-feature
+  // strings rather than parked inside whichever module happened to add it.
+  undo: 'Undo',
+  undo_restored: 'Restored',
+  undo_unavailable: 'Undo no longer available',
   date_picker_clear_btn: 'Clear date',
   date_picker_today_btn: 'Today',
   date_picker_placeholder: 'MM/DD/YYYY',
@@ -781,8 +791,6 @@ const en: Record<MsgKey, string> = {
   risk_delete_confirm: 'Delete "{title}"?',
   risk_delete_btn: 'Delete',
   risk_deleted_toast: 'Risk "{title}" deleted',
-  undo: 'Undo',
-  undo_restored: 'Restored',
   risk_empty: 'No risks',
   pane_back_title: 'Back',
   pane_forward_title: 'Forward',
