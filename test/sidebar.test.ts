@@ -492,8 +492,8 @@ test('delete team resyncs both panes without landing on the same module twice fo
 })
 
 describe('team delete undo', () => {
-  test('offers an undo toast that restores both teams and nav exactly', () => {
-    const { store } = setup()
+  test('offers an undo toast that restores both teams and nav exactly, and re-syncs the pane view', () => {
+    const { store, renderPanes } = setup()
     addTeam(store, 'Alpha')
     addTeam(store, 'Beta')
     const locA: Loc = { teamId: 'Alpha', ref: { kind: 'actions' } }
@@ -521,6 +521,43 @@ describe('team delete undo', () => {
     clickByText('Delete')
 
     expect(store.doc.teams.map((tm) => tm.id)).toEqual(['Beta'])
+    expect(renderPanes).toHaveBeenCalledTimes(1) // the forward delete's own resync
+
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams).toEqual(teamsBefore)
+    expect(store.doc.nav).toEqual(navBefore)
+    // The wrapper's whole reason for existing: undo() must re-run the same
+    // pane resync the forward delete did, since restoring nav.panes inside
+    // deleteWithUndo's plain store.update() doesn't repaint panes on its own.
+    expect(renderPanes).toHaveBeenCalledTimes(2)
+  })
+
+  test('deleting the only remaining team, then undo, restores teams and nav exactly (activeTeamId goes null, not to a sibling)', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    const locA: Loc = { teamId: 'Alpha', ref: { kind: 'actions' } }
+    store.update((d) => {
+      d.nav.activeTeamId = 'Alpha'
+      d.nav.panes = [
+        { history: [locA], index: 0 },
+        { history: [], index: -1 },
+      ]
+    })
+
+    const teamsBefore = structuredClone(store.doc.teams)
+    const navBefore = structuredClone(store.doc.nav)
+
+    const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement
+    editBtn.click()
+    clickByText('Delete')
+    clickByText('Delete')
+
+    expect(store.doc.teams).toEqual([])
+    expect(store.doc.nav.activeTeamId).toBeNull()
 
     const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
     expect(undoBtn?.textContent).toBe('Undo')
