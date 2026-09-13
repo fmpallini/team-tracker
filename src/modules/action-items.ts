@@ -16,6 +16,8 @@ import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/docume
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
+import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { offerUndoToast } from '../ui/undo-toast'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
@@ -208,13 +210,22 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
-  function removeItem(id: string): void {
-    ctx.store.update((d) => {
+  function removeItem(id: string): UndoOffer | null {
+    return deleteWithUndo(ctx.store, (d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
+      if (!tm) return null
       const removed = tm.actionItems.find((i) => i.id === id)
-      unlinkRefsInTeam(tm, 'action', removed ? new Map([[id, removed.summary]]) : new Map())
+      if (!removed) return null
+      // Deep copy: unlinkRefsInTeam rewrites @mentions in place across the
+      // whole team, so a shallow capture of tm.actionItems would restore the
+      // card with every mention of it permanently flattened.
+      const before = structuredClone(tm)
+      unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, milestones,
       // risks — see refs.ts), not just 'actions'. Team-only scoping is the
@@ -259,7 +270,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       message: t(lc, 'kanban_delete_confirm', { summary: item.summary }),
       confirmLabel: t(lc, 'kanban_delete_btn'),
       variant: 'danger',
-      onConfirm: () => removeItem(item.id),
+      onConfirm: () => {
+        const offer = removeItem(item.id)
+        offerUndoToast(ctx.store, lc, t(lc, 'action_deleted_toast', { summary: item.summary }), offer)
+      },
     })
   }
 
@@ -272,15 +286,22 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       confirmLabel: t(lc, 'kanban_clear_zone_btn'),
       variant: 'danger',
       onConfirm: () => {
-        ctx.store.update((d) => {
+        const offer = deleteWithUndo(ctx.store, (d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
-          if (!tm) return
+          if (!tm) return null
           const removedTitles = new Map(tm.actionItems.filter((i) => i.status === status).map((i) => [i.id, i.summary]))
+          if (removedTitles.size === 0) return null
+          // Deep copy — same unlinkRefsInTeam cross-section rationale as
+          // removeItem() above.
+          const before = structuredClone(tm)
           unlinkRefsInTeam(tm, 'action', removedTitles)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
-          // No `sections` — same unlinkRefsInTeam cross-section rationale as
-          // removeItem() above.
+          return (d2) => {
+            const i = d2.teams.findIndex((t2) => t2.id === teamId)
+            if (i !== -1) d2.teams[i] = before
+          }
         }, { teamId })
+        offerUndoToast(ctx.store, lc, t(lc, 'actions_deleted_toast', { count: String(count) }), offer)
       },
     })
   }

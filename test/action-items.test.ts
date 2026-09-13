@@ -2276,3 +2276,50 @@ describe('backlink-only foreign changes patch chips in place (no full rebuild)',
     expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).not.toBe(cardBefore)
   })
 })
+
+describe('renderActionItems — delete undo', () => {
+  test('deleting a card offers an undo that restores it and its @-mentions', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a1', summary: 'Ship it' })],
+      dailyNotes: { '2026-09-10': 'Reminder: @[Ship it](action:a1) today.' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Ship it"?')
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+
+  test('clearing a zone offers an undo that restores every card with its original status and order', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'd1', status: 'done', order: 0 }), item({ id: 'd2', status: 'done', order: 1 })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
+    clickByTitleOrText(document.body, 'Delete all')
+
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+})
