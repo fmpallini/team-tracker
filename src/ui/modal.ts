@@ -394,6 +394,14 @@ interface ToastOptions {
    * a single, updating toast instead of stacking one per step.
    */
   key?: string
+  /**
+   * Milliseconds on screen before auto-dismiss; defaults to
+   * `DEFAULT_TOAST_MS`. Ignored when `sticky`. Undo toasts
+   * (src/ui/undo-toast.ts) need noticeably longer than a status message:
+   * four seconds is not enough time to register that a delete was a
+   * mistake and reach for the button.
+   */
+  duration?: number
 }
 
 /**
@@ -404,6 +412,8 @@ interface ToastOptions {
  * the newest message is the one the user is looking for.
  */
 const MAX_TOASTS = 3
+
+const DEFAULT_TOAST_MS = 4000
 
 let toastStack: HTMLElement | null = null
 
@@ -442,7 +452,7 @@ export function toast(msg: string, opts?: ToastOptions): void {
     stack.firstElementChild?.remove()
   }
   if (!opts?.sticky) {
-    setTimeout(dismiss, 4000)
+    setTimeout(dismiss, opts?.duration ?? DEFAULT_TOAST_MS)
   }
 }
 
