@@ -2304,7 +2304,16 @@ describe('renderActionItems — delete undo', () => {
 
   test('clearing a zone offers an undo that restores every card with its original status and order', () => {
     const team = makeTeam({
-      actionItems: [item({ id: 'd1', status: 'done', order: 0 }), item({ id: 'd2', status: 'done', order: 1 })],
+      actionItems: [
+        item({ id: 'd1', summary: 'Ship it', status: 'done', order: 0 }),
+        item({ id: 'd2', summary: 'Cancel it', status: 'done', order: 1 }),
+        // A survivor (different zone, untouched by the clear) whose notes
+        // mention both cleared cards — a swept field other than dailyNotes
+        // (already covered by the single-card-delete test above), so the
+        // deep-equal below only passes if the unlink rewrite of *this*
+        // object was actually reversed, not just the array membership.
+        item({ id: 't1', summary: 'Survivor', status: 'todo', order: 0, notes: 'See @[Ship it](action:d1) and @[Cancel it](action:d2)' }),
+      ],
     })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -2314,7 +2323,8 @@ describe('renderActionItems — delete undo', () => {
     clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
     clickByTitleOrText(document.body, 'Delete all')
 
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(store.doc.teams[0]!.actionItems.filter((i) => i.status === 'done')).toHaveLength(0)
+    expect(store.doc.teams[0]!.actionItems.find((i) => i.id === 't1')!.notes).toBe('See ~Ship it~ and ~Cancel it~')
     const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
     expect(undoBtn?.textContent).toBe('Undo')
 
