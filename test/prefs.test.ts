@@ -1039,6 +1039,27 @@ test('delete button asks for confirmation, then removes the template', () => {
   expect(store.doc.templates).toHaveLength(4)
 })
 
+test('delete confirmation warns that a deleted template cannot be brought back', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+
+  const delBtn = document.querySelector('.tt-prefs-template-delete-btn') as HTMLButtonElement
+  delBtn.click()
+
+  // Every other delete in the app either offers an undo toast or says it
+  // cannot; templates are the one site with no undo, so the dialog has to
+  // say so rather than leave the user to infer it from a missing button.
+  expect(document.querySelector('.tt-modal-warning')?.textContent).toBe(
+    'Unlike deleting a task, milestone or risk, a deleted template cannot be brought back.'
+  )
+  const confirmBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Delete')!
+  expect(confirmBtn.className).toContain('tt-btn-danger')
+
+  clickByText('Delete')
+  expect(document.querySelector('.tt-toast-action')).toBeNull()
+})
+
 test('reorder (up/down) swaps templates in the array', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)

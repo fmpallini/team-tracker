@@ -794,7 +794,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           onclick: () => confirmDelete(locale, {
             title: t(locale, 'prefs_templates_delete_title'),
             message: t(locale, 'prefs_templates_delete_confirm', { name: tpl.name }),
+            // Templates are the one delete in the app with no undo offer:
+            // there is no containing team to capture, and a template is a
+            // snippet the user typed rather than something other records
+            // point at. Say so, rather than leave the missing Undo button to
+            // speak for itself.
+            warning: t(locale, 'prefs_templates_delete_no_undo_warning'),
             confirmLabel: t(locale, 'prefs_templates_delete_btn'),
+            variant: 'danger',
             onConfirm: () => removeTemplate(tpl.id),
           }),
         },
