@@ -581,8 +581,9 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-toast-action {
   background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px;
-  padding: .2rem .6rem; cursor: pointer; font-size: .85rem;
+  padding: .2rem .6rem; cursor: pointer; font-size: .85rem; align-self: flex-end;
 }
+.tt-toast-action:hover { background: rgba(var(--accent-rgb), .12); }
 
 /* Read-only cross-tab banner (Task 25) */
 .tt-readonly-banner {
