@@ -50,7 +50,7 @@ describe('deleteWithUndo', () => {
       const before = structuredClone(tm)
       // Stand-in for unlinkRefsInTeam: rewrites text in place on the team.
       tm.dailyNotes['2026-09-13'] = 'see ~Slip~ today'
-      tm.risks = tm.risks.filter((r) => r.id === 'r1')
+      tm.risks = tm.risks.filter((r) => r.id !== 'r1')
       return (d2) => {
         const i = d2.teams.findIndex((t) => t.id === 't1')
         if (i !== -1) d2.teams[i] = before

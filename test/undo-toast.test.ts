@@ -67,4 +67,34 @@ describe('offerUndoToast', () => {
     offerUndoToast(store, 'pt-BR', 'Risco excluído', fakeOffer())
     expect(actionButton()?.textContent).toBe('Desfazer')
   })
+
+  it('releases the store watcher when the toast expires naturally', () => {
+    vi.useFakeTimers()
+    try {
+      const store = createStore(createEmptyDocument('en-US'))
+      let mutationListenerCalls = 0
+      const origOnMutate = store.onMutate.bind(store)
+      vi.spyOn(store, 'onMutate').mockImplementation((fn) => {
+        const wrappedFn = (kind: any) => {
+          mutationListenerCalls++
+          fn(kind)
+        }
+        return origOnMutate(wrappedFn)
+      })
+
+      offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer())
+
+      // Advance time by the full toast duration to let it expire and clean up
+      vi.advanceTimersByTime(10_000)
+
+      // Reset call count (the watcher was called once during offerUndoToast setup)
+      mutationListenerCalls = 0
+
+      // After expiry, mutate the store and verify the watcher was NOT called
+      store.update((d) => { d.prefs.dueSoonDays = 5 })
+      expect(mutationListenerCalls).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

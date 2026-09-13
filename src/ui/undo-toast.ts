@@ -41,7 +41,13 @@ export function offerUndoToast(
   }
 
   let unsubscribe: (() => void) | null = null
+  let expiryTimer: ReturnType<typeof setTimeout> | null = null
+
   const stopWatching = (): void => {
+    if (expiryTimer !== null) {
+      clearTimeout(expiryTimer)
+      expiryTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
   }
@@ -65,4 +71,10 @@ export function offerUndoToast(
     stopWatching()
     dismissToast(UNDO_TOAST_KEY)
   })
+
+  // Mirror modal.ts's dismiss timer so cleanup does not depend on modal.ts
+  // exposing a dismiss hook it does not have. When the toast naturally expires
+  // after UNDO_TOAST_MS, release the store watcher so it doesn't outlive the
+  // toast it was watching.
+  expiryTimer = setTimeout(stopWatching, UNDO_TOAST_MS)
 }
