@@ -12,6 +12,8 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
+import { deleteWithUndo } from '../core/undo-delete'
+import { offerUndoToast } from '../ui/undo-toast'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -221,11 +223,23 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
               message: t(lc, 'person_delete_confirm', { name: person.name }),
               confirmLabel: t(lc, 'person_delete_btn'),
               onConfirm: () => {
-                ctx.store.update((d) => {
+                const offer = deleteWithUndo(ctx.store, (d) => {
                   const tm = d.teams.find((t2) => t2.id === teamId)
-                  if (!tm) return
+                  if (!tm) return null
+                  if (!tm[group].some((p) => p.id === person.id)) return null
+                  // Deep copy, for two reasons: unlinkRefsInTeam rewrites
+                  // @mentions in place across the whole team, and
+                  // deletePerson() re-parents this node's children and
+                  // renumbers their siblings' `order` in place. A shallow
+                  // capture of tm[group] would share those very objects and
+                  // restore none of it.
+                  const before = structuredClone(tm)
                   unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
                   tm[group] = deletePerson(tm[group], person.id)
+                  return (d2) => {
+                    const i = d2.teams.findIndex((t2) => t2.id === teamId)
+                    if (i !== -1) d2.teams[i] = before
+                  }
                   // No `sections`: unlinkRefsInTeam rewrites @mentions across
                   // every content-bearing section of this team (notes,
                   // actions, milestones, risks — see refs.ts), not just
@@ -233,6 +247,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
                   // still correct and won't rot if unlinkRefsInTeam's reach
                   // changes later.
                 }, { teamId })
+                offerUndoToast(ctx.store, lc, t(lc, 'person_deleted_toast', { name: person.name }), offer)
               },
             })
           },
