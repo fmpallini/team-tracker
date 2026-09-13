@@ -244,11 +244,21 @@ export function showErrorModal(locale: Locale, message: string): ModalHandle {
 export function confirmDelete(locale: Locale, opts: {
   title: string
   message: string
+  /**
+   * An extra, visually louder line below the message, for a delete the user
+   * cannot take back. Every other delete in the app offers an undo toast, so a
+   * site that does not must say so here rather than rely on the user noticing
+   * the absence of a button.
+   */
+  warning?: string
   confirmLabel: string
   variant?: 'danger' | 'primary'
   onConfirm: () => void
 }): void {
-  const body = el('p', { class: 'tt-modal-message' }, opts.message)
+  const message = el('p', { class: 'tt-modal-message' }, opts.message)
+  const body = opts.warning
+    ? el('div', {}, message, el('p', { class: 'tt-modal-warning' }, opts.warning))
+    : message
   const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,

@@ -1494,7 +1494,13 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
+        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted.'
+      )
+      // Every other delete in the app offers an undo toast; this one does not,
+      // so the dialog has to say so rather than let the user infer it.
+      const warnings = document.querySelectorAll('.tt-modal-warning')
+      expect(warnings[warnings.length - 1]?.textContent).toBe(
+        'Unlike deleting a single task, milestone or risk, this cleanup offers no undo. There is no way back.'
       )
 
       clickByText('Clean up data')

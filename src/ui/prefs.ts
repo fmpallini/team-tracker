@@ -1209,6 +1209,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           risks: String(counts.risks),
           dailyNotes: String(counts.dailyNotes),
         }),
+        warning: t(locale, 'data_cleanup_no_undo_warning'),
         confirmLabel: t(locale, 'data_cleanup_btn'),
         variant: 'danger',
         onConfirm: () => {

@@ -528,6 +528,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-modal-title-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .tt-kanban-modal-header-extra { display: flex; align-items: center; gap: .5rem; flex: none; }
 .tt-modal-message { color: var(--fg); }
+.tt-modal-warning {
+  margin: .75rem 0 0; padding: .5rem .6rem; border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  color: var(--danger); font-weight: 600;
+}
 .tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-editor-link-form { display: flex; flex-direction: column; gap: .75rem; }
