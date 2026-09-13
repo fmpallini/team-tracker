@@ -792,10 +792,19 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function deleteColumn(columnId: string): void {
     const count = items().filter((i) => i.status === columnId).length
     if (count === 0) {
-      ctx.store.update((d) => {
+      const name = statusLabel(columnId, findTeam())
+      const offer = deleteWithUndo(ctx.store, (d) => {
         const tm = d.teams.find((t2) => t2.id === teamId)
-        if (tm?.actionColumns) tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
+        if (!tm?.actionColumns) return null
+        if (!tm.actionColumns.some((c) => c.id === columnId)) return null
+        const before = structuredClone(tm)
+        tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
+        return (d2) => {
+          const i = d2.teams.findIndex((t2) => t2.id === teamId)
+          if (i !== -1) d2.teams[i] = before
+        }
       }, { teamId, sections: ['actions'] })
+      offerUndoToast(ctx.store, lc, t(lc, 'column_deleted_toast', { name }), offer)
       return
     }
     openDeleteColumnModal(columnId, count)
@@ -817,9 +826,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       danger: true,
       onClick: () => {
         const targetStatus = select.value
-        ctx.store.update((d) => {
+        const name = statusLabel(columnId, findTeam())
+        const offer = deleteWithUndo(ctx.store, (d) => {
           const team2 = d.teams.find((t2) => t2.id === teamId)
-          if (!team2) return
+          if (!team2) return null
+          // Deep copy before anything moves: the migration below rewrites
+          // `status` and `order` in place on every card it moves, so a shallow
+          // capture of actionColumns alone would restore the column but leave
+          // its cards stranded in the landing column.
+          const before = structuredClone(team2)
           const moving = team2.actionItems.filter((i) => i.status === columnId).sort((a, b) => a.order - b.order)
           const destGroup = team2.actionItems.filter((i) => i.status === targetStatus)
           // Appends past the destination's highest existing order — same
@@ -829,7 +844,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           let nextOrder = destGroup.length === 0 ? 0 : Math.max(...destGroup.map((i) => i.order)) + 1
           for (const i of moving) { i.status = targetStatus; i.order = nextOrder++ }
           if (team2.actionColumns) team2.actionColumns = team2.actionColumns.filter((c) => c.id !== columnId)
+          return (d2) => {
+            const i = d2.teams.findIndex((t2) => t2.id === teamId)
+            if (i !== -1) d2.teams[i] = before
+          }
         }, { teamId, sections: ['actions'] })
+        offerUndoToast(ctx.store, lc, t(lc, 'column_deleted_toast', { name }), offer)
         handle.close()
       },
     }

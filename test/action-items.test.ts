@@ -2323,3 +2323,54 @@ describe('renderActionItems — delete undo', () => {
     expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
   })
 })
+
+describe('renderActionItems — column delete undo', () => {
+  function deleteColumnBtn(container: HTMLElement, index = 0): HTMLButtonElement {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-kanban-col-delete-btn'))[index]!
+  }
+
+  test('deleting an empty column offers an undo that restores its name and order', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    deleteColumnBtn(container).click()
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+
+  test('deleting a non-empty column offers an undo that restores it and its cards\' original status and order', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a', status: 'wip', order: 0 }), item({ id: 'b', status: 'wip', order: 1 })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    deleteColumnBtn(container).click()
+    const select = document.querySelector('.tt-kanban-column-landing-select') as HTMLSelectElement
+    select.value = 'todo'
+    // Scoped to the dialog, not document.body — see the identical comment in
+    // the "custom columns: delete" describe above.
+    clickByTitleOrText(document.querySelector('.tt-modal-dialog')!, 'Delete column')
+
+    const migrated = store.doc.teams[0]!.actionItems
+    expect(migrated.every((i) => i.status === 'todo')).toBe(true)
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+})
