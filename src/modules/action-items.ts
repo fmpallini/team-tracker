@@ -222,16 +222,37 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const before = structuredClone(tm)
       unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
-      return (d2) => {
-        const i = d2.teams.findIndex((t2) => t2.id === teamId)
-        if (i !== -1) d2.teams[i] = before
-      }
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, milestones,
       // risks — see refs.ts), not just 'actions'. Team-only scoping is the
       // narrowest scope that's still correct, and it won't rot if
       // unlinkRefsInTeam's reach changes later — refs never cross teams
       // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
+    }, { teamId })
+  }
+
+  /**
+   * Silent counterpart to removeItem, for the paths that carry no confirm
+   * dialog and offer no undo (an abandoned blank "+ Card" draft discarded on
+   * modal close, or an empty-summary delete click) — see requestDelete and
+   * the card modal's onClose below. deleteWithUndo's structuredClone(tm) is
+   * only worth paying for on an explicit user action that has already been
+   * through a confirm dialog (see undo-delete.ts's header); a silent delete
+   * never offers undo, so it skips the capture entirely rather than cloning
+   * a potentially multi-MB team every time an empty draft is closed.
+   */
+  function removeItemSilently(id: string): void {
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const removed = tm.actionItems.find((i) => i.id === id)
+      if (!removed) return
+      unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
+      tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
     }, { teamId })
   }
 
@@ -262,7 +283,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   function requestDelete(item: ActionItem): void {
     if (item.summary.trim() === '') {
-      removeItem(item.id) // empty cards carry no meaningful content to lose — delete silently
+      removeItemSilently(item.id) // empty cards carry no meaningful content to lose — delete silently
       return
     }
     confirmDelete(lc, {
@@ -716,7 +737,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // draft nothing was typed into and an existing card cleared to blank.
         const current = items().find((i) => i.id === itemId)
         if (current && current.summary.trim() === '') {
-          removeItem(itemId)
+          removeItemSilently(itemId)
         } else if (current && existing === null && activeTagFilter !== null && activeTagFilter !== current.color) {
           // A new card whose final color the active filter would hide is
           // invisible the moment the modal closes — clear the filter so the

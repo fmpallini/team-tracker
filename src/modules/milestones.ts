@@ -272,19 +272,43 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       const before = structuredClone(tm)
       unlinkRefsInTeam(tm, 'milestone', new Map([[id, removed.title]]))
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, actions, risks
+      // — see refs.ts), not just 'milestones'. Team-only scoping is the
+      // narrowest scope that's still correct, and it won't rot if
+      // unlinkRefsInTeam's reach changes later — refs never cross teams
+      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
       return (d2) => {
         const i = d2.teams.findIndex((t2) => t2.id === teamId)
         if (i !== -1) d2.teams[i] = before
       }
-      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
-      // content-bearing section of this team (notes, people, actions, risks
-      // — see refs.ts), not just 'milestones'.
+    }, { teamId })
+  }
+
+  /**
+   * Silent counterpart to removeMilestone, for the paths that carry no
+   * confirm dialog and offer no undo (a blank draft dropped on blur or an
+   * empty-title delete click) — see requestDelete below. deleteWithUndo's
+   * structuredClone(tm) is only worth paying for on an explicit user action
+   * that has already been through a confirm dialog (see undo-delete.ts's
+   * header); a silent delete never offers undo, so it skips the capture
+   * entirely rather than cloning a potentially multi-MB team for nothing.
+   */
+  function removeMilestoneSilently(id: string): void {
+    expandable.collapse(id)
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const removed = tm.milestones.find((m) => m.id === id)
+      if (!removed) return
+      unlinkRefsInTeam(tm, 'milestone', new Map([[id, removed.title]]))
+      tm.milestones = tm.milestones.filter((m) => m.id !== id)
     }, { teamId })
   }
 
   function requestDelete(m: Milestone): void {
     if (m.title.trim() === '') {
-      removeMilestone(m.id) // empty titles carry no meaningful content to lose — delete silently
+      removeMilestoneSilently(m.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
     confirmDelete(lc, {
@@ -561,7 +585,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         const cur = milestones().find((mm) => mm.id === m.id)
         if (!cur) return
         if (cur.title.trim() !== '') { clearNameError(row); return }
-        if (isBlankMilestoneDraft(cur)) removeMilestone(cur.id)
+        if (isBlankMilestoneDraft(cur)) removeMilestoneSilently(cur.id)
         else showNameError(row)
       }, 0)
     })

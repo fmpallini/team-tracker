@@ -236,16 +236,18 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
                   const before = structuredClone(tm)
                   unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
                   tm[group] = deletePerson(tm[group], person.id)
-                  return (d2) => {
-                    const i = d2.teams.findIndex((t2) => t2.id === teamId)
-                    if (i !== -1) d2.teams[i] = before
-                  }
                   // No `sections`: unlinkRefsInTeam rewrites @mentions across
                   // every content-bearing section of this team (notes,
                   // actions, milestones, risks — see refs.ts), not just
                   // 'people'. Team-only scoping is the narrowest scope that's
-                  // still correct and won't rot if unlinkRefsInTeam's reach
-                  // changes later.
+                  // still correct, and it won't rot if unlinkRefsInTeam's
+                  // reach changes later — refs never cross teams (see
+                  // refs.ts's own header comment), so `{ teamId }` alone is
+                  // safe.
+                  return (d2) => {
+                    const i = d2.teams.findIndex((t2) => t2.id === teamId)
+                    if (i !== -1) d2.teams[i] = before
+                  }
                 }, { teamId })
                 offerUndoToast(ctx.store, lc, t(lc, 'person_deleted_toast', { name: person.name }), offer)
               },

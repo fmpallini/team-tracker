@@ -453,6 +453,29 @@ describe('renderMilestones', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
+  test('deleting a milestone with an empty title does not pay for a whole-team clone', () => {
+    // The silent path has no confirm dialog and offers no undo, so the
+    // spec's justification for deleteWithUndo's structuredClone cost ("paid
+    // once, on an explicit user action that has already been through a
+    // confirm dialog") does not apply here — this must not clone at all.
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      clickByTitleOrText(container, 'Delete milestone')
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
+  })
+
   test('deleting a milestone with a non-empty title requires confirmation', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Important' })] })
     const { container, store, pm, loc } = setup(team)

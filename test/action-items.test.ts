@@ -1003,6 +1003,30 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
+  test('leaving summary blank and closing discards the draft without paying for a whole-team clone', () => {
+    // Fires from the card modal's onClose whenever a "+ Card" draft was
+    // abandoned blank — on a team with years of daily notes, this used to
+    // cost a multi-MB structuredClone for a delete with no confirm dialog
+    // and no undo offer, purely thrown away.
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      clickByTitleOrText(document.body, 'Close')
+
+      expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
+  })
+
   test('a new card with notes but no name will not close — the modal stays, the name field takes focus, a hint shows', () => {
     vi.useFakeTimers()
     const team = makeTeam()
@@ -1214,6 +1238,28 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Delete')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('deleting a card whose summary is blank does not pay for a whole-team clone', () => {
+    // Same silent, no-confirm/no-undo path as the abandoned-draft case above,
+    // reached this time via requestDelete's blank-summary branch.
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      clickByTitleOrText(document.body, 'Delete')
+
+      expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
   })
 
   test('renaming a milestone mentioned in the open modal\'s notes live-updates its @mention chip', () => {

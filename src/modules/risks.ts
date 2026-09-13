@@ -361,15 +361,37 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       const before = structuredClone(tm)
       unlinkRefsInTeam(tm, 'risk', new Map([[id, removed.title]]))
       tm.risks = tm.risks.filter((r) => r.id !== id)
+      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
+      // content-bearing section of this team (notes, people, actions,
+      // milestones — see refs.ts), not just 'risks'. Team-only scoping is
+      // the narrowest scope that's still correct, and it won't rot if
+      // unlinkRefsInTeam's reach changes later — refs never cross teams
+      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
       return (d2) => {
         const i = d2.teams.findIndex((t2) => t2.id === teamId)
         if (i !== -1) d2.teams[i] = before
       }
-      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
-      // content-bearing section of this team (notes, people, actions,
-      // milestones — see refs.ts), not just 'risks'. Team-only scoping is
-      // the narrowest scope that's still correct and won't rot if
-      // unlinkRefsInTeam's reach changes later.
+    }, { teamId })
+  }
+
+  /**
+   * Silent counterpart to removeRisk, for the paths that carry no confirm
+   * dialog and offer no undo (a blank draft dropped on blur or on an
+   * empty-title delete click) — see requestDelete below. deleteWithUndo's
+   * structuredClone(tm) is only worth paying for on an explicit user action
+   * that has already been through a confirm dialog (see undo-delete.ts's
+   * header); a silent delete never offers undo, so it skips the capture
+   * entirely rather than cloning a potentially multi-MB team for nothing.
+   */
+  function removeRiskSilently(id: string): void {
+    expandable.collapse(id)
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const removed = tm.risks.find((r) => r.id === id)
+      if (!removed) return
+      unlinkRefsInTeam(tm, 'risk', new Map([[id, removed.title]]))
+      tm.risks = tm.risks.filter((r) => r.id !== id)
     }, { teamId })
   }
 
@@ -396,7 +418,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   function requestDelete(r: Risk): void {
     if (r.title.trim() === '') {
-      removeRisk(r.id) // empty titles carry no meaningful content to lose — delete silently
+      removeRiskSilently(r.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
     confirmDelete(lc, {
@@ -960,7 +982,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         const cur = risks().find((rr) => rr.id === r.id)
         if (!cur) return
         if (cur.title.trim() !== '') { clearNameError(row); return }
-        if (isBlankRiskDraft(cur, newRiskFollowup())) removeRisk(cur.id)
+        if (isBlankRiskDraft(cur, newRiskFollowup())) removeRiskSilently(cur.id)
         else showNameError(row)
       }, 0)
     })
