@@ -16,6 +16,8 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
+import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { offerUndoToast } from '../ui/undo-toast'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
@@ -257,19 +259,26 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id, 'data-item-id': m.id }, bundle.editor.root)
   }
 
-  function removeMilestone(id: string): void {
+  function removeMilestone(id: string): UndoOffer | null {
     expandable.collapse(id) // local UI state; must flip before store.update fires the synchronous subscriber below
-    ctx.store.update((d) => {
+    return deleteWithUndo(ctx.store, (d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
+      if (!tm) return null
       const removed = tm.milestones.find((m) => m.id === id)
-      unlinkRefsInTeam(tm, 'milestone', removed ? new Map([[id, removed.title]]) : new Map())
+      if (!removed) return null
+      // Deep copy: unlinkRefsInTeam rewrites @mentions in place across the
+      // whole team, so a shallow capture of tm.milestones would restore the
+      // milestone with every mention of it permanently flattened.
+      const before = structuredClone(tm)
+      unlinkRefsInTeam(tm, 'milestone', new Map([[id, removed.title]]))
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, actions, risks
-      // — see refs.ts), not just 'milestones'. Team-only scoping is the
-      // narrowest scope that's still correct and won't rot if
-      // unlinkRefsInTeam's reach changes later.
+      // — see refs.ts), not just 'milestones'.
     }, { teamId })
   }
 
@@ -282,7 +291,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       title: t(lc, 'milestone_delete_title'),
       message: t(lc, 'milestone_delete_confirm', { title: m.title }),
       confirmLabel: t(lc, 'milestone_delete_btn'),
-      onConfirm: () => removeMilestone(m.id),
+      onConfirm: () => {
+        const offer = removeMilestone(m.id)
+        offerUndoToast(ctx.store, lc, t(lc, 'milestone_deleted_toast', { title: m.title }), offer)
+      },
     })
   }
 

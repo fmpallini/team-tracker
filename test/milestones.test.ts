@@ -1164,3 +1164,37 @@ describe('backlink-only foreign changes patch chips in place (no full rebuild)',
     expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).not.toBe(rowBefore)
   })
 })
+
+describe('milestone delete undo', () => {
+  function mountMilestonesWithMentionedMilestone(): { store: Store; teamId: string } {
+    const team = makeTeam({
+      milestones: [milestone({ id: 'm1', title: 'Ship', date: '2026-01-01' })],
+      dailyNotes: { '2026-01-01': 'Reminder: @[Ship](milestone:m1) is coming up.' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { store, teamId: team.id }
+  }
+
+  function clickDeleteAndConfirm(title: string): void {
+    clickByTitleOrText(document.body, 'Delete milestone')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe(`Delete "${title}"?`)
+    clickByTitleOrText(document.body, 'Delete')
+  }
+
+  it('offers an undo toast that restores the milestone and its @-mentions', () => {
+    const { store, teamId } = mountMilestonesWithMentionedMilestone()
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
+
+    clickDeleteAndConfirm('Ship')
+
+    expect(store.doc.teams.find((t) => t.id === teamId)!.milestones).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
+  })
+})
