@@ -109,7 +109,7 @@ export function showStartScreen(
           continue
         }
         if (e instanceof CorruptFileError) {
-          showErrorModal(locale, t(locale, 'err_corrupt_file'))
+          showErrorModal(locale, corruptMessage(e))
           return null
         }
         if (e instanceof SchemaTooNewError) {
@@ -119,6 +119,19 @@ export function showStartScreen(
         throw e
       }
     }
+  }
+
+  /**
+   * Gap 4: a `CorruptFileError` now covers two different situations. Bad
+   * magic / a failed GCM tag / unparseable JSON carry no `path` — the bytes
+   * are simply unreadable, and 'err_corrupt_file' is all that can be said.
+   * A structurally invalid document (document.ts's `validateDoc`) carries
+   * the offending field, which is worth showing verbatim: the plain
+   * `TMV-PLAIN` format is meant to be hand-editable, so naming the field
+   * turns "corrupt file" into something the user can actually go and fix.
+   */
+  function corruptMessage(e: CorruptFileError): string {
+    return e.path ? t(locale, 'err_invalid_shape', { path: e.path }) : t(locale, 'err_corrupt_file')
   }
 
   // Shared by every "get a {session, bytes} pair, then decrypt it" open
@@ -133,7 +146,7 @@ export function showStartScreen(
       plainDoc = parsePlain(result.bytes)
     } catch (e) {
       if (e instanceof CorruptFileError) {
-        showErrorModal(locale, t(locale, 'err_corrupt_file'))
+        showErrorModal(locale, corruptMessage(e))
         return
       }
       if (e instanceof SchemaTooNewError) {
@@ -164,7 +177,7 @@ export function showStartScreen(
       plainDoc = parsePlain(bytes)
     } catch (e) {
       if (e instanceof CorruptFileError) {
-        showErrorModal(locale, t(locale, 'err_corrupt_file'))
+        showErrorModal(locale, corruptMessage(e))
         return
       }
       if (e instanceof SchemaTooNewError) {

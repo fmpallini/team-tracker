@@ -1,4 +1,4 @@
-import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError, findTeam, nearestDatedNote } from '../src/core/document'
+import { createEmptyDocument, createEmptyTeam, migrate, migrateTeams, SCHEMA_VERSION, SchemaTooNewError, findTeam, nearestDatedNote, validateDoc } from '../src/core/document'
 
 test('createEmptyDocument shape', () => {
   const d = createEmptyDocument('pt-BR')
@@ -389,5 +389,144 @@ describe('nearestDatedNote', () => {
   it('skips whitespace-only entries in both directions', () => {
     expect(nearestDatedNote(notes, '2026-09-04', 1)).toBe('2026-09-10')
     expect(nearestDatedNote(notes, '2026-09-06', -1)).toBe('2026-09-03')
+  })
+})
+
+describe('validateDoc', () => {
+  function goodDoc(): Record<string, unknown> {
+    const d = createEmptyDocument('en-US') as unknown as Record<string, unknown>
+    const team = createEmptyTeam('t1', 'Team A', '🙂', 'en-US')
+    team.members.push({ id: 'p1', name: 'Ann', role: 'Dev', parentId: null, order: 0, notes: '' })
+    team.stakeholders.push({ id: 's1', name: 'Bo', role: 'Sponsor', parentId: null, order: 0, notes: '' })
+    team.actionItems.push({ id: 'a1', summary: 'Do it', notes: '', status: 'todo', dueDate: null, assignee: '', color: null, order: 0 })
+    team.milestones.push({ id: 'm1', date: '2026-09-13', title: 'Ship', done: false, followup: '' })
+    team.risks.push({ id: 'r1', title: 'Slip', chance: 2, impact: 3, plan: 'mitigate', followup: '', order: 0, closed: false })
+    team.dailyNotes['2026-09-13'] = '<p>hi</p>'
+    ;(d.teams as unknown[]).push(team)
+    return JSON.parse(JSON.stringify(d)) as Record<string, unknown>
+  }
+
+  function team0(d: Record<string, unknown>): Record<string, unknown> {
+    const t0 = (d.teams as Record<string, unknown>[])[0]
+    if (!t0) throw new Error('fixture has no team')
+    return t0
+  }
+
+  function first(team: Record<string, unknown>, key: string): Record<string, unknown> {
+    const e = (team[key] as Record<string, unknown>[])[0]
+    if (!e) throw new Error(`fixture has no ${key}[0]`)
+    return e
+  }
+
+  it('accepts a fully populated current-version document', () => {
+    expect(validateDoc(goodDoc())).toBeNull()
+  })
+
+  it('accepts an empty document straight from createEmptyDocument', () => {
+    expect(validateDoc(createEmptyDocument('pt-BR') as unknown as Record<string, unknown>)).toBeNull()
+  })
+
+  it('accepts a legacy v1 document once migrated up', () => {
+    const legacy = { schemaVersion: 1, prefs: {}, templates: [], nav: {}, teams: [] }
+    expect(validateDoc(migrate(legacy) as unknown as Record<string, unknown>)).toBeNull()
+  })
+
+  it('rejects a doc with no teams array', () => {
+    const d = goodDoc()
+    delete d.teams
+    expect(validateDoc(d)).toBe('teams')
+  })
+
+  it('rejects a doc whose teams is not an array', () => {
+    const d = goodDoc()
+    d.teams = { '0': {} }
+    expect(validateDoc(d)).toBe('teams')
+  })
+
+  it('rejects a doc with no prefs object', () => {
+    const d = goodDoc()
+    d.prefs = null
+    expect(validateDoc(d)).toBe('prefs')
+  })
+
+  it('rejects a doc whose templates is not an array', () => {
+    const d = goodDoc()
+    d.templates = 'nope'
+    expect(validateDoc(d)).toBe('templates')
+  })
+
+  it('rejects a doc with no nav object', () => {
+    const d = goodDoc()
+    delete d.nav
+    expect(validateDoc(d)).toBe('nav')
+  })
+
+  it('names the team index when a team is not an object', () => {
+    const d = goodDoc()
+    ;(d.teams as unknown[]).push('oops')
+    expect(validateDoc(d)).toBe('teams[1]')
+  })
+
+  it('names the team index when a team id is missing', () => {
+    const d = goodDoc()
+    delete team0(d).id
+    expect(validateDoc(d)).toBe('teams[0].id')
+  })
+
+  it('rejects an empty-string team id', () => {
+    const d = goodDoc()
+    team0(d).id = ''
+    expect(validateDoc(d)).toBe('teams[0].id')
+  })
+
+  it('names the collection when a team collection is not an array', () => {
+    const d = goodDoc()
+    team0(d).actionItems = null
+    expect(validateDoc(d)).toBe('teams[0].actionItems')
+  })
+
+  it('names the entity path when a member has no id', () => {
+    const d = goodDoc()
+    first(team0(d), 'members').id = 42
+    expect(validateDoc(d)).toBe('teams[0].members[0].id')
+  })
+
+  it('names the entity path when an action item is missing a required field', () => {
+    const d = goodDoc()
+    delete first(team0(d), 'actionItems').summary
+    expect(validateDoc(d)).toBe('teams[0].actionItems[0].summary')
+  })
+
+  it('names the entity path when a risk field has the wrong primitive type', () => {
+    const d = goodDoc()
+    first(team0(d), 'risks').closed = 'yes'
+    expect(validateDoc(d)).toBe('teams[0].risks[0].closed')
+  })
+
+  it('rejects dailyNotes that is not an object', () => {
+    const d = goodDoc()
+    team0(d).dailyNotes = []
+    expect(validateDoc(d)).toBe('teams[0].dailyNotes')
+  })
+
+  it('names the date key when a daily note is not a string', () => {
+    const d = goodDoc()
+    const notes = team0(d).dailyNotes as Record<string, unknown>
+    notes['2026-09-14'] = 17
+    expect(validateDoc(d)).toBe('teams[0].dailyNotes["2026-09-14"]')
+  })
+
+  it('tolerates loose enum values a migration may have left behind', () => {
+    const d = goodDoc()
+    const team = team0(d)
+    first(team, 'actionItems').status = 'some-custom-column'
+    first(team, 'risks').plan = 'unknown-plan'
+    expect(validateDoc(d)).toBeNull()
+  })
+
+  it('tolerates an assignee naming nobody real', () => {
+    const d = goodDoc()
+    first(team0(d), 'actionItems').assignee = 'Ghost'
+    expect(validateDoc(d)).toBeNull()
   })
 })

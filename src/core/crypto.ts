@@ -1,8 +1,16 @@
 import type { Doc } from './types'
-import { migrate } from './document'
+import { migrate, validateDoc } from './document'
 
 export class WrongPasswordError extends Error {}
-export class CorruptFileError extends Error {}
+/**
+ * `path` names the offending field when the file was readable but
+ * structurally invalid (see document.ts's `validateDoc`) — e.g.
+ * `teams[0].members[3].id`. Left undefined for the unreadable cases (bad
+ * magic, failed GCM tag, unparseable JSON), where there is no path to name.
+ */
+export class CorruptFileError extends Error {
+  constructor(readonly path?: string) { super(path ? `invalid document at ${path}` : 'corrupt file') }
+}
 
 const MAGIC = [0x54, 0x4d, 0x56, 0x31] // "TMV1"
 const FORMAT_VERSION = 1
@@ -93,7 +101,19 @@ async function decryptRaw(bytes: Uint8Array, password: string): Promise<Record<s
 }
 
 export async function decryptDocument(bytes: Uint8Array, password: string): Promise<Doc> {
-  return migrate(await decryptRaw(bytes, password))
+  return checkShape(migrate(await decryptRaw(bytes, password)))
+}
+
+/**
+ * Gap 4: the last gate before a parsed document reaches the store. Runs on
+ * both load paths so a file that survives decryption/JSON parsing but whose
+ * shape the app can't render is refused by name, rather than loaded and then
+ * written back over the user's real file by the next auto-save.
+ */
+function checkShape(doc: Doc): Doc {
+  const bad = validateDoc(doc)
+  if (bad) throw new CorruptFileError(bad)
+  return doc
 }
 
 /**
@@ -133,7 +153,7 @@ export function parsePlain(bytes: Uint8Array): Doc | null {
   } catch {
     throw new CorruptFileError()
   }
-  return migrate(parsed)
+  return checkShape(migrate(parsed))
 }
 
 /**
