@@ -1768,3 +1768,37 @@ describe('backlink-only foreign changes patch chips in place (no full rebuild)',
     expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).not.toBe(rowBefore)
   })
 })
+
+describe('risk delete undo', () => {
+  function mountRisksWithMentionedRisk(): { store: Store; teamId: string } {
+    const team = makeTeam({
+      risks: [risk({ id: 'r1', title: 'Slip' })],
+      dailyNotes: { '2026-09-10': 'Watch out for @[Slip](risk:r1) this week.' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { store, teamId: team.id }
+  }
+
+  function clickDeleteAndConfirm(title: string): void {
+    clickByTitleOrText(document.body, 'Delete risk')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe(`Delete "${title}"?`)
+    clickByTitleOrText(document.body, 'Delete')
+  }
+
+  it('offers an undo toast that restores the risk and its @-mentions', () => {
+    const { store, teamId } = mountRisksWithMentionedRisk()
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
+
+    clickDeleteAndConfirm('Slip')
+
+    expect(store.doc.teams.find((t) => t.id === teamId)!.risks).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
+  })
+})

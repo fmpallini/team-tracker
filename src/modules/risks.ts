@@ -17,6 +17,8 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
+import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { offerUndoToast } from '../ui/undo-toast'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
@@ -345,14 +347,24 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     })
   }
 
-  function removeRisk(id: string): void {
+  function removeRisk(id: string): UndoOffer | null {
     expandable.collapse(id) // local UI state; must flip before store.update fires the synchronous subscriber below
-    ctx.store.update((d) => {
+    return deleteWithUndo(ctx.store, (d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
+      if (!tm) return null
       const removed = tm.risks.find((r) => r.id === id)
-      unlinkRefsInTeam(tm, 'risk', removed ? new Map([[id, removed.title]]) : new Map())
+      if (!removed) return null
+      // Deep, not a shallow copy of tm.risks: unlinkRefsInTeam below rewrites
+      // @mentions in place on objects this team's other sections own, so a
+      // shallow capture would restore the risk with every mention of it
+      // permanently flattened.
+      const before = structuredClone(tm)
+      unlinkRefsInTeam(tm, 'risk', new Map([[id, removed.title]]))
       tm.risks = tm.risks.filter((r) => r.id !== id)
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, actions,
       // milestones — see refs.ts), not just 'risks'. Team-only scoping is
@@ -391,7 +403,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       title: t(lc, 'risk_delete_title'),
       message: t(lc, 'risk_delete_confirm', { title: r.title }),
       confirmLabel: t(lc, 'risk_delete_btn'),
-      onConfirm: () => removeRisk(r.id),
+      onConfirm: () => {
+        const offer = removeRisk(r.id)
+        offerUndoToast(ctx.store, lc, t(lc, 'risk_deleted_toast', { title: r.title }), offer)
+      },
     })
   }
 
