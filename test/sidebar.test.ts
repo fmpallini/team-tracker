@@ -491,6 +491,47 @@ test('delete team resyncs both panes without landing on the same module twice fo
   expect(cur0.ref.kind).not.toBe(cur1.ref.kind)
 })
 
+describe('team delete undo', () => {
+  test('offers an undo toast that restores both teams and nav exactly', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addTeam(store, 'Beta')
+    const locA: Loc = { teamId: 'Alpha', ref: { kind: 'actions' } }
+    const locB: Loc = { teamId: 'Beta', ref: { kind: 'actions' } }
+    store.update((d) => {
+      d.nav.activeTeamId = 'Alpha' // deleted team must be the active one
+      d.nav.split = true
+      d.nav.teamSplit = { Alpha: true, Beta: false }
+      // Both panes carry a history entry referencing Alpha, so the two-pass
+      // history prune actually has something to reverse on undo.
+      d.nav.panes = [
+        { history: [locB, locA], index: 1 },
+        { history: [locA], index: 0 },
+      ]
+    })
+
+    // Alpha (index 0 of 2) is not the last team — exercises the index
+    // restore, rather than trivially appending back to the end.
+    const teamsBefore = structuredClone(store.doc.teams)
+    const navBefore = structuredClone(store.doc.nav)
+
+    const editBtn = items()[0]!.querySelector('.tt-team-edit-btn') as HTMLButtonElement // Alpha
+    editBtn.click()
+    clickByText('Delete')
+    clickByText('Delete')
+
+    expect(store.doc.teams.map((tm) => tm.id)).toEqual(['Beta'])
+
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams).toEqual(teamsBefore)
+    expect(store.doc.nav).toEqual(navBefore)
+  })
+})
+
 test('drag and drop reorders the teams array', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')

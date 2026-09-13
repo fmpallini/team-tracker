@@ -12,6 +12,8 @@ import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
+import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { offerUndoToast } from './undo-toast'
 import { blockedByModal } from './hotkeys'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
@@ -402,10 +404,34 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     })
   }
 
-  function deleteTeam(teamId: string): void {
-    store.update((d) => {
+  /**
+   * Refreshes what a nav-affecting delete/undo can't get from store.update()
+   * alone (see SidebarActions.renderPanes's doc comment: store.update() never
+   * re-renders panes on its own). Both the forward delete and a later undo
+   * rewrite nav.panes[].history/index, so both paths need this — undo's own
+   * store.update() call happens inside deleteWithUndo's UndoOffer.undo(),
+   * outside this function's control, hence the offer gets wrapped below
+   * rather than this being called from a single call site.
+   */
+  function resyncPanesAfterNavRewrite(): void {
+    invalidateUnsplitStash(store) // deleted/restored team's history may be what an unsplit stash is holding onto
+    actions.renderPanes()
+  }
+
+  function deleteTeam(teamId: string): UndoOffer | null {
+    // Unlike every other delete site, this doesn't need structuredClone(team):
+    // deleteTeam never calls unlinkRefsInTeam (refs never cross teams — see
+    // refs.ts), so the spliced-out Team object is fully detached the moment
+    // splice() returns and holding a plain reference to it costs nothing.
+    // `nav`, however, is rewritten extensively below (activeTeamId, split,
+    // teamSplit, and a two-pass prune of both panes' histories) — that's what
+    // gets structuredClone'd and restored.
+    const offer = deleteWithUndo(store, (d) => {
       const idx = d.teams.findIndex((tm) => tm.id === teamId)
-      if (idx === -1) return
+      if (idx === -1) return null
+      const removedTeam = d.teams[idx]!
+      const navBefore = structuredClone(d.nav)
+
       d.teams.splice(idx, 1)
       delete d.nav.teamSplit[teamId]
       // "Next" team: whichever team now sits at the deleted one's old index
@@ -458,9 +484,34 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         if (r.push) pane.history.push(r.push)
         pane.index = r.loc ? pane.history.indexOf(r.loc) : pane.history.length - 1
       })
+
+      return (d2) => {
+        d2.teams.splice(idx, 0, removedTeam)
+        d2.nav = navBefore
+      }
     })
-    invalidateUnsplitStash(store) // deleted team's history may be what an unsplit stash is holding onto
-    actions.renderPanes()
+    resyncPanesAfterNavRewrite()
+    if (!offer) return null
+    // deleteWithUndo's own store.update() (inside offer.undo()) restores
+    // `nav` correctly for anything driven by store.subscribe()/store.onMutate
+    // (the sidebar's own team-list render included, since the delete/restore
+    // call above passes no scope — "everything changed" per scope.ts, so
+    // subscribe() always fires). But pane content is different: per
+    // SidebarActions.renderPanes's doc comment, store.update() deliberately
+    // never re-renders panes on its own, in either direction — that's why the
+    // forward delete above calls resyncPanesAfterNavRewrite() explicitly right
+    // after its own store.update(). Undo rewrites nav.panes[].history/index
+    // exactly the same way, so it needs the identical follow-up; the offer
+    // deleteWithUndo hands back has no hook for that, so it's wrapped here
+    // rather than changing how deleteWithUndo itself works.
+    return {
+      isAvailable: () => offer.isAvailable(),
+      undo(): boolean {
+        const restored = offer.undo()
+        if (restored) resyncPanesAfterNavRewrite()
+        return restored
+      },
+    }
   }
 
   function render(): void {
@@ -622,7 +673,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
           title: t(locale(), 'team_delete_title'),
           message: t(locale(), 'team_delete_confirm', { name: team.name }),
           confirmLabel: t(locale(), 'team_delete_btn'),
-          onConfirm: () => deleteTeam(team.id),
+          onConfirm: () => {
+            const offer = deleteTeam(team.id)
+            offerUndoToast(store, locale(), t(locale(), 'team_deleted_toast', { name: team.name }), offer)
+          },
         })
       },
     }
