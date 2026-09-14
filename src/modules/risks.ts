@@ -1191,7 +1191,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   )
 
   function updateSortIndicator(): void {
-    sortIndicatorEl.textContent = sortMode === 'desc' ? ' ▾' : sortMode === 'asc' ? ' ▲' : ''
+    // A resting '⇅' hints the column is clickable even before it's ever
+    // been sorted — without it, "sortable" wasn't discoverable short of
+    // stumbling into a hover.
+    sortIndicatorEl.textContent = sortMode === 'desc' ? ' ▾' : sortMode === 'asc' ? ' ▲' : ' ⇅'
     exposureHeaderBtn.classList.toggle('active', sortMode !== 'none')
   }
 
@@ -1247,7 +1250,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       },
       '🗑'
     )
-    closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) }), closed.length > 0 ? clearClosedBtn : null))
+    // The flex row lives on an inner wrapper, not <summary> itself — Chrome
+    // only auto-draws the native disclosure triangle when <summary> keeps
+    // its default `display: list-item`; overriding that to flex silently
+    // drops the marker.
+    const summaryRow = el(
+      'div',
+      { class: 'tt-risks-closed-summary-row' },
+      t(lc, 'risks_closed_heading', { count: String(closed.length) }),
+      closed.length > 0 ? clearClosedBtn : null
+    )
+    closedEl.appendChild(el('summary', {}, summaryRow))
     closed.forEach((r) => {
       closedEl.appendChild(renderClosedRow(r))
       if (expandable.isExpanded(r.id) && r.followup.trim() !== '') {

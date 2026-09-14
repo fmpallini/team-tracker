@@ -1461,6 +1461,8 @@ body { background: var(--bg); color: var(--fg); }
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
 }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
+.tt-risk-sort-indicator { opacity: .45; }
+.tt-risk-header-exposure:hover .tt-risk-sort-indicator, .tt-risk-header-exposure.active .tt-risk-sort-indicator { opacity: 1; }
 /* Monospace "tag" read for the editable data selects — bordered, muted,
    brightening to the accent on hover/focus — echoing the Field Ledger
    mockup's plain bordered tags rather than each browser's native <select>
@@ -1584,14 +1586,16 @@ select option { background: var(--bg); color: var(--fg); }
 }
 
 .tt-risks-closed { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
-.tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; display: flex; align-items: center; }
+.tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; }
+.tt-risks-closed-summary-row { display: flex; align-items: center; }
 .tt-risks-clear-closed-btn { margin-left: auto; flex: none; border: none; background: transparent; font-size: 1rem; opacity: .45; }
 .tt-risks-clear-closed-btn:hover, .tt-risks-clear-closed-btn:focus { opacity: 1; }
 .tt-risks-closed.tt-risks-closed-empty { display: none; }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); box-shadow: none; transform: none; }
-.tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: .85rem; }
+.tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: 1.3rem; line-height: 1; color: inherit; opacity: .55; }
+.tt-risks-closed .tt-risk-reopen-btn:hover, .tt-risks-closed .tt-risk-reopen-btn:focus { opacity: 1; }
 /* The closed row's caret isn't hover-gated like an open row's — a closed
    risk is read-only, so its one interaction (peek the follow-up) should be
    visible at rest. */
