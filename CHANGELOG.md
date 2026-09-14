@@ -4,7 +4,7 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
-## [2.8.2] - 2026-09-13
+## [2.8.2] - 2026-09-14
 
 ### Added
 - **Undo for deletions.** Deleting a task, a milestone, a risk, a person, a board column, or a whole team now shows a notice with an **Undo** button for ten seconds. One click puts the document back exactly as it was — including the `@`-mentions of the deleted item elsewhere in your notes, which a delete flattens to plain text and which used to stay flattened even if you recreated the item by hand. Undoing a person's deletion also returns whoever reported to them to their original place in the org chart, and undoing a team's puts it back in its original position in the sidebar, still selected, with both panes' history intact. The offer disappears the moment you make any other change, and it doesn't survive reloading or closing the file.
