@@ -1250,13 +1250,14 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       },
       '🗑'
     )
-    // The flex row lives on an inner wrapper, not <summary> itself — Chrome
-    // only auto-draws the native disclosure triangle when <summary> keeps
-    // its default `display: list-item`; overriding that to flex silently
-    // drops the marker.
+    // A hand-drawn arrow instead of the native <summary> marker — the
+    // native one is a list-item marker, which forces the flex row holding
+    // the heading text + clear button onto its own line below it in
+    // Chrome. Rotated via the `.tt-risks-closed[open]` selector below.
     const summaryRow = el(
       'div',
       { class: 'tt-risks-closed-summary-row' },
+      el('span', { class: 'tt-risks-closed-arrow' }, '▸'),
       t(lc, 'risks_closed_heading', { count: String(closed.length) }),
       closed.length > 0 ? clearClosedBtn : null
     )
