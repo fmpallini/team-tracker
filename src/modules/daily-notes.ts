@@ -17,6 +17,7 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
+import { actionStatusLabel } from './action-items'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
@@ -93,18 +94,21 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
 
   function buildMarks(): CalendarMarks {
     const team = findTeam(ctx, teamId)
-    const milestonesByDate = new Map<string, string[]>()
+    const milestonesByDate = new Map<string, { label: string; done: boolean }[]>()
     for (const m of team?.milestones ?? []) {
+      const entry = { label: `${m.title} (${t(lc, m.done ? 'milestone_done_title' : 'milestone_pending_title')})`, done: m.done }
       const list = milestonesByDate.get(m.date)
-      if (list) list.push(m.title)
-      else milestonesByDate.set(m.date, [m.title])
+      if (list) list.push(entry)
+      else milestonesByDate.set(m.date, [entry])
     }
-    const actionItemsByDate = new Map<string, string[]>()
+    const actionItemsByDate = new Map<string, { label: string; resolved: boolean }[]>()
     for (const a of team?.actionItems ?? []) {
       if (a.dueDate === null) continue
+      const resolved = a.status === 'done' || a.status === 'cancelled'
+      const entry = { label: `${a.summary} (${actionStatusLabel(lc, a.status, team)})`, resolved }
       const list = actionItemsByDate.get(a.dueDate)
-      if (list) list.push(a.summary)
-      else actionItemsByDate.set(a.dueDate, [a.summary])
+      if (list) list.push(entry)
+      else actionItemsByDate.set(a.dueDate, [entry])
     }
     const dailyNotes = team?.dailyNotes ?? {}
     return {
@@ -112,10 +116,10 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
         const note = dailyNotes[d]
         return typeof note === 'string' && note.trim() !== ''
       },
-      milestones(d: string): string[] {
+      milestones(d: string) {
         return milestonesByDate.get(d) ?? []
       },
-      actionItems(d: string): string[] {
+      actionItems(d: string) {
         return actionItemsByDate.get(d) ?? []
       },
     }

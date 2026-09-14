@@ -78,10 +78,10 @@ describe('createCalendar marks', () => {
     expect(dayButtonFor(root, 11).classList.contains('tt-calendar-day-has-note')).toBe(false)
   })
 
-  test('milestones(day) renders a 🚩 flag with a title of the joined milestone titles', () => {
+  test('milestones(day) renders a 🚩 flag (any pending) with a title of the joined labels', () => {
     const marks: CalendarMarks = {
       hasNote: () => false,
-      milestones: (d) => (d === '2026-07-20' ? ['Launch', 'Freeze'] : []),
+      milestones: (d) => (d === '2026-07-20' ? [{ label: 'Launch (Pending)', done: false }, { label: 'Freeze (Done)', done: true }] : []),
       actionItems: () => [],
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
@@ -89,23 +89,45 @@ describe('createCalendar marks', () => {
     const flag = dayButtonFor(root, 20).querySelector('.tt-calendar-flag')
     expect(flag).not.toBeNull()
     expect(flag!.textContent).toBe('🚩')
-    expect(flag!.getAttribute('title')).toBe('Launch, Freeze')
+    expect(flag!.getAttribute('title')).toBe('Launch (Pending), Freeze (Done)')
     expect(dayButtonFor(root, 21).querySelector('.tt-calendar-flag')).toBeNull()
   })
 
-  test('actionItems(day) renders a ✅ check with a title of the joined summaries', () => {
+  test('milestones(day) renders 🏁 once every milestone that day is done', () => {
+    const marks: CalendarMarks = {
+      hasNote: () => false,
+      milestones: (d) => (d === '2026-07-20' ? [{ label: 'Freeze (Done)', done: true }] : []),
+      actionItems: () => [],
+    }
+    const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
+
+    expect(dayButtonFor(root, 20).querySelector('.tt-calendar-flag')!.textContent).toBe('🏁')
+  })
+
+  test('actionItems(day) renders a ⏳ check (any not resolved) with a title of the joined labels', () => {
     const marks: CalendarMarks = {
       hasNote: () => false,
       milestones: () => [],
-      actionItems: (d) => (d === '2026-07-20' ? ['Ship report', 'Review budget'] : []),
+      actionItems: (d) => (d === '2026-07-20' ? [{ label: 'Ship report (To Do)', resolved: false }, { label: 'Review budget (Done)', resolved: true }] : []),
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
     const check = dayButtonFor(root, 20).querySelector('.tt-calendar-check')
     expect(check).not.toBeNull()
-    expect(check!.textContent).toBe('✅')
-    expect(check!.getAttribute('title')).toBe('Ship report, Review budget')
+    expect(check!.textContent).toBe('⏳')
+    expect(check!.getAttribute('title')).toBe('Ship report (To Do), Review budget (Done)')
     expect(dayButtonFor(root, 21).querySelector('.tt-calendar-check')).toBeNull()
+  })
+
+  test('actionItems(day) renders ✅ once every action item that day is done or cancelled', () => {
+    const marks: CalendarMarks = {
+      hasNote: () => false,
+      milestones: () => [],
+      actionItems: (d) => (d === '2026-07-20' ? [{ label: 'Ship report (Done)', resolved: true }, { label: 'Old idea (Cancelled)', resolved: true }] : []),
+    }
+    const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
+
+    expect(dayButtonFor(root, 20).querySelector('.tt-calendar-check')!.textContent).toBe('✅')
   })
 })
 

@@ -8,7 +8,7 @@
 // store update while it's focused defers the rebuild to the input's next
 // blur instead of wiping the in-progress edit.
 import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } from '../core/types'
-import { t, todayIso, formatDate } from '../core/i18n'
+import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
@@ -46,6 +46,14 @@ export function itemsByStatus(items: ActionItem[], status: ActionItem['status'])
 // The overdue rule lives in core/due.ts (shared with the sidebar due badge);
 // re-exported here so board code and tests keep one import site.
 export { isOverdue }
+
+/** Human-readable label for a status value: the three fixed columns, or a team's own custom middle column by id. Pure (locale/team passed in) so callers outside this module's own render closure — src/modules/daily-notes.ts's calendar tooltips — can use the exact same labels without hand-rolling the fixed-status branch again. */
+export function actionStatusLabel(locale: Locale, status: string, team: Team | undefined): string {
+  if (status === 'todo') return t(locale, 'kanban_status_todo')
+  if (status === 'done') return t(locale, 'kanban_status_done')
+  if (status === 'cancelled') return t(locale, 'kanban_status_cancelled')
+  return team?.actionColumns?.find((c) => c.id === status)?.name ?? ''
+}
 
 /**
  * How the assignee field's raw string should render: a live reference
@@ -1046,10 +1054,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   // declared skeleton interface — first used by Task 7's delete-column
   // landing-picker labels (openDeleteColumnModal, above).
   function statusLabel(status: string, tm: Team | undefined): string {
-    if (status === 'todo') return t(lc, 'kanban_status_todo')
-    if (status === 'done') return t(lc, 'kanban_status_done')
-    if (status === 'cancelled') return t(lc, 'kanban_status_cancelled')
-    return tm?.actionColumns?.find((c) => c.id === status)?.name ?? ''
+    return actionStatusLabel(lc, status, tm)
   }
 
   /** Column ids in board order: fixed 'todo', the team's custom columns sorted by order, fixed 'done'/'cancelled'. */

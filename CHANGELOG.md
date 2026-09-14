@@ -9,6 +9,9 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ### Added
 - A closed risk can now be deleted (with the same confirmation and undo as an open one) and right-clicked for the same duplicate/copy/move menu, instead of only being reopenable. The closed-risks section also gains a "delete all" button to clear every closed risk in one action, with a single undo covering the whole batch.
 
+### Changed
+- The daily-notes calendar's milestone and action-item icons now show status, not just names, on hover — and flip to a "done" look (🏁 / ✅) once every item they represent on that day is finished (or cancelled), instead of always showing the same icon regardless of progress.
+
 ### Fixed
 - Deleting a person, task, milestone, or risk that was `@`-mentioned in a daily note or person's notes left the mention looking like a live, clickable link in any other pane that had that note open, until the note was reopened. It now flattens to plain text immediately, matching what already happened in the pane doing the deleting; undoing the delete relinks it back to a live mention there too.
 
