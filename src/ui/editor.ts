@@ -23,9 +23,12 @@ export interface Editor {
    * in this same editor. Chips are `contenteditable="false"` leaves, so a
    * live caret/selection can never sit inside one; patching their
    * `textContent` cannot perturb it. No-op if `hooks.resolveRefLabel` was
-   * never supplied, or (per-chip) if it returns null for a given ref — same
-   * "leave the frozen label alone" fallback setMd's initial parse already
-   * uses.
+   * never supplied. A chip whose target no longer resolves (the mentioned
+   * item was just deleted, in another pane that isn't due for a full
+   * rebuild) is flattened in place to the same plain-text marker a fresh
+   * parse would show; a later undo that makes the id resolvable again
+   * relinks it back to a live chip. See the function body for why both
+   * directions are needed.
    */
   refreshRefLabels(): void
   focus(): void
@@ -2246,9 +2249,50 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const target = parseRef(chip.dataset.ref ?? '')
       if (!target) return
       const resolved = resolve(target)
-      if (resolved === null) return
+      if (resolved === null) {
+        // The mentioned item was just deleted elsewhere. The store's own
+        // markdown already got flattened to a plain `~Title~` marker (see
+        // core/refs.ts's unlinkRefsInTeam) the moment that delete ran, but
+        // *this* editor's live DOM is never reparsed from it — only a fresh
+        // setMd() would show that, and nothing here triggers one (that would
+        // blow away whatever the user is doing in this editor right now).
+        // Mirror the same flatten directly on the chip instead of leaving it
+        // a dead, still-clickable link: swap it for the exact span
+        // mdToHtml's own single-tilde marker produces (markdown.ts's
+        // applyMarks/`tt-unlinked-ref`). `data-ref` is kept on the span —
+        // mdToHtml never writes that attribute there, so it changes nothing
+        // about how the note serializes/reparses — purely so the relink pass
+        // below can find its way back to a live chip if a delete's undo (or
+        // any other change) makes the id resolvable again; without it, an
+        // undo would restore the document but leave this DOM stuck flattened
+        // forever, since nothing else ever revisits a plain span.
+        const span = document.createElement('span')
+        span.className = 'tt-unlinked-ref'
+        span.dataset.ref = chip.dataset.ref!
+        span.textContent = chip.textContent!.replace(/^@/, '')
+        chip.replaceWith(span)
+        return
+      }
       const label = `@${resolved}`
       if (chip.textContent !== label) chip.textContent = label
+    })
+    // Reverse of the above: a span this same function flattened earlier,
+    // whose target is resolvable again (the delete that caused it was just
+    // undone), gets relinked back into a real chip. Only spans carrying
+    // `data-ref` are ours to touch — a genuine, permanently-unlinked marker
+    // (or literal `~text~` the user typed) never has one and is left alone.
+    editorEl.querySelectorAll<HTMLElement>('span.tt-unlinked-ref[data-ref]').forEach((span) => {
+      const target = parseRef(span.dataset.ref ?? '')
+      if (!target) return
+      const resolved = resolve(target)
+      if (resolved === null) return
+      const chip = document.createElement('a')
+      chip.className = 'ref'
+      chip.dataset.ref = span.dataset.ref!
+      chip.contentEditable = 'false'
+      chip.title = t(locale, 'editor_ref_hint')
+      chip.textContent = `@${resolved}`
+      span.replaceWith(chip)
     })
   }
 

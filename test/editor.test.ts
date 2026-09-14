@@ -3369,12 +3369,45 @@ describe('refreshRefLabels', () => {
     editor.destroy()
   })
 
-  test('leaves the chip label untouched when the resolver returns null (dangling/unresolvable ref)', () => {
+  test('flattens the chip to the same plain unlinked-ref marker a fresh parse would show, when the resolver returns null (target deleted elsewhere)', () => {
     const editor = createEditor({ ...makeHooks(), resolveRefLabel: () => null }, 'pt-BR')
     editor.setMd('see @[Frozen Label](action:gone)')
     editor.refreshRefLabels()
+    expect(editor.root.querySelector('a.ref')).toBeNull()
+    const span = editor.root.querySelector('span.tt-unlinked-ref') as HTMLElement
+    expect(span.textContent).toBe('Frozen Label')
+    editor.destroy()
+  })
+
+  test('relinks a flattened chip back into a live one once its target resolves again (e.g. an undo)', () => {
+    let deleted = true
+    const editor = createEditor(
+      { ...makeHooks(), resolveRefLabel: (target) => (deleted ? null : (target.kind === 'action' ? 'Restored Title' : null)) },
+      'pt-BR'
+    )
+    editor.setMd('see @[Frozen Label](action:a1)')
+    editor.refreshRefLabels() // flattens it, same as the delete-elsewhere case above
+    expect(editor.root.querySelector('a.ref')).toBeNull()
+
+    deleted = false // simulates undoing the delete
+    editor.refreshRefLabels()
+
     const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
-    expect(chip.textContent).toBe('@Frozen Label')
+    expect(chip).not.toBeNull()
+    expect(chip.textContent).toBe('@Restored Title')
+    expect(chip.dataset.ref).toBe('action:a1')
+    expect(editor.root.querySelector('span.tt-unlinked-ref')).toBeNull()
+    editor.destroy()
+  })
+
+  test('leaves a genuine markdown-authored ~marker~ (no data-ref) alone — never mistakes it for one of its own flattened chips', () => {
+    const editor = createEditor({ ...makeHooks(), resolveRefLabel: () => 'Whatever' }, 'pt-BR')
+    editor.setMd('this ~was never a ref~ just text')
+    const span = editor.root.querySelector('span.tt-unlinked-ref') as HTMLElement
+    expect(span.dataset.ref).toBeUndefined()
+    editor.refreshRefLabels()
+    expect(editor.root.querySelector('span.tt-unlinked-ref')!.textContent).toBe('was never a ref')
+    expect(editor.root.querySelector('a.ref')).toBeNull()
     editor.destroy()
   })
 
