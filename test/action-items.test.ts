@@ -1003,6 +1003,30 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
+  test('leaving summary blank and closing discards the draft without paying for a whole-team clone', () => {
+    // Fires from the card modal's onClose whenever a "+ Card" draft was
+    // abandoned blank — on a team with years of daily notes, this used to
+    // cost a multi-MB structuredClone for a delete with no confirm dialog
+    // and no undo offer, purely thrown away.
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    clickByTitleOrText(container, '+ Card')
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      clickByTitleOrText(document.body, 'Close')
+
+      expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
+  })
+
   test('a new card with notes but no name will not close — the modal stays, the name field takes focus, a hint shows', () => {
     vi.useFakeTimers()
     const team = makeTeam()
@@ -1214,6 +1238,28 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Delete')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('deleting a card whose summary is blank does not pay for a whole-team clone', () => {
+    // Same silent, no-confirm/no-undo path as the abandoned-draft case above,
+    // reached this time via requestDelete's blank-summary branch.
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      clickByTitleOrText(document.body, 'Delete')
+
+      expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
   })
 
   test('renaming a milestone mentioned in the open modal\'s notes live-updates its @mention chip', () => {
@@ -2274,5 +2320,113 @@ describe('backlink-only foreign changes patch chips in place (no full rebuild)',
     }, { teamId: 'T1', sections: ['people'] })
 
     expect(container.querySelector('[data-item-id="i1"].tt-kanban-card')).not.toBe(cardBefore)
+  })
+})
+
+describe('renderActionItems — delete undo', () => {
+  test('deleting a card offers an undo that restores it and its @-mentions', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a1', summary: 'Ship it' })],
+      dailyNotes: { '2026-09-10': 'Reminder: @[Ship it](action:a1) today.' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Ship it"?')
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+
+  test('clearing a zone offers an undo that restores every card with its original status and order', () => {
+    const team = makeTeam({
+      actionItems: [
+        item({ id: 'd1', summary: 'Ship it', status: 'done', order: 0 }),
+        item({ id: 'd2', summary: 'Cancel it', status: 'done', order: 1 }),
+        // A survivor (different zone, untouched by the clear) whose notes
+        // mention both cleared cards — a swept field other than dailyNotes
+        // (already covered by the single-card-delete test above), so the
+        // deep-equal below only passes if the unlink rewrite of *this*
+        // object was actually reversed, not just the array membership.
+        item({ id: 't1', summary: 'Survivor', status: 'todo', order: 0, notes: 'See @[Ship it](action:d1) and @[Cancel it](action:d2)' }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
+    clickByTitleOrText(document.body, 'Delete all')
+
+    expect(store.doc.teams[0]!.actionItems.filter((i) => i.status === 'done')).toHaveLength(0)
+    expect(store.doc.teams[0]!.actionItems.find((i) => i.id === 't1')!.notes).toBe('See ~Ship it~ and ~Cancel it~')
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+})
+
+describe('renderActionItems — column delete undo', () => {
+  function deleteColumnBtn(container: HTMLElement, index = 0): HTMLButtonElement {
+    return Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-kanban-col-delete-btn'))[index]!
+  }
+
+  test('deleting an empty column offers an undo that restores its name and order', () => {
+    const team = makeTeam()
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    deleteColumnBtn(container).click()
+
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+
+  test('deleting a non-empty column offers an undo that restores it and its cards\' original status and order', () => {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a', status: 'wip', order: 0 }), item({ id: 'b', status: 'wip', order: 1 })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
+
+    deleteColumnBtn(container).click()
+    const select = document.querySelector('.tt-kanban-column-landing-select') as HTMLSelectElement
+    select.value = 'todo'
+    // Scoped to the dialog, not document.body — see the identical comment in
+    // the "custom columns: delete" describe above.
+    clickByTitleOrText(document.querySelector('.tt-modal-dialog')!, 'Delete column')
+
+    const migrated = store.doc.teams[0]!.actionItems
+    expect(migrated.every((i) => i.status === 'todo')).toBe(true)
+    expect(store.doc.teams[0]!.actionColumns).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
   })
 })

@@ -71,3 +71,51 @@ test('renders in pt-BR', () => {
   const labels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
   expect(labels).toEqual(['Recarregar', 'Sobrescrever'])
 })
+
+test('offers a non-destructive fork as the first option', () => {
+  showConflictModal({
+    locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}),
+    onFork: vi.fn(async () => true),
+  })
+  const labels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
+  expect(labels).toEqual(['Save my copy as a new file…', 'Reload', 'Overwrite'])
+})
+
+test('fork calls onFork without any confirmation step and closes the modal', async () => {
+  const onFork = vi.fn(async () => true)
+  const onReload = vi.fn(async () => {})
+  const onOverwrite = vi.fn(async () => {})
+  showConflictModal({ locale: 'en-US', onReload, onOverwrite, onFork })
+
+  clickByText('Save my copy as a new file…')
+  await Promise.resolve()
+
+  expect(onFork).toHaveBeenCalledTimes(1)
+  expect(onReload).not.toHaveBeenCalled()
+  expect(onOverwrite).not.toHaveBeenCalled()
+  expect(overlays()).toHaveLength(0)
+})
+
+test('a cancelled fork picker reopens the conflict modal so no choice is lost', async () => {
+  const onFork = vi.fn(async () => false)
+  showConflictModal({
+    locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}), onFork,
+  })
+
+  clickByText('Save my copy as a new file…')
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(onFork).toHaveBeenCalledTimes(1)
+  expect(overlays()).toHaveLength(1)
+  const labels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
+  expect(labels).toEqual(['Save my copy as a new file…', 'Reload', 'Overwrite'])
+})
+
+test('renders the fork option in pt-BR', () => {
+  showConflictModal({
+    locale: 'pt-BR', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}),
+    onFork: vi.fn(async () => true),
+  })
+  const labels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
+  expect(labels).toEqual(['Salvar minha cópia como novo arquivo…', 'Recarregar', 'Sobrescrever'])
+})

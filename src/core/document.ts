@@ -201,3 +201,126 @@ export function migrateTeams<T>(teams: T[], fromVersion: number): T[] {
   const result = migrate({ schemaVersion: fromVersion, teams }) as unknown as { teams: T[] }
   return result.teams
 }
+
+/**
+ * Gap 4: structural validation of a document that has already been through
+ * `migrate()`. `migrate()` itself only checks that `schemaVersion` is a
+ * number and then casts — so a truncated or hand-edited plain file (the
+ * `TMV-PLAIN` format is deliberately human-readable, see crypto.ts) could
+ * load as a `Doc` that lies about its own shape. The app would then render
+ * against it, and the next auto-save would write that gutted doc straight
+ * back over the user's real file. This is the check that stops that.
+ *
+ * Returns the dotted path of the FIRST violation (`teams[0].members[3].id`)
+ * or null when the shape is sound. Callers — crypto.ts's `decryptDocument`
+ * and `parsePlain`, the only two Doc-producing load paths — turn a non-null
+ * result into a `CorruptFileError` carrying that path, so the user gets an
+ * actionable message instead of a crash.
+ *
+ * Deliberately NOT called from `migrate()`'s tail: `migrateTeams()` feeds
+ * `migrate()` a shim doc with no prefs/nav/templates (see its comment), and
+ * validating there would break team import.
+ *
+ * Structure only — never business rules. Enum membership (`status`, `plan`,
+ * `color`, `palette`) and referential integrity (`assignee` naming a real
+ * person) are NOT checked: thirteen migrations have left real files loose in
+ * exactly those places, and refusing on them would reject documents that
+ * open fine today. The bar here is "can the app render this without
+ * crashing", not "is every value canonical".
+ *
+ * `prefs`, `nav`, `templates` and `teams` are all required rather than
+ * tolerated-when-absent: no `MIGRATIONS` step ever creates one from scratch
+ * (they only patch what's already there), so a document missing one has
+ * never been openable in any released version — the shell reads all four
+ * unguarded. Refusing it by name beats crashing halfway through a render.
+ */
+type FieldType = 'string' | 'id' | 'number' | 'boolean' | 'string|null' | 'any'
+
+const PERSON_FIELDS: Record<string, FieldType> = {
+  id: 'id', name: 'string', role: 'string', parentId: 'string|null', order: 'number', notes: 'string',
+}
+const ACTION_ITEM_FIELDS: Record<string, FieldType> = {
+  id: 'id', summary: 'string', notes: 'string', status: 'string',
+  dueDate: 'string|null', assignee: 'string', color: 'string|null', order: 'number',
+}
+const MILESTONE_FIELDS: Record<string, FieldType> = {
+  id: 'id', date: 'string', title: 'string', done: 'boolean', followup: 'string',
+}
+const RISK_FIELDS: Record<string, FieldType> = {
+  id: 'id', title: 'string', chance: 'number', impact: 'number',
+  plan: 'string', followup: 'string', order: 'number', closed: 'boolean',
+}
+const ACTION_COLUMN_FIELDS: Record<string, FieldType> = {
+  id: 'id', name: 'string', order: 'number',
+}
+const TEMPLATE_FIELDS: Record<string, FieldType> = {
+  id: 'id', name: 'string', scope: 'string', body: 'string',
+}
+
+const TEAM_COLLECTIONS: [string, Record<string, FieldType>][] = [
+  ['stakeholders', PERSON_FIELDS], ['members', PERSON_FIELDS],
+  ['actionItems', ACTION_ITEM_FIELDS], ['milestones', MILESTONE_FIELDS], ['risks', RISK_FIELDS],
+]
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function fieldOk(value: unknown, type: FieldType): boolean {
+  switch (type) {
+    case 'id': return typeof value === 'string' && value !== ''
+    case 'string': return typeof value === 'string'
+    case 'number': return typeof value === 'number' && Number.isFinite(value)
+    case 'boolean': return typeof value === 'boolean'
+    case 'string|null': return value === null || typeof value === 'string'
+    case 'any': return true
+  }
+}
+
+/** Validates one array of same-shaped entities, returning the first bad path. */
+function validateEntities(arr: unknown, spec: Record<string, FieldType>, path: string): string | null {
+  if (!Array.isArray(arr)) return path
+  for (let i = 0; i < arr.length; i++) {
+    const entity: unknown = arr[i]
+    if (!isPlainObject(entity)) return `${path}[${i}]`
+    for (const [field, type] of Object.entries(spec)) {
+      if (!fieldOk(entity[field], type)) return `${path}[${i}].${field}`
+    }
+  }
+  return null
+}
+
+export function validateDoc(raw: unknown): string | null {
+  if (!isPlainObject(raw)) return 'document'
+  if (!isPlainObject(raw.prefs)) return 'prefs'
+  if (!isPlainObject(raw.nav)) return 'nav'
+
+  const templatesBad = validateEntities(raw.templates, TEMPLATE_FIELDS, 'templates')
+  if (templatesBad) return templatesBad
+
+  if (!Array.isArray(raw.teams)) return 'teams'
+  for (let i = 0; i < raw.teams.length; i++) {
+    const team: unknown = raw.teams[i]
+    const at = `teams[${i}]`
+    if (!isPlainObject(team)) return at
+    if (!fieldOk(team.id, 'id')) return `${at}.id`
+    if (!fieldOk(team.name, 'string')) return `${at}.name`
+
+    for (const [key, spec] of TEAM_COLLECTIONS) {
+      const bad = validateEntities(team[key], spec, `${at}.${key}`)
+      if (bad) return bad
+    }
+
+    // Optional since schema 12 — validated only when the team carries it.
+    if (team.actionColumns !== undefined) {
+      const bad = validateEntities(team.actionColumns, ACTION_COLUMN_FIELDS, `${at}.actionColumns`)
+      if (bad) return bad
+    }
+
+    if (!isPlainObject(team.dailyNotes)) return `${at}.dailyNotes`
+    for (const [date, body] of Object.entries(team.dailyNotes)) {
+      if (typeof body !== 'string') return `${at}.dailyNotes["${date}"]`
+    }
+  }
+  return null
+}

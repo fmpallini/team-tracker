@@ -26,8 +26,9 @@ import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
-import { forceWrite, readCurrent, sameEntry } from './core/fs'
-import { toast, showErrorModal, dismissModelessModals } from './ui/modal'
+import { forceWrite, readCurrent, sameEntry, pickCreate } from './core/fs'
+import { toast, showErrorModal, dismissModelessModals, dismissToast } from './ui/modal'
+import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController, backupHealthPillState } from './core/backup-controller'
@@ -115,6 +116,12 @@ async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose
   closeAnyContextMenu()
   closeAnyBacklinksPanel()
   resetSessionKey()
+  // A still-showing undo toast (src/ui/undo-toast.ts) holds an UndoOffer
+  // whose restore closure captured a structuredClone of a team from THIS
+  // document — exactly the retention class panes.ts's dispose() doc comment
+  // exists to prevent. Left alone, it would sit over the start screen for up
+  // to ten more seconds, bound to the store/Doc just discarded above.
+  dismissToast(UNDO_TOAST_KEY)
 }
 
 function detectBrowserLocale(): Locale {
@@ -269,6 +276,62 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
             conflictOpen = false
           }
         },
+        // Gap 3: the non-destructive way out of a conflict. Both other
+        // options throw away one side of it — reload discards the in-memory
+        // edits, overwrite discards whatever the other writer put in the
+        // file. Forking keeps both: the in-memory document goes to a new
+        // file the user picks, and the original is left exactly as the
+        // other writer left it.
+        //
+        // Guarded on `session.handle`: without one there is no save picker
+        // and no `writeFile()` either, so a conflict can't arise in the
+        // first place (downloadFallback never throws ExternalChangeError).
+        // Omitting the callback drops the button rather than showing one
+        // that can't work.
+        onFork: session.handle
+          ? async () => {
+              const stem = session.name.replace(/\.tmv$/i, '')
+              const forkSession = await pickCreate(`${stem} (copy).tmv`)
+              if (!forkSession) return false
+
+              // Before serializing, not after: `backupHandleId` travels
+              // inside the .tmv itself, so a fork that kept it would mirror
+              // its own saves into the ORIGINAL file's .bck and quietly
+              // overwrite the backups belonging to a document it just
+              // diverged from. The user re-picks a backup target for the
+              // fork in prefs.
+              store.update((d) => {
+                d.prefs.dailyBackupEnabled = false
+                d.prefs.backupHandleId = null
+              })
+
+              const currentPw = app ? app.password : password
+              const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
+              await forceWrite(forkSession, bytes)
+              // The document's content is now persisted — to the fork rather
+              // than to `session`, but persisted. Clearing dirty here is what
+              // stops `teardownApp()` (reached via openDocument below) from
+              // trying one last save into the ORIGINAL handle and hitting the
+              // very ExternalChangeError this fork exists to resolve.
+              store.markSaved()
+
+              // Re-open rather than mutate `session` in place. `session` is
+              // a shared mutable object, but tab-lock.ts captures
+              // `session.name` ONCE into its lock name and BroadcastChannel
+              // name — mutating it would leave the fork holding the original
+              // file's write lock, i.e. two documents contending for one
+              // lock. Going back through openDocument() gives the fork a
+              // correctly-keyed tab lock, a fresh save controller and
+              // auto-save interval, a fresh backup controller, the right
+              // title and a clean save state, with no new lifecycle code:
+              // onDocumentOpened() already tears the previous app down.
+              // (pickCreate has also repointed the 'lastHandle' IndexedDB
+              // key at the fork, so "reopen last" follows it.)
+              conflictOpen = false
+              openDocument(forkSession, store.doc, currentPw, null)
+              return true
+            }
+          : undefined,
         onOverwrite: async () => {
           try {
             const currentPw = app ? app.password : password

@@ -448,6 +448,43 @@ describe('renderPeopleTree', () => {
   })
 })
 
+describe('person delete undo', () => {
+  function mountTeamWithMentionedParent(): { store: Store; teamId: string; container: HTMLElement } {
+    const team = makeTeam({
+      members: [
+        person({ id: 'parent', name: 'Ann', order: 0 }),
+        person({ id: 'child1', name: 'Child1', parentId: 'parent', order: 0 }),
+        person({ id: 'child2', name: 'Child2', parentId: 'parent', order: 1 }),
+        person({ id: 'sib', name: 'Sib', order: 1 }),
+      ],
+      generalNotes: 'cc @[Ann](person:parent) about this',
+    })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    return { store, teamId: team.id, container }
+  }
+
+  test('offers an undo toast that restores the deleted person, their reparented children, renumbered siblings, and the unlinked mention', () => {
+    const { store, teamId, container } = mountTeamWithMentionedParent()
+    const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
+
+    const parentBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ann')!
+    clickByTitleOrText(parentBox, 'Delete person')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete Ann? Their reports will be promoted.')
+    clickByTitleOrText(document.body, 'Delete')
+
+    const afterDelete = store.doc.teams.find((t) => t.id === teamId)!
+    expect(afterDelete.members.map((p) => p.id)).not.toContain('parent')
+
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
+  })
+})
+
 test('deleting a person unlinks every reference to them across the team\'s notes', () => {
   const doc = createEmptyDocument('pt-BR')
   doc.teams.push({

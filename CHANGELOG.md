@@ -4,6 +4,23 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.8.2] - 2026-09-14
+
+### Added
+- **Undo for deletions.** Deleting a task, a milestone, a risk, a person, a board column, or a whole team now shows a notice with an **Undo** button for ten seconds. One click puts the document back exactly as it was — including the `@`-mentions of the deleted item elsewhere in your notes, which a delete flattens to plain text and which used to stay flattened even if you recreated the item by hand. Undoing a person's deletion also returns whoever reported to them to their original place in the org chart, and undoing a team's puts it back in its original position in the sidebar, still selected, with both panes' history intact. The offer disappears the moment you make any other change, and it doesn't survive reloading or closing the file.
+- A closed risk can now be deleted (with the same confirmation and undo as an open one) and right-clicked for the same duplicate/copy/move menu, instead of only being reopenable. The closed-risks section also gains a "delete all" button to clear every closed risk in one action, with a single undo covering the whole batch.
+- Notices that carry an action now stay on screen for ten seconds instead of four, so there's time to notice a mistake and act on it.
+- When your file has been changed by something else while you had it open, the conflict prompt now offers a third option alongside reloading and overwriting: **save your copy as a new file**. It writes what you have in front of you to a new file you pick, leaves the file on disk untouched, and moves you onto the copy — so you no longer have to choose between losing your edits and losing whatever the other change was. Automatic backup is switched off on the copy, so it doesn't start writing over the original's backup.
+
+### Changed
+- The daily-notes calendar's milestone and action-item icons now show status, not just names, on hover — and flip to a "done" look (🏁 / ✅) once every item they represent on that day is finished (or cancelled), instead of always showing the same icon regardless of progress.
+- Data cleanup (Settings → Data) now states in a highlighted block, right in its confirmation, that it offers no undo. It's deliberately a permanent purge, and that's easy to misread now that individual deletes can be undone.
+- Deleting a template (Settings → Templates) likewise warns that it can't be brought back, and its confirm button is now styled as a destructive action like every other delete in the app.
+
+### Fixed
+- Deleting a person, task, milestone, or risk that was `@`-mentioned in a daily note or person's notes left the mention looking like a live, clickable link in any other pane that had that note open, until the note was reopened. It now flattens to plain text immediately, matching what already happened in the pane doing the deleting; undoing the delete relinks it back to a live mention there too.
+- A `.tmv` file whose contents are structurally broken — a missing or wrong-typed field, whatever the cause — is now refused when you open it, naming the exact field that's wrong, instead of loading into an app that half works and may write the damage back out on the next save.
+
 ## [2.8.1] - 2026-09-12
 
 ### Added

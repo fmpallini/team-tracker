@@ -313,3 +313,46 @@ test('peekPlainSchemaVersion returns null for a plain file with corrupt JSON', (
   const bytes = new TextEncoder().encode('TMV-PLAIN\n{not json')
   expect(peekPlainSchemaVersion(bytes)).toBeNull()
 })
+
+describe('shape validation on load (gap 4)', () => {
+  /** A doc whose teams array holds a member with a non-string id. */
+  function gutted(): Record<string, unknown> {
+    const d = createEmptyDocument('en-US') as unknown as Record<string, unknown>
+    ;(d.teams as unknown[]).push({
+      id: 't1', name: 'Alpha', emoji: '🙂',
+      stakeholders: [], members: [{ id: null, name: 'Ann', role: '', parentId: null, order: 0, notes: '' }],
+      actionItems: [], milestones: [], risks: [], dailyNotes: {},
+    })
+    return d
+  }
+
+  it('parsePlain refuses a structurally invalid plain file, naming the path', () => {
+    const bytes = new TextEncoder().encode('TMV-PLAIN\n' + JSON.stringify(gutted()))
+    let caught: unknown
+    try { parsePlain(bytes) } catch (e) { caught = e }
+    expect(caught).toBeInstanceOf(CorruptFileError)
+    expect((caught as CorruptFileError).path).toBe('teams[0].members[0].id')
+  })
+
+  it('decryptDocument refuses a structurally invalid encrypted file', async () => {
+    resetSessionKey()
+    const bytes = await encryptDocument(gutted() as never, 'pw')
+    resetSessionKey()
+    await expect(decryptDocument(bytes, 'pw')).rejects.toBeInstanceOf(CorruptFileError)
+  })
+
+  it('still round-trips a valid document unchanged', async () => {
+    resetSessionKey()
+    const doc = createEmptyDocument('en-US')
+    const bytes = await encryptDocument(doc, 'pw')
+    resetSessionKey()
+    await expect(decryptDocument(bytes, 'pw')).resolves.toEqual(doc)
+  })
+
+  it('leaves path undefined on a genuinely unreadable file', async () => {
+    let caught: unknown
+    try { await decryptDocument(new Uint8Array(100), 'pw') } catch (e) { caught = e }
+    expect(caught).toBeInstanceOf(CorruptFileError)
+    expect((caught as CorruptFileError).path).toBeUndefined()
+  })
+})

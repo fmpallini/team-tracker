@@ -244,11 +244,21 @@ export function showErrorModal(locale: Locale, message: string): ModalHandle {
 export function confirmDelete(locale: Locale, opts: {
   title: string
   message: string
+  /**
+   * An extra, visually louder line below the message, for a delete the user
+   * cannot take back. Every other delete in the app offers an undo toast, so a
+   * site that does not must say so here rather than rely on the user noticing
+   * the absence of a button.
+   */
+  warning?: string
   confirmLabel: string
   variant?: 'danger' | 'primary'
   onConfirm: () => void
 }): void {
-  const body = el('p', { class: 'tt-modal-message' }, opts.message)
+  const message = el('p', { class: 'tt-modal-message' }, opts.message)
+  const body = opts.warning
+    ? el('div', {}, message, el('p', { class: 'tt-modal-warning' }, opts.warning))
+    : message
   const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,
@@ -394,6 +404,14 @@ interface ToastOptions {
    * a single, updating toast instead of stacking one per step.
    */
   key?: string
+  /**
+   * Milliseconds on screen before auto-dismiss; defaults to
+   * `DEFAULT_TOAST_MS`. Ignored when `sticky`. Undo toasts
+   * (src/ui/undo-toast.ts) need noticeably longer than a status message:
+   * four seconds is not enough time to register that a delete was a
+   * mistake and reach for the button.
+   */
+  duration?: number
 }
 
 /**
@@ -404,6 +422,8 @@ interface ToastOptions {
  * the newest message is the one the user is looking for.
  */
 const MAX_TOASTS = 3
+
+const DEFAULT_TOAST_MS = 4000
 
 let toastStack: HTMLElement | null = null
 
@@ -442,7 +462,7 @@ export function toast(msg: string, opts?: ToastOptions): void {
     stack.firstElementChild?.remove()
   }
   if (!opts?.sticky) {
-    setTimeout(dismiss, 4000)
+    setTimeout(dismiss, opts?.duration ?? DEFAULT_TOAST_MS)
   }
 }
 

@@ -8,7 +8,7 @@
 // store update while it's focused defers the rebuild to the input's next
 // blur instead of wiping the in-progress edit.
 import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } from '../core/types'
-import { t, todayIso, formatDate } from '../core/i18n'
+import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
 import { isOverdue } from '../core/due'
 import { nowHHMM } from '../core/date'
@@ -16,6 +16,8 @@ import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/docume
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
+import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { offerUndoToast } from '../ui/undo-toast'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
@@ -44,6 +46,14 @@ export function itemsByStatus(items: ActionItem[], status: ActionItem['status'])
 // The overdue rule lives in core/due.ts (shared with the sidebar due badge);
 // re-exported here so board code and tests keep one import site.
 export { isOverdue }
+
+/** Human-readable label for a status value: the three fixed columns, or a team's own custom middle column by id. Pure (locale/team passed in) so callers outside this module's own render closure — src/modules/daily-notes.ts's calendar tooltips — can use the exact same labels without hand-rolling the fixed-status branch again. */
+export function actionStatusLabel(locale: Locale, status: string, team: Team | undefined): string {
+  if (status === 'todo') return t(locale, 'kanban_status_todo')
+  if (status === 'done') return t(locale, 'kanban_status_done')
+  if (status === 'cancelled') return t(locale, 'kanban_status_cancelled')
+  return team?.actionColumns?.find((c) => c.id === status)?.name ?? ''
+}
 
 /**
  * How the assignee field's raw string should render: a live reference
@@ -208,12 +218,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     })
   }
 
-  function removeItem(id: string): void {
-    ctx.store.update((d) => {
+  function removeItem(id: string): UndoOffer | null {
+    return deleteWithUndo(ctx.store, (d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
+      if (!tm) return null
       const removed = tm.actionItems.find((i) => i.id === id)
-      unlinkRefsInTeam(tm, 'action', removed ? new Map([[id, removed.summary]]) : new Map())
+      if (!removed) return null
+      // Deep copy: unlinkRefsInTeam rewrites @mentions in place across the
+      // whole team, so a shallow capture of tm.actionItems would restore the
+      // card with every mention of it permanently flattened.
+      const before = structuredClone(tm)
+      unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
       tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, milestones,
@@ -221,6 +236,31 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       // narrowest scope that's still correct, and it won't rot if
       // unlinkRefsInTeam's reach changes later — refs never cross teams
       // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
+    }, { teamId })
+  }
+
+  /**
+   * Silent counterpart to removeItem, for the paths that carry no confirm
+   * dialog and offer no undo (an abandoned blank "+ Card" draft discarded on
+   * modal close, or an empty-summary delete click) — see requestDelete and
+   * the card modal's onClose below. deleteWithUndo's structuredClone(tm) is
+   * only worth paying for on an explicit user action that has already been
+   * through a confirm dialog (see undo-delete.ts's header); a silent delete
+   * never offers undo, so it skips the capture entirely rather than cloning
+   * a potentially multi-MB team every time an empty draft is closed.
+   */
+  function removeItemSilently(id: string): void {
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const removed = tm.actionItems.find((i) => i.id === id)
+      if (!removed) return
+      unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
+      tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
     }, { teamId })
   }
 
@@ -251,7 +291,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   function requestDelete(item: ActionItem): void {
     if (item.summary.trim() === '') {
-      removeItem(item.id) // empty cards carry no meaningful content to lose — delete silently
+      removeItemSilently(item.id) // empty cards carry no meaningful content to lose — delete silently
       return
     }
     confirmDelete(lc, {
@@ -259,7 +299,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       message: t(lc, 'kanban_delete_confirm', { summary: item.summary }),
       confirmLabel: t(lc, 'kanban_delete_btn'),
       variant: 'danger',
-      onConfirm: () => removeItem(item.id),
+      onConfirm: () => {
+        const offer = removeItem(item.id)
+        offerUndoToast(ctx.store, lc, t(lc, 'action_deleted_toast', { summary: item.summary }), offer)
+      },
     })
   }
 
@@ -272,15 +315,22 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       confirmLabel: t(lc, 'kanban_clear_zone_btn'),
       variant: 'danger',
       onConfirm: () => {
-        ctx.store.update((d) => {
+        const offer = deleteWithUndo(ctx.store, (d) => {
           const tm = d.teams.find((t2) => t2.id === teamId)
-          if (!tm) return
+          if (!tm) return null
           const removedTitles = new Map(tm.actionItems.filter((i) => i.status === status).map((i) => [i.id, i.summary]))
+          if (removedTitles.size === 0) return null
+          // Deep copy — same unlinkRefsInTeam cross-section rationale as
+          // removeItem() above.
+          const before = structuredClone(tm)
           unlinkRefsInTeam(tm, 'action', removedTitles)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
-          // No `sections` — same unlinkRefsInTeam cross-section rationale as
-          // removeItem() above.
+          return (d2) => {
+            const i = d2.teams.findIndex((t2) => t2.id === teamId)
+            if (i !== -1) d2.teams[i] = before
+          }
         }, { teamId })
+        offerUndoToast(ctx.store, lc, t(lc, 'actions_deleted_toast', { count: String(count) }), offer)
       },
     })
   }
@@ -695,7 +745,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // draft nothing was typed into and an existing card cleared to blank.
         const current = items().find((i) => i.id === itemId)
         if (current && current.summary.trim() === '') {
-          removeItem(itemId)
+          removeItemSilently(itemId)
         } else if (current && existing === null && activeTagFilter !== null && activeTagFilter !== current.color) {
           // A new card whose final color the active filter would hide is
           // invisible the moment the modal closes — clear the filter so the
@@ -771,10 +821,19 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function deleteColumn(columnId: string): void {
     const count = items().filter((i) => i.status === columnId).length
     if (count === 0) {
-      ctx.store.update((d) => {
+      const name = statusLabel(columnId, findTeam())
+      const offer = deleteWithUndo(ctx.store, (d) => {
         const tm = d.teams.find((t2) => t2.id === teamId)
-        if (tm?.actionColumns) tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
+        if (!tm?.actionColumns) return null
+        if (!tm.actionColumns.some((c) => c.id === columnId)) return null
+        const before = structuredClone(tm)
+        tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
+        return (d2) => {
+          const i = d2.teams.findIndex((t2) => t2.id === teamId)
+          if (i !== -1) d2.teams[i] = before
+        }
       }, { teamId, sections: ['actions'] })
+      offerUndoToast(ctx.store, lc, t(lc, 'column_deleted_toast', { name }), offer)
       return
     }
     openDeleteColumnModal(columnId, count)
@@ -796,9 +855,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       danger: true,
       onClick: () => {
         const targetStatus = select.value
-        ctx.store.update((d) => {
+        const name = statusLabel(columnId, findTeam())
+        const offer = deleteWithUndo(ctx.store, (d) => {
           const team2 = d.teams.find((t2) => t2.id === teamId)
-          if (!team2) return
+          if (!team2) return null
+          // Deep copy before anything moves: the migration below rewrites
+          // `status` and `order` in place on every card it moves, so a shallow
+          // capture of actionColumns alone would restore the column but leave
+          // its cards stranded in the landing column.
+          const before = structuredClone(team2)
           const moving = team2.actionItems.filter((i) => i.status === columnId).sort((a, b) => a.order - b.order)
           const destGroup = team2.actionItems.filter((i) => i.status === targetStatus)
           // Appends past the destination's highest existing order — same
@@ -808,7 +873,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           let nextOrder = destGroup.length === 0 ? 0 : Math.max(...destGroup.map((i) => i.order)) + 1
           for (const i of moving) { i.status = targetStatus; i.order = nextOrder++ }
           if (team2.actionColumns) team2.actionColumns = team2.actionColumns.filter((c) => c.id !== columnId)
+          return (d2) => {
+            const i = d2.teams.findIndex((t2) => t2.id === teamId)
+            if (i !== -1) d2.teams[i] = before
+          }
         }, { teamId, sections: ['actions'] })
+        offerUndoToast(ctx.store, lc, t(lc, 'column_deleted_toast', { name }), offer)
         handle.close()
       },
     }
@@ -984,10 +1054,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   // declared skeleton interface — first used by Task 7's delete-column
   // landing-picker labels (openDeleteColumnModal, above).
   function statusLabel(status: string, tm: Team | undefined): string {
-    if (status === 'todo') return t(lc, 'kanban_status_todo')
-    if (status === 'done') return t(lc, 'kanban_status_done')
-    if (status === 'cancelled') return t(lc, 'kanban_status_cancelled')
-    return tm?.actionColumns?.find((c) => c.id === status)?.name ?? ''
+    return actionStatusLabel(lc, status, tm)
   }
 
   /** Column ids in board order: fixed 'todo', the team's custom columns sorted by order, fixed 'done'/'cancelled'. */

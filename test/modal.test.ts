@@ -99,6 +99,45 @@ test('Enter from an input outside the dialog does not trigger the primary button
   expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
 })
 
+describe('toast duration', () => {
+  it('auto-dismisses after 4000ms by default', () => {
+    vi.useFakeTimers()
+    try {
+      toast('default')
+      vi.advanceTimersByTime(3999)
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(1)
+      vi.advanceTimersByTime(1)
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('honors an explicit duration', () => {
+    vi.useFakeTimers()
+    try {
+      toast('slow', { duration: 10_000 })
+      vi.advanceTimersByTime(4000)
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(1)
+      vi.advanceTimersByTime(6000)
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores duration when sticky', () => {
+    vi.useFakeTimers()
+    try {
+      toast('stays', { sticky: true, duration: 10 })
+      vi.advanceTimersByTime(60_000)
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 test('showModal focuses the first focusable element on open when no caller focuses one', () => {
   showModal({
     title: 'T',
@@ -405,6 +444,33 @@ test('confirmDelete shows a title/message/confirm button and calls onConfirm', (
   confirmBtn.click()
   expect(onConfirm).toHaveBeenCalledOnce()
   expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+})
+
+test('confirmDelete renders no warning paragraph when no warning is given', () => {
+  confirmDelete('en-US', {
+    title: 'Delete X',
+    message: 'Are you sure?',
+    confirmLabel: 'Delete',
+    onConfirm: () => {},
+  })
+  expect(document.querySelector('.tt-modal-warning')).toBeNull()
+})
+
+test('confirmDelete renders a warning paragraph after the message when given one', () => {
+  confirmDelete('en-US', {
+    title: 'Delete X',
+    message: 'Are you sure?',
+    warning: 'This one cannot be undone.',
+    confirmLabel: 'Delete',
+    variant: 'danger',
+    onConfirm: () => {},
+  })
+  const dialog = document.querySelector('.tt-modal-dialog')!
+  const warning = dialog.querySelector('.tt-modal-warning')
+  expect(warning?.textContent).toBe('This one cannot be undone.')
+  // The warning must follow the message, not replace or precede it.
+  expect(dialog.querySelector('.tt-modal-message')?.textContent).toBe('Are you sure?')
+  expect(warning?.previousElementSibling?.className).toBe('tt-modal-message')
 })
 
 test('toast renders message and is removed on click', () => {

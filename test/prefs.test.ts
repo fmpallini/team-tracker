@@ -1039,6 +1039,27 @@ test('delete button asks for confirmation, then removes the template', () => {
   expect(store.doc.templates).toHaveLength(4)
 })
 
+test('delete confirmation warns that a deleted template cannot be brought back', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+
+  const delBtn = document.querySelector('.tt-prefs-template-delete-btn') as HTMLButtonElement
+  delBtn.click()
+
+  // Every other delete in the app either offers an undo toast or says it
+  // cannot; templates are the one site with no undo, so the dialog has to
+  // say so rather than leave the user to infer it from a missing button.
+  expect(document.querySelector('.tt-modal-warning')?.textContent).toBe(
+    'Unlike deleting a task, milestone or risk, a deleted template cannot be brought back.'
+  )
+  const confirmBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Delete')!
+  expect(confirmBtn.className).toContain('tt-btn-danger')
+
+  clickByText('Delete')
+  expect(document.querySelector('.tt-toast-action')).toBeNull()
+})
+
 test('reorder (up/down) swaps templates in the array', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
@@ -1494,10 +1515,21 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted. This cannot be undone.'
+        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted.'
+      )
+      // Every other delete in the app offers an undo toast; this one does not,
+      // so the dialog has to say so rather than let the user infer it.
+      const warnings = document.querySelectorAll('.tt-modal-warning')
+      expect(warnings[warnings.length - 1]?.textContent).toBe(
+        'Unlike deleting a single task, milestone or risk, this cleanup offers no undo. There is no way back.'
       )
 
       clickByText('Clean up data')
+
+      // Data cleanup deliberately offers no undo (the warning above says so
+      // instead) — this locks that decision in against a future "helpful"
+      // re-addition of an undo button for cleanup.
+      expect(document.querySelector('.tt-toast-action')).toBeNull()
 
       const teams = store.doc.teams
       expect(teams[0]!.actionItems.map((a) => a.id)).toEqual(['a1'])

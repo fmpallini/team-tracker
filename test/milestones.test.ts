@@ -453,6 +453,29 @@ describe('renderMilestones', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
+  test('deleting a milestone with an empty title does not pay for a whole-team clone', () => {
+    // The silent path has no confirm dialog and offers no undo, so the
+    // spec's justification for deleteWithUndo's structuredClone cost ("paid
+    // once, on an explicit user action that has already been through a
+    // confirm dialog") does not apply here — this must not clone at all.
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      clickByTitleOrText(container, 'Delete milestone')
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
+  })
+
   test('deleting a milestone with a non-empty title requires confirmation', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
@@ -1162,5 +1185,39 @@ describe('backlink-only foreign changes patch chips in place (no full rebuild)',
 
     expect(rows(container)).toHaveLength(2)
     expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).not.toBe(rowBefore)
+  })
+})
+
+describe('milestone delete undo', () => {
+  function mountMilestonesWithMentionedMilestone(): { store: Store; teamId: string } {
+    const team = makeTeam({
+      milestones: [milestone({ id: 'm1', title: 'Ship', date: '2026-01-01' })],
+      dailyNotes: { '2026-01-01': 'Reminder: @[Ship](milestone:m1) is coming up.' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { store, teamId: team.id }
+  }
+
+  function clickDeleteAndConfirm(title: string): void {
+    clickByTitleOrText(document.body, 'Delete milestone')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe(`Delete "${title}"?`)
+    clickByTitleOrText(document.body, 'Delete')
+  }
+
+  it('offers an undo toast that restores the milestone and its @-mentions', () => {
+    const { store, teamId } = mountMilestonesWithMentionedMilestone()
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
+
+    clickDeleteAndConfirm('Ship')
+
+    expect(store.doc.teams.find((t) => t.id === teamId)!.milestones).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
   })
 })

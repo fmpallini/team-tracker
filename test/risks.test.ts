@@ -682,6 +682,29 @@ describe('renderRisks', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
+  test('deleting a risk with an empty title does not pay for a whole-team clone', () => {
+    // The silent path has no confirm dialog and offers no undo, so the
+    // spec's justification for deleteWithUndo's structuredClone cost ("paid
+    // once, on an explicit user action that has already been through a
+    // confirm dialog") does not apply here — this must not clone at all.
+    const team = makeTeam({ risks: [risk({ id: 'a', title: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    // Restored in finally: vi.spyOn on an already-spied global returns the
+    // SAME spy instance with its call history intact, so an unrestored spy
+    // here would leak stale calls into any other test (in this file or
+    // another) that later spies on the same global.
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      clickByTitleOrText(container, 'Delete risk')
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(0)
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
+  })
+
   test('deleting a risk with a non-empty title requires confirmation', () => {
     const team = makeTeam({ risks: [risk({ id: 'a', title: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
@@ -839,6 +862,91 @@ describe('renderRisks', () => {
     expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
     expect(container.querySelectorAll('.tt-risk-list .tt-risk-row')).toHaveLength(1)
     expect(container.querySelectorAll('.tt-risks-closed .tt-risk-row')).toHaveLength(0)
+  })
+
+  test('a closed row has its own delete button, using the same confirm+undo flow as an open row', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay', closed: true })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container.querySelector('.tt-risk-row-closed')!, 'Delete risk')
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+  })
+
+  test('right-clicking a closed row opens the same context menu (duplicate/transfer/delete) as an open row', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay', closed: true })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    rightClick(container.querySelector('.tt-risk-row-closed')!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+  })
+
+  describe('clear all closed', () => {
+    test('is absent when there are no closed risks', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.tt-risks-clear-closed-btn')).toBeNull()
+    })
+
+    test('deletes every closed risk at once, unlinking mentions of each, and leaves open risks untouched', () => {
+      const team = makeTeam({
+        risks: [
+          risk({ id: 'open', title: 'Open one', order: 0 }),
+          risk({ id: 'r1', title: 'Vendor delay', order: 1, closed: true }),
+          risk({ id: 'r2', title: 'Budget cut', order: 2, closed: true, followup: 'related to ~ignored~' }),
+        ],
+        dailyNotes: { '2026-02-02': 'see @[Vendor delay](risk:r1) and @[Budget cut](risk:r2)' },
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      clickByTitleOrText(container, 'Delete closed risks')
+      clickByTitleOrText(document.body, 'Delete all')
+
+      const remaining = store.doc.teams[0]!.risks
+      expect(remaining.map((r) => r.id)).toEqual(['open'])
+      expect(store.doc.teams[0]!.dailyNotes['2026-02-02']).toBe('see ~Vendor delay~ and ~Budget cut~')
+    })
+
+    test('a single undo restores every deleted closed risk and their unlinked mentions', () => {
+      const team = makeTeam({
+        risks: [
+          risk({ id: 'r1', title: 'Vendor delay', order: 0, closed: true }),
+          risk({ id: 'r2', title: 'Budget cut', order: 1, closed: true }),
+        ],
+        dailyNotes: { '2026-02-02': 'see @[Vendor delay](risk:r1)' },
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      clickByTitleOrText(container, 'Delete closed risks')
+      clickByTitleOrText(document.body, 'Delete all')
+      expect(store.doc.teams[0]!.risks).toHaveLength(0)
+
+      clickByTitleOrText(document.body, 'Undo')
+
+      const restored = store.doc.teams[0]!.risks
+      expect(restored.map((r) => r.id).sort()).toEqual(['r1', 'r2'])
+      expect(store.doc.teams[0]!.dailyNotes['2026-02-02']).toBe('see @[Vendor delay](risk:r1)')
+    })
+
+    test('clicking the button does not toggle the closed <details> section open/closed', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const details = container.querySelector('details.tt-risks-closed') as HTMLDetailsElement
+      expect(details.open).toBe(false)
+      container.querySelector<HTMLButtonElement>('.tt-risks-clear-closed-btn')!.click()
+      expect(details.open).toBe(false)
+    })
   })
 
   test('clicking the "Exposição" header cycles display order (unsorted -> desc -> asc -> unsorted) without touching stored .order', () => {
@@ -1766,5 +1874,39 @@ describe('backlink-only foreign changes patch chips in place (no full rebuild)',
 
     expect(container.querySelectorAll('.tt-risk-row:not(.tt-risk-row-closed)')).toHaveLength(2)
     expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).not.toBe(rowBefore)
+  })
+})
+
+describe('risk delete undo', () => {
+  function mountRisksWithMentionedRisk(): { store: Store; teamId: string } {
+    const team = makeTeam({
+      risks: [risk({ id: 'r1', title: 'Slip' })],
+      dailyNotes: { '2026-09-10': 'Watch out for @[Slip](risk:r1) this week.' },
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { store, teamId: team.id }
+  }
+
+  function clickDeleteAndConfirm(title: string): void {
+    clickByTitleOrText(document.body, 'Delete risk')
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe(`Delete "${title}"?`)
+    clickByTitleOrText(document.body, 'Delete')
+  }
+
+  it('offers an undo toast that restores the risk and its @-mentions', () => {
+    const { store, teamId } = mountRisksWithMentionedRisk()
+
+    const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
+
+    clickDeleteAndConfirm('Slip')
+
+    expect(store.doc.teams.find((t) => t.id === teamId)!.risks).toHaveLength(0)
+    const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
+    expect(undoBtn?.textContent).toBe('Undo')
+
+    undoBtn!.click()
+
+    expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
   })
 })

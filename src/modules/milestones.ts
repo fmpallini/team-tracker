@@ -16,6 +16,8 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
+import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { offerUndoToast } from '../ui/undo-toast'
 import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
@@ -257,32 +259,66 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id, 'data-item-id': m.id }, bundle.editor.root)
   }
 
-  function removeMilestone(id: string): void {
+  function removeMilestone(id: string): UndoOffer | null {
     expandable.collapse(id) // local UI state; must flip before store.update fires the synchronous subscriber below
-    ctx.store.update((d) => {
+    return deleteWithUndo(ctx.store, (d) => {
       const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
+      if (!tm) return null
       const removed = tm.milestones.find((m) => m.id === id)
-      unlinkRefsInTeam(tm, 'milestone', removed ? new Map([[id, removed.title]]) : new Map())
+      if (!removed) return null
+      // Deep copy: unlinkRefsInTeam rewrites @mentions in place across the
+      // whole team, so a shallow capture of tm.milestones would restore the
+      // milestone with every mention of it permanently flattened.
+      const before = structuredClone(tm)
+      unlinkRefsInTeam(tm, 'milestone', new Map([[id, removed.title]]))
       tm.milestones = tm.milestones.filter((m) => m.id !== id)
       // No `sections`: unlinkRefsInTeam rewrites @mentions across every
       // content-bearing section of this team (notes, people, actions, risks
       // — see refs.ts), not just 'milestones'. Team-only scoping is the
-      // narrowest scope that's still correct and won't rot if
-      // unlinkRefsInTeam's reach changes later.
+      // narrowest scope that's still correct, and it won't rot if
+      // unlinkRefsInTeam's reach changes later — refs never cross teams
+      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
+    }, { teamId })
+  }
+
+  /**
+   * Silent counterpart to removeMilestone, for the paths that carry no
+   * confirm dialog and offer no undo (a blank draft dropped on blur or an
+   * empty-title delete click) — see requestDelete below. deleteWithUndo's
+   * structuredClone(tm) is only worth paying for on an explicit user action
+   * that has already been through a confirm dialog (see undo-delete.ts's
+   * header); a silent delete never offers undo, so it skips the capture
+   * entirely rather than cloning a potentially multi-MB team for nothing.
+   */
+  function removeMilestoneSilently(id: string): void {
+    expandable.collapse(id)
+    ctx.store.update((d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return
+      const removed = tm.milestones.find((m) => m.id === id)
+      if (!removed) return
+      unlinkRefsInTeam(tm, 'milestone', new Map([[id, removed.title]]))
+      tm.milestones = tm.milestones.filter((m) => m.id !== id)
     }, { teamId })
   }
 
   function requestDelete(m: Milestone): void {
     if (m.title.trim() === '') {
-      removeMilestone(m.id) // empty titles carry no meaningful content to lose — delete silently
+      removeMilestoneSilently(m.id) // empty titles carry no meaningful content to lose — delete silently
       return
     }
     confirmDelete(lc, {
       title: t(lc, 'milestone_delete_title'),
       message: t(lc, 'milestone_delete_confirm', { title: m.title }),
       confirmLabel: t(lc, 'milestone_delete_btn'),
-      onConfirm: () => removeMilestone(m.id),
+      onConfirm: () => {
+        const offer = removeMilestone(m.id)
+        offerUndoToast(ctx.store, lc, t(lc, 'milestone_deleted_toast', { title: m.title }), offer)
+      },
     })
   }
 
@@ -549,7 +585,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         const cur = milestones().find((mm) => mm.id === m.id)
         if (!cur) return
         if (cur.title.trim() !== '') { clearNameError(row); return }
-        if (isBlankMilestoneDraft(cur)) removeMilestone(cur.id)
+        if (isBlankMilestoneDraft(cur)) removeMilestoneSilently(cur.id)
         else showNameError(row)
       }, 0)
     })

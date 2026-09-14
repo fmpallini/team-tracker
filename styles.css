@@ -528,6 +528,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-modal-title-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .tt-kanban-modal-header-extra { display: flex; align-items: center; gap: .5rem; flex: none; }
 .tt-modal-message { color: var(--fg); }
+.tt-modal-warning {
+  margin: .75rem 0 0; padding: .5rem .6rem; border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  color: var(--danger); font-weight: 600;
+}
 .tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-editor-link-form { display: flex; flex-direction: column; gap: .75rem; }
@@ -576,8 +581,9 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-toast-action {
   background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px;
-  padding: .2rem .6rem; cursor: pointer; font-size: .85rem;
+  padding: .2rem .6rem; cursor: pointer; font-size: .85rem; align-self: flex-end;
 }
+.tt-toast-action:hover { background: rgba(var(--accent-rgb), .12); }
 
 /* Read-only cross-tab banner (Task 25) */
 .tt-readonly-banner {
@@ -1455,6 +1461,8 @@ body { background: var(--bg); color: var(--fg); }
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
 }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
+.tt-risk-sort-indicator { opacity: .45; }
+.tt-risk-header-exposure:hover .tt-risk-sort-indicator, .tt-risk-header-exposure.active .tt-risk-sort-indicator { opacity: 1; }
 /* Monospace "tag" read for the editable data selects — bordered, muted,
    brightening to the accent on hover/focus — echoing the Field Ledger
    mockup's plain bordered tags rather than each browser's native <select>
@@ -1578,12 +1586,19 @@ select option { background: var(--bg); color: var(--fg); }
 }
 
 .tt-risks-closed { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
-.tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; }
+.tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; list-style: none; }
+.tt-risks-closed summary::-webkit-details-marker { display: none; }
+.tt-risks-closed-summary-row { display: flex; align-items: center; gap: .35rem; }
+.tt-risks-closed-arrow { display: inline-block; flex: none; transition: transform .12s; }
+.tt-risks-closed[open] .tt-risks-closed-arrow { transform: rotate(90deg); }
+.tt-risks-clear-closed-btn { margin-left: auto; flex: none; border: none; background: transparent; font-size: 1rem; opacity: .45; }
+.tt-risks-clear-closed-btn:hover, .tt-risks-clear-closed-btn:focus { opacity: 1; }
 .tt-risks-closed.tt-risks-closed-empty { display: none; }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); box-shadow: none; transform: none; }
-.tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: .85rem; }
+.tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: 1.3rem; line-height: 1; color: inherit; opacity: .55; }
+.tt-risks-closed .tt-risk-reopen-btn:hover, .tt-risks-closed .tt-risk-reopen-btn:focus { opacity: 1; }
 /* The closed row's caret isn't hover-gated like an open row's — a closed
    risk is read-only, so its one interaction (peek the follow-up) should be
    visible at rest. */

@@ -23,7 +23,7 @@ vi.mock('../src/core/idb', () => idbMocks)
 
 const cryptoMocks = vi.hoisted(() => {
   class WrongPasswordError extends Error {}
-  class CorruptFileError extends Error {}
+  class CorruptFileError extends Error { constructor(readonly path?: string) { super() } }
   return {
     WrongPasswordError,
     CorruptFileError,
@@ -228,6 +228,45 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
   await flush()
 
   expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Corrupt or invalid file')
+  expect(onOpen).not.toHaveBeenCalled()
+})
+
+test('open flow: a structurally invalid file names the offending field in the error modal', async () => {
+  const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
+  cryptoMocks.decryptDocument.mockRejectedValue(new cryptoMocks.CorruptFileError('teams[0].members[3].id'))
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+  pwInput.value = 'x'
+  pwInput.dispatchEvent(new Event('input'))
+  clickByText('OK')
+  await flush()
+  await flush()
+
+  expect(document.querySelector('.tt-modal-message')?.textContent)
+    .toBe('Invalid file structure at: teams[0].members[3].id')
+  expect(onOpen).not.toHaveBeenCalled()
+})
+
+test('open flow: a plain file with an invalid structure names the field too', async () => {
+  const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
+  cryptoMocks.parsePlain.mockImplementation(() => { throw new cryptoMocks.CorruptFileError('teams[0].dailyNotes') })
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+
+  expect(document.querySelector('.tt-modal-message')?.textContent)
+    .toBe('Invalid file structure at: teams[0].dailyNotes')
   expect(onOpen).not.toHaveBeenCalled()
 })
 

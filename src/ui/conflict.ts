@@ -11,6 +11,19 @@ export interface ConflictModalOptions {
   onReload(): Promise<void>
   /** forceWrite the current in-memory state, ignoring the external change. */
   onOverwrite(): Promise<void>
+  /**
+   * Gap 3: the non-destructive way out. Writes the in-memory document to a
+   * NEW file the user picks and moves the live session onto it, leaving the
+   * external change in the original file untouched — so neither side of the
+   * conflict is lost. Resolves true when the fork completed, false when the
+   * user dismissed the save picker; on false this modal reopens, because a
+   * cancelled picker must not silently drop the user back into an
+   * unresolved conflict with no prompt.
+   *
+   * Optional: callers that can't fork (fallback mode, where there is no
+   * save picker at all) simply omit it and get the original two buttons.
+   */
+  onFork?: () => Promise<boolean>
 }
 
 /**
@@ -43,8 +56,27 @@ export function showConflictModal(opts: ConflictModalOptions): void {
     Promise.resolve(opts.onOverwrite()).catch((e) => console.error(e))
   }
 
+  /**
+   * No confirmation step, unlike reload: forking destroys nothing, so there
+   * is nothing to warn about. Any failure — including a cancelled picker —
+   * reopens this modal rather than leaving the user with a dirty document,
+   * a save pill stuck in error, and no visible way to act on it.
+   */
+  function fork(): void {
+    const onFork = opts.onFork
+    if (!onFork) return
+    handle.close()
+    Promise.resolve(onFork())
+      .then((done) => { if (!done) showConflictModal(opts) })
+      .catch((e: unknown) => { console.error(e); showConflictModal(opts) })
+  }
+
   const body = el('p', { class: 'tt-modal-message' }, t(locale, 'conflict_message'))
   const reloadBtn: ModalButton = { label: t(locale, 'conflict_reload_btn'), onClick: () => confirmReload() }
   const overwriteBtn: ModalButton = { label: t(locale, 'conflict_overwrite_btn'), primary: true, onClick: () => overwrite() }
-  const handle: ModalHandle = showModal({ title: t(locale, 'conflict_title'), body, buttons: [reloadBtn, overwriteBtn] })
+  // Fork leads: it is the only option that keeps both sides of the conflict.
+  const buttons: ModalButton[] = opts.onFork
+    ? [{ label: t(locale, 'conflict_fork_btn'), onClick: () => fork() }, reloadBtn, overwriteBtn]
+    : [reloadBtn, overwriteBtn]
+  const handle: ModalHandle = showModal({ title: t(locale, 'conflict_title'), body, buttons })
 }

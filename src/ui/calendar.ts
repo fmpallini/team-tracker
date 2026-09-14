@@ -12,10 +12,10 @@ import { el } from './dom'
 
 export interface CalendarMarks {
   hasNote(dateIso: string): boolean
-  /** Titles of milestones landing on this day; empty array = no milestone. */
-  milestones(dateIso: string): string[]
-  /** Summaries of action items due this day; empty array = none due. */
-  actionItems(dateIso: string): string[]
+  /** Milestones landing on this day, each already labelled with its title and done/pending status for the icon's tooltip; empty array = no milestone. */
+  milestones(dateIso: string): { label: string; done: boolean }[]
+  /** Action items due this day, each already labelled with its summary and status for the icon's tooltip; `resolved` groups 'done' and 'cancelled' together, matching the icon's own two states. Empty array = none due. */
+  actionItems(dateIso: string): { label: string; resolved: boolean }[]
 }
 
 function parseIso(iso: string): { y: number; m: number; d: number } {
@@ -114,14 +114,22 @@ export function createCalendar(opts: {
         String(day)
       )
 
-      const titles = opts.marks.milestones(iso)
-      if (titles.length > 0) {
-        dayBtn.appendChild(el('span', { class: 'tt-calendar-flag', title: titles.join(', ') }, '🚩'))
+      // One icon per type regardless of how many items land on the day — its
+      // state groups every item on that day into "still needs attention" vs
+      // "resolved": any not-done milestone, or any action neither done nor
+      // cancelled, flips the whole icon to its pending state. The tooltip
+      // (native `title`) always lists every item with its own status, so
+      // nothing is lost by collapsing the icon itself to two states.
+      const milestoneEntries = opts.marks.milestones(iso)
+      if (milestoneEntries.length > 0) {
+        const icon = milestoneEntries.some((m) => !m.done) ? '🚩' : '🏁'
+        dayBtn.appendChild(el('span', { class: 'tt-calendar-flag', title: milestoneEntries.map((m) => m.label).join(', ') }, icon))
       }
 
-      const dueSummaries = opts.marks.actionItems(iso)
-      if (dueSummaries.length > 0) {
-        dayBtn.appendChild(el('span', { class: 'tt-calendar-check', title: dueSummaries.join(', ') }, '✅'))
+      const actionEntries = opts.marks.actionItems(iso)
+      if (actionEntries.length > 0) {
+        const icon = actionEntries.some((a) => !a.resolved) ? '⏳' : '✅'
+        dayBtn.appendChild(el('span', { class: 'tt-calendar-check', title: actionEntries.map((a) => a.label).join(', ') }, icon))
       }
 
       grid.appendChild(dayBtn)
