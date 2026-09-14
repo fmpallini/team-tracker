@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [Unreleased]
+
+### Added
+- A closed risk can now be deleted (with the same confirmation and undo as an open one) and right-clicked for the same duplicate/copy/move menu, instead of only being reopenable. The closed-risks section also gains a "delete all" button to clear every closed risk in one action, with a single undo covering the whole batch.
+
 ## [2.8.2] - 2026-09-13
 
 ### Added

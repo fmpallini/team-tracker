@@ -416,6 +416,44 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     }, { teamId, sections: ['risks'] })
   }
 
+  /**
+   * Removes every closed risk at once, unlinking @mentions for all of them in
+   * a single team clone (see removeRisk's own comment on why deleteWithUndo
+   * needs the deep copy) rather than N separate deletes with N separate
+   * captures/toasts.
+   */
+  function removeAllClosedRisks(): UndoOffer | null {
+    return deleteWithUndo(ctx.store, (d) => {
+      const tm = d.teams.find((t2) => t2.id === teamId)
+      if (!tm) return null
+      const removedIds = new Set(tm.risks.filter((r) => r.closed).map((r) => r.id))
+      if (removedIds.size === 0) return null
+      const before = structuredClone(tm)
+      const titles = new Map(tm.risks.filter((r) => removedIds.has(r.id)).map((r) => [r.id, r.title]))
+      unlinkRefsInTeam(tm, 'risk', titles)
+      tm.risks = tm.risks.filter((r) => !removedIds.has(r.id))
+      return (d2) => {
+        const i = d2.teams.findIndex((t2) => t2.id === teamId)
+        if (i !== -1) d2.teams[i] = before
+      }
+    }, { teamId })
+  }
+
+  function requestDeleteAllClosed(): void {
+    const count = risks().filter((r) => r.closed).length
+    if (count === 0) return
+    confirmDelete(lc, {
+      title: t(lc, 'risks_delete_all_closed_title'),
+      message: t(lc, 'risks_delete_all_closed_confirm', { count: String(count) }),
+      confirmLabel: t(lc, 'risks_delete_all_closed_btn'),
+      onConfirm: () => {
+        expandable.setAll(risks().filter((r) => r.closed).map((r) => r.id), false)
+        const offer = removeAllClosedRisks()
+        offerUndoToast(ctx.store, lc, t(lc, 'risks_all_closed_deleted_toast', { count: String(count) }), offer)
+      },
+    })
+  }
+
   function requestDelete(r: Risk): void {
     if (r.title.trim() === '') {
       removeRiskSilently(r.id) // empty titles carry no meaningful content to lose — delete silently
@@ -1068,17 +1106,32 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
       '♻️'
     )
+    // Same delete flow as an open row's — closed carries no other content
+    // worth losing beyond what requestDelete already guards (confirm +
+    // undo toast, or silent removal for a blank title).
+    const deleteBtn = el(
+      'button',
+      { class: 'tt-btn tt-risk-delete-btn', type: 'button', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
+      '🗑'
+    )
     const row = el(
       'div',
       { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id, 'data-item-id': r.id },
       el('span', { class: 'tt-risk-title-text' }, r.title),
       el('span', { class: 'tt-risk-exposure-badge' }, String(exposure)),
       expandBtn,
-      reopenBtn
+      reopenBtn,
+      deleteBtn
     )
+    // Same right-click menu (duplicate/copy-to-team/move-to-team/delete) as
+    // an open row — nothing about being closed makes those actions invalid.
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
+    })
     // Double-click anywhere on the row toggles the follow-up peek — a bigger
-    // target than the caret. Skipped on the reopen button so it keeps its own
-    // job, and a no-op when there's no follow-up to show.
+    // target than the caret. Skipped on the row's own buttons so each keeps
+    // its own job, and a no-op when there's no follow-up to show.
     if (hasFollowup) {
       row.addEventListener('dblclick', (e) => {
         if ((e.target as HTMLElement).closest('button')) return
@@ -1182,7 +1235,19 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     updateExpandAllBtn(open)
 
     closedEl.innerHTML = ''
-    closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) })))
+    const clearClosedBtn = el(
+      'button',
+      {
+        class: 'tt-btn tt-risks-clear-closed-btn',
+        type: 'button',
+        title: t(lc, 'risks_delete_all_closed_title'),
+        // Prevents the click from also toggling the <details> this sits
+        // inside of — a native <summary> click always does that first.
+        onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); requestDeleteAllClosed() },
+      },
+      '🗑'
+    )
+    closedEl.appendChild(el('summary', {}, t(lc, 'risks_closed_heading', { count: String(closed.length) }), closed.length > 0 ? clearClosedBtn : null))
     closed.forEach((r) => {
       closedEl.appendChild(renderClosedRow(r))
       if (expandable.isExpanded(r.id) && r.followup.trim() !== '') {

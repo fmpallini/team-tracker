@@ -864,6 +864,91 @@ describe('renderRisks', () => {
     expect(container.querySelectorAll('.tt-risks-closed .tt-risk-row')).toHaveLength(0)
   })
 
+  test('a closed row has its own delete button, using the same confirm+undo flow as an open row', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay', closed: true })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container.querySelector('.tt-risk-row-closed')!, 'Delete risk')
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+  })
+
+  test('right-clicking a closed row opens the same context menu (duplicate/transfer/delete) as an open row', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay', closed: true })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    rightClick(container.querySelector('.tt-risk-row-closed')!)
+    contextMenuItem('Duplicate').click()
+
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+  })
+
+  describe('clear all closed', () => {
+    test('is absent when there are no closed risks', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      expect(container.querySelector('.tt-risks-clear-closed-btn')).toBeNull()
+    })
+
+    test('deletes every closed risk at once, unlinking mentions of each, and leaves open risks untouched', () => {
+      const team = makeTeam({
+        risks: [
+          risk({ id: 'open', title: 'Open one', order: 0 }),
+          risk({ id: 'r1', title: 'Vendor delay', order: 1, closed: true }),
+          risk({ id: 'r2', title: 'Budget cut', order: 2, closed: true, followup: 'related to ~ignored~' }),
+        ],
+        dailyNotes: { '2026-02-02': 'see @[Vendor delay](risk:r1) and @[Budget cut](risk:r2)' },
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      clickByTitleOrText(container, 'Delete closed risks')
+      clickByTitleOrText(document.body, 'Delete all')
+
+      const remaining = store.doc.teams[0]!.risks
+      expect(remaining.map((r) => r.id)).toEqual(['open'])
+      expect(store.doc.teams[0]!.dailyNotes['2026-02-02']).toBe('see ~Vendor delay~ and ~Budget cut~')
+    })
+
+    test('a single undo restores every deleted closed risk and their unlinked mentions', () => {
+      const team = makeTeam({
+        risks: [
+          risk({ id: 'r1', title: 'Vendor delay', order: 0, closed: true }),
+          risk({ id: 'r2', title: 'Budget cut', order: 1, closed: true }),
+        ],
+        dailyNotes: { '2026-02-02': 'see @[Vendor delay](risk:r1)' },
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      clickByTitleOrText(container, 'Delete closed risks')
+      clickByTitleOrText(document.body, 'Delete all')
+      expect(store.doc.teams[0]!.risks).toHaveLength(0)
+
+      clickByTitleOrText(document.body, 'Undo')
+
+      const restored = store.doc.teams[0]!.risks
+      expect(restored.map((r) => r.id).sort()).toEqual(['r1', 'r2'])
+      expect(store.doc.teams[0]!.dailyNotes['2026-02-02']).toBe('see @[Vendor delay](risk:r1)')
+    })
+
+    test('clicking the button does not toggle the closed <details> section open/closed', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const details = container.querySelector('details.tt-risks-closed') as HTMLDetailsElement
+      expect(details.open).toBe(false)
+      container.querySelector<HTMLButtonElement>('.tt-risks-clear-closed-btn')!.click()
+      expect(details.open).toBe(false)
+    })
+  })
+
   test('clicking the "Exposição" header cycles display order (unsorted -> desc -> asc -> unsorted) without touching stored .order', () => {
     const team = makeTeam({
       risks: [
