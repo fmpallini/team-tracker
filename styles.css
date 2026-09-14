@@ -1584,7 +1584,9 @@ select option { background: var(--bg); color: var(--fg); }
 }
 
 .tt-risks-closed { flex: none; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: .3rem; }
-.tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; }
+.tt-risks-closed summary { cursor: pointer; padding: .2rem .4rem; display: flex; align-items: center; }
+.tt-risks-clear-closed-btn { margin-left: auto; flex: none; border: none; background: transparent; font-size: 1rem; opacity: .45; }
+.tt-risks-clear-closed-btn:hover, .tt-risks-clear-closed-btn:focus { opacity: 1; }
 .tt-risks-closed.tt-risks-closed-empty { display: none; }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
