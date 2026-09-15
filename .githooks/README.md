@@ -20,13 +20,19 @@ git config core.hooksPath .githooks
 
 ## Gate summary
 
+"Pushes to `dev`" means the refs git reports on the hook's stdin, not the
+checked-out branch: `git push origin other-branch:dev` gets the dev gates,
+while a push of only tags (e.g. `git push origin v2.8.3`) or only branch
+deletions skips every gate. Run by hand from a terminal, the hook falls back
+to the checked-out branch against `origin/dev`.
+
 | Gate | Blocks push? | Notes |
 |------|-------------|-------|
 | Lint (`eslint src test`) | Yes | flat config, type-checked rules — see `eslint.config.mjs` |
 | TypeCheck (`tsc --noEmit`) | Yes | |
 | Tests (`vitest run`) | Yes | |
 | Test coverage sanity | Yes (new files only) | dev pushes only — see below |
-| Changelog entry | No | dev pushes only — warns if `package.json` version changed vs `origin/dev` with no matching `## [x.y.z]` in `CHANGELOG.md`; CI hard-fails the same check on the `dev → main` PR |
+| Changelog entry | No | dev pushes only — warns if `package.json` version changed vs remote `dev` with no matching `## [x.y.z]` in `CHANGELOG.md`; CI hard-fails the same check on the `dev → main` PR |
 | AI: Simplify / Security review / Bug hunt / Test Coverage | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI — see [AI gates](#ai-gates) |
 
 ### Test coverage sanity
@@ -34,7 +40,7 @@ git config core.hooksPath .githooks
 `CLAUDE.md`'s "every `src` module gets a matching `test/*.test.ts`" convention is
 effectively 1:1 today; the only exempt files are `src/core/types.ts` (type-only),
 `src/main.ts` (wiring, covered by e2e), and `*.d.ts` ambient declarations. Scoped
-to the diff against `origin/dev` on pushes to `dev`:
+to the commits this push lands on `dev` (remote `dev` tip → pushed commit):
 
 - A **new** `src/**/*.ts` file with no matching `test/<name>.test.ts` **fails the
   push** — the convention is real, so this is a mistake, not a style choice.
