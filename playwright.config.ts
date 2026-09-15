@@ -27,6 +27,14 @@ export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // `trace` below is 'on-first-retry', which needs there to *be* a retry —
+  // with the default 0 retries in CI no trace was ever written, so a CI-only
+  // failure left nothing to open locally. CI's e2e job uploads test-results/
+  // on failure; retries are 0 locally so a flake stays visible while you work.
+  retries: process.env.CI ? 2 : 0,
+  // A stray .only committed by accident would silently shrink the CI suite to
+  // one spec and still report green.
+  forbidOnly: !!process.env.CI,
   reporter: [['list']],
   webServer: {
     command: 'node e2e/static-server.mjs',

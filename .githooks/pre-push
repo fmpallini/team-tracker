@@ -35,9 +35,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # ─── PHASE 1: DETERMINISTIC GATES ────────────────────────────────────────────
 
+# Gates 1-3 go through the npm scripts rather than calling eslint/tsc/vitest
+# directly, so this hook and CI (.github/workflows/ci.yml's `check` job, which
+# runs the same three scripts) can't drift apart when a script gains a flag.
+
 # 1. Lint
 gate_run "Lint"
-if npx eslint src test 2>&1; then
+if npm run lint 2>&1; then
   gate_ok "Lint"
 else
   gate_fail "Lint" "fix lint errors above then push again"
@@ -45,7 +49,7 @@ fi
 
 # 2. TypeCheck
 gate_run "TypeCheck"
-if npx tsc --noEmit 2>&1; then
+if npm run typecheck 2>&1; then
   gate_ok "TypeCheck"
 else
   gate_fail "TypeCheck" "fix type errors above then push again"
@@ -53,7 +57,7 @@ fi
 
 # 3. Tests
 gate_run "Tests"
-if npx vitest run 2>&1; then
+if npm test 2>&1; then
   gate_ok "Tests"
 else
   gate_fail "Tests" "fix failing tests then push again"
@@ -178,8 +182,9 @@ if [ -z "$DIFF" ]; then
   pass_and_exit "All gates passed. Pushing..."
 fi
 
-# Wall-clock cap per `claude` invocation — SKIP_AI exists precisely so a slow
-# or hung CLI call never blocks `git push` with no way out but Ctrl-C. 600s
+# Wall-clock cap per `claude` invocation, so a slow or hung CLI call never
+# blocks `git push` with no way out but Ctrl-C. Override with AI_GATE_TIMEOUT;
+# to skip the AI phase outright, just leave ENABLE_AI unset (the default). 600s
 # because the prompts below tell the model to read repo files to verify its
 # findings before reporting, which adds tool-use turns beyond a one-shot read
 # of the diff.
