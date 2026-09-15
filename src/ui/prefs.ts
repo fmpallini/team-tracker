@@ -61,7 +61,7 @@ export interface PrefsAppCtl {
   backupStatus(): Promise<BackupStatus | null>
   /**
    * Single priority-ordered backup health summary (orphaned / lapsed grant /
-   * generic write error / stale password / ok) — see BackupController.currentHealth.
+   * stale password / generic write error / ok) — see BackupController.currentHealth.
    * Replaces the old orphan-only checkBackupOrphaned() so the Backup tab and
    * the save pill read from the same source of truth.
    */

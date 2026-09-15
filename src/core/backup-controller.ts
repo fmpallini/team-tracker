@@ -81,10 +81,19 @@ export interface BackupController {
   markPasswordMismatch(): void
   /**
    * Single priority-ordered health summary — orphaned, then a lapsed grant,
-   * then a generic write failure, then a stale password, else 'ok'. The one
+   * then a stale password, then a generic write failure, else 'ok'. The one
    * source of truth save-controller.ts's pill, change-password.ts's
    * post-write pill update, and the Prefs Backup tab all read instead of
    * each deriving backup state their own way.
+   *
+   * Stale password outranks a generic write failure deliberately, not just
+   * incidentally: `markPasswordMismatch()`'s one real call site
+   * (change-password.ts) only fires right after a `writeBackupNow()` call
+   * that already failed, which means `lastWriteFailed` is set in that same
+   * breath too — checking the generic flag first would report every real
+   * password-mismatch episode as plain 'error' and this state would never
+   * once be user-visible. A later, unrelated write failure never touches
+   * `passwordMismatch`, so ordinary 'error' reporting is unaffected.
    */
   currentHealth(): Promise<BackupHealth>
 }
@@ -301,8 +310,8 @@ export function createBackupController(deps: { store: Store }): BackupController
     if (!deps.store.doc.prefs.dailyBackupEnabled) return 'ok'
     if (await checkOrphaned()) return 'orphaned'
     if (await hasMissingGrant()) return 'permission'
-    if (lastWriteFailed) return 'error'
     if (passwordMismatch) return 'password-mismatch'
+    if (lastWriteFailed) return 'error'
     return 'ok'
   }
 
