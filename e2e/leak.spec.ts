@@ -700,6 +700,109 @@ test.describe('resource growth over a long session', () => {
     expect(perCycleHeapMB, 'JS heap retained per cycle (MB)').toBeLessThan(1.5)
   })
 
+  /**
+   * `offerUndoToast` (src/ui/undo-toast.ts) is the one surface above that
+   * never gets exercised in a churn loop: every other test's deletes are
+   * either blank-title (no offer, no toast at all — see `overlayCycle`'s risk
+   * and milestone rows) or one-off (`e2e/undo-delete.spec.ts`, a single team
+   * delete that always ends by clicking Undo). Its watcher/timer already
+   * leaked once for real — `1f76da2 fix: release undo toast watcher on
+   * natural expiry` — so a named-title delete/undo round trip belongs in the
+   * churn set, not just the one-shot functional spec.
+   *
+   * Each round trip is driven twice, on purpose, because `offerUndoToast` has
+   * two distinct cleanup paths and a churn loop that only ever hits one of
+   * them proves nothing about the other:
+   * - delete #1 ends by clicking Undo — `stopWatching()` runs synchronously
+   *   in the click handler.
+   * - delete #2 is left alone: nothing here waits out the toast's 10s timer
+   *   or clicks anything. Its `store.onMutate` watcher is only released when
+   *   *something else* mutates the doc — which the very next round trip's
+   *   own add() does, on the other item type. That cross-mutation release is
+   *   the exact path the fixed bug was in, and it fires 40 times across this
+   *   loop (WARMUP+MEASURED round trips, times two types), only the very
+   *   last one running out its timer instead.
+   *
+   * Every round trip nets back to zero rows of its own type, so — same as
+   * every other cycle in this file — N iterations must cost the same as one.
+   */
+  test('delete/undo round trips release the undo-toast watcher and timer', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, 'leak-probe-password')
+
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('Runtime.enable')
+
+    await addTeam(page, 'Alpha')
+
+    const dialog = page.getByRole('dialog')
+
+    async function confirmDeleteRow(kind: 'risk' | 'milestone'): Promise<void> {
+      await page.locator(`.tt-${kind}-delete-btn`).first().click()
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('button', { name: 'Delete' }).click()
+      await expect(dialog).toHaveCount(0)
+    }
+
+    async function roundTrip(kind: 'risk' | 'milestone', title: string): Promise<void> {
+      await switchModule(page, kind === 'risk' ? /Risks/i : /Milestones/i)
+      await page.locator(`.tt-${kind}-add-btn`).click()
+      const input = page.locator(`.tt-${kind}-title-input`).first()
+      await input.fill(title)
+      await input.blur()
+
+      // Delete, then undo — the click-driven cleanup path.
+      await confirmDeleteRow(kind)
+      await page.locator('.tt-toast-action').click()
+      await expect(page.locator(`.tt-${kind}-row`)).toHaveCount(1)
+
+      // Delete again, and walk away — the mutation-driven cleanup path, left
+      // for the next round trip's own add() to release.
+      await confirmDeleteRow(kind)
+      await expect(page.locator(`.tt-${kind}-row`)).toHaveCount(0)
+    }
+
+    // This shape's one-time costs (first-ever confirm dialog + toast + undo
+    // restore combination) take noticeably longer to finish than this file's
+    // usual 3-cycle warmup — measured climbing until ~cycle 17 before it goes
+    // flat. WARMUP is set past that plateau rather than guessed, so what
+    // follows measures the app's steady state, not its startup.
+    const WARMUP = 20
+    const MEASURED = 20
+    const samples: Counters[] = []
+
+    for (let i = 0; i < WARMUP + MEASURED; i++) {
+      await roundTrip('risk', `Leak risk ${i}`)
+      await roundTrip('milestone', `Leak milestone ${i}`)
+      await settle(page)
+      if (i >= WARMUP) samples.push(await measure(cdp))
+    }
+
+    const first = samples[0]!
+    const last = samples[samples.length - 1]!
+    const perCycleNodes = perCycleGrowth(samples, 'nodes')
+    const perCycleListeners = perCycleGrowth(samples, 'listeners')
+    const perCycleHeapMB = perCycleGrowth(samples, 'heapMB')
+
+    console.log(
+      `[leak/undo-toast] nodes ${first.nodes} -> ${last.nodes} (${perCycleNodes.toFixed(1)}/cycle) | ` +
+      `listeners ${first.listeners} -> ${last.listeners} (${perCycleListeners.toFixed(1)}/cycle) | ` +
+      `heap ${first.heapMB.toFixed(1)}MB -> ${last.heapMB.toFixed(1)}MB (${perCycleHeapMB.toFixed(2)}/cycle)`
+    )
+    console.log('[leak/undo-toast] samples:', samples.map((s) => `${s.nodes}/${s.listeners}`).join(' '))
+
+    // A stuck watcher pins a whole cloned team (core/undo-delete.ts's
+    // captured `tm`) per round trip that never released it — heap, not DOM,
+    // is where that mass sits, same reasoning as the context-menu-stranding
+    // test above.
+    expect(perCycleNodes, 'DOM nodes retained per undo-toast round trip').toBeLessThan(15)
+    expect(perCycleListeners, 'JS event listeners retained per undo-toast round trip').toBeLessThan(4)
+    expect(perCycleHeapMB, 'JS heap retained per undo-toast round trip (MB)').toBeLessThan(1.0)
+  })
+
   test('history stepping, the due panel, backlinks and the save/backup controllers do not accumulate', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)

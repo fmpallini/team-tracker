@@ -46,4 +46,38 @@ test.describe('cross-tab single-writer lock', () => {
 
     await pageB.close()
   })
+
+  test('a read-only tab can close its file (🔒 / Ctrl+Alt+L) without writing, leaving the holder untouched', async ({ page: pageA, context }) => {
+    await installOpfsPickerShim(context)
+    await blockUpdateCheck(context)
+
+    await pageA.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(pageA, PASSWORD)
+    await expect(pageA.locator('.tt-readonly-banner')).toHaveCount(0)
+
+    const pageB = await context.newPage()
+    await pageB.goto(`${E2E_BASE_URL}/app.html`)
+    await pageB.getByRole('button', { name: /Reopen last/ }).click()
+    const dialog = pageB.getByRole('dialog')
+    await dialog.locator('input[name="tt-password"]').fill(PASSWORD)
+    await dialog.getByRole('button', { name: 'OK' }).click()
+    await expect(pageB.locator('.tt-readonly-banner')).toBeVisible()
+
+    await pageB.locator('.tt-btn-close-file').click()
+    await expect(pageB.locator('.tt-shell')).toHaveCount(0)
+    await expect(pageB.locator('.tt-readonly-banner')).toHaveCount(0)
+    await expect(pageB.getByRole('button', { name: /Reopen last/ })).toBeVisible()
+
+    // Same via the hotkey: reopen read-only, then Ctrl+Alt+L.
+    await pageB.getByRole('button', { name: /Reopen last/ }).click()
+    await pageB.getByRole('dialog').locator('input[name="tt-password"]').fill(PASSWORD)
+    await pageB.getByRole('dialog').getByRole('button', { name: 'OK' }).click()
+    await expect(pageB.locator('.tt-readonly-banner')).toBeVisible()
+    await pageB.keyboard.press('Control+Alt+KeyL')
+    await expect(pageB.locator('.tt-shell')).toHaveCount(0)
+
+    // A still holds the lock, fully writable.
+    await expect(pageA.locator('.tt-readonly-banner')).toHaveCount(0)
+    await pageB.close()
+  })
 })

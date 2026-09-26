@@ -620,6 +620,20 @@ describe('backup-controller', () => {
       await expect(ctl.currentHealth()).resolves.toBe('ok')
     })
 
+    test('a pending password-mismatch takes priority over a plain write failure', async () => {
+      // Mirrors change-password.ts's real call pattern: markPasswordMismatch()
+      // only ever fires right after a writeBackupNow() call that already
+      // failed, so lastWriteFailed is already set in the very same breath.
+      // If a generic write failure outranked the mismatch here, this state
+      // would never once be reachable through its one real call site.
+      writeMock.mockRejectedValueOnce(new Error('disk full'))
+      const store = storeWithBackup(true)
+      const ctl = createBackupController({ store })
+      await ctl.writeBackupNow(new Uint8Array([1]))
+      ctl.markPasswordMismatch()
+      await expect(ctl.currentHealth()).resolves.toBe('password-mismatch')
+    })
+
     test('"orphaned" takes priority over a pending password-mismatch', async () => {
       idbMocks.idbGet.mockResolvedValue(undefined)
       const store = storeWithBackup(true)

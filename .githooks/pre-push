@@ -16,16 +16,67 @@ pass_and_exit() {
 
 BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
 
-# Diff against origin/dev — the commits this push is actually about to land
-# on the shared branch, not the whole history of dev. Only meaningful for
-# pushes to dev (the only branch anyone pushes to directly — main only ever
-# changes via a reviewed PR); computed once here, reused by the deterministic
-# test-coverage gate below and the AI gates further down.
+# What is this push actually doing? git answers on stdin, one line per ref:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# The hook used to ask the checked-out branch instead, which got three
+# everyday cases wrong: `git push origin v2.8.3` (every release) ran the
+# dev-only gates against a diff unrelated to the tag; `git push origin
+# HEAD:dev` from another branch skipped them all; a branch delete ran the
+# full suite for nothing. <remote sha> is also the true diff base — the local
+# origin/dev tracking ref only reflects whenever you last fetched.
+#
+# Stdin is a terminal when the hook is run by hand rather than by git; fall
+# back to the checked-out branch against origin/dev in that case.
+is_zero() { [ -z "${1//0/}" ]; }   # git's all-zeros sha: ref absent on that side
+
+PUSH_REFS=""
+[ -t 0 ] || PUSH_REFS=$(cat)
+
+PUSHING_DEV=0     # 1 when some ref in this push lands on refs/heads/dev
+PUSH_TO=""        # commit being pushed to dev
+PUSH_FROM=""      # commit remote dev had before this push; empty = none/unknown
+if [ -n "$PUSH_REFS" ]; then
+  PUSHING_BRANCH=0
+  while read -r _local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_sha:-}" ] || continue
+    is_zero "$local_sha" && continue    # ref deletion: nothing new lands
+    case "$remote_ref" in refs/heads/*) PUSHING_BRANCH=1 ;; esac
+    if [ "$remote_ref" = "refs/heads/dev" ]; then
+      PUSHING_DEV=1
+      PUSH_TO="$local_sha"
+      is_zero "$remote_sha" || PUSH_FROM="$remote_sha"
+    fi
+  done <<< "$PUSH_REFS"
+
+  # Only tags and/or deletions. A release tag points at a commit that already
+  # passed the dev -> main PR's CI; re-running the suite against the working
+  # tree proves nothing about it.
+  if [ "$PUSHING_BRANCH" = "0" ]; then
+    echo "Pre-push: no branch updates in this push (tags/deletions only) — gates skipped."
+    exit 0
+  fi
+elif [ "$BRANCH" = "dev" ]; then
+  PUSHING_DEV=1
+  PUSH_TO=$(git rev-parse HEAD)
+  PUSH_FROM=$(git rev-parse --verify -q "origin/dev^{commit}" || true)
+fi
+
+# <remote sha> can name a commit this clone has never fetched (someone else
+# pushed to dev since). git will reject the push as non-fast-forward anyway,
+# but the gates below still run first — use origin/dev rather than failing on
+# an unknown object.
+if [ -n "$PUSH_FROM" ] && ! git cat-file -e "${PUSH_FROM}^{commit}" 2>/dev/null; then
+  PUSH_FROM=$(git rev-parse --verify -q "origin/dev^{commit}" || true)
+fi
+
+# Changed files between the remote's dev and what's being pushed — the commits
+# this push actually lands, not the whole history of dev. Computed once, reused
+# by the test-coverage and changelog gates and the AI gates further down.
 PUSH_DIFF_FILES=""
 PUSH_DIFF_ADDED=""
-if [ "$BRANCH" = "dev" ] && git rev-parse "origin/dev" &>/dev/null; then
-  PUSH_DIFF_FILES=$(git diff --name-only --diff-filter=ACMR "origin/dev..HEAD" 2>/dev/null || true)
-  PUSH_DIFF_ADDED=$(git diff --name-only --diff-filter=A "origin/dev..HEAD" 2>/dev/null || true)
+if [ "$PUSHING_DEV" = "1" ] && [ -n "$PUSH_FROM" ]; then
+  PUSH_DIFF_FILES=$(git diff --name-only --diff-filter=ACMR "$PUSH_FROM" "$PUSH_TO" 2>/dev/null || true)
+  PUSH_DIFF_ADDED=$(git diff --name-only --diff-filter=A "$PUSH_FROM" "$PUSH_TO" 2>/dev/null || true)
 fi
 
 echo ""
@@ -33,11 +84,22 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo " Pre-push quality gate"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# Lint/typecheck/tests run on the working tree. The diff-based gates below read
+# the pushed commit itself, but these three can't without a second checkout —
+# so say so when the two differ (e.g. `git push origin other-branch:dev`).
+if [ "$PUSHING_DEV" = "1" ] && [ "$PUSH_TO" != "$(git rev-parse HEAD)" ]; then
+  gate_warn "Pushing ${PUSH_TO:0:9} to dev, but HEAD is $(git rev-parse --short=9 HEAD) — lint/typecheck/tests check the working tree, not the pushed commit"
+fi
+
 # ─── PHASE 1: DETERMINISTIC GATES ────────────────────────────────────────────
+
+# Gates 1-3 go through the npm scripts rather than calling eslint/tsc/vitest
+# directly, so this hook and CI (.github/workflows/ci.yml's `check` job, which
+# runs the same three scripts) can't drift apart when a script gains a flag.
 
 # 1. Lint
 gate_run "Lint"
-if npx eslint src test 2>&1; then
+if npm run lint 2>&1; then
   gate_ok "Lint"
 else
   gate_fail "Lint" "fix lint errors above then push again"
@@ -45,7 +107,7 @@ fi
 
 # 2. TypeCheck
 gate_run "TypeCheck"
-if npx tsc --noEmit 2>&1; then
+if npm run typecheck 2>&1; then
   gate_ok "TypeCheck"
 else
   gate_fail "TypeCheck" "fix type errors above then push again"
@@ -53,7 +115,7 @@ fi
 
 # 3. Tests
 gate_run "Tests"
-if npx vitest run 2>&1; then
+if npm test 2>&1; then
   gate_ok "Tests"
 else
   gate_fail "Tests" "fix failing tests then push again"
@@ -74,10 +136,10 @@ fi
 # hook can't judge that — the AI Test Coverage gate below does the deeper,
 # judgment-based check (including whether e2e/*.spec.ts should be touched).
 gate_run "Test coverage sanity"
-if [ "$BRANCH" != "dev" ]; then
+if [ "$PUSHING_DEV" != "1" ]; then
   gate_warn "Test coverage sanity — skipped (only enforced on pushes to dev)"
 elif [ -z "$PUSH_DIFF_FILES" ]; then
-  gate_ok "Test coverage sanity (no diff against origin/dev)"
+  gate_ok "Test coverage sanity (no diff against remote dev)"
 else
   MISSING=""
   UNCOVERED=""
@@ -91,7 +153,7 @@ else
     esac
     base=$(basename "$f" .ts)
     test_file="test/${base}.test.ts"
-    if [ ! -f "$test_file" ]; then
+    if ! git cat-file -e "${PUSH_TO}:${test_file}" 2>/dev/null; then
       if printf '%s\n' "$PUSH_DIFF_ADDED" | grep -qxF "$f"; then
         MISSING="$MISSING\n  $f  (expected $test_file)"
       fi
@@ -116,17 +178,17 @@ fi
 # CI's changelog-gate hard-fails the same check on the dev -> main PR, against
 # the origin/main baseline (the true last release).
 gate_run "Changelog entry"
-if [ "$BRANCH" != "dev" ]; then
+if [ "$PUSHING_DEV" != "1" ]; then
   gate_warn "Changelog entry — skipped (only checked on pushes to dev)"
 elif ! printf '%s\n' "$PUSH_DIFF_FILES" | grep -qxF "package.json"; then
   gate_ok "Changelog entry (package.json not in this push)"
 else
   extract_ver() { grep -m1 '"version"' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; }
-  HEAD_VER=$( { extract_ver < package.json; } || echo "")
-  BASE_VER=$( { git show origin/dev:package.json 2>/dev/null | extract_ver; } || echo "")
+  HEAD_VER=$( { git show "${PUSH_TO}:package.json" 2>/dev/null | extract_ver; } || echo "")
+  BASE_VER=$( { git show "${PUSH_FROM}:package.json" 2>/dev/null | extract_ver; } || echo "")
   if [ -z "$HEAD_VER" ] || [ -z "$BASE_VER" ] || [ "$HEAD_VER" = "$BASE_VER" ]; then
     gate_ok "Changelog entry (version unchanged)"
-  elif grep -qF "## [${HEAD_VER}]" CHANGELOG.md; then
+  elif git show "${PUSH_TO}:CHANGELOG.md" 2>/dev/null | grep -qF "## [${HEAD_VER}]"; then
     gate_ok "Changelog entry (## [${HEAD_VER}] present)"
   else
     gate_warn "Changelog entry — package.json ${BASE_VER} -> ${HEAD_VER} but CHANGELOG.md has no '## [${HEAD_VER}]' section yet (CI blocks the dev -> main PR until it does)"
@@ -140,9 +202,9 @@ fi
 # other branch (main only ever gets updated via a reviewed PR, never a raw
 # push) skip this phase entirely.
 
-if [ "$BRANCH" != "dev" ]; then
+if [ "$PUSHING_DEV" != "1" ]; then
   echo ""
-  echo -e "${BLUE}AI gates: skipped — only run for pushes to dev (current branch: $BRANCH)${NC}"
+  echo -e "${BLUE}AI gates: skipped — only run for pushes to dev${NC}"
   pass_and_exit "All gates passed. Pushing..."
 fi
 
@@ -166,11 +228,10 @@ if ! command -v claude &>/dev/null; then
   pass_and_exit "All deterministic gates passed. Pushing..."
 fi
 
-# Diff against origin/dev — the commits this push is actually about to land
-# on the shared branch, not the whole history of dev.
+# Same range as PUSH_DIFF_FILES above, full patch this time.
 DIFF=""
-if git rev-parse "origin/dev" &>/dev/null; then
-  DIFF=$(git diff "origin/dev..HEAD" 2>/dev/null || true)
+if [ -n "$PUSH_FROM" ]; then
+  DIFF=$(git diff "$PUSH_FROM" "$PUSH_TO" 2>/dev/null || true)
 fi
 
 if [ -z "$DIFF" ]; then
@@ -178,8 +239,9 @@ if [ -z "$DIFF" ]; then
   pass_and_exit "All gates passed. Pushing..."
 fi
 
-# Wall-clock cap per `claude` invocation — SKIP_AI exists precisely so a slow
-# or hung CLI call never blocks `git push` with no way out but Ctrl-C. 600s
+# Wall-clock cap per `claude` invocation, so a slow or hung CLI call never
+# blocks `git push` with no way out but Ctrl-C. Override with AI_GATE_TIMEOUT;
+# to skip the AI phase outright, just leave ENABLE_AI unset (the default). 600s
 # because the prompts below tell the model to read repo files to verify its
 # findings before reporting, which adds tool-use turns beyond a one-shot read
 # of the diff.

@@ -259,4 +259,51 @@ test.describe('split view — an edit in one pane leaves the other pane mounted'
     await expect(p1.locator('.tt-milestone-row[data-milestone-id="t0-m7"].tt-search-target-flash'))
       .toHaveCount(1, { timeout: 3000 })
   })
+
+  test('deleting a milestone flattens its dead @mention chip in the other pane immediately, and undo relinks it', async ({ page }) => {
+    // Regression for eb9b321: refreshRefLabels() only ever patched a chip's
+    // text on a rename; a delete elsewhere (resolveRefLabel returning null)
+    // did nothing, leaving a dead, still-clickable chip in this pane until a
+    // full editor rebuild it was never due for — potentially the rest of the
+    // session.
+    const doc = buildSplitDoc({ kind: 'daily', date: DAILY_DATE }, { kind: 'milestones' })
+    doc.teams[0]!.dailyNotes[DAILY_DATE] = 'kickoff tied to @[Milestone 3](milestone:t0-m3) next week'
+    await openDoc(page, doc)
+
+    const p0 = page.locator('.tt-pane[data-pane-idx="0"]')
+    const p1 = page.locator('.tt-pane[data-pane-idx="1"]')
+    const chip = p0.locator('.editor a.ref[data-ref="milestone:t0-m3"]')
+    await expect(chip).toHaveText('@Milestone 3')
+
+    // Marks the editor's own root, not just the chip — the fix patches the
+    // chip node in place rather than reparsing the note, so a rebuild would
+    // be a real regression here even though it wouldn't change the chip text.
+    await page.evaluate(() => {
+      document.querySelector('.tt-pane[data-pane-idx="0"] .editor')!.setAttribute('data-e2e-marker', '1')
+    })
+
+    const targetRow = p1.locator('.tt-milestone-row[data-milestone-id="t0-m3"]')
+    await targetRow.locator('.tt-milestone-delete-btn').click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Delete' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(targetRow).toHaveCount(0)
+
+    // The chip is gone, replaced by the same dead-marker span mdToHtml itself
+    // produces for a `~text~` marker — data-ref kept so an undo can find its
+    // way back to a live chip (see refreshRefLabels' own comment).
+    await expect(chip).toHaveCount(0)
+    const deadSpan = p0.locator('.editor span.tt-unlinked-ref[data-ref="milestone:t0-m3"]')
+    await expect(deadSpan).toHaveText('Milestone 3')
+    expect(
+      await page.evaluate(() => !!document.querySelector('.tt-pane[data-pane-idx="0"] .editor[data-e2e-marker="1"]'))
+    ).toBe(true)
+
+    // Undo the delete: the milestone comes back, and the live chip relinks.
+    await page.locator('.tt-toast-action').click()
+    await expect(targetRow).toBeVisible()
+    await expect(deadSpan).toHaveCount(0)
+    await expect(chip).toHaveText('@Milestone 3')
+  })
 })

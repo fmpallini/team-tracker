@@ -4,23 +4,42 @@ on:
   push:
     branches:
       - dev
-      - 'feature/**'
+  # Into dev: Dependabot's bump PRs (dependabot.yml sets target-branch: dev) —
+  # that's the only thing that opens a PR against dev, since all human work
+  # commits to dev directly (CLAUDE.md: no feature branches). Into main: the
+  # release PR, which picks up the heavier gates below.
   pull_request:
     branches:
       - dev
       - main
 
+# Pushing twice in quick succession used to leave both runs going, each paying
+# for a full build + Chromium. Supersede the in-flight run for a PR — a new
+# commit makes the old verdict irrelevant — but never for a push to dev, so
+# every commit that actually lands keeps its own recorded result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Deny by default; each job opts into exactly what it needs. A job added later
+# without its own `permissions:` block fails closed instead of inheriting
+# whatever the repo default happens to be.
+permissions: {}
+
 jobs:
   check:
     name: Lint, typecheck & test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -31,22 +50,55 @@ jobs:
   # — the slowest gate there (full build + Chromium). Moved here so pushes are
   # fast and e2e enforcement no longer depends on the hook being installed or
   # not bypassed with --no-verify. Runs on every push to dev (catch early) and
-  # on PRs into main (release gate); skipped for PRs into dev.
+  # on PRs into main (release gate); skipped for PRs into dev, i.e. Dependabot
+  # bumps — those still get `check`, and the e2e run on the dev push that
+  # merges them.
   e2e:
     name: E2E (Playwright)
     if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+
+      # The Chromium build is ~150MB and only changes when @playwright/test
+      # does, so key the cache on the lockfile: a bump misses and re-downloads,
+      # everything else reuses. The OS-level libraries `--with-deps` installs
+      # live outside ~/.cache/ms-playwright and are not cached, hence the
+      # separate install-deps on a hit.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
       - run: npm run test:e2e
+
+      # playwright.config.ts records a trace on first retry; without this the
+      # trace is written into the runner and thrown away, leaving a CI-only
+      # failure with nothing to open locally.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: playwright-results-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Only runs for PRs targeting main — dev -> main is where releases are cut,
   # so this is the heavier gate: full build, on both OSes, with output
@@ -55,6 +107,7 @@ jobs:
     name: Release gate (build)
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     needs: check
+    timeout-minutes: 15
     permissions:
       contents: read
     strategy:
@@ -63,9 +116,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run build
@@ -87,18 +142,25 @@ jobs:
     name: Changelog entry for version bump
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
+      # Default shallow checkout, not fetch-depth: 0 — this job reads exactly
+      # one file from the base branch, and a full clone of this repo is ~135MB
+      # of history to fetch for it. The one commit it needs is pulled below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
+          persist-credentials: false
       - name: Require CHANGELOG.md entry when package.json version changes
         shell: bash
         run: |
           set -euo pipefail
           ver() { grep -m1 '"version"' "$1" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; }
           HEAD_VER=$(ver package.json)
+          # The shallow PR checkout has no origin/<base> tracking ref, so fetch
+          # just that branch's tip (depth 1, unauthenticated — public repo).
+          git fetch --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
           git show "origin/${GITHUB_BASE_REF}:package.json" > /tmp/base-package.json
           BASE_VER=$(ver /tmp/base-package.json)
           echo "package.json version: base=${BASE_VER} head=${HEAD_VER}"

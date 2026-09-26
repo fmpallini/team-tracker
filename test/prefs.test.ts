@@ -10,10 +10,18 @@ import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
 import type { BackupHealth } from '../src/core/backup-controller'
 
-const fsMocks = vi.hoisted(() => ({ pickCreateBackup: vi.fn() }))
+// `fsApi` overrides `supportsFsApi` (always false under jsdom) for the few
+// tests that need the Backup tab's controls to be enabled at all; setup()
+// resets it to jsdom's real value.
+const fsMocks = vi.hoisted(() => ({ pickCreateBackup: vi.fn(), fsApi: false }))
 vi.mock('../src/core/fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/fs')>()
-  return { ...actual, downloadFallback: vi.fn(), pickCreateBackup: fsMocks.pickCreateBackup }
+  return {
+    ...actual,
+    get supportsFsApi() { return fsMocks.fsApi },
+    downloadFallback: vi.fn(),
+    pickCreateBackup: fsMocks.pickCreateBackup,
+  }
 })
 const idbMocks = vi.hoisted(() => ({ idbSet: vi.fn(async () => {}) }))
 vi.mock('../src/core/idb', () => idbMocks)
@@ -44,6 +52,7 @@ function setup(): Setup {
   document.body.innerHTML = ''
   stubMatchMedia()
   fsMocks.pickCreateBackup.mockReset()
+  fsMocks.fsApi = false
   idbMocks.idbSet.mockReset().mockResolvedValue(undefined)
   const doc = createEmptyDocument('en-US')
   const store = createStore(doc)
@@ -601,6 +610,29 @@ test('backup tab: backup frequency defaults to Daily and updates the pref when c
   hourly.checked = true
   hourly.dispatchEvent(new Event('change'))
   expect(store.doc.prefs.backupFrequency).toBe('hourly')
+})
+
+test('backup tab: frequency selector stays disabled until backup is turned on, then enables', async () => {
+  const { store, shell, appCtl } = setup()
+  fsMocks.fsApi = true
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {}, name: 'team.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Backup')
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  expect(checkbox.disabled).toBe(false)
+  expect(radio('tt-prefs-backup-frequency', 'daily').disabled).toBe(true)
+  expect(radio('tt-prefs-backup-frequency', 'hourly').disabled).toBe(true)
+
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await vi.waitFor(() => expect(radio('tt-prefs-backup-frequency', 'hourly').disabled).toBe(false))
+  expect(radio('tt-prefs-backup-frequency', 'daily').disabled).toBe(false)
+
+  const box = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  box.checked = false
+  box.dispatchEvent(new Event('change'))
+  expect(radio('tt-prefs-backup-frequency', 'hourly').disabled).toBe(true)
 })
 
 test('backup tab: no status table when backup is off', () => {

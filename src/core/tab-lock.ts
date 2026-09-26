@@ -55,6 +55,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
   const channelName = 'tmv:' + session.name
   const bc = BC ? new BC(channelName) : null
   let releaseLock: (() => void) | null = null
+  let released = false
 
   const banner = el(
     'div',
@@ -86,6 +87,12 @@ export function createTabLock(deps: TabLockDeps): () => void {
     const opts = waitForRelease ? {} : { ifAvailable: true }
     locks
       .request(channelName, opts, (lock) => {
+        // A read-only tab can close its file while a "Take control" request
+        // is still queued. Granted after that, returning undefined hands the
+        // lock straight back — holding it would lock every other tab out of
+        // the file for as long as this one stays open, on behalf of a
+        // document nobody has open any more.
+        if (released) return undefined
         if (!lock) {
           enterReadOnly()
           return undefined
@@ -151,8 +158,12 @@ export function createTabLock(deps: TabLockDeps): () => void {
   // Lets a "close file" action give up write access cleanly — without this,
   // the lock's holding Promise (see requestLock's callback above) never
   // resolves on its own, and reopening the same filename in this same tab
-  // would queue forever behind a lock this very tab still holds.
+  // would queue forever behind a lock this very tab still holds. A read-only
+  // tab closes too, so this also takes down its banner and neutralizes any
+  // takeover request still queued (see requestLock's `released` check).
   return function releaseTabLock(): void {
+    released = true
+    banner.remove()
     releaseLock?.()
     bc?.close()
     unsubscribeBlocked()

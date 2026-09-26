@@ -249,6 +249,50 @@ test('releaseTabLock() lets the same file be reopened without hanging behind its
 })
 
 /**
+ * A read-only tab can close its file (main.ts's closeFile). Its tab lock may
+ * still have a queued "Take control" request in flight; if that is granted
+ * after the release, it must hand the lock straight back instead of holding it
+ * forever for a document nobody has open — and must not flip the discarded
+ * store writable or resurrect the banner.
+ */
+test('releasing a read-only tab with a pending takeover drops the lock as soon as it is granted', async () => {
+  const { locks } = makeFakeLockManager()
+  const session = makeSession('closing-reader.tmv')
+
+  const storeA = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session, store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(storeA.readOnly).toBe(false)
+
+  const storeB = createStore(createEmptyDocument('en-US'))
+  const shellB = makeShell()
+  const releaseB = createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(storeB.readOnly).toBe(true)
+
+  // B asks for control, then closes before A's handoff completes.
+  shellB.root.parentElement!.querySelector<HTMLButtonElement>('.tt-readonly-takeover-btn')!.click()
+  releaseB()
+  expect(document.querySelectorAll('.tt-readonly-banner')).toHaveLength(0)
+
+  // A still hands off (the message was already sent) and goes read-only.
+  await vi.waitFor(() => expect(storeA.readOnly).toBe(true))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  // B's late grant must neither touch its discarded store nor keep the lock.
+  expect(storeB.readOnly).toBe(true)
+  expect(document.querySelectorAll('.tt-readonly-banner')).toHaveLength(1) // A's own banner only
+
+  const storeC = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session, store: storeC, shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(storeC.readOnly).toBe(false)
+})
+
+/**
  * makeFakeLockManager() above grants synchronously (its Promise executor runs
  * the callback inline), which happens to collapse the provisional-read-only
  * window to nothing — no good for testing that the window itself is covered.

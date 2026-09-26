@@ -61,7 +61,7 @@ export interface PrefsAppCtl {
   backupStatus(): Promise<BackupStatus | null>
   /**
    * Single priority-ordered backup health summary (orphaned / lapsed grant /
-   * generic write error / stale password / ok) — see BackupController.currentHealth.
+   * stale password / generic write error / ok) — see BackupController.currentHealth.
    * Replaces the old orphan-only checkBackupOrphaned() so the Backup tab and
    * the save pill read from the same source of truth.
    */
@@ -490,6 +490,10 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         )
       : null
 
+    // Greyed out, not hidden, while backup is off: there's no backup for a
+    // frequency to apply to, but hiding it would make the layout jump on every
+    // toggle. The checkbox's enable/disable paths both renderActiveTab(), so
+    // this follows the pref without a listener of its own.
     const frequencyField = radioField(
       'tt-prefs-backup-frequency',
       'prefs_backup_frequency_label',
@@ -500,7 +504,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           d.prefs.backupFrequency = value as Prefs['backupFrequency']
         }, PREFS_ONLY)
       },
-      !backupAvailable
+      !backupAvailable || !prefs.dailyBackupEnabled
     )
 
     // Two separate top-level fields (not one field stacking everything with
