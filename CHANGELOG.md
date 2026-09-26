@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.8.3] - 2026-09-25
+
+### Fixed
+- A file opened read-only because it's already open in another tab can now be closed with the 🔒 button or **Ctrl+Alt+L**, returning to the start screen. Previously both did nothing, leaving no way out short of closing the tab. Closing a read-only file never saves, so it can't overwrite changes made in the tab that has it open for editing.
+- When changing your password also failed to update the backup file, the save indicator showed a generic "backup write failed" notice instead of the "backup password out of date" one. The generic notice has no action for that problem, so the backup kept its old password with no one-click way to update it. It now shows the right notice, and clicking it updates the backup's password.
+
 ## [2.8.2] - 2026-09-14
 
 ### Added
