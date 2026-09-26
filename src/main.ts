@@ -536,9 +536,12 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // cross-tab write lock, then returns to the start screen — the 🔒 header
   // button and Ctrl+Alt+L. `closing` guards against a double-invocation
   // (e.g. a fast repeat keypress) tearing the same document down twice.
+  // Deliberately NOT gated on `store.readOnly`: a tab that lost (or never got)
+  // the cross-tab write lock must still be able to close — teardownApp() and
+  // saveNow() both refuse to write while read-only, so it closes unsaved.
   let closing = false
   function closeFile(): void {
-    if (closing || store.readOnly) return
+    if (closing) return
     closing = true
     ;(async () => {
       await teardownApp({ store, saveCtl, dispose })
