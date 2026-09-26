@@ -1728,6 +1728,14 @@ select option { background: var(--bg); color: var(--fg); }
 }
 .tt-prefs-radio input[type="radio"]:checked::before { transform: scale(1); }
 .tt-prefs-radio input[type="radio"]:checked { border-color: var(--accent); }
+/* Disabled (e.g. backup frequency while backup is off): dimmed like
+   .tt-btn:disabled, and no accent on hover — the pill is custom-drawn, so
+   the browser's own disabled look never reaches it. */
+.tt-prefs-radio:has(input:disabled),
+.tt-prefs-radio:has(input:disabled) input[type="radio"] { cursor: not-allowed; }
+.tt-prefs-radio:has(input:disabled) { opacity: .5; }
+.tt-prefs-radio:has(input:disabled):hover { border-color: var(--border); }
+.tt-prefs-radio:has(input:disabled:checked):hover { border-color: var(--accent); }
 .tt-prefs-radio-swatch { width: .85rem; height: .85rem; border-radius: 50%; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .tt-prefs-autosave-input { width: 5rem; }
 .tt-prefs-due-soon-input { width: 5rem; }
