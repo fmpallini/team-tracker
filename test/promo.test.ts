@@ -201,3 +201,19 @@ describe('dismissal and standalone', () => {
     window.matchMedia = orig
   })
 })
+
+describe('PWA build opened over file:// (not installable)', () => {
+  it('renders no install card or header button', () => {
+    expect(promoStartCard(LOCALE, { pwa: true, protocol: 'file:' })).toBeNull()
+    expect(promoHeaderButton(LOCALE, { pwa: true, protocol: 'file:' })).toBeNull()
+  })
+
+  it('still renders the install offer over http(s)', () => {
+    expect(promoHeaderButton(LOCALE, { pwa: true, protocol: 'http:' })).not.toBeNull()
+    expect(promoHeaderButton(LOCALE, { pwa: true, protocol: 'https:' })).not.toBeNull()
+  })
+
+  it('leaves the local build hosted invite alone (file:// is its normal home)', () => {
+    expect(promoHeaderButton(LOCALE, { pwa: false, pagesUrl: URL, protocol: 'file:' })).not.toBeNull()
+  })
+})

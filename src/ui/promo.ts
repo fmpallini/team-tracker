@@ -17,6 +17,7 @@ import { showModal, type ModalHandle } from './modal'
 export interface PromoOpts {
   pwa?: boolean
   pagesUrl?: string
+  protocol?: string
 }
 
 interface BeforeInstallPromptEvent extends Event {
@@ -120,8 +121,12 @@ function setDismissed(): void {
   }
 }
 
-function resolve(opts?: PromoOpts): { pwa: boolean; pagesUrl: string } {
-  return { pwa: opts?.pwa ?? __PWA__, pagesUrl: opts?.pagesUrl ?? __PAGES_URL__ }
+function resolve(opts?: PromoOpts): { pwa: boolean; pagesUrl: string; protocol: string } {
+  return {
+    pwa: opts?.pwa ?? __PWA__,
+    pagesUrl: opts?.pagesUrl ?? __PAGES_URL__,
+    protocol: opts?.protocol ?? window.location.protocol,
+  }
 }
 
 function showInstallInstructions(locale: Locale): void {
@@ -154,8 +159,13 @@ function openHosted(pagesUrl: string): void {
   window.open(url, '_blank', 'noopener')
 }
 
-function hiddenEverywhere(pwa: boolean, pagesUrl: string): boolean {
-  return installed || isStandalone() || (!pwa && !pagesUrl)
+// The PWA build opened straight from disk (dist/pwa/index.html over file://)
+// can never install: browsers only install http(s) pages with a manifest and
+// service worker, and main.ts skips SW registration off http(s). An install
+// offer there would only lead to instructions that can't work, so hide it.
+function hiddenEverywhere(pwa: boolean, pagesUrl: string, protocol: string): boolean {
+  const installable = protocol === 'http:' || protocol === 'https:'
+  return installed || isStandalone() || (!pwa && !pagesUrl) || (pwa && !installable)
 }
 
 // Shared by the card's action button and the header button: install flow in
@@ -166,12 +176,12 @@ function promoAction(locale: Locale, pwa: boolean, pagesUrl: string): void {
 }
 
 export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | null {
-  const { pwa, pagesUrl } = resolve(opts)
+  const { pwa, pagesUrl, protocol } = resolve(opts)
   // Arriving from the local build's "go to the installable version" link
   // (INSTALL_HASH): force the card past a past dismissal so the install
   // affordance is actually there when the user lands.
   const deepLink = pwa && wantsInstallDeepLink()
-  if (hiddenEverywhere(pwa, pagesUrl) || (isDismissed() && !deepLink)) return null
+  if (hiddenEverywhere(pwa, pagesUrl, protocol) || (isDismissed() && !deepLink)) return null
 
   const action = el(
     'button',
@@ -230,8 +240,8 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
 }
 
 export function promoHeaderButton(locale: Locale, opts?: PromoOpts): HTMLElement | null {
-  const { pwa, pagesUrl } = resolve(opts)
-  if (hiddenEverywhere(pwa, pagesUrl)) return null
+  const { pwa, pagesUrl, protocol } = resolve(opts)
+  if (hiddenEverywhere(pwa, pagesUrl, protocol)) return null
   return el(
     'button',
     {
