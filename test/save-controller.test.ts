@@ -1186,3 +1186,36 @@ test('a failed write does not call backupCtl.maybeWriteBackup', async () => {
 
   expect(backupCtl.maybeWriteBackup).not.toHaveBeenCalled()
 })
+
+
+test('repeated write failures replace one error toast instead of stacking a new one each time', async () => {
+  // Saves retry on their own (the auto-save interval), so an unkeyed toast
+  // piled up one sticky copy per failed attempt.
+  fsMocks.writeFile.mockImplementation(async () => { throw new Error('disk full') })
+  const store = createStore(createEmptyDocument('en-US'))
+  const ctl = createSaveController({
+    store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+  store.update((d) => { d.prefs.dueSoonDays = 3 })
+  await ctl.saveNow()
+  await ctl.saveNow()
+  expect(modalMocks.toast).toHaveBeenCalledTimes(2)
+  const keys = modalMocks.toast.mock.calls.map((c) => (c as unknown[])[1] as { key?: string } | undefined).map((o) => o?.key)
+  expect(keys[0]).toBeTruthy()
+  expect(keys[1]).toBe(keys[0])
+})
+
+test('a successful save clears a lingering save-error toast', async () => {
+  fsMocks.writeFile.mockImplementationOnce(async () => { throw new Error('locked') })
+  const store = createStore(createEmptyDocument('en-US'))
+  const ctl = createSaveController({
+    store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+  store.update((d) => { d.prefs.dueSoonDays = 3 })
+  await ctl.saveNow()
+  const key = ((modalMocks.toast.mock.calls[0] as unknown[])[1] as { key?: string }).key
+  modalMocks.dismissToast.mockReset()
+  await ctl.saveNow()
+  expect(store.dirty).toBe(false)
+  expect(modalMocks.dismissToast).toHaveBeenCalledWith(key)
+})

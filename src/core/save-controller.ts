@@ -68,6 +68,9 @@ export interface SaveControllerDeps {
   onOpenBackupPrefs?: () => void
 }
 
+/** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
+const SAVE_ERROR_TOAST_KEY = 'save-error'
+
 export function createSaveController(deps: SaveControllerDeps): SaveController {
   let saving = false
   let queued = false
@@ -116,6 +119,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     const lc = deps.locale()
     toast(t(lc, 'save_error_toast'), {
       sticky: true,
+      key: SAVE_ERROR_TOAST_KEY,
       action: { label: t(lc, 'save_as_ellipsis'), onClick: () => void saveAs() },
     })
   }
@@ -324,6 +328,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // of the branches beneath it.
     permissionEpisodeToasted = false
     dismissToast(SAVE_PERMISSION_TOAST_KEY)
+    dismissToast(SAVE_ERROR_TOAST_KEY)
     const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
     if (health === 'orphaned') {
       // The moved-computer case: `backupHandleId` travelled inside the .tmv
