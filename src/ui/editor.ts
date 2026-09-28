@@ -291,8 +291,26 @@ export function flushAllEditors(): void {
   }
 }
 
+/**
+ * Whether editors are currently read-only (the tab lost the cross-tab write
+ * lock — see core/tab-lock.ts). Module-level like `liveEditors`: an editor
+ * mounted while it's set (a pane switch in a read-only tab) must come up
+ * non-editable too.
+ */
+let editorsReadOnly = false
+
+/**
+ * Turns every live editor — and every one created until lifted — non-editable.
+ * A read-only tab's `store.update()` is blocked, so without this the editor
+ * still took keystrokes that were shown but never reached the document.
+ */
+export function setEditorsReadOnly(readOnly: boolean): void {
+  editorsReadOnly = readOnly
+  for (const ed of liveEditors) ed.root.setAttribute('contenteditable', readOnly ? 'false' : 'true')
+}
+
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
-  const editorEl = el('div', { class: 'editor', contenteditable: 'true' })
+  const editorEl = el('div', { class: 'editor', contenteditable: editorsReadOnly ? 'false' : 'true' })
 
   let changeTimer: ReturnType<typeof setTimeout> | null = null
   function scheduleChange(): void {

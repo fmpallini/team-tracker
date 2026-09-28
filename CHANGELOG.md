@@ -4,6 +4,19 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.0] - 2026-09-28
+
+### Changed
+- Opening a file is faster, most noticeably for large files. Each open used to decrypt and read the whole file twice.
+
+### Fixed
+- Closing a file (🔒 or **Ctrl+Alt+L**) no longer throws away changes whose last save failed. Before, if that save failed (the file was locked by another program, the disk was full, or the file had been changed elsewhere), the app went back to the start screen anyway and the changes were lost, even though a notice still said your data was safe in memory. The file now stays open. If the "file changed externally" prompt is showing, resolve it there; otherwise you're asked whether to keep the file open or close it without saving. Opening another file while one is open works the same way.
+- When a file is open read-only because another tab is editing it, notes can no longer be typed into. Before, typing appeared on screen but was never saved. Just looking around a read-only tab also no longer marks the file as unsaved, so closing it no longer asks "Leave site?" about changes it could never save.
+- **Take control** in a read-only tab now picks up whatever the other tab saved before handing over. Before, it kept showing its own older copy, and its first save hit the "file changed externally" prompt, where choosing to overwrite erased the other tab's work.
+- Two different files with the same name, such as a `team.tmv` in two different folders, can now be open in separate tabs at the same time. Before, whichever you opened second became read-only, as if it were the same file.
+- In Risks and Milestones, clicking from one expanded follow-up into another now keeps your cursor where you clicked. Before, the list redrew as you left the first one, so the cursor was lost and what you typed next went nowhere.
+- When saving kept failing, a new "Failed to save" notice piled up on every automatic retry, and they stayed on screen even after a later save worked. There is now a single notice, and it goes away once a save succeeds.
+
 ## [2.8.3] - 2026-09-25
 
 ### Changed

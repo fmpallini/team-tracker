@@ -1,4 +1,4 @@
-import { createEditor, flushAllEditors, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 
@@ -3505,5 +3505,32 @@ describe('flushAllEditors', () => {
     flushAllEditors()
     expect(hooks.changes).toBe(0)
     ed.destroy()
+  })
+})
+
+// A tab without the cross-tab write lock can't commit anything to the store,
+// so an editable surface there only collects keystrokes that silently vanish.
+describe('setEditorsReadOnly', () => {
+  test('makes every live editor, and every one created while read-only, non-editable until lifted', () => {
+    const a = createEditor(makeHooks(), 'en-US')
+    const surface = (ed: Editor): HTMLElement => ed.root.querySelector<HTMLElement>('.editor')!
+    try {
+      setEditorsReadOnly(true)
+      expect(surface(a).getAttribute('contenteditable')).toBe('false')
+
+      const b = createEditor(makeHooks(), 'en-US')
+      try {
+        expect(surface(b).getAttribute('contenteditable')).toBe('false')
+
+        setEditorsReadOnly(false)
+        expect(surface(a).getAttribute('contenteditable')).toBe('true')
+        expect(surface(b).getAttribute('contenteditable')).toBe('true')
+      } finally {
+        b.destroy()
+      }
+    } finally {
+      setEditorsReadOnly(false)
+      a.destroy()
+    }
   })
 })

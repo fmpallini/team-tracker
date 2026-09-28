@@ -27,20 +27,22 @@ import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
 import { forceWrite, readCurrent, sameEntry, pickCreate } from './core/fs'
-import { toast, showErrorModal, dismissModelessModals, dismissToast } from './ui/modal'
+import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast } from './ui/modal'
+import { el } from './ui/dom'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
+import { resolveFileLockKey } from './core/file-identity'
 import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { closeAnyContextMenu } from './ui/context-menu'
 import { closeAnyBacklinksPanel } from './ui/backlinks-panel'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
-import { flushAllEditors } from './ui/editor'
+import { flushAllEditors, setEditorsReadOnly } from './ui/editor'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
 import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
 import { waitForActivation } from './core/sw-ready'
@@ -60,6 +62,8 @@ interface AppController {
   shell: Shell
   pm: PaneManager
   saveCtl: SaveController
+  /** Whether the external-change conflict modal is up — teardown leaves it to resolve an unsaved close rather than stacking a discard prompt over it. */
+  isConflictOpen(): boolean
   /**
    * Task 25 re-review item #4c: tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
@@ -95,8 +99,18 @@ function openDocument(session: FileSession, doc: Doc, password: string | null, m
  * this document's listeners, and resets the password-derived session key so
  * it can't leak into whichever document opens next. Does not touch `app` or
  * navigate — callers own both.
+ *
+ * Returns false WITHOUT tearing anything down when the document is still
+ * dirty after that save — `saveNow()` resolves normally on a failed write
+ * (the error surfaces as a toast or the conflict modal, not a rejection), so
+ * `store.dirty` is the one signal that the edits never reached the file,
+ * whatever the reason. Tearing down anyway used to drop the user on the start
+ * screen with a toast still claiming their data was "safe in memory", and
+ * with the beforeunload guard already removed. `force` is the explicit
+ * "close without saving" choice (see confirmDiscardUnsaved). A read-only tab
+ * is exempt: it can never save, so waiting on it would make it unclosable.
  */
-async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose'>): Promise<void> {
+async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose'>, opts?: { force?: boolean }): Promise<boolean> {
   // BEFORE the dirty check, not after: a debounced editor change still in
   // flight hasn't reached the store yet, so both `store.dirty` and whatever
   // `saveNow()` serializes would miss it. `a.dispose()` below flushes it
@@ -105,6 +119,7 @@ async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose
   flushAllEditors()
   if (a.store.dirty && !a.store.readOnly) await a.saveCtl.saveNow({ explicit: true })
   await a.saveCtl.flush()
+  if (!opts?.force && a.store.dirty && !a.store.readOnly) return false
   a.dispose()
   // Both are module-level singletons (one popover open at a time, app-wide —
   // see their own files) rather than anything a.dispose()'s per-document
@@ -122,6 +137,39 @@ async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose
   // exists to prevent. Left alone, it would sit over the start screen for up
   // to ten more seconds, bound to the store/Doc just discarded above.
   dismissToast(UNDO_TOAST_KEY)
+  return true
+}
+
+/**
+ * Asks whether to throw away edits whose save just failed. Resolves true only
+ * on the explicit discard button; Escape, "Keep open" or any other close
+ * keeps the document.
+ */
+function confirmDiscardUnsaved(locale: Locale): Promise<boolean> {
+  return new Promise((resolve) => {
+    let discard = false
+    const handle = showModal({
+      title: t(locale, 'close_unsaved_title'),
+      body: el('p', { class: 'tt-modal-message' }, t(locale, 'close_unsaved_body')),
+      buttons: [
+        { label: t(locale, 'close_unsaved_discard'), danger: true, left: true, onClick: () => { discard = true; handle.close() } },
+        { label: t(locale, 'close_unsaved_keep'), primary: true, onClick: () => handle.close() },
+      ],
+      onClose: () => resolve(discard),
+    })
+  })
+}
+
+/**
+ * teardownApp, falling back to asking the user when the final save didn't
+ * land. With the conflict modal already up there is nothing to ask — its
+ * Overwrite/Fork/Reload choices are the recovery — so the close just stops.
+ */
+async function teardownOrConfirm(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose' | 'isConflictOpen'>): Promise<boolean> {
+  if (await teardownApp(a)) return true
+  if (a.isConflictOpen()) return false
+  if (!(await confirmDiscardUnsaved(a.store.doc.prefs.locale))) return false
+  return teardownApp(a, { force: true })
 }
 
 function detectBrowserLocale(): Locale {
@@ -146,7 +194,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       toast(t(prev.store.doc.prefs.locale, 'already_open_toast'))
       return
     }
-    await teardownApp(prev)
+    // Edits that couldn't be saved keep the previous document open and
+    // abandon this open, unless the user explicitly discards them.
+    if (!(await teardownOrConfirm(prev))) return
     app = null
   }
 
@@ -228,10 +278,24 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // chosen action (successfully or not) settles.
   let conflictOpen = false
 
+  // Replaces the in-memory document with the file's current contents — the
+  // conflict modal's "Reload", and a tab taking the write lock over from
+  // another (see createTabLock's refreshBeforeWritable below).
+  async function reloadFromDisk(): Promise<void> {
+    const bytes = await readCurrent(session)
+    const currentPw = app ? app.password : password
+    const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
+    if (!reloaded) throw new Error('expected a plain file, got something else on reload')
+    store.replaceDoc(reloaded)
+    pm.renderAll()
+    shell.setSaveState('saved')
+    shell.setTitle(session.name, false)
+  }
+
   const backupCtl = createBackupController({ store })
 
-  // A migration just ran on open (see start.ts's peekPlainSchemaVersion/
-  // peekEncryptedSchemaVersion) — snapshot the original, unmigrated bytes to
+  // A migration just ran on open (see crypto.ts's parsePlainWithVersion/
+  // decryptDocumentWithVersion, used by start.ts) — snapshot the original, unmigrated bytes to
   // the backup mirror once, before any edit/autosave can overwrite it with
   // post-migration state. Fire-and-forget: writeBackupNow never throws, and
   // nothing downstream depends on this completing before the shell renders.
@@ -261,14 +325,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         locale: store.doc.prefs.locale,
         onReload: async () => {
           try {
-            const bytes = await readCurrent(session)
-            const currentPw = app ? app.password : password
-            const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
-            if (!reloaded) throw new Error('expected a plain file, got something else on reload')
-            store.replaceDoc(reloaded)
-            pm.renderAll()
-            shell.setSaveState('saved')
-            shell.setTitle(session.name, false)
+            await reloadFromDisk()
           } catch (e) {
             console.error(e)
             toast(t(store.doc.prefs.locale, 'conflict_reload_failed'), { sticky: true })
@@ -369,7 +426,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     },
   })
   disposers.push(() => saveCtl.dispose())
-  app = { store, session, password, shell, pm, saveCtl, dispose }
+  app = { store, session, password, shell, pm, saveCtl, isConflictOpen: () => conflictOpen, dispose }
   saveCtl.scheduleFrom(store.doc.prefs)
 
   // Task 25 fix #6: `onDirty` was never wired up — the save indicator and
@@ -451,7 +508,19 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   window.addEventListener('beforeunload', onBeforeUnload)
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
-  const releaseTabLock = createTabLock({ session, store, shell, saveCtl, locks: navigator.locks })
+  const releaseTabLock = createTabLock({
+    session, store, shell, saveCtl, locks: navigator.locks,
+    // Per file, not per file name — see core/file-identity.ts.
+    lockKey: resolveFileLockKey(session, navigator.locks),
+    onReadOnlyChange: (readOnly) => setEditorsReadOnly(readOnly),
+    // The tab that held the lock saved on its way out, so the file is newer
+    // than this tab's copy whenever its lastModified moved.
+    refreshBeforeWritable: async () => {
+      if (!session.handle) return
+      const file = await session.handle.getFile()
+      if (file.lastModified !== session.lastModified) await reloadFromDisk()
+    },
+  })
   disposers.push(releaseTabLock)
 
   // Task 24: preferences modal wiring. `changePassword` itself lives in
@@ -539,12 +608,17 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // Deliberately NOT gated on `store.readOnly`: a tab that lost (or never got)
   // the cross-tab write lock must still be able to close — teardownApp() and
   // saveNow() both refuse to write while read-only, so it closes unsaved.
+  // A writable document whose final save fails stays open (teardownOrConfirm)
+  // unless the user explicitly chooses to discard.
   let closing = false
   function closeFile(): void {
     if (closing) return
     closing = true
     ;(async () => {
-      await teardownApp({ store, saveCtl, dispose })
+      if (!(await teardownOrConfirm({ store, saveCtl, dispose, isConflictOpen: () => conflictOpen }))) {
+        closing = false
+        return
+      }
       app = null
       // No file open once we're back at the start screen — same reasoning as
       // the launch-time clear above.

@@ -42,6 +42,31 @@ export interface TabLockDeps {
    * and jsdom both provide it, unlike `navigator.locks`).
    */
   BroadcastChannelCtor?: typeof BroadcastChannel
+  /**
+   * Fires on each *visible* read-only transition (banner shown / removed) —
+   * never for the provisional silent window a sole tab passes through on
+   * open. main.ts turns the editors non-editable with it, since a blocked
+   * `store.update()` otherwise leaves typed text on screen that never
+   * reaches the document.
+   */
+  onReadOnlyChange?(readOnly: boolean): void
+  /**
+   * Awaited while holding a lock this tab had to wait for (it was visibly
+   * read-only — e.g. "Take control"), BEFORE the tab becomes writable. The
+   * previous holder saved on its way out, so this tab's in-memory document is
+   * older than the file; main.ts reloads it here. Without that, the first
+   * save hit an external-change conflict whose "Overwrite" erased the other
+   * tab's edits. A rejection is logged and the tab goes writable anyway —
+   * the conflict modal still guards the next save.
+   */
+  refreshBeforeWritable?(): Promise<void>
+  /**
+   * The lock / BroadcastChannel name for this file (core/file-identity.ts's
+   * resolveFileLockKey — per file, not per file *name*). A promise because
+   * resolving it reads IndexedDB; the tab stays provisionally read-only until
+   * it settles and the lock is requested. Omitted = `'tmv:' + session.name`.
+   */
+  lockKey?: Promise<string>
 }
 
 export function createTabLock(deps: TabLockDeps): () => void {
@@ -52,8 +77,9 @@ export function createTabLock(deps: TabLockDeps): () => void {
   const supportsBroadcast = !!BC
   if (!supportsLocks && !supportsBroadcast) return () => {}
 
-  const channelName = 'tmv:' + session.name
-  const bc = BC ? new BC(channelName) : null
+  // Both set by start(), once the lock key is known.
+  let channelName = 'tmv:' + session.name
+  let bc: BroadcastChannel | null = null
   let releaseLock: (() => void) | null = null
   let released = false
 
@@ -68,8 +94,17 @@ export function createTabLock(deps: TabLockDeps): () => void {
     )
   )
 
+  // Whether the read-only state is currently *shown* (banner up) — distinct
+  // from store.readOnly, which is also true during the silent provisional
+  // window below.
+  let visibleReadOnly = false
+
   function enterReadOnly(): void {
     store.setReadOnly(true)
+    if (!visibleReadOnly) {
+      visibleReadOnly = true
+      deps.onReadOnlyChange?.(true)
+    }
     // Sibling before shell.root, not prepended inside it: .tt-shell is a
     // 2-row CSS grid (header auto, body 1fr) — a 3rd grid child shifts
     // auto-placement so header lands in the 1fr row (stretches full-height)
@@ -80,6 +115,19 @@ export function createTabLock(deps: TabLockDeps): () => void {
   function exitReadOnly(): void {
     store.setReadOnly(false)
     banner.remove()
+    if (visibleReadOnly) {
+      visibleReadOnly = false
+      deps.onReadOnlyChange?.(false)
+    }
+  }
+
+  function holdUntilReleased(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      releaseLock = () => {
+        releaseLock = null
+        resolve()
+      }
+    })
   }
 
   function requestLock(waitForRelease: boolean): void {
@@ -97,13 +145,23 @@ export function createTabLock(deps: TabLockDeps): () => void {
           enterReadOnly()
           return undefined
         }
-        exitReadOnly()
-        return new Promise<void>((resolve) => {
-          releaseLock = () => {
-            releaseLock = null
-            resolve()
+        if (!visibleReadOnly || !deps.refreshBeforeWritable) {
+          exitReadOnly()
+          return holdUntilReleased()
+        }
+        // Waited for this lock: refresh from disk first (see
+        // `refreshBeforeWritable`), still read-only and still holding it.
+        return (async () => {
+          try {
+            await deps.refreshBeforeWritable!()
+          } catch (e) {
+            console.error(e)
           }
-        })
+          // Closed mid-refresh: hand the lock straight back, as above.
+          if (released) return
+          exitReadOnly()
+          await holdUntilReleased()
+        })()
       })
       .catch((e) => console.error(e))
   }
@@ -132,28 +190,43 @@ export function createTabLock(deps: TabLockDeps): () => void {
     store.setReadOnly(true, { silent: true })
   }
 
-  if (bc) {
-    bc.onmessage = (ev: MessageEvent<TakeoverMessage>) => {
-      if (ev.data?.type !== 'takeover' || !releaseLock) return
-      const release = releaseLock
-      ;(async () => {
-        // Task 25 fix #4: `saveNow()` can return before the write actually
-        // lands — it no-ops synchronously while another save is in flight
-        // and just queues a trailing round. Releasing the lock right after
-        // `await saveNow()` could hand write access to the requesting tab
-        // while that trailing round (or the in-flight save it queued behind)
-        // is still on its way to disk. `flush()` blocks until the controller
-        // is fully idle — in-flight save and any trailing round both done —
-        // before the lock (and read-write access) actually changes hands.
-        if (store.dirty) await saveCtl.saveNow()
-        await saveCtl.flush()
-        enterReadOnly()
-        release()
-      })().catch((e) => console.error(e))
-    }
+  function start(key: string): void {
+    channelName = key
+    bc = BC ? new BC(channelName) : null
+    if (bc) bc.onmessage = onTakeoverMessage
+    requestLock(false)
   }
 
-  requestLock(false)
+  function onTakeoverMessage(ev: MessageEvent<TakeoverMessage>): void {
+    if (ev.data?.type !== 'takeover' || !releaseLock) return
+    const release = releaseLock
+    ;(async () => {
+      // Task 25 fix #4: `saveNow()` can return before the write actually
+      // lands — it no-ops synchronously while another save is in flight
+      // and just queues a trailing round. Releasing the lock right after
+      // `await saveNow()` could hand write access to the requesting tab
+      // while that trailing round (or the in-flight save it queued behind)
+      // is still on its way to disk. `flush()` blocks until the controller
+      // is fully idle — in-flight save and any trailing round both done —
+      // before the lock (and read-write access) actually changes hands.
+      if (store.dirty) await saveCtl.saveNow()
+      await saveCtl.flush()
+      enterReadOnly()
+      release()
+    })().catch((e) => console.error(e))
+  }
+
+  if (deps.lockKey) {
+    deps.lockKey.then(
+      (key) => { if (!released) start(key) },
+      (e: unknown) => {
+        console.error(e)
+        if (!released) start(channelName)
+      }
+    )
+  } else {
+    start(channelName)
+  }
 
   // Lets a "close file" action give up write access cleanly — without this,
   // the lock's holding Promise (see requestLock's callback above) never
@@ -164,6 +237,10 @@ export function createTabLock(deps: TabLockDeps): () => void {
   return function releaseTabLock(): void {
     released = true
     banner.remove()
+    if (visibleReadOnly) {
+      visibleReadOnly = false
+      deps.onReadOnlyChange?.(false)
+    }
     releaseLock?.()
     bc?.close()
     unsubscribeBlocked()

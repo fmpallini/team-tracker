@@ -19,6 +19,18 @@ test('updateNav marks dirty without render', () => {
   expect(n).toBe(0); expect(s.dirty).toBe(true)
 })
 
+test('updateNav while read-only navigates but does not mark the document dirty', () => {
+  // A read-only tab can never save, so a dirty flag there only ever means a
+  // pill and a "leave site?" prompt for changes that cannot be persisted.
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const kinds: string[] = []; s.onMutate((k) => kinds.push(k))
+  s.setReadOnly(true)
+  s.updateNav((d) => { d.nav.split = true })
+  expect(s.doc.nav.split).toBe(true)
+  expect(kinds).toEqual(['nav'])
+  expect(s.dirty).toBe(false)
+})
+
 test('unsubscribe works', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   let n = 0; const un = s.subscribe(() => n++); un()

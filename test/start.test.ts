@@ -24,16 +24,29 @@ vi.mock('../src/core/idb', () => idbMocks)
 const cryptoMocks = vi.hoisted(() => {
   class WrongPasswordError extends Error {}
   class CorruptFileError extends Error { constructor(readonly path?: string) { super() } }
-  return {
+  // Tests drive the decoded document through `parsePlain`/`decryptDocument`
+  // and the file's pre-migration schema version through the two
+  // `*PreSchemaVersion` knobs; the open-path functions start.ts actually
+  // calls compose them the way crypto.ts does.
+  const m = {
     WrongPasswordError,
     CorruptFileError,
     decryptDocument: vi.fn(),
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
     serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
-    parsePlain: vi.fn(() => null as unknown),
-    peekPlainSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
-    peekEncryptedSchemaVersion: vi.fn(async (_bytes: Uint8Array, _password: string) => SCHEMA_VERSION),
+    parsePlain: vi.fn((_bytes: Uint8Array) => null as unknown),
+    plainPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
+    encryptedPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
+    parsePlainWithVersion: vi.fn((bytes: Uint8Array) => {
+      const doc = m.parsePlain(bytes)
+      return doc ? { doc, preSchemaVersion: m.plainPreSchemaVersion(bytes) } : null
+    }),
+    decryptDocumentWithVersion: vi.fn(async (bytes: Uint8Array, password: string) => {
+      const doc: unknown = await m.decryptDocument(bytes, password)
+      return { doc, preSchemaVersion: m.encryptedPreSchemaVersion(bytes) }
+    }),
   }
+  return m
 })
 vi.mock('../src/core/crypto', () => cryptoMocks)
 
@@ -58,8 +71,8 @@ beforeEach(() => {
   cryptoMocks.encryptDocument.mockReset().mockImplementation(async () => new Uint8Array([1, 2, 3]))
   cryptoMocks.serializePlain.mockReset().mockReturnValue(new Uint8Array([9, 9, 9]))
   cryptoMocks.parsePlain.mockReset().mockReturnValue(null)
-  cryptoMocks.peekPlainSchemaVersion.mockReset().mockReturnValue(SCHEMA_VERSION)
-  cryptoMocks.peekEncryptedSchemaVersion.mockReset().mockResolvedValue(SCHEMA_VERSION)
+  cryptoMocks.plainPreSchemaVersion.mockReset().mockReturnValue(SCHEMA_VERSION)
+  cryptoMocks.encryptedPreSchemaVersion.mockReset().mockReturnValue(SCHEMA_VERSION)
 })
 
 function clickByText(text: string): void {
@@ -362,7 +375,7 @@ test('open flow: a plain file below the current schema version calls onOpen with
   fsMocks.pickOpen.mockResolvedValue({ session, bytes })
   const plainDoc = createEmptyDocument('en-US')
   cryptoMocks.parsePlain.mockReturnValue(plainDoc)
-  cryptoMocks.peekPlainSchemaVersion.mockReturnValue(SCHEMA_VERSION - 1)
+  cryptoMocks.plainPreSchemaVersion.mockReturnValue(SCHEMA_VERSION - 1)
 
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
@@ -379,7 +392,7 @@ test('open flow: a plain file already at the current schema version calls onOpen
   const session: FileSession = { handle: null, name: 'current.tmv', lastModified: 1 }
   fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
   cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
-  cryptoMocks.peekPlainSchemaVersion.mockReturnValue(SCHEMA_VERSION)
+  cryptoMocks.plainPreSchemaVersion.mockReturnValue(SCHEMA_VERSION)
 
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
@@ -397,7 +410,7 @@ test('open flow: an encrypted file below the current schema version calls onOpen
   fsMocks.pickOpen.mockResolvedValue({ session, bytes })
   cryptoMocks.parsePlain.mockReturnValue(null)
   cryptoMocks.decryptDocument.mockResolvedValue(createEmptyDocument('en-US'))
-  cryptoMocks.peekEncryptedSchemaVersion.mockResolvedValue(SCHEMA_VERSION - 1)
+  cryptoMocks.encryptedPreSchemaVersion.mockReturnValue(SCHEMA_VERSION - 1)
 
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)

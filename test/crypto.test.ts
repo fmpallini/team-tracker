@@ -1,4 +1,4 @@
-import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain, peekPlainSchemaVersion, peekEncryptedSchemaVersion } from '../src/core/crypto'
+import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain, parsePlainWithVersion, decryptDocumentWithVersion } from '../src/core/crypto'
 import { createEmptyDocument, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
 
 test('round-trip', async () => {
@@ -279,39 +279,52 @@ test('parsePlain rejects a plain file claiming a newer schema than this build su
   expect(() => parsePlain(bytes)).toThrow(SchemaTooNewError)
 })
 
-test('peekEncryptedSchemaVersion reads the pre-migration schema version without migrating', async () => {
+// Open-time variants that also report the file's pre-migration schema
+// version (main.ts snapshots the unmigrated bytes to the backup when a
+// migration ran). They decrypt/parse exactly once — the separate "peek"
+// helpers they replaced repeated the whole AES decrypt and JSON.parse of the
+// document on every open.
+test('decryptDocumentWithVersion returns the migrated doc and the pre-migration schema version', async () => {
   const oldDoc = { ...createEmptyDocument('pt-BR'), schemaVersion: SCHEMA_VERSION - 1 }
   const bytes = await encryptDocument(oldDoc, 'pw')
-  await expect(peekEncryptedSchemaVersion(bytes, 'pw')).resolves.toBe(SCHEMA_VERSION - 1)
-  // decryptDocument on the same bytes still migrates all the way up, unaffected.
-  const decrypted = await decryptDocument(bytes, 'pw')
-  expect(decrypted.schemaVersion).toBe(SCHEMA_VERSION)
+  const { doc, preSchemaVersion } = await decryptDocumentWithVersion(bytes, 'pw')
+  expect(preSchemaVersion).toBe(SCHEMA_VERSION - 1)
+  expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
 }, 20000)
 
-test('peekEncryptedSchemaVersion returns the current version for an up-to-date file', async () => {
+test('decryptDocumentWithVersion decrypts the payload only once', async () => {
   const bytes = await encryptDocument(createEmptyDocument('pt-BR'), 'pw')
-  await expect(peekEncryptedSchemaVersion(bytes, 'pw')).resolves.toBe(SCHEMA_VERSION)
+  const spy = vi.spyOn(crypto.subtle, 'decrypt')
+  try {
+    const { preSchemaVersion } = await decryptDocumentWithVersion(bytes, 'pw')
+    expect(preSchemaVersion).toBe(SCHEMA_VERSION)
+    // One key-check block + one payload.
+    expect(spy).toHaveBeenCalledTimes(2)
+  } finally {
+    spy.mockRestore()
+  }
 }, 20000)
 
-test('peekEncryptedSchemaVersion rejects with WrongPasswordError, same as decryptDocument', async () => {
+test('decryptDocumentWithVersion rejects with WrongPasswordError, same as decryptDocument', async () => {
   const bytes = await encryptDocument(createEmptyDocument('pt-BR'), 'right')
-  await expect(peekEncryptedSchemaVersion(bytes, 'wrong')).rejects.toBeInstanceOf(WrongPasswordError)
+  await expect(decryptDocumentWithVersion(bytes, 'wrong')).rejects.toBeInstanceOf(WrongPasswordError)
 }, 20000)
 
-test('peekPlainSchemaVersion reads the pre-migration schema version for a plain file', () => {
+test('parsePlainWithVersion returns the migrated doc and the pre-migration schema version', () => {
   const oldDoc = { ...createEmptyDocument('en-US'), schemaVersion: SCHEMA_VERSION - 1 }
-  const bytes = serializePlain(oldDoc)
-  expect(peekPlainSchemaVersion(bytes)).toBe(SCHEMA_VERSION - 1)
+  const result = parsePlainWithVersion(serializePlain(oldDoc))
+  expect(result?.preSchemaVersion).toBe(SCHEMA_VERSION - 1)
+  expect(result?.doc.schemaVersion).toBe(SCHEMA_VERSION)
 })
 
-test('peekPlainSchemaVersion returns null for a non-plain (encrypted) file', async () => {
+test('parsePlainWithVersion returns null for a non-plain (encrypted) file', async () => {
   const bytes = await encryptDocument(createEmptyDocument('en-US'), 'pw')
-  expect(peekPlainSchemaVersion(bytes)).toBeNull()
+  expect(parsePlainWithVersion(bytes)).toBeNull()
 }, 20000)
 
-test('peekPlainSchemaVersion returns null for a plain file with corrupt JSON', () => {
+test('parsePlainWithVersion throws CorruptFileError for a plain file with corrupt JSON, same as parsePlain', () => {
   const bytes = new TextEncoder().encode('TMV-PLAIN\n{not json')
-  expect(peekPlainSchemaVersion(bytes)).toBeNull()
+  expect(() => parsePlainWithVersion(bytes)).toThrow(CorruptFileError)
 })
 
 describe('shape validation on load (gap 4)', () => {
