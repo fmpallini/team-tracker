@@ -1015,6 +1015,31 @@ describe('renderRisks', () => {
       expect(store.doc.teams[0]!.risks[0]!.followup).toBe('Escalate to sponsor')
     })
 
+    test('moving from one follow-up editor to another after a commit keeps the target editor and its focus', () => {
+      // The follow-up's own commit changes nothing the row list renders, so it
+      // must not arm the rebuild-on-blur: that rebuild used to run as focus
+      // left A, detaching B mid-click and dropping everything typed next.
+      vi.useFakeTimers()
+      const team = makeTeam({
+        risks: [risk({ id: 'a', title: 'A', followup: 'follow A' }), risk({ id: 'b', title: 'B', followup: 'follow B', order: 1 })],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-all-btn')!.click()
+      const [edA, edB] = [...container.querySelectorAll<HTMLElement>('.tt-risk-followup-row .editor')]
+
+      edA!.focus()
+      setBlockText(edA!, 'follow A, updated')
+      fireInput(edA!)
+      vi.advanceTimersByTime(400)
+      expect(store.doc.teams[0]!.risks[0]!.followup).toBe('follow A, updated')
+
+      edB!.focus()
+      expect(edB!.isConnected).toBe(true)
+      expect(document.activeElement).toBe(edB)
+      expect(edA!.isConnected).toBe(true)
+    })
+
     test('collapsing a row disposes its editor', () => {
       const team = makeTeam({ risks: [risk({ id: 'a', followup: 'x' })] })
       const { container, store, pm, loc } = setup(team)

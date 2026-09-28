@@ -204,6 +204,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
   const expandable = new ExpandableRowsController()
+  // True only while one of this module's own follow-up editors is committing
+  // (see renderFollowupRow) — same reasoning as risks.ts's identical flag:
+  // follow-up text appears nowhere in the list or timeline, so that commit
+  // skips the full rebuild and the rebuild-on-blur that detached the next
+  // follow-up editor being clicked into.
+  let committingOwnFollowup = false
 
   // Each row's date-picker owns a popover appended to document.body, outside
   // `container` — a plain listEl.innerHTML='' rebuild (renderList below)
@@ -244,12 +250,17 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
       initialMd: m.followup,
       onChange: (md) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          const found = tm?.milestones.find((mm) => mm.id === m.id)
-          if (!found) return
-          found.followup = md.trim() === '' ? '' : md
-        }, { teamId, sections: ['milestones'] })
+        committingOwnFollowup = true
+        try {
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            const found = tm?.milestones.find((mm) => mm.id === m.id)
+            if (!found) return
+            found.followup = md.trim() === '' ? '' : md
+          }, { teamId, sections: ['milestones'] })
+        } finally {
+          committingOwnFollowup = false
+        }
       },
       getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
@@ -721,6 +732,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // Editor.refreshRefLabels' doc comment), so this runs unconditionally
     // instead of waiting on the deferred full rebuild below.
     expandable.refreshAllLabels()
+    // Our own follow-up commit: only its @mentions can have moved another
+    // row's backlinks chip.
+    if (committingOwnFollowup) {
+      refreshBacklinkChips()
+      return
+    }
     // A change confined to sibling sections can only reach this module
     // through backlinks chips — nothing in the milestone list or timeline
     // itself changed. Patch the chips in place instead of a full rebuild.

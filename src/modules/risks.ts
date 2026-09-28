@@ -340,6 +340,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // simultaneously.
   const expandable = new ExpandableRowsController()
   let focusRiskId: string | null = null
+  // True only while one of this module's own follow-up editors is committing
+  // (see renderFollowupRow). A follow-up's text appears nowhere in the row
+  // list, so the subscriber below skips the full rebuild for it — and with it
+  // the rebuild-on-blur deferral, which fired as focus moved from one
+  // follow-up to another and detached the one being clicked into.
+  let committingOwnFollowup = false
 
   function clearDropClasses(): void {
     listEl.querySelectorAll('.tt-risk-row').forEach((n) => {
@@ -513,12 +519,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
       initialMd: r.followup,
       onChange: (md) => {
-        ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
-          const found = tm?.risks.find((rr) => rr.id === r.id)
-          if (!found) return
-          found.followup = md.trim() === '' ? '' : md
-        }, { teamId, sections: ['risks'] })
+        committingOwnFollowup = true
+        try {
+          ctx.store.update((d) => {
+            const tm = d.teams.find((t2) => t2.id === teamId)
+            const found = tm?.risks.find((rr) => rr.id === r.id)
+            if (!found) return
+            found.followup = md.trim() === '' ? '' : md
+          }, { teamId, sections: ['risks'] })
+        } finally {
+          committingOwnFollowup = false
+        }
       },
       getTeam: () => findTeam(),
       getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
@@ -1357,6 +1368,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // Editor.refreshRefLabels' doc comment), so this runs unconditionally
     // instead of waiting on the deferred full rebuild below.
     expandable.refreshAllLabels()
+    // Our own follow-up commit: only its @mentions can have moved another
+    // row's backlinks chip — nothing else here renders follow-up text.
+    if (committingOwnFollowup) {
+      refreshBacklinkChips()
+      return
+    }
     // A change confined to sibling sections can only reach this module
     // through backlinks chips — nothing in the risk list or quadrant itself
     // changed. Patch the chips in place instead of a full rebuild. A scope

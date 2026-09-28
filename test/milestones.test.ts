@@ -656,6 +656,30 @@ describe('renderMilestones', () => {
       expect(editorEl.querySelector('h2')?.textContent).toBe('Plan')
     })
 
+    test('moving from one follow-up editor to another after a commit keeps the target editor and its focus', () => {
+      // See the identical risks.test.ts case: the follow-up's own commit must
+      // not arm the rebuild-on-blur that detached the editor being clicked into.
+      vi.useFakeTimers()
+      const team = makeTeam({
+        milestones: [milestone({ id: 'a', title: 'A', followup: 'follow A' }), milestone({ id: 'b', title: 'B', date: '2026-02-01', followup: 'follow B' })],
+      })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-milestone-expand-all-btn')!.click()
+      const [edA, edB] = [...container.querySelectorAll<HTMLElement>('.tt-milestone-followup-row .editor')]
+
+      edA!.focus()
+      setBlockText(edA!, 'follow A, updated')
+      fireInput(edA!)
+      vi.advanceTimersByTime(400)
+      expect(store.doc.teams[0]!.milestones.find((m) => m.id === 'a')!.followup).toBe('follow A, updated')
+
+      edB!.focus()
+      expect(edB!.isConnected).toBe(true)
+      expect(document.activeElement).toBe(edB)
+      expect(edA!.isConnected).toBe(true)
+    })
+
     test('collapsing a row disposes its editor', () => {
       const team = makeTeam({ milestones: [milestone({ id: 'a', followup: 'x' })] })
       const { container, store, pm, loc } = setup(team)
