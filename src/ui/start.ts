@@ -15,7 +15,7 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
-import { decryptDocument, encryptDocument, serializePlain, parsePlain, peekPlainSchemaVersion, peekEncryptedSchemaVersion, WrongPasswordError, CorruptFileError } from '../core/crypto'
+import { decryptDocumentWithVersion, encryptDocument, serializePlain, parsePlainWithVersion, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
 import { promptPassword, showErrorModal, toast } from './modal'
 
@@ -75,6 +75,11 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
   )
 }
 
+/** The original bytes when opening just ran a migration — main.ts snapshots them to the backup before any save can overwrite the unmigrated file. */
+function migratedFromFor(opened: OpenedDoc, bytes: Uint8Array): Uint8Array | null {
+  return opened.preSchemaVersion !== null && opened.preSchemaVersion < SCHEMA_VERSION ? bytes : null
+}
+
 export function showStartScreen(
   locale: Locale,
   onOpen: (session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null) => void,
@@ -100,9 +105,8 @@ export function showStartScreen(
       // allowPlain is never set for this prompt, so result is always {password}.
       const password = (result as { password: string }).password
       try {
-        const doc = await decryptDocument(bytes, password)
-        const preSchemaVersion = await peekEncryptedSchemaVersion(bytes, password)
-        return { doc, password, migratedFrom: preSchemaVersion < SCHEMA_VERSION ? bytes : null }
+        const opened = await decryptDocumentWithVersion(bytes, password)
+        return { doc: opened.doc, password, migratedFrom: migratedFromFor(opened, bytes) }
       } catch (e) {
         if (e instanceof WrongPasswordError) {
           toast(t(locale, 'err_wrong_password'))
@@ -141,9 +145,9 @@ export function showStartScreen(
   async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
     const result = await fetchResult()
     if (!result) return
-    let plainDoc: Doc | null
+    let plain: OpenedDoc | null
     try {
-      plainDoc = parsePlain(result.bytes)
+      plain = parsePlainWithVersion(result.bytes)
     } catch (e) {
       if (e instanceof CorruptFileError) {
         showErrorModal(locale, corruptMessage(e))
@@ -155,9 +159,8 @@ export function showStartScreen(
       }
       throw e
     }
-    if (plainDoc) {
-      const preSchemaVersion = peekPlainSchemaVersion(result.bytes)
-      onOpen(result.session, plainDoc, null, preSchemaVersion !== null && preSchemaVersion < SCHEMA_VERSION ? result.bytes : null)
+    if (plain) {
+      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes))
       return
     }
     const outcome = await decryptLoop(result.bytes)
@@ -172,9 +175,9 @@ export function showStartScreen(
     const buf = await file.arrayBuffer()
     const bytes = new Uint8Array(buf)
     const session: FileSession = { handle: null, name: file.name, lastModified: file.lastModified }
-    let plainDoc: Doc | null
+    let plain: OpenedDoc | null
     try {
-      plainDoc = parsePlain(bytes)
+      plain = parsePlainWithVersion(bytes)
     } catch (e) {
       if (e instanceof CorruptFileError) {
         showErrorModal(locale, corruptMessage(e))
@@ -186,9 +189,8 @@ export function showStartScreen(
       }
       throw e
     }
-    if (plainDoc) {
-      const preSchemaVersion = peekPlainSchemaVersion(bytes)
-      onOpen(session, plainDoc, null, preSchemaVersion !== null && preSchemaVersion < SCHEMA_VERSION ? bytes : null)
+    if (plain) {
+      onOpen(session, plain.doc, null, migratedFromFor(plain, bytes))
       return
     }
     const outcome = await decryptLoop(bytes)
@@ -357,14 +359,14 @@ export function showStartScreen(
   async function checkAutoLoad(): Promise<void> {
     const result = await peekLastFile()
     if (!result) return
-    let plainDoc: Doc | null
+    let plain: OpenedDoc | null
     try {
-      plainDoc = parsePlain(result.bytes)
+      plain = parsePlainWithVersion(result.bytes)
     } catch (e) {
       console.error(e)
       return
     }
-    if (!plainDoc) return
+    if (!plain) return
     const autoLoad = (await idbGet<boolean>('autoLoadLast')) === true
     autoLoadRow.style.display = ''
     autoLoadCheckbox.checked = autoLoad
@@ -373,8 +375,7 @@ export function showStartScreen(
     // would trap them (open/create would be unreachable). The checkbox still
     // reflects/edits the pref; only the immediate re-open is suppressed.
     if (autoLoad && !opts?.skipAutoLoad) {
-      const preSchemaVersion = peekPlainSchemaVersion(result.bytes)
-      onOpen(result.session, plainDoc, null, preSchemaVersion !== null && preSchemaVersion < SCHEMA_VERSION ? result.bytes : null)
+      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes))
     }
   }
   checkAutoLoad().catch((e: unknown) => console.error(e))

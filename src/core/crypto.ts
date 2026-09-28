@@ -116,19 +116,29 @@ function checkShape(doc: Doc): Doc {
   return doc
 }
 
+/** A freshly opened document plus the schema version its file was at *before* migration (null when the file didn't carry a numeric one). */
+export interface OpenedDoc {
+  doc: Doc
+  preSchemaVersion: number | null
+}
+
+/** Read before migrate(), which upgrades the parsed object in place. */
+function schemaVersionOf(parsed: unknown): number | null {
+  const v = (parsed as { schemaVersion?: unknown } | null)?.schemaVersion
+  return typeof v === 'number' ? v : null
+}
+
 /**
- * Read-only peek at the schema version a file is at *before* migration —
- * used only to decide whether to fire a one-off pre-migration backup
- * snapshot on open (see main.ts's onDocumentOpened). Always called
- * immediately after a successful decryptDocument() on the same bytes and
- * password, so its own error paths never actually trigger in practice; kept
- * type-honest (same errors as decryptDocument) rather than assumed away.
+ * decryptDocument for the open path (ui/start.ts): also reports the file's
+ * pre-migration schema version, which decides whether main.ts's
+ * onDocumentOpened snapshots the original, unmigrated bytes to the backup.
+ * Decrypts and parses once — reading the version through a second full
+ * decrypt+parse used to double the cost of every open.
  */
-export async function peekEncryptedSchemaVersion(bytes: Uint8Array, password: string): Promise<number> {
+export async function decryptDocumentWithVersion(bytes: Uint8Array, password: string): Promise<OpenedDoc> {
   const parsed = await decryptRaw(bytes, password)
-  const schemaVersion = parsed.schemaVersion
-  if (typeof schemaVersion !== 'number') throw new CorruptFileError()
-  return schemaVersion
+  const preSchemaVersion = schemaVersionOf(parsed)
+  return { doc: checkShape(migrate(parsed)), preSchemaVersion }
 }
 
 export function serializePlain(doc: Doc): Uint8Array {
@@ -142,6 +152,11 @@ export function serializePlain(doc: Doc): Uint8Array {
  * one" (bad JSON) or "a plain file from a newer, unsupported schema".
  */
 export function parsePlain(bytes: Uint8Array): Doc | null {
+  return parsePlainWithVersion(bytes)?.doc ?? null
+}
+
+/** parsePlain for the open path — also reports the pre-migration schema version, from the same single parse (see decryptDocumentWithVersion). */
+export function parsePlainWithVersion(bytes: Uint8Array): OpenedDoc | null {
   if (bytes.length < PLAIN_TAG_BYTES.length) return null
   for (let i = 0; i < PLAIN_TAG_BYTES.length; i++) {
     if (bytes[i] !== PLAIN_TAG_BYTES[i]) return null
@@ -153,25 +168,6 @@ export function parsePlain(bytes: Uint8Array): Doc | null {
   } catch {
     throw new CorruptFileError()
   }
-  return checkShape(migrate(parsed))
-}
-
-/**
- * Same tag-sniff as parsePlain, but stops short of migrate() — best-effort
- * only (returns null rather than throwing on corrupt JSON): the real
- * parsePlain() call made alongside this one is still the authoritative
- * error path, this is purely advisory for the pre-migration snapshot decision.
- */
-export function peekPlainSchemaVersion(bytes: Uint8Array): number | null {
-  if (bytes.length < PLAIN_TAG_BYTES.length) return null
-  for (let i = 0; i < PLAIN_TAG_BYTES.length; i++) {
-    if (bytes[i] !== PLAIN_TAG_BYTES[i]) return null
-  }
-  const json = new TextDecoder().decode(bytes.slice(PLAIN_TAG_BYTES.length))
-  try {
-    const parsed = JSON.parse(json) as { schemaVersion?: unknown }
-    return typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : null
-  } catch {
-    return null
-  }
+  const preSchemaVersion = schemaVersionOf(parsed)
+  return { doc: checkShape(migrate(parsed)), preSchemaVersion }
 }
