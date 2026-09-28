@@ -349,3 +349,120 @@ test('a real cross-instance BroadcastChannel takeover message is ignored by a ta
   expect(store.readOnly).toBe(false)
   otherTabChannel.close()
 })
+
+test('onReadOnlyChange reports only the visible read-only transitions — never for a sole tab', async () => {
+  const { locks } = makeFakeLockManager()
+  const session = makeSession('ro-change.tmv')
+
+  const changesA: boolean[] = []
+  const storeA = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session, store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks, onReadOnlyChange: (ro) => changesA.push(ro) })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(changesA).toEqual([])
+
+  const changesB: boolean[] = []
+  const storeB = createStore(createEmptyDocument('en-US'))
+  const shellB = makeShell()
+  createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks, onReadOnlyChange: (ro) => changesB.push(ro) })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(changesB).toEqual([true])
+
+  shellB.root.parentElement!.querySelector<HTMLButtonElement>('.tt-readonly-takeover-btn')!.click()
+  await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+  expect(changesB).toEqual([true, false])
+  expect(changesA).toEqual([true])
+})
+
+test('taking control refreshes the document from disk BEFORE the tab becomes writable', async () => {
+  // The previous holder saved on its way out; this tab's in-memory copy
+  // predates that. Becoming writable first would let the next save either
+  // hit a conflict or (via Overwrite) erase the other tab's edits.
+  const { locks } = makeFakeLockManager()
+  const session = makeSession('refresh.tmv')
+  createTabLock({ session, store: createStore(createEmptyDocument('en-US')), shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  await Promise.resolve()
+  await Promise.resolve()
+
+  const storeB = createStore(createEmptyDocument('en-US'))
+  const shellB = makeShell()
+  let finishRefresh!: () => void
+  const readOnlyDuringRefresh: boolean[] = []
+  const refreshBeforeWritable = vi.fn(() => {
+    readOnlyDuringRefresh.push(storeB.readOnly)
+    return new Promise<void>((resolve) => { finishRefresh = resolve })
+  })
+  createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks, refreshBeforeWritable })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(refreshBeforeWritable).not.toHaveBeenCalled()
+
+  shellB.root.parentElement!.querySelector<HTMLButtonElement>('.tt-readonly-takeover-btn')!.click()
+  await vi.waitFor(() => expect(refreshBeforeWritable).toHaveBeenCalledTimes(1))
+  expect(readOnlyDuringRefresh).toEqual([true])
+  expect(storeB.readOnly).toBe(true)
+
+  finishRefresh()
+  await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+})
+
+test('a sole tab never refreshes from disk on acquiring the lock', async () => {
+  const { locks } = makeFakeLockManager()
+  const refreshBeforeWritable = vi.fn(async () => {})
+  const store = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session: makeSession('solo.tmv'), store, shell: makeShell(), saveCtl: makeSaveCtl(), locks, refreshBeforeWritable })
+  await vi.waitFor(() => expect(store.readOnly).toBe(false))
+  expect(refreshBeforeWritable).not.toHaveBeenCalled()
+})
+
+test('closing a visibly read-only tab reports the read-only state lifted', async () => {
+  // main.ts's editor read-only flag is module-level: left set, the NEXT
+  // document opened in this tab would come up with non-editable editors.
+  const { locks } = makeFakeLockManager()
+  void locks.request('tmv:closing.tmv', {}, () => new Promise<void>(() => {}))
+  const changes: boolean[] = []
+  const release = createTabLock({ session: makeSession('closing.tmv'), store: createStore(createEmptyDocument('en-US')), shell: makeShell(), saveCtl: makeSaveCtl(), locks, onReadOnlyChange: (ro) => changes.push(ro) })
+  await vi.waitFor(() => expect(changes).toEqual([true]))
+  release()
+  expect(changes).toEqual([true, false])
+})
+
+/** One independent fake lock per name — the shared fake above ignores names. */
+function makeNamedLockManager(): LockManager {
+  const byName = new Map<string, LockManager>()
+  return {
+    request: (name: string, opts: LockOptions, cb: LockGrantedCallback<unknown>) => {
+      let lm = byName.get(name)
+      if (!lm) { lm = makeFakeLockManager().locks; byName.set(name, lm) }
+      return lm.request(name, opts, cb)
+    },
+  } as unknown as LockManager
+}
+
+test('lockKey: two different files that share a name both stay writable', async () => {
+  const locks = makeNamedLockManager()
+  const storeA = createStore(createEmptyDocument('en-US'))
+  const storeB = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session: makeSession('team.tmv'), store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: Promise.resolve('tmv:file-a') })
+  createTabLock({ session: makeSession('team.tmv'), store: storeB, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: Promise.resolve('tmv:file-b') })
+  await vi.waitFor(() => expect(storeA.readOnly).toBe(false))
+  await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+})
+
+test('lockKey: the same file under the same key still makes the second tab read-only, provisionally from the start', async () => {
+  const locks = makeNamedLockManager()
+  const storeA = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session: makeSession('team.tmv'), store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: Promise.resolve('tmv:same') })
+  await vi.waitFor(() => expect(storeA.readOnly).toBe(false))
+
+  let resolveKey!: (k: string) => void
+  const storeB = createStore(createEmptyDocument('en-US'))
+  createTabLock({ session: makeSession('team.tmv'), store: storeB, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: new Promise<string>((r) => { resolveKey = r }) })
+  // Still resolving the key: already (silently) read-only, so nothing can be
+  // written before the lock is known to be ours.
+  expect(storeB.readOnly).toBe(true)
+  resolveKey('tmv:same')
+  await vi.waitFor(() => expect(document.querySelectorAll('.tt-readonly-banner')).toHaveLength(1))
+  expect(storeB.readOnly).toBe(true)
+})

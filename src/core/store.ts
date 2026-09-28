@@ -139,7 +139,9 @@ export function createStore(initialDoc: Doc): Store {
     updateNav(fn: (d: Doc) => void): void {
       rev++
       fn(doc)
-      setDirty(true)
+      // A read-only tab never saves, so dirtying it would only raise a pill
+      // and a "leave site?" prompt for changes that can't be persisted.
+      if (roState.kind === 'writable') setDirty(true)
       notifyMutate('nav')
     },
     subscribe(fn: (scope: ChangeScope | null) => void): () => void {

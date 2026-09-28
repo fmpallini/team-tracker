@@ -35,13 +35,14 @@ import { createSaveController, type SaveController } from './core/save-controlle
 import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
+import { resolveFileLockKey } from './core/file-identity'
 import { installBlurSave } from './core/blur-save'
 import { showConflictModal } from './ui/conflict'
 import { closeAnyContextMenu } from './ui/context-menu'
 import { closeAnyBacklinksPanel } from './ui/backlinks-panel'
 import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
-import { flushAllEditors } from './ui/editor'
+import { flushAllEditors, setEditorsReadOnly } from './ui/editor'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
 import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
 import { waitForActivation } from './core/sw-ready'
@@ -277,10 +278,24 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // chosen action (successfully or not) settles.
   let conflictOpen = false
 
+  // Replaces the in-memory document with the file's current contents — the
+  // conflict modal's "Reload", and a tab taking the write lock over from
+  // another (see createTabLock's refreshBeforeWritable below).
+  async function reloadFromDisk(): Promise<void> {
+    const bytes = await readCurrent(session)
+    const currentPw = app ? app.password : password
+    const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
+    if (!reloaded) throw new Error('expected a plain file, got something else on reload')
+    store.replaceDoc(reloaded)
+    pm.renderAll()
+    shell.setSaveState('saved')
+    shell.setTitle(session.name, false)
+  }
+
   const backupCtl = createBackupController({ store })
 
-  // A migration just ran on open (see start.ts's peekPlainSchemaVersion/
-  // peekEncryptedSchemaVersion) — snapshot the original, unmigrated bytes to
+  // A migration just ran on open (see crypto.ts's parsePlainWithVersion/
+  // decryptDocumentWithVersion, used by start.ts) — snapshot the original, unmigrated bytes to
   // the backup mirror once, before any edit/autosave can overwrite it with
   // post-migration state. Fire-and-forget: writeBackupNow never throws, and
   // nothing downstream depends on this completing before the shell renders.
@@ -310,14 +325,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         locale: store.doc.prefs.locale,
         onReload: async () => {
           try {
-            const bytes = await readCurrent(session)
-            const currentPw = app ? app.password : password
-            const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
-            if (!reloaded) throw new Error('expected a plain file, got something else on reload')
-            store.replaceDoc(reloaded)
-            pm.renderAll()
-            shell.setSaveState('saved')
-            shell.setTitle(session.name, false)
+            await reloadFromDisk()
           } catch (e) {
             console.error(e)
             toast(t(store.doc.prefs.locale, 'conflict_reload_failed'), { sticky: true })
@@ -500,7 +508,19 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   window.addEventListener('beforeunload', onBeforeUnload)
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
-  const releaseTabLock = createTabLock({ session, store, shell, saveCtl, locks: navigator.locks })
+  const releaseTabLock = createTabLock({
+    session, store, shell, saveCtl, locks: navigator.locks,
+    // Per file, not per file name — see core/file-identity.ts.
+    lockKey: resolveFileLockKey(session, navigator.locks),
+    onReadOnlyChange: (readOnly) => setEditorsReadOnly(readOnly),
+    // The tab that held the lock saved on its way out, so the file is newer
+    // than this tab's copy whenever its lastModified moved.
+    refreshBeforeWritable: async () => {
+      if (!session.handle) return
+      const file = await session.handle.getFile()
+      if (file.lastModified !== session.lastModified) await reloadFromDisk()
+    },
+  })
   disposers.push(releaseTabLock)
 
   // Task 24: preferences modal wiring. `changePassword` itself lives in
