@@ -18,6 +18,7 @@ import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
+import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField } from './prefs-fields'
 
 /**
  * Every write in this file that only moves a preference. No module renders
@@ -105,13 +106,12 @@ function formatBytes(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
-export type TabId = 'general' | 'backup' | 'templates' | 'tags' | 'security' | 'data' | 'about'
+export type TabId = 'general' | 'backup' | 'templates' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
   { id: 'backup', key: 'prefs_tab_backup' },
   { id: 'templates', key: 'prefs_tab_templates' },
-  { id: 'tags', key: 'prefs_tab_tags' },
   { id: 'security', key: 'prefs_tab_security' },
   { id: 'data', key: 'prefs_tab_data' },
   { id: 'about', key: 'prefs_tab_about' },
@@ -200,32 +200,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     onChange: (value: string) => void,
     disabled = false
   ): HTMLElement {
-    const row = el(
-      'div',
-      { class: 'tt-prefs-radio-row' },
-      ...options.map((opt) => {
-        const input = el('input', {
-          type: 'radio',
-          name,
-          value: opt.value,
-          checked: opt.value === current,
-          disabled,
-          onchange: () => onChange(opt.value),
-        })
-        // `sizePreview` is an absolute px value on purpose: the modal is
-        // already rendered at the *current* preference's root size, so a
-        // relative unit would scale every option with it and the five steps
-        // would look identical to each other at any setting.
-        const text = opt.preview
-          ? el('span', { class: 'tt-prefs-radio-preview', style: `font-family:${opt.preview}` }, t(locale, opt.key))
-          : opt.sizePreview
-            ? el('span', { class: 'tt-prefs-radio-preview', style: `font-size:${opt.sizePreview}` }, t(locale, opt.key))
-            : t(locale, opt.key)
-        const swatch = opt.swatch ? el('span', { class: 'tt-prefs-radio-swatch', style: `background:${opt.swatch}` }) : null
-        return el('label', { class: 'tt-prefs-radio' }, input, swatch, text)
-      })
-    )
-    return el('div', { class: 'tt-prefs-field' }, el('div', { class: 'tt-prefs-field-label' }, t(locale, labelKey)), row)
+    return prefsRadioField({
+      name,
+      label: t(locale, labelKey),
+      options: options.map(({ key, ...rest }) => ({ ...rest, label: t(locale, key) })),
+      current,
+      onChange,
+      disabled,
+    })
   }
 
   // --- Tab 1: Geral -----------------------------------------------------
@@ -274,105 +256,62 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       shell.applyPrefs(store.doc.prefs)
     })
 
-    const autoSaveInput = el('input', {
-      type: 'number',
-      class: 'tt-input tt-prefs-autosave-input',
-      min: '1',
-      max: '60',
-      value: String(prefs.autoSaveMin),
-      onchange: (e: Event) => {
-        const raw = Number((e.target as HTMLInputElement).value)
-        const clamped = Math.min(60, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.autoSaveMin))
-        ;(e.target as HTMLInputElement).value = String(clamped)
-        store.update((d) => {
-          d.prefs.autoSaveMin = clamped
-        }, PREFS_ONLY)
-      },
-    })
-    const autoSaveField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_autosave_label'), autoSaveInput),
-      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_autosave_hint'))
-    )
-
-    const dueSoonInput = el('input', {
-      type: 'number',
-      class: 'tt-input tt-prefs-due-soon-input',
-      min: '1',
-      max: '30',
-      value: String(prefs.dueSoonDays),
-      onchange: (e: Event) => {
-        const raw = Number((e.target as HTMLInputElement).value)
-        const clamped = Math.min(30, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : prefs.dueSoonDays))
-        ;(e.target as HTMLInputElement).value = String(clamped)
-        store.update((d) => {
-          d.prefs.dueSoonDays = clamped
-        }, PREFS_ONLY)
-      },
-    })
-    const dueSoonField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-field-label' }, t(locale, 'prefs_due_soon_days_label'), dueSoonInput)
-    )
-
-    const openRefsSecondaryInput = el('input', {
-      type: 'checkbox',
-      class: 'tt-prefs-open-refs-secondary-checkbox',
-      checked: prefs.openRefsInSecondaryPane,
-      onchange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked
-        store.update((d) => {
-          d.prefs.openRefsInSecondaryPane = checked
-        }, PREFS_ONLY)
-      },
-    })
-    const openRefsSecondaryField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-checkbox-label' }, openRefsSecondaryInput, t(locale, 'prefs_open_refs_secondary_label'))
-    )
-
     // Both toggles are read live by their handlers — main.ts's wheel listener
     // for Ctrl+wheel, daily-notes.ts's onWheel for edge-scroll — so neither
     // needs an applyPrefs() or a re-render here; flipping the pref is enough.
-    const ctrlWheelFontInput = el('input', {
-      type: 'checkbox',
-      class: 'tt-prefs-ctrl-wheel-font-checkbox',
+    const ctrlWheelFontField = prefsCheckboxField({
+      inputClass: 'tt-prefs-ctrl-wheel-font-checkbox',
+      label: t(locale, 'prefs_ctrl_wheel_font_label'),
+      hint: t(locale, 'prefs_ctrl_wheel_font_hint'),
       checked: prefs.ctrlWheelFontSize,
-      onchange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked
+      onChange: (checked) => {
         store.update((d) => {
           d.prefs.ctrlWheelFontSize = checked
         }, PREFS_ONLY)
       },
     })
-    const ctrlWheelFontField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-checkbox-label' }, ctrlWheelFontInput, t(locale, 'prefs_ctrl_wheel_font_label')),
-      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_ctrl_wheel_font_hint'))
-    )
 
-    const dailyEdgeScrollInput = el('input', {
-      type: 'checkbox',
-      class: 'tt-prefs-daily-edge-scroll-checkbox',
+    const dailyEdgeScrollField = prefsCheckboxField({
+      inputClass: 'tt-prefs-daily-edge-scroll-checkbox',
+      label: t(locale, 'prefs_daily_edge_scroll_label'),
       checked: prefs.dailyEdgeScroll,
-      onchange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked
+      onChange: (checked) => {
         store.update((d) => {
           d.prefs.dailyEdgeScroll = checked
         }, PREFS_ONLY)
       },
     })
-    const dailyEdgeScrollField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('label', { class: 'tt-prefs-checkbox-label' }, dailyEdgeScrollInput, t(locale, 'prefs_daily_edge_scroll_label'))
-    )
 
-    container.append(autoSaveField, themeField, paletteField, localeField, fontField, sizeField, dueSoonField, openRefsSecondaryField, ctrlWheelFontField, dailyEdgeScrollField)
+    const openRefsSecondaryField = prefsCheckboxField({
+      inputClass: 'tt-prefs-open-refs-secondary-checkbox',
+      label: t(locale, 'prefs_open_refs_secondary_label'),
+      checked: prefs.openRefsInSecondaryPane,
+      onChange: (checked) => {
+        store.update((d) => {
+          d.prefs.openRefsInSecondaryPane = checked
+        }, PREFS_ONLY)
+      },
+    })
+
+    const dueSoonField = prefsNumberField({
+      inputClass: 'tt-prefs-due-soon-input',
+      label: t(locale, 'prefs_due_soon_days_label'),
+      min: 1,
+      max: 30,
+      value: prefs.dueSoonDays,
+      onCommit: (days) => {
+        store.update((d) => {
+          d.prefs.dueSoonDays = days
+        }, PREFS_ONLY)
+      },
+    })
+
+    // Ctrl+wheel sits directly under Text size: it is a text-size control, and
+    // used to be two unrelated fields further down.
+    container.append(
+      prefsSection(t(locale, 'prefs_group_interface'), localeField, themeField, paletteField, fontField, sizeField, ctrlWheelFontField),
+      prefsSection(t(locale, 'prefs_group_behavior'), openRefsSecondaryField, dailyEdgeScrollField, dueSoonField)
+    )
   }
 
   // --- Tab 1b: Backup -----------------------------------------------------
@@ -515,9 +454,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const backupToggleField = el(
       'div',
       { class: 'tt-prefs-field' },
-      el('p', { class: 'tt-data-hint' }, t(locale, 'prefs_backup_hint')),
+      prefsHint(t(locale, 'prefs_backup_hint')),
       el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
-      backupAvailable ? null : el('p', { class: 'tt-data-hint tt-prefs-backup-disabled-hint' }, t(locale, 'prefs_backup_disabled_hint'))
+      backupAvailable ? null : prefsHint(t(locale, 'prefs_backup_disabled_hint'), 'tt-prefs-backup-disabled-hint')
     )
 
     // Fired only while no notice is pinned yet — once backupHealthNotice is
@@ -588,7 +527,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       ? el(
           'div',
           { class: 'tt-prefs-field tt-prefs-backup-orphaned' },
-          el('p', { class: 'tt-data-hint tt-prefs-backup-orphaned-hint' }, t(locale, HEALTH_NOTICE_HINT_KEY[backupHealthNotice])),
+          prefsHint(t(locale, HEALTH_NOTICE_HINT_KEY[backupHealthNotice]), 'tt-prefs-backup-orphaned-hint'),
           el(
             'button',
             {
@@ -623,11 +562,31 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         )
       : null
 
-    const children: HTMLElement[] = [backupToggleField, frequencyField]
-    if (healthNoticeField) children.push(healthNoticeField)
-    if (statusWrap) children.push(statusWrap)
-    if (changeBackupBtn) children.push(changeBackupBtn)
-    container.append(...children)
+    // Auto-save lives here, not in General: it and the backup below answer the
+    // same question — how is my data protected — and the save pill already
+    // links users to this tab.
+    const autoSaveField = prefsNumberField({
+      inputClass: 'tt-prefs-autosave-input',
+      label: t(locale, 'prefs_autosave_label'),
+      hint: t(locale, 'prefs_autosave_hint'),
+      min: 1,
+      max: 60,
+      value: prefs.autoSaveMin,
+      onCommit: (minutes) => {
+        store.update((d) => {
+          d.prefs.autoSaveMin = minutes
+        }, PREFS_ONLY)
+      },
+    })
+
+    const backupChildren: HTMLElement[] = [backupToggleField, frequencyField]
+    if (healthNoticeField) backupChildren.push(healthNoticeField)
+    if (statusWrap) backupChildren.push(statusWrap)
+    if (changeBackupBtn) backupChildren.push(changeBackupBtn)
+    container.append(
+      prefsSection(t(locale, 'prefs_group_autosave'), autoSaveField),
+      prefsSection(t(locale, 'prefs_group_backup'), ...backupChildren)
+    )
   }
 
   // --- Tab 2: Templates ---------------------------------------------------
@@ -836,14 +795,13 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.append(toolbar, listEl)
   }
 
-  // --- Tab: Tags (cross-apply across teams) --------------------------------
-  function renderTags(container: HTMLElement): void {
-    container.innerHTML = ''
+  // --- Data tab section: Tags (cross-apply across teams) -------------------
+  function buildTagsSection(): HTMLElement {
     const teams = store.doc.teams
+    const title = t(locale, 'tags_cross_apply_heading')
 
     if (teams.length < 2) {
-      container.append(el('p', { class: 'tt-data-hint' }, t(locale, 'tags_cross_apply_need_two_teams')))
-      return
+      return prefsSection(title, prefsHint(t(locale, 'tags_cross_apply_need_two_teams')))
     }
 
     const sourceSelect = el('select', { class: 'tt-input' }) as HTMLSelectElement
@@ -883,15 +841,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       t(locale, 'tags_cross_apply_btn')
     )
 
-    container.append(
-      el(
-        'div',
-        { class: 'tt-prefs-field' },
-        el('div', { class: 'tt-prefs-field-label' }, t(locale, 'tags_cross_apply_heading')),
-        el('p', { class: 'tt-data-hint' }, t(locale, 'tags_cross_apply_hint')),
-        el('label', { class: 'tt-field' }, t(locale, 'tags_cross_apply_source_label'), sourceSelect),
-        applyBtn
-      )
+    return prefsSection(
+      title,
+      prefsHint(t(locale, 'tags_cross_apply_hint')),
+      el('label', { class: 'tt-field' }, t(locale, 'tags_cross_apply_source_label'), sourceSelect),
+      applyBtn
     )
   }
 
@@ -1092,14 +1046,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       t(locale, 'data_export_btn')
     )
 
-    const exportSection = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_export_heading')),
-      el('p', { class: 'tt-data-hint' }, t(locale, 'data_export_hint')),
-      exportListEl,
-      exportBtn
-    )
+    const exportSection = prefsSection(t(locale, 'data_export_heading'), prefsHint(t(locale, 'data_export_hint')), exportListEl, exportBtn)
 
     // --- Import ---
     let importTeams: ExportedTeam[] | null = null
@@ -1175,11 +1122,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       t(locale, 'data_import_pick_btn')
     )
 
-    const importSection = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_import_heading')),
-      el('p', { class: 'tt-data-hint' }, t(locale, 'data_import_hint')),
+    const importSection = prefsSection(
+      t(locale, 'data_import_heading'),
+      prefsHint(t(locale, 'data_import_hint')),
       pickBtn,
       fileInput,
       importListEl,
@@ -1236,16 +1181,15 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       t(locale, 'data_cleanup_btn')
     )
 
-    const cleanupSection = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      el('div', { class: 'tt-prefs-field-label' }, t(locale, 'data_cleanup_heading')),
-      el('p', { class: 'tt-data-hint' }, t(locale, 'data_cleanup_hint')),
+    const cleanupSection = prefsSection(
+      t(locale, 'data_cleanup_heading'),
+      prefsHint(t(locale, 'data_cleanup_hint')),
       el('label', { class: 'tt-field' }, t(locale, 'data_cleanup_days_label'), cleanupDaysInput),
       cleanupBtn
     )
 
-    container.append(exportSection, importSection, cleanupSection)
+    // Destructive cleanup stays last.
+    container.append(exportSection, importSection, buildTagsSection(), cleanupSection)
   }
 
   // --- Tab 6: Sobre ----------------------------------------------------
@@ -1271,48 +1215,88 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   }
 
   // --- Tab strip / dispatch ----------------------------------------------
-  const contentEl = el('div', { class: 'tt-prefs-content' })
+  const PANEL_ID = 'tt-prefs-panel'
+  const tabDomId = (id: TabId): string => `tt-prefs-tab-${id}`
+  const contentEl = el('div', { class: 'tt-prefs-content', role: 'tabpanel', id: PANEL_ID })
   const tabButtons = new Map<TabId, HTMLButtonElement>()
 
-  function renderActiveTab(): void {
-    for (const [id, btn] of tabButtons) btn.classList.toggle('active', id === activeTab)
+  /**
+   * Renders `activeTab` into the shared content area. `resetScroll` is true
+   * only when the user switched tabs — every other call is a rebuild of the
+   * tab already on screen (backup toggle, health notice, picker result) and
+   * must leave the user where they were: emptying the container collapses the
+   * scroll height, which would otherwise snap them back to the top.
+   */
+  function renderActiveTab(resetScroll = false): void {
+    const scrollTop = contentEl.scrollTop
+    for (const [id, btn] of tabButtons) {
+      const active = id === activeTab
+      btn.classList.toggle('active', active)
+      btn.setAttribute('aria-selected', String(active))
+      // Roving tabindex: Tab enters the strip once, arrow keys move within it.
+      btn.tabIndex = active ? 0 : -1
+    }
+    contentEl.setAttribute('aria-labelledby', tabDomId(activeTab))
     switch (activeTab) {
       case 'general':
         renderGeneral(contentEl)
-        return
+        break
       case 'backup':
         renderBackup(contentEl)
-        return
+        break
       case 'templates':
         renderTemplates(contentEl)
-        return
-      case 'tags':
-        renderTags(contentEl)
-        return
+        break
       case 'security':
         renderSecurity(contentEl)
-        return
+        break
       case 'data':
         renderData(contentEl)
-        return
+        break
       case 'about':
         renderAbout(contentEl)
-        return
+        break
     }
+    contentEl.scrollTop = resetScroll ? 0 : scrollTop
+  }
+
+  function onTabKeydown(e: KeyboardEvent): void {
+    const ids = TABS.map((tab) => tab.id)
+    const from = ids.indexOf(activeTab)
+    const focused = ids.find((id) => tabButtons.get(id) === document.activeElement)
+    const at = focused !== undefined ? ids.indexOf(focused) : from
+    let next: number
+    if (e.key === 'ArrowRight') next = (at + 1) % ids.length
+    else if (e.key === 'ArrowLeft') next = (at - 1 + ids.length) % ids.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = ids.length - 1
+    else return
+    e.preventDefault()
+    // Arrows only move focus (Enter/Space then activates, as for any button):
+    // activating on focus would rebuild a tab — and fire the Backup tab's
+    // async health check — for every tab the user merely passes over.
+    const target = tabButtons.get(ids[next]!)
+    if (!target) return
+    for (const btn of tabButtons.values()) btn.tabIndex = btn === target ? 0 : -1
+    target.focus()
   }
 
   const tabStrip = el(
     'div',
-    { class: 'tt-prefs-tabs' },
+    { class: 'tt-prefs-tabs', role: 'tablist', onkeydown: (e: Event) => onTabKeydown(e as KeyboardEvent) },
     ...TABS.map(({ id, key }) => {
       const btn = el(
         'button',
         {
           class: 'tt-btn tt-prefs-tab-btn',
           type: 'button',
+          role: 'tab',
+          id: tabDomId(id),
+          'aria-controls': PANEL_ID,
           onclick: () => {
+            const changed = activeTab !== id
             activeTab = id
-            renderActiveTab()
+            renderActiveTab(changed)
           },
         },
         t(locale, key)
