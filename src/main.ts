@@ -31,6 +31,7 @@ import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast }
 import { el } from './ui/dom'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
+import { requestPersistentStorage } from './core/storage-persist'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
@@ -862,7 +863,10 @@ async function runUpdateCheck(): Promise<void> {
 // file's own overdue+due-soon total, set by sidebar.ts on each render) — an
 // app launch with no file open yet must never show a stale count left over
 // from whatever was open in a previous session.
-if (__PWA__) updateAppBadge(0)
+if (__PWA__) {
+  updateAppBadge(0)
+  requestPersistentStorage()
+}
 showStartScreen(detectBrowserLocale(), openDocument)
 
 void runUpdateCheck()

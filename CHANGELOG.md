@@ -4,6 +4,18 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.1] - 2026-09-29
+
+### Added
+- In the installed app, `.tmv` files now show the Team Tracker icon in your file manager instead of a generic one.
+
+### Changed
+- In the installed app, the window's title bar now matches your chosen theme and color palette. Before, it stayed the default light blue even with a dark theme or a different palette.
+- The installed app now asks the browser to keep its saved data (the remembered last file and the backup link) even when the disk is nearly full, so "open last file" and automatic backup are less likely to be lost.
+
+### Fixed
+- Launching the installed app while offline from a link with extra parts on the end (for example `?something`) failed to load. It now opens the app like any other launch.
+
 ## [2.9.0] - 2026-09-28
 
 ### Changed
