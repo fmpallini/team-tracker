@@ -3,7 +3,7 @@
 // from DOM rendering. Nothing here touches the DOM.
 import type { Store } from './store'
 import type { PaneState } from './types'
-import { currentLoc, locsConflict, navigateHistory } from './nav'
+import { currentLoc, latestReachableIndex, navigateHistory, steppable } from './nav'
 
 function otherPaneIdx(idx: 0 | 1): 0 | 1 {
   return idx === 0 ? 1 : 0
@@ -23,6 +23,12 @@ export interface PaneLayout {
    * pane's current Loc. Returns whether the nav state actually changed.
    */
   jumpToLatest(idx: 0 | 1): boolean
+  /**
+   * Jumps pane `idx` straight to history entry `target` (the history-list
+   * menu's pick). Refuses — returns false — for an out-of-range or current
+   * index, or an entry conflicting with the other pane's current Loc.
+   */
+  jumpToIndex(idx: 0 | 1, target: number): boolean
   /** Records that a real navigation landed in pane `idx` — invalidates the stash for idx 0. */
   noteRealNavigation(idx: 0 | 1): void
   /** Drops the stash outright (e.g. sidebar.ts's deleteTeam pruning histories directly). */
@@ -50,7 +56,7 @@ export function createPaneLayout(store: Store): PaneLayout {
     stepHistory(idx, dir) {
       const nav = store.doc.nav
       const other = currentLoc(nav.panes[otherPaneIdx(idx)])
-      const result = navigateHistory(nav.panes[idx], dir, other)
+      const result = navigateHistory(nav.panes[idx], dir, other, nav.activeTeamId)
       if (!result) return false
       store.updateNav((d) => {
         d.nav.panes[idx] = result
@@ -70,15 +76,25 @@ export function createPaneLayout(store: Store): PaneLayout {
       // the array — a single backward scan finds it directly, rather than
       // walking forward one navigateHistory() call (and one conflict-skip
       // scan) per reachable entry.
-      let target = -1
-      for (let i = pane.history.length - 1; i > pane.index; i--) {
-        const loc = pane.history[i]
-        if (loc !== undefined && !locsConflict(loc, other)) {
-          target = i
-          break
-        }
-      }
+      const target = latestReachableIndex(pane, other, nav.activeTeamId)
       if (target === -1) return false
+      store.updateNav((d) => {
+        d.nav.panes[idx] = { history: pane.history, index: target }
+        d.nav.focusedPane = idx
+      })
+      if (idx === 0) {
+        unsplitStash = null
+        unsplitStashValid = false
+      }
+      return true
+    },
+    jumpToIndex(idx, target) {
+      const nav = store.doc.nav
+      const pane = nav.panes[idx]
+      const loc = pane.history[target]
+      if (loc === undefined || target === pane.index || nav.activeTeamId === null) return false
+      // Same admission rule as a step (team, not-where-I-am, not-the-other-pane).
+      if (!steppable(loc, nav.activeTeamId, currentLoc(pane), currentLoc(nav.panes[otherPaneIdx(idx)]))) return false
       store.updateNav((d) => {
         d.nav.panes[idx] = { history: pane.history, index: target }
         d.nav.focusedPane = idx

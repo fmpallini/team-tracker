@@ -71,6 +71,7 @@ test('stepHistory walks back and sets the focused pane', () => {
   const store = createStore(createEmptyDocument('en-US'))
   const layout = createPaneLayout(store)
   store.updateNav((d) => {
+    d.nav.activeTeamId = 't1'
     d.nav.focusedPane = 1
     d.nav.panes[0] = { history: [loc('t1', 'daily'), loc('t1', 'members')], index: 1 }
   })
@@ -99,6 +100,7 @@ test('jumpToLatest jumps straight to the newest entry in one call and sets the f
   const store = createStore(createEmptyDocument('en-US'))
   const layout = createPaneLayout(store)
   store.updateNav((d) => {
+    d.nav.activeTeamId = 't1'
     d.nav.focusedPane = 1
     d.nav.panes[0] = {
       history: [loc('t1', 'daily'), loc('t1', 'members'), loc('t1', 'actions')],
@@ -114,6 +116,7 @@ test('jumpToLatest stops at the newest entry that does not conflict with the oth
   const store = createStore(createEmptyDocument('en-US'))
   const layout = createPaneLayout(store)
   store.updateNav((d) => {
+    d.nav.activeTeamId = 't1'
     d.nav.panes[0] = {
       history: [loc('t1', 'daily'), loc('t1', 'members'), loc('t1', 'actions')],
       index: 0,
@@ -131,6 +134,7 @@ test('jumpToLatest on pane 0 invalidates the unsplit stash, same as stepHistory'
   const store = createStore(createEmptyDocument('en-US'))
   const layout = createPaneLayout(store)
   store.updateNav((d) => {
+    d.nav.activeTeamId = 't1'
     d.nav.split = true
     d.nav.focusedPane = 1
     d.nav.panes[0] = { history: [loc('t1', 'daily')], index: 0 }
@@ -145,4 +149,86 @@ test('jumpToLatest on pane 0 invalidates the unsplit stash, same as stepHistory'
 
   // Stash was invalidated: pane 0 keeps what it jumped to, not the stale stash.
   expect(store.doc.nav.panes[0]!.history[store.doc.nav.panes[0]!.index]!.ref.kind).toBe('members')
+})
+
+describe('jumpToIndex', () => {
+  function setup(): { store: ReturnType<typeof createStore>; layout: ReturnType<typeof createPaneLayout> } {
+    const store = createStore(createEmptyDocument('en-US'))
+    const layout = createPaneLayout(store)
+    store.updateNav((d) => {
+      d.nav.activeTeamId = 't1'
+      d.nav.split = true
+      d.nav.focusedPane = 1
+      d.nav.panes[0] = { history: [loc('t1', 'daily')], index: 0 }
+      d.nav.panes[1] = { history: [loc('t1', 'members'), loc('t1', 'actions'), loc('t1', 'members')], index: 2 }
+    })
+    return { store, layout }
+  }
+
+  test('moves the pane to the entry and focuses it', () => {
+    const { store, layout } = setup()
+    store.updateNav((d) => { d.nav.focusedPane = 0 })
+    expect(layout.jumpToIndex(1, 1)).toBe(true)
+    expect(store.doc.nav.panes[1]!.index).toBe(1)
+    expect(store.doc.nav.focusedPane).toBe(1)
+  })
+
+  test('refuses the current, an out-of-range, or a negative index', () => {
+    const { store, layout } = setup()
+    expect(layout.jumpToIndex(1, 2)).toBe(false)
+    expect(layout.jumpToIndex(1, 3)).toBe(false)
+    expect(layout.jumpToIndex(1, -1)).toBe(false)
+    expect(store.doc.nav.panes[1]!.index).toBe(2)
+  })
+
+  test('refuses an entry that conflicts with the other pane', () => {
+    const { store, layout } = setup()
+    store.updateNav((d) => { d.nav.panes[0] = { history: [loc('t1', 'actions')], index: 0 } })
+    expect(layout.jumpToIndex(1, 1)).toBe(false)
+    expect(store.doc.nav.panes[1]!.index).toBe(2)
+  })
+
+  test("refuses another team's entry, the spot the pane is already on, and any jump with no active team", () => {
+    const { store, layout } = setup()
+    store.updateNav((d) => { d.nav.panes[1] = { history: [loc('t2', 'actions'), loc('t1', 'members'), loc('t1', 'actions'), loc('t1', 'members')], index: 3 } })
+    expect(layout.jumpToIndex(1, 0)).toBe(false) // other team
+    expect(layout.jumpToIndex(1, 1)).toBe(false) // same spot as current (members)
+    expect(layout.jumpToIndex(1, 2)).toBe(true)
+    store.updateNav((d) => { d.nav.activeTeamId = null })
+    expect(layout.jumpToIndex(1, 3)).toBe(false)
+  })
+})
+
+describe('stepHistory / jumpToLatest are team scoped', () => {
+  function setup(): { store: ReturnType<typeof createStore>; layout: ReturnType<typeof createPaneLayout> } {
+    const store = createStore(createEmptyDocument('en-US'))
+    const layout = createPaneLayout(store)
+    store.updateNav((d) => {
+      d.nav.activeTeamId = 't1'
+      d.nav.panes[0] = { history: [loc('t1', 'daily'), loc('t2', 'actions'), loc('t1', 'members'), loc('t2', 'members')], index: 2 }
+    })
+    return { store, layout }
+  }
+
+  test("stepHistory never lands on another team's entry", () => {
+    const { store, layout } = setup()
+    expect(layout.stepHistory(0, 1)).toBe(false) // only t2 ahead
+    expect(layout.stepHistory(0, -1)).toBe(true)
+    expect(store.doc.nav.panes[0]!.index).toBe(0)
+    expect(layout.stepHistory(0, -1)).toBe(false)
+  })
+
+  test("jumpToLatest ignores other teams' newer entries", () => {
+    const { store, layout } = setup()
+    layout.stepHistory(0, -1)
+    expect(layout.jumpToLatest(0)).toBe(true)
+    expect(store.doc.nav.panes[0]!.index).toBe(2)
+  })
+
+  test('with no active team nothing steps or jumps', () => {
+    const { store, layout } = setup()
+    store.updateNav((d) => { d.nav.activeTeamId = null })
+    expect(layout.stepHistory(0, -1)).toBe(false)
+    expect(layout.jumpToLatest(0)).toBe(false)
+  })
 })

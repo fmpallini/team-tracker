@@ -12,13 +12,15 @@ export interface ContextMenuItem {
   label: string
   onClick: () => void
   danger?: boolean
+  /** Renders a leading ✓ (and reserves the gutter on every row when any item sets this, so labels stay aligned). */
+  checked?: boolean
 }
 
 // Module-level so opening a new menu always closes any menu already open —
 // callers never need to track/close their own previous instance.
 let closeCurrent: (() => void) | null = null
 
-export function showContextMenu(x: number, y: number, items: ContextMenuItem[]): void {
+export function showContextMenu(x: number, y: number, items: ContextMenuItem[], opts?: { selectedIndex?: number }): void {
   closeCurrent?.()
 
   // Whatever had focus when the menu opened (typically the row/card whose
@@ -26,7 +28,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   // via Escape/outside-click/picking an item leaves focus stranded on
   // document.body, same class of bug the kanban edit modal had.
   const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  let selected = 0
+  let selected = Math.min(Math.max(opts?.selectedIndex ?? 0, 0), Math.max(items.length - 1, 0))
 
   // Paints the CSS highlight only — used for mouse hover, which shouldn't
   // yank keyboard focus out from under a pointer user.
@@ -54,6 +56,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
     origin?.focus()
   }
 
+  const hasChecks = items.some((it) => it.checked !== undefined)
   const buttonEls: HTMLButtonElement[] = items.map((item, i) =>
     el(
       'button',
@@ -66,6 +69,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
         }),
         type: 'button',
       },
+      ...(hasChecks ? [el('span', { class: 'tt-context-menu-check' }, item.checked ? '✓' : '')] : []),
       item.label
     )
   )
@@ -101,7 +105,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   // handlers are guarded on the keydown's target being the row/card itself
   // (see risks.ts/milestones.ts/action-items.ts), so once focus is here they
   // naturally stop firing without this menu needing to know about them.
-  buttonEls[0]?.focus()
+  buttonEls[selected]?.focus()
 }
 
 /**

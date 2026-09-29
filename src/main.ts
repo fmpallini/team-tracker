@@ -8,7 +8,7 @@ import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
 import { resolveAppHotkey } from './ui/app-hotkeys'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
@@ -750,6 +750,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
   document.addEventListener('keydown', onKeyDown)
   disposers.push(() => document.removeEventListener('keydown', onKeyDown))
+  disposers.push(installMouseHistoryButtons(pm, store, navPastModelessCard))
 
   // Ctrl+mouse-wheel steps the text-size preference through its five stops,
   // standing in for the browser's own page zoom — but only while

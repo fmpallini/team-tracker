@@ -170,3 +170,23 @@ test('clamps to the viewport when opened near the right/bottom edge', () => {
     Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
   }
 })
+
+test('checked reserves a gutter on every row and ticks only the checked one', () => {
+  showContextMenu(0, 0, [
+    { label: 'A', onClick: () => {}, checked: false },
+    { label: 'B', onClick: () => {}, checked: true },
+  ])
+  const marks = Array.from(document.querySelectorAll('.tt-context-menu-check')).map((n) => n.textContent)
+  expect(marks).toEqual(['', '✓'])
+})
+
+test('no check gutter when no item sets checked', () => {
+  showContextMenu(0, 0, [{ label: 'A', onClick: () => {} }])
+  expect(document.querySelector('.tt-context-menu-check')).toBeNull()
+})
+
+test('selectedIndex pre-selects and focuses that row', () => {
+  showContextMenu(0, 0, [{ label: 'A', onClick: () => {} }, { label: 'B', onClick: () => {} }], { selectedIndex: 1 })
+  expect(items()[1]!.classList.contains('selected')).toBe(true)
+  expect(document.activeElement).toBe(items()[1])
+})
