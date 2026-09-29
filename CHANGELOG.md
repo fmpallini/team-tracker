@@ -8,8 +8,13 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Added
 - In the installed app, `.tmv` files now show the Team Tracker icon in your file manager instead of a generic one.
+- **Pane history list:** right-click, or press and hold, the ◀ / ▶ button of a pane to see that pane's recent history for the current team and jump straight to any entry. The current one is ticked.
+- A **⏭ button** appears next to ▶ while a pane is behind its newest entry, to jump back to the latest one in a click (same as Alt+Shift+↑).
+- The **mouse side buttons** (back / forward) now step through the focused pane's history, like Alt+Shift+← / →.
+- The pane's module menu now ticks the module currently open, and can be driven from the keyboard: **Home** / **End**, a **letter** to jump to the next module starting with it, and **1–7** to open that module directly.
 
 ### Changed
+- The pane ◀ / ▶ buttons' tooltips now name where they will take you and show their keyboard shortcut, and they are easier to tell apart from an active button when there is nowhere to go. The modules button's tooltip mentions the F1–F7 shortcuts.
 - The Preferences window is reorganized. General is now split into **Interface** (language, theme, palette, font, text size) and **Behavior** (open references in the secondary pane, daily-note edge scroll, due-date warning). The **Ctrl+mouse wheel adjusts text size** option now sits right under Text size instead of several settings further down.
 - The **Backup** tab is now **Saving & backup** and also holds the auto-save interval, which used to be in General. The **Tags** tab is gone: "Apply tags across teams" now lives in the **Data** tab, above the data cleanup.
 - Preferences has a clearer look: settings are grouped under headings, and labels, options and hints use one consistent set of text sizes. The window now also grows with your text size setting, so options no longer wrap in the largest size.
@@ -20,6 +25,8 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Fixed
 - Launching the installed app while offline from a link with extra parts on the end (for example `?something`) failed to load. It now opens the app like any other launch.
+- Pane back / forward (◀ / ▶, **Alt+Shift+←** / **→** / **↑**) could step onto a different team's entry left over from switching teams, and stepping could land on the spot you were already on. History now only ever moves within the current team, and skips repeats.
+- Going back in a team's pane and then opening something new no longer wipes the other teams' history in that pane, so switching back to another team still reopens the module you last had there.
 
 ## [2.9.0] - 2026-09-28
 
