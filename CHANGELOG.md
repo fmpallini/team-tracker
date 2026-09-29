@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.2] - 2026-09-29
+
+### Fixed
+- In the installed app, the window's title bar was the exact same color as the app header, so it was hard to see where the title bar ended and the app began. The title bar now has its own slightly different shade in every theme and palette.
+
 ## [2.9.1] - 2026-09-29
 
 ### Added
