@@ -243,7 +243,7 @@ async function overlayCycle(page: Page): Promise<void> {
   // build their own DOM (including the password strength meter).
   await page.locator('.tt-btn-settings').click()
   await expect(dialog).toBeVisible()
-  for (const tab of ['Backup', 'Templates', 'Tags', 'Security', 'Data', 'About']) {
+  for (const tab of ['Saving & backup', 'Templates', 'Security', 'Data', 'About']) {
     await dialog.locator('.tt-prefs-tab-btn', { hasText: tab }).first().click()
   }
   await dialog.getByRole('button', { name: 'OK' }).click()

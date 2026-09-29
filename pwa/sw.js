@@ -43,7 +43,14 @@ self.addEventListener('fetch', (event) => {
           }
           return res
         })
-        .catch(() => cached)
+        .catch(() =>
+          // Offline and not cached. A navigation (a launch URL with a query
+          // string, or /index.html) is served the cached app shell; anything
+          // else fails as a normal network error.
+          req.mode === 'navigate'
+            ? caches.open(CACHE).then((c) => c.match('./')).then((shell) => shell || Response.error())
+            : Response.error()
+        )
     })
   )
 })

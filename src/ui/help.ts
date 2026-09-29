@@ -43,6 +43,8 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
   ['Alt+Shift+← / Alt+Shift+→', 'help_global_history'],
   ['Alt+Shift+↑', 'help_global_history_latest'],
+  ['🖱 4 / 5', 'help_global_history_mouse'],
+  ['◀ / ▶ 🖱', 'help_global_history_menu'],
   ['Alt+←/→/↑/↓', 'help_global_pane_layout'],
   ['F1 … F7', 'help_global_pane_module'],
   ['Alt+[ / Alt+] / Alt+T', 'help_global_daily_nav'],

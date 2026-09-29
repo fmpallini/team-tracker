@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
+import { createPaneManager, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
 import { filterModuleItems } from '../src/ui/palette'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
@@ -893,7 +893,7 @@ test('module title/modules button are merged into one trigger: shows current mod
 
   const after = paneBtn(0, 'tt-pane-modules-btn')
   expect(after.disabled).toBe(false)
-  expect(after.title).toBe(t('en-US', 'pane_modules_title'))
+  expect(after.title).toBe(`${t('en-US', 'pane_modules_title')} (F1–F7)`)
   expect(after.textContent).toContain(t('en-US', 'module_risks'))
   expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
 })
@@ -1262,5 +1262,225 @@ describe('title bar flash — only on an opt-in openInPane', () => {
     pm.openInPane(1, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } }, { flashTitle: true })
     expect(titleSpan(0).classList.contains('tt-pane-title-flash')).toBe(false)
     expect(titleSpan(1).classList.contains('tt-pane-title-flash')).toBe(false)
+  })
+})
+
+describe('pane history: tooltips, list menu, jump-to-latest, mouse buttons', () => {
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+  const locC: Loc = { teamId: 'T1', ref: { kind: 'risks' } }
+  const label = (kind: 'actions' | 'milestones' | 'risks'): string =>
+    `${KIND_ICON[kind]} ${t('en-US', ({ actions: 'module_actions', milestones: 'module_milestones', risks: 'module_risks' } as const)[kind])}`
+
+  function setupHistory(): { store: Store; pm: PaneManager } {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, locA)
+    pm.openInPane(0, locB)
+    pm.openInPane(0, locC)
+    return { store, pm }
+  }
+
+  function menuLabels(): string[] {
+    return Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.textContent ?? '')
+  }
+
+  function rightClick(btn: HTMLElement): void {
+    btn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  }
+
+  afterEach(() => {
+    document.querySelector('.tt-context-menu')?.remove()
+    vi.useRealTimers()
+  })
+
+  test('back/forward tooltips name the destination and the hotkey, and hint at the history list', () => {
+    const { store, pm } = setupHistory()
+    navigateFocusedHistory(pm, store, -1) // now on B, with A behind and C ahead
+    const back = paneBtn(0, 'tt-pane-back-btn').title
+    const fwd = paneBtn(0, 'tt-pane-fwd-btn').title
+    expect(back).toContain(`Back to ${label('actions')}`)
+    expect(back).toContain('(Alt+Shift+←)')
+    expect(back).toContain(t('en-US', 'pane_history_hint'))
+    expect(fwd).toContain(`Forward to ${label('risks')}`)
+    expect(fwd).toContain('(Alt+Shift+→)')
+  })
+
+  test('a disabled direction falls back to the plain title', () => {
+    setupHistory()
+    const fwd = paneBtn(0, 'tt-pane-fwd-btn').title
+    expect(fwd).toContain(t('en-US', 'pane_forward_title'))
+    expect(fwd).not.toContain('Forward to')
+  })
+
+  test('right-click on back opens the history list, newest first, current entry ticked', () => {
+    setupHistory()
+    rightClick(paneBtn(0, 'tt-pane-back-btn'))
+    expect(menuLabels()).toEqual([`✓${label('risks')}`, label('milestones'), label('actions')])
+  })
+
+  test('picking an entry jumps the pane straight there without touching the history', () => {
+    const { store } = setupHistory()
+    rightClick(paneBtn(0, 'tt-pane-back-btn'))
+    document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')[2]!.click()
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locA)
+    expect(store.doc.nav.panes[0]!.history).toHaveLength(3)
+  })
+
+  test('the history list is not offered when the pane has fewer than two entries', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, locA)
+    rightClick(paneBtn(0, 'tt-pane-back-btn'))
+    expect(document.querySelector('.tt-context-menu')).toBeNull()
+  })
+
+  test('the list only shows entries of the active team', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    addTeam(store, 'T2')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, locA)
+    pm.openInPane(0, { teamId: 'T2', ref: { kind: 'actions' } })
+    pm.openInPane(0, locB)
+    pm.openInPane(0, locC)
+    rightClick(paneBtn(0, 'tt-pane-back-btn'))
+    expect(menuLabels()).toEqual([`✓${label('risks')}`, label('milestones'), label('actions')])
+  })
+
+  test('press-and-hold opens the list and swallows the click that ends the hold', () => {
+    vi.useFakeTimers()
+    const { store } = setupHistory()
+    const btn = paneBtn(0, 'tt-pane-back-btn')
+    btn.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    vi.advanceTimersByTime(600)
+    expect(document.querySelector('.tt-context-menu')).not.toBeNull()
+    btn.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    btn.click()
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC) // the click did not step back
+    paneBtn(0, 'tt-pane-back-btn').click()
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB) // ...but the next one does
+  })
+
+  test('a short press does not open the list', () => {
+    vi.useFakeTimers()
+    setupHistory()
+    const btn = paneBtn(0, 'tt-pane-back-btn')
+    btn.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    vi.advanceTimersByTime(200)
+    btn.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    vi.advanceTimersByTime(600)
+    expect(document.querySelector('.tt-context-menu')).toBeNull()
+  })
+
+  test('the jump-to-latest button only exists while the pane is behind its newest entry, and jumps there', () => {
+    const { store, pm } = setupHistory()
+    expect(document.querySelector('[data-pane-idx="0"] .tt-pane-latest-btn')).toBeNull()
+    navigateFocusedHistory(pm, store, -1)
+    navigateFocusedHistory(pm, store, -1)
+    paneBtn(0, 'tt-pane-latest-btn').click()
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC)
+    expect(document.querySelector('[data-pane-idx="0"] .tt-pane-latest-btn')).toBeNull()
+  })
+
+  test('mouse side buttons step the focused pane back (4) and forward (5), and are consumed', () => {
+    const { store, pm } = setupHistory()
+    const dispose = installMouseHistoryButtons(pm, store, () => true)
+    const up = (button: number): MouseEvent => {
+      const e = new MouseEvent('mouseup', { bubbles: true, cancelable: true, button })
+      document.dispatchEvent(e)
+      return e
+    }
+    expect(up(3).defaultPrevented).toBe(true)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+    up(4)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC)
+    expect(up(0).defaultPrevented).toBe(false)
+    dispose()
+    up(3)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC)
+  })
+
+  test('mouse side buttons do nothing when the gate says no', () => {
+    const { store, pm } = setupHistory()
+    const dispose = installMouseHistoryButtons(pm, store, () => false)
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 3 }))
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locC)
+    dispose()
+  })
+})
+
+describe('pane module menu: current-module check, typeahead, quick-pick', () => {
+  function openMenuOn(kind: 'daily' | 'risks' | 'actions'): { store: Store } {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, kind === 'daily' ? { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } } : { teamId: 'T1', ref: { kind } })
+    paneBtn(0, 'tt-pane-modules-btn').click()
+    return { store }
+  }
+  const key = (k: string): void => { document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })) }
+  const selected = (): string | null | undefined => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')?.textContent
+
+  test('only the current module row carries the ✓ (and aria-current)', () => {
+    openMenuOn('risks')
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
+    expect(rows.map((r) => r.querySelector('.tt-pane-menu-check')?.textContent)).toEqual(['', '', '', '', '', '', '✓'])
+    expect(rows.filter((r) => r.getAttribute('aria-current') === 'true')).toHaveLength(1)
+  })
+
+  test('a daily note on any date ticks the Daily row', () => {
+    openMenuOn('daily')
+    const first = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item .tt-pane-menu-check')
+    expect(first?.textContent).toBe('✓')
+  })
+
+  test('the other pane\'s module is not marked', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    store.updateNav((d) => { d.nav.split = true })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'members' } })
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'risks' } })
+    paneBtn(0, 'tt-pane-modules-btn').click()
+    const ticked = Array.from(document.querySelectorAll('[data-pane-idx="0"] .tt-pane-menu-check')).map((n) => n.textContent)
+    expect(ticked).toEqual(['', '', '', '✓', '', '', ''])
+  })
+
+  test('Home/End jump to the first/last row', () => {
+    openMenuOn('actions')
+    key('End')
+    expect(selected()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+    key('Home')
+    expect(selected()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+  })
+
+  test('typing a letter jumps to the next row starting with it, cycling on repeats', () => {
+    openMenuOn('daily')
+    key('m')
+    expect(selected()).toBe(`${KIND_ICON.members} ${t('en-US', 'module_members')}`)
+    key('m')
+    expect(selected()).toBe(`${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
+    key('m')
+    expect(selected()).toBe(`${KIND_ICON.members} ${t('en-US', 'module_members')}`)
+    key('q') // no match: selection stays
+    expect(selected()).toBe(`${KIND_ICON.members} ${t('en-US', 'module_members')}`)
+  })
+
+  test('1..7 open that row directly and close the menu', () => {
+    const { store } = openMenuOn('daily')
+    key('7')
+    expect(document.querySelector('.tt-pane-menu')).toBeNull()
+    expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('risks')
+  })
+
+  test('digits beyond the row count and ctrl-modified letters are ignored', () => {
+    const { store } = openMenuOn('daily')
+    key('8')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', ctrlKey: true, bubbles: true }))
+    expect(document.querySelector('.tt-pane-menu')).not.toBeNull()
+    expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('daily')
   })
 })

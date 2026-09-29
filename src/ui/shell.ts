@@ -3,6 +3,7 @@ import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { formatHHMM } from '../core/date'
+import { syncThemeColor } from '../core/theme-color'
 
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission' | 'backup-error' | 'backup-permission' | 'backup-password-mismatch'
 
@@ -274,7 +275,10 @@ export function createShell(locale: Locale): Shell {
   }
 
   const onSystemThemeChange = (): void => {
-    if (currentTheme === 'system') applyTheme('system')
+    if (currentTheme === 'system') {
+      applyTheme('system')
+      syncThemeColor()
+    }
   }
   mq.addEventListener('change', onSystemThemeChange)
 
@@ -369,6 +373,7 @@ export function createShell(locale: Locale): Shell {
     backupFrequency = prefs.backupFrequency
     applyTheme(prefs.theme)
     document.documentElement.dataset.palette = prefs.palette
+    syncThemeColor()
     document.documentElement.dataset.font = prefs.font
     document.documentElement.dataset.size = prefs.fontSize
     if (localeChanged) {

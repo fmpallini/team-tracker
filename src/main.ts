@@ -8,7 +8,7 @@ import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
 import { resolveAppHotkey } from './ui/app-hotkeys'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
@@ -31,6 +31,7 @@ import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast }
 import { el } from './ui/dom'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
+import { requestPersistentStorage } from './core/storage-persist'
 import { createSaveController, type SaveController } from './core/save-controller'
 import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
@@ -749,6 +750,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   }
   document.addEventListener('keydown', onKeyDown)
   disposers.push(() => document.removeEventListener('keydown', onKeyDown))
+  disposers.push(installMouseHistoryButtons(pm, store, navPastModelessCard))
 
   // Ctrl+mouse-wheel steps the text-size preference through its five stops,
   // standing in for the browser's own page zoom — but only while
@@ -862,7 +864,10 @@ async function runUpdateCheck(): Promise<void> {
 // file's own overdue+due-soon total, set by sidebar.ts on each render) — an
 // app launch with no file open yet must never show a stale count left over
 // from whatever was open in a previous session.
-if (__PWA__) updateAppBadge(0)
+if (__PWA__) {
+  updateAppBadge(0)
+  requestPersistentStorage()
+}
 showStartScreen(detectBrowserLocale(), openDocument)
 
 void runUpdateCheck()

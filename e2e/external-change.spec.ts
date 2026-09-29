@@ -58,7 +58,7 @@ test.describe('external file change conflict', () => {
     // checked for it afterwards: a fork that inherited backupHandleId would
     // mirror its saves into the ORIGINAL file's .bck.
     await page.click('.tt-btn-settings')
-    await page.getByRole('button', { name: 'Backup' }).click()
+    await page.getByRole('tab', { name: 'Saving & backup' }).click()
     const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
     await expect(backupCheckbox).toBeEnabled()
     await backupCheckbox.check()
@@ -98,7 +98,7 @@ test.describe('external file change conflict', () => {
 
     // The fork does not inherit the original's backup target.
     await page.click('.tt-btn-settings')
-    await page.getByRole('button', { name: 'Backup' }).click()
+    await page.getByRole('tab', { name: 'Saving & backup' }).click()
     await expect(page.locator('.tt-prefs-backup-checkbox')).not.toBeChecked()
   })
 

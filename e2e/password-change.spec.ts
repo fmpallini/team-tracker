@@ -11,7 +11,7 @@ import { createEncryptedDoc, blockUpdateCheck } from './helpers'
 
 async function openSecurityTab(page: Page): Promise<void> {
   await page.click('.tt-btn-settings')
-  await page.getByRole('button', { name: 'Security' }).click()
+  await page.getByRole('tab', { name: 'Security' }).click()
 }
 
 async function closeAndReopen(page: Page): Promise<void> {

@@ -2,13 +2,14 @@
 import type { Store } from '../core/store'
 import type { Shell, SaveStatusInfo } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
-import { currentLoc, lastLocForTeam, locsConflict, navigateHistory, openLoc } from '../core/nav'
+import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, reachableHistory } from '../core/nav'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
+import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { blockedByModal } from './hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
@@ -272,6 +273,35 @@ export function jumpFocusedHistoryToLatest(pm: PaneManager, store: Store): void 
     pm.renderAll()
   }
 }
+
+/**
+ * Mouse side buttons (4 = back, 5 = forward, as `MouseEvent.button` 3/4) step
+ * the focused pane's history — same effect as Alt+Shift+←/→. `canNavigate` is
+ * main.ts's gate (an open modal swallows the press; a modeless card modal
+ * closes first, like the hotkeys). Always consumes the press so the browser's
+ * own page-back navigation never fires. Returns a disposer.
+ */
+export function installMouseHistoryButtons(pm: PaneManager, store: Store, canNavigate: () => boolean): () => void {
+  const isSide = (e: MouseEvent): boolean => e.button === 3 || e.button === 4
+  function onMouseUp(e: MouseEvent): void {
+    if (!isSide(e)) return
+    e.preventDefault()
+    if (blockedByModal() || !canNavigate()) return
+    navigateFocusedHistory(pm, store, e.button === 3 ? -1 : 1)
+  }
+  function onAuxClick(e: MouseEvent): void {
+    if (isSide(e)) e.preventDefault()
+  }
+  document.addEventListener('mouseup', onMouseUp)
+  document.addEventListener('auxclick', onAuxClick)
+  return () => {
+    document.removeEventListener('mouseup', onMouseUp)
+    document.removeEventListener('auxclick', onAuxClick)
+  }
+}
+
+/** How long a press on ◀/▶ must be held to open the history list (same as right-click). */
+const HISTORY_LONG_PRESS_MS = 500
 
 /**
  * Focuses pane `idx` directly — main.ts's global Alt+ArrowLeft (pane 0) /
@@ -613,6 +643,74 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     renderAll()
   }
 
+  function historyEntryLabel(loc: Loc): string {
+    return `${KIND_ICON[loc.ref.kind]} ${titleFor(store, loc, localeNow())}`
+  }
+
+  /** Tooltip for ◀/▶: names where the click lands (when reachable), the hotkey, and the right-click hint. */
+  function historyBtnTitle(dir: -1 | 1, target: Loc | null): string {
+    const lc = localeNow()
+    const hotkey = dir === -1 ? 'Alt+Shift+←' : 'Alt+Shift+→'
+    const base = target
+      ? t(lc, dir === -1 ? 'pane_back_to_title' : 'pane_forward_to_title', { dest: historyEntryLabel(target) })
+      : t(lc, dir === -1 ? 'pane_back_title' : 'pane_forward_title')
+    return `${base} (${hotkey})
+${t(lc, 'pane_history_hint')}`
+  }
+
+  /** The pane's reachable history as a click-to-jump list (newest first, current entry ticked), anchored under `anchor`. */
+  function openHistoryMenu(idx: 0 | 1, anchor: HTMLElement): void {
+    const nav = store.doc.nav
+    const entries = reachableHistory(nav.panes[idx], currentLoc(nav.panes[otherPaneIdx(idx)]), nav.activeTeamId)
+    if (entries.length < 2) return
+    const items: ContextMenuItem[] = entries.map((e) => ({
+      label: historyEntryLabel(e.loc),
+      checked: e.current,
+      onClick: () => {
+        if (layout$.jumpToIndex(idx, e.index)) renderAll()
+      },
+    }))
+    const rect = anchor.getBoundingClientRect()
+    showContextMenu(rect.left, rect.bottom + 2, items, { selectedIndex: entries.findIndex((e) => e.current) })
+  }
+
+  /** Right-click, or press-and-hold, on a ◀/▶ button opens the history list; the click that ends a hold is swallowed. */
+  function bindHistoryMenu(btn: HTMLButtonElement, idx: 0 | 1): void {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let held = false
+    const cancel = (): void => {
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+    }
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      cancel()
+      openHistoryMenu(idx, btn)
+    })
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return
+      held = false
+      cancel()
+      timer = setTimeout(() => {
+        timer = null
+        held = true
+        openHistoryMenu(idx, btn)
+      }, HISTORY_LONG_PRESS_MS)
+    })
+    btn.addEventListener('pointerup', cancel)
+    btn.addEventListener('pointerleave', cancel)
+    btn.addEventListener('pointercancel', cancel)
+    btn.addEventListener(
+      'click',
+      (e) => {
+        if (!held) return
+        held = false
+        e.stopImmediatePropagation()
+      },
+      true
+    )
+  }
+
   function openInPane(idx: 0 | 1, target: Loc, opts?: { force?: boolean; flashTitle?: boolean }): void {
     clearSearchHighlight()
     const nav = store.doc.nav
@@ -655,7 +753,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       const hiddenPane = nav.panes[1]
       const hiddenCur = currentLoc(hiddenPane)
       if (hiddenCur && locsConflict(target, hiddenCur)) {
-        const stepped = navigateHistory(hiddenPane, -1, null)
+        const stepped = navigateHistory(hiddenPane, -1, null, hiddenCur.teamId)
         store.updateNav((d) => {
           d.nav.panes[1] = stepped ?? { history: hiddenPane.history, index: -1 }
         })
@@ -794,6 +892,12 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
         paintSelection(menuListEls[idx], '.tt-pane-menu-item', menuSelected[idx])
         return
       }
+      if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault()
+        menuSelected[idx] = e.key === 'Home' ? 0 : paneMenuItems().length - 1
+        paintSelection(menuListEls[idx], '.tt-pane-menu-item', menuSelected[idx])
+        return
+      }
       if (e.key === 'Enter') {
         e.preventDefault()
         const teamId = store.doc.nav.activeTeamId
@@ -801,6 +905,34 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
         if (!teamId || !row) return
         closeMenu(idx)
         openInPane(idx, { teamId, ref: row.ref })
+        return
+      }
+      // 1..7 picks that row outright; a letter jumps to the next row whose
+      // label starts with it (repeat presses cycle). Modified keys stay free
+      // for the global hotkeys.
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+        const rows = paneMenuItems()
+        const digit = Number(e.key)
+        if (Number.isInteger(digit) && digit >= 1 && digit <= rows.length) {
+          e.preventDefault()
+          const teamId = store.doc.nav.activeTeamId
+          const row = rows[digit - 1]
+          if (!teamId || !row) return
+          closeMenu(idx)
+          openInPane(idx, { teamId, ref: row.ref })
+          return
+        }
+        const lc = localeNow()
+        const letter = e.key.toLocaleLowerCase(lc)
+        for (let step = 1; step <= rows.length; step++) {
+          const i = (menuSelected[idx] + step) % rows.length
+          if (t(lc, rows[i]!.labelKey).toLocaleLowerCase(lc).startsWith(letter)) {
+            e.preventDefault()
+            menuSelected[idx] = i
+            paintSelection(menuListEls[idx], '.tt-pane-menu-item', i)
+            return
+          }
+        }
         return
       }
       if (e.key === 'Escape') {
@@ -821,11 +953,13 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       openInPane(idx, { teamId, ref })
     }
 
+    const curKind = currentLoc(store.doc.nav.panes[idx])?.ref.kind
     const itemBtns = paneMenuItems().map((row, i) =>
       el(
         'button',
         {
           type: 'button',
+          ...(row.kind === curKind ? { 'aria-current': 'true' } : {}),
           ...selectableRowProps({
             class: 'tt-pane-menu-item',
             selected: i === menuSelected[idx],
@@ -836,6 +970,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
             },
           }),
         },
+        el('span', { class: 'tt-pane-menu-check' }, row.kind === curKind ? '✓' : ''),
         el('span', { class: 'tt-pane-menu-label' }, `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`),
         el('span', { class: 'tt-pane-menu-hotkey' }, `F${i + 1}`)
       )
@@ -885,8 +1020,13 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     const pane = nav.panes[idx]
     const other = currentLoc(nav.panes[otherPaneIdx(idx)])
     const cur = currentLoc(pane)
-    const canBack = navigateHistory(pane, -1, other) !== null
-    const canFwd = navigateHistory(pane, 1, other) !== null
+    const backPane = navigateHistory(pane, -1, other, nav.activeTeamId)
+    const fwdPane = navigateHistory(pane, 1, other, nav.activeTeamId)
+    const canBack = backPane !== null
+    const canFwd = fwdPane !== null
+    const backTarget = backPane ? (backPane.history[backPane.index] ?? null) : null
+    const fwdTarget = fwdPane ? (fwdPane.history[fwdPane.index] ?? null) : null
+    const canLatest = latestReachableIndex(pane, other, nav.activeTeamId) !== -1
 
     // Consume the one-shot flash flag (set by openInPane's `flashTitle` opt).
     const flashTitle = pendingTitleFlash[idx]
@@ -897,7 +1037,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       {
         class: 'tt-btn tt-pane-nav-btn tt-pane-back-btn',
         type: 'button',
-        title: t(lc, 'pane_back_title'),
+        title: historyBtnTitle(-1, backTarget),
         disabled: !canBack,
         onclick: () => goHistory(idx, -1),
       },
@@ -908,19 +1048,37 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       {
         class: 'tt-btn tt-pane-nav-btn tt-pane-fwd-btn',
         type: 'button',
-        title: t(lc, 'pane_forward_title'),
+        title: historyBtnTitle(1, fwdTarget),
         disabled: !canFwd,
         onclick: () => goHistory(idx, 1),
       },
       '▶'
     )
+    bindHistoryMenu(backBtn, idx)
+    bindHistoryMenu(fwdBtn, idx)
+    // Only while the pane sits in the past of its own history — the same jump
+    // Alt+Shift+↑ does, made clickable.
+    const latestBtn = canLatest
+      ? el(
+          'button',
+          {
+            class: 'tt-btn tt-pane-nav-btn tt-pane-latest-btn',
+            type: 'button',
+            title: `${t(lc, 'pane_latest_title')} (Alt+Shift+↑)`,
+            onclick: () => {
+              if (layout$.jumpToLatest(idx)) renderAll()
+            },
+          },
+          '⏭'
+        )
+      : null
     const teamId = nav.activeTeamId
     const modulesBtn = el(
       'button',
       {
         class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
-        title: t(lc, teamId ? 'pane_modules_title' : 'pane_no_team'),
+        title: teamId ? `${t(lc, 'pane_modules_title')} (F1–F${paneMenuItems().length})` : t(lc, 'pane_no_team'),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
@@ -959,7 +1117,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       modulesBtn,
       ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId)] : [])
     )
-    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, moduleTriggerWrap)
+    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap)
     const right = el('div', { class: 'tt-pane-bar-right' }, printBtn, splitBtn)
     barEl.append(left, right)
   }

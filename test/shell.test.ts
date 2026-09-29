@@ -363,6 +363,24 @@ function prefsWith(dailyBackupEnabled: boolean, backupFrequency: 'daily' | 'hour
   }
 }
 
+describe('PWA theme-color meta', () => {
+  test('applyPrefs re-syncs the tag from the active --panel color', () => {
+    const meta = document.createElement('meta')
+    meta.name = 'theme-color'
+    meta.content = '#3b5a6b'
+    document.head.appendChild(meta)
+    document.documentElement.style.setProperty('--panel', '#26231a')
+    try {
+      const shell = setup()
+      shell.applyPrefs(prefsWith(false))
+      expect(meta.content).toBe('#26231a')
+    } finally {
+      meta.remove()
+      document.documentElement.style.removeProperty('--panel')
+    }
+  })
+})
+
 // The backup tab is a sibling of .tt-save-pill under a shared .tt-save-pill-
 // wrap (not a child of the pill, and not a separate control) — a sibling so
 // it can visually tuck behind the main pill's own border/background as a

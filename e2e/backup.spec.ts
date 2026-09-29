@@ -138,7 +138,7 @@ test.describe('backup health pill', () => {
     await page.evaluate(() => { window.__poisonBackupWrites = true })
     await page.locator('.tt-btn-settings').click()
     const prefs = page.getByRole('dialog')
-    await prefs.getByRole('button', { name: 'Security' }).click()
+    await prefs.getByRole('tab', { name: 'Security' }).click()
     await prefs.locator('input[name="tt-prefs-current-password"]').fill('e2e-backup-old-password')
     await prefs.locator('input[name="tt-prefs-new-password"]').fill('e2e-backup-new-password')
     await prefs.locator('input[name="tt-prefs-new-password-confirm"]').fill('e2e-backup-new-password')

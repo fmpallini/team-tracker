@@ -469,6 +469,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
 .tt-btn:disabled { opacity: .5; cursor: not-allowed; }
+.tt-pane-nav-btn:disabled { opacity: .3; }
 .tt-btn:disabled:hover { border-color: var(--border); color: var(--fg); }
 
 /* Start screen */
@@ -715,6 +716,9 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-pane-menu-item.selected, .tt-pane-menu-item:hover { background: rgba(var(--accent-rgb), .1); }
 .tt-pane-menu-hotkey { font-size: .75rem; opacity: .5; flex: none; }
+.tt-pane-menu-label { flex: 1; }
+.tt-pane-menu-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; }
+.tt-pane-menu-item[aria-current='true'] .tt-pane-menu-label { font-weight: 700; }
 
 /* Command palette */
 .tt-palette-overlay {
@@ -909,6 +913,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-context-menu-item:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-context-menu-item.danger { color: var(--danger); }
+.tt-context-menu-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; }
 
 /* Backlinks badge/chip + popover (references pointing at a person/day/action/milestone/risk) */
 .tt-backlinks-chip {
@@ -1640,7 +1645,9 @@ select option { background: var(--bg); color: var(--fg); }
    visibly resized the whole window. :has() scopes this to just the prefs
    modal without touching every other showModal() caller. Widened past the
    generic modal's 480px cap to comfortably fit Templates' widest row. */
-.tt-modal-dialog:has(.tt-prefs-dialog) { width: min(640px, 90vw); max-width: min(640px, 90vw); }
+/* rem, not px: the text-size preference scales rem, so a px width would let
+   the XL setting wrap pills that fit at M inside the very modal that offers it. */
+.tt-modal-dialog:has(.tt-prefs-dialog) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
 /* Action item edit modal: widened past the generic 480px cap so the notes
    editor (bumped to min-height 240px above) has real room to read/write in,
    not a cramped strip inside an otherwise-narrow dialog. */
@@ -1675,7 +1682,13 @@ select option { background: var(--bg); color: var(--fg); }
    layers (matching the panel background) sit over the two `scroll` shadow
    layers and slide away from them as the content moves. */
 .tt-prefs-content {
-  display: flex; flex-direction: column; gap: 1.5rem; height: 55vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1.75rem; height: 60vh; min-height: 16rem; max-height: 40rem; overflow-y: auto;
+  /* Reserve the scrollbar's width on every tab. Without it a tab that
+     overflows (General) is narrower than one that doesn't (About), so the
+     content visibly shifts sideways when switching between them. */
+  scrollbar-gutter: stable;
+  /* Reaching the end of a tab must not hand the wheel to the page behind. */
+  overscroll-behavior: contain;
   /* Right/bottom insets so a tab that overflows doesn't butt its scrollbar
      up against the last control (the Data tab's "Clear data" button most
      visibly) — with no scrollbar the modal's own body padding already
@@ -1686,8 +1699,21 @@ select option { background: var(--bg); color: var(--fg); }
     linear-gradient(rgba(0, 0, 0, 0), var(--bg) 60%) bottom / 100% 2rem no-repeat local,
     linear-gradient(to bottom, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) top / 100% 1.1rem no-repeat scroll,
     linear-gradient(to top, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) bottom / 100% 1.1rem no-repeat scroll;
+  /* The two `scroll` fades are clipped to the content box so they stop short
+     of the scrollbar gutter: `local` layers only cover the scrolling area, so
+     an unclipped fade also painted a small orphan gradient block in the
+     reserved gutter — visible on tabs that don't even scroll. */
+  background-clip: border-box, border-box, content-box, content-box;
 }
-.tt-prefs-field { display: flex; flex-direction: column; gap: .55rem; }
+/* Type hierarchy for every tab: section title (display, bold) > field label
+   (small, muted, semibold) > control text (body size, --fg) > hint (small,
+   muted). Controls read as the primary content; labels and hints as support. */
+.tt-prefs-section { display: flex; flex-direction: column; gap: 1.1rem; }
+.tt-prefs-section-title {
+  font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin: 0;
+  padding-bottom: .3rem; border-bottom: 1px solid var(--border);
+}
+.tt-prefs-field { display: flex; flex-direction: column; gap: .5rem; }
 /* A `.tt-btn` sitting directly in one of these column flex containers would
    otherwise inherit the default cross-axis `stretch` and balloon into a
    full-width bar (this modal's only flex-column contexts, so the selector
@@ -1698,9 +1724,11 @@ select option { background: var(--bg); color: var(--fg); }
    .tt-prefs-template-actions, .tt-data-import-actions) aren't direct
    children here, so they're unaffected. */
 .tt-prefs-field > .tt-btn,
+.tt-prefs-section > .tt-btn,
 .tt-prefs-content > .tt-btn { align-self: flex-start; }
-.tt-prefs-field-label { font-size: .9rem; color: var(--muted); display: flex; flex-direction: column; gap: .4rem; }
-.tt-prefs-checkbox-label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; color: var(--muted); }
+.tt-prefs-field-label { font-size: .85rem; font-weight: 600; color: var(--muted); display: flex; flex-direction: column; gap: .4rem; }
+.tt-prefs-checkbox-label { display: flex; align-items: center; gap: .5rem; font-size: .95rem; color: var(--fg); cursor: pointer; }
+.tt-prefs-inline-label { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; font-size: .95rem; color: var(--fg); }
 .tt-prefs-radio-row { display: flex; flex-wrap: wrap; gap: .5rem; }
 /* Replaces the raw OS-native radio row (inconsistent circle styling across
    browsers, no relation to the Field Ledger look) with a bordered pill —
