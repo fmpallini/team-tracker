@@ -364,19 +364,21 @@ function prefsWith(dailyBackupEnabled: boolean, backupFrequency: 'daily' | 'hour
 }
 
 describe('PWA theme-color meta', () => {
-  test('applyPrefs re-syncs the tag from the active --panel color', () => {
+  test('applyPrefs re-syncs the tag from the active --bg/--border blend', () => {
     const meta = document.createElement('meta')
     meta.name = 'theme-color'
     meta.content = '#3b5a6b'
     document.head.appendChild(meta)
-    document.documentElement.style.setProperty('--panel', '#26231a')
+    document.documentElement.style.setProperty('--bg', '#1c1a14')
+    document.documentElement.style.setProperty('--border', '#4a4530')
     try {
       const shell = setup()
       shell.applyPrefs(prefsWith(false))
-      expect(meta.content).toBe('#26231a')
+      expect(meta.content).toBe('#312d21')
     } finally {
       meta.remove()
-      document.documentElement.style.removeProperty('--panel')
+      document.documentElement.style.removeProperty('--bg')
+      document.documentElement.style.removeProperty('--border')
     }
   })
 })
