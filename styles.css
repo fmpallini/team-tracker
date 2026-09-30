@@ -1816,6 +1816,9 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-help-code-block {
   font-family: var(--font-data); font-size: .85rem; background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: .5rem; overflow-x: auto; white-space: pre;
+  /* A flex child of the height-capped .tt-help-body: without this its overflow
+     lets flex shrink it below one line, leaving a clipped sliver. */
+  flex: none;
 }
 
 /* Password strength meter */

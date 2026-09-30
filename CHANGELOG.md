@@ -12,6 +12,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ### Fixed
 - Renaming a member or stakeholder now updates the title of a pane showing that person right away, even when the rename is done from the other pane. Before, the title kept the old name until you navigated somewhere else.
 - In Risks, dragging a dot on the chart while you were editing a follow-up note moved the dot but left its label, the risk's exposure and the total out of date until you left the note. They now update immediately, and your note keeps its cursor.
+- In the global help window, the "Window without browser UI" command box was squashed into an unreadable sliver. It now shows the full command.
 
 ## [2.9.2] - 2026-09-29
 
