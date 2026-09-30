@@ -1,4 +1,4 @@
-import { showGlobalHelp, showEditorHelp } from '../src/ui/help'
+import { showGlobalHelp, showEditorHelp, appWindowCommand } from '../src/ui/help'
 import { createShell } from '../src/ui/shell'
 
 function stubMatchMedia(): void {
@@ -96,7 +96,10 @@ test('global help lists app-level shortcuts and the app-window recipe', () => {
   // Task 12 moved the command palette to Ctrl+Shift+K globally; the global
   // help table must name that, not the old Ctrl+K.
   expect(text).toContain('Ctrl+Shift+K')
-  expect(text).toContain('chrome --app')
+  expect(text).toContain('--app="')
+  // Filled with this page's own URL, not a placeholder path.
+  expect(text).toContain(location.href.split('#')[0])
+  expect(text).not.toContain('caminho/para')
 })
 
 test('editor help lists the code-block / blockquote / link shortcuts and syntax', () => {
@@ -115,14 +118,14 @@ test('editor help lists the code-block / blockquote / link shortcuts and syntax'
 
 test('editor help no longer carries the app-window recipe', () => {
   showEditorHelp('en-US')
-  expect(document.body.textContent!).not.toContain('chrome --app')
+  expect(document.body.textContent!).not.toContain('--app=')
 })
 
 test('global help omits the app-window recipe in the PWA build (opts.pwa: true) — moot once already installable/standalone', () => {
   showGlobalHelp('en-US', { pwa: true })
   const text = document.body.textContent!
   expect(text).toContain('Alt+1') // shortcuts stay
-  expect(text).not.toContain('chrome --app')
+  expect(text).not.toContain('--app=')
 })
 
 test('editor help explains ctrl/middle-click for the secondary pane', () => {
@@ -157,4 +160,30 @@ test('editor help (pt-BR) also explains ctrl/middle-click for the secondary pane
   const text = document.body.textContent!
   expect(text).toContain('Ctrl')
   expect(text.toLowerCase()).toContain('meio') // "botão do meio" = middle button
+})
+
+describe('appWindowCommand', () => {
+  const url = 'file:///C:/Users/me/My%20Apps/app.html#frag'
+  const chrome = { brands: [{ brand: 'Chromium' }, { brand: 'Google Chrome' }, { brand: 'Not A Brand' }] }
+  const edge = { brands: [{ brand: 'Chromium' }, { brand: 'Microsoft Edge' }] }
+
+  test('Windows Chrome and Edge use their Run-box launchers, with the quoted URL minus the hash', () => {
+    expect(appWindowCommand(url, { ...chrome, platform: 'Windows' })).toBe('chrome --app="file:///C:/Users/me/My%20Apps/app.html"')
+    expect(appWindowCommand(url, { ...edge, platform: 'Windows' })).toBe('msedge --app="file:///C:/Users/me/My%20Apps/app.html"')
+  })
+
+  test('macOS goes through open -na with the app bundle name', () => {
+    expect(appWindowCommand('file:///a/app.html', { ...chrome, platform: 'macOS' })).toBe('open -na "Google Chrome" --args --app="file:///a/app.html"')
+    expect(appWindowCommand('file:///a/app.html', { ...edge, platform: 'macOS' })).toBe('open -na "Microsoft Edge" --args --app="file:///a/app.html"')
+  })
+
+  test('Linux uses the packaged binary names; unbranded Chromium is told apart from Chrome', () => {
+    expect(appWindowCommand('file:///a/app.html', { ...chrome, platform: 'Linux' })).toBe('google-chrome --app="file:///a/app.html"')
+    expect(appWindowCommand('file:///a/app.html', { brands: [{ brand: 'Chromium' }], platform: 'Linux' })).toBe('chromium --app="file:///a/app.html"')
+  })
+
+  test('without userAgentData it reads the UA string, and falls back to Chrome when nothing matches', () => {
+    expect(appWindowCommand('file:///a/app.html', undefined, 'Mozilla/5.0 (Windows NT 10.0) Chrome/120 Safari/537.36 Edg/120')).toBe('msedge --app="file:///a/app.html"')
+    expect(appWindowCommand('file:///a/app.html', undefined, '')).toBe('google-chrome --app="file:///a/app.html"')
+  })
 })

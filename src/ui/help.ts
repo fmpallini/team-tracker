@@ -1,6 +1,7 @@
 // src/ui/help.ts — editor help modal (shortcuts, markdown syntax, @refs,
 // /templates) and the global help modal (app-level shortcuts, plus the
-// `chrome --app=...` chromeless-window recipe).
+// `--app=...` chromeless-window recipe, filled in with this file's own URL and
+// the detected browser).
 import type { Locale, MsgKey } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
@@ -60,6 +61,41 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Espaço', 'help_global_row_menu'],
 ]
 
+type BrowserBrand = 'chrome' | 'edge' | 'chromium'
+type Platform = 'win' | 'mac' | 'linux'
+
+interface UaData { brands?: readonly { brand: string }[]; platform?: string }
+
+/** Executable (or macOS app-bundle) names, per platform and Chromium brand. */
+const APP_LAUNCHERS: Record<Platform, Record<BrowserBrand, string>> = {
+  win: { chrome: 'chrome', edge: 'msedge', chromium: 'chromium' },
+  mac: { chrome: 'Google Chrome', edge: 'Microsoft Edge', chromium: 'Chromium' },
+  linux: { chrome: 'google-chrome', edge: 'microsoft-edge', chromium: 'chromium' },
+}
+
+/**
+ * The command that opens `href` in a chromeless `--app=` window, for the
+ * browser the page is running in. Best-effort: a page can tell the brand and
+ * OS (`userAgentData`, else the UA string) but never the executable's real
+ * path, so it names the launcher a shell/Run box resolves and falls back to
+ * plain Chrome on anything it doesn't recognise. `href` is already
+ * percent-encoded, so double quotes are all the quoting it needs.
+ */
+export function appWindowCommand(href: string, uaData?: UaData, userAgent = ''): string {
+  const brands = uaData?.brands?.map((b) => b.brand) ?? []
+  // Google Chrome's brand list carries both "Google Chrome" and "Chromium";
+  // an unbranded Chromium build carries only the latter.
+  const brand: BrowserBrand = brands.includes('Microsoft Edge') || /\bEdg\//.test(userAgent)
+    ? 'edge'
+    : brands.includes('Chromium') && !brands.includes('Google Chrome') ? 'chromium' : 'chrome'
+  const os = `${uaData?.platform ?? ''} ${userAgent}`
+  const platform: Platform = /win/i.test(os) ? 'win' : /mac/i.test(os) ? 'mac' : 'linux'
+  const app = `--app="${href.split('#')[0]}"`
+  return platform === 'mac'
+    ? `open -na "${APP_LAUNCHERS.mac[brand]}" --args ${app}`
+    : `${APP_LAUNCHERS[platform][brand]} ${app}`
+}
+
 function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {
   const body = rows.map(([code, key]) =>
     el('tr', {}, el('td', { class: 'tt-help-code' }, code), el('td', {}, t(locale, key)))
@@ -95,7 +131,7 @@ export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
     { class: 'tt-help-body' },
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_global_shortcuts_heading')),
     table(locale, GLOBAL_ROWS),
-    // The chrome --app= recipe is a workaround for opening the plain
+    // The --app= recipe is a workaround for opening the plain
     // dist/app.html without browser chrome — moot in the PWA build, which is
     // already installable/standalone, so it's only shown there.
     ...(isPwa
@@ -103,7 +139,7 @@ export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
       : [
           el('h3', { class: 'tt-help-heading' }, t(locale, 'help_appwindow_heading')),
           el('p', { class: 'tt-help-text' }, t(locale, 'help_appwindow_body')),
-          el('pre', { class: 'tt-help-code-block' }, 'chrome --app=file:///caminho/para/app.html'),
+          el('pre', { class: 'tt-help-code-block' }, appWindowCommand(location.href, (navigator as Navigator & { userAgentData?: UaData }).userAgentData, navigator.userAgent)),
         ])
   )
 
