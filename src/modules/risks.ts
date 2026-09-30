@@ -1231,6 +1231,30 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     }
   }
 
+  /**
+   * Syncs every open row's chance/impact selects and exposure badge to the
+   * store in place. For the deferred-rebuild path, where a full `renderAll()`
+   * would tear down the focused follow-up editor/title input. Row order under
+   * an exposure sort still catches up on the deferred rebuild.
+   */
+  function refreshRowExposure(): void {
+    const byId = new Map(risks().map((r) => [r.id, r]))
+    for (const row of listEl.querySelectorAll<HTMLElement>('.tt-risk-row')) {
+      const r = byId.get(row.dataset.riskId ?? '')
+      if (!r) continue
+      const chanceSel = row.querySelector<HTMLSelectElement>('.tt-risk-chance-select')
+      const impactSel = row.querySelector<HTMLSelectElement>('.tt-risk-impact-select')
+      if (chanceSel) chanceSel.value = String(r.chance)
+      if (impactSel) impactSel.value = String(r.impact)
+      const badge = row.querySelector<HTMLElement>('.tt-risk-exposure-badge')
+      if (badge) {
+        const exposure = computeExposure(r.chance, r.impact)
+        badge.textContent = String(exposure)
+        badge.className = `tt-risk-exposure-badge tt-risk-exposure-${exposureLevel(exposure)}`
+      }
+    }
+  }
+
   function renderAll(): void {
     expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     listEl.innerHTML = ''
@@ -1388,6 +1412,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const active = focusedCaretElement()
     if (active) {
       deferred.arm(active)
+      // The rebuild waits for blur, but the chart and each row's chance/
+      // impact/exposure must not go stale meanwhile — a quadrant drag keeps
+      // the follow-up editor focused (pointerdown preventDefaults), so its
+      // drop lands here. Neither patch touches the focused field.
+      refreshRowExposure()
+      renderQuadrant()
       return
     }
     renderAll()

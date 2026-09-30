@@ -1647,7 +1647,10 @@ select option { background: var(--bg); color: var(--fg); }
    generic modal's 480px cap to comfortably fit Templates' widest row. */
 /* rem, not px: the text-size preference scales rem, so a px width would let
    the XL setting wrap pills that fit at M inside the very modal that offers it. */
-.tt-modal-dialog:has(.tt-prefs-dialog) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
+/* The editor and global help modals share Preferences' width: their shortcut
+   tables and the app-window command read cramped at the generic 480px cap. */
+.tt-modal-dialog:has(.tt-prefs-dialog),
+.tt-modal-dialog:has(.tt-help-body) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
 /* Action item edit modal: widened past the generic 480px cap so the notes
    editor (bumped to min-height 240px above) has real room to read/write in,
    not a cramped strip inside an otherwise-narrow dialog. */
@@ -1809,14 +1812,29 @@ select option { background: var(--bg); color: var(--fg); }
 /* Editor help modal */
 .tt-help-body { display: flex; flex-direction: column; gap: .4rem; max-height: 60vh; overflow-y: auto; }
 .tt-help-heading { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin-top: .5rem; }
-.tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+/* Fixed layout + one shared first-column width, so every table in a help
+   modal puts its descriptions at the same x. With auto layout each table sized
+   its own first column to its longest key, leaving the descriptions of the
+   shortcut and Markdown tables misaligned. rem so it follows the text size. */
+.tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; table-layout: fixed; }
+.tt-help-table td:first-child { width: 18rem; }
 .tt-help-table td { padding: .2rem .4rem; border-bottom: 1px solid var(--border); }
 .tt-help-code { font-family: var(--font-data); white-space: nowrap; color: var(--muted); }
 .tt-help-text { font-size: .9rem; }
 .tt-help-code-block {
   font-family: var(--font-data); font-size: .85rem; background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: .5rem; overflow-x: auto; white-space: pre;
+  /* A flex child of the height-capped .tt-help-body: without this its overflow
+     lets flex shrink it below one line, leaving a clipped sliver. */
+  flex: none;
 }
+.tt-help-cmd { position: relative; flex: none; }
+/* Hover/focus-revealed, like the editor's floating code-block controls. */
+.tt-help-cmd-copy {
+  position: absolute; top: .3rem; right: .3rem; opacity: 0; transition: opacity .12s;
+}
+.tt-help-cmd:hover .tt-help-cmd-copy, .tt-help-cmd-copy:focus-visible { opacity: 1; }
+.tt-help-hint { font-size: .8rem; color: var(--muted); }
 
 /* Password strength meter */
 .tt-pwmeter { display: flex; align-items: center; gap: .5rem; margin-top: .25rem; font-size: .85em; }

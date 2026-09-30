@@ -1705,6 +1705,31 @@ describe('quadrant', () => {
       expect(container.querySelector('.tt-risk-quadrant-cell-drag-target')).toBeNull()
     })
 
+    test('a drop while a follow-up editor is focused still refreshes the chart dot, exposure badge and selects, without rebuilding the editor', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'A', chance: 1, impact: 1, followup: 'notes' }), risk({ id: 'b', title: 'B', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+      const editor = container.querySelector<HTMLElement>('.editor')!
+      // jsdom doesn't implement isContentEditable, which focusedCaretElement checks.
+      Object.defineProperty(editor, 'isContentEditable', { value: true })
+      editor.focus()
+      expect(document.activeElement).toBe(editor)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dot = container.querySelector('[data-quadrant-risk-id="a"]')!
+
+      dragQuadrantDot(dot, gx0 + 10, gy0 + 170, gx0 + 2 * cell + cell / 2, gy0 + cell / 2)
+
+      const row = container.querySelector<HTMLElement>('.tt-risk-row[data-risk-id="a"]')!
+      expect(row.querySelector('.tt-risk-exposure-badge')!.textContent).toBe('9')
+      expect(row.querySelector<HTMLSelectElement>('.tt-risk-chance-select')!.value).toBe('3')
+      expect(row.querySelector<HTMLSelectElement>('.tt-risk-impact-select')!.value).toBe('3')
+      expect(container.querySelector('.tt-risk-exposure-total-value')!.textContent).toBe('10')
+      // Same editor node, still focused: the full rebuild stays deferred.
+      expect(container.querySelector('.editor')).toBe(editor)
+      expect(document.activeElement).toBe(editor)
+    })
+
     test('a cancelled drag (pointercancel) discards the move without persisting any change', () => {
       const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
       const { container, store, pm, loc } = setup(team)

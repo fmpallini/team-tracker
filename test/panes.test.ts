@@ -1484,3 +1484,60 @@ describe('pane module menu: current-module check, typeahead, quick-pick', () => 
     expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('daily')
   })
 })
+
+describe('title bar follows a rename made from the other pane', () => {
+  function titleText(idx: 0 | 1): string {
+    return document.querySelector(`[data-pane-idx="${idx}"] .tt-pane-title-text`)!.textContent!
+  }
+
+  test('a person pane\'s title updates when that person is renamed while pane 0 shows something else', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => {
+      d.teams[0]!.members.push({ id: 'm1', name: 'Ana', role: '', parentId: null, order: 0, notes: '' })
+    })
+    store.updateNav((d) => { d.nav.split = true })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'members' } })
+    pm.openInPane(1, { teamId: 'T1', ref: { kind: 'person', personId: 'm1', group: 'members' } })
+    expect(titleText(1)).toBe('Ana')
+
+    // Same scope people-tree.ts's rename uses: team only, no sections.
+    store.update((d) => { d.teams[0]!.members[0]!.name = 'Ana Maria' }, { teamId: 'T1' })
+
+    expect(titleText(1)).toBe('Ana Maria')
+  })
+
+  test('an unrelated mutation does not rebuild the bars', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'general' } })
+    const bar = document.querySelector('[data-pane-idx="0"] .tt-pane-title-text')
+    store.update((d) => { d.teams[0]!.name = 'renamed' }, { teamId: 'T1' })
+    expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title-text')).toBe(bar)
+  })
+})
+
+describe('history skips days with no note', () => {
+  test('leaving an empty day drops it from history; a day with a note stays', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-02'] = 'hello' })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-03' } })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+    const dates = store.doc.nav.panes[0].history.flatMap((l) => (l.ref.kind === 'daily' ? [l.ref.date] : []))
+    expect(dates).toEqual(['2026-07-02'])
+    const p = store.doc.nav.panes[0]
+    expect(p.history[p.index]!.ref.kind).toBe('risks')
+  })
+
+  test('the day being viewed stays even when empty', () => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    const p = store.doc.nav.panes[0]
+    expect(p.history[p.index]!.ref).toEqual({ kind: 'daily', date: '2026-07-01' })
+  })
+})

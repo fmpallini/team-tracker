@@ -1,4 +1,4 @@
-import { locsConflict, openLoc, navigateHistory, currentLoc, lastLocForTeam, latestReachableIndex, reachableHistory } from '../src/core/nav'
+import { locsConflict, openLoc, navigateHistory, currentLoc, lastLocForTeam, latestReachableIndex, reachableHistory, pruneEmptyDailies } from '../src/core/nav'
 import type { Loc, PaneState } from '../src/core/types'
 
 const daily = (team: string, date: string): Loc => ({ teamId: team, ref: { kind: 'daily', date } })
@@ -138,5 +138,39 @@ describe('reachableHistory', () => {
 
   test('empty with no active team', () => {
     expect(reachableHistory(pane(actions('t1')), null, null)).toEqual([])
+  })
+})
+
+describe('pruneEmptyDailies', () => {
+  const noted = (...keys: string[]) => (team: string, date: string): boolean => keys.includes(`${team}:${date}`)
+
+  test('drops empty days that are not current, keeps noted days and other modules, and re-points index', () => {
+    const p: PaneState = {
+      history: [daily('t1', '2026-07-01'), daily('t1', '2026-07-02'), actions('t1'), daily('t1', '2026-07-03'), person('t1', 'p1')],
+      index: 4,
+    }
+    const out = pruneEmptyDailies(p, noted('t1:2026-07-02'))!
+    expect(out.history).toEqual([daily('t1', '2026-07-02'), actions('t1'), person('t1', 'p1')])
+    expect(out.index).toBe(2)
+  })
+
+  test('keeps the current entry even when its day is empty', () => {
+    const p: PaneState = { history: [actions('t1'), daily('t1', '2026-07-01')], index: 1 }
+    expect(pruneEmptyDailies(p, noted())).toBeNull()
+  })
+
+  test('an empty day ahead of the index is dropped without moving the index', () => {
+    const p: PaneState = { history: [actions('t1'), daily('t1', '2026-07-01')], index: 0 }
+    const out = pruneEmptyDailies(p, noted())!
+    expect(out).toEqual({ history: [actions('t1')], index: 0 })
+  })
+
+  test('is per team: a note on the same date in another team does not save it', () => {
+    const p: PaneState = { history: [daily('t1', '2026-07-01'), actions('t1')], index: 1 }
+    expect(pruneEmptyDailies(p, noted('t2:2026-07-01'))!.history).toEqual([actions('t1')])
+  })
+
+  test('null when nothing to drop', () => {
+    expect(pruneEmptyDailies(pane(actions('t1'), daily('t1', '2026-07-01')), noted('t1:2026-07-01'))).toBeNull()
   })
 })

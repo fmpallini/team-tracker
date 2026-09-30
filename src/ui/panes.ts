@@ -2,7 +2,7 @@
 import type { Store } from '../core/store'
 import type { Shell, SaveStatusInfo } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
-import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, reachableHistory } from '../core/nav'
+import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, pruneEmptyDailies, reachableHistory } from '../core/nav'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
@@ -473,7 +473,24 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // clearing every team's — a document-level listener in the same category
   // dispose() below already tears down for other concerns.
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  const unsubscribeSearchIndex = store.subscribe((scope) => searchIndex.invalidate(scope))
+  // Also refreshes the bars' titles. A person pane's name is otherwise only
+  // painted by renderBar() on navigation, so renaming that person from the
+  // *other* pane — whose body re-renders itself off its own subscription —
+  // left this bar showing the old name. A rename is scoped `{ teamId }` with
+  // no sections, so gate on the painted text actually differing rather than on
+  // scope: keeps a notes keystroke from rebuilding the bars. Same subscription
+  // as the search index (not a second one) so the per-document listener count
+  // test/lifecycle.test.ts baselines stays put.
+  const unsubscribeSearchIndex = store.subscribe((scope) => {
+    searchIndex.invalidate(scope)
+    for (const idx of [0, 1] as const) {
+      if (idx === 1 && !effectiveSplit()) break
+      const cur = currentLoc(store.doc.nav.panes[idx])
+      if (!cur) continue
+      const painted = barEls[idx].querySelector('.tt-pane-title-text')?.textContent
+      if (painted != null && painted !== titleFor(store, cur, localeNow())) renderBar(idx)
+    }
+  })
 
   // The narrow Shell slice every ModuleCtx gets — see SaveStatusApi's doc
   // comment for why this isn't `shell` itself.
@@ -1171,14 +1188,41 @@ ${t(lc, 'pane_history_hint')}`
    */
   function renderAll(bodies: readonly (0 | 1)[] = [0, 1]): void {
     layout()
+    renderBodies(bodies)
+    // Bodies first, bars after: mounting a new body tears the old one down,
+    // and a daily-note editor commits its pending text on the way out — so a
+    // day just typed into is already non-empty when judged below. Pruning
+    // before the bars are painted also keeps their one-shot title flash (see
+    // renderBar) from being consumed by a throwaway first paint.
+    pruneEmptyDailyHistory()
     renderBar(0)
+    if (effectiveSplit()) renderBar(1)
+  }
+
+  function renderBodies(bodies: readonly (0 | 1)[]): void {
     if (bodies.includes(0)) renderBody(0)
     if (!effectiveSplit()) {
       disposeContainer(bodyEls[1])
       return
     }
-    renderBar(1)
     if (bodies.includes(1)) renderBody(1)
+  }
+
+  /**
+   * Days with no note stay out of the history list — see core/nav.ts's
+   * pruneEmptyDailies. Runs on every render so it covers every way of leaving
+   * a day (openInPane, back/forward, team switch). Only writes (and so only
+   * marks the doc dirty) when something was actually dropped.
+   */
+  function pruneEmptyDailyHistory(): void {
+    const hasNote = (teamId: string, date: string): boolean =>
+      (store.doc.teams.find((tm) => tm.id === teamId)?.dailyNotes[date] ?? '') !== ''
+    const pruned = ([0, 1] as const).map((idx) => pruneEmptyDailies(store.doc.nav.panes[idx], hasNote))
+    if (pruned[0] === null && pruned[1] === null) return
+    store.updateNav((d) => {
+      if (pruned[0]) d.nav.panes[0] = pruned[0]
+      if (pruned[1]) d.nav.panes[1] = pruned[1]
+    })
   }
 
   // Exposes searchIndex beyond the PaneManager interface (which module tests'
