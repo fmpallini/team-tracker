@@ -150,32 +150,38 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
     await page.keyboard.press('Alt+ArrowUp')
     await expect(grid).toHaveAttribute('data-split', 'true')
 
-    // Switch pane 0's module (a real navigation, distinct from the swap
-    // above) to give it a second history entry, then step through it with
-    // Alt+Shift+Left/Right.
+    // Switch pane 0's module twice (real navigations, distinct from the swap
+    // above) to build history, then step through it with Alt+Shift+Left/Right.
+    // Milestones then Risks, not the daily note it started on: that day holds
+    // no note, and an empty day is deliberately kept out of history once left
+    // (pruneEmptyDailies in src/core/nav.ts), so it is not a step to land on.
     await pane0.locator('.tt-pane-modules-btn').click()
     await pane0.locator('.tt-pane-menu-item', { hasText: /Milestones|Marcos/i }).first().click()
-    const afterSwitch = await title0.textContent()
-    expect(afterSwitch).not.toBe(leftBefore)
+    const first = await title0.textContent()
+    expect(first).not.toBe(leftBefore)
+    await pane0.locator('.tt-pane-modules-btn').click()
+    await pane0.locator('.tt-pane-menu-item', { hasText: /Risks|Riscos/i }).first().click()
+    const second = await title0.textContent()
+    expect(second).not.toBe(first)
 
     await page.keyboard.press('Alt+Shift+ArrowLeft')
-    await expect(title0).toHaveText(leftBefore ?? '')
+    await expect(title0).toHaveText(first ?? '')
 
     // Plain Alt+Left must NOT step history (that's the old, broken binding) —
     // it only changes pane focus. Pane 0 is already focused, so this is a
     // pure no-op and the title must stay put.
     await page.keyboard.press('Alt+ArrowLeft')
-    await expect(title0).toHaveText(leftBefore ?? '')
+    await expect(title0).toHaveText(first ?? '')
 
     await page.keyboard.press('Alt+Shift+ArrowRight')
-    await expect(title0).toHaveText(afterSwitch ?? '')
+    await expect(title0).toHaveText(second ?? '')
 
     // Alt+Shift+Up jumps straight back to the newest entry from wherever
     // history stepping left off, without needing repeated Alt+Shift+Left.
     await page.keyboard.press('Alt+Shift+ArrowLeft')
-    await expect(title0).toHaveText(leftBefore ?? '')
+    await expect(title0).toHaveText(first ?? '')
     await page.keyboard.press('Alt+Shift+ArrowUp')
-    await expect(title0).toHaveText(afterSwitch ?? '')
+    await expect(title0).toHaveText(second ?? '')
   })
 
   test('Alt and F-key hotkeys (team switch, pane select, pane history, pane module jump) still fire with focus inside a rich-text editor', async ({ page }) => {
