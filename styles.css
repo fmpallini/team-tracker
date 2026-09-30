@@ -1647,7 +1647,10 @@ select option { background: var(--bg); color: var(--fg); }
    generic modal's 480px cap to comfortably fit Templates' widest row. */
 /* rem, not px: the text-size preference scales rem, so a px width would let
    the XL setting wrap pills that fit at M inside the very modal that offers it. */
-.tt-modal-dialog:has(.tt-prefs-dialog) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
+/* The editor and global help modals share Preferences' width: their shortcut
+   tables and the app-window command read cramped at the generic 480px cap. */
+.tt-modal-dialog:has(.tt-prefs-dialog),
+.tt-modal-dialog:has(.tt-help-body) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
 /* Action item edit modal: widened past the generic 480px cap so the notes
    editor (bumped to min-height 240px above) has real room to read/write in,
    not a cramped strip inside an otherwise-narrow dialog. */
