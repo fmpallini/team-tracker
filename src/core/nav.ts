@@ -100,6 +100,27 @@ export function latestReachableIndex(pane: PaneState, otherCurrent: Loc | null, 
   return -1
 }
 
+/**
+ * Drops every non-current daily-note entry whose day holds no note
+ * (`hasNote` false): an empty day stores nothing, so it is not somewhere the
+ * user needs history to take them back to. The current entry always stays —
+ * they are looking at it, and may be about to type. Returns null when nothing
+ * was dropped, so callers can skip the write.
+ */
+export function pruneEmptyDailies(pane: PaneState, hasNote: (teamId: string, date: string) => boolean): PaneState | null {
+  const history: Loc[] = []
+  let index = pane.index
+  pane.history.forEach((loc, i) => {
+    const empty = loc.ref.kind === 'daily' && !hasNote(loc.teamId, loc.ref.date)
+    if (empty && i !== pane.index) {
+      if (i < pane.index) index--
+      return
+    }
+    history.push(loc)
+  })
+  return history.length === pane.history.length ? null : { history, index }
+}
+
 export interface HistoryEntry {
   index: number
   loc: Loc

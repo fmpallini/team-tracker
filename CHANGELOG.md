@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.3] - 2026-09-29
+
+### Changed
+- Pane history no longer lists days that have no note. Once you move on from an empty day, it drops out of that pane's history, so ◀ / ▶ and the history list only take you to days that have something in them. The day you're currently on always stays.
+
+### Fixed
+- Renaming a member or stakeholder now updates the title of a pane showing that person right away, even when the rename is done from the other pane. Before, the title kept the old name until you navigated somewhere else.
+- In Risks, dragging a dot on the chart while you were editing a follow-up note moved the dot but left its label, the risk's exposure and the total out of date until you left the note. They now update immediately, and your note keeps its cursor.
+
 ## [2.9.2] - 2026-09-29
 
 ### Fixed
