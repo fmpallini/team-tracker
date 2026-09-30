@@ -1820,6 +1820,13 @@ select option { background: var(--bg); color: var(--fg); }
      lets flex shrink it below one line, leaving a clipped sliver. */
   flex: none;
 }
+.tt-help-cmd { position: relative; flex: none; }
+/* Hover/focus-revealed, like the editor's floating code-block controls. */
+.tt-help-cmd-copy {
+  position: absolute; top: .3rem; right: .3rem; opacity: 0; transition: opacity .12s;
+}
+.tt-help-cmd:hover .tt-help-cmd-copy, .tt-help-cmd-copy:focus-visible { opacity: 1; }
+.tt-help-hint { font-size: .8rem; color: var(--muted); }
 
 /* Password strength meter */
 .tt-pwmeter { display: flex; align-items: center; gap: .5rem; margin-top: .25rem; font-size: .85em; }

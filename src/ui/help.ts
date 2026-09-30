@@ -96,6 +96,44 @@ export function appWindowCommand(href: string, uaData?: UaData, userAgent = ''):
     : `${APP_LAUNCHERS[platform][brand]} ${app}`
 }
 
+const COPY_GLYPH = '⧉'
+const COPIED_GLYPH = '✓'
+
+/** Async Clipboard API where the page has it; the hidden-textarea + execCommand('copy') route otherwise (file:// is an insecure context, so navigator.clipboard is absent there — the very case this help block is shown in). */
+function copyToClipboard(text: string): void {
+  const viaTextarea = (): void => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy', false, undefined)
+    document.body.removeChild(ta)
+  }
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(viaTextarea)
+  else viaTextarea()
+}
+
+/** A `<pre>` command with a copy button that fades in on hover/focus — same look and feedback as the editor's code-block copy chrome. */
+function copyableCommand(locale: Locale, command: string): HTMLElement {
+  let resetTimer: ReturnType<typeof setTimeout> | null = null
+  const btn = el('button', {
+    class: 'tt-cb-btn tt-help-cmd-copy', type: 'button', title: t(locale, 'editor_cb_copy'),
+    onclick: () => {
+      copyToClipboard(command)
+      btn.textContent = COPIED_GLYPH
+      btn.title = t(locale, 'editor_cb_copied')
+      if (resetTimer) clearTimeout(resetTimer)
+      resetTimer = setTimeout(() => {
+        btn.textContent = COPY_GLYPH
+        btn.title = t(locale, 'editor_cb_copy')
+      }, 900)
+    },
+  }, COPY_GLYPH)
+  return el('div', { class: 'tt-help-cmd' }, el('pre', { class: 'tt-help-code-block' }, command), btn)
+}
+
 function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {
   const body = rows.map(([code, key]) =>
     el('tr', {}, el('td', { class: 'tt-help-code' }, code), el('td', {}, t(locale, key)))
@@ -139,7 +177,11 @@ export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
       : [
           el('h3', { class: 'tt-help-heading' }, t(locale, 'help_appwindow_heading')),
           el('p', { class: 'tt-help-text' }, t(locale, 'help_appwindow_body')),
-          el('pre', { class: 'tt-help-code-block' }, appWindowCommand(location.href, (navigator as Navigator & { userAgentData?: UaData }).userAgentData, navigator.userAgent)),
+          copyableCommand(locale, appWindowCommand(location.href, (navigator as Navigator & { userAgentData?: UaData }).userAgentData, navigator.userAgent)),
+          // The launcher name is inferred from the browser brand + OS — a page
+          // can't see the real executable — so say so instead of presenting it
+          // as authoritative.
+          el('p', { class: 'tt-help-hint' }, t(locale, 'help_appwindow_guess')),
         ])
   )
 

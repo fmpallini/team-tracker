@@ -8,7 +8,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Changed
 - Pane history no longer lists days that have no note. Once you move on from an empty day, it drops out of that pane's history, so ◀ / ▶ and the history list only take you to days that have something in them. The day you're currently on always stays.
-- In the global help window, the command for opening the app in a window without the browser's address bar now already contains the real path of this file and the right launcher for your browser and system (Chrome or Edge on Windows, macOS and Linux), so you can copy and paste it as is. Before, it showed a placeholder path you had to edit by hand.
+- In the global help window, the command for opening the app in a window without the browser's address bar now already contains the real path of this file and the right launcher for your browser and system (Chrome or Edge on Windows, macOS and Linux), so you can copy and paste it as is. Hover the command to reveal a copy button. The launcher name is a best guess from your browser (a page can't see the real executable), and the window now says so. Before, it showed a placeholder path you had to edit by hand.
 
 ### Fixed
 - Renaming a member or stakeholder now updates the title of a pane showing that person right away, even when the rename is done from the other pane. Before, the title kept the old name until you navigated somewhere else.

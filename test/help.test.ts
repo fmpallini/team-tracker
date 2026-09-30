@@ -187,3 +187,38 @@ describe('appWindowCommand', () => {
     expect(appWindowCommand('file:///a/app.html', undefined, '')).toBe('google-chrome --app="file:///a/app.html"')
   })
 })
+
+describe('app-window command box', () => {
+  test('has a copy button that puts the command on the clipboard and flashes a confirmation', () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      showGlobalHelp('en-US')
+      const command = document.querySelector('.tt-help-code-block')!.textContent!
+      const btn = document.querySelector<HTMLButtonElement>('.tt-help-cmd-copy')!
+      expect(btn.title).toBe('Copy code')
+
+      btn.click()
+
+      expect(writeText).toHaveBeenCalledWith(command)
+      expect(btn.title).toBe('Copied!')
+      vi.advanceTimersByTime(1000)
+      expect(btn.title).toBe('Copy code')
+    } finally {
+      vi.useRealTimers()
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  test('says the executable name is a guess to be adjusted', () => {
+    showGlobalHelp('en-US')
+    expect(document.querySelector('.tt-help-hint')!.textContent).toMatch(/guess/i)
+  })
+
+  test('the hint and copy button are absent in the PWA build with the rest of the recipe', () => {
+    showGlobalHelp('en-US', { pwa: true })
+    expect(document.querySelector('.tt-help-hint')).toBeNull()
+    expect(document.querySelector('.tt-help-cmd-copy')).toBeNull()
+  })
+})
