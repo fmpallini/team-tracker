@@ -1812,7 +1812,12 @@ select option { background: var(--bg); color: var(--fg); }
 /* Editor help modal */
 .tt-help-body { display: flex; flex-direction: column; gap: .4rem; max-height: 60vh; overflow-y: auto; }
 .tt-help-heading { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin-top: .5rem; }
-.tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+/* Fixed layout + one shared first-column width, so every table in a help
+   modal puts its descriptions at the same x. With auto layout each table sized
+   its own first column to its longest key, leaving the descriptions of the
+   shortcut and Markdown tables misaligned. rem so it follows the text size. */
+.tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; table-layout: fixed; }
+.tt-help-table td:first-child { width: 18rem; }
 .tt-help-table td { padding: .2rem .4rem; border-bottom: 1px solid var(--border); }
 .tt-help-code { font-family: var(--font-data); white-space: nowrap; color: var(--muted); }
 .tt-help-text { font-size: .9rem; }
