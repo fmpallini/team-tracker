@@ -27,6 +27,7 @@ import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
@@ -352,9 +353,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // rather than collapsing everything to x=0.
     const containerWidth = timelineEl.clientWidth > 0 ? timelineEl.clientWidth : FALLBACK_WIDTH
     const drawWidth = Math.max(containerWidth - H_PADDING * 2, 1)
+    // Date labels are CSS-sized from the size setting (--tt-fs-k), so the
+    // spacing floor that keeps them from touching has to grow with them.
     const layout = computeTimelineLayout(
       sorted.map((m) => ({ id: m.id, date: m.date })),
-      MIN_LABEL_GAP,
+      MIN_LABEL_GAP * fontScale(ctx.store.doc.prefs.fontSize),
       drawWidth,
       today
     )
@@ -724,7 +727,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // a person's notes, an action item or risk follow-up — not just edits to
   // milestones themselves, so the watch list is that full set (plus
   // 'teams', since a rename/delete/reorder can invalidate any pane).
-  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
+  // 'prefs' too: a size change re-spaces the timeline's date labels.
+  const WATCHED: readonly Section[] = ['teams', 'prefs', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     // Patches every expanded follow-up editor's @mention chips in place —
@@ -745,6 +749,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // falls through to the rebuild below (a title rename is scoped
     // `{ teamId }` with no sections, so it takes the full path).
     const sections = scope?.sections
+    if (sections?.length === 1 && sections[0] === 'prefs') {
+      renderTimeline()
+      return
+    }
     if (sections !== undefined && !sections.includes('milestones') && !sections.includes('teams')) {
       refreshBacklinkChips()
       return

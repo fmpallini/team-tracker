@@ -1245,3 +1245,26 @@ describe('milestone delete undo', () => {
     expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
   })
 })
+
+describe('timeline label spacing follows the font-size setting', () => {
+  function crowdedTeam(): Team {
+    const ms = Array.from({ length: 12 }, (_, i) => milestone({ id: `m${i}`, title: `M${i}`, date: `2026-01-${String(i + 1).padStart(2, '0')}` }))
+    return makeTeam({ milestones: ms })
+  }
+  function svgWidth(container: HTMLElement): number {
+    return Number(container.querySelector('.tt-milestone-svg')!.getAttribute('width'))
+  }
+
+  it('draws a wider timeline at XL than at M, and re-spaces live when the size changes', () => {
+    const { container, store, pm, loc } = setup(crowdedTeam())
+    render(container, loc, store, pm)
+    const atM = svgWidth(container)
+
+    store.update((d) => { d.prefs.fontSize = 'XL' }, { sections: ['prefs'] })
+    const atXL = svgWidth(container)
+    expect(atXL).toBeGreaterThan(atM)
+
+    store.update((d) => { d.prefs.fontSize = 'XS' }, { sections: ['prefs'] })
+    expect(svgWidth(container)).toBeLessThan(atM)
+  })
+})

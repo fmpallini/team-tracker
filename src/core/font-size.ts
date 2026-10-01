@@ -7,6 +7,17 @@ import type { Prefs } from './types'
 export const FONT_SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const
 
 /**
+ * Each size's root font-size relative to M (15px) — the same ratio styles.css
+ * publishes as --tt-fs-k, for geometry computed in JS (the milestone
+ * timeline's label spacing) that has to keep pace with text the CSS scales.
+ */
+export const FONT_SIZE_SCALE: Record<Prefs['fontSize'], number> = { XS: 0.8, S: 0.9, M: 1, L: 1.1, XL: 1.2 }
+
+export function fontScale(size: Prefs['fontSize'] | undefined): number {
+  return (size && FONT_SIZE_SCALE[size]) || 1
+}
+
+/**
  * The size one step from `current` in `dir` (+1 larger, -1 smaller), clamped
  * at the ends — stepping past the last size returns that same size, so a
  * caller can treat "no change" as "already at the limit".
