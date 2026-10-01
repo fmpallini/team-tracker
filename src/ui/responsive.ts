@@ -5,6 +5,9 @@
 // Edge-triggered: only fires when a threshold is actually crossed, so it
 // never fights a manual toggle click made while the window happens to
 // already be narrow/wide.
+import { fontScale } from '../core/font-size'
+import type { Prefs } from '../core/types'
+
 const SPLIT_HIDE_BELOW_PX = 900
 const SIDEBAR_HIDE_BELOW_PX = 650
 // The header's only two mandatory pieces are the close-file (🔒) and
@@ -24,6 +27,13 @@ const SIDEBAR_HIDE_BELOW_PX = 650
 // guaranteed room. Comfortably above SIDEBAR_HIDE_BELOW_PX so a *manual*
 // sidebar collapse (which reveals the team indicator) can't reopen the gap
 // in the 650-820px band.
+//
+// Tuned at the M text size (15px root). The header's clusters are sized in rem,
+// so they grow with the text-size setting while the window width doesn't: at XL
+// the same 820px no longer fits them (the promo button then overlaps the
+// search box). The threshold is therefore multiplied by the current size's
+// scale (core/font-size.ts's fontScale; never below 1), and re-evaluated when the size
+// changes.
 const HEADER_COMPACT_BELOW_PX = 820
 // Below this, a single daily-notes pane no longer has room for both the
 // ~240px calendar column and a usable note width, so the calendar is folded
@@ -49,11 +59,16 @@ export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHook
   let headerCompactHidden = false
   let calendarHidden = false
 
-  const observer = new ResizeObserver((entries) => {
-    const width = entries[0]?.contentRect.width ?? target.clientWidth
+  let lastWidth: number | null = null
+
+  const evaluate = (width: number): void => {
+    lastWidth = width
+    // Only ever raised: below M the header just gets roomier, and lowering the
+    // threshold would eat into the gap above SIDEBAR_HIDE_BELOW_PX.
+    const textScale = Math.max(1, fontScale(document.documentElement.dataset.size as Prefs['fontSize'] | undefined))
     const nextSplitHidden = width < SPLIT_HIDE_BELOW_PX
     const nextSidebarHidden = width < SIDEBAR_HIDE_BELOW_PX
-    const nextHeaderCompactHidden = width < HEADER_COMPACT_BELOW_PX
+    const nextHeaderCompactHidden = width < HEADER_COMPACT_BELOW_PX * textScale
     const nextCalendarHidden = width < CALENDAR_HIDE_BELOW_PX
     if (nextSplitHidden !== splitHidden) {
       splitHidden = nextSplitHidden
@@ -71,7 +86,20 @@ export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHook
       calendarHidden = nextCalendarHidden
       hooks.setCalendarSpaceHidden(calendarHidden)
     }
+  }
+
+  const observer = new ResizeObserver((entries) => {
+    evaluate(entries[0]?.contentRect.width ?? target.clientWidth)
   })
   observer.observe(target)
-  return () => observer.disconnect()
+  // A text-size change moves the header's threshold without resizing the window,
+  // so the ResizeObserver stays silent — re-run against the last known width.
+  const sizeWatch = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {
+    if (lastWidth !== null) evaluate(lastWidth)
+  })
+  sizeWatch?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-size'] })
+  return () => {
+    observer.disconnect()
+    sizeWatch?.disconnect()
+  }
 }

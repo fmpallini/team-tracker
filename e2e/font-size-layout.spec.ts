@@ -77,3 +77,45 @@ test('SVG labels on the milestone timeline and risk quadrant follow the size set
   await expect(tick).toBeVisible()
   expect(parseFloat(await tick.evaluate((e) => getComputedStyle(e).fontSize))).toBeCloseTo(9 * 1.2, 1)
 })
+
+// The header's clusters are sized in rem, the window is not: responsive.ts has to
+// drop the optional chrome (search, team indicator, save pill…) before they collide,
+// and at XL the old fixed 820px threshold let the promo button land on the search box.
+for (const size of ['M', 'XL'] as const) {
+  for (const collapsed of [false, true]) {
+    test(`header never overlaps itself at ${size}, sidebar ${collapsed ? 'collapsed' : 'open'}, at any window width`, async ({ page }) => {
+      await openDoc(page, buildDoc(size, { kind: 'general' }, { sidebarCollapsed: collapsed, locale: 'pt-BR' }), { width: 1500, height: 700 })
+      // a nav change dirties the doc so the save pill is at its widest
+      await page.keyboard.press('F2')
+      await page.keyboard.press('F1')
+      for (let w = 1500; w >= 380; w -= 20) {
+        await page.setViewportSize({ width: w, height: 700 })
+        await page.waitForTimeout(60)
+        const clashes = await page.evaluate(() => {
+          const header = document.querySelector('.tt-header')!.getBoundingClientRect()
+          const sel = '.tt-btn, .tt-app-name, .tt-search-input, .tt-save-pill, .tt-header-team-indicator, .tt-header-due-summary'
+          const items = [...document.querySelectorAll<HTMLElement>(`.tt-header ${sel.split(', ').join(', .tt-header ')}`)]
+            .map((e) => {
+              // the team slot clips its content (overflow:hidden): only what it still shows can collide
+              const clip = e.closest('.tt-header-center')?.getBoundingClientRect()
+              const r = e.getBoundingClientRect()
+              const left = clip ? Math.max(r.left, clip.left) : r.left
+              const right = clip ? Math.min(r.right, clip.right) : r.right
+              return { name: e.className.toString().split(' ').slice(0, 2).join('.'), r: { left, right, top: r.top, bottom: r.bottom, width: right - left, height: r.height } }
+            })
+            .filter((i) => i.r.width > 0 && i.r.height > 0)
+          const bad: string[] = []
+          for (const i of items) if (i.r.right > header.right + 1 || i.r.left < header.left - 1) bad.push(`${i.name} outside the header`)
+          for (let a = 0; a < items.length; a++) {
+            for (let b = a + 1; b < items.length; b++) {
+              const x = items[a]!.r, y = items[b]!.r
+              if (x.left < y.right - 1 && y.left < x.right - 1 && x.top < y.bottom - 1 && y.top < x.bottom - 1) bad.push(`${items[a]!.name} overlaps ${items[b]!.name}`)
+            }
+          }
+          return bad
+        })
+        expect(clashes, `window ${w}px`).toEqual([])
+      }
+    })
+  }
+}

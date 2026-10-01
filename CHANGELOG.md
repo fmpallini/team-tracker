@@ -17,6 +17,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - With the sidebar collapsed and a long team name, the name in the header is now shortened with "…" a little sooner so that the search box keeps a usable width.
 
 ### Fixed
+- At the larger text sizes, in a narrow window, the header's buttons and search box overlapped each other. The header now falls back to its compact form (just the lock and settings buttons) at a wider window the larger the text size is, and switches as soon as you change the size.
 - At the larger text sizes, the module menu at the top of a pane (Daily notes, General notes, Tasks…) broke some of its entries onto two lines.
 - At the larger text sizes, Tasks cards were squashed when a column had many cards, cutting off their date, assignee and tag. The column now scrolls instead.
 - At the larger text sizes, with the sidebar collapsed and a long team name, the search box shrank to a bare icon.
