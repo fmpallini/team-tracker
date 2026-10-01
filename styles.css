@@ -656,9 +656,13 @@ body { background: var(--bg); color: var(--fg); }
   outline: none; border-color: var(--accent);
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
 }
-.tt-due-row-title { flex: 1; }
-.tt-due-row-team { color: var(--muted); font-size: .85rem; }
-.tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; }
+/* One line per row, the full text on the element's own title tooltip, so the
+   rows stay the same height whatever the item's title length — and, with the
+   team and date columns a fixed width, titles all end (and dates start) at the
+   same x. */
+.tt-due-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-due-row-team { color: var(--muted); font-size: .85rem; flex: none; width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; white-space: nowrap; min-width: 12rem; text-align: right; }
 .tt-team-form { display: flex; flex-direction: column; gap: .75rem; }
 
 /* Panes */
@@ -1050,7 +1054,9 @@ body { background: var(--bg); color: var(--fg); }
    the root belongs in the middle of it. (Start-anchoring was tried and
    reverted — it buys room to grow leftward at the cost of the shape the
    chart is supposed to have.) */
-.tt-org-root { display: flex; gap: 2rem; justify-content: center; overflow-x: auto; height: 100%; }
+.tt-org-root { display: flex; gap: 2rem; justify-content: safe center; overflow-x: auto; height: 100%; }
+/* safe: plain `center` also centers an overflowing chart, pushing its left half
+   past the scroll origin where no scrollbar or wheel can reach it. */
 /* While a card is being dragged, every other card shows it is a target.
    Previously the drop bands only appeared once the pointer was already over
    one specific card, so the nesting affordance was invisible to anyone who
@@ -1342,17 +1348,15 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
-/* The timeline never scrolls horizontally, at any date distribution. The SVG's
-   pixel width is computed in src/modules/milestones.ts from MIN_LABEL_GAP, so
-   tightly-clustered dates produce a drawing several times wider than the pane
-   (worst in a split pane, which is narrower and — with no ResizeObserver on the
-   module — isn't even re-measured when the splitter moves). The SVG carries a
-   viewBox, so max-width/height:auto scales the whole drawing down to fit
-   instead, preserving proportions. This is the same treatment the print window
-   applies via PRINT_CSS in src/ui/panes.ts; it now just holds on screen too, so
-   the pane and its print preview agree. */
-.tt-milestone-timeline { flex: none; overflow: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
-.tt-milestone-svg { display: block; max-width: 100%; height: auto; }
+/* The timeline is drawn at its natural size and scrolls sideways when that is
+   wider than the pane. It used to scale the whole SVG down to fit (max-width:
+   100% over a viewBox), which made a dense timeline's date and title labels
+   too small to read. The SVG's pixel width comes from src/modules/milestones.ts
+   (MIN_LABEL_GAP, scaled with the text-size setting) so labels never touch;
+   the plain mouse wheel scrolls it (wheelScrollsHorizontally). The print
+   window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
+.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
 .tt-milestone-dot { stroke-width: 2; }
@@ -1564,9 +1568,12 @@ select option { background: var(--bg); color: var(--fg); }
    `order` is only set here; at full width every child sits at the default 0
    and the row is exactly the table it always was. */
 /* Threshold sits above the width at which the single-line row would start
-   overflowing (fixed columns ~34rem + the title's 12rem floor), so the wrap
-   takes over before a horizontal scrollbar ever appears. */
-@container (max-width: 50rem) {
+   overflowing, so the wrap takes over before a horizontal scrollbar — or a
+   delete button hanging off the row's border — ever appears. That width is the
+   title's 12rem floor + chance/impact/exposure/plan (26rem) + the backlinks
+   chip and the three action buttons (4 × 2.6rem) + 8 gaps (3.2rem) + the row's
+   padding (.8rem) ≈ 52.4rem. Keep this above it when adding a column. */
+@container (max-width: 54rem) {
   .tt-risk-row { flex-wrap: wrap; row-gap: .35rem; }
   /* The column header can't span two lines' worth of controls, and the
      mini-labels below replace it. */
@@ -1665,8 +1672,10 @@ select option { background: var(--bg); color: var(--fg); }
    the XL setting wrap pills that fit at M inside the very modal that offers it. */
 /* The editor and global help modals share Preferences' width: their shortcut
    tables and the app-window command read cramped at the generic 480px cap. */
+/* The due/overdue list too: its rows hold a title, a team and a date side by side. */
 .tt-modal-dialog:has(.tt-prefs-dialog),
-.tt-modal-dialog:has(.tt-help-body) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
+.tt-modal-dialog:has(.tt-help-body),
+.tt-modal-dialog:has(.tt-due-list) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
 /* Action item edit modal: widened past the generic 480px cap so the notes
    editor (bumped to min-height 240px above) has real room to read/write in,
    not a cramped strip inside an otherwise-narrow dialog. */

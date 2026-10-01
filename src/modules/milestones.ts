@@ -25,7 +25,7 @@ import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
@@ -337,8 +337,14 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // --- timeline (SVG) -------------------------------------------------------
 
   const timelineEl = el('div', { class: 'tt-milestone-timeline' })
+  // The drawing is never scaled below its natural size (styles.css), so a dense
+  // timeline scrolls sideways — and the plain wheel drives that scroll.
+  const unbindTimelineWheel = wheelScrollsHorizontally(timelineEl)
 
   function renderTimeline(): void {
+    // Clearing the content collapses the scroll range and snaps scrollLeft to 0;
+    // keep the reader's place across a re-render (an edit, a size change).
+    const keepScroll = timelineEl.scrollLeft
     timelineEl.innerHTML = ''
     const sorted = sortByDate(milestones())
     if (sorted.length === 0) {
@@ -454,6 +460,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     })
 
     timelineEl.appendChild(svg)
+    timelineEl.scrollLeft = keepScroll
   }
 
   // --- list -------------------------------------------------------------
@@ -796,6 +803,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     expandable.disposeAll()
     disposeDatePickers()
     disposeArrowFallback()
+    unbindTimelineWheel()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

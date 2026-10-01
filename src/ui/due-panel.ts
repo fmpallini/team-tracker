@@ -51,11 +51,11 @@ function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenIt
       onclick: activate,
     },
     el('span', { class: 'tt-due-row-icon' }, icon),
-    el('span', { class: 'tt-due-row-title' }, item.title),
+    el('span', { class: 'tt-due-row-title', title: item.title }, item.title),
     // The team name only carries information when the panel spans multiple
     // teams — a team-scoped panel (teamId set) already says which team it's
     // for in the modal title, so repeating it on every row is just noise.
-    ...(showTeam ? [el('span', { class: 'tt-due-row-team' }, item.teamName)] : []),
+    ...(showTeam ? [el('span', { class: 'tt-due-row-team', title: item.teamName }, item.teamName)] : []),
     el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale)} · ${relLabel(locale, item.date)}`)
   )
   // Guarded on e.target === row (mirrors risks.ts/milestones.ts's row nav):

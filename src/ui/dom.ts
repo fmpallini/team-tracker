@@ -97,6 +97,34 @@ export function clampToViewport(el: HTMLElement, margin = 8): void {
   }
 }
 
+/**
+ * Vertical mouse-wheel travel scrolls `scroller` sideways — but only when it
+ * has a horizontal scrollbar and nothing vertical to scroll, so a wheel never
+ * loses its normal job. A plain wheel can't otherwise reach a horizontal-only
+ * overflow at all (nothing consumes a vertical delta). Same gesture
+ * modules/action-items.ts gives the kanban board. Skips events that already
+ * carry a horizontal delta (trackpads, shift+wheel) and Ctrl+wheel (the font
+ * size gesture), and lets the wheel through once the scroller is at the end it
+ * is heading for. Returns the unbind function.
+ */
+export function wheelScrollsHorizontally(scroller: HTMLElement, yieldsTo?: (target: HTMLElement) => boolean): () => void {
+  const onWheel = (e: WheelEvent): void => {
+    if (e.deltaY === 0 || e.deltaX !== 0 || e.ctrlKey) return
+    if (scroller.scrollWidth <= scroller.clientWidth) return
+    if (scroller.scrollHeight > scroller.clientHeight) return
+    if (yieldsTo?.(e.target as HTMLElement)) return
+    // Already at the end it is heading for: let the wheel do its normal job (e.g.
+    // scroll the page behind) rather than trapping it over a spent scroller.
+    const atStart = scroller.scrollLeft <= 0
+    const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1
+    if ((e.deltaY < 0 && atStart) || (e.deltaY > 0 && atEnd)) return
+    e.preventDefault()
+    scroller.scrollLeft += e.deltaY
+  }
+  scroller.addEventListener('wheel', onWheel, { passive: false })
+  return () => scroller.removeEventListener('wheel', onWheel)
+}
+
 export interface DeferredRebuild {
   /** Arms `rebuild` to run once, on `active`'s next blur, replacing any previously-armed element. No-op if `active` is already the armed element. */
   arm(active: HTMLElement): void
