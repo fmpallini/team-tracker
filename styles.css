@@ -287,22 +287,31 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-switcher-item.active { border-left-color: var(--accent); font-weight: 600; }
 
 /* Space-constrained override (src/ui/responsive.ts, below
-   HEADER_COMPACT_BELOW_PX): hides every non-mandatory header element at
-   once — wins over .tt-header-team-indicator.visible above regardless of
-   sidebar collapse state. Only the close-file (🔒) and settings (⚙) buttons
-   (both untouched here) are guaranteed room — closing the file and reaching
-   prefs must always be reachable; everything else has a keyboard equivalent
-   (Ctrl+K/Ctrl+F for the app name/search, Ctrl+S still saves with the pill
-   hidden) or simply isn't essential moment-to-moment. */
+   HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every
+   optional header element at once — wins over .tt-header-team-indicator.visible
+   above regardless of sidebar collapse state. What is left is the save-state
+   pill (so unsaved work stays visible), the close-file (🔒) and settings (⚙)
+   buttons: closing the file and reaching prefs must always be reachable;
+   everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
+   name/search) or simply isn't essential moment-to-moment. */
 .tt-header.tt-header-compact .tt-sidebar-toggle,
 .tt-header.tt-header-compact .tt-app-name,
 .tt-header.tt-header-compact .tt-search-wrap,
 .tt-header.tt-header-compact .tt-header-team-indicator-group,
-.tt-header.tt-header-compact .tt-save-pill,
+.tt-header.tt-header-compact .tt-btn-promo,
 .tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
+/* With the left and centre slots empty, give the right cluster the whole bar
+   (its 1fr share was half of it) and let the pill — the only part that can —
+   give way with an ellipsis rather than push the two buttons off the edge. */
+.tt-header.tt-header-compact { grid-template-columns: 0 0 minmax(0, 1fr); column-gap: 0; }
+.tt-header.tt-header-compact .tt-header-right { min-width: 0; gap: .5rem; justify-self: stretch; justify-content: flex-end; }
+.tt-header.tt-header-compact .tt-save-pill-wrap,
+.tt-header.tt-header-compact .tt-save-pill { min-width: 0; }
+.tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }
+.tt-header.tt-header-compact .tt-save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* Fixed to (sidebar width − header's own left padding − the gap before the
    search bar − the collapse toggle's own width and its gap) so the search

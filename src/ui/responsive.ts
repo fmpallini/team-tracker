@@ -10,17 +10,17 @@ import type { Prefs } from '../core/types'
 
 const SPLIT_HIDE_BELOW_PX = 900
 const SIDEBAR_HIDE_BELOW_PX = 650
-// The header's only two mandatory pieces are the close-file (🔒) and
-// settings (⚙) buttons — everything else (sidebar collapse toggle, app
-// name, search bar, the active-team indicator, the save-state pill,
-// fullscreen, help) has a keyboard equivalent (Ctrl+S still saves with the
-// pill hidden, Ctrl+Shift+K/Ctrl+F reopen the app-name/search actions) or simply
-// isn't essential moment-to-moment. Below this width the two
+// The header's mandatory pieces are the save-state pill (unsaved work must
+// stay visible; it shrinks with an ellipsis if it has to) and the close-file
+// (🔒) and settings (⚙) buttons — everything else (sidebar collapse toggle,
+// app name, search bar, the active-team indicator, the install/promo button,
+// fullscreen, help) has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F reopen the
+// app-name/search actions) or simply isn't essential moment-to-moment. Below this width the two
 // floored-but-not-shrinkable clusters either side of them (headerRight's
 // icon buttons never shrink at all; headerLeft's app name/search bar bottom
 // out at a fixed min-width) can no longer both fit without
 // crowding/overlapping — so every optional piece is hidden at once instead,
-// leaving only the mandatory two. One threshold, not one per element:
+// leaving only the mandatory ones. One threshold, not one per element:
 // hiding them piecemeal (search first, then the team indicator, then...)
 // just moves the collision to a different narrower width instead of
 // removing it, since the mandatory cluster alone is what actually needs

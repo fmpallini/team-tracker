@@ -14,6 +14,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - The milestone timeline is no longer shrunk to fit the pane. A timeline with many or closely spaced milestones used to be squeezed until its dates and titles were unreadable; it now keeps a readable size and scrolls instead.
 - The text on the milestone timeline and on the Risks chart now follows the text-size setting.
 - The due and overdue list and the fast switch (Ctrl+Shift+K) are now as wide as the Preferences window. Each item takes one line, with a long title cut short and its full text shown when you hover it, so the rows line up and have the same height, even at the largest text size.
+- In a narrow window, the header's compact form now keeps the save-status pill (shortened with "…" if it has to be) next to the lock and settings buttons, so you can still see whether your work is saved. The install button is hidden there instead.
 - With the sidebar collapsed and a long team name, the name in the header is now shortened with "…" a little sooner so that the search box keeps a usable width.
 
 ### Fixed

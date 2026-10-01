@@ -119,3 +119,20 @@ for (const size of ['M', 'XL'] as const) {
     })
   }
 }
+
+for (const [size, width] of [['M', 700], ['XL', 900], ['XL', 400]] as const) {
+  test(`compact header (${size}, ${width}px) keeps exactly the save pill, lock and settings`, async ({ page }) => {
+    await openDoc(page, buildDoc(size, { kind: 'general' }, { locale: 'pt-BR' }), { width, height: 700 })
+    await page.keyboard.press('F2')
+    await page.keyboard.press('F1')
+    await expect(page.locator('.tt-header.tt-header-compact')).toBeVisible()
+    const visible = await page.evaluate(() =>
+      ['.tt-save-pill', '.tt-btn-close-file', '.tt-btn-settings', '.tt-btn-promo', '.tt-btn-help', '.tt-btn-fullscreen', '.tt-search-input', '.tt-app-name', '.tt-sidebar-toggle', '.tt-header-team-indicator']
+        .filter((q) => { const e = document.querySelector(q); return e !== null && e.getBoundingClientRect().width > 0 })
+    )
+    expect(visible.sort()).toEqual(['.tt-btn-close-file', '.tt-btn-settings', '.tt-save-pill'])
+    // all three on screen, the pill's text ellipsized rather than shoving a button off the edge
+    const right = await page.evaluate(() => document.querySelector('.tt-btn-settings')!.getBoundingClientRect().right)
+    expect(right).toBeLessThanOrEqual(width)
+  })
+}
