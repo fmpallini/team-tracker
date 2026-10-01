@@ -153,4 +153,52 @@ describe('with ResizeObserver available', () => {
     dispose()
     expect(ro.disconnected).toBe(true)
   })
+
+  describe('header compact threshold follows the text size', () => {
+    afterEach(() => {
+      delete document.documentElement.dataset.size
+    })
+
+    test('at XL the header goes compact at a width where M still fits it (820 × 1.2 = 984)', () => {
+      document.documentElement.dataset.size = 'XL'
+      const hooks = fakeHooks()
+      setupResponsiveLayout(document.createElement('div'), hooks)
+      const ro = FakeResizeObserver.instances[0]!
+
+      ro.fire(950) // between 820 and 984
+      expect(hooks.headerCompactCalls).toEqual([true])
+      expect(hooks.splitCalls).toEqual([]) // the other thresholds are untouched
+    })
+
+    test('at M, and below, the threshold stays 820', () => {
+      for (const size of ['M', 'XS']) {
+        document.documentElement.dataset.size = size
+        FakeResizeObserver.instances = []
+        const hooks = fakeHooks()
+        setupResponsiveLayout(document.createElement('div'), hooks)
+        const ro = FakeResizeObserver.instances[0]!
+        ro.fire(830)
+        expect(hooks.headerCompactCalls).toEqual([])
+        ro.fire(810)
+        expect(hooks.headerCompactCalls).toEqual([true])
+      }
+    })
+
+    test('changing the size re-evaluates against the last width, without a resize', async () => {
+      document.documentElement.dataset.size = 'M'
+      const hooks = fakeHooks()
+      const dispose = setupResponsiveLayout(document.createElement('div'), hooks)
+      FakeResizeObserver.instances[0]!.fire(900)
+      expect(hooks.headerCompactCalls).toEqual([])
+
+      document.documentElement.dataset.size = 'XL'
+      await Promise.resolve() // MutationObserver callbacks run as a microtask
+      expect(hooks.headerCompactCalls).toEqual([true])
+
+      document.documentElement.dataset.size = 'M'
+      await Promise.resolve()
+      expect(hooks.headerCompactCalls).toEqual([true, false])
+      dispose()
+    })
+  })
 })

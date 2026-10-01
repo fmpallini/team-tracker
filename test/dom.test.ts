@@ -1,4 +1,4 @@
-import { blurOnEnter, clampToViewport, createDeferredRebuild } from '../src/ui/dom'
+import { blurOnEnter, clampToViewport, createDeferredRebuild, wheelScrollsHorizontally } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -127,5 +127,71 @@ describe('createDeferredRebuild', () => {
   test('dispose() with nothing armed does not throw', () => {
     const deferred = createDeferredRebuild(vi.fn())
     expect(() => deferred.dispose()).not.toThrow()
+  })
+})
+
+describe('wheelScrollsHorizontally', () => {
+  // jsdom has no layout: scroll geometry is whatever the test says it is.
+  function scroller(g: { sw: number; cw: number; sh: number; ch: number; left?: number }): HTMLElement {
+    const e = document.createElement('div')
+    Object.defineProperty(e, 'scrollWidth', { value: g.sw })
+    Object.defineProperty(e, 'clientWidth', { value: g.cw })
+    Object.defineProperty(e, 'scrollHeight', { value: g.sh })
+    Object.defineProperty(e, 'clientHeight', { value: g.ch })
+    e.scrollLeft = g.left ?? 0
+    return e
+  }
+  function wheel(e: HTMLElement, init: WheelEventInit): WheelEvent {
+    const ev = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })
+    e.dispatchEvent(ev)
+    return ev
+  }
+
+  test('turns vertical wheel travel into horizontal scroll and cancels the default', () => {
+    const e = scroller({ sw: 1000, cw: 400, sh: 50, ch: 50 })
+    wheelScrollsHorizontally(e)
+    const ev = wheel(e, { deltaY: 120 })
+    expect(e.scrollLeft).toBe(120)
+    expect(ev.defaultPrevented).toBe(true)
+  })
+
+  test('leaves the wheel alone when there is nothing to scroll sideways, or it can scroll vertically', () => {
+    const fits = scroller({ sw: 400, cw: 400, sh: 50, ch: 50 })
+    wheelScrollsHorizontally(fits)
+    expect(wheel(fits, { deltaY: 120 }).defaultPrevented).toBe(false)
+
+    const tall = scroller({ sw: 1000, cw: 400, sh: 900, ch: 300 })
+    wheelScrollsHorizontally(tall)
+    expect(wheel(tall, { deltaY: 120 }).defaultPrevented).toBe(false)
+    expect(tall.scrollLeft).toBe(0)
+  })
+
+  test('ignores horizontal deltas (trackpad/shift) and Ctrl+wheel (font size)', () => {
+    const e = scroller({ sw: 1000, cw: 400, sh: 50, ch: 50 })
+    wheelScrollsHorizontally(e)
+    expect(wheel(e, { deltaY: 120, deltaX: 30 }).defaultPrevented).toBe(false)
+    expect(wheel(e, { deltaY: 120, ctrlKey: true }).defaultPrevented).toBe(false)
+  })
+
+  test('lets the wheel through once the scroller is at the end it is heading for', () => {
+    const atStart = scroller({ sw: 1000, cw: 400, sh: 50, ch: 50, left: 0 })
+    wheelScrollsHorizontally(atStart)
+    expect(wheel(atStart, { deltaY: -120 }).defaultPrevented).toBe(false)
+
+    const atEnd = scroller({ sw: 1000, cw: 400, sh: 50, ch: 50, left: 600 })
+    wheelScrollsHorizontally(atEnd)
+    expect(wheel(atEnd, { deltaY: 120 }).defaultPrevented).toBe(false)
+  })
+
+  test('yieldsTo lets a nested scroller keep its own wheel, and the returned unbind detaches', () => {
+    const e = scroller({ sw: 1000, cw: 400, sh: 50, ch: 50 })
+    const inner = document.createElement('div')
+    e.appendChild(inner)
+    const unbind = wheelScrollsHorizontally(e, (target) => target === inner)
+    expect(wheel(inner, { deltaY: 120 }).defaultPrevented).toBe(false)
+    expect(wheel(e, { deltaY: 120 }).defaultPrevented).toBe(true)
+
+    unbind()
+    expect(wheel(e, { deltaY: 120 }).defaultPrevented).toBe(false)
   })
 })

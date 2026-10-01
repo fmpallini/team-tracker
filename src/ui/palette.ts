@@ -74,6 +74,7 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
         }),
         row.label
       )
+      rowEl.title = row.label // rows ellipsize (styles.css); the tooltip carries the full text
       listEl!.appendChild(rowEl)
     })
   }

@@ -25,8 +25,9 @@ import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally } from '../ui/dom'
 import { withDisposal } from './lifecycle'
+import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
@@ -336,8 +337,14 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // --- timeline (SVG) -------------------------------------------------------
 
   const timelineEl = el('div', { class: 'tt-milestone-timeline' })
+  // The drawing is never scaled below its natural size (styles.css), so a dense
+  // timeline scrolls sideways — and the plain wheel drives that scroll.
+  const unbindTimelineWheel = wheelScrollsHorizontally(timelineEl)
 
   function renderTimeline(): void {
+    // Clearing the content collapses the scroll range and snaps scrollLeft to 0;
+    // keep the reader's place across a re-render (an edit, a size change).
+    const keepScroll = timelineEl.scrollLeft
     timelineEl.innerHTML = ''
     const sorted = sortByDate(milestones())
     if (sorted.length === 0) {
@@ -352,9 +359,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // rather than collapsing everything to x=0.
     const containerWidth = timelineEl.clientWidth > 0 ? timelineEl.clientWidth : FALLBACK_WIDTH
     const drawWidth = Math.max(containerWidth - H_PADDING * 2, 1)
+    // Date labels are CSS-sized from the size setting (--tt-fs-k), so the
+    // spacing floor that keeps them from touching has to grow with them.
     const layout = computeTimelineLayout(
       sorted.map((m) => ({ id: m.id, date: m.date })),
-      MIN_LABEL_GAP,
+      MIN_LABEL_GAP * fontScale(ctx.store.doc.prefs.fontSize),
       drawWidth,
       today
     )
@@ -451,6 +460,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     })
 
     timelineEl.appendChild(svg)
+    timelineEl.scrollLeft = keepScroll
   }
 
   // --- list -------------------------------------------------------------
@@ -724,7 +734,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // a person's notes, an action item or risk follow-up — not just edits to
   // milestones themselves, so the watch list is that full set (plus
   // 'teams', since a rename/delete/reorder can invalidate any pane).
-  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
+  // 'prefs' too: a size change re-spaces the timeline's date labels.
+  const WATCHED: readonly Section[] = ['teams', 'prefs', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     // Patches every expanded follow-up editor's @mention chips in place —
@@ -745,6 +756,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // falls through to the rebuild below (a title rename is scoped
     // `{ teamId }` with no sections, so it takes the full path).
     const sections = scope?.sections
+    if (sections?.length === 1 && sections[0] === 'prefs') {
+      renderTimeline()
+      return
+    }
     if (sections !== undefined && !sections.includes('milestones') && !sections.includes('teams')) {
       refreshBacklinkChips()
       return
@@ -788,6 +803,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     expandable.disposeAll()
     disposeDatePickers()
     disposeArrowFallback()
+    unbindTimelineWheel()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   }
 })

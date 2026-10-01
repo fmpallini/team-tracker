@@ -7,7 +7,7 @@ import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { openPersonModal } from '../ui/person-modal'
-import { el } from '../ui/dom'
+import { el, wheelScrollsHorizontally } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
@@ -411,11 +411,14 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       if (!scopeAffects(scope, teamId, WATCHED)) return
       renderAll()
     })
+    // A wide chart scrolls sideways under the plain wheel, as the kanban board does.
+    const unbindWheel = wheelScrollsHorizontally(treeEl)
 
     container.appendChild(el('div', { class: 'tt-people' }, toolbar, rootDropEl, treeEl))
 
     return () => {
       unsubscribe()
+      unbindWheel()
     }
   })
 }

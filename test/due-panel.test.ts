@@ -127,4 +127,11 @@ describe('openDuePanel', () => {
     rows[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
     expect(document.activeElement).toBe(rows[0])
   })
+
+  test('every row carries its full title (and team) as a tooltip, since the row ellipsizes', () => {
+    const long = 'A very long action item title that the row will cut off with an ellipsis'
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem({ title: long })], dueSoon: [] }, onOpenItem: () => {} })
+    expect(document.querySelector<HTMLElement>('.tt-due-row-title')!.title).toBe(long)
+    expect(document.querySelector<HTMLElement>('.tt-due-row-team')!.title).toBe('Alpha')
+  })
 })

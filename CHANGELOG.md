@@ -4,6 +4,27 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.4] - 2026-09-30
+
+### Added
+- In the org chart (Members and Stakeholders), a chart wider than the pane now scrolls sideways with the plain mouse wheel when there is nothing to scroll vertically, the same way the Tasks board does. Once you reach the end, the wheel carries on as usual.
+- The milestone timeline scrolls sideways with the mouse wheel too, and keeps its place when you edit a milestone.
+
+### Changed
+- The milestone timeline is no longer shrunk to fit the pane. A timeline with many or closely spaced milestones used to be squeezed until its dates and titles were unreadable; it now keeps a readable size and scrolls instead.
+- The text on the milestone timeline and on the Risks chart now follows the text-size setting.
+- The due and overdue list and the fast switch (Ctrl+Shift+K) are now as wide as the Preferences window. Each item takes one line, with a long title cut short and its full text shown when you hover it, so the rows line up and have the same height, even at the largest text size.
+- In a narrow window, the header's compact form now keeps the save-status pill (shortened with "…" if it has to be) next to the lock and settings buttons, so you can still see whether your work is saved. The install button is hidden there instead.
+- With the sidebar collapsed and a long team name, the name in the header is now shortened with "…" a little sooner so that the search box keeps a usable width.
+
+### Fixed
+- At the larger text sizes, in a narrow window, the header's buttons and search box overlapped each other. The header now falls back to its compact form (just the lock and settings buttons) at a wider window the larger the text size is, and switches as soon as you change the size.
+- At the larger text sizes, the module menu at the top of a pane (Daily notes, General notes, Tasks…) broke some of its entries onto two lines.
+- At the larger text sizes, Tasks cards were squashed when a column had many cards, cutting off their date, assignee and tag. The column now scrolls instead.
+- At the larger text sizes, with the sidebar collapsed and a long team name, the search box shrank to a bare icon.
+- In Risks, at the larger text sizes in a split view, a risk's delete button could be drawn outside the row's border.
+- In the org chart, when the chart was wider than the pane, its left part could not be scrolled into view.
+
 ## [2.9.3] - 2026-09-29
 
 ### Changed

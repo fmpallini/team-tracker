@@ -139,6 +139,11 @@ html[data-font=mono] body { font-family: Consolas, 'Cascadia Mono', monospace; }
 html[data-font=classic] body { font-family: Constantia, Cambria, 'Times New Roman', serif; }
 html[data-font=rounded] body { font-family: Candara, Corbel, sans-serif; }
 html[data-size=XS] { font-size: 12px; } html[data-size=S] { font-size: 13.5px; } html[data-size=M] { font-size: 15px; } html[data-size=L] { font-size: 16.5px; } html[data-size=XL] { font-size: 18px; }
+/* --tt-fs-k = root px / 15 (M). Inline SVG text is sized in the drawing's own
+   user units, so rem can't reach it; calc(9px * var(--tt-fs-k)) lets the
+   milestone timeline and risk quadrant labels follow the size setting. Keep
+   in step with FONT_SIZE_SCALE in src/core/font-size.ts. */
+html[data-size=XS] { --tt-fs-k: .8; } html[data-size=S] { --tt-fs-k: .9; } html[data-size=M] { --tt-fs-k: 1; } html[data-size=L] { --tt-fs-k: 1.1; } html[data-size=XL] { --tt-fs-k: 1.2; }
 
 body { background: var(--bg); color: var(--fg); }
 
@@ -183,7 +188,13 @@ body { background: var(--bg); color: var(--fg); }
    forces the whole header to overflow instead. */
 .tt-header-left { min-width: 0; }
 .tt-header-right { justify-self: end; }
-.tt-header-center { justify-self: center; min-width: 0; }
+/* The team indicator only ever gets what the two side clusters leave over: capped
+   at 28vw, and never more than the window minus the sidebar-wide left cluster
+   (220px: toggle, app name, a usable search box ≈ 220px + 7rem) and the right one
+   (≈ 34rem of save pill and buttons, in rem so it tracks the text size). Below
+   that it shrinks to nothing — hence overflow:hidden — rather than pushing the
+   search box under itself. */
+.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - 220px - 44rem))); overflow: hidden; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of
@@ -240,13 +251,15 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-header-team-indicator.visible { display: inline-flex; }
 .tt-header-team-indicator:hover, .tt-header-team-indicator:focus-visible { border-color: var(--accent); color: var(--accent); }
-.tt-header-team-indicator-label { overflow: hidden; text-overflow: ellipsis; }
+.tt-header-team-indicator { min-width: 0; }
+.tt-header-team-indicator-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tt-header-team-indicator-caret { display: inline-flex; flex: none; opacity: .6; }
 .tt-header-team-indicator-caret svg { display: block; }
 .tt-header-team-indicator:hover .tt-header-team-indicator-caret,
 .tt-header-team-indicator:focus-visible .tt-header-team-indicator-caret { opacity: 1; }
 
-.tt-header-team-indicator-group { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
+/* flex, not inline-flex: a block-level box takes the (capped) width of .tt-header-center, so the indicator's label can ellipsize instead of the pill overflowing into the save pill beside it. */
+.tt-header-team-indicator-group { display: flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; }
 
 .tt-header-due-summary {
   display: none; align-items: center; justify-content: center;
@@ -274,22 +287,31 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-switcher-item.active { border-left-color: var(--accent); font-weight: 600; }
 
 /* Space-constrained override (src/ui/responsive.ts, below
-   HEADER_COMPACT_BELOW_PX): hides every non-mandatory header element at
-   once — wins over .tt-header-team-indicator.visible above regardless of
-   sidebar collapse state. Only the close-file (🔒) and settings (⚙) buttons
-   (both untouched here) are guaranteed room — closing the file and reaching
-   prefs must always be reachable; everything else has a keyboard equivalent
-   (Ctrl+K/Ctrl+F for the app name/search, Ctrl+S still saves with the pill
-   hidden) or simply isn't essential moment-to-moment. */
+   HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every
+   optional header element at once — wins over .tt-header-team-indicator.visible
+   above regardless of sidebar collapse state. What is left is the save-state
+   pill (so unsaved work stays visible), the close-file (🔒) and settings (⚙)
+   buttons: closing the file and reaching prefs must always be reachable;
+   everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
+   name/search) or simply isn't essential moment-to-moment. */
 .tt-header.tt-header-compact .tt-sidebar-toggle,
 .tt-header.tt-header-compact .tt-app-name,
 .tt-header.tt-header-compact .tt-search-wrap,
 .tt-header.tt-header-compact .tt-header-team-indicator-group,
-.tt-header.tt-header-compact .tt-save-pill,
+.tt-header.tt-header-compact .tt-btn-promo,
 .tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
+/* With the left and centre slots empty, give the right cluster the whole bar
+   (its 1fr share was half of it) and let the pill — the only part that can —
+   give way with an ellipsis rather than push the two buttons off the edge. */
+.tt-header.tt-header-compact { grid-template-columns: 0 0 minmax(0, 1fr); column-gap: 0; }
+.tt-header.tt-header-compact .tt-header-right { min-width: 0; gap: .5rem; justify-self: stretch; justify-content: flex-end; }
+.tt-header.tt-header-compact .tt-save-pill-wrap,
+.tt-header.tt-header-compact .tt-save-pill { min-width: 0; }
+.tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }
+.tt-header.tt-header-compact .tt-save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* Fixed to (sidebar width − header's own left padding − the gap before the
    search bar − the collapse toggle's own width and its gap) so the search
@@ -649,9 +671,13 @@ body { background: var(--bg); color: var(--fg); }
   outline: none; border-color: var(--accent);
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
 }
-.tt-due-row-title { flex: 1; }
-.tt-due-row-team { color: var(--muted); font-size: .85rem; }
-.tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; }
+/* One line per row, the full text on the element's own title tooltip, so the
+   rows stay the same height whatever the item's title length — and, with the
+   team and date columns a fixed width, titles all end (and dates start) at the
+   same x. */
+.tt-due-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-due-row-team { color: var(--muted); font-size: .85rem; flex: none; width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-due-row-date { font-family: var(--font-data); font-size: .8rem; color: var(--muted); flex: none; white-space: nowrap; min-width: 12rem; text-align: right; }
 .tt-team-form { display: flex; flex-direction: column; gap: .75rem; }
 
 /* Panes */
@@ -708,6 +734,11 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .25); display: flex; flex-direction: column;
   min-width: 200px; max-height: 60vh; overflow-y: auto; padding: .25rem;
+  /* The menu is absolutely positioned inside .tt-pane-title-trigger-wrap, which
+     is only as wide as the trigger button, so shrink-to-fit would cap it at that
+     width and fold "Daily notes" onto two lines whenever the labels (which
+     grow with the size setting) outrun a short trigger like "General notes". */
+  width: max-content; max-width: 90vw;
 }
 .tt-pane-menu-item {
   background: transparent; color: var(--fg); border: none; text-align: left;
@@ -716,7 +747,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-pane-menu-item.selected, .tt-pane-menu-item:hover { background: rgba(var(--accent-rgb), .1); }
 .tt-pane-menu-hotkey { font-size: .75rem; opacity: .5; flex: none; }
-.tt-pane-menu-label { flex: 1; }
+.tt-pane-menu-label { flex: 1; white-space: nowrap; }
 .tt-pane-menu-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; }
 .tt-pane-menu-item[aria-current='true'] .tt-pane-menu-label { font-weight: 700; }
 
@@ -727,13 +758,16 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-palette-dialog {
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
-  width: min(90vw, 480px); max-height: 60vh; display: flex; flex-direction: column;
+  /* As wide as Preferences and the due list (rem, so it grows with the text size). */
+  width: min(42rem, 92vw); max-height: 60vh; display: flex; flex-direction: column;
   box-shadow: 0 12px 48px rgba(0, 0, 0, .35); overflow: hidden;
 }
 .tt-palette-input { border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: .75rem; font-size: 1.05rem; }
 .tt-palette-input:focus { outline: none; }
 .tt-palette-list { overflow-y: auto; padding: .25rem; }
-.tt-palette-item { padding: .5rem .6rem; border-radius: 4px; cursor: pointer; }
+/* One line per entry whatever the item's title length; the full text is on the
+   row's own title tooltip (palette.ts). */
+.tt-palette-item { padding: .5rem .6rem; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-palette-item.selected, .tt-palette-item:hover { background: rgba(var(--accent-rgb), .12); }
 
 /* Header search */
@@ -1038,7 +1072,9 @@ body { background: var(--bg); color: var(--fg); }
    the root belongs in the middle of it. (Start-anchoring was tried and
    reverted — it buys room to grow leftward at the cost of the shape the
    chart is supposed to have.) */
-.tt-org-root { display: flex; gap: 2rem; justify-content: center; overflow-x: auto; height: 100%; }
+.tt-org-root { display: flex; gap: 2rem; justify-content: safe center; overflow-x: auto; height: 100%; }
+/* safe: plain `center` also centers an overflowing chart, pushing its left half
+   past the scroll origin where no scrollbar or wheel can reach it. */
 /* While a card is being dragged, every other card shows it is a target.
    Previously the drop bands only appeared once the pointer was already over
    one specific card, so the nesting affordance was invisible to anyone who
@@ -1184,6 +1220,10 @@ body { background: var(--bg); color: var(--fg); }
   padding: .5rem .55rem .45rem; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); cursor: grab;
   border-left: 8px solid var(--border); /* no color-X class → uncategorized, neutral stripe */
   overflow: hidden; /* hard backstop: nothing bleeds past the rounded border */
+  /* overflow:hidden zeroes a flex item's automatic min-height, so inside the
+     column-direction .tt-kanban-col-body a card would flex-shrink to fit the
+     column and clip its meta row instead of letting the column scroll. */
+  flex: none;
 }
 .tt-kanban-card.color-slate { border-left-color: var(--card-slate); }
 .tt-kanban-card.color-brass { border-left-color: var(--card-brass); }
@@ -1326,21 +1366,19 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Milestones module */
 .tt-milestones { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: .5rem; gap: .5rem; }
-/* The timeline never scrolls horizontally, at any date distribution. The SVG's
-   pixel width is computed in src/modules/milestones.ts from MIN_LABEL_GAP, so
-   tightly-clustered dates produce a drawing several times wider than the pane
-   (worst in a split pane, which is narrower and — with no ResizeObserver on the
-   module — isn't even re-measured when the splitter moves). The SVG carries a
-   viewBox, so max-width/height:auto scales the whole drawing down to fit
-   instead, preserving proportions. This is the same treatment the print window
-   applies via PRINT_CSS in src/ui/panes.ts; it now just holds on screen too, so
-   the pane and its print preview agree. */
-.tt-milestone-timeline { flex: none; overflow: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
-.tt-milestone-svg { display: block; max-width: 100%; height: auto; }
+/* The timeline is drawn at its natural size and scrolls sideways when that is
+   wider than the pane. It used to scale the whole SVG down to fit (max-width:
+   100% over a viewBox), which made a dense timeline's date and title labels
+   too small to read. The SVG's pixel width comes from src/modules/milestones.ts
+   (MIN_LABEL_GAP, scaled with the text-size setting) so labels never touch;
+   the plain mouse wheel scrolls it (wheelScrollsHorizontally). The print
+   window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
+.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
 .tt-milestone-dot { stroke-width: 2; }
-.tt-milestone-date-label, .tt-milestone-title-label { font-size: 9px; fill: var(--fg); text-anchor: middle; }
+.tt-milestone-date-label, .tt-milestone-title-label { font-size: calc(9px * var(--tt-fs-k, 1)); fill: var(--fg); text-anchor: middle; }
 .tt-milestone-date-label { font-family: var(--font-data); }
 .tt-milestone-title-label { fill: var(--muted); }
 /* Connects a dot to its title on the far stagger row. Hairline and border-
@@ -1403,8 +1441,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-quadrant-cell-low { fill: color-mix(in srgb, var(--exposure-low) 14%, transparent); }
 .tt-risk-quadrant-cell-medium { fill: color-mix(in srgb, var(--exposure-medium) 16%, transparent); }
 .tt-risk-quadrant-cell-high { fill: color-mix(in srgb, var(--exposure-high) 26%, transparent); }
-.tt-risk-quadrant-tick { font-size: 9px; fill: var(--muted); font-family: var(--font-data); text-anchor: middle; dominant-baseline: middle; }
-.tt-risk-quadrant-axis-title { font-size: 9px; fill: var(--muted); text-anchor: middle; }
+.tt-risk-quadrant-tick { font-size: calc(9px * var(--tt-fs-k, 1)); fill: var(--muted); font-family: var(--font-data); text-anchor: middle; dominant-baseline: middle; }
+.tt-risk-quadrant-axis-title { font-size: calc(9px * var(--tt-fs-k, 1)); fill: var(--muted); text-anchor: middle; }
 /* Hollow ring, not a flat filled dot — echoes the "ink stamp" read of this
    module's own .tt-risk-exposure-badge (a hollow circle in currentColor) and
    milestones.ts's not-done dots, rather than a generic scatter-plot marker.
@@ -1423,7 +1461,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Drop-target feedback while dragging (wireQuadrantDrag) — a stronger,
    accent-colored border on whichever cell the pointer currently sits over. */
 .tt-risk-quadrant-cell-drag-target { stroke: var(--accent); stroke-width: 2; }
-.tt-risk-quadrant-label { font-size: 9px; fill: var(--fg); dominant-baseline: middle; cursor: default; }
+.tt-risk-quadrant-label { font-size: calc(9px * var(--tt-fs-k, 1)); fill: var(--fg); dominant-baseline: middle; cursor: default; }
 .tt-risk-quadrant-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: .1rem .75rem; font-size: .72rem; color: var(--muted); }
 .tt-risk-quadrant-legend-item { display: inline-flex; align-items: center; gap: .3rem; }
 /* Same static coloring as .tt-risk-quadrant-dot, minus the interactive bits
@@ -1548,9 +1586,12 @@ select option { background: var(--bg); color: var(--fg); }
    `order` is only set here; at full width every child sits at the default 0
    and the row is exactly the table it always was. */
 /* Threshold sits above the width at which the single-line row would start
-   overflowing (fixed columns ~34rem + the title's 12rem floor), so the wrap
-   takes over before a horizontal scrollbar ever appears. */
-@container (max-width: 50rem) {
+   overflowing, so the wrap takes over before a horizontal scrollbar — or a
+   delete button hanging off the row's border — ever appears. That width is the
+   title's 12rem floor + chance/impact/exposure/plan (26rem) + the backlinks
+   chip and the three action buttons (4 × 2.6rem) + 8 gaps (3.2rem) + the row's
+   padding (.8rem) ≈ 52.4rem. Keep this above it when adding a column. */
+@container (max-width: 54rem) {
   .tt-risk-row { flex-wrap: wrap; row-gap: .35rem; }
   /* The column header can't span two lines' worth of controls, and the
      mini-labels below replace it. */
@@ -1649,8 +1690,10 @@ select option { background: var(--bg); color: var(--fg); }
    the XL setting wrap pills that fit at M inside the very modal that offers it. */
 /* The editor and global help modals share Preferences' width: their shortcut
    tables and the app-window command read cramped at the generic 480px cap. */
+/* The due/overdue list too: its rows hold a title, a team and a date side by side. */
 .tt-modal-dialog:has(.tt-prefs-dialog),
-.tt-modal-dialog:has(.tt-help-body) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
+.tt-modal-dialog:has(.tt-help-body),
+.tt-modal-dialog:has(.tt-due-list) { width: min(42rem, 92vw); max-width: min(42rem, 92vw); }
 /* Action item edit modal: widened past the generic 480px cap so the notes
    editor (bumped to min-height 240px above) has real room to read/write in,
    not a cramped strip inside an otherwise-narrow dialog. */
