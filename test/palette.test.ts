@@ -158,3 +158,12 @@ test('Escape over a modeless card modal closes the palette and is consumed so th
   expect(document.querySelector('.tt-palette-overlay')).toBeNull() // palette closed
   expect(evt.defaultPrevented).toBe(true) // preventDefault + stopPropagation → the card modal's own Escape guard skips it
 })
+
+test('each row carries its full label as a tooltip, since rows ellipsize to one line', () => {
+  const { palette } = setup()
+  palette.open()
+
+  const rows = Array.from(document.querySelectorAll<HTMLElement>('.tt-palette-item'))
+  expect(rows.length).toBeGreaterThan(0)
+  for (const r of rows) expect(r.title).toBe(r.textContent)
+})

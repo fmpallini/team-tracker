@@ -39,6 +39,23 @@ test('due panel: as wide as Preferences, one aligned row per item, full title on
   for (const r of rows) expect(r.tip).toBe(r.text) // …and every title carries its full text as a tooltip
 })
 
+test('fast switch (Ctrl+Shift+K): as wide as Preferences, one ellipsized line per entry, full text on hover', async ({ page }) => {
+  await openDoc(page, buildDoc('XL', { kind: 'general' }))
+  await page.keyboard.press('Control+Shift+K')
+  const dialog = page.locator('.tt-palette-dialog')
+  await expect(dialog.locator('.tt-palette-item').first()).toBeVisible()
+  const rem = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  expect(await dialog.evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThan(40 * rem)
+
+  const rows = await dialog.locator('.tt-palette-item').evaluateAll((els) =>
+    els.map((e) => ({ h: e.getBoundingClientRect().height, clipped: e.scrollWidth > e.clientWidth, tip: (e as HTMLElement).title, text: e.textContent }))
+  )
+  expect(rows.length).toBeGreaterThan(20) // the modules plus every action item, milestone and risk
+  expect(new Set(rows.map((r) => Math.round(r.h))).size).toBe(1) // one line each
+  expect(rows.some((r) => r.clipped)).toBe(true) // the long summaries are ellipsized…
+  for (const r of rows) expect(r.tip).toBe(r.text) // …and each row carries its full text as a tooltip
+})
+
 test('milestone timeline: drawn at natural size, scrolls sideways under the wheel', async ({ page }) => {
   await openDoc(page, buildDoc('XL', { kind: 'milestones' }, { milestones: 'dense' }))
   const tl = page.locator('.tt-milestone-timeline')
