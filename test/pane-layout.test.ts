@@ -232,3 +232,100 @@ describe('stepHistory / jumpToLatest are team scoped', () => {
     expect(layout.jumpToLatest(0)).toBe(false)
   })
 })
+
+describe('setSpaceHidden — the window-narrow hide of pane 1 (transient, nav.split untouched)', () => {
+  function splitStore(focusedPane: 0 | 1) {
+    const store = createStore(createEmptyDocument('en-US'))
+    const layout = createPaneLayout(store)
+    store.updateNav((d) => {
+      d.nav.split = true
+      d.nav.focusedPane = focusedPane
+      d.nav.panes[0] = { history: [loc('t1', 'daily')], index: 0 }
+      d.nav.panes[1] = { history: [loc('t1', 'members')], index: 0 }
+    })
+    return { store, layout }
+  }
+
+  test('splitVisible is the persisted split AND not space-hidden', () => {
+    const { store, layout } = splitStore(0)
+    expect(layout.splitVisible()).toBe(true)
+    layout.setSpaceHidden(true)
+    expect(layout.splitVisible()).toBe(false)
+    expect(store.doc.nav.split).toBe(true) // the preference is never touched
+    layout.setSpaceHidden(false)
+    expect(layout.splitVisible()).toBe(true)
+    store.updateNav((d) => { d.nav.split = false })
+    expect(layout.splitVisible()).toBe(false)
+  })
+
+  test('narrowing while pane 1 is focused pulls pane 1 into the visible pane 0 and moves focus there; reports a nav change', () => {
+    const { store, layout } = splitStore(1)
+
+    const changed = layout.setSpaceHidden(true)
+
+    expect(changed).toBe(true)
+    expect(store.doc.nav.panes[0]!.history[0]!.ref.kind).toBe('members')
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('narrowing while pane 0 is focused changes nothing', () => {
+    const { store, layout } = splitStore(0)
+    const before = structuredClone(store.doc.nav)
+
+    expect(layout.setSpaceHidden(true)).toBe(false)
+
+    expect(store.doc.nav).toEqual(before)
+  })
+
+  test('widening restores pane 0\'s own content and puts focus back on pane 1 when nothing was navigated meanwhile', () => {
+    const { store, layout } = splitStore(1)
+    layout.setSpaceHidden(true)
+
+    const changed = layout.setSpaceHidden(false)
+
+    expect(changed).toBe(true)
+    expect(store.doc.nav.panes[0]!.history[0]!.ref.kind).toBe('daily')
+    expect(store.doc.nav.panes[1]!.history[0]!.ref.kind).toBe('members')
+    expect(store.doc.nav.focusedPane).toBe(1)
+  })
+
+  test('a real navigation into pane 0 while narrow cancels the restore: widening keeps what the user opened and leaves focus alone', () => {
+    const { store, layout } = splitStore(1)
+    layout.setSpaceHidden(true)
+    store.updateNav((d) => { d.nav.panes[0] = { history: [loc('t1', 'actions')], index: 0 } })
+    layout.noteRealNavigation(0)
+
+    const changed = layout.setSpaceHidden(false)
+
+    expect(changed).toBe(false)
+    expect(store.doc.nav.panes[0]!.history[0]!.ref.kind).toBe('actions')
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('no restore if the user un-split by hand while narrow (their choice wins)', () => {
+    const { store, layout } = splitStore(1)
+    layout.setSpaceHidden(true)
+    store.updateNav((d) => { d.nav.split = false })
+
+    expect(layout.setSpaceHidden(false)).toBe(false)
+    expect(store.doc.nav.panes[0]!.history[0]!.ref.kind).toBe('members')
+  })
+
+  test('applyToggleSplit(false) — the "show it anyway" click while narrow — restores the stash and clears the hide', () => {
+    const { store, layout } = splitStore(1)
+    layout.setSpaceHidden(true)
+
+    layout.applyToggleSplit(false)
+
+    expect(layout.splitVisible()).toBe(true)
+    expect(store.doc.nav.panes[0]!.history[0]!.ref.kind).toBe('daily')
+    // The later real "widen" event is now a no-op rather than a second restore.
+    expect(layout.setSpaceHidden(false)).toBe(false)
+  })
+
+  test('setting the same value twice is a no-op', () => {
+    const { layout } = splitStore(1)
+    expect(layout.setSpaceHidden(true)).toBe(true)
+    expect(layout.setSpaceHidden(true)).toBe(false)
+  })
+})

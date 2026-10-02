@@ -39,6 +39,27 @@ export interface PaneLayout {
    * `nav.split` when the responsive layout has force-hidden the split view.
    */
   applyToggleSplit(wasVisible: boolean): void
+  /**
+   * Whether pane 1 is on screen: the persisted split AND not hidden for lack of
+   * window width. Everything that asks "is the other pane visible?" — the
+   * same-module guard, focus changes, swapping — goes through this, never the
+   * raw `nav.split`, which stays true while a narrow window hides pane 1.
+   */
+  splitVisible(): boolean
+  /** Whether the responsive layout is currently hiding pane 1 (transient, never persisted). */
+  isSpaceHidden(): boolean
+  /**
+   * The responsive layout hiding (`true`) or revealing (`false`) pane 1. A
+   * no-op if already in that state. Narrowing while pane 1 is the one being
+   * worked in pulls its content into the visible pane 0 and moves focus there —
+   * exactly what a manual "expand the right pane" does — so the pane in use stays
+   * in view; widening puts pane 0's own content and focus back unless the user
+   * navigated in pane 0 meanwhile. Returns whether the nav state changed (the
+   * caller must re-render the bodies if so). `nav.split` is never touched.
+   */
+  setSpaceHidden(hidden: boolean): boolean
+  /** The user explicitly opening the second pane ("open in other pane") while narrow: override the responsive hide. */
+  showSplit(): void
 }
 
 export function createPaneLayout(store: Store): PaneLayout {
@@ -51,6 +72,11 @@ export function createPaneLayout(store: Store): PaneLayout {
   // because updateNav mutates in place) — any real navigation while unsplit
   // invalidates the stash.
   let unsplitStashValid = false
+  // Window too narrow for two panes — transient, like the stash.
+  let spaceHidden = false
+  // The stash currently held was taken by narrowing (not by a manual un-split),
+  // so widening should put focus back on pane 1 along with pane 0's content.
+  let pulledByResize = false
 
   return {
     stepHistory(idx, dir) {
@@ -114,7 +140,51 @@ export function createPaneLayout(store: Store): PaneLayout {
       unsplitStash = null
       unsplitStashValid = false
     },
+    splitVisible() {
+      return store.doc.nav.split && !spaceHidden
+    },
+    isSpaceHidden() {
+      return spaceHidden
+    },
+    showSplit() {
+      spaceHidden = false
+      pulledByResize = false
+    },
+    setSpaceHidden(hidden) {
+      if (spaceHidden === hidden) return false
+      spaceHidden = hidden
+      const nav = store.doc.nav
+      if (hidden) {
+        pulledByResize = false
+        if (!nav.split || nav.focusedPane !== 1) return false
+        store.updateNav((d) => {
+          unsplitStash = d.nav.panes[0]
+          unsplitStashValid = true
+          d.nav.panes[0] = d.nav.panes[1]
+          d.nav.focusedPane = 0
+        })
+        pulledByResize = true
+        return true
+      }
+      // Widening. A manual un-split made while narrow, or a real navigation in
+      // pane 0 (which drops the stash), both mean the user has moved on: leave it.
+      const stash = unsplitStash
+      const restore = pulledByResize && unsplitStashValid && stash !== null && nav.split
+      pulledByResize = false
+      if (!restore) return false
+      unsplitStash = null
+      unsplitStashValid = false
+      store.updateNav((d) => {
+        d.nav.panes[0] = stash
+        d.nav.focusedPane = 1
+      })
+      return true
+    },
     applyToggleSplit(wasVisible) {
+      // Showing the split — even "anyway" while narrow — is the user overriding the
+      // responsive hide; and any manual toggle supersedes a resize-made stash.
+      if (!wasVisible) spaceHidden = false
+      pulledByResize = false
       store.updateNav((d) => {
         d.nav.split = !wasVisible
         // Un-splitting hides pane 1 (pane 0 is never hidden) — leaving focus
