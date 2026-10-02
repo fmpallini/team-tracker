@@ -4,6 +4,10 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.5] - 2026-10-01
+
+_No user-facing changes — internal cleanup only._
+
 ## [2.9.4] - 2026-09-30
 
 ### Added
