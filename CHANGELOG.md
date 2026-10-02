@@ -4,6 +4,13 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.9.5] - 2026-10-01
+
+### Fixed
+- In a window too narrow for two panes, opening a module that the hidden second pane was showing told you it was "already open in the other pane" and moved focus to a pane you couldn't see, so nothing seemed to happen. It now opens in the pane you can see.
+- Narrowing the window while working in the second pane now keeps that pane's module on screen, and widening the window puts both panes back as they were.
+- While the second pane is hidden by a narrow window, Alt+→ and Alt+↓ no longer move focus to it or swap it in, and switching teams no longer focuses it. The same goes for Alt+→ when the view is split into a single pane by hand: it no longer focuses the pane you can't see.
+
 ## [2.9.4] - 2026-09-30
 
 ### Added

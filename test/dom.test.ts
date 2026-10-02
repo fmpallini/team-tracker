@@ -1,4 +1,4 @@
-import { blurOnEnter, clampToViewport, createDeferredRebuild, wheelScrollsHorizontally } from '../src/ui/dom'
+import { blurOnEnter, clampToViewport, clearClasses, clearRowError, createDeferredRebuild, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -193,5 +193,69 @@ describe('wheelScrollsHorizontally', () => {
 
     unbind()
     expect(wheel(e, { deltaY: 120 }).defaultPrevented).toBe(false)
+  })
+})
+
+describe('clearClasses', () => {
+  function list(): HTMLElement {
+    const root = document.createElement('div')
+    root.innerHTML = '<p class="row a b keep"></p><p class="row a"></p><p class="other a"></p>'
+    return root
+  }
+
+  test('strips every named class from every selector match, and nothing else', () => {
+    const root = list()
+
+    clearClasses(root, '.row', 'a', 'b')
+
+    const [first, second, third] = Array.from(root.children) as HTMLElement[]
+    expect(first!.className).toBe('row keep')
+    expect(second!.className).toBe('row')
+    expect(third!.className).toBe('other a') // not matched by the selector
+  })
+
+  test('is a no-op when nothing matches or a class is absent', () => {
+    const root = list()
+    clearClasses(root, '.nothing', 'a')
+    clearClasses(root, '.row', 'never-there')
+    expect(root.innerHTML).toBe('<p class="row a b keep"></p><p class="row a"></p><p class="other a"></p>')
+  })
+})
+
+describe('showRowError / clearRowError', () => {
+  test('appends one field-error note carrying the message to the row', () => {
+    const row = document.createElement('div')
+
+    showRowError(row, 'my-error', 'Needs a name')
+
+    const note = row.querySelector('.my-error') as HTMLElement
+    expect(note.textContent).toBe('Needs a name')
+    expect(note.className).toBe('my-error tt-field-error')
+    expect(note.parentElement).toBe(row)
+  })
+
+  test('is idempotent: a second call neither duplicates nor rewrites the note', () => {
+    const row = document.createElement('div')
+    showRowError(row, 'my-error', 'first')
+    showRowError(row, 'my-error', 'second')
+
+    expect(row.querySelectorAll('.my-error')).toHaveLength(1)
+    expect(row.querySelector('.my-error')!.textContent).toBe('first')
+  })
+
+  test('different classes coexist; clearRowError removes only its own', () => {
+    const row = document.createElement('div')
+    showRowError(row, 'e1', 'one')
+    showRowError(row, 'e2', 'two')
+
+    clearRowError(row, 'e1')
+
+    expect(row.querySelector('.e1')).toBeNull()
+    expect(row.querySelector('.e2')).not.toBeNull()
+  })
+
+  test('clearRowError on a row with no note is a no-op', () => {
+    const row = document.createElement('div')
+    expect(() => clearRowError(row, 'e1')).not.toThrow()
   })
 })

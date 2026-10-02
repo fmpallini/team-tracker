@@ -307,3 +307,44 @@ test.describe('split view — an edit in one pane leaves the other pane mounted'
     await expect(chip).toHaveText('@Milestone 3')
   })
 })
+
+// The window-width path jsdom can't reach (no ResizeObserver there): the real
+// responsive layout hides pane 2 below 900px while nav.split stays on. The pane
+// the user is working in must stay in view, focus must never sit on the hidden
+// pane, and widening must put things back.
+test.describe('split view — resizing the window narrow and wide again', () => {
+  const NARROW = { width: 800, height: 800 }
+  const WIDE = { width: 1280, height: 800 }
+
+  async function openFocusedOnRight(page: Page): Promise<void> {
+    const doc = buildSplitDoc({ kind: 'milestones' }, { kind: 'actions' })
+    doc.nav.focusedPane = 1
+    await openDoc(page, doc)
+    await expect(page.locator('.tt-pane[data-pane-idx="1"] .tt-kanban-board')).toBeVisible()
+  }
+
+  test('narrowing while working in the right pane keeps that module in view; widening restores both panes and focus', async ({ page }) => {
+    await openFocusedOnRight(page)
+
+    await page.setViewportSize(NARROW)
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toBeHidden()
+    await expect(page.locator('.tt-pane[data-pane-idx="0"] .tt-kanban-board')).toBeVisible() // the board the user was in
+    await expect(page.locator('.tt-pane[data-pane-idx="0"]')).toHaveClass(/focused/)
+
+    await page.setViewportSize(WIDE)
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toBeVisible()
+    await expect(page.locator('.tt-pane[data-pane-idx="0"] .tt-milestone-row').first()).toBeVisible()
+    await expect(page.locator('.tt-pane[data-pane-idx="1"] .tt-kanban-board')).toBeVisible()
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toHaveClass(/focused/)
+  })
+
+  test('while narrow, Alt+Right does not move focus to the hidden pane', async ({ page }) => {
+    await openFocusedOnRight(page)
+    await page.setViewportSize(NARROW)
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toBeHidden()
+
+    await page.keyboard.press('Alt+ArrowRight')
+    await expect(page.locator('.tt-pane[data-pane-idx="0"]')).toHaveClass(/focused/)
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).not.toHaveClass(/focused/)
+  })
+})

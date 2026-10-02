@@ -338,6 +338,188 @@ test('unsplit: opening a module in pane 0 that matches pane 1\'s stashed current
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locA)
 })
 
+describe('narrow window (split force-hidden by setSplitSpaceConstrained): the hidden pane 1 must not trap navigation', () => {
+  // Same bug class as the manual-unsplit tests above, reached through the
+  // transient width-forced hide instead: nav.split stays true there, but pane 1
+  // is just as invisible, so the same-module-in-both-panes guard must not run.
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  function splitWithBOnRight(): { store: Store; pm: PaneManager } {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.toggleSplit()
+    pm.openInPane(0, locA)
+    pm.openInPane(1, locB)
+    return { store, pm }
+  }
+
+  test('opening in pane 0 the module the hidden pane 1 holds shows it in pane 0, with no "already open" toast and no focus hand-off', () => {
+    const { store, pm } = splitWithBOnRight()
+    pm.setSplitSpaceConstrained(true)
+    expect(store.doc.nav.split).toBe(true) // persisted flag untouched — the trap
+
+    pm.openInPane(0, locB)
+
+    expect(document.querySelector('.tt-toast')).toBeNull()
+    expect(store.doc.nav.focusedPane).toBe(0)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+  })
+
+  test('pane 1 steps back so widening the window does not reveal the same module twice', () => {
+    const { store, pm } = splitWithBOnRight()
+    pm.setSplitSpaceConstrained(true)
+
+    pm.openInPane(0, locB)
+    pm.setSplitSpaceConstrained(false) // window widens: both panes visible again
+
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+    expect(currentLoc(store.doc.nav.panes[1])).not.toEqual(locB)
+  })
+
+  test('while both panes are visible the guard still fires (the fix must not loosen the normal split case)', () => {
+    const { store, pm } = splitWithBOnRight()
+    pm.setSplitSpaceConstrained(true)
+    pm.setSplitSpaceConstrained(false)
+
+    pm.openInPane(0, locB)
+
+    expect(document.querySelector('.tt-toast')).not.toBeNull()
+    expect(store.doc.nav.focusedPane).toBe(1)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locA)
+  })
+})
+
+describe('narrow window: the pane in use stays in view, and focus never lands on the hidden pane', () => {
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+  const locC: Loc = { teamId: 'T1', ref: { kind: 'risks' } }
+  const kind = (store: Store, i: 0 | 1): string | undefined => currentLoc(store.doc.nav.panes[i])?.ref.kind
+
+  /** Split view, A on the left, B on the right, focus on `focus`. */
+  function splitAB(focus: 0 | 1): { store: Store; pm: PaneManager } {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.toggleSplit()
+    pm.openInPane(0, locA)
+    pm.openInPane(1, locB)
+    if (focus === 0) setFocusedPane(store, 0)
+    return { store, pm }
+  }
+
+  test('narrowing while working in pane 2 brings that module into the visible pane and focuses it', () => {
+    const { store, pm } = splitAB(1)
+    // Distinguishable renderers, so the test can see what each body really shows.
+    for (const k of ['actions', 'milestones'] as const) {
+      pm.registerModule(k, (container) => { container.textContent = `module:${k}` })
+    }
+    pm.renderAll()
+    const body0 = document.querySelectorAll('.tt-pane-body')[0] as HTMLElement
+    expect(body0.textContent).toBe('module:actions')
+
+    pm.setSplitSpaceConstrained(true)
+
+    expect(store.doc.nav.split).toBe(true)
+    expect(store.doc.nav.focusedPane).toBe(0)
+    expect(kind(store, 0)).toBe('milestones')
+    expect(body0.textContent).toBe('module:milestones') // really re-rendered, not just nav state
+  })
+
+  test('widening again puts both panes back as they were, with focus back on pane 2', () => {
+    const { store, pm } = splitAB(1)
+    pm.setSplitSpaceConstrained(true)
+
+    pm.setSplitSpaceConstrained(false)
+
+    expect(kind(store, 0)).toBe('actions')
+    expect(kind(store, 1)).toBe('milestones')
+    expect(store.doc.nav.focusedPane).toBe(1)
+  })
+
+  test('narrowing while working in pane 1 changes nothing', () => {
+    const { store, pm } = splitAB(0)
+    const before = structuredClone(store.doc.nav)
+
+    pm.setSplitSpaceConstrained(true)
+
+    expect(store.doc.nav).toEqual(before)
+  })
+
+  test('after narrowing, a palette-style open into the focused pane lands in the visible pane', () => {
+    const { store, pm } = splitAB(1)
+    pm.setSplitSpaceConstrained(true)
+
+    pm.openInFocused(locC)
+
+    expect(kind(store, 0)).toBe('risks')
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('navigating while narrow wins over the restore: widening keeps what was opened', () => {
+    const { store, pm } = splitAB(1)
+    pm.setSplitSpaceConstrained(true)
+    pm.openInFocused(locC)
+
+    pm.setSplitSpaceConstrained(false)
+
+    expect(kind(store, 0)).toBe('risks')
+    expect(kind(store, 1)).toBe('milestones')
+  })
+
+  test('Alt+Right (setFocusedPane to pane 2) is refused while pane 2 is hidden', () => {
+    const { store, pm } = splitAB(0)
+    pm.setSplitSpaceConstrained(true)
+
+    expect(setFocusedPane(store, 1)).toBe(false)
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('Alt+Right is refused in a manually un-split view too, and works again once split', () => {
+    const { store, pm } = splitAB(0)
+    pm.toggleSplit() // unsplit by hand
+    expect(setFocusedPane(store, 1)).toBe(false)
+    expect(store.doc.nav.focusedPane).toBe(0)
+
+    pm.toggleSplit()
+    expect(setFocusedPane(store, 1)).toBe(true)
+  })
+
+  test('Alt+Down (swap) is refused while pane 2 is hidden, leaving contents and focus alone', () => {
+    const { store, pm } = splitAB(0)
+    pm.setSplitSpaceConstrained(true)
+
+    expect(swapPaneSides(store)).toBe(false)
+
+    expect(kind(store, 0)).toBe('actions')
+    expect(kind(store, 1)).toBe('milestones')
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('switching to a team remembered as split, while narrow, focuses the visible pane', () => {
+    const { store, pm } = splitAB(0)
+    addTeam(store, 'T2')
+    store.updateNav((d) => { d.nav.teamSplit.T2 = true })
+    pm.setSplitSpaceConstrained(true)
+
+    restoreTeamLayout(pm, store, 'T2')
+
+    expect(store.doc.nav.activeTeamId).toBe('T2')
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('team switch while wide still focuses pane 2 for a team remembered as split (the rule only applies while hidden)', () => {
+    const { store, pm } = splitAB(0)
+    addTeam(store, 'T2')
+    store.updateNav((d) => { d.nav.teamSplit.T2 = true })
+
+    restoreTeamLayout(pm, store, 'T2')
+
+    expect(store.doc.nav.focusedPane).toBe(1)
+  })
+})
+
 test('toggleSplit resets focusedPane to 0 when un-splitting, so it never points at the now-hidden pane 1', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
@@ -748,6 +930,7 @@ test('jumpFocusedHistoryToLatest jumps the currently focused pane straight to it
 
 test('setFocusedPane focuses the given pane index and reports whether focus actually changed', () => {
   const { store } = setup()
+  store.updateNav((d) => { d.nav.split = true }) // pane 1 can only take focus while it is visible
   expect(store.doc.nav.focusedPane).toBe(0)
 
   expect(setFocusedPane(store, 0)).toBe(false) // already focused pane 0

@@ -6,7 +6,7 @@
 // instead of only through prefs.ts's mocked PrefsAppCtl.
 import type { Store } from './store'
 import type { FileSession } from './fs'
-import { encryptDocument, serializePlain } from './crypto'
+import { docToBytes } from './doc-bytes'
 import { writeFile, downloadFallback } from './fs'
 import { toast } from '../ui/modal'
 import { t } from './i18n'
@@ -51,7 +51,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // `fn` is exactly the window that needs to stay guarded once it
       // actually starts writing.
       if (deps.store.readOnly) throw new Error('read-only')
-      const bytes = newPw === null ? serializePlain(deps.store.doc) : await encryptDocument(deps.store.doc, newPw)
+      const bytes = await docToBytes(deps.store.doc, newPw)
       if (deps.session.handle) {
         await writeFile(deps.session, bytes)
       } else {

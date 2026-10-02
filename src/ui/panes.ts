@@ -1,5 +1,6 @@
 // src/ui/panes.ts — central navigation hub; every module open goes through here.
 import type { Store } from '../core/store'
+import { findTeam as docFindTeam } from '../core/document'
 import type { Shell, SaveStatusInfo } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, pruneEmptyDailies, reachableHistory } from '../core/nav'
@@ -79,7 +80,9 @@ export interface PaneManager {
    * forces single-pane view when the window is too narrow, independent of
    * (and without persisting over) `nav.split`/`nav.teamSplit`. Purely
    * transient — never written to the doc, so a resize alone never marks the
-   * file dirty.
+   * file dirty. If pane 1 was the one being worked in, narrowing brings its
+   * module into the visible pane and focuses it (widening puts both back) —
+   * see PaneLayout.setSpaceHidden.
    */
   setSplitSpaceConstrained(hidden: boolean): void
   /**
@@ -154,7 +157,7 @@ function titleFor(store: Store, loc: Loc, locale: Locale): string {
       // can't prove the property access is stable across a closure) — so we
       // capture the narrowed ref in a local const first.
       const ref = loc.ref
-      const team = store.doc.teams.find((tm) => tm.id === loc.teamId)
+      const team = docFindTeam(store.doc, loc.teamId)
       const person = team?.[ref.group].find((p) => p.id === ref.personId)
       return person ? person.name : t(locale, 'module_person')
     }
@@ -304,6 +307,15 @@ export function installMouseHistoryButtons(pm: PaneManager, store: Store, canNav
 const HISTORY_LONG_PRESS_MS = 500
 
 /**
+ * Whether pane 1 is on screen for this store: the persisted split and not hidden by a narrow
+ * window. A free function (like the other pane helpers below) so they can ask without a
+ * `PaneManager` in hand; falls back to the raw flag for a store with no live layout.
+ */
+export function isSplitVisible(store: Store): boolean {
+  return layoutsByStore.get(store)?.splitVisible() ?? store.doc.nav.split
+}
+
+/**
  * Focuses pane `idx` directly — main.ts's global Alt+ArrowLeft (pane 0) /
  * Alt+ArrowRight (pane 1) hotkey. A free function rather than a
  * `PaneManager` method for the same reason as `stepPaneHistory` above: keeps
@@ -312,6 +324,10 @@ const HISTORY_LONG_PRESS_MS = 500
  */
 export function setFocusedPane(store: Store, idx: 0 | 1): boolean {
   if (store.doc.nav.focusedPane === idx) return false
+  // Pane 1 can't take focus while it's off screen (unsplit, or hidden by a
+  // narrow window) — every focused-pane action would then land on a pane the
+  // user can't see.
+  if (idx === 1 && !isSplitVisible(store)) return false
   store.updateNav((d) => {
     d.nav.focusedPane = idx
   })
@@ -326,7 +342,7 @@ export function setFocusedPane(store: Store, idx: 0 | 1): boolean {
  * survives un-splitting, an assumption a swap can invalidate.
  */
 export function swapPaneSides(store: Store): boolean {
-  if (!store.doc.nav.split) return false
+  if (!isSplitVisible(store)) return false
   store.updateNav((d) => {
     const tmp = d.nav.panes[0]
     d.nav.panes[0] = d.nav.panes[1]
@@ -398,8 +414,9 @@ export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: str
  * showing for this team (from that pane's own history), not a blanket reset
  * to today's daily notes.
  *
- * `focusedPane` is derived from `rememberedSplit`, never hardcoded — pane 1
- * is only ever visible while split, so focusing it while restoring a
+ * `focusedPane` is derived from whether pane 1 is actually visible (the
+ * remembered split, unless a narrow window is hiding it), never hardcoded —
+ * pane 1 is only ever visible while split, so focusing it while restoring a
  * single-pane layout would silently point every focused-pane action
  * (Ctrl+Shift+K palette picks, the due-date reminder list, Alt+arrow history) at a
  * pane the user can't see, making it look like selecting an item did
@@ -439,7 +456,9 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
     const fallback: Loc = { teamId, ref: { kind: 'members' } }
     target1 = locsConflict(fallback, target0) ? { teamId, ref: { kind: 'stakeholders' } } : fallback
   }
-  pm.openBothPanes(target0, target1, rememberedSplit ? 1 : 0)
+  // Focus pane 1 only if it's actually on screen — a narrow window hides it even
+  // for a team remembered as split.
+  pm.openBothPanes(target0, target1, isSplitVisible(store) ? 1 : 0)
 }
 
 export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager & { searchIndex: SearchIndex } {
@@ -457,9 +476,6 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
    */
   const pendingTitleFlash: [boolean, boolean] = [false, false]
   let splitPct = 50
-  // Transient, in-memory only (see PaneManager.setSplitSpaceConstrained) —
-  // not part of Doc, so it never persists and never marks the file dirty.
-  let spaceHideSplit = false
   // `layout$` (not `layout`, which is this closure's own render function
   // below) owns the transient un-split-stash / history-stepping policy —
   // see src/core/pane-layout.ts.
@@ -500,7 +516,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function effectiveSplit(): boolean {
-    return store.doc.nav.split && !spaceHideSplit
+    return layout$.splitVisible()
   }
 
   function localeNow(): Locale {
@@ -737,6 +753,10 @@ ${t(lc, 'pane_history_hint')}`
     // still holds a stashed current Loc — without this, opening a module
     // here that happens to match that stashed Loc would silently refuse
     // (focusOther) and hand focus to a pane the user can't even see.
+    // "Visible" is the effective split, not the persisted `nav.split`: a window
+    // too narrow for two panes hides pane 1 just the same while `nav.split`
+    // stays true.
+    const visibleSplit = effectiveSplit()
     //
     // `force` skips this guard entirely. It's for programmatic per-pane
     // resyncs (team switch, first-visit default layout) that restore each
@@ -746,7 +766,7 @@ ${t(lc, 'pane_history_hint')}`
     // Locs happen to share a kind, leaving that pane stuck on the previous
     // team while the other one switches — exactly the "mixed teams across
     // panes" bug this is guarding against.
-    const other = nav.split && !opts?.force ? currentLoc(nav.panes[otherIdx]) : null
+    const other = visibleSplit && !opts?.force ? currentLoc(nav.panes[otherIdx]) : null
     const result = openLoc(nav.panes[idx], target, other)
     if (result.type === 'focusOther') {
       store.updateNav((d) => {
@@ -766,7 +786,7 @@ ${t(lc, 'pane_history_hint')}`
     // landed on the *visible* pane (idx 0) can leave the hidden pane 1
     // showing a stale duplicate; a write into pane 1 itself doesn't touch
     // what's on screen and needs no cleanup.
-    if (!nav.split && idx === 0) {
+    if (!visibleSplit && idx === 0) {
       const hiddenPane = nav.panes[1]
       const hiddenCur = currentLoc(hiddenPane)
       if (hiddenCur && locsConflict(target, hiddenCur)) {
@@ -828,7 +848,7 @@ ${t(lc, 'pane_history_hint')}`
         d.nav.split = true
         if (d.nav.activeTeamId) d.nav.teamSplit[d.nav.activeTeamId] = true
       })
-      spaceHideSplit = false
+      layout$.showSplit()
     }
     const toIdx = otherPaneIdx(fromIdx)
     openInPane(toIdx, target)
@@ -848,16 +868,17 @@ ${t(lc, 'pane_history_hint')}`
   function toggleSplit(): void {
     const wasVisible = effectiveSplit()
     layout$.applyToggleSplit(wasVisible)
-    if (wasVisible === false) spaceHideSplit = false
     renderAll()
   }
 
   function setSplitSpaceConstrained(hidden: boolean): void {
-    if (spaceHideSplit === hidden) return
-    spaceHideSplit = hidden
+    if (layout$.isSpaceHidden() === hidden) return
+    const navChanged = layout$.setSpaceHidden(hidden)
     // Un-hiding makes pane 1 visible again; it was skipped by renderAll()
     // for as long as it was hidden, so its content needs a real render now.
-    if (!hidden) renderAll()
+    // Hiding only re-lays-out, unless narrowing pulled pane 1's content into
+    // pane 0 (the pane in use stays in view) — then pane 0 needs a real render too.
+    if (!hidden || navChanged) renderAll()
     else layout()
   }
 
@@ -1003,7 +1024,7 @@ ${t(lc, 'pane_history_hint')}`
     const lc = localeNow()
     const cur = currentLoc(store.doc.nav.panes[idx])
     if (!cur) return
-    const team = store.doc.teams.find((tm) => tm.id === cur.teamId)
+    const team = docFindTeam(store.doc, cur.teamId)
 
     const w = window.open('', '_blank')
     if (!w) return
@@ -1216,7 +1237,7 @@ ${t(lc, 'pane_history_hint')}`
    */
   function pruneEmptyDailyHistory(): void {
     const hasNote = (teamId: string, date: string): boolean =>
-      (store.doc.teams.find((tm) => tm.id === teamId)?.dailyNotes[date] ?? '') !== ''
+      (docFindTeam(store.doc, teamId)?.dailyNotes[date] ?? '') !== ''
     const pruned = ([0, 1] as const).map((idx) => pruneEmptyDailies(store.doc.nav.panes[idx], hasNote))
     if (pruned[0] === null && pruned[1] === null) return
     store.updateNav((d) => {

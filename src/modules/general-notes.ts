@@ -27,7 +27,7 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
     initialMd: findTeam()?.generalNotes ?? '',
     onChange: (md) => {
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm) return
         tm.generalNotes = md.trim() === '' ? '' : md
       }, { teamId, sections: ['notes'] })

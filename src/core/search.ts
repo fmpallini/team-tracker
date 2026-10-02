@@ -1,4 +1,5 @@
 import type { Doc, ModuleRef, Team } from './types'
+import { findTeam as docFindTeam } from './document'
 import type { ChangeScope, Section } from './scope'
 import { formatDate, t } from './i18n'
 import { refPattern, type RefKind } from './refs'
@@ -511,7 +512,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
     backlinks(teamId: string, kind: RefKind, targetId: string): Backlink[] {
       syncRev()
       const doc = getDoc()
-      const team = doc.teams.find((tm) => tm.id === teamId)
+      const team = docFindTeam(doc, teamId)
       if (!team) return []
       return backlinksFor(team, doc).get(`${kind}:${targetId}`) ?? []
     },

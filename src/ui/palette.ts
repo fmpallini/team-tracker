@@ -3,6 +3,7 @@
 // one synthetic "Due" entry (src/ui/due-panel.ts) that isn't part of the
 // pane module list.
 import type { Store } from '../core/store'
+import { findTeam as docFindTeam } from '../core/document'
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { normalize } from '../core/search'
@@ -116,7 +117,7 @@ export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => v
     // to match, and this guard also covers the Ctrl+Shift+K path.
     if (store.doc.teams.length === 0) return
     const teamId = store.doc.nav.activeTeamId
-    const team = teamId ? store.doc.teams.find((tm) => tm.id === teamId) ?? null : null
+    const team = teamId ? docFindTeam(store.doc, teamId) ?? null : null
     const moduleRows: PaletteRow[] = buildModuleItems(team, locale()).map((item) => ({
       label: item.label,
       commit: () => {

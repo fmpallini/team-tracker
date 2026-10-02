@@ -37,6 +37,21 @@ export function blurOnEnter(e: Event): void {
   if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
 }
 
+/** Strips `classes` from every `selector` match under `root` — the drag-over / drop-position highlight reset every drag-and-drop list does between events. */
+export function clearClasses(root: ParentNode, selector: string, ...classes: string[]): void {
+  root.querySelectorAll(selector).forEach((n) => n.classList.remove(...classes))
+}
+
+/** Appends a `<div class="{cls} tt-field-error">` note to `row` unless one is already there (idempotent). It clears when the row is next rebuilt, or via `clearRowError`. */
+export function showRowError(row: HTMLElement, cls: string, message: string): void {
+  if (row.querySelector(`.${cls}`)) return
+  row.appendChild(el('div', { class: `${cls} tt-field-error` }, message))
+}
+
+export function clearRowError(row: HTMLElement, cls: string): void {
+  row.querySelector(`.${cls}`)?.remove()
+}
+
 /**
  * Wires the "dismiss on outside click or Escape" lifecycle shared by every
  * floating overlay in this app (context menus, popovers, the @-mention

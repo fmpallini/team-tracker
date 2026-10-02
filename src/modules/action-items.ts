@@ -16,12 +16,13 @@ import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/docume
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
-import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { deleteWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
+import { createEntityDelete } from './entity-delete'
 import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
-import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
 import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
 import { BACKLINK_SECTIONS, normalize, KIND_ICON } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
@@ -213,56 +214,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   function clearDropClasses(): void {
-    boardEl.querySelectorAll('.tt-kanban-card').forEach((n) => {
-      n.classList.remove('tt-kanban-drop-before', 'tt-kanban-drop-after')
-    })
+    clearClasses(boardEl, '.tt-kanban-card', 'tt-kanban-drop-before', 'tt-kanban-drop-after')
   }
 
-  function removeItem(id: string): UndoOffer | null {
-    return deleteWithUndo(ctx.store, (d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return null
-      const removed = tm.actionItems.find((i) => i.id === id)
-      if (!removed) return null
-      // Deep copy: unlinkRefsInTeam rewrites @mentions in place across the
-      // whole team, so a shallow capture of tm.actionItems would restore the
-      // card with every mention of it permanently flattened.
-      const before = structuredClone(tm)
-      unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
-      tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
-      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
-      // content-bearing section of this team (notes, people, milestones,
-      // risks — see refs.ts), not just 'actions'. Team-only scoping is the
-      // narrowest scope that's still correct, and it won't rot if
-      // unlinkRefsInTeam's reach changes later — refs never cross teams
-      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
-      return (d2) => {
-        const i = d2.teams.findIndex((t2) => t2.id === teamId)
-        if (i !== -1) d2.teams[i] = before
-      }
-    }, { teamId })
-  }
-
-  /**
-   * Silent counterpart to removeItem, for the paths that carry no confirm
-   * dialog and offer no undo (an abandoned blank "+ Card" draft discarded on
-   * modal close, or an empty-summary delete click) — see requestDelete and
-   * the card modal's onClose below. deleteWithUndo's structuredClone(tm) is
-   * only worth paying for on an explicit user action that has already been
-   * through a confirm dialog (see undo-delete.ts's header); a silent delete
-   * never offers undo, so it skips the capture entirely rather than cloning
-   * a potentially multi-MB team every time an empty draft is closed.
-   */
-  function removeItemSilently(id: string): void {
-    ctx.store.update((d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
-      const removed = tm.actionItems.find((i) => i.id === id)
-      if (!removed) return
-      unlinkRefsInTeam(tm, 'action', new Map([[id, removed.summary]]))
-      tm.actionItems = tm.actionItems.filter((i) => i.id !== id)
-    }, { teamId })
-  }
+  // Confirm/undo/silent delete shared with risks and milestones (see
+  // modules/entity-delete.ts). Cards have no inline follow-up editor, so
+  // there's no local UI state to flip first.
+  const { removeSilently: removeItemSilently, requestDelete } = createEntityDelete({
+    ctx, teamId, collection: 'actionItems', refKind: 'action', labelOf: (i) => i.summary, labelParam: 'summary',
+    messages: { title: 'kanban_delete_title', confirm: 'kanban_delete_confirm', button: 'kanban_delete_btn', toast: 'action_deleted_toast' },
+    variant: 'danger',
+  })
 
   function addColumn(): void {
     const newId = crypto.randomUUID()
@@ -274,7 +236,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // never gets its auto-focus.
     pendingColumnFocusId = newId
     ctx.store.update((d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
+      const tm = docFindTeam(d, teamId)
       if (!tm) return
       const existing = tm.actionColumns ?? []
       const maxOrder = existing.length === 0 ? -1 : Math.max(...existing.map((c) => c.order))
@@ -284,26 +246,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   function renameColumn(columnId: string, name: string): void {
     ctx.store.update((d) => {
-      const col = d.teams.find((t2) => t2.id === teamId)?.actionColumns?.find((c) => c.id === columnId)
+      const col = docFindTeam(d, teamId)?.actionColumns?.find((c) => c.id === columnId)
       if (col) col.name = name
     }, { teamId, sections: ['actions'] })
-  }
-
-  function requestDelete(item: ActionItem): void {
-    if (item.summary.trim() === '') {
-      removeItemSilently(item.id) // empty cards carry no meaningful content to lose — delete silently
-      return
-    }
-    confirmDelete(lc, {
-      title: t(lc, 'kanban_delete_title'),
-      message: t(lc, 'kanban_delete_confirm', { summary: item.summary }),
-      confirmLabel: t(lc, 'kanban_delete_btn'),
-      variant: 'danger',
-      onConfirm: () => {
-        const offer = removeItem(item.id)
-        offerUndoToast(ctx.store, lc, t(lc, 'action_deleted_toast', { summary: item.summary }), offer)
-      },
-    })
   }
 
   function clearZone(status: ActionItem['status']): void {
@@ -316,12 +261,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       variant: 'danger',
       onConfirm: () => {
         const offer = deleteWithUndo(ctx.store, (d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
+          const tm = docFindTeam(d, teamId)
           if (!tm) return null
           const removedTitles = new Map(tm.actionItems.filter((i) => i.status === status).map((i) => [i.id, i.summary]))
           if (removedTitles.size === 0) return null
           // Deep copy — same unlinkRefsInTeam cross-section rationale as
-          // removeItem() above.
+          // entity-delete.ts.
           const before = structuredClone(tm)
           unlinkRefsInTeam(tm, 'action', removedTitles)
           tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
@@ -374,11 +319,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (existing === null) {
       itemId = crypto.randomUUID()
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm) return
         const group = itemsByStatus(tm.actionItems, defaultStatus)
         // Not `group.length`: a prior delete can leave a gap in `order`
-        // (removeItem/clearZone never renumber survivors), so the next
+        // (a card delete/clearZone never renumber survivors), so the next
         // slot has to be past the highest existing value, not the count.
         const nextOrder = group.length === 0 ? 0 : Math.max(...group.map((i) => i.order)) + 1
         tm.actionItems.push({
@@ -393,7 +338,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     /** Every field's commit path funnels through here — finds this card by `itemId` (never stale: re-looked-up on every call) and mutates it in place inside a single store.update. `sections` defaults to unscoped (everything changed) for `summary`, since it's also the @mention label; every other field narrows to `['actions']`. */
     function patch(mutate: (item: ActionItem) => void, sections?: Section[]): void {
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         const found = tm?.actionItems.find((i) => i.id === itemId)
         if (found) mutate(found)
       }, sections ? { teamId, sections } : { teamId })
@@ -802,7 +747,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       primary: true,
       onClick: () => {
         ctx.store.update((d) => {
-          const target = d.teams.find((t2) => t2.id === teamId)
+          const target = docFindTeam(d, teamId)
           if (!target) return
           const nextTags: Partial<Record<ActionItemColor, string>> = { ...target.actionTagNames }
           for (const c of COLORS) {
@@ -823,7 +768,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     if (count === 0) {
       const name = statusLabel(columnId, findTeam())
       const offer = deleteWithUndo(ctx.store, (d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm?.actionColumns) return null
         if (!tm.actionColumns.some((c) => c.id === columnId)) return null
         const before = structuredClone(tm)
@@ -857,7 +802,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         const targetStatus = select.value
         const name = statusLabel(columnId, findTeam())
         const offer = deleteWithUndo(ctx.store, (d) => {
-          const team2 = d.teams.find((t2) => t2.id === teamId)
+          const team2 = docFindTeam(d, teamId)
           if (!team2) return null
           // Deep copy before anything moves: the migration below rewrites
           // `status` and `order` in place on every card it moves, so a shallow
@@ -1030,7 +975,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const rect = card.getBoundingClientRect()
       const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm) return
         moveCard(tm.actionItems, srcId, item.status, item.id, pos)
       }, { teamId, sections: ['actions'] })
@@ -1122,7 +1067,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       draggedId = null
       if (srcId === null) return
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm) return
         moveCard(tm.actionItems, srcId, status, null, 'after')
       }, { teamId, sections: ['actions'] })
@@ -1174,7 +1119,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const rect = headEl.getBoundingClientRect()
       const pos: 'before' | 'after' = (e as MouseEvent).clientX - rect.left < rect.width / 2 ? 'before' : 'after'
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm?.actionColumns) return
         moveColumn(tm.actionColumns, srcId, status, pos)
       }, { teamId, sections: ['actions'] })

@@ -15,8 +15,9 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
-import { decryptDocumentWithVersion, encryptDocument, serializePlain, parsePlainWithVersion, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
+import { decryptDocumentWithVersion, parsePlainWithVersion, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
+import { docToBytes } from '../core/doc-bytes'
 import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
@@ -204,22 +205,22 @@ export function showStartScreen(
       const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
       const doc = createEmptyDocument(locale)
-      const bytes = 'plain' in result ? serializePlain(doc) : await encryptDocument(doc, result.password)
-      await writeFile(session, bytes)
-      onOpen(session, doc, 'plain' in result ? null : result.password, null)
+      const password = 'plain' in result ? null : result.password
+      await writeFile(session, await docToBytes(doc, password))
+      onOpen(session, doc, password, null)
     } else {
       const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
       const doc = createEmptyDocument(locale)
-      const bytes = 'plain' in result ? serializePlain(doc) : await encryptDocument(doc, result.password)
-      downloadFallback(SUGGESTED_NAME, bytes)
+      const password = 'plain' in result ? null : result.password
+      downloadFallback(SUGGESTED_NAME, await docToBytes(doc, password))
       // Not sticky: this announces the download that just happened. The
       // *ongoing* fact that this browser has no direct file access is a mode,
       // not an event, and lives on the save pill (shell.setFallbackHint) —
       // a sticky toast here outlived the start screen and sat over the app.
       toast(t(locale, 'fallback_notice'))
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
-      onOpen(session, doc, 'plain' in result ? null : result.password, null)
+      onOpen(session, doc, password, null)
     }
   }
 

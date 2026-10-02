@@ -11,7 +11,7 @@ import type { BackupStatus, BackupHealth } from '../core/backup-controller'
 import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
-import { SCHEMA_VERSION, migrateTeams } from '../core/document'
+import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup } from '../core/fs'
 import { idbSet } from '../core/idb'
@@ -810,7 +810,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     }
 
     function applyClick(): void {
-      const source = store.doc.teams.find((tm) => tm.id === sourceSelect.value)
+      const source = docFindTeam(store.doc, sourceSelect.value)
       if (!source) return
       const body = el('p', { class: 'tt-modal-message' }, t(locale, 'tags_cross_apply_confirm_body', { source: source.name }))
       const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
@@ -820,7 +820,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         onClick: () => {
           const sourceId = source.id
           store.update((d) => {
-            const src = d.teams.find((tm) => tm.id === sourceId)
+            const src = docFindTeam(d, sourceId)
             if (!src) return
             const tags = { ...src.actionTagNames }
             for (const tm of d.teams) {

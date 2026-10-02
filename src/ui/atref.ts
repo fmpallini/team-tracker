@@ -3,6 +3,7 @@
 // app-level ref-click navigation handler every module renderer (Tasks 18/19)
 // wires into EditorHooks.onRefClick.
 import { AT_TRIGGER_EVENT, type Editor } from './editor'
+import { findTeam as docFindTeam } from '../core/document'
 import type { RefInfo, LabelResolver } from '../core/markdown'
 import { t, todayIso, formatDateWithWeekday, parseLocaleDate, type Locale } from '../core/i18n'
 import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from '../core/search'
@@ -357,7 +358,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
       return
     }
 
-    const team = store.doc.teams.find((tm) => tm.id === teamId)
+    const team = docFindTeam(store.doc, teamId)
     const group = team?.stakeholders.some((p) => p.id === target.id)
       ? 'stakeholders'
       : team?.members.some((p) => p.id === target.id)
@@ -382,7 +383,7 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
 export function makeRefLabelResolver(store: Store, teamId: string): LabelResolver {
   return (target) => {
     if (target.kind === 'day') return formatDateWithWeekday(target.date, store.doc.prefs.locale)
-    const team = store.doc.teams.find((tm) => tm.id === teamId)
+    const team = docFindTeam(store.doc, teamId)
     if (!team) return null
     switch (target.kind) {
       case 'person': {
