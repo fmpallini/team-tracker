@@ -7,7 +7,7 @@ import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { openPersonModal } from '../ui/person-modal'
-import { el, wheelScrollsHorizontally } from '../ui/dom'
+import { el, wheelScrollsHorizontally, clearClasses } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
@@ -146,9 +146,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     let draggedId: string | null = null
 
     function clearDropClasses(): void {
-      treeEl.querySelectorAll('.tt-org-box').forEach((n) => {
-        n.classList.remove('tt-people-drop-before', 'tt-people-drop-after', 'tt-people-drop-child')
-      })
+      clearClasses(treeEl, '.tt-org-box', 'tt-people-drop-before', 'tt-people-drop-after', 'tt-people-drop-child')
     }
 
     function openAddModal(parentId: string | null): void {
@@ -158,7 +156,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         initialRole: '',
         onSubmit: (name, role) => {
           ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
+            const tm = docFindTeam(d, teamId)
             if (!tm) return
             const siblings = tm[group].filter((p) => p.parentId === parentId)
             const order = siblings.length === 0 ? 0 : Math.max(...siblings.map((p) => p.order)) + 1
@@ -175,7 +173,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         initialRole: person.role,
         onSubmit: (name, role) => {
           ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
+            const tm = docFindTeam(d, teamId)
             const p = tm?.[group].find((pp) => pp.id === person.id)
             if (!p) return
             p.name = name
@@ -224,7 +222,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
               confirmLabel: t(lc, 'person_delete_btn'),
               onConfirm: () => {
                 const offer = deleteWithUndo(ctx.store, (d) => {
-                  const tm = d.teams.find((t2) => t2.id === teamId)
+                  const tm = docFindTeam(d, teamId)
                   if (!tm) return null
                   if (!tm[group].some((p) => p.id === person.id)) return null
                   // Deep copy, for two reasons: unlinkRefsInTeam rewrites
@@ -325,7 +323,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         const offsetY = (e as MouseEvent).clientY - rect.top
         const pos = computeDropPosition(offsetY, rect.height)
         ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
+          const tm = docFindTeam(d, teamId)
           if (!tm) return
           moveInTree(tm[group], srcId, person.id, pos)
         }, { teamId, sections: ['people'] })
@@ -374,7 +372,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       draggedId = null
       if (srcId === null) return
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm) return
         moveToRoot(tm[group], srcId)
       }, { teamId, sections: ['people'] })

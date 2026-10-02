@@ -14,6 +14,8 @@
 import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, formatDateWithWeekday, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
+import { createEntityDelete } from './entity-delete'
+import { patchTeamItem } from '../core/team-items'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete } from '../ui/modal'
@@ -26,7 +28,7 @@ import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, showRowError, clearRowError, clearClasses } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
@@ -326,11 +328,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   /** Shows the "needs a name" note on a row (idempotent); it clears on its own at the next renderAll(), which rebuilds the row from scratch. */
   function showNameError(row: HTMLElement): void {
-    if (row.querySelector('.tt-risk-name-error')) return
-    row.appendChild(el('div', { class: 'tt-risk-name-error tt-field-error' }, t(lc, 'risk_name_required')))
+    showRowError(row, 'tt-risk-name-error', t(lc, 'risk_name_required'))
   }
   function clearNameError(row: HTMLElement): void {
-    row.querySelector('.tt-risk-name-error')?.remove()
+    clearRowError(row, 'tt-risk-name-error')
   }
 
   let draggedId: string | null = null
@@ -348,58 +349,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   let committingOwnFollowup = false
 
   function clearDropClasses(): void {
-    listEl.querySelectorAll('.tt-risk-row').forEach((n) => {
-      n.classList.remove('tt-risk-drop-before', 'tt-risk-drop-after')
-    })
+    clearClasses(listEl, '.tt-risk-row', 'tt-risk-drop-before', 'tt-risk-drop-after')
   }
 
-  function removeRisk(id: string): UndoOffer | null {
-    expandable.collapse(id) // local UI state; must flip before store.update fires the synchronous subscriber below
-    return deleteWithUndo(ctx.store, (d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return null
-      const removed = tm.risks.find((r) => r.id === id)
-      if (!removed) return null
-      // Deep, not a shallow copy of tm.risks: unlinkRefsInTeam below rewrites
-      // @mentions in place on objects this team's other sections own, so a
-      // shallow capture would restore the risk with every mention of it
-      // permanently flattened.
-      const before = structuredClone(tm)
-      unlinkRefsInTeam(tm, 'risk', new Map([[id, removed.title]]))
-      tm.risks = tm.risks.filter((r) => r.id !== id)
-      // No `sections`: unlinkRefsInTeam rewrites @mentions across every
-      // content-bearing section of this team (notes, people, actions,
-      // milestones — see refs.ts), not just 'risks'. Team-only scoping is
-      // the narrowest scope that's still correct, and it won't rot if
-      // unlinkRefsInTeam's reach changes later — refs never cross teams
-      // (see refs.ts's own header comment), so `{ teamId }` alone is safe.
-      return (d2) => {
-        const i = d2.teams.findIndex((t2) => t2.id === teamId)
-        if (i !== -1) d2.teams[i] = before
-      }
-    }, { teamId })
-  }
-
-  /**
-   * Silent counterpart to removeRisk, for the paths that carry no confirm
-   * dialog and offer no undo (a blank draft dropped on blur or on an
-   * empty-title delete click) — see requestDelete below. deleteWithUndo's
-   * structuredClone(tm) is only worth paying for on an explicit user action
-   * that has already been through a confirm dialog (see undo-delete.ts's
-   * header); a silent delete never offers undo, so it skips the capture
-   * entirely rather than cloning a potentially multi-MB team for nothing.
-   */
-  function removeRiskSilently(id: string): void {
-    expandable.collapse(id)
-    ctx.store.update((d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
-      if (!tm) return
-      const removed = tm.risks.find((r) => r.id === id)
-      if (!removed) return
-      unlinkRefsInTeam(tm, 'risk', new Map([[id, removed.title]]))
-      tm.risks = tm.risks.filter((r) => r.id !== id)
-    }, { teamId })
-  }
+  // Confirm/undo/silent delete shared with milestones and action items (see
+  // modules/entity-delete.ts). `expandable.collapse` is the local UI state that
+  // must flip before the store update fires the synchronous subscriber.
+  const { removeSilently: removeRiskSilently, requestDelete } = createEntityDelete({
+    ctx, teamId, collection: 'risks', refKind: 'risk', labelOf: (r) => r.title, labelParam: 'title',
+    messages: { title: 'risk_delete_title', confirm: 'risk_delete_confirm', button: 'risk_delete_btn', toast: 'risk_deleted_toast' },
+    beforeRemove: (id) => expandable.collapse(id),
+  })
 
   function setClosed(id: string, closed: boolean): void {
     if (closed) {
@@ -416,21 +376,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       }
       expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
     }
-    ctx.store.update((d) => {
-      const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
-      if (found) found.closed = closed
-    }, { teamId, sections: ['risks'] })
+    patchTeamItem(ctx.store, teamId, 'risks', id, (r) => { r.closed = closed }, { teamId, sections: ['risks'] })
   }
 
   /**
    * Removes every closed risk at once, unlinking @mentions for all of them in
-   * a single team clone (see removeRisk's own comment on why deleteWithUndo
+   * a single team clone (see entity-delete.ts's header on why deleteWithUndo
    * needs the deep copy) rather than N separate deletes with N separate
    * captures/toasts.
    */
   function removeAllClosedRisks(): UndoOffer | null {
     return deleteWithUndo(ctx.store, (d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
+      const tm = docFindTeam(d, teamId)
       if (!tm) return null
       const removedIds = new Set(tm.risks.filter((r) => r.closed).map((r) => r.id))
       if (removedIds.size === 0) return null
@@ -456,22 +413,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         expandable.setAll(risks().filter((r) => r.closed).map((r) => r.id), false)
         const offer = removeAllClosedRisks()
         offerUndoToast(ctx.store, lc, t(lc, 'risks_all_closed_deleted_toast', { count: String(count) }), offer)
-      },
-    })
-  }
-
-  function requestDelete(r: Risk): void {
-    if (r.title.trim() === '') {
-      removeRiskSilently(r.id) // empty titles carry no meaningful content to lose — delete silently
-      return
-    }
-    confirmDelete(lc, {
-      title: t(lc, 'risk_delete_title'),
-      message: t(lc, 'risk_delete_confirm', { title: r.title }),
-      confirmLabel: t(lc, 'risk_delete_btn'),
-      onConfirm: () => {
-        const offer = removeRisk(r.id)
-        offerUndoToast(ctx.store, lc, t(lc, 'risk_deleted_toast', { title: r.title }), offer)
       },
     })
   }
@@ -522,7 +463,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         committingOwnFollowup = true
         try {
           ctx.store.update((d) => {
-            const tm = d.teams.find((t2) => t2.id === teamId)
+            const tm = docFindTeam(d, teamId)
             const found = tm?.risks.find((rr) => rr.id === r.id)
             if (!found) return
             found.followup = md.trim() === '' ? '' : md
@@ -572,10 +513,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function setRiskChanceImpact(id: string, chance: 1 | 2 | 3, impact: 1 | 2 | 3): void {
-    ctx.store.update((d) => {
-      const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === id)
-      if (found) { found.chance = chance; found.impact = impact }
-    }, { teamId, sections: ['risks'] })
+    patchTeamItem(ctx.store, teamId, 'risks', id, (r) => { r.chance = chance; r.impact = impact }, { teamId, sections: ['risks'] })
   }
 
   /** Below this pointer travel (px, in client space), a press+release on a dot counts as a click (jump to the row) rather than a drag (recompute chance/impact) — without a threshold, a hand's natural tremor during an intended click would occasionally register as a one-pixel drag. */
@@ -860,13 +798,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       onkeydown: blurOnEnter,
       onchange: (e: Event) => {
         const value = (e.target as HTMLInputElement).value
-        ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
-          if (found) found.title = value
-          // Unscoped beyond the team: `title` is the label @[…](risk:id)
-          // mentions resolve through live — see the note at people-tree.ts's
-          // rename site.
-        }, { teamId })
+        // Unscoped beyond the team: `title` is the label @[…](risk:id)
+        // mentions resolve through live — see the note at people-tree.ts's
+        // rename site.
+        patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.title = value }, { teamId })
       },
     })
 
@@ -875,17 +810,11 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // The dropdown is the one place with room for the word, so it carries it.
     const numberOptions = LEVEL_OPTIONS.map((n) => ({ value: String(n), label: t(lc, LEVEL_KEYS[n]) }))
     const chanceSelect = buildSelect('tt-risk-chance-select', 'risk_col_chance', numberOptions, String(r.chance), (value) => {
-      ctx.store.update((d) => {
-        const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
-        if (found) found.chance = Number(value) as 1 | 2 | 3
-      }, { teamId, sections: ['risks'] })
+      patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.chance = Number(value) as 1 | 2 | 3 }, { teamId, sections: ['risks'] })
     })
 
     const impactSelect = buildSelect('tt-risk-impact-select', 'risk_col_impact', numberOptions, String(r.impact), (value) => {
-      ctx.store.update((d) => {
-        const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
-        if (found) found.impact = Number(value) as 1 | 2 | 3
-      }, { teamId, sections: ['risks'] })
+      patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.impact = Number(value) as 1 | 2 | 3 }, { teamId, sections: ['risks'] })
     })
 
     const exposureBadge = el(
@@ -904,10 +833,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       PLAN_OPTIONS.map((p) => ({ value: p, label: t(lc, PLAN_KEYS[p]) })),
       r.plan,
       (value) => {
-        ctx.store.update((d) => {
-          const found = d.teams.find((t2) => t2.id === teamId)?.risks.find((rr) => rr.id === r.id)
-          if (found) found.plan = value as RiskPlan
-        }, { teamId, sections: ['risks'] })
+        patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.plan = value as RiskPlan }, { teamId, sections: ['risks'] })
       }
     )
 
@@ -1076,7 +1002,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         const rect = row.getBoundingClientRect()
         const pos = computeFlatDropPosition((e as MouseEvent).clientY - rect.top, rect.height)
         ctx.store.update((d) => {
-          const tm = d.teams.find((t2) => t2.id === teamId)
+          const tm = docFindTeam(d, teamId)
           if (!tm) return
           moveRisk(tm.risks, srcId, r.id, pos)
         }, { teamId, sections: ['risks'] })
@@ -1319,7 +1245,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const newId = crypto.randomUUID()
     focusRiskId = newId
     ctx.store.update((d) => {
-      const tm = d.teams.find((t2) => t2.id === teamId)
+      const tm = docFindTeam(d, teamId)
       if (!tm) return
       const maxOrder = tm.risks.length === 0 ? -1 : Math.max(...tm.risks.map((r) => r.order))
       tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: newRiskFollowup(), order: maxOrder + 1, closed: false })

@@ -9,8 +9,8 @@ import { t, todayIso, type Locale } from '../core/i18n'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
-import { createEmptyTeam } from '../core/document'
-import { el, bindOutsideDismiss, clampToViewport } from './dom'
+import { createEmptyTeam, findTeam as docFindTeam } from '../core/document'
+import { el, bindOutsideDismiss, clampToViewport, clearClasses } from './dom'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from './undo-toast'
@@ -387,9 +387,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   renderCollapseState()
 
   function clearDragOverClasses(): void {
-    listEl.querySelectorAll('.tt-team-item').forEach((n) => {
-      n.classList.remove('drag-over-top', 'drag-over-bottom')
-    })
+    clearClasses(listEl, '.tt-team-item', 'drag-over-top', 'drag-over-bottom')
   }
 
   function reorder(srcIndex: number, dropIndex: number, after: boolean): void {
@@ -691,7 +689,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         }
         const emoji = emojiInput.value.trim() || team.emoji
         store.update((d) => {
-          const target = d.teams.find((tm) => tm.id === team.id)
+          const target = docFindTeam(d, team.id)
           if (target) {
             target.name = name
             target.emoji = emoji

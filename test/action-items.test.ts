@@ -1123,7 +1123,7 @@ describe('renderActionItems — edit modal', () => {
     expect(store.doc.teams[0]!.actionItems[0]!.color).toBeNull()
   })
 
-  // Regression: removeItem/clearZone never renumber the remaining cards'
+  // Regression: a card delete/clearZone never renumber the remaining cards'
   // `order` after a delete, so a status group can end up with a gap (e.g.
   // orders [0, 2]). The next card added to that group must not collide with
   // an existing order value.
@@ -2428,5 +2428,122 @@ describe('renderActionItems — column delete undo', () => {
     undoBtn!.click()
 
     expect(store.doc.teams.find((t) => t.id === team.id)).toEqual(before)
+  })
+})
+
+// Characterization guard for the delete flow (now modules/entity-delete.ts; formerly
+// removeItem / removeItemSilently / requestDelete). Written before it was factored into a shared helper:
+// pins every observable edge so the refactor can only move code, not change it.
+describe('renderActionItems — delete behaviour pins', () => {
+  const MENTION = 'See @[Ship it](action:a1) for context.'
+
+  function mount(overrides: Partial<Team> = {}): { container: HTMLElement; store: Store } {
+    const team = makeTeam({
+      actionItems: [item({ id: 'a1', summary: 'Ship it', order: 0 }), item({ id: 'a2', summary: 'Other', order: 1 })],
+      dailyNotes: { '2026-09-10': MENTION },
+      ...overrides,
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { container, store }
+  }
+
+  function openCard(container: HTMLElement, id: string): void {
+    cards(container).find((c) => c.getAttribute('data-item-id') === id)!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  }
+
+  function deleteViaModal(container: HTMLElement, id: string, confirm = true): void {
+    openCard(container, id)
+    clickByTitleOrText(document.body, 'Delete')
+    if (confirm) clickByTitleOrText(document.body, 'Delete')
+  }
+
+  function recordScopes(store: Store): { scope: unknown; items: number }[] {
+    const seen: { scope: unknown; items: number }[] = []
+    store.subscribe((scope) => { seen.push({ scope, items: store.doc.teams[0]!.actionItems.length }) })
+    return seen
+  }
+
+  it('a confirmed delete toasts the deleted summary, with an Undo action', () => {
+    const { container } = mount()
+    deleteViaModal(container, 'a1')
+
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Action "Ship it" deleted')
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+  })
+
+  it('a blank-summary delete is silent: no dialog, no toast, no undo', () => {
+    const { container, store } = mount({
+      actionItems: [item({ id: 'a1', summary: '' }), item({ id: 'a2', summary: 'Other', order: 1 })],
+    })
+    deleteViaModal(container, 'a1', false)
+
+    expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).toEqual(['a2'])
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+
+  it('the confirmed delete is scoped to the team with no sections (it rewrites mentions team-wide)', () => {
+    const { container, store } = mount()
+    openCard(container, 'a1')
+    clickByTitleOrText(document.body, 'Delete')
+    const seen = recordScopes(store)
+    clickByTitleOrText(document.body, 'Delete')
+
+    const firstDeletion = seen.find((s) => s.items === 1)
+    expect(firstDeletion?.scope).toEqual({ teamId: 'T1' })
+  })
+
+  it('the silent delete is scoped the same way', () => {
+    const { container, store } = mount({
+      actionItems: [item({ id: 'a1', summary: '' }), item({ id: 'a2', summary: 'Other', order: 1 })],
+    })
+    openCard(container, 'a1')
+    const seen = recordScopes(store)
+    clickByTitleOrText(document.body, 'Delete')
+
+    const firstDeletion = seen.find((s) => s.items === 1)
+    expect(firstDeletion?.scope).toEqual({ teamId: 'T1' })
+  })
+
+  it('only the targeted card goes; siblings keep their order, and the mention is flattened to plain text', () => {
+    const { container, store } = mount()
+    deleteViaModal(container, 'a1')
+
+    expect(store.doc.teams[0]!.actionItems.map((i) => [i.id, i.order])).toEqual([['a2', 1]])
+    expect(store.doc.teams[0]!.dailyNotes['2026-09-10']).toBe('See ~Ship it~ for context.')
+  })
+
+  it('another team that happens to hold the same ids and mentions is left untouched', () => {
+    const { container, store } = mount()
+    store.doc.teams.push(makeTeam({
+      id: 'T2', name: 'Team 2',
+      actionItems: [item({ id: 'a1', summary: 'Ship it' })],
+      dailyNotes: { '2026-09-10': MENTION },
+    }))
+    const otherBefore = structuredClone(store.doc.teams[1])
+
+    deleteViaModal(container, 'a1')
+
+    expect(store.doc.teams[1]).toEqual(otherBefore)
+  })
+
+  it('the undo offer expires once any other edit lands', () => {
+    const { container, store } = mount()
+    deleteViaModal(container, 'a1')
+    store.update((d) => { d.teams[0]!.actionItems[0]!.summary = 'Edited later' }, { teamId: 'T1', sections: ['actions'] })
+
+    // The toast is dismissed the instant anything else mutates the doc — no stale Undo button.
+    expect(document.querySelector('.tt-toast-action')).toBeNull()
+    expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).toEqual(['a2'])
+  })
+
+  it('in a read-only tab the delete changes nothing and no "deleted" toast is announced', () => {
+    const { container, store } = mount()
+    store.setReadOnly(true)
+    deleteViaModal(container, 'a1')
+
+    expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).toEqual(['a1', 'a2'])
+    expect(document.querySelector('.tt-toast')).toBeNull()
   })
 })

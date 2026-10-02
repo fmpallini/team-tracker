@@ -216,7 +216,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     initialMd: findTeam(ctx, teamId)?.dailyNotes[date] ?? '',
     onChange: (md) => {
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (!tm) return
         if (md.trim() === '') delete tm.dailyNotes[date]
         else tm.dailyNotes[date] = md

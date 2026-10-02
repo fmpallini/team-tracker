@@ -5,6 +5,7 @@
 // per-kind functions) since the menu itself has no notion of which list a
 // card belongs to.
 import type { Team } from '../core/types'
+import { findTeam as docFindTeam } from '../core/document'
 import { t, type Locale } from '../core/i18n'
 import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { openTeamPickerModal, openTeamColumnPickerModal } from './team-picker-modal'
@@ -85,7 +86,7 @@ export function openItemContextMenu(ctx: ModuleCtx, kind: CardKind, teamId: stri
   showCardContextMenu(ctx.locale, teamId, ctx.store.doc.teams, itemId, x, y, {
     duplicate: (id) => {
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         if (tm) DUPLICATE_FNS[kind](tm, id)
       })
     },

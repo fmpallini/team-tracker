@@ -1,5 +1,6 @@
 // src/ui/panes.ts — central navigation hub; every module open goes through here.
 import type { Store } from '../core/store'
+import { findTeam as docFindTeam } from '../core/document'
 import type { Shell, SaveStatusInfo } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, pruneEmptyDailies, reachableHistory } from '../core/nav'
@@ -154,7 +155,7 @@ function titleFor(store: Store, loc: Loc, locale: Locale): string {
       // can't prove the property access is stable across a closure) — so we
       // capture the narrowed ref in a local const first.
       const ref = loc.ref
-      const team = store.doc.teams.find((tm) => tm.id === loc.teamId)
+      const team = docFindTeam(store.doc, loc.teamId)
       const person = team?.[ref.group].find((p) => p.id === ref.personId)
       return person ? person.name : t(locale, 'module_person')
     }
@@ -1003,7 +1004,7 @@ ${t(lc, 'pane_history_hint')}`
     const lc = localeNow()
     const cur = currentLoc(store.doc.nav.panes[idx])
     if (!cur) return
-    const team = store.doc.teams.find((tm) => tm.id === cur.teamId)
+    const team = docFindTeam(store.doc, cur.teamId)
 
     const w = window.open('', '_blank')
     if (!w) return
@@ -1216,7 +1217,7 @@ ${t(lc, 'pane_history_hint')}`
    */
   function pruneEmptyDailyHistory(): void {
     const hasNote = (teamId: string, date: string): boolean =>
-      (store.doc.teams.find((tm) => tm.id === teamId)?.dailyNotes[date] ?? '') !== ''
+      (docFindTeam(store.doc, teamId)?.dailyNotes[date] ?? '') !== ''
     const pruned = ([0, 1] as const).map((idx) => pruneEmptyDailies(store.doc.nav.panes[idx], hasNote))
     if (pruned[0] === null && pruned[1] === null) return
     store.updateNav((d) => {

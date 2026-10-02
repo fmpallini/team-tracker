@@ -1960,3 +1960,187 @@ describe('risk delete undo', () => {
     expect(store.doc.teams.find((t) => t.id === teamId)).toEqual(before)
   })
 })
+
+// Characterization guard for the delete flow (now modules/entity-delete.ts; formerly
+// removeRisk / removeRiskSilently / requestDelete). Written before it was factored into a shared helper:
+// pins every observable edge so the refactor can only move code, not change it.
+describe('risk delete — behaviour pins', () => {
+  const MENTION = 'See @[Slip](risk:r1) for context.'
+
+  function mount(overrides: Partial<Team> = {}): { container: HTMLElement; store: Store } {
+    const team = makeTeam({
+      risks: [risk({ id: 'r1', title: 'Slip', order: 0 }), risk({ id: 'r2', title: 'Other', order: 1 })],
+      dailyNotes: { '2026-09-10': MENTION },
+      ...overrides,
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { container, store }
+  }
+
+  function deleteRowButton(container: HTMLElement, id: string): HTMLButtonElement {
+    return container.querySelector<HTMLButtonElement>(`[data-risk-id="${id}"].tt-risk-row .tt-risk-delete-btn`)!
+  }
+
+  function recordScopes(store: Store): { scope: unknown; risks: number }[] {
+    const seen: { scope: unknown; risks: number }[] = []
+    store.subscribe((scope) => { seen.push({ scope, risks: store.doc.teams[0]!.risks.length }) })
+    return seen
+  }
+
+  it('a confirmed delete toasts the deleted title, with an Undo action', () => {
+    const { container } = mount()
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Risk "Slip" deleted')
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+  })
+
+  it('a blank-title delete is silent: no dialog, no toast, no undo, mentions of its (empty) label untouched', () => {
+    const { container, store } = mount({ risks: [risk({ id: 'r1', title: '' }), risk({ id: 'r2', title: 'Other', order: 1 })] })
+    deleteRowButton(container, 'r1').click()
+
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r2'])
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+
+  it('the delete lands as ONE mutation scoped to the team with no sections (it rewrites mentions team-wide)', () => {
+    const { container, store } = mount()
+    const seen = recordScopes(store)
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    const deletion = seen.filter((s) => s.risks === 1)
+    expect(deletion).toHaveLength(1)
+    expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
+  })
+
+  it('the silent delete is scoped the same way', () => {
+    const { container, store } = mount({ risks: [risk({ id: 'r1', title: '' }), risk({ id: 'r2', title: 'Other', order: 1 })] })
+    const seen = recordScopes(store)
+    deleteRowButton(container, 'r1').click()
+
+    const deletion = seen.filter((s) => s.risks === 1)
+    expect(deletion).toHaveLength(1)
+    expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
+  })
+
+  it('only the targeted risk goes; siblings keep their order, and the mention is flattened to plain text', () => {
+    const { container, store } = mount()
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.risks.map((r) => [r.id, r.order])).toEqual([['r2', 1]])
+    expect(store.doc.teams[0]!.dailyNotes['2026-09-10']).toBe('See ~Slip~ for context.')
+  })
+
+  it('another team that happens to hold the same ids and mentions is left untouched', () => {
+    const { container, store } = mount()
+    store.doc.teams.push(makeTeam({
+      id: 'T2', name: 'Team 2',
+      risks: [risk({ id: 'r1', title: 'Slip' })],
+      dailyNotes: { '2026-09-10': MENTION },
+    }))
+    const otherBefore = structuredClone(store.doc.teams[1])
+
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[1]).toEqual(otherBefore)
+  })
+
+  it('deleting an expanded risk drops its follow-up editor but leaves other expanded rows expanded', () => {
+    const { container } = mount()
+    for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-risk-expand-btn'))) btn.click()
+    expect(container.querySelectorAll('.tt-risk-followup-row')).toHaveLength(2)
+
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    const followups = Array.from(container.querySelectorAll('.tt-risk-followup-row')).map((n) => n.getAttribute('data-risk-followup-id'))
+    expect(followups).toEqual(['r2'])
+  })
+
+  it('undoing the delete of an expanded risk brings it back collapsed', () => {
+    const { container } = mount()
+    container.querySelector<HTMLButtonElement>('[data-risk-id="r1"].tt-risk-row .tt-risk-expand-btn')!.click()
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+
+    expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).not.toBeNull()
+    expect(container.querySelector('[data-risk-followup-id="r1"]')).toBeNull()
+  })
+
+  it('the undo offer expires once any other edit lands', () => {
+    const { container, store } = mount()
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+    store.update((d) => { d.teams[0]!.risks[0]!.title = 'Edited later' }, { teamId: 'T1', sections: ['risks'] })
+
+    // The toast is dismissed the instant anything else mutates the doc — no stale Undo button.
+    expect(document.querySelector('.tt-toast-action')).toBeNull()
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r2'])
+  })
+
+  it('in a read-only tab the delete changes nothing and no "deleted" toast is announced', () => {
+    const { container, store } = mount()
+    store.setReadOnly(true)
+    deleteRowButton(container, 'r1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r1', 'r2'])
+    expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+})
+
+// Pins for the "needs a name" note (shown by the close-refusal and the
+// blur guard, now via ui/dom.ts's showRowError/clearRowError).
+describe('risk name-error note — behaviour pins', () => {
+  function mountNameless(): { container: HTMLElement; store: Store } {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: '' })] }))
+    render(container, loc, store, pm)
+    return { container, store }
+  }
+
+  test('refusing to close twice still leaves exactly one note on the row', () => {
+    const { container } = mountNameless()
+
+    clickByTitleOrText(container, 'Close risk')
+    clickByTitleOrText(container, 'Close risk')
+
+    expect(container.querySelectorAll('.tt-risk-name-error')).toHaveLength(1)
+  })
+
+  test('the note is a field-error block appended to the row itself', () => {
+    const { container } = mountNameless()
+    clickByTitleOrText(container, 'Close risk')
+
+    const note = container.querySelector('.tt-risk-name-error') as HTMLElement
+    expect(note.classList.contains('tt-field-error')).toBe(true)
+    expect(note.parentElement).toBe(container.querySelector('.tt-risk-row'))
+  })
+
+  test('giving the row a name and leaving it clears the note', () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = mountNameless()
+      clickByTitleOrText(container, 'Close risk')
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      const titleInput = row.querySelector('.tt-risk-title-input') as HTMLInputElement
+      titleInput.value = 'Named now'
+      titleInput.dispatchEvent(new Event('change'))
+
+      const outside = document.body.appendChild(document.createElement('button'))
+      outside.focus()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
+
+      expect(container.querySelector('.tt-risk-name-error')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

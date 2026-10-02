@@ -186,7 +186,7 @@ test('renaming a risk refreshes its mention label in the milestones pane', () =>
 // ---------------------------------------------------------------------------
 // Deletes call unlinkRefsInTeam(), which strips mention markup across EVERY
 // content section — so every delete site must stay scoped to { teamId } with no
-// `sections`. test/render-counts.test.ts pins the action-items removeItem site;
+// `sections`. test/render-counts.test.ts pins the action-items delete site;
 // these cover the remaining four.
 // ---------------------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 // writer at a time and a graceful path for every failure mode.
 import type { Store } from './store'
 import type { Prefs } from './types'
-import { encryptDocument, serializePlain } from './crypto'
+import { docToBytes } from './doc-bytes'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
@@ -80,7 +80,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
 
   // Task 25 fix #1: any edit that lands while a save is in flight must not
   // have its dirty flag cleared without being persisted. `doSave()` snapshots
-  // `store.doc` once at the top (via `encryptDocument`) — an edit landing
+  // `store.doc` once at the top (via `docToBytes`) — an edit landing
   // after that snapshot but before the write resolves would otherwise be
   // silently dropped from the bytes on disk while `markSaved()` still clears
   // `dirty`. Forcing a trailing round (the same mechanism already used for
@@ -225,8 +225,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // to it now instead; `writeBackupNow()` self-no-ops if the grant is still
     // missing (user dismissed the native prompt).
     try {
-      const password = deps.getPassword()
-      const bytes = password === null ? serializePlain(deps.store.doc) : await encryptDocument(deps.store.doc, password)
+      const bytes = await docToBytes(deps.store.doc, deps.getPassword())
       await deps.backupCtl?.writeBackupNow(bytes)
     } catch (e) {
       console.error(e)
@@ -285,8 +284,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     deps.shell.setSaveState('saving')
     let bytes: Uint8Array
     try {
-      const password = deps.getPassword()
-      bytes = password === null ? serializePlain(deps.store.doc) : await encryptDocument(deps.store.doc, password)
+      bytes = await docToBytes(deps.store.doc, deps.getPassword())
     } catch (e) {
       console.error(e)
       reportWriteError()

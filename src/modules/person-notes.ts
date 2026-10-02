@@ -71,7 +71,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
           initialRole: p.role,
           onSubmit: (name, role) => {
             ctx.store.update((d) => {
-              const tm = d.teams.find((t2) => t2.id === teamId)
+              const tm = docFindTeam(d, teamId)
               const pp = tm?.[group].find((x) => x.id === personId)
               if (!pp) return
               pp.name = name
@@ -115,7 +115,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     initialMd: person.notes,
     onChange: (md) => {
       ctx.store.update((d) => {
-        const tm = d.teams.find((t2) => t2.id === teamId)
+        const tm = docFindTeam(d, teamId)
         const p = tm?.[group].find((pp) => pp.id === personId)
         if (!p) return
         p.notes = md.trim() === '' ? '' : md

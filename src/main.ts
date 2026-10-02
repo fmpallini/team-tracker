@@ -25,7 +25,8 @@ import { renderActionItems } from './modules/action-items'
 import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
-import { encryptDocument, decryptDocument, serializePlain, parsePlain, resetSessionKey } from './core/crypto'
+import { decryptDocument, parsePlain, resetSessionKey } from './core/crypto'
+import { docToBytes } from './core/doc-bytes'
 import { forceWrite, readCurrent, sameEntry, pickCreate } from './core/fs'
 import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast } from './ui/modal'
 import { el } from './ui/dom'
@@ -242,6 +243,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   disposers.push(() => shell.dispose())
 
   const store = createStore(doc)
+  // Live read — never the closed-over `password` parameter alone: a password
+  // change updates `app.password`, and the parameter goes stale after it.
+  const currentPassword = (): string | null => (app ? app.password : password)
   const pm = createPaneManager(shell, store, doc.prefs.locale)
   pm.registerModule('daily', renderDailyNotes)
   pm.registerModule('general', renderGeneralNotes)
@@ -284,7 +288,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // another (see createTabLock's refreshBeforeWritable below).
   async function reloadFromDisk(): Promise<void> {
     const bytes = await readCurrent(session)
-    const currentPw = app ? app.password : password
+    const currentPw = currentPassword()
     const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
     if (!reloaded) throw new Error('expected a plain file, got something else on reload')
     store.replaceDoc(reloaded)
@@ -310,7 +314,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   const saveCtl = createSaveController({
     store,
     session,
-    getPassword: () => (app ? app.password : password),
+    getPassword: currentPassword,
     shell,
     locale: () => store.doc.prefs.locale,
     isConflictOpen: () => conflictOpen,
@@ -363,9 +367,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
                 d.prefs.backupHandleId = null
               })
 
-              const currentPw = app ? app.password : password
-              const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
-              await forceWrite(forkSession, bytes)
+              const currentPw = currentPassword()
+              await forceWrite(forkSession, await docToBytes(store.doc, currentPw))
               // The document's content is now persisted — to the fork rather
               // than to `session`, but persisted. Clearing dirty here is what
               // stops `teardownApp()` (reached via openDocument below) from
@@ -392,9 +395,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
           : undefined,
         onOverwrite: async () => {
           try {
-            const currentPw = app ? app.password : password
-            const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
-            await forceWrite(session, bytes)
+            await forceWrite(session, await docToBytes(store.doc, currentPassword()))
             store.markSaved()
             shell.setSaveState('saved')
             shell.setTitle(session.name, false)
@@ -544,9 +545,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
 
   async function retryBackupWrite(): Promise<void> {
     try {
-      const currentPw = app ? app.password : password
-      const bytes = currentPw === null ? serializePlain(store.doc) : await encryptDocument(store.doc, currentPw)
-      await backupCtl.writeBackupNow(bytes)
+      await backupCtl.writeBackupNow(await docToBytes(store.doc, currentPassword()))
     } catch (e) {
       console.error(e)
     }
@@ -559,9 +558,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
 
   const prefsAppCtl: PrefsAppCtl = {
     changePassword,
-    currentPassword(): string | null {
-      return app ? app.password : password
-    },
+    currentPassword,
     // Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
     // submit button and show an explanatory hint instead of only surfacing
     // the rejection after the fact via the generic failure toast.

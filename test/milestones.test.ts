@@ -1268,3 +1268,201 @@ describe('timeline label spacing follows the font-size setting', () => {
     expect(svgWidth(container)).toBeLessThan(atM)
   })
 })
+
+// Characterization guard for the delete flow (now modules/entity-delete.ts;
+// formerly removeMilestone / removeMilestoneSilently / requestDelete). Written before it was factored
+// into a shared helper: pins every observable edge so the refactor can only
+// move code, not change it.
+describe('milestone delete — behaviour pins', () => {
+  const MENTION = 'See @[Ship](milestone:m1) for context.'
+
+  function mount(overrides: Partial<Team> = {}): { container: HTMLElement; store: Store } {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'm1', title: 'Ship', date: '2026-01-01' }),
+        milestone({ id: 'm2', title: 'Other', date: '2026-02-01' }),
+      ],
+      dailyNotes: { '2026-01-01': MENTION },
+      ...overrides,
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    return { container, store }
+  }
+
+  function deleteRowButton(container: HTMLElement, id: string): HTMLButtonElement {
+    return container.querySelector<HTMLButtonElement>(`[data-milestone-id="${id}"].tt-milestone-row .tt-milestone-delete-btn`)!
+  }
+
+  function recordScopes(store: Store): { scope: unknown; milestones: number }[] {
+    const seen: { scope: unknown; milestones: number }[] = []
+    store.subscribe((scope) => { seen.push({ scope, milestones: store.doc.teams[0]!.milestones.length }) })
+    return seen
+  }
+
+  it('a confirmed delete toasts the deleted title, with an Undo action', () => {
+    const { container } = mount()
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Milestone "Ship" deleted')
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+  })
+
+  it('a blank-title delete is silent: no dialog, no toast, no undo', () => {
+    const { container, store } = mount({
+      milestones: [milestone({ id: 'm1', title: '', date: '2026-01-01' }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],
+    })
+    deleteRowButton(container, 'm1').click()
+
+    expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m2'])
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+
+  it('the delete lands as ONE mutation scoped to the team with no sections (it rewrites mentions team-wide)', () => {
+    const { container, store } = mount()
+    const seen = recordScopes(store)
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    const deletion = seen.filter((s) => s.milestones === 1)
+    expect(deletion).toHaveLength(1)
+    expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
+  })
+
+  it('the silent delete is scoped the same way', () => {
+    const { container, store } = mount({
+      milestones: [milestone({ id: 'm1', title: '', date: '2026-01-01' }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],
+    })
+    const seen = recordScopes(store)
+    deleteRowButton(container, 'm1').click()
+
+    const deletion = seen.filter((s) => s.milestones === 1)
+    expect(deletion).toHaveLength(1)
+    expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
+  })
+
+  it('only the targeted milestone goes; siblings stay, and the mention is flattened to plain text', () => {
+    const { container, store } = mount()
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m2'])
+    expect(store.doc.teams[0]!.dailyNotes['2026-01-01']).toBe('See ~Ship~ for context.')
+  })
+
+  it('another team that happens to hold the same ids and mentions is left untouched', () => {
+    const { container, store } = mount()
+    store.doc.teams.push(makeTeam({
+      id: 'T2', name: 'Team 2',
+      milestones: [milestone({ id: 'm1', title: 'Ship', date: '2026-01-01' })],
+      dailyNotes: { '2026-01-01': MENTION },
+    }))
+    const otherBefore = structuredClone(store.doc.teams[1])
+
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[1]).toEqual(otherBefore)
+  })
+
+  it('deleting an expanded milestone drops its follow-up editor but leaves other expanded rows expanded', () => {
+    const { container } = mount()
+    for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>('.tt-milestone-expand-btn'))) btn.click()
+    expect(container.querySelectorAll('.tt-milestone-followup-row')).toHaveLength(2)
+
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    const followups = Array.from(container.querySelectorAll('.tt-milestone-followup-row')).map((n) => n.getAttribute('data-milestone-followup-id'))
+    expect(followups).toEqual(['m2'])
+  })
+
+  it('undoing the delete of an expanded milestone brings it back collapsed', () => {
+    const { container } = mount()
+    container.querySelector<HTMLButtonElement>('[data-milestone-id="m1"].tt-milestone-row .tt-milestone-expand-btn')!.click()
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+
+    expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).not.toBeNull()
+    expect(container.querySelector('[data-milestone-followup-id="m1"]')).toBeNull()
+  })
+
+  it('the undo offer expires once any other edit lands', () => {
+    const { container, store } = mount()
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+    store.update((d) => { d.teams[0]!.milestones[0]!.title = 'Edited later' }, { teamId: 'T1', sections: ['milestones'] })
+
+    // The toast is dismissed the instant anything else mutates the doc — no stale Undo button.
+    expect(document.querySelector('.tt-toast-action')).toBeNull()
+    expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m2'])
+  })
+
+  it('in a read-only tab the delete changes nothing and no "deleted" toast is announced', () => {
+    const { container, store } = mount()
+    store.setReadOnly(true)
+    deleteRowButton(container, 'm1').click()
+    clickByTitleOrText(document.body, 'Delete')
+
+    expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m1', 'm2'])
+    expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+})
+
+// Pins for the "needs a name" note (shown by the done-refusal and the blur
+// guard, now via ui/dom.ts's showRowError/clearRowError).
+describe('milestone name-error note — behaviour pins', () => {
+  function mountNameless(): { container: HTMLElement } {
+    const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', title: '' })] }))
+    render(container, loc, store, pm)
+    return { container }
+  }
+
+  function tryMarkDone(container: HTMLElement): void {
+    const checkbox = container.querySelector('.tt-milestone-done-checkbox') as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+  }
+
+  test('refusing to mark done twice still leaves exactly one note on the row', () => {
+    const { container } = mountNameless()
+
+    tryMarkDone(container)
+    tryMarkDone(container)
+
+    expect(container.querySelectorAll('.tt-milestone-name-error')).toHaveLength(1)
+  })
+
+  test('the note is a field-error block appended to the row itself', () => {
+    const { container } = mountNameless()
+    tryMarkDone(container)
+
+    const note = container.querySelector('.tt-milestone-name-error') as HTMLElement
+    expect(note.classList.contains('tt-field-error')).toBe(true)
+    expect(note.parentElement).toBe(container.querySelector('.tt-milestone-row'))
+  })
+
+  test('giving the row a name and leaving it clears the note', () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = mountNameless()
+      tryMarkDone(container)
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      const titleInput = row.querySelector('.tt-milestone-title-input') as HTMLInputElement
+      titleInput.value = 'Named now'
+      titleInput.dispatchEvent(new Event('change'))
+
+      const outside = document.body.appendChild(document.createElement('button'))
+      outside.focus()
+      row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      vi.runAllTimers()
+
+      expect(container.querySelector('.tt-milestone-name-error')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
