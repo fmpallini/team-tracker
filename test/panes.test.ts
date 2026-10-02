@@ -338,6 +338,59 @@ test('unsplit: opening a module in pane 0 that matches pane 1\'s stashed current
   expect(currentLoc(store.doc.nav.panes[1])).toEqual(locA)
 })
 
+describe('narrow window (split force-hidden by setSplitSpaceConstrained): the hidden pane 1 must not trap navigation', () => {
+  // Same bug class as the manual-unsplit tests above, reached through the
+  // transient width-forced hide instead: nav.split stays true there, but pane 1
+  // is just as invisible, so the same-module-in-both-panes guard must not run.
+  const locA: Loc = { teamId: 'T1', ref: { kind: 'actions' } }
+  const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
+
+  function splitWithBOnRight(): { store: Store; pm: PaneManager } {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.toggleSplit()
+    pm.openInPane(0, locA)
+    pm.openInPane(1, locB)
+    return { store, pm }
+  }
+
+  test('opening in pane 0 the module the hidden pane 1 holds shows it in pane 0, with no "already open" toast and no focus hand-off', () => {
+    const { store, pm } = splitWithBOnRight()
+    pm.setSplitSpaceConstrained(true)
+    expect(store.doc.nav.split).toBe(true) // persisted flag untouched — the trap
+
+    pm.openInPane(0, locB)
+
+    expect(document.querySelector('.tt-toast')).toBeNull()
+    expect(store.doc.nav.focusedPane).toBe(0)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+  })
+
+  test('pane 1 steps back so widening the window does not reveal the same module twice', () => {
+    const { store, pm } = splitWithBOnRight()
+    pm.setSplitSpaceConstrained(true)
+
+    pm.openInPane(0, locB)
+    pm.setSplitSpaceConstrained(false) // window widens: both panes visible again
+
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+    expect(currentLoc(store.doc.nav.panes[1])).not.toEqual(locB)
+  })
+
+  test('while both panes are visible the guard still fires (the fix must not loosen the normal split case)', () => {
+    const { store, pm } = splitWithBOnRight()
+    pm.setSplitSpaceConstrained(true)
+    pm.setSplitSpaceConstrained(false)
+
+    pm.openInPane(0, locB)
+
+    expect(document.querySelector('.tt-toast')).not.toBeNull()
+    expect(store.doc.nav.focusedPane).toBe(1)
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual(locA)
+  })
+})
+
 test('toggleSplit resets focusedPane to 0 when un-splitting, so it never points at the now-hidden pane 1', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

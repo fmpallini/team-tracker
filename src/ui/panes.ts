@@ -738,6 +738,10 @@ ${t(lc, 'pane_history_hint')}`
     // still holds a stashed current Loc — without this, opening a module
     // here that happens to match that stashed Loc would silently refuse
     // (focusOther) and hand focus to a pane the user can't even see.
+    // "Visible" is the effective split, not the persisted `nav.split`: a window
+    // too narrow for two panes hides pane 1 just the same while `nav.split`
+    // stays true.
+    const visibleSplit = effectiveSplit()
     //
     // `force` skips this guard entirely. It's for programmatic per-pane
     // resyncs (team switch, first-visit default layout) that restore each
@@ -747,7 +751,7 @@ ${t(lc, 'pane_history_hint')}`
     // Locs happen to share a kind, leaving that pane stuck on the previous
     // team while the other one switches — exactly the "mixed teams across
     // panes" bug this is guarding against.
-    const other = nav.split && !opts?.force ? currentLoc(nav.panes[otherIdx]) : null
+    const other = visibleSplit && !opts?.force ? currentLoc(nav.panes[otherIdx]) : null
     const result = openLoc(nav.panes[idx], target, other)
     if (result.type === 'focusOther') {
       store.updateNav((d) => {
@@ -767,7 +771,7 @@ ${t(lc, 'pane_history_hint')}`
     // landed on the *visible* pane (idx 0) can leave the hidden pane 1
     // showing a stale duplicate; a write into pane 1 itself doesn't touch
     // what's on screen and needs no cleanup.
-    if (!nav.split && idx === 0) {
+    if (!visibleSplit && idx === 0) {
       const hiddenPane = nav.panes[1]
       const hiddenCur = currentLoc(hiddenPane)
       if (hiddenCur && locsConflict(target, hiddenCur)) {
