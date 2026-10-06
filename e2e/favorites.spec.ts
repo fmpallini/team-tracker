@@ -78,11 +78,26 @@ for (const size of ['XS', 'XL'] as const) {
   })
 }
 
+// HEADER_COMPACT_BELOW_PX (840) × text scale (M = 1, XL = 1.2): below it the header goes compact and hides the ★.
+const COMPACT_BELOW = { M: 840, XL: 1008 } as const
+const WIDTHS = {
+  M: [640, 760, 820, 830, 836, 844, 850, 900, 1000, 1100, 1200, 1440],
+  XL: [640, 900, 1000, 1004, 1012, 1016, 1100, 1200, 1300, 1440],
+} as const
+
 for (const size of ['M', 'XL'] as const) {
   test(`header ★ never overlaps the search box or the save pill across window widths (${size})`, async ({ page }) => {
-    await openDoc(page, buildDoc(size, { kind: 'general' }), { width: 1440, height: 900 })
-    for (const width of [640, 760, 820, 900, 1000, 1100, 1200, 1440]) {
+    // pt-BR + a dirty doc: the widest save pill, which is where the real collision (up to 830px at M) occurred.
+    await openDoc(page, buildDoc(size, { kind: 'general' }, { locale: 'pt-BR' }), { width: 1440, height: 900 })
+    await page.keyboard.press('F2')
+    await page.keyboard.press('F1')
+    let measured = 0
+    for (const width of WIDTHS[size]) {
       await page.setViewportSize({ width, height: 900 })
+      const expectVisible = width >= COMPACT_BELOW[size]
+      // Wait for the ResizeObserver-driven compact state to settle before measuring.
+      if (expectVisible) await expect(page.locator('.tt-btn-favorites'), `width ${width}`).toBeVisible()
+      else await expect(page.locator('.tt-btn-favorites'), `width ${width}`).toBeHidden()
       const r = await page.evaluate(() => {
         const rect = (sel: string): DOMRect | null => {
           const e = document.querySelector<HTMLElement>(sel)
@@ -99,7 +114,10 @@ for (const size of ['M', 'XL'] as const) {
           pageOverflowsX: document.documentElement.scrollWidth > innerWidth,
         }
       })
-      expect(r, `width ${width}`).toMatchObject({ overSearch: false, overPill: false, overNeighbour: false, pageOverflowsX: false })
+      expect(r, `width ${width}`).toMatchObject({ starVisible: expectVisible, overSearch: false, overPill: false, overNeighbour: false, pageOverflowsX: false })
+      if (r.starVisible) measured++
     }
+    // Guard against a vacuous pass: the ★ must have been measured at several widths, straddling the threshold.
+    expect(measured).toBeGreaterThanOrEqual(5)
   })
 }
