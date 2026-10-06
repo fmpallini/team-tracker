@@ -4,6 +4,7 @@ import { findTeam as docFindTeam } from '../core/document'
 import type { Shell, SaveStatusInfo } from './shell'
 import type { Loc, ModuleRef, Team } from '../core/types'
 import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, pruneEmptyDailies, reachableHistory } from '../core/nav'
+import { isFavorite, toggleFavorite } from '../core/favorites'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
 import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
@@ -145,7 +146,7 @@ function paneMenuItems(): PaneMenuRow[] {
   ]
 }
 
-function titleFor(store: Store, loc: Loc, locale: Locale): string {
+export function titleFor(store: Store, loc: Loc, locale: Locale): string {
   switch (loc.ref.kind) {
     case 'daily':
       return `${t(locale, 'module_daily')} · ${formatDateWithWeekday(loc.ref.date, locale)}`
@@ -489,14 +490,16 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // clearing every team's — a document-level listener in the same category
   // dispose() below already tears down for other concerns.
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  // Also refreshes the bars' titles. A person pane's name is otherwise only
+  // Also refreshes the bars' titles and favorite stars. A person pane's name is otherwise only
   // painted by renderBar() on navigation, so renaming that person from the
   // *other* pane — whose body re-renders itself off its own subscription —
   // left this bar showing the old name. A rename is scoped `{ teamId }` with
   // no sections, so gate on the painted text actually differing rather than on
   // scope: keeps a notes keystroke from rebuilding the bars. Same subscription
   // as the search index (not a second one) so the per-document listener count
-  // test/lifecycle.test.ts baselines stays put.
+  // test/lifecycle.test.ts baselines stays put. The star is gated the same way
+  // (painted aria-pressed vs. the store), so a favorite removed from the
+  // sidebar or the data cleanup repaints it.
   const unsubscribeSearchIndex = store.subscribe((scope) => {
     searchIndex.invalidate(scope)
     for (const idx of [0, 1] as const) {
@@ -504,7 +507,11 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       const cur = currentLoc(store.doc.nav.panes[idx])
       if (!cur) continue
       const painted = barEls[idx].querySelector('.tt-pane-title-text')?.textContent
-      if (painted != null && painted !== titleFor(store, cur, localeNow())) renderBar(idx)
+      const paintedStar = barEls[idx].querySelector('.tt-pane-fav-btn')?.getAttribute('aria-pressed')
+      if (
+        (painted != null && painted !== titleFor(store, cur, localeNow())) ||
+        (paintedStar != null && paintedStar !== String(isFavorite(store.doc, cur)))
+      ) renderBar(idx)
     }
   })
 
@@ -1127,6 +1134,20 @@ ${t(lc, 'pane_history_hint')}`
       ),
       el('span', { class: 'tt-pane-title-chev' }, '▾')
     )
+    const isFav = cur !== null && isFavorite(store.doc, cur)
+    const favBtn = el(
+      'button',
+      {
+        class: 'tt-btn tt-pane-fav-btn',
+        type: 'button',
+        title: t(lc, isFav ? 'pane_fav_remove_title' : 'pane_fav_add_title'),
+        'aria-pressed': String(isFav),
+        disabled: cur === null,
+        // Unscoped on purpose (core/scope.ts): a toggle is rare, and a wrong narrow scope would leave a star stale.
+        onclick: () => { if (cur) store.update((d) => { toggleFavorite(d, cur) }) },
+      },
+      isFav ? '★' : '☆'
+    )
     const printBtn = el(
       'button',
       {
@@ -1156,7 +1177,7 @@ ${t(lc, 'pane_history_hint')}`
       ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId)] : [])
     )
     const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap)
-    const right = el('div', { class: 'tt-pane-bar-right' }, printBtn, splitBtn)
+    const right = el('div', { class: 'tt-pane-bar-right' }, favBtn, printBtn, splitBtn)
     barEl.append(left, right)
   }
 
