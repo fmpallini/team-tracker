@@ -710,7 +710,10 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-pane-bar-left, .tt-pane-bar-right { display: flex; align-items: center; gap: .35rem; min-width: 0; }
 /* Favorite star: same square-ish icon button as print/split; filled state tinted with the accent. */
-.tt-pane-fav-btn { flex: none; }
+.tt-pane-fav-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2rem; padding-left: 0; padding-right: 0;
+}
 .tt-pane-fav-btn[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
 .tt-pane-fav-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-pane-title-trigger-wrap { position: relative; min-width: 0; display: flex; }
