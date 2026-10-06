@@ -1697,15 +1697,16 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-person-header {
   flex: none; padding: .5rem .75rem;
   background: var(--panel); border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  display: flex; align-items: center; gap: .5rem;
 }
-.tt-person-header-id { min-width: 0; display: flex; flex-direction: column; gap: .05rem; }
-.tt-person-header-name { font-weight: 700; font-family: var(--font-display); font-size: 1.05rem; line-height: 1.2; }
+/* Order: edit, org, role line, backlinks chip. The role line shrinks (ellipsis)
+   before the buttons or the chip do. */
+.tt-person-header > * { flex: none; }
+.tt-person-header-id { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .tt-person-header-title {
-  font-size: .8rem; color: var(--muted); line-height: 1.2;
+  font-size: .85rem; color: var(--muted); line-height: 1.2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tt-person-header-right { display: flex; align-items: center; gap: .35rem; flex: none; }
 /* Plain boxed .tt-btn, same as the pane bar's printer/split buttons — a
    header control is always on show, so no borderless row-hover-reveal
    treatment here. */
