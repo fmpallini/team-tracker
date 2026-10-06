@@ -39,7 +39,21 @@ export interface Doc { …; favorites: Favorite[] }
 
 ### Stale entries
 
-Filtered at read time (`resolveFavorites`), never pruned. Ids are never reused, so a dead entry is inert, and this avoids touching every team/person delete path. The ★ state in a pane is computed from the live list, so a stale entry can never light a star.
+Filtered at read time (`resolveFavorites`), not pruned when the team or person is deleted. Ids are never reused, so a dead entry is inert, and this avoids touching every team/person delete path. The ★ state in a pane is computed from the live list, so a stale entry can never light a star. Dead entries are removed for good by the Prefs → Data cleanup (next section).
+
+### Data cleanup also purges dead favorites
+
+The "Limpeza de dados / Data cleanup" action in Prefs → Data (`core/cleanup.ts`, `ui/prefs.ts`) clears dead favorites in the same pass. A favorite is **dead** when either:
+
+1. its team no longer exists, or it is a person favorite whose person no longer exists (same predicate `resolveFavorites` uses to filter; share one `isFavoriteDead(doc, fav)` helper so the two cannot drift), or
+2. it is a daily-note favorite whose date is older than the cleanup's day cutoff (`isOlderThan(date, days, today)`), since cleanup is deleting that day's note and the favorite would point at an empty day.
+
+Wiring:
+- `CleanupCounts` gains `favorites`; `countCleanupTargets` counts dead favorites and `applyCleanup` removes them (`doc.favorites = doc.favorites.filter(f => !dead(f))`).
+- The "nothing to clean" check in `doCleanup` includes `counts.favorites === 0`, so a document whose only garbage is dead favorites still gets a confirm and a purge.
+- The confirm message gains a `{favorites}` count, and the heading hint text mentions favorites.
+- Like the other targets, this is not undoable; the existing no-undo warning covers it.
+- Order inside `applyCleanup` does not matter: cleanup never deletes teams or people, so rule 1 is unaffected by the rest of the pass. Rule 2 does not depend on a note existing, only on its date.
 
 ## Mutation and scope
 
@@ -75,11 +89,12 @@ From the earlier layout fixes (69cc774, dc3487f, 21a9242, 877ef13):
 
 ## i18n
 
-New keys in both `pt-BR` and `en-US`: pane star add/remove titles, header button title, panel hint when empty, unfavorite ✕ title, help-modal hotkey line.
+New keys in both `pt-BR` and `en-US`: pane star add/remove titles, header button title, panel hint when empty, unfavorite ✕ title, help-modal hotkey line. Existing keys `data_cleanup_hint`, `data_cleanup_confirm_body` (new `{favorites}` placeholder) and `data_cleanup_nothing_body` are reworded in both locales to mention favorites.
 
 ## Testing
 
 - Unit: migration 14→15 and unchanged v15 passthrough; `favoriteKey` (itemId stripped, person/date distinct); `toggleFavorite`; `resolveFavorites` stale filtering + labels; document validation of malformed `favorites`; `resolveAppHotkey` Ctrl+Alt+F (allowed / blocked in editors / no match with Shift).
+- Cleanup (`test/cleanup.test.ts`): `countCleanupTargets`/`applyCleanup` count and remove favorites for a deleted team, a deleted person, and a daily favorite older than the cutoff; keep a live team/person favorite, a daily favorite exactly at or inside the cutoff, and non-daily favorites regardless of age; a doc whose only target is a dead favorite is not "nothing to clean". `prefs` test: confirm message includes the favorites count.
 - jsdom: pane star toggles and re-renders; empty-pane disabled; panel keyboard (↑/↓/Enter/Esc/1–9); ✕ removes; empty hint; disposal releases the keydown listener and store subscription (`test/lifecycle.test.ts`-style).
 - E2E (`e2e/`, in the style of `font-size-layout.spec.ts`): star a pane, switch team, open via hotkey and via header button, jump lands in the focused pane; at M and XL with long team/person names, no row wraps, nothing overflows the viewport, ★ does not collide with the search box across window widths.
 - Every new `src` module has a matching `test/*.test.ts` (`core/favorites.ts`, `ui/favorites.ts`).
