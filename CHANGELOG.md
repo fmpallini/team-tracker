@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.10.0] - 2026-10-06
+
+### Added
+- Favorites: every pane now has a ☆ next to the print and split buttons. Click it to star that spot — a team's Daily notes for a given day, a person's notes, the member or stakeholder lists, Tasks, Milestones, Risks or General notes — and click again to remove it.
+- A ★ button in the header opens your favorites from any team. Pick one to jump to that team and open it in the pane you're working in. Press Ctrl+Alt+F to open the same list from the keyboard, move with ↑/↓ and Enter, or press 1–9 to jump straight to an entry. The list follows the text-size setting, and long names are cut short with "…" instead of wrapping.
+- In a window narrow enough that the header switches to its compact form, the ★ button is hidden, but Ctrl+Alt+F still opens your favorites.
+
+### Changed
+- Clean up data (Preferences → Data) now also removes favorites that no longer lead anywhere: ones for a deleted team or person, and Daily notes favorites for days older than the number of days you choose. The confirmation shows how many.
+
 ## [2.9.5] - 2026-10-01
 
 ### Fixed

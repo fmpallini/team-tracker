@@ -191,10 +191,10 @@ body { background: var(--bg); color: var(--fg); }
 /* The team indicator only ever gets what the two side clusters leave over: capped
    at 28vw, and never more than the window minus the sidebar-wide left cluster
    (220px: toggle, app name, a usable search box ≈ 220px + 7rem) and the right one
-   (≈ 34rem of save pill and buttons, in rem so it tracks the text size). Below
+   (≈ 47rem of save pill and buttons, in rem so it tracks the text size). Below
    that it shrinks to nothing — hence overflow:hidden — rather than pushing the
    search box under itself. */
-.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - 220px - 44rem))); overflow: hidden; }
+.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - 220px - 47rem))); overflow: hidden; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of

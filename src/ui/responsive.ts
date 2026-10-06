@@ -26,15 +26,16 @@ const SIDEBAR_HIDE_BELOW_PX = 650
 // removing it, since the mandatory cluster alone is what actually needs
 // guaranteed room. Comfortably above SIDEBAR_HIDE_BELOW_PX so a *manual*
 // sidebar collapse (which reveals the team indicator) can't reopen the gap
-// in the 650-820px band.
+// in the 650-840px band.
 //
 // Tuned at the M text size (15px root). The header's clusters are sized in rem,
 // so they grow with the text-size setting while the window width doesn't: at XL
-// the same 820px no longer fits them (the promo button then overlaps the
+// the same 840px no longer fits them (the promo button then overlaps the
 // search box). The threshold is therefore multiplied by the current size's
 // scale (core/font-size.ts's fontScale; never below 1), and re-evaluated when the size
-// changes.
-const HEADER_COMPACT_BELOW_PX = 820
+// changes. 820 → 840 when the header favorites ★ joined the right cluster: at M
+// (pt-BR, dirty save pill) the search box and promo button then overlapped up to 830px.
+const HEADER_COMPACT_BELOW_PX = 840
 // Below this, a single daily-notes pane no longer has room for both the
 // ~240px calendar column and a usable note width, so the calendar is folded
 // away on top of (never instead of) the user's own nav.calendarCollapsed —

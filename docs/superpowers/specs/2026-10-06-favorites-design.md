@@ -35,17 +35,18 @@ export interface Doc { …; favorites: Favorite[] }
 - `favoriteKey(loc: Loc): string`
 - `isFavorite(doc, loc): boolean`
 - `toggleFavorite(doc, loc): void` — mutates the passed doc; callers wrap it in `store.update`.
-- `resolveFavorites(doc, locale): { fav: Favorite; label: string }[]` — drops entries whose team, or person (for person refs), no longer exists, and builds each label.
+- `liveFavorites(doc): Favorite[]` — drops entries whose team, or person (for person refs), no longer exists; the panel builds labels itself (`titleFor` is a UI helper).
+- `isFavoriteOrphaned(doc, fav): boolean` — the shared predicate.
 
 ### Stale entries
 
-Filtered at read time (`resolveFavorites`), not pruned when the team or person is deleted. Ids are never reused, so a dead entry is inert, and this avoids touching every team/person delete path. The ★ state in a pane is computed from the live list, so a stale entry can never light a star. Dead entries are removed for good by the Prefs → Data cleanup (next section).
+Filtered at read time (`liveFavorites`), not pruned when the team or person is deleted. Ids are never reused, so a dead entry is inert, and this avoids touching every team/person delete path. The ★ state in a pane is computed from the live list, so a stale entry can never light a star. Dead entries are removed for good by the Prefs → Data cleanup (next section).
 
 ### Data cleanup also purges dead favorites
 
 The "Limpeza de dados / Data cleanup" action in Prefs → Data (`core/cleanup.ts`, `ui/prefs.ts`) clears dead favorites in the same pass. A favorite is **dead** when either:
 
-1. its team no longer exists, or it is a person favorite whose person no longer exists (same predicate `resolveFavorites` uses to filter; share one `isFavoriteDead(doc, fav)` helper so the two cannot drift), or
+1. its team no longer exists, or it is a person favorite whose person no longer exists (same predicate `liveFavorites` uses to filter; share one `isFavoriteOrphaned(doc, fav)` helper so the two cannot drift; cleanup's own `isDeadFavorite` adds the daily-older-than-cutoff rule on top), or
 2. it is a daily-note favorite whose date is older than the cleanup's day cutoff (`isOlderThan(date, days, today)`), since cleanup is deleting that day's note and the favorite would point at an empty day.
 
 Wiring:
@@ -67,7 +68,7 @@ New button left of `printBtn` in `tt-pane-bar-right`, class `tt-btn tt-pane-fav-
 
 ### Favorites panel (`src/ui/favorites.ts`, new)
 
-- Opened from the header ★ (`shell.ts`, `headerRight`, before the save pill; new `onFavorites(cb)` + `setFavoritesEnabled(bool)` on `Shell`, mirroring `onHelp`/`setAppNameEnabled`) and from the hotkey. One component, one open/close state.
+- Opened from the header ★ (`shell.ts`, `headerRight`, after the save pill and before the fullscreen button — the pill's width changes would shift a button on its left, so to its right the button stays put; new `onFavorites(cb)` + `setFavoritesEnabled(bool)` on `Shell`, mirroring `onHelp`/`setAppNameEnabled`) and from the hotkey. One component, one open/close state.
 - Positioned `position: fixed` under the header's right edge, **not** relative to the ★ button, so the hotkey still works when the compact header hides the button.
 - Disabled / no-op with no teams (same rule as the palette and search bar). With teams but no favorites it shows a one-line hint.
 - Row: number badge (1–9, none after 9) · `team emoji + team name · module title`. Module title reuses `titleFor` (person shows the name, daily shows the date). A trailing ✕ unfavorites the row without closing the panel.
@@ -93,7 +94,7 @@ New keys in both `pt-BR` and `en-US`: pane star add/remove titles, header button
 
 ## Testing
 
-- Unit: migration 14→15 and unchanged v15 passthrough; `favoriteKey` (itemId stripped, person/date distinct); `toggleFavorite`; `resolveFavorites` stale filtering + labels; document validation of malformed `favorites`; `resolveAppHotkey` Ctrl+Alt+F (allowed / blocked in editors / no match with Shift).
+- Unit: migration 14→15 and unchanged v15 passthrough; `favoriteKey` (itemId stripped, person/date distinct); `toggleFavorite`; `liveFavorites` stale filtering; document validation of malformed `favorites`; `resolveAppHotkey` Ctrl+Alt+F (allowed / blocked in editors / no match with Shift).
 - Cleanup (`test/cleanup.test.ts`): `countCleanupTargets`/`applyCleanup` count and remove favorites for a deleted team, a deleted person, and a daily favorite older than the cutoff; keep a live team/person favorite, a daily favorite exactly at or inside the cutoff, and non-daily favorites regardless of age; a doc whose only target is a dead favorite is not "nothing to clean". `prefs` test: confirm message includes the favorites count.
 - jsdom: pane star toggles and re-renders; empty-pane disabled; panel keyboard (↑/↓/Enter/Esc/1–9); ✕ removes; empty hint; disposal releases the keydown listener and store subscription (`test/lifecycle.test.ts`-style).
 - E2E (`e2e/`, in the style of `font-size-layout.spec.ts`): star a pane, switch team, open via hotkey and via header button, jump lands in the focused pane; at M and XL with long team/person names, no row wraps, nothing overflows the viewport, ★ does not collide with the search box across window widths.
