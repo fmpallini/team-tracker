@@ -99,6 +99,26 @@ describe('filterAtItems', () => {
     ])
   })
 
+  test('offers "next/last <weekday>" days after the relative words, tagged with the phrase', () => {
+    const days = filterAtItems(candidates(), 'next fri', 'en-US').filter((i) => i.kind === 'day')
+    expect(days).toHaveLength(1)
+    const [day] = days as { kind: 'day'; date: string; relativeWord?: string }[]
+    expect(day!.relativeWord).toBe('next friday')
+    const d = new Date(day!.date + 'T00:00:00')
+    expect(d.getDay()).toBe(5)
+    expect(day!.date > isoShift(0) && day!.date <= isoShift(7)).toBe(true)
+  })
+
+  test('offers weekday phrases in pt-BR', () => {
+    const days = filterAtItems(candidates(), 'sábado passado', 'pt-BR').filter((i) => i.kind === 'day')
+    expect(days).toEqual([{ kind: 'day', date: expect.any(String), relativeWord: 'sábado passado' }])
+  })
+
+  test('a bare @ does not list weekday phrases', () => {
+    const days = filterAtItems(candidates(), '', 'en-US').filter((i) => i.kind === 'day') as { relativeWord?: string }[]
+    expect(days.map((i) => i.relativeWord)).toEqual(['today', 'yesterday', 'tomorrow', undefined])
+  })
+
   test('groups results by type in a fixed order: people, dates, actions, milestones, risks', () => {
     const items = filterAtItems({
       people: [{ id: 'p1', title: 'Eva' }],
