@@ -281,10 +281,12 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-team-switcher-item {
   display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
-  cursor: pointer; border-radius: 4px; border-left: 3px solid transparent;
+  cursor: pointer; border-radius: 4px;
 }
 .tt-team-switcher-item.selected, .tt-team-switcher-item:hover { background: rgba(var(--accent-rgb), .12); }
-.tt-team-switcher-item.active { border-left-color: var(--accent); font-weight: 600; }
+.tt-team-switcher-item.active { font-weight: 600; }
+/* Same ✓ gutter as .tt-pane-menu-check / .tt-context-menu-check (history menu). */
+.tt-team-switcher-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; flex: none; }
 
 /* Space-constrained override (src/ui/responsive.ts, below
    HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every

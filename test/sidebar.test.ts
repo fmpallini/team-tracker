@@ -764,6 +764,22 @@ test('the team switcher\'s Enter/Arrow keys do not act while a modal is open (e.
   expect(document.querySelector('.tt-team-switcher-dropdown')).not.toBeNull() // still open, untouched
 })
 
+test('the team switcher marks only the active team with a ✓ (same mark as the history menu)', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  store.updateNav((d) => { d.nav.activeTeamId = 'Beta' })
+
+  ;(document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement).click()
+  ;(document.querySelector('.tt-header-team-indicator') as HTMLElement).click()
+
+  const marks = [...document.querySelectorAll('.tt-team-switcher-item')].map(
+    (row) => row.querySelector('.tt-team-switcher-check')?.textContent
+  )
+  expect(marks).toEqual(['', '✓'])
+  expect(document.querySelectorAll('.tt-team-switcher-item[aria-current="true"]')).toHaveLength(1)
+})
+
 describe('team switcher dropdown due badge', () => {
   function toggleBtn(): HTMLButtonElement {
     return document.querySelector('.tt-sidebar-toggle') as HTMLButtonElement
