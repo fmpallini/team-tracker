@@ -1428,7 +1428,7 @@ describe('Data tab (export/import)', () => {
       'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, tasks, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
       'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
       'Create at least two teams to use this.',
-      'Removes done/cancelled tasks and closed risks, plus completed milestones and daily notes dated older than the chosen number of days — across every team in this file. This cannot be undone.',
+      'Removes done/cancelled tasks and closed risks, plus completed milestones and daily notes dated older than the chosen number of days, and favorites that point to a deleted team or person or to a day older than that — across every team in this file. This cannot be undone.',
     ])
   })
 
@@ -1525,6 +1525,32 @@ describe('Data tab (export/import)', () => {
     }
   })
 
+  test('cleanup: a document whose only garbage is a dead favorite still gets a confirm and is purged', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20))
+    try {
+      const { store, shell, appCtl } = setup()
+      store.update((d) => {
+        d.teams.push(sampleTeam())
+        d.favorites.push({ teamId: 'deleted-team', ref: { kind: 'risks' } })
+      })
+      openPrefs(store, shell, 'en-US', appCtl)
+      clickTab('Data')
+
+      clickByText('Clean up data')
+
+      const titles = document.querySelectorAll('.tt-modal-title')
+      expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
+      const messages = document.querySelectorAll('.tt-modal-message')
+      expect(messages[messages.length - 1]?.textContent).toContain('1 broken favorites')
+
+      clickByText('Clean up data')
+      expect(store.doc.favorites).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('cleanup: counts done/cancelled actions, completed milestones, closed risks, and old daily notes across teams, then removes them on confirm', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 20))
@@ -1550,7 +1576,7 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 tasks, 1 milestones, 1 risks, and 1 daily notes across all teams will be permanently deleted.'
+        '2 tasks, 1 milestones, 1 risks, 1 daily notes and 0 broken favorites across all teams will be permanently deleted.'
       )
       // Every other delete in the app offers an undo toast; this one does not,
       // so the dialog has to say so rather than let the user infer it.

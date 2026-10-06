@@ -1,6 +1,6 @@
 import { countCleanupTargets, applyCleanup } from '../src/core/cleanup'
 import { createEmptyDocument } from '../src/core/document'
-import type { ActionItem, Doc, Milestone, Risk, Team } from '../src/core/types'
+import type { ActionItem, Doc, Favorite, Milestone, Risk, Team } from '../src/core/types'
 
 function item(overrides: Partial<ActionItem>): ActionItem {
   return { id: 'i1', summary: 'Do thing', status: 'todo', dueDate: null, assignee: '', order: 0, notes: '', color: 'ledger', ...overrides }
@@ -35,7 +35,7 @@ test('counts and removes done/cancelled action items, keeps active ones', () => 
       item({ id: 'cancelled', status: 'cancelled' }),
     ],
   })])
-  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 2, milestones: 0, risks: 0, dailyNotes: 0 })
+  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 2, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 })
   applyCleanup(d, 30, TODAY)
   expect(d.teams[0]!.actionItems.map((a) => a.id)).toEqual(['todo', 'wip'])
 })
@@ -88,7 +88,7 @@ test('daily note exactly `days` old survives; one day older is removed', () => {
 
 test('zero matches across an empty document', () => {
   const d = doc([team()])
-  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 0, milestones: 0, risks: 0, dailyNotes: 0 })
+  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 })
 })
 
 test('purging a done action item unlinks its @mentions elsewhere in the team', () => {
@@ -135,4 +135,47 @@ test('applies across multiple teams independently', () => {
   expect(d.teams[0]!.actionItems).toEqual([])
   expect(d.teams[1]!.actionItems.map((a) => a.id)).toEqual(['b'])
   expect(d.teams[1]!.milestones).toEqual([])
+})
+
+describe('dead favorites', () => {
+  const OLD_DAY = '2026-05-01' // 86 days before TODAY
+  const KEPT_DAY = '2026-07-10' // 16 days before TODAY
+  const fav = (teamId: string, ref: Favorite['ref']): Favorite => ({ teamId, ref })
+
+  function favDoc(): Doc {
+    const d = doc([team({ id: 'T1', members: [{ id: 'p1', name: 'Ann', role: '', parentId: null, order: 0, notes: '' }] })])
+    d.favorites = [
+      fav('T1', { kind: 'risks' }),                                   // live
+      fav('T1', { kind: 'person', personId: 'p1', group: 'members' }), // live
+      fav('T1', { kind: 'daily', date: KEPT_DAY }),                   // live: inside the cutoff
+      fav('T1', { kind: 'daily', date: OLD_DAY }),                    // dead: rule 2 (older than cutoff)
+      fav('T1', { kind: 'person', personId: 'gone', group: 'members' }), // dead: rule 1 (person gone)
+      fav('GONE', { kind: 'actions' }),                               // dead: rule 1 (team gone)
+    ]
+    return d
+  }
+
+  test('counts dead favorites: deleted team, deleted person, daily older than the cutoff', () => {
+    expect(countCleanupTargets(favDoc(), 30, TODAY).favorites).toBe(3)
+  })
+
+  test('removes only the dead ones and keeps order', () => {
+    const d = favDoc()
+    applyCleanup(d, 30, TODAY)
+    expect(d.favorites.map((f) => f.ref.kind)).toEqual(['risks', 'person', 'daily'])
+    expect((d.favorites[2]!.ref as { date: string }).date).toBe(KEPT_DAY)
+  })
+
+  test('a daily favorite exactly at the cutoff is kept (strictly older than `days` is dead)', () => {
+    const d = doc([team()])
+    d.favorites = [fav('T1', { kind: 'daily', date: '2026-06-26' })] // exactly 30 days before TODAY
+    expect(countCleanupTargets(d, 30, TODAY).favorites).toBe(0)
+  })
+
+  test('non-daily favorites of live teams are kept regardless of age', () => {
+    const d = doc([team()])
+    d.favorites = [fav('T1', { kind: 'milestones' }), fav('T1', { kind: 'general' })]
+    applyCleanup(d, 1, TODAY)
+    expect(d.favorites).toHaveLength(2)
+  })
 })

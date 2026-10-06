@@ -3,16 +3,19 @@
 // action items and closed risks regardless of age (neither has a single date
 // to gauge age by), plus the two things that do carry a date — completed
 // milestones and daily notes — once that date is older than a user-chosen
-// number of days.
-import type { Doc } from './types'
+// number of days. Favorites that no longer point anywhere (their team/person
+// is gone, or they pin a daily note this same pass is purging) go too.
+import type { Doc, Favorite } from './types'
 import { diffDays } from './date'
 import { unlinkRefsInTeam } from './refs'
+import { isFavoriteOrphaned } from './favorites'
 
 export interface CleanupCounts {
   actions: number
   milestones: number
   risks: number
   dailyNotes: number
+  favorites: number
 }
 
 /** True when a date is strictly more than `days` days before `today` — the shared age test for daily notes and completed milestones. */
@@ -20,8 +23,14 @@ function isOlderThan(date: string, days: number, today: string): boolean {
   return diffDays(today, date) > days
 }
 
+/** A favorite cleanup removes: its team/person is gone, or it is a daily-note favorite older than the cutoff (that day's note is being purged too). */
+function isDeadFavorite(doc: Doc, fav: Favorite, days: number, today: string): boolean {
+  if (isFavoriteOrphaned(doc, fav)) return true
+  return fav.ref.kind === 'daily' && isOlderThan(fav.ref.date, days, today)
+}
+
 export function countCleanupTargets(doc: Doc, days: number, today: string): CleanupCounts {
-  const counts: CleanupCounts = { actions: 0, milestones: 0, risks: 0, dailyNotes: 0 }
+  const counts: CleanupCounts = { actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 }
   for (const team of doc.teams) {
     for (const a of team.actionItems) {
       if (a.status === 'done' || a.status === 'cancelled') counts.actions++
@@ -36,6 +45,7 @@ export function countCleanupTargets(doc: Doc, days: number, today: string): Clea
       if (isOlderThan(date, days, today)) counts.dailyNotes++
     }
   }
+  counts.favorites = doc.favorites.filter((f) => isDeadFavorite(doc, f, days, today)).length
   return counts
 }
 
@@ -64,4 +74,6 @@ export function applyCleanup(doc: Doc, days: number, today: string): void {
       if (isOlderThan(date, days, today)) delete team.dailyNotes[date]
     }
   }
+  // Cleanup never deletes teams or people, so doing this after the team loop is order-independent.
+  doc.favorites = doc.favorites.filter((f) => !isDeadFavorite(doc, f, days, today))
 }
