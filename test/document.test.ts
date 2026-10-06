@@ -10,6 +10,7 @@ test('createEmptyDocument shape', () => {
     ctrlWheelFontSize: true, dailyEdgeScroll: true,
   })
   expect(d.teams).toEqual([])
+  expect(d.favorites).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
     panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false })
 })
@@ -304,6 +305,24 @@ describe('v13 → v14 migration (Ctrl+wheel font size + daily edge-scroll toggle
   })
 })
 
+describe('v14 → v15 migration (favorites)', () => {
+  it('adds an empty favorites list to a v14 document', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 14
+    delete d.favorites
+    const doc = migrate(d)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.favorites).toEqual([])
+  })
+
+  it('keeps an existing favorites array untouched', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 14
+    d.favorites = [{ teamId: 'T1', ref: { kind: 'risks' } }]
+    expect(migrate(d).favorites).toEqual([{ teamId: 'T1', ref: { kind: 'risks' } }])
+  })
+})
+
 test('createEmptyTeam seeds a single default WIP column', () => {
   const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
   expect(team.actionColumns).toEqual([{ id: 'wip', name: 'WIP', order: 0 }])
@@ -459,6 +478,28 @@ describe('validateDoc', () => {
     const d = goodDoc()
     delete d.nav
     expect(validateDoc(d)).toBe('nav')
+  })
+
+  it('rejects a doc whose favorites is not an array', () => {
+    const d = goodDoc()
+    d.favorites = 'nope'
+    expect(validateDoc(d)).toBe('favorites')
+  })
+
+  it('names the favorite when an entry has no team id or no ref', () => {
+    const d = goodDoc()
+    d.favorites = [{ teamId: '', ref: { kind: 'risks' } }]
+    expect(validateDoc(d)).toBe('favorites[0].teamId')
+    d.favorites = [{ teamId: 't1', ref: null }]
+    expect(validateDoc(d)).toBe('favorites[0].ref')
+    d.favorites = [{ teamId: 't1', ref: { kind: 5 } }]
+    expect(validateDoc(d)).toBe('favorites[0].ref.kind')
+  })
+
+  it('accepts well-formed favorites', () => {
+    const d = goodDoc()
+    d.favorites = [{ teamId: 't1', ref: { kind: 'daily', date: '2026-09-13' } }]
+    expect(validateDoc(d)).toBeNull()
   })
 
   it('names the team index when a team is not an object', () => {

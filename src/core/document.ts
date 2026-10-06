@@ -2,7 +2,7 @@ import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 14
+export const SCHEMA_VERSION = 15
 
 export class SchemaTooNewError extends Error {}
 
@@ -14,6 +14,7 @@ export function createEmptyDocument(locale: Locale): Doc {
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false },
     teams: [],
+    favorites: [],
   }
 }
 
@@ -169,6 +170,9 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
       prefs.dailyEdgeScroll = prefs.dailyEdgeScroll ?? true
     }
   },
+  14: (d) => {
+    d.favorites = Array.isArray(d.favorites) ? d.favorites : []
+  },
 }
 
 export function migrate(raw: unknown): Doc {
@@ -297,6 +301,20 @@ export function validateDoc(raw: unknown): string | null {
 
   const templatesBad = validateEntities(raw.templates, TEMPLATE_FIELDS, 'templates')
   if (templatesBad) return templatesBad
+
+  // Required since schema 15 (MIGRATIONS[14] always creates it, and validateDoc
+  // only ever sees a migrated doc). `ref` is checked structurally (a plain
+  // object with a string `kind`); whether it still points at something real is
+  // deliberately not checked — dead favorites are inert (core/favorites.ts).
+  if (!Array.isArray(raw.favorites)) return 'favorites'
+  for (let i = 0; i < raw.favorites.length; i++) {
+    const fav: unknown = raw.favorites[i]
+    const at = `favorites[${i}]`
+    if (!isPlainObject(fav)) return at
+    if (!fieldOk(fav.teamId, 'id')) return `${at}.teamId`
+    if (!isPlainObject(fav.ref)) return `${at}.ref`
+    if (!fieldOk(fav.ref.kind, 'string')) return `${at}.ref.kind`
+  }
 
   if (!Array.isArray(raw.teams)) return 'teams'
   for (let i = 0; i < raw.teams.length; i++) {
