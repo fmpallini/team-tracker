@@ -293,12 +293,13 @@ body { background: var(--bg); color: var(--fg); }
    pill (so unsaved work stays visible), the close-file (🔒) and settings (⚙)
    buttons: closing the file and reaching prefs must always be reachable;
    everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
-   name/search) or simply isn't essential moment-to-moment. */
+   name/search, Ctrl+Alt+F for the favorites panel) or simply isn't essential moment-to-moment. */
 .tt-header.tt-header-compact .tt-sidebar-toggle,
 .tt-header.tt-header-compact .tt-app-name,
 .tt-header.tt-header-compact .tt-search-wrap,
 .tt-header.tt-header-compact .tt-header-team-indicator-group,
 .tt-header.tt-header-compact .tt-btn-promo,
+.tt-header.tt-header-compact .tt-btn-favorites,
 .tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
@@ -350,6 +351,7 @@ body { background: var(--bg); color: var(--fg); }
   border-radius: 4px; padding: .25rem .5rem; cursor: pointer; font-size: 1rem; line-height: 1;
 }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
+.tt-btn-favorites:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Save-state pill (header): always visible, states differentiated by both
    the text label and a tinted background/border (color-mix keeps this to

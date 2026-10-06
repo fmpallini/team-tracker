@@ -1,5 +1,6 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { t } from '../src/core/i18n'
+import { createEmptyDocument } from '../src/core/document'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -491,5 +492,41 @@ describe('dispose', () => {
     for (let i = 0; i < 5; i++) createShell('en-US').dispose()
     expect(counts.added).toBe(5)
     expect(counts.removed).toBe(5)
+  })
+})
+
+describe('favorites button', () => {
+  test('is in the header between the save pill and fullscreen, titled with the hotkey', () => {
+    const shell = setup()
+    const btn = shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!
+    expect(btn).not.toBeNull()
+    expect(btn.textContent).toBe('★')
+    expect(btn.title).toBe(t('en-US', 'favorites_btn_title'))
+    const kids = Array.from(shell.headerRight.children)
+    expect(kids.indexOf(btn)).toBeGreaterThan(kids.findIndex((c) => c.classList.contains('tt-save-pill-wrap')))
+    expect(kids.indexOf(btn)).toBeLessThan(kids.findIndex((c) => c.classList.contains('tt-btn-fullscreen')))
+  })
+
+  test('click calls the registered handler', () => {
+    const shell = setup()
+    const cb = vi.fn()
+    shell.onFavorites(cb)
+    shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!.click()
+    expect(cb).toHaveBeenCalledTimes(1)
+  })
+
+  test('setFavoritesEnabled toggles disabled', () => {
+    const shell = setup()
+    const btn = shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!
+    shell.setFavoritesEnabled(false)
+    expect(btn.disabled).toBe(true)
+    shell.setFavoritesEnabled(true)
+    expect(btn.disabled).toBe(false)
+  })
+
+  test('title follows a locale change', () => {
+    const shell = setup()
+    shell.applyPrefs({ ...createEmptyDocument('pt-BR').prefs })
+    expect(shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!.title).toBe(t('pt-BR', 'favorites_btn_title'))
   })
 })
