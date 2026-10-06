@@ -17,6 +17,8 @@ export type AppHotkeyAction =
   | { type: 'save' }
   | { type: 'palette' }
   | { type: 'closeFile' }
+  /** Ctrl/Cmd+Alt+F → toggle the favorites panel (src/ui/favorites.ts). */
+  | { type: 'favorites' }
   /** F1..F7 → pane module index 0..6. */
   | { type: 'paneModule'; index: number }
   /** Alt+Shift+Left / Alt+Shift+Right → step the focused pane's history. */
@@ -80,6 +82,12 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
   // Ctrl+Shift+L, a common password-manager binding).
   if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && matchKey(e, 'l')) {
     return comboHotkeyAllowed(e) ? { type: 'closeFile' } : null
+  }
+
+  // Ctrl+Alt+F: favorites panel. Not Alt+F (opens the browser menu on Windows
+  // Chrome) and not Ctrl+Shift+F (search across all teams).
+  if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && matchKey(e, 'f')) {
+    return comboHotkeyAllowed(e) ? { type: 'favorites' } : null
   }
 
   const fKeyMatch = /^F([1-7])$/.exec(e.key)
