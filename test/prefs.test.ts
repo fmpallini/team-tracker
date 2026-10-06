@@ -1576,7 +1576,7 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 tasks, 1 milestones, 1 risks, 1 daily notes and 0 broken favorites across all teams will be permanently deleted.'
+        '2 tasks, 1 milestones, 1 risks, 1 daily notes, and 0 broken favorites across all teams will be permanently deleted.'
       )
       // Every other delete in the app offers an undo toast; this one does not,
       // so the dialog has to say so rather than let the user infer it.

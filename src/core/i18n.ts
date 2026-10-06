@@ -1109,7 +1109,7 @@ const en: Record<MsgKey, string> = {
   data_cleanup_days_label: 'Delete completed milestones and daily notes older than (days)',
   data_cleanup_btn: 'Clean up data',
   data_cleanup_confirm_title: 'Confirm cleanup',
-  data_cleanup_confirm_body: '{actions} tasks, {milestones} milestones, {risks} risks, {dailyNotes} daily notes and {favorites} broken favorites across all teams will be permanently deleted.',
+  data_cleanup_confirm_body: '{actions} tasks, {milestones} milestones, {risks} risks, {dailyNotes} daily notes, and {favorites} broken favorites across all teams will be permanently deleted.',
   data_cleanup_no_undo_warning: 'Unlike deleting a single task, milestone or risk, this cleanup offers no undo. There is no way back.',
   data_cleanup_nothing_title: 'Nothing to clean up',
   data_cleanup_nothing_body: 'No done/cancelled tasks, closed risks, old completed milestones, old daily notes, or broken favorites were found.',

@@ -53,7 +53,12 @@ export function isFavoriteOrphaned(doc: Doc, fav: Favorite): boolean {
   const team = findTeam(doc, fav.teamId)
   if (!team) return true
   const r = fav.ref
-  if (r.kind === 'person') return !team[r.group].some((p) => p.id === r.personId)
+  if (r.kind === 'person') {
+    // Belt and braces: validateDoc rejects a bad group, but a render path must never throw.
+    const list: unknown = team[r.group]
+    if (!Array.isArray(list)) return true
+    return !(list as { id: string }[]).some((p) => p.id === r.personId)
+  }
   return false
 }
 

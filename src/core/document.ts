@@ -294,6 +294,9 @@ function validateEntities(arr: unknown, spec: Record<string, FieldType>, path: s
   return null
 }
 
+/** Every `ModuleRef['kind']` a favorite may carry (validateDoc checks it before anything dereferences the ref). */
+const FAVORITE_KINDS: readonly string[] = ['daily', 'general', 'person', 'stakeholders', 'members', 'actions', 'milestones', 'risks']
+
 export function validateDoc(raw: unknown): string | null {
   if (!isPlainObject(raw)) return 'document'
   if (!isPlainObject(raw.prefs)) return 'prefs'
@@ -303,9 +306,11 @@ export function validateDoc(raw: unknown): string | null {
   if (templatesBad) return templatesBad
 
   // Required since schema 15 (MIGRATIONS[14] always creates it, and validateDoc
-  // only ever sees a migrated doc). `ref` is checked structurally (a plain
-  // object with a string `kind`); whether it still points at something real is
-  // deliberately not checked — dead favorites are inert (core/favorites.ts).
+  // only ever sees a migrated doc). `ref` is checked structurally (a known
+  // `kind` plus the detail that kind needs: a daily `date`, a person's
+  // `personId` + `group`) so later code never dereferences a malformed one;
+  // whether it still points at something real is deliberately not checked —
+  // dead favorites are inert (core/favorites.ts).
   if (!Array.isArray(raw.favorites)) return 'favorites'
   for (let i = 0; i < raw.favorites.length; i++) {
     const fav: unknown = raw.favorites[i]
@@ -313,7 +318,13 @@ export function validateDoc(raw: unknown): string | null {
     if (!isPlainObject(fav)) return at
     if (!fieldOk(fav.teamId, 'id')) return `${at}.teamId`
     if (!isPlainObject(fav.ref)) return `${at}.ref`
-    if (!fieldOk(fav.ref.kind, 'string')) return `${at}.ref.kind`
+    const ref = fav.ref
+    if (typeof ref.kind !== 'string' || !FAVORITE_KINDS.includes(ref.kind)) return `${at}.ref.kind`
+    if (ref.kind === 'daily' && !fieldOk(ref.date, 'string')) return `${at}.ref.date`
+    if (ref.kind === 'person') {
+      if (!fieldOk(ref.personId, 'id')) return `${at}.ref.personId`
+      if (ref.group !== 'stakeholders' && ref.group !== 'members') return `${at}.ref.group`
+    }
   }
 
   if (!Array.isArray(raw.teams)) return 'teams'

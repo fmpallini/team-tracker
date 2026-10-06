@@ -4,6 +4,8 @@ import { createEmptyDocument } from '../src/core/document'
 import { createPaneManager, type PaneManager } from '../src/ui/panes'
 import { createFavoritesPanel, type FavoritesPanel } from '../src/ui/favorites'
 import { currentLoc } from '../src/core/nav'
+import { showModal } from '../src/ui/modal'
+import { el } from '../src/ui/dom'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -185,10 +187,118 @@ test('close and dispose release the document listeners', () => {
   const remove = vi.spyOn(document, 'removeEventListener')
   panel.open()
   panel.close()
-  const added = add.mock.calls.filter(([type]) => type === 'keydown' || type === 'mousedown').length
-  const removed = remove.mock.calls.filter(([type]) => type === 'keydown' || type === 'mousedown').length
+  const tracked = (type: string): boolean => type === 'keydown' || type === 'mousedown' || type === 'focusin'
+  const added = add.mock.calls.filter(([type]) => tracked(type)).length
+  const removed = remove.mock.calls.filter(([type]) => tracked(type)).length
+  expect(added).toBe(3)
   expect(removed).toBe(added)
   panel.open()
   panel.dispose()
   expect(panel.isOpen()).toBe(false)
+})
+
+test('opening the panel moves focus onto it', () => {
+  const { panel } = setup()
+  panel.open()
+  expect(document.activeElement).toBe(document.querySelector('.tt-favorites-panel'))
+})
+
+test('focus moving to an input outside the panel closes it, and a digit then reaches the input untouched', () => {
+  const { store, panel } = setup()
+  const input = document.createElement('input')
+  document.body.appendChild(input)
+  const before = currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])
+  panel.open()
+  input.focus()
+  expect(panel.isOpen()).toBe(false)
+  const e = new KeyboardEvent('keydown', { key: '1', code: 'Digit1', bubbles: true, cancelable: true })
+  input.dispatchEvent(e)
+  expect(e.defaultPrevented).toBe(false)
+  expect(currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])).toEqual(before)
+})
+
+test('focus landing on the header star button does not close the panel (its click toggles)', () => {
+  const { panel } = setup()
+  const btn = document.createElement('button')
+  btn.className = 'tt-btn-favorites'
+  document.body.appendChild(btn)
+  panel.open()
+  btn.focus()
+  expect(panel.isOpen()).toBe(true)
+})
+
+test('Escape puts focus back on the element that had it before the panel opened', () => {
+  const { panel } = setup()
+  const input = document.createElement('input')
+  document.body.appendChild(input)
+  input.focus()
+  panel.open()
+  expect(document.activeElement).not.toBe(input)
+  press('Escape')
+  expect(panel.isOpen()).toBe(false)
+  expect(document.activeElement).toBe(input)
+})
+
+test('a row click does not restore focus after the jump (the pane re-renders)', () => {
+  const { panel } = setup()
+  const input = document.createElement('input')
+  document.body.appendChild(input)
+  input.focus()
+  panel.open()
+  rows()[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  expect(document.activeElement).not.toBe(input)
+})
+
+test('a stale row whose favorite died after the list was rendered does not jump', () => {
+  const { store, panel, selectTeam } = setup()
+  panel.open()
+  const before = currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])
+  // Dies behind the panel's back (no re-render): rows[0] is still the T1 risks row.
+  store.doc.teams = store.doc.teams.filter((tm) => tm.id !== 'T1')
+  press('Enter')
+  expect(selectTeam).not.toHaveBeenCalled()
+  expect(currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])).toEqual(before)
+})
+
+test('modified arrows and Enter are not swallowed: Alt+ArrowDown leaves the selection, Ctrl+Enter does not jump', () => {
+  const { panel } = setup()
+  panel.open()
+  const down = new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true })
+  document.dispatchEvent(down)
+  expect(down.defaultPrevented).toBe(false)
+  expect(rows()[0]!.classList.contains('selected')).toBe(true)
+  const enter = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true })
+  document.dispatchEvent(enter)
+  expect(enter.defaultPrevented).toBe(false)
+  expect(panel.isOpen()).toBe(true)
+})
+
+test('Shift+digit ("!") does not jump', () => {
+  const { panel } = setup()
+  panel.open()
+  press('!', { code: 'Digit1', shiftKey: true })
+  expect(panel.isOpen()).toBe(true)
+})
+
+test('in a split view the favorite opens in the focused pane (pane 1), leaving pane 0 alone', () => {
+  const { store, pm, panel } = setup()
+  pm.toggleSplit()
+  store.updateNav((d) => { d.nav.focusedPane = 1 })
+  const pane0 = currentLoc(store.doc.nav.panes[0])
+  panel.open()
+  press('1', { code: 'Digit1' })
+  expect(currentLoc(store.doc.nav.panes[1])).toEqual({ teamId: 'T1', ref: { kind: 'risks' } })
+  expect(currentLoc(store.doc.nav.panes[0])).toEqual(pane0)
+})
+
+test('a modeless card whose close is vetoed aborts the jump and keeps the panel open', () => {
+  const { store, panel, selectTeam } = setup()
+  showModal({ title: 'Card', body: el('div'), buttons: [], modeless: true, beforeClose: () => false })
+  const before = currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])
+  panel.open()
+  press('2', { code: 'Digit2' }) // a cross-team row, so a leaked jump would also switch team
+  expect(panel.isOpen()).toBe(true)
+  expect(selectTeam).not.toHaveBeenCalled()
+  expect(currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])).toEqual(before)
+  expect(document.querySelector('.tt-modal-modeless')).not.toBeNull()
 })

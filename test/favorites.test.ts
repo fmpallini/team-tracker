@@ -1,6 +1,6 @@
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import { favoriteKey, normalizeRef, isFavorite, toggleFavorite, isFavoriteOrphaned, liveFavorites } from '../src/core/favorites'
-import type { Doc, Loc } from '../src/core/types'
+import type { Doc, Favorite, Loc } from '../src/core/types'
 
 function docWithTeam(): Doc {
   const d = createEmptyDocument('en-US')
@@ -78,6 +78,11 @@ describe('isFavoriteOrphaned / liveFavorites', () => {
     expect(isFavoriteOrphaned(d, ann)).toBe(false)
     d.teams[0]!.members = []
     expect(isFavoriteOrphaned(d, ann)).toBe(true)
+  })
+  test('a person favorite with a malformed group is orphaned instead of throwing', () => {
+    const d = docWithTeam()
+    const bad = { teamId: d.teams[0]!.id, ref: { kind: 'person', personId: 'x' } } as unknown as Favorite
+    expect(isFavoriteOrphaned(d, bad)).toBe(true)
   })
   test('daily and module favorites of an existing team are never orphaned', () => {
     const d = docWithTeam()

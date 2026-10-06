@@ -9,7 +9,7 @@
 import type { Store } from '../core/store'
 import type { Favorite } from '../core/types'
 import { findTeam } from '../core/document'
-import { liveFavorites, toggleFavorite } from '../core/favorites'
+import { isFavoriteOrphaned, liveFavorites, toggleFavorite } from '../core/favorites'
 import { KIND_ICON } from '../core/search'
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
@@ -40,6 +40,8 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
   let listEl: HTMLElement | null = null
   let rows: Favorite[] = []
   let selected = 0
+  // Where focus was before open(): Escape hands it back (a jump must not — the pane re-renders).
+  let prevFocus: Element | null = null
 
   function locale(): Locale {
     return store.doc.prefs.locale
@@ -58,10 +60,13 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
     listEl = null
     document.removeEventListener('keydown', onKeydown, true)
     document.removeEventListener('mousedown', onMousedown, true)
+    document.removeEventListener('focusin', onFocusin, true)
   }
 
   function jump(fav: Favorite | undefined): void {
     if (!fav) return
+    // The row may predate a deletion (rows render once per open/✕); never jump to a dead favorite.
+    if (isFavoriteOrphaned(store.doc, fav)) { renderList(); return }
     // A card modal open in a pane must close first (flushing its notes editor);
     // if its required-name guard vetoes, keep the panel open on the card.
     if (!dismissModelessModals()) return
@@ -117,9 +122,13 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
     if (blockedByBlockingModal()) return
     if (e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation()
+      const back = prevFocus
       close()
+      if (back instanceof HTMLElement && back.isConnected) back.focus()
       return
     }
+    // Modified keys belong to the app's own hotkeys (Alt+arrows = panes, Alt+1..9 = teams).
+    if (e.ctrlKey || e.altKey || e.metaKey) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault(); e.stopPropagation()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, rows.length)
@@ -131,7 +140,7 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
       jump(rows[selected])
       return
     }
-    if (e.ctrlKey || e.altKey || e.metaKey) return // Alt+1..9 is the team switch, not ours
+    if (e.shiftKey) return // Shift+1 types "!", it is not a digit press
     for (let n = 1; n <= 9; n++) {
       if (!matchDigit(e, n)) continue
       e.preventDefault(); e.stopPropagation()
@@ -148,23 +157,35 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
     close()
   }
 
+  // The panel takes focus on open so its keys never fight a field the user was
+  // typing in; focus moving anywhere else (Ctrl+F, `/`, Tab…) dismisses it and
+  // leaves that field's keys untouched. Same ★-button exemption as mousedown.
+  function onFocusin(e: FocusEvent): void {
+    const target = e.target as Element | null
+    if (target?.closest('.tt-favorites-panel, .tt-btn-favorites')) return
+    close()
+  }
+
   function open(): void {
     if (panel) return
     // Every row re-targets a pane inside some team; with none there is nothing
     // to jump to. Same rule as the palette and the search bar.
     if (store.doc.teams.length === 0) return
     selected = 0
+    prevFocus = document.activeElement
     listEl = el('div', { class: 'tt-favorites-list' })
     panel = el(
       'div',
-      { class: 'tt-favorites-panel', role: 'dialog', 'aria-label': t(locale(), 'favorites_panel_label') },
+      { class: 'tt-favorites-panel', tabindex: '-1', role: 'dialog', 'aria-label': t(locale(), 'favorites_panel_label') },
       listEl
     )
     panel.style.top = `${deps.headerBottom()}px`
     document.body.appendChild(panel)
     document.addEventListener('keydown', onKeydown, true)
     document.addEventListener('mousedown', onMousedown, true)
+    document.addEventListener('focusin', onFocusin, true)
     renderList()
+    panel.focus()
   }
 
   return {

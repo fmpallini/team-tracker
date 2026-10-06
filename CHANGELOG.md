@@ -13,6 +13,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Changed
 - Clean up data (Preferences → Data) now also removes favorites that no longer lead anywhere: ones for a deleted team or person, and Daily notes favorites for days older than the number of days you choose. The confirmation shows how many.
+- The header now switches to its compact form a little sooner: at a window width of 840 px instead of 820 px at the default text size, and proportionally wider at larger text sizes. In a window in that narrow band, the search box and the app name are now hidden.
 
 ## [2.9.5] - 2026-10-01
 
