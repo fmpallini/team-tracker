@@ -106,10 +106,8 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const headerEl = el(
     'div',
     { class: 'tt-person-header' },
-    editBtn,
-    gotoOrgBtn,
     el('div', { class: 'tt-person-header-id' }, headerTitleEl),
-    headerBadgeSlot
+    el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, editBtn, gotoOrgBtn)
   )
 
   const bundle = createRichEditorBundle({
