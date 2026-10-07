@@ -11,7 +11,7 @@ your browser, nothing to install.
 
 Re-organise an org chart by drag, double-click a person to open their notes,
 write rich text with shortcuts or markdown, switch between fully separate
-teams, jump to any module or item in the current team with Fast Switch
+teams, jump to any module, item or favorite in any team with Fast Switch
 (`Ctrl+Shift+K`), follow `@`-references
 (plain click jumps to the item, `Ctrl`+click opens it in the second pane),
 drop in one-key templates, run a kanban board with custom columns, drag a risk
@@ -34,7 +34,7 @@ opens the same clip in its own player).
 | Action items — kanban with custom columns | Milestones — timeline + list |
 | ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![A person's notes page with role, backlink badge, and a filled 1:1 template](docs/screenshots/person-notes.png) |
 | Risks — chance × impact exposure | Per-person notes + backlinks |
-| ![Ctrl+Shift+K fast switch for jumping to any module or item in the current team](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
+| ![Ctrl+Shift+K fast switch for jumping to any module, item, favorite or due item in any team](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
 | `Ctrl+Shift+K` fast switch | `Ctrl+Shift+F` search across every team |
 
 </details>
