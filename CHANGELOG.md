@@ -12,9 +12,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - The list shows at most 20 rows. Each section keeps its own share, and a section that was cut short shows how many matches it has (for example "10 of 31").
 - Overdue and due-soon items now appear as rows in the fast switch itself, instead of one "Due" entry that opened the due list.
 - Favorites are used from the fast switch: they are its first section, and a ✕ at the end of a favorite's row removes it. The ☆ in each pane's title bar still adds or removes a favorite.
-
-### Removed
-- The ★ button in the header and its Ctrl+Alt+F shortcut. Your saved favorites are untouched — open the fast switch to use them.
+- The ★ button in the header and its Ctrl+Alt+F shortcut are gone; your saved favorites are untouched — open the fast switch to use them.
 
 ## [2.10.0] - 2026-10-06
 

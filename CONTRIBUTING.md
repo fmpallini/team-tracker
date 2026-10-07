@@ -56,7 +56,7 @@ runtime dependency is a hard no.
 Because every pane is just a render function registered by string key, adding
 a new tracked entity (say, a "decisions log", kind `decisions`) is mostly
 additive. The one thing that's easy to half-do is wiring it into global search
-and the `Ctrl+Shift+K` fast switch (a.k.a. the command palette, `palette.ts`) —
+and the `Ctrl+Shift+K` fast switch (a.k.a. the command palette, `palette.ts`, fed by `core/switcher.ts`) —
 both are covered explicitly below, since they don't come for free just from
 registering the module.
 
@@ -105,18 +105,19 @@ registering the module.
    call a few lines down, or a pane whose saved nav state already points at
    the new kind renders "Módulo em construção…" and never gets a second pass.
    Also add a `case 'decisions':` to `titleFor()`'s switch in
-   `src/ui/panes.ts` (the pane header title) — it has an explicit `string`
+   `src/core/module-items.ts` (the pane header title) — it has an explicit `string`
    return type, so TypeScript will refuse to compile a non-exhaustive switch
    and point you straight back here if you forget.
 
 4. **Pane switcher + fast switch (one list, both surfaces).** Add it to
-   `FIXED_MODULE_KEYS` in `src/ui/panes.ts` (its `kind` field is a closed
+   `FIXED_MODULE_KEYS` in `src/core/module-items.ts` (its `kind` field is a closed
    union — widen that type alongside the new array entry, TypeScript will
    flag the mismatch either way). `buildModuleItems()` in that same file
    turns that list into the `ModuleItem[]` array shown in the pane's own "＋"
-   module dropdown — **and `src/ui/palette.ts`'s `Ctrl+Shift+K` fast switch
-   calls this exact same function.** There's no separate fast-switch item list
-   to maintain; wiring the pane switcher wires the fast switch too.
+   module dropdown — **and the `Ctrl+Shift+K` fast switch reuses this exact
+   same function:** `src/core/switcher.ts` (which `src/ui/palette.ts` renders)
+   calls `buildModuleItems()` for every team. There's no separate fast-switch
+   item list to maintain; wiring the pane switcher wires the fast switch too.
    If individual items (not just the module as a whole) should get their own
    fast-switch entries — the way each action item/milestone/risk shows up as
    its own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
