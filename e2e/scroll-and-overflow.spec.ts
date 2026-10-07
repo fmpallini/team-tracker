@@ -47,13 +47,18 @@ test('fast switch (Ctrl+Shift+K): as wide as Preferences, one ellipsized line pe
   const rem = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
   expect(await dialog.evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThan(40 * rem)
 
+  await page.locator('.tt-palette-input').fill('legado') // the long summary would otherwise sit past the 20-row cap
   const rows = await dialog.locator('.tt-palette-item').evaluateAll((els) =>
-    els.map((e) => ({ h: e.getBoundingClientRect().height, clipped: e.scrollWidth > e.clientWidth, tip: (e as HTMLElement).title, text: e.textContent }))
+    els.map((e) => {
+      const label = e.querySelector<HTMLElement>('.tt-palette-label')!
+      return { h: e.getBoundingClientRect().height, clipped: label.scrollWidth > label.clientWidth, tip: label.title, text: label.textContent }
+    })
   )
-  expect(rows.length).toBeGreaterThan(20) // the modules plus every action item, milestone and risk
+  expect(rows.length).toBeGreaterThan(0)
+  expect(rows.length).toBeLessThanOrEqual(20)
   expect(new Set(rows.map((r) => Math.round(r.h))).size).toBe(1) // one line each
-  expect(rows.some((r) => r.clipped)).toBe(true) // the long summaries are ellipsized…
-  for (const r of rows) expect(r.tip).toBe(r.text) // …and each row carries its full text as a tooltip
+  expect(rows.some((r) => r.clipped)).toBe(true) // the long summary is ellipsized…
+  for (const r of rows) expect(r.tip).toBe(r.text) // …and each label carries its full text as a tooltip
 })
 
 test('milestone timeline: drawn at natural size, scrolls sideways under the wheel', async ({ page }) => {
