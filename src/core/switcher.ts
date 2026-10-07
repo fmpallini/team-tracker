@@ -92,7 +92,6 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
     if (!matches(words, team.name, label)) continue
     favRows.push({ label, teamId: fav.teamId, ref: fav.ref, teamBadge: badge(team), favorite: fav })
   }
-  const favKeys = new Set(favRows.map((r) => favoriteKey(r)))
 
   // 2. Due dates: overdue first, then due soon (collectDueItems already sorts each bucket).
   const buckets = collectDueItems(doc, today)
@@ -108,14 +107,12 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
     dueRows.push({ label, teamId: item.loc.teamId, ref: item.loc.ref, teamBadge: badge(team), dueLabel })
   }
 
-  // 3. Current team. A module-level row already shown as a favorite is dropped;
-  // card rows (with an itemId) never are — a favorite opens the module, not a card.
-  const currentRows: SwitcherRow[] = []
+  // 3. Current team (before dedupe — see the allocation loop below).
+  const currentMatches: SwitcherRow[] = []
   if (active) {
     for (const item of buildModuleItems(active, locale)) {
-      if (!hasItemId(item.ref) && favKeys.has(favoriteKey({ teamId: active.id, ref: item.ref }))) continue
       if (!matches(words, active.name, item.label)) continue
-      currentRows.push({ label: item.label, teamId: active.id, ref: item.ref })
+      currentMatches.push({ label: item.label, teamId: active.id, ref: item.ref })
     }
   }
 
@@ -131,13 +128,32 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
     }
   }
 
+  // A module-level Current-team row is dropped only when its favorite twin is
+  // actually SHOWN — a favorite cut by the cap must not make the place vanish
+  // from both sections. Card rows (with an itemId) are never dropped: a
+  // favorite opens the module, not a card. Dedupe changes Current's count and
+  // the cap depends on counts, so iterate: start by assuming every matching
+  // favorite shows, then shrink to the share the allocation really gives
+  // Favorites. That share only ever shrinks (a twin coming back lengthens
+  // Current, which can only compete for the leftover slots), so it settles
+  // within favRows.length + 2 passes.
+  let favShown = favRows.length
+  let currentRows: SwitcherRow[] = []
+  let shown: number[] = []
+  for (let pass = 0; pass <= favRows.length + 1; pass++) {
+    const favKeys = new Set(favRows.slice(0, favShown).map((r) => favoriteKey(r)))
+    currentRows = currentMatches.filter((r) => hasItemId(r.ref) || !favKeys.has(favoriteKey(r)))
+    shown = allocateRows([favRows.length, dueRows.length, currentRows.length, otherRows.length])
+    if (shown[0] === favShown) break
+    favShown = shown[0]!
+  }
+
   const all: { id: SwitcherSectionId; heading: string; rows: SwitcherRow[] }[] = [
     { id: 'favorites', heading: `⭐ ${t(locale, 'switcher_favorites')}`, rows: favRows },
     { id: 'due', heading: `⏰ ${t(locale, 'switcher_due')}`, rows: dueRows },
     { id: 'current', heading: active ? badge(active) : '', rows: currentRows },
     { id: 'others', heading: `🗂️ ${t(locale, 'switcher_others')}`, rows: otherRows },
   ]
-  const shown = allocateRows(all.map((s) => s.rows.length))
   return all
     .map((s, i) => ({ id: s.id, heading: s.heading, total: s.rows.length, rows: s.rows.slice(0, shown[i]) }))
     .filter((s) => s.total > 0)

@@ -183,5 +183,39 @@ describe('buildSwitcher row cap', () => {
     const byId = Object.fromEntries(sections.map((s) => [s.id, s.rows.length]))
     expect(byId['current']).toBeGreaterThanOrEqual(4)
     expect(byId['others']).toBeGreaterThanOrEqual(4)
+    // Two big sections split the 20 rows evenly (see allocateRows([40, 40])).
+    expect(byId['current']).toBe(10)
+    expect(byId['others']).toBe(10)
+    expect(sections.flatMap((s) => s.rows).length).toBeLessThanOrEqual(SWITCHER_MAX_ROWS)
+  })
+})
+
+describe('buildSwitcher favorite dedupe vs the row cap', () => {
+  /** Alpha (active) with 20 people so Current team is long; Beta with 12 members that become 12 favorites. */
+  function crowdedFavoritesDoc(): Doc {
+    const doc = twoTeamDoc()
+    for (let i = 0; i < 20; i++) doc.teams[0]!.members.push(person(`m${i}`, `Person ${i}`))
+    for (let i = 0; i < 12; i++) doc.teams[1]!.members.push(person(`n${i}`, `Beta ${i}`))
+    return doc
+  }
+
+  test('a favorite cut by the cap does not remove its twin from Current team', () => {
+    const doc = crowdedFavoritesDoc()
+    for (let i = 0; i < 11; i++) toggleFavorite(doc, { teamId: 'b', ref: { kind: 'person', personId: `n${i}`, group: 'members' } })
+    toggleFavorite(doc, { teamId: 'a', ref: { kind: 'general' } }) // starred last → ranked beyond the Favorites cap
+    const sections = buildSwitcher(doc, '', 'en-US', TODAY)
+    const favorites = sections.find((s) => s.id === 'favorites')!
+    expect(favorites.total).toBe(12)
+    expect(favorites.rows.length).toBeLessThan(12)
+    expect(favorites.rows.some((r) => r.ref.kind === 'general')).toBe(false)
+    expect(rowsOf(doc, '', 'current').some((r) => r.ref.kind === 'general')).toBe(true)
+  })
+
+  test('a favorite that is shown still removes its twin from Current team', () => {
+    const doc = crowdedFavoritesDoc()
+    toggleFavorite(doc, { teamId: 'a', ref: { kind: 'risks' } }) // starred first → shown
+    for (let i = 0; i < 11; i++) toggleFavorite(doc, { teamId: 'b', ref: { kind: 'person', personId: `n${i}`, group: 'members' } })
+    expect(rowsOf(doc, '', 'favorites').some((r) => r.ref.kind === 'risks')).toBe(true)
+    expect(rowsOf(doc, '', 'current').some((r) => r.ref.kind === 'risks' && !('itemId' in r.ref))).toBe(false)
   })
 })
