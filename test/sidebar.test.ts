@@ -699,22 +699,6 @@ describe('due list modal', () => {
   })
 })
 
-describe('SidebarHandle.openDuePanel()', () => {
-  test('opens the real, unfiltered, global due panel (used by the Ctrl+K palette\'s "Due" entry)', () => {
-    const { store, sidebar } = setup()
-    addTeam(store, 'Alpha')
-    addTeam(store, 'Beta')
-    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
-    addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-02' })
-    store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
-
-    sidebar.openDuePanel()
-
-    expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
-    expect(document.querySelectorAll('.tt-due-row')).toHaveLength(2)
-  })
-})
-
 describe('per-team due badge (sidebar list)', () => {
   test('clicking it opens a panel scoped to just that team, without selecting the team', () => {
     const { store, selectTeam } = setup()

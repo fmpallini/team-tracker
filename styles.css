@@ -790,10 +790,28 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-input { border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: .75rem; font-size: 1.05rem; }
 .tt-palette-input:focus { outline: none; }
 .tt-palette-list { overflow-y: auto; padding: .25rem; }
-/* One line per entry whatever the item's title length; the full text is on the
-   row's own title tooltip (palette.ts). */
-.tt-palette-item { padding: .5rem .6rem; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Sections (core/switcher.ts): each group gets a heading, and every group after
+   the first a rule above it, so Favorites / Due dates / team / Other teams read
+   as separate lists at a glance. */
+.tt-palette-group + .tt-palette-group { margin-top: .35rem; padding-top: .35rem; border-top: 1px solid var(--border); }
+.tt-palette-heading {
+  padding: .25rem .6rem; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* One line per entry whatever the title length: the label ellipsizes (full text
+   on its title tooltip, palette.ts); due text, team badge and ✕ are fixed items
+   that never shrink. min-height keeps rows with and without the ✕ the same height. */
+.tt-palette-item { display: flex; align-items: center; gap: .5rem; box-sizing: border-box; min-height: 2.5rem; padding: .5rem .6rem; border-radius: 4px; cursor: pointer; }
 .tt-palette-item.selected, .tt-palette-item:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-palette-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-palette-due { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.tt-palette-team { flex: none; max-width: 10rem; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-palette-remove {
+  flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
+  background: transparent; color: var(--fg); border: none; border-radius: 4px; cursor: pointer; opacity: .6;
+}
+.tt-palette-remove:hover { opacity: 1; color: var(--accent); }
+.tt-palette-empty { padding: .75rem; opacity: .75; }
 
 /* Favorites panel (src/ui/favorites.ts): hangs under the header, right-aligned.
    Everything in rem so it follows html[data-size]; rows are one line with an

@@ -264,11 +264,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // module is registered.
   pm.renderAll()
   disposers.push(() => pm.dispose())
-  // sidebarHandle isn't declared until mountSidebar() runs later in this
-  // function — safe to reference here because this arrow function only ever
-  // executes later (Ctrl+Shift+K or the app-name click), by which point
-  // mountSidebar() has already returned it.
-  const palette = createPalette(store, pm, () => sidebarHandle.openDuePanel())
+  // `selectTeam` is a hoisted function declaration (below), safe to pass here.
+  const palette = createPalette(store, pm, { selectTeam })
   shell.onAppNameClick(() => palette.open())
   // Same empty-document rule as the search bar (src/ui/search-ui.ts): driven by
   // onMutate so creating the first team and deleting the last one both reach it.
