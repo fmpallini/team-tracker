@@ -38,10 +38,6 @@ export interface Shell {
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
   onHelp(cb: () => void): void
-  /** Registers the click handler for the header ★ button (toggles the favorites panel — same action as Ctrl+Alt+F). */
-  onFavorites(cb: () => void): void
-  /** Enables/disables the ★ button. Mirrors the palette/search rule: with no team there is nothing a favorite could open. */
-  setFavoritesEnabled(enabled: boolean): void
   /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+Shift+K). */
   onAppNameClick(cb: () => void): void
   /**
@@ -269,19 +265,8 @@ export function createShell(locale: Locale): Shell {
     { class: 'tt-btn tt-btn-help', type: 'button', title: t(locale, 'help_global_title'), onclick: () => helpHandler?.() },
     '❓'
   )
-  let favoritesHandler: (() => void) | null = null
-  const favoritesBtn = el(
-    'button',
-    { class: 'tt-btn tt-btn-favorites', type: 'button', title: t(locale, 'favorites_btn_title'), onclick: () => favoritesHandler?.() },
-    '★'
-  )
 
-  // ★ is navigation (same family as search and the palette), so it sits in
-  // headerLeft right after the search bar; mountSearch() inserts the search box
-  // before it. The right cluster is status, then view/help utilities, then
-  // settings and the session-ending close-file button last, kept apart from
-  // the utilities.
-  headerLeft.appendChild(favoritesBtn)
+  // The right cluster is status, then view/help utilities, then settings and the session-ending close-file button last, kept apart from the utilities. (mountSearch() appends the search box to headerLeft.)
   headerRight.append(
     savePillWrap,
     el('span', { class: 'tt-header-btn-group' }, fullscreenBtn, helpBtn),
@@ -412,7 +397,6 @@ export function createShell(locale: Locale): Shell {
       closeFileBtn.title = t(currentLocale, 'close_file_title')
       settingsBtn.title = t(currentLocale, 'settings')
       helpBtn.title = t(currentLocale, 'help_global_title')
-      favoritesBtn.title = t(currentLocale, 'favorites_btn_title')
     }
     if (localeChanged || backupEnabledChanged || backupFrequencyChanged) renderSaveIndicator()
   }
@@ -428,14 +412,6 @@ export function createShell(locale: Locale): Shell {
 
   function onHelp(cb: () => void): void {
     helpHandler = cb
-  }
-
-  function onFavorites(cb: () => void): void {
-    favoritesHandler = cb
-  }
-
-  function setFavoritesEnabled(enabled: boolean): void {
-    favoritesBtn.disabled = !enabled
   }
 
   function onAppNameClick(cb: () => void): void {
@@ -490,5 +466,5 @@ export function createShell(locale: Locale): Shell {
     mq.removeEventListener('change', onSystemThemeChange)
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onFavorites, setFavoritesEnabled, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
 }

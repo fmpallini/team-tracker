@@ -1,5 +1,5 @@
 // src/core/favorites.ts — pure helpers for Doc.favorites (the pane-bar star and
-// the header favorites panel). A favorite is a team + module location; the
+// the fast switch's Favorites section). A favorite is a team + module location; the
 // `itemId` of an actions/milestones/risks ref is dropped, so one opens the
 // module, not a card. No DOM, no store: callers wrap mutations in store.update.
 import type { Doc, Favorite, Loc, ModuleRef } from './types'

@@ -40,7 +40,6 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Shift+K', 'help_global_palette'],
   ['Ctrl+S', 'help_global_save'],
   ['Ctrl+Alt+L / 🔒', 'help_global_close_file'],
-  ['Ctrl+Alt+F', 'help_global_favorites'],
   ['Ctrl+F ou /', 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
   ['Alt+Shift+← / Alt+Shift+→', 'help_global_history'],

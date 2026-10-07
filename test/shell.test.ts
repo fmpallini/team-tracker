@@ -1,6 +1,5 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { t } from '../src/core/i18n'
-import { createEmptyDocument } from '../src/core/document'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -495,20 +494,8 @@ describe('dispose', () => {
   })
 })
 
-describe('favorites button', () => {
-  test('is in the header left cluster, after the search box mount point, titled with the hotkey', () => {
-    const shell = setup()
-    const btn = shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!
-    expect(btn).not.toBeNull()
-    expect(btn.textContent).toBe('★')
-    expect(btn.title).toBe(t('en-US', 'favorites_btn_title'))
-    expect(shell.headerLeft.contains(btn)).toBe(true)
-    expect(shell.headerRight.contains(btn)).toBe(false)
-    const kids = Array.from(shell.headerLeft.children)
-    expect(kids.indexOf(btn)).toBeGreaterThan(kids.findIndex((c) => c.classList.contains('tt-app-name')))
-  })
-
-  test('right cluster order: save pill, view/help group, settings then close-file', () => {
+describe('header right cluster', () => {
+  test('order: save pill, view/help group, settings then close-file', () => {
     const shell = setup()
     const order = Array.from(shell.headerRight.querySelectorAll('.tt-save-pill-wrap, .tt-btn')).map(
       (e) => ['tt-save-pill-wrap', 'tt-btn-fullscreen', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'].find((c) => e.classList.contains(c))
@@ -516,26 +503,7 @@ describe('favorites button', () => {
     expect(order).toEqual(['tt-save-pill-wrap', 'tt-btn-fullscreen', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'])
   })
 
-  test('click calls the registered handler', () => {
-    const shell = setup()
-    const cb = vi.fn()
-    shell.onFavorites(cb)
-    shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!.click()
-    expect(cb).toHaveBeenCalledTimes(1)
-  })
-
-  test('setFavoritesEnabled toggles disabled', () => {
-    const shell = setup()
-    const btn = shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!
-    shell.setFavoritesEnabled(false)
-    expect(btn.disabled).toBe(true)
-    shell.setFavoritesEnabled(true)
-    expect(btn.disabled).toBe(false)
-  })
-
-  test('title follows a locale change', () => {
-    const shell = setup()
-    shell.applyPrefs({ ...createEmptyDocument('pt-BR').prefs })
-    expect(shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!.title).toBe(t('pt-BR', 'favorites_btn_title'))
+  test('there is no favorites ★ button any more', () => {
+    expect(setup().root.querySelector('.tt-btn-favorites')).toBeNull()
   })
 })

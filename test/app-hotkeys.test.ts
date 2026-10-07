@@ -48,31 +48,16 @@ describe('global Ctrl chords', () => {
   })
 })
 
-describe('Ctrl+Alt+F → favorites', () => {
-  test('Ctrl+Alt+F and Cmd+Alt+F → favorites', () => {
-    expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true, altKey: true })).toEqual({ type: 'favorites' })
-    expect(resolve({ key: 'f', code: 'KeyF', metaKey: true, altKey: true })).toEqual({ type: 'favorites' })
+describe('Ctrl+Alt+F (retired favorites hotkey)', () => {
+  test('is no longer claimed', () => {
+    expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true, altKey: true })).toBeNull()
+    expect(resolve({ key: 'f', code: 'KeyF', metaKey: true, altKey: true })).toBeNull()
   })
 
-  test('Ctrl+Shift+F (search all teams), plain Ctrl+F and Alt+F are not claimed', () => {
+  test('Ctrl+Shift+F (search all teams), plain Ctrl+F and Alt+F are not claimed either', () => {
     expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true, shiftKey: true })).toBeNull()
     expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true })).toBeNull()
     expect(resolve({ key: 'f', code: 'KeyF', altKey: true })).toBeNull()
-  })
-
-  test('Ctrl+Alt+Shift+F is not claimed', () => {
-    expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true, altKey: true, shiftKey: true })).toBeNull()
-  })
-
-  test('matches by physical key on a layout where e.key is not "f"', () => {
-    expect(resolve({ key: 'ƒ', code: 'KeyF', ctrlKey: true, altKey: true })).toEqual({ type: 'favorites' })
-  })
-
-  test('is blocked by a blocking modal but not by a modeless card modal', () => {
-    document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
-    expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true, altKey: true })).toBeNull()
-    document.body.innerHTML = '<div class="tt-modal-overlay tt-modal-modeless"></div>'
-    expect(resolve({ key: 'f', code: 'KeyF', ctrlKey: true, altKey: true })).toEqual({ type: 'favorites' })
   })
 })
 
