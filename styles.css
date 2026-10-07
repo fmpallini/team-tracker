@@ -200,7 +200,11 @@ body { background: var(--bg); color: var(--fg); }
    (≈ 47rem of save pill and buttons, in rem so it tracks the text size). Below
    that it shrinks to nothing — hence overflow:hidden — rather than pushing the
    search box under itself. */
-.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - 220px - 47rem))); overflow: hidden; }
+.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - var(--tt-wco-reserve) - 220px - 47rem))); overflow: hidden; }
+/* Width the window-controls overlay takes from the header's row (0 outside the installed PWA): the formula above and responsive.ts both budget against the usable row, not the window. */
+:root { --tt-wco-reserve: 0px; }
+/* responsive.ts: the slot is too narrow for more than a stub. Hides the content, not .tt-header-center itself — a display:none grid item drops out of the auto-placement and the right cluster would slide into its column. */
+.tt-header.tt-header-team-hidden .tt-header-team-indicator-group { display: none; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of
@@ -217,6 +221,7 @@ body { background: var(--bg); color: var(--fg); }
    it) — just tall and padded enough to clear the caption-button cluster, and
    marked as the drag region. */
 @media (display-mode: window-controls-overlay) {
+  :root { --tt-wco-reserve: calc(100vw - env(titlebar-area-width, 100vw)); }
   .tt-header {
     min-height: env(titlebar-area-height, 2.5rem);
     padding-inline-end: calc(.75rem + 100% - env(titlebar-area-width, 100%));
@@ -226,8 +231,17 @@ body { background: var(--bg); color: var(--fg); }
   /* Fixed banner is otherwise pinned to top:0, landing under the browser's
      caption-button overlay (widest in the collapsed state) — pointer events
      there never reach the page, so the action button can't be clicked. Drop
-     it below the titlebar strip, same env var .tt-header uses above. */
-  .tt-update-banner { top: env(titlebar-area-height, 2.5rem); }
+     it below the header, whose real height is the larger of the titlebar strip
+     and its own content (padding .5rem×2 + the 2rem controls + 1px border):
+     the header is the drag region, and Chromium builds drag regions from
+     element rects without regard to what is painted on top, so a banner that
+     overlaps even a few px of the header leaves that part of its button as
+     window-drag, not click (hover and click then depend on which side the
+     pointer enters from). no-drag on the banner is the belt to those braces. */
+  .tt-update-banner {
+    top: max(env(titlebar-area-height, 2.5rem), 3rem + 1px);
+    -webkit-app-region: no-drag; app-region: no-drag;
+  }
 }
 
 /* Sidebar collapse toggle: lives in the header (prepended before the app

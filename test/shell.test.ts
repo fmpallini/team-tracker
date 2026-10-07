@@ -64,6 +64,17 @@ describe('header compact mode', () => {
     shell.setHeaderCompactSpaceHidden(false)
     expect(header(shell).classList.contains('tt-header-compact')).toBe(false)
   })
+
+  test('setHeaderTeamSpaceHidden toggles its own class, independent of compact', () => {
+    const shell = setup()
+    shell.setHeaderCompactSpaceHidden(true)
+    shell.setHeaderTeamSpaceHidden(true)
+    expect(header(shell).classList.contains('tt-header-team-hidden')).toBe(true)
+    shell.setHeaderCompactSpaceHidden(false)
+    expect(header(shell).classList.contains('tt-header-team-hidden')).toBe(true)
+    shell.setHeaderTeamSpaceHidden(false)
+    expect(header(shell).classList.contains('tt-header-team-hidden')).toBe(false)
+  })
 })
 
 describe('save indicator pill', () => {

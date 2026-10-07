@@ -1,4 +1,4 @@
-import { setupResponsiveLayout, type ResponsiveHooks } from '../src/ui/responsive'
+import { setupResponsiveLayout, wcoReservedWidth, type ResponsiveHooks } from '../src/ui/responsive'
 
 type Callback = (entries: Array<{ contentRect: { width: number } }>) => void
 
@@ -152,6 +152,73 @@ describe('with ResizeObserver available', () => {
     expect(ro.disconnected).toBe(false)
     dispose()
     expect(ro.disconnected).toBe(true)
+  })
+
+  describe('window-controls overlay (installed PWA) takes width out of the header row', () => {
+    test('the header thresholds see the window width minus the reserved width; the others do not', () => {
+      const hooks = fakeHooks()
+      setupResponsiveLayout(document.createElement('div'), hooks, { reservedWidth: () => 140 })
+      const ro = FakeResizeObserver.instances[0]!
+
+      ro.fire(950) // 950 − 140 = 810 < 840: compact, though a plain 950px window would not be
+      expect(hooks.headerCompactCalls).toEqual([true])
+      expect(hooks.splitCalls).toEqual([]) // 950 is still above the 900 split threshold
+      expect(hooks.sidebarCalls).toEqual([])
+    })
+
+    test('reserved width is read on every evaluation, so a geometry change takes effect', () => {
+      let reserved = 0
+      const hooks = fakeHooks()
+      setupResponsiveLayout(document.createElement('div'), hooks, { reservedWidth: () => reserved })
+      const ro = FakeResizeObserver.instances[0]!
+      ro.fire(900)
+      expect(hooks.headerCompactCalls).toEqual([])
+      reserved = 140
+      ro.fire(900)
+      expect(hooks.headerCompactCalls).toEqual([true])
+    })
+
+    test('wcoReservedWidth is 0 without the API, and window − titlebar-area width with it', () => {
+      expect(wcoReservedWidth()).toBe(0)
+      const nav = navigator as unknown as { windowControlsOverlay?: unknown }
+      nav.windowControlsOverlay = { visible: true, getTitlebarAreaRect: () => ({ width: window.innerWidth - 138 }) }
+      try {
+        expect(wcoReservedWidth()).toBe(138)
+        nav.windowControlsOverlay = { visible: false, getTitlebarAreaRect: () => ({ width: 1 }) }
+        expect(wcoReservedWidth()).toBe(0)
+      } finally {
+        delete nav.windowControlsOverlay
+      }
+    })
+  })
+
+  describe('team indicator slot', () => {
+    afterEach(() => {
+      delete document.documentElement.dataset.size
+    })
+
+    test('is dropped once the header is too narrow for it to show more than a stub (220px + 54rem = 1030 at M), restored on widening', () => {
+      const calls: boolean[] = []
+      setupResponsiveLayout(document.createElement('div'), { ...fakeHooks(), setHeaderTeamSpaceHidden: (h) => calls.push(h) })
+      const ro = FakeResizeObserver.instances[0]!
+      ro.fire(1100)
+      expect(calls).toEqual([])
+      ro.fire(1020)
+      expect(calls).toEqual([true])
+      ro.fire(1040)
+      expect(calls).toEqual([true, false])
+    })
+
+    test('the rem part of the threshold follows the text size (XL: 220 + 54 × 18 = 1192)', () => {
+      document.documentElement.dataset.size = 'XL'
+      const calls: boolean[] = []
+      setupResponsiveLayout(document.createElement('div'), { ...fakeHooks(), setHeaderTeamSpaceHidden: (h) => calls.push(h) })
+      const ro = FakeResizeObserver.instances[0]!
+      ro.fire(1200)
+      expect(calls).toEqual([])
+      ro.fire(1180)
+      expect(calls).toEqual([true])
+    })
   })
 
   describe('header compact threshold follows the text size', () => {

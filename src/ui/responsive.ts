@@ -36,6 +36,15 @@ const SIDEBAR_HIDE_BELOW_PX = 650
 // changes. 820 → 840 when the header favorites ★ joined the right cluster: at M
 // (pt-BR, dirty save pill) the search box and promo button then overlapped up to 830px.
 const HEADER_COMPACT_BELOW_PX = 840
+// The centred team indicator only gets what the side clusters leave over (see
+// .tt-header-center in styles.css: 100vw − 220px − 47rem). Below this width
+// that is under ~7rem — a stub that shows a caret and half a letter — so the
+// slot is dropped outright instead. The two constants are that formula solved
+// for 7rem; keep them in step with it. rem part scales with the text size on
+// its own (root px), the 220px part does not.
+const TEAM_SLOT_FIXED_PX = 220
+const TEAM_SLOT_REM = 47 + 7
+const TEAM_SLOT_BASE_ROOT_PX = 15
 // Below this, a single daily-notes pane no longer has room for both the
 // ~240px calendar column and a usable note width, so the calendar is folded
 // away on top of (never instead of) the user's own nav.calendarCollapsed —
@@ -44,21 +53,40 @@ const HEADER_COMPACT_BELOW_PX = 840
 // should go first.
 const CALENDAR_HIDE_BELOW_PX = 560
 
+/**
+ * Width the installed PWA's window-controls overlay (min/max/close) takes out
+ * of the header's row — styles.css pads .tt-header by the same amount. 0
+ * everywhere else, including the standalone build and browsers without the API.
+ */
+export function wcoReservedWidth(): number {
+  const wco = (navigator as Navigator & { windowControlsOverlay?: { visible: boolean; getTitlebarAreaRect(): DOMRect } }).windowControlsOverlay
+  if (!wco?.visible) return 0
+  return Math.max(0, window.innerWidth - wco.getTitlebarAreaRect().width)
+}
+
+export interface ResponsiveOpts {
+  /** Horizontal space the header cannot use (window-controls overlay). Subtracted from the observed width for the header thresholds only. */
+  reservedWidth?: () => number
+}
+
 export interface ResponsiveHooks {
   setSplitSpaceHidden(hidden: boolean): void
   setSidebarSpaceHidden(hidden: boolean): void
   setHeaderCompactSpaceHidden(hidden: boolean): void
+  /** Optional: the team-indicator slot has shrunk below a usable width. */
+  setHeaderTeamSpaceHidden?(hidden: boolean): void
   setCalendarSpaceHidden(hidden: boolean): void
 }
 
 /** Returns a disposer. No-ops (and returns a no-op disposer) where ResizeObserver isn't available — e.g. jsdom in tests — same graceful-degradation the app already applies to Web Locks/BroadcastChannel. */
-export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHooks): () => void {
+export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHooks, opts: ResponsiveOpts = {}): () => void {
   if (typeof ResizeObserver === 'undefined') return () => {}
 
   let splitHidden = false
   let sidebarHidden = false
   let headerCompactHidden = false
   let calendarHidden = false
+  let teamHidden = false
 
   let lastWidth: number | null = null
 
@@ -69,7 +97,11 @@ export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHook
     const textScale = Math.max(1, fontScale(document.documentElement.dataset.size as Prefs['fontSize'] | undefined))
     const nextSplitHidden = width < SPLIT_HIDE_BELOW_PX
     const nextSidebarHidden = width < SIDEBAR_HIDE_BELOW_PX
-    const nextHeaderCompactHidden = width < HEADER_COMPACT_BELOW_PX * textScale
+    // The header row is narrower than the window by whatever the OS draws over it.
+    const headerWidth = width - (opts.reservedWidth?.() ?? 0)
+    const nextHeaderCompactHidden = headerWidth < HEADER_COMPACT_BELOW_PX * textScale
+    const rootPx = TEAM_SLOT_BASE_ROOT_PX * fontScale(document.documentElement.dataset.size as Prefs['fontSize'] | undefined)
+    const nextTeamHidden = headerWidth < TEAM_SLOT_FIXED_PX + TEAM_SLOT_REM * rootPx
     const nextCalendarHidden = width < CALENDAR_HIDE_BELOW_PX
     if (nextSplitHidden !== splitHidden) {
       splitHidden = nextSplitHidden
@@ -82,6 +114,10 @@ export function setupResponsiveLayout(target: HTMLElement, hooks: ResponsiveHook
     if (nextHeaderCompactHidden !== headerCompactHidden) {
       headerCompactHidden = nextHeaderCompactHidden
       hooks.setHeaderCompactSpaceHidden(headerCompactHidden)
+    }
+    if (nextTeamHidden !== teamHidden) {
+      teamHidden = nextTeamHidden
+      hooks.setHeaderTeamSpaceHidden?.(teamHidden)
     }
     if (nextCalendarHidden !== calendarHidden) {
       calendarHidden = nextCalendarHidden

@@ -4,6 +4,13 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.11.1] - 2026-10-07
+
+### Fixed
+- Installed app (the window with the system title bar buttons drawn over it): the header no longer overlaps itself when the window is narrowed. The search box, the install button and the save status could run into each other at widths around 840–980 px, because the space taken by the window's minimize/maximize/close buttons wasn't counted. The header now switches to its compact form at the right width.
+- Installed app: the "Reload now" button of the update banner could be hard to click — hovering and clicking worked or not depending on the direction the pointer came from. The banner sat partly over the draggable title-bar area; it now sits fully below the header.
+- With the sidebar collapsed, the team indicator in the header is no longer squeezed into a sliver showing only an arrow and half a letter. When there isn't room for it to be readable, it is hidden.
+
 ## [2.11.0] - 2026-10-07
 
 ### Changed
