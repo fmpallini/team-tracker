@@ -13,8 +13,9 @@ by `esbuild` — no framework, no virtual DOM, no templating engine.
 - **`src/core/`** — headless logic, no DOM construction. Document shape and
   schema migrations (`document.ts`, `types.ts`), the `.tmv` encryption format
   (`crypto.ts`), the mutable document store (`store.ts`), the File System
-  Access API wrapper (`fs.ts`), save orchestration (`save-controller.ts`), and
-  the backup mirror controller (`backup-controller.ts`).
+  Access API wrapper (`fs.ts`), save orchestration (`save-controller.ts`),
+  the backup mirror controller (`backup-controller.ts`), and the fast-switch
+  model (`switcher.ts`, `module-items.ts`).
 - **`src/modules/`** — one file per feature pane: daily notes, general notes,
   people trees (stakeholders/members), person notes, action items, milestones,
   risks. Each module exports a single render function with the signature

@@ -141,9 +141,7 @@ export function mountSearch(
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
   const inputBox = el('div', { class: 'tt-search-input-box' }, input, clearBtn)
   const wrap = el('div', { class: 'tt-search-wrap' }, inputBox, dropdown)
-  // Before the favorites ★ (shell.ts puts it in headerLeft) so the star sits right
-  // after the search box; with no ★ present this is a plain append.
-  shell.headerLeft.insertBefore(wrap, shell.headerLeft.querySelector('.tt-btn-favorites'))
+  shell.headerLeft.appendChild(wrap)
   syncEnabled()
   const unsubscribeMutate = store.onMutate(() => syncEnabled())
 

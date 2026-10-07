@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.11.0] - 2026-10-07
+
+### Changed
+- The fast switch (Ctrl+Shift+K, or click the app name) now searches every team, not only the one you're on. Results come in sections: your favorites, items that are overdue or due soon, the current team's modules, people and cards, and — as soon as you type — everything in your other teams. Picking a row from another team switches to that team first.
+- Rows from other teams, favorites and due items show the team's emoji and name. Typing a team's name together with a word (for example "alpha risks") narrows the list to that team.
+- The list shows at most 20 rows. Each section keeps its own share, and a section that was cut short shows how many matches it has (for example "10 of 31").
+- Overdue and due-soon items now appear as rows in the fast switch itself, instead of one "Due" entry that opened the due list.
+- Favorites are used from the fast switch: they are its first section, and a ✕ at the end of a favorite's row removes it. The ☆ in each pane's title bar still adds or removes a favorite.
+- The ★ button in the header and its Ctrl+Alt+F shortcut are gone; your saved favorites are untouched — open the fast switch to use them.
+
 ## [2.10.0] - 2026-10-06
 
 ### Added

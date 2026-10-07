@@ -45,7 +45,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const headerTitleEl = el('span', { class: 'tt-person-header-title' })
   const groupLabel = t(lc, group === 'members' ? 'person_group_member' : 'person_group_stakeholder')
   // The person's name is deliberately not repeated here: the pane bar above
-  // already shows it (ui/panes.ts's titleFor) and keeps it live on rename.
+  // already shows it (core/module-items.ts's titleFor) and keeps it live on rename.
   // This line is the role first (when they have one), then their
   // classification (team member / stakeholder) after a "·".
   function renderIdentity(p: Person): void {

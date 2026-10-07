@@ -1,5 +1,5 @@
 // src/core/favorites.ts — pure helpers for Doc.favorites (the pane-bar star and
-// the header favorites panel). A favorite is a team + module location; the
+// the fast switch's Favorites section). A favorite is a team + module location; the
 // `itemId` of an actions/milestones/risks ref is dropped, so one opens the
 // module, not a card. No DOM, no store: callers wrap mutations in store.update.
 import type { Doc, Favorite, Loc, ModuleRef } from './types'
@@ -46,7 +46,7 @@ export function toggleFavorite(doc: Doc, loc: Loc): boolean {
 /**
  * Whether a favorite points at something that no longer exists: its team is
  * gone, or it is a person favorite whose person is gone. Ids are never
- * reused, so such an entry is inert; it is hidden from the panel (liveFavorites)
+ * reused, so such an entry is inert; it is hidden from the fast switch (liveFavorites)
  * and removed for good by the Prefs → Data cleanup (core/cleanup.ts).
  */
 export function isFavoriteOrphaned(doc: Doc, fav: Favorite): boolean {

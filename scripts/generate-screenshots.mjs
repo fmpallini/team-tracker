@@ -28,6 +28,9 @@ const SCREENSHOTS = [
   { file: 'global-search.png', theme: 'light', palette: 'verdant', view: 'global-search' },
 ]
 
+// What the fast-switch screenshot types into the box (see the 'command-palette' view).
+const PALETTE_QUERY = 'e'
+
 async function createTeam(page, name, emoji, first) {
   if (first) {
     await page.getByRole('button', { name: /Create first team/ }).click()
@@ -402,11 +405,21 @@ async function main() {
           await blurAway(page)
           break
         case 'command-palette':
-          // Leave the query empty — filterModuleItems() (src/ui/palette.ts)
-          // returns every fast-switch item unfiltered when the query is
-          // blank, so the screenshot shows the full list instead of one match.
+          // Star two spots in two teams first, so the Favorites section has
+          // rows (the due tasks/milestones seeded in buildContent() are past
+          // today, so the Due dates section fills on its own).
+          await switchPaneModule(page, 0, /Risks/i)
+          await page.locator('.tt-pane[data-pane-idx="0"] .tt-pane-fav-btn').click()
+          await page.locator('.tt-team-item').nth(1).click() // Design
+          await page.locator('.tt-pane[data-pane-idx="0"] .tt-pane-fav-btn').click()
+          await page.locator('.tt-team-item').first().click()
+          // A short query that matches in every section: a non-empty query is
+          // what reveals Other teams (src/core/switcher.ts), and the 20-row
+          // cap then shows each section's share with its "N of M" count.
           await page.keyboard.press('Control+Shift+k')
           await expect(page.locator('.tt-palette-overlay')).toBeVisible()
+          await page.keyboard.type(PALETTE_QUERY, { delay: 20 })
+          await page.waitForTimeout(200)
           break
         case 'global-search':
           await page.locator('.tt-search-input').click()

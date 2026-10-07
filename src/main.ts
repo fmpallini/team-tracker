@@ -11,7 +11,6 @@ import { resolveAppHotkey } from './ui/app-hotkeys'
 import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout } from './ui/responsive'
 import { createPalette } from './ui/palette'
-import { createFavoritesPanel } from './ui/favorites'
 import { mountSearch } from './ui/search-ui'
 import { t, todayIso } from './core/i18n'
 import { currentLoc } from './core/nav'
@@ -264,11 +263,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // module is registered.
   pm.renderAll()
   disposers.push(() => pm.dispose())
-  // sidebarHandle isn't declared until mountSidebar() runs later in this
-  // function — safe to reference here because this arrow function only ever
-  // executes later (Ctrl+Shift+K or the app-name click), by which point
-  // mountSidebar() has already returned it.
-  const palette = createPalette(store, pm, () => sidebarHandle.openDuePanel())
+  // `selectTeam` is a hoisted function declaration (below), safe to pass here.
+  const palette = createPalette(store, pm, { selectTeam })
   shell.onAppNameClick(() => palette.open())
   // Same empty-document rule as the search bar (src/ui/search-ui.ts): driven by
   // onMutate so creating the first team and deleting the last one both reach it.
@@ -276,19 +272,6 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   syncAppName()
   disposers.push(store.onMutate(syncAppName))
 
-  // Favorites: the header ★ and Ctrl+Alt+F drive one panel. `selectTeam` is a
-  // hoisted function declaration (below), safe to pass here. The panel is
-  // positioned from the header's bottom edge, not the ★ button, so the hotkey
-  // still works when the compact header hides the button.
-  const favorites = createFavoritesPanel(store, pm, {
-    selectTeam,
-    headerBottom: () => shell.root.querySelector('.tt-header')?.getBoundingClientRect().bottom ?? 0,
-  })
-  shell.onFavorites(() => favorites.toggle())
-  const syncFavoritesBtn = (): void => shell.setFavoritesEnabled(store.doc.teams.length > 0)
-  syncFavoritesBtn()
-  disposers.push(store.onMutate(syncFavoritesBtn))
-  disposers.push(() => favorites.dispose())
   disposers.push(mountSearch(shell, store, pm, selectTeam, pm.searchIndex))
 
   // Replaces the in-memory document with the file's current contents — the
@@ -610,9 +593,6 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
         return
       case 'closeFile':
         if (navPastModelessCard()) closeFile()
-        return
-      case 'favorites':
-        favorites.toggle()
         return
       case 'paneModule':
         if (navPastModelessCard()) openPaneModuleByIndex(pm, store, action.index)

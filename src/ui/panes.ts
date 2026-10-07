@@ -2,12 +2,13 @@
 import type { Store } from '../core/store'
 import { findTeam as docFindTeam } from '../core/document'
 import type { Shell, SaveStatusInfo } from './shell'
-import type { Loc, ModuleRef, Team } from '../core/types'
+import type { Loc, ModuleRef } from '../core/types'
 import { currentLoc, lastLocForTeam, latestReachableIndex, locsConflict, navigateHistory, openLoc, pruneEmptyDailies, reachableHistory } from '../core/nav'
 import { isFavorite, toggleFavorite } from '../core/favorites'
+import { FIXED_MODULE_KEYS, titleFor } from '../core/module-items'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
-import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from '../core/i18n'
-import { teamRefCandidates, KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
+import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
+import { KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
@@ -95,84 +96,19 @@ export interface PaneManager {
   dispose(): void
 }
 
-/** Same item list feeds both the pane module dropdown and the Ctrl+Shift+K palette. */
-export interface ModuleItem {
-  label: string
-  ref: ModuleRef
-}
-
-const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' | 'milestones' | 'risks'; key: MsgKey }[] = [
-  { kind: 'stakeholders', key: 'module_stakeholders' },
-  { kind: 'members', key: 'module_members' },
-  { kind: 'actions', key: 'module_actions' },
-  { kind: 'milestones', key: 'module_milestones' },
-  { kind: 'risks', key: 'module_risks' },
-]
-
-export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
-  const items: ModuleItem[] = [
-    { label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } },
-    { label: `${KIND_ICON.general} ${t(locale, 'module_general_notes')}`, ref: { kind: 'general' } },
-  ]
-  if (team) {
-    for (const group of ['stakeholders', 'members'] as const) {
-      for (const person of team[group]) {
-        items.push({ label: `${KIND_ICON.person} ${person.name}`, ref: { kind: 'person', personId: person.id, group } })
-      }
-    }
-  }
-  const cands = team ? teamRefCandidates(team) : null
-  for (const { kind, key } of FIXED_MODULE_KEYS) {
-    items.push({ label: `${KIND_ICON[kind]} ${t(locale, key)}`, ref: { kind } })
-    if (!cands || kind === 'stakeholders' || kind === 'members') continue
-    const list = { actions: cands.actionItems, milestones: cands.milestones, risks: cands.risks }[kind]
-    for (const c of list) items.push({ label: `${KIND_ICON[kind]} ${c.title}`, ref: { kind, itemId: c.id } })
-  }
-  return items
-}
-
 type PaneMenuRow = {
   kind: 'daily' | 'general' | 'stakeholders' | 'members' | 'actions' | 'milestones' | 'risks'
   ref: ModuleRef
   labelKey: MsgKey
 }
 
-/** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems for the fuller Ctrl+Shift+K equivalent. */
+/** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems (core/module-items.ts) for the fuller Ctrl+Shift+K equivalent. */
 function paneMenuItems(): PaneMenuRow[] {
   return [
     { kind: 'daily', ref: { kind: 'daily', date: todayIso() }, labelKey: 'module_daily' },
     { kind: 'general', ref: { kind: 'general' }, labelKey: 'module_general_notes' },
     ...FIXED_MODULE_KEYS.map(({ kind, key }): PaneMenuRow => ({ kind, ref: { kind }, labelKey: key })),
   ]
-}
-
-export function titleFor(store: Store, loc: Loc, locale: Locale): string {
-  switch (loc.ref.kind) {
-    case 'daily':
-      return `${t(locale, 'module_daily')} · ${formatDateWithWeekday(loc.ref.date, locale)}`
-    case 'general':
-      return t(locale, 'module_general_notes')
-    case 'person': {
-      // `loc.ref` is narrowed to the 'person' variant here by the switch, but
-      // that narrowing does not survive into the .find() callback below (TS
-      // can't prove the property access is stable across a closure) — so we
-      // capture the narrowed ref in a local const first.
-      const ref = loc.ref
-      const team = docFindTeam(store.doc, loc.teamId)
-      const person = team?.[ref.group].find((p) => p.id === ref.personId)
-      return person ? person.name : t(locale, 'module_person')
-    }
-    case 'stakeholders':
-      return t(locale, 'module_stakeholders')
-    case 'members':
-      return t(locale, 'module_members')
-    case 'actions':
-      return t(locale, 'module_actions')
-    case 'milestones':
-      return t(locale, 'module_milestones')
-    case 'risks':
-      return t(locale, 'module_risks')
-  }
 }
 
 const SPLIT_MIN_PCT = 20
@@ -509,7 +445,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
       const painted = barEls[idx].querySelector('.tt-pane-title-text')?.textContent
       const paintedStar = barEls[idx].querySelector('.tt-pane-fav-btn')?.getAttribute('aria-pressed')
       if (
-        (painted != null && painted !== titleFor(store, cur, localeNow())) ||
+        (painted != null && painted !== titleFor(store.doc, cur, localeNow())) ||
         (paintedStar != null && paintedStar !== String(isFavorite(store.doc, cur)))
       ) renderBar(idx)
     }
@@ -684,7 +620,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function historyEntryLabel(loc: Loc): string {
-    return `${KIND_ICON[loc.ref.kind]} ${titleFor(store, loc, localeNow())}`
+    return `${KIND_ICON[loc.ref.kind]} ${titleFor(store.doc, loc, localeNow())}`
   }
 
   /** Tooltip for ◀/▶: names where the click lands (when reachable), the hotkey, and the right-click hint. */
@@ -1046,7 +982,7 @@ ${t(lc, 'pane_history_hint')}`
 
     const header = w.document.createElement('div')
     header.className = 'tt-print-header'
-    header.textContent = [t(lc, 'app_name'), team?.name, titleFor(store, cur, lc)].filter(Boolean).join(' · ')
+    header.textContent = [t(lc, 'app_name'), team?.name, titleFor(store.doc, cur, lc)].filter(Boolean).join(' · ')
 
     const content = w.document.createElement('div')
     content.className = 'tt-print-content'
@@ -1130,7 +1066,7 @@ ${t(lc, 'pane_history_hint')}`
       el(
         'span',
         { class: flashTitle ? 'tt-pane-title-text tt-pane-title-flash' : 'tt-pane-title-text' },
-        cur ? titleFor(store, cur, lc) : t(lc, 'pane_empty')
+        cur ? titleFor(store.doc, cur, lc) : t(lc, 'pane_empty')
       ),
       el('span', { class: 'tt-pane-title-chev' }, '▾')
     )
