@@ -19,6 +19,15 @@ Make the fast switch (Ctrl+Shift+K, or the app-name button) the single place to 
 - Enter or click on a row on another team switches to that team first (`selectTeam`), then opens the row in the focused pane via `pm.openInFocused`. Card rows keep the current expand-and-highlight behavior. Rows on the active team skip the team switch.
 - Favorite rows have a ✕ button that removes the favorite. It does not commit the row, keeps the palette open, and repaints the list in place.
 
+## Section delimitation
+
+Each section is visibly separated, reusing the look of `tt-due-section-heading` from the due panel:
+
+- A heading row per section: small, uppercase, muted label with the section's icon (⭐ Favorites, ⏰ Due dates, the team emoji + name for Current team, 🗂️ Other teams), plus the row count when the section is truncated (e.g. "Other teams · 4 of 11").
+- A thin top border and extra vertical spacing on every heading except the first one, so sections read as separate groups even when scanning quickly.
+- Headings are non-interactive (`role="presentation"`, not selectable, skipped by arrows and hover). The list container is a `role="listbox"`; each section is a `role="group"` labelled by its heading, so screen readers announce section changes.
+- Sizes are rem, so headings follow the text-size setting.
+
 ## Row limit
 
 At most **20 rows** in total, headings not counted. Allocation:
