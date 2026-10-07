@@ -14,8 +14,8 @@ Make the fast switch (Ctrl+Shift+K, or the app-name button) the single place to 
   3. **Current team** — what the palette lists today for the active team: Daily, General notes, people, the Stakeholders/Members/Tasks/Milestones/Risks lists, and each task, milestone and risk card.
   4. **Other teams** — the same rows for every other team (full content, not just shortcuts).
 - With an empty query, sections 1–3 show and section 4 is hidden. Other teams appear only once there is a query.
-- The query is the existing normalized substring match. It matches the row's title and also its team name, so "alpha risks" narrows to the Risks rows of a team called Alpha.
-- A section with no matches (or no rows) shows no heading.
+- The query is normalized (case- and accent-insensitive) and split on whitespace. A row matches when **every** word is a substring of `"<team name> <row title>"`, so "alpha risks" narrows to the Risks rows of a team called Alpha. A query of only whitespace counts as empty.
+- A section with no matches (or no rows) shows no heading. When nothing matches at all, a single "No results" line shows and Enter does nothing.
 - Enter or click on a row on another team switches to that team first (`selectTeam`), then opens the row in the focused pane via `pm.openInFocused`. Card rows keep the current expand-and-highlight behavior. Rows on the active team skip the team switch.
 - Favorite rows have a ✕ button that removes the favorite. It does not commit the row, keeps the palette open, and repaints the list in place.
 
@@ -25,7 +25,7 @@ Each section is visibly separated, reusing the look of `tt-due-section-heading` 
 
 - A heading row per section: small, uppercase, muted label with the section's icon (⭐ Favorites, ⏰ Due dates, the team emoji + name for Current team, 🗂️ Other teams), plus the row count when the section is truncated (e.g. "Other teams · 4 of 11").
 - A thin top border and extra vertical spacing on every heading except the first one, so sections read as separate groups even when scanning quickly.
-- Headings are non-interactive (`role="presentation"`, not selectable, skipped by arrows and hover). The list container is a `role="listbox"`; each section is a `role="group"` labelled by its heading, so screen readers announce section changes.
+- Headings are non-interactive (not selectable, skipped by arrows and hover). Each section is a `role="group"` labelled (`aria-labelledby`) by its heading, so screen readers announce section changes. No `listbox`/`option` roles: a Favorites row contains the ✕ button, and an interactive control inside an `option` fails axe's nested-interactive rule.
 - Sizes are rem, so headings follow the text-size setting.
 
 ## Row limit
@@ -33,7 +33,7 @@ Each section is visibly separated, reusing the look of `tt-due-section-heading` 
 At most **20 rows** in total, headings not counted. Allocation:
 
 1. Each section with matches gets `min(matches, 4)` rows.
-2. The remaining slots (up to 4) go top-down to sections that still have unshown matches, one row at a time.
+2. The remaining slots go out in round-robin passes in section order (Favorites, Due, Current team, Other teams): each pass gives one more row to every section that still has unshown matches, until 20 rows are used or nothing is left. With every section full that is one extra row each (5/5/5/5); with only two sections it is 10/10; with one section it is 20.
 
 Rows keep their natural order inside a section. Favorites keep the order they were starred in; due items keep overdue-then-due-soon order (as returned by `collectDueItems`); other teams are in team order. No scoring or ranking.
 
@@ -93,6 +93,7 @@ A module-level row in Current team (Daily for today, General notes, a person, or
 - Orphaned favorites (team or person deleted) are not shown (`liveFavorites`).
 - A favorite for the active team shows in Favorites and its module-level twin is removed from Current team (see Deduplication).
 - Teams with no due dates: Due dates section absent.
+- No active team although teams exist (should not happen after open): there is no Current team section, and Other teams shows even with an empty query so the box is never blank.
 - Ctrl+Shift+K while a card modal is open: unchanged — `dismissModelessModals` runs before commit.
 - Large documents: building rows for all teams on every keystroke is plain array filtering over titles; no body text is scanned, so it stays cheap.
 
