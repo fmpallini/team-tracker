@@ -153,7 +153,7 @@ function bundledWcoMediaBlock(): string {
   const marker = 'display-mode:window-controls-overlay){'
   const start = html.indexOf(marker)
   expect(start, 'window-controls-overlay media block missing from the bundled PWA CSS').toBeGreaterThanOrEqual(0)
-  return html.slice(start, start + 600)
+  return html.slice(start, start + 1400)
 }
 
 /** Stand-in for what the real WCO media block does to the banner: push the
@@ -192,7 +192,38 @@ test.describe('PWA update banner clears the window-controls-overlay caption stri
     // The fix: banner dropped below the caption strip, same env var .tt-header
     // uses to clear the same region, with the 2.5rem fallback for UAs that do
     // not expose the var.
-    expect(block).toMatch(/\.tt-update-banner\{top:env\(titlebar-area-height,\s*2\.5rem\)\}/)
+    expect(block).toMatch(/\.tt-update-banner\{top:max\(env\(titlebar-area-height,\s*2\.5rem\),\s*3rem \+ 1px\);/)
+    // …and is its own no-drag region: the header above it is the drag region.
+    expect(block).toMatch(/\.tt-update-banner\{[^}]*app-region:no-drag/)
+  })
+
+  // The "hover/click only works from some directions" report: in WCO the header is
+  // app-region:drag, and Chromium builds drag regions from element rects, ignoring
+  // what paints on top. The banner used to sit at top:env(titlebar-area-height)
+  // (~35px) while the header is 3rem + 1px tall (46px at M), so the top of its
+  // "Reload now" button lay inside the header's drag region. Nothing headless can
+  // match the WCO media block, so apply the shipped banner rule by hand against a
+  // real open document and check the banner clears the header.
+  test('the shipped WCO banner rule leaves the banner entirely below the header', async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 700 })
+    await installOpfsPickerShim(page)
+    await mockNewerVersionAvailable(page)
+    await page.goto(`${E2E_BASE_URL}/pwa/index.html`)
+    await page.evaluate(() => navigator.serviceWorker.ready)
+    await createEncryptedDoc(page, 'e2e-pwa-banner-password')
+    await expect(page.locator('.tt-update-banner')).toBeVisible()
+
+    const rule = /\.tt-update-banner\{[^}]*\}/.exec(bundledWcoMediaBlock())?.[0]
+    expect(rule, 'banner rule missing from the WCO media block').toBeTruthy()
+    await page.addStyleTag({ content: rule! })
+
+    const { headerBottom, bannerTop, btnTop } = await page.evaluate(() => ({
+      headerBottom: document.querySelector('.tt-header')!.getBoundingClientRect().bottom,
+      bannerTop: document.querySelector('.tt-update-banner')!.getBoundingClientRect().top,
+      btnTop: document.querySelector('.tt-update-banner-action')!.getBoundingClientRect().top,
+    }))
+    expect(bannerTop).toBeGreaterThanOrEqual(headerBottom - 0.5)
+    expect(btnTop).toBeGreaterThanOrEqual(headerBottom)
   })
 
   test('Reload now is hit-testable and navigates when the banner is offset below the caption strip', async ({ page }) => {

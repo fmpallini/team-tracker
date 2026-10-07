@@ -95,6 +95,8 @@ export interface Shell {
    * that actually needs guaranteed room.
    */
   setHeaderCompactSpaceHidden(hidden: boolean): void
+  /** Drops the centred team indicator once its slot is too narrow to show more than a stub (see responsive.ts). */
+  setHeaderTeamSpaceHidden(hidden: boolean): void
   /**
    * Releases the OS-theme `matchMedia` listener this shell registered.
    *
@@ -460,11 +462,15 @@ export function createShell(locale: Locale): Shell {
     header.classList.toggle('tt-header-compact', hidden)
   }
 
+  function setHeaderTeamSpaceHidden(hidden: boolean): void {
+    header.classList.toggle('tt-header-team-hidden', hidden)
+  }
+
   setSaveState('saved')
 
   function dispose(): void {
     mq.removeEventListener('change', onSystemThemeChange)
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, dispose }
 }
