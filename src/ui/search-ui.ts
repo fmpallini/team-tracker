@@ -88,8 +88,15 @@ export function mountSearch(
     type: 'text',
     class: 'tt-input tt-search-input',
     placeholder: t(localeNow(), 'search_placeholder'),
+    title: t(localeNow(), 'search_title'),
+    'aria-label': t(localeNow(), 'search_placeholder'),
     autocomplete: 'off',
   }) as HTMLInputElement
+  // Drawn over the input, not part of its placeholder: at rest the box is just
+  // this icon (see .tt-search-wrap in styles.css), with no room for placeholder text.
+  const icon = el('span', { class: 'tt-search-icon-mark', 'aria-hidden': 'true' })
+  icon.innerHTML =
+    '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.75" cy="6.75" r="4.5"/><path d="M10.25 10.25L14 14"/></svg>'
 
   const checkbox = el('input', { type: 'checkbox' }) as HTMLInputElement
   const checkboxLabelText = el('span', {}, t(localeNow(), 'search_all_teams'))
@@ -111,10 +118,12 @@ export function mountSearch(
     },
     '×'
   )
+  // A query keeps the box expanded after it loses focus (.has-value), so what
+  // was searched stays visible; an empty box folds back to the icon on blur.
   function updateClearBtn(): void {
     clearBtn.classList.toggle('visible', input.value.length > 0)
+    wrap.classList.toggle('has-value', input.value.length > 0)
   }
-  updateClearBtn()
 
   // Header-adjacent text captured at mount time would otherwise stay stale
   // after a locale switch (see prefs.ts's LOCALE_CHANGED_EVENT comment) —
@@ -122,6 +131,8 @@ export function mountSearch(
   const unsubscribeLocale = onLocaleChanged(() => {
     const lc = localeNow()
     input.placeholder = t(lc, 'search_placeholder')
+    input.title = t(lc, 'search_title')
+    input.setAttribute('aria-label', t(lc, 'search_placeholder'))
     checkboxLabelText.textContent = t(lc, 'search_all_teams')
     clearBtn.title = t(lc, 'search_clear_title')
     if (open) renderList()
@@ -139,7 +150,7 @@ export function mountSearch(
 
   const listEl = el('div', { class: 'tt-search-list' })
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
-  const inputBox = el('div', { class: 'tt-search-input-box' }, input, clearBtn)
+  const inputBox = el('div', { class: 'tt-search-input-box' }, input, icon, clearBtn)
   const wrap = el('div', { class: 'tt-search-wrap' }, inputBox, dropdown)
   shell.headerLeft.appendChild(wrap)
   syncEnabled()

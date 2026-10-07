@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.12.0] - 2026-10-07
+
+### Changed
+- The header's search box now rests as a small magnifier button, like the buttons beside it. Click it, or press / , Ctrl+F or Ctrl+Shift+F, and it opens to the full search field. It folds back to the magnifier when you click away with nothing typed; if there's a query in it, it stays open until you clear it with ×. Hovering the magnifier shows the shortcuts.
+- The app-name button ("Team Tracker ▾", which opens the fast switch) is now only as wide as its label. With the sidebar open, the search keeps its place above the edge of the sidebar; with the sidebar closed, the search sits right next to the app name.
+
 ## [2.11.1] - 2026-10-07
 
 ### Fixed
