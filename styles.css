@@ -190,7 +190,23 @@ body { background: var(--bg); color: var(--fg); }
    into it; min-width: 0 overrides the grid item default of min-width: auto,
    which otherwise refuses to shrink below its content's intrinsic width and
    forces the whole header to overflow instead. */
-.tt-header-left { min-width: 0; }
+/* A three-column grid, not a flex row, so the search can stay on the sidebar's edge
+   whatever width the app-name button has: toggle | app name | search. With the sidebar
+   open the middle column is the sidebar's width less what sits before it (all in rem,
+   so it tracks the text size), which puts the search's left edge on the sidebar/panes
+   boundary below; the app-name button hugs its content inside that column and the rest
+   is empty. With it collapsed the column is just the button and the search closes up.
+   Every child names its column, so one that is hidden (compact header) can't shift
+   the others into the wrong one. */
+.tt-header-left {
+  min-width: 0; display: grid; align-items: center; column-gap: .75rem;
+  grid-template-columns: auto var(--tt-appname-slot) minmax(0, 1fr);
+  --tt-appname-slot: calc(220px - 1.5rem - 1.5rem - .75rem);
+}
+.tt-shell:has(.tt-sidebar[data-collapsed="true"]) .tt-header-left { --tt-appname-slot: auto; }
+.tt-header-left > .tt-sidebar-toggle { grid-column: 1; }
+.tt-header-left > .tt-app-name { grid-column: 2; }
+.tt-header-left > .tt-search-wrap { grid-column: 3; }
 .tt-header-right { justify-self: end; }
 /* Buttons of one purpose (view/help, settings/close-file) sit closer together than the .75rem between groups. */
 .tt-header-btn-group { display: flex; align-items: center; gap: .375rem; }
@@ -334,15 +350,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }
 .tt-header.tt-header-compact .tt-save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-/* Fixed to (sidebar width − header's own left padding − the gap before the
-   search bar − the collapse toggle's own width and its gap) so the search
-   bar's left edge lines up with the sidebar/first module boundary below it,
-   regardless of font-size preference (all in rem, so this tracks the root
-   font-size live). */
+/* Hugs its content; the width of its column in .tt-header-left (above) is what keeps
+   the search lined up with the sidebar edge. */
 .tt-app-name {
   font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; line-height: .85; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
-  width: calc(220px - 1.5rem - 1.5rem - .75rem); height: var(--tt-header-ctl-h); flex: none;
+  justify-self: start; max-width: 100%; height: var(--tt-header-ctl-h);
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 .55rem; cursor: pointer;
 }
@@ -826,13 +839,37 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-empty { padding: .75rem; opacity: .75; }
 
 /* Header search */
-.tt-search-wrap { position: relative; flex: 0 1 360px; min-width: 0; }
+/* At rest the search is a square icon button like its neighbours; focus (click,
+   Tab, / , Ctrl+F, Ctrl+Shift+F) or a query in the box expands it to the full
+   field. :focus-within covers every way in, since they all end in input.focus().
+   The expanded size is what the box always had; the extra space it frees at rest
+   stays in the 1fr left column, so expanding never moves another header piece. */
+.tt-search-wrap {
+  position: relative; justify-self: start; width: var(--tt-header-ctl-h); max-width: 100%; min-width: 0;
+  transition: width .15s ease;
+}
+.tt-search-wrap:focus-within, .tt-search-wrap.has-value { width: 360px; }
+@media (prefers-reduced-motion: reduce) { .tt-search-wrap { transition: none; } }
 /* No teams yet — nothing to search. Dimmed rather than hidden so the header
    doesn't reflow the moment the first team is created. */
 .tt-search-wrap.tt-search-disabled { opacity: .45; }
 .tt-search-wrap.tt-search-disabled .tt-search-input { cursor: not-allowed; }
-.tt-search-input-box { position: relative; width: 100%; max-width: 360px; min-width: 60px; }
-.tt-search-input { width: 100%; height: var(--tt-header-ctl-h); box-sizing: border-box; padding-right: 1.8rem; }
+.tt-search-input-box { position: relative; width: 100%; max-width: 360px; min-width: var(--tt-header-ctl-h); }
+.tt-search-input { width: 100%; height: var(--tt-header-ctl-h); box-sizing: border-box; padding: 0 1.8rem 0 var(--tt-header-ctl-h); }
+/* The magnifier, in a control-sized square at the box's left edge: centred in the
+   collapsed button, and the left gutter of the expanded field. */
+.tt-search-icon-mark {
+  position: absolute; left: 0; top: 0; width: var(--tt-header-ctl-h); height: var(--tt-header-ctl-h);
+  display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none;
+}
+.tt-search-icon-mark svg { display: block; }
+.tt-search-wrap:not(:focus-within):not(.has-value) .tt-search-input {
+  padding: 0; cursor: pointer; color: transparent; caret-color: transparent;
+}
+.tt-search-wrap:not(:focus-within):not(.has-value) .tt-search-input::placeholder { color: transparent; }
+.tt-search-wrap:not(:focus-within):not(.has-value):hover .tt-search-input { border-color: var(--accent); }
+.tt-search-wrap:not(:focus-within):not(.has-value):hover .tt-search-icon-mark { color: var(--accent); }
+.tt-search-wrap.tt-search-disabled .tt-search-icon-mark { opacity: .8; }
 .tt-search-clear-btn {
   display: none; position: absolute; right: .35rem; top: 0; height: var(--tt-header-ctl-h); width: 1.5rem;
   align-items: center; justify-content: center; border: none; background: transparent;

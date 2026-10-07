@@ -53,8 +53,9 @@ test('header search keeps a usable width with the sidebar collapsed and a long t
   await page.keyboard.press('F2')
   await page.keyboard.press('F1')
   await expect(page.locator('.tt-save-pill-text')).toContainText('Não salvo')
-  const width = await page.locator('.tt-search-input').evaluate((e) => e.getBoundingClientRect().width)
-  expect(width).toBeGreaterThanOrEqual(150)
+  // At rest the search is just its icon; the field it expands to on focus is what has to stay usable.
+  await page.locator('.tt-search-input').click()
+  await expect.poll(() => page.locator('.tt-search-input').evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThanOrEqual(150)
   // The long team name gives way (ellipsis) rather than spilling out of its header slot over the save pill.
   const fit = await page.evaluate(() => {
     const center = document.querySelector('.tt-header-center')!.getBoundingClientRect()
