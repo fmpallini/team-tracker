@@ -86,7 +86,7 @@ const WIDTHS = {
 } as const
 
 for (const size of ['M', 'XL'] as const) {
-  test(`header ★ never overlaps the search box or the save pill across window widths (${size})`, async ({ page }) => {
+  test(`header ★ never overlaps the search box, the app name or the save pill across window widths (${size})`, async ({ page }) => {
     // pt-BR + a dirty doc: the widest save pill, which is where the real collision (up to 830px at M) occurred.
     await openDoc(page, buildDoc(size, { kind: 'general' }, { locale: 'pt-BR' }), { width: 1440, height: 900 })
     await page.keyboard.press('F2')
@@ -110,7 +110,7 @@ for (const size of ['M', 'XL'] as const) {
           starVisible: star !== null,
           overSearch: hit(star, rect('.tt-search-input')),
           overPill: hit(star, rect('.tt-save-pill-wrap')),
-          overNeighbour: hit(star, rect('.tt-btn-fullscreen')),
+          overNeighbour: hit(star, rect('.tt-app-name')),
           pageOverflowsX: document.documentElement.scrollWidth > innerWidth,
         }
       })

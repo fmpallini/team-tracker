@@ -180,6 +180,10 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
       listEl
     )
     panel.style.top = `${deps.headerBottom()}px`
+    // Hang the panel under the header ★ (it lives in headerLeft, after the search box).
+    const star = document.querySelector<HTMLElement>('.tt-btn-favorites')
+    // Hidden in the compact header (hotkey still works): keep the CSS default left edge.
+    if (star && star.offsetParent !== null) panel.style.setProperty('--tt-fav-left', `${Math.max(0, star.getBoundingClientRect().left)}px`)
     document.body.appendChild(panel)
     document.addEventListener('keydown', onKeydown, true)
     document.addEventListener('mousedown', onMousedown, true)

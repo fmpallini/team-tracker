@@ -496,15 +496,24 @@ describe('dispose', () => {
 })
 
 describe('favorites button', () => {
-  test('is in the header between the save pill and fullscreen, titled with the hotkey', () => {
+  test('is in the header left cluster, after the search box mount point, titled with the hotkey', () => {
     const shell = setup()
     const btn = shell.root.querySelector<HTMLButtonElement>('.tt-btn-favorites')!
     expect(btn).not.toBeNull()
     expect(btn.textContent).toBe('★')
     expect(btn.title).toBe(t('en-US', 'favorites_btn_title'))
-    const kids = Array.from(shell.headerRight.children)
-    expect(kids.indexOf(btn)).toBeGreaterThan(kids.findIndex((c) => c.classList.contains('tt-save-pill-wrap')))
-    expect(kids.indexOf(btn)).toBeLessThan(kids.findIndex((c) => c.classList.contains('tt-btn-fullscreen')))
+    expect(shell.headerLeft.contains(btn)).toBe(true)
+    expect(shell.headerRight.contains(btn)).toBe(false)
+    const kids = Array.from(shell.headerLeft.children)
+    expect(kids.indexOf(btn)).toBeGreaterThan(kids.findIndex((c) => c.classList.contains('tt-app-name')))
+  })
+
+  test('right cluster order: save pill, view/help group, settings then close-file', () => {
+    const shell = setup()
+    const order = Array.from(shell.headerRight.querySelectorAll('.tt-save-pill-wrap, .tt-btn')).map(
+      (e) => ['tt-save-pill-wrap', 'tt-btn-fullscreen', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'].find((c) => e.classList.contains(c))
+    )
+    expect(order).toEqual(['tt-save-pill-wrap', 'tt-btn-fullscreen', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'])
   })
 
   test('click calls the registered handler', () => {
