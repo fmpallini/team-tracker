@@ -11,13 +11,14 @@ import type { Favorite } from '../core/types'
 import { findTeam } from '../core/document'
 import { isFavoriteOrphaned, liveFavorites, toggleFavorite } from '../core/favorites'
 import { KIND_ICON } from '../core/search'
+import { titleFor } from '../core/module-items'
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByBlockingModal, matchDigit } from './hotkeys'
 import { dismissModelessModals } from './modal'
-import { titleFor, type PaneManager } from './panes'
+import type { PaneManager } from './panes'
 
 export interface FavoritesDeps {
   /** Switches the active team (main.ts's selectTeam). */
@@ -49,7 +50,7 @@ export function createFavoritesPanel(store: Store, pm: PaneManager, deps: Favori
 
   function labelFor(fav: Favorite): string {
     const team = findTeam(store.doc, fav.teamId)
-    const title = titleFor(store, fav, locale())
+    const title = titleFor(store.doc, fav, locale())
     return `${team?.emoji ?? ''} ${team?.name ?? ''} · ${KIND_ICON[fav.ref.kind]} ${title}`.trim()
   }
 

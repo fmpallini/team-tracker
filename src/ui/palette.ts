@@ -6,10 +6,10 @@ import type { Store } from '../core/store'
 import { findTeam as docFindTeam } from '../core/document'
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
-import { normalize } from '../core/search'
+import { buildModuleItems, filterModuleItems } from '../core/module-items'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
-import { buildModuleItems, type PaneManager } from './panes'
+import type { PaneManager } from './panes'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { blockedByBlockingModal } from './hotkeys'
 import { dismissModelessModals } from './modal'
@@ -21,13 +21,6 @@ export interface Palette {
 interface PaletteRow {
   label: string
   commit(): void
-}
-
-/** Pure and exported so it can be unit-tested without touching the DOM. */
-export function filterModuleItems<T extends { label: string }>(items: T[], query: string): T[] {
-  const q = normalize(query.trim())
-  if (!q) return items
-  return items.filter((item) => normalize(item.label).includes(q))
 }
 
 export function createPalette(store: Store, pm: PaneManager, onOpenDue?: () => void): Palette {

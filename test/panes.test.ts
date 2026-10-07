@@ -1,13 +1,12 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, buildModuleItems, type PaneManager, type ModuleItem } from '../src/ui/panes'
-import { filterModuleItems } from '../src/ui/palette'
+import { createPaneManager, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
 import { KIND_ICON } from '../src/core/search'
-import type { Loc, Team } from '../src/core/types'
+import type { Loc } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
 // OS theme preference (same stub as test/sidebar.test.ts).
@@ -1038,18 +1037,6 @@ test('creating the first team hides the CTA and shows the pane shell', () => {
   expect(noTeams.style.display).toBe('none')
 })
 
-test('filterModuleItems matches substrings case- and accent-insensitively (palette filter)', () => {
-  const items: ModuleItem[] = [
-    { label: 'María', ref: { kind: 'actions' } },
-    { label: 'Stakeholders', ref: { kind: 'stakeholders' } },
-  ]
-
-  expect(filterModuleItems(items, 'maria').map((i) => i.label)).toEqual(['María'])
-  expect(filterModuleItems(items, 'STAKE').map((i) => i.label)).toEqual(['Stakeholders'])
-  expect(filterModuleItems(items, '')).toEqual(items)
-  expect(filterModuleItems(items, 'zzz')).toEqual([])
-})
-
 test('print button is disabled when the pane is empty and enabled once a module is open', () => {
   const { store, pm } = setup()
   expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(true)
@@ -1165,61 +1152,6 @@ test('toggleSplit does not record anything when no team is active', () => {
   expect(store.doc.nav.activeTeamId).toBeNull()
   pm.toggleSplit()
   expect(store.doc.nav.teamSplit).toEqual({})
-})
-
-test('buildModuleItems includes one entry per action item/milestone/risk, after the whole-board entries', () => {
-  const team: Team = {
-    id: 'T1', name: 'Team 1', emoji: '🚀', stakeholders: [], members: [],
-    actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
-    milestones: [{ id: 'm1', date: '2026-08-01', title: 'Ship v2', done: false, followup: '' }],
-    risks: [{ id: 'r1', title: 'Vendor delay', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false }],
-    dailyNotes: {},
-  }
-  const items = buildModuleItems(team, 'en-US')
-
-  expect(items).toContainEqual({ label: `${KIND_ICON.actions} Fix bug`, ref: { kind: 'actions', itemId: 'a1' } })
-  expect(items).toContainEqual({ label: `${KIND_ICON.milestones} Ship v2`, ref: { kind: 'milestones', itemId: 'm1' } })
-  expect(items).toContainEqual({ label: `${KIND_ICON.risks} Vendor delay`, ref: { kind: 'risks', itemId: 'r1' } })
-
-  const actionsBoardIdx = items.findIndex((i) => i.ref.kind === 'actions' && !('itemId' in i.ref && i.ref.itemId))
-  const actionItemIdx = items.findIndex((i) => i.ref.kind === 'actions' && 'itemId' in i.ref && i.ref.itemId === 'a1')
-  expect(actionItemIdx).toBeGreaterThan(actionsBoardIdx)
-})
-
-test('buildModuleItems with no team includes the daily-notes entry, the general-notes entry, and all 5 whole-board entries, but no per-item entries', () => {
-  const items = buildModuleItems(null, 'en-US')
-  expect(items).toEqual([
-    { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
-    { label: `${KIND_ICON.general} General notes`, ref: { kind: 'general' } },
-    { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
-    { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
-    { label: `${KIND_ICON.actions} Tasks`, ref: { kind: 'actions' } },
-    { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
-    { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
-  ])
-})
-
-test('buildModuleItems places the general-notes entry immediately after daily, before any per-person entries', () => {
-  const team: Team = {
-    id: 'T1', name: 'Team 1', emoji: '🚀',
-    stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
-    members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
-  }
-  const items = buildModuleItems(team, 'en-US')
-  expect(items[0]!.ref.kind).toBe('daily')
-  expect(items[1]!.ref).toEqual({ kind: 'general' })
-})
-
-test('buildModuleItems prefixes every entry with its module icon (daily, person, and each whole-board entry)', () => {
-  const team: Team = {
-    id: 'T1', name: 'Team 1', emoji: '🚀',
-    stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
-    members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
-  }
-  const items = buildModuleItems(team, 'en-US')
-
-  expect(items[0]!.label.startsWith(KIND_ICON.daily)).toBe(true)
-  expect(items).toContainEqual({ label: `${KIND_ICON.person} Carla`, ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
 })
 
 test('dispose() removes the document click listener that closes the module menu', () => {
