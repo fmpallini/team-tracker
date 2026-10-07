@@ -38,6 +38,10 @@ export interface Shell {
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
   onHelp(cb: () => void): void
+  /** Registers the click handler for the header ★ button (toggles the favorites panel — same action as Ctrl+Alt+F). */
+  onFavorites(cb: () => void): void
+  /** Enables/disables the ★ button. Mirrors the palette/search rule: with no team there is nothing a favorite could open. */
+  setFavoritesEnabled(enabled: boolean): void
   /** Registers the click handler for the "Team Tracker" title button (opens the command palette — same action as Ctrl+Shift+K). */
   onAppNameClick(cb: () => void): void
   /**
@@ -171,10 +175,19 @@ export function createShell(locale: Locale): Shell {
   // Appended first so it renders to the left of the search bar, which
   // mountSearch() (src/ui/search-ui.ts) appends into headerLeft afterwards.
   let appNameHandler: (() => void) | null = null
+  // The trailing chevron is the affordance: without it the button reads as a
+  // plain title, and the palette it opens is only discoverable via the tooltip.
+  // Label lives in its own span so a locale switch can rewrite the text without
+  // wiping the chevron.
+  const appNameLabel = el('span', { class: 'tt-app-name-label' }, t(locale, 'app_name'))
+  const appNameChevron = el('span', { class: 'tt-app-name-chevron', 'aria-hidden': 'true' })
+  appNameChevron.innerHTML =
+    '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6L8 10.5L12.5 6"/></svg>'
   const appNameBtn = el(
     'button',
     { class: 'tt-app-name', type: 'button', title: t(locale, 'app_name_button_title'), onclick: () => appNameHandler?.() },
-    t(locale, 'app_name')
+    appNameLabel,
+    appNameChevron
   )
   headerLeft.appendChild(appNameBtn)
 
@@ -256,8 +269,24 @@ export function createShell(locale: Locale): Shell {
     { class: 'tt-btn tt-btn-help', type: 'button', title: t(locale, 'help_global_title'), onclick: () => helpHandler?.() },
     '❓'
   )
+  let favoritesHandler: (() => void) | null = null
+  const favoritesBtn = el(
+    'button',
+    { class: 'tt-btn tt-btn-favorites', type: 'button', title: t(locale, 'favorites_btn_title'), onclick: () => favoritesHandler?.() },
+    '★'
+  )
 
-  headerRight.append(savePillWrap, fullscreenBtn, helpBtn, closeFileBtn, settingsBtn)
+  // ★ is navigation (same family as search and the palette), so it sits in
+  // headerLeft right after the search bar; mountSearch() inserts the search box
+  // before it. The right cluster is status, then view/help utilities, then
+  // settings and the session-ending close-file button last, kept apart from
+  // the utilities.
+  headerLeft.appendChild(favoritesBtn)
+  headerRight.append(
+    savePillWrap,
+    el('span', { class: 'tt-header-btn-group' }, fullscreenBtn, helpBtn),
+    el('span', { class: 'tt-header-btn-group' }, settingsBtn, closeFileBtn)
+  )
 
   const header = el('header', { class: 'tt-header' }, headerLeft, headerCenter, headerRight)
   const sidebar = el('aside', { class: 'tt-sidebar' })
@@ -378,11 +407,12 @@ export function createShell(locale: Locale): Shell {
     document.documentElement.dataset.size = prefs.fontSize
     if (localeChanged) {
       appNameBtn.title = t(currentLocale, 'app_name_button_title')
-      appNameBtn.textContent = t(currentLocale, 'app_name')
+      appNameLabel.textContent = t(currentLocale, 'app_name')
       fullscreenBtn.title = t(currentLocale, 'fullscreen')
       closeFileBtn.title = t(currentLocale, 'close_file_title')
       settingsBtn.title = t(currentLocale, 'settings')
       helpBtn.title = t(currentLocale, 'help_global_title')
+      favoritesBtn.title = t(currentLocale, 'favorites_btn_title')
     }
     if (localeChanged || backupEnabledChanged || backupFrequencyChanged) renderSaveIndicator()
   }
@@ -398,6 +428,14 @@ export function createShell(locale: Locale): Shell {
 
   function onHelp(cb: () => void): void {
     helpHandler = cb
+  }
+
+  function onFavorites(cb: () => void): void {
+    favoritesHandler = cb
+  }
+
+  function setFavoritesEnabled(enabled: boolean): void {
+    favoritesBtn.disabled = !enabled
   }
 
   function onAppNameClick(cb: () => void): void {
@@ -452,5 +490,5 @@ export function createShell(locale: Locale): Shell {
     mq.removeEventListener('change', onSystemThemeChange)
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onFavorites, setFavoritesEnabled, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, dispose }
 }

@@ -1149,7 +1149,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       const days = Math.min(3650, Math.max(1, Math.round(Number(cleanupDaysInput.value)) || 1))
       const today = todayIso()
       const counts = countCleanupTargets(store.doc, days, today)
-      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0) {
+      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0) {
         const nothingHandle: ModalHandle = showModal({
           title: t(locale, 'data_cleanup_nothing_title'),
           body: el('p', { class: 'tt-modal-message' }, t(locale, 'data_cleanup_nothing_body')),
@@ -1164,6 +1164,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           milestones: String(counts.milestones),
           risks: String(counts.risks),
           dailyNotes: String(counts.dailyNotes),
+          favorites: String(counts.favorites),
         }),
         warning: t(locale, 'data_cleanup_no_undo_warning'),
         confirmLabel: t(locale, 'data_cleanup_btn'),

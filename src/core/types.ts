@@ -84,7 +84,11 @@ export interface NavState {
   /** Manual daily-notes calendar collapse — a global layout choice (not per-team), toggled from the calendar's own toggle button. */
   calendarCollapsed: boolean
 }
+/** A starred pane location (see core/favorites.ts). `ref` never carries an `itemId`: a favorite opens the module, not one card. */
+export interface Favorite { teamId: string; ref: ModuleRef }
 export interface Doc {
   schemaVersion: number; prefs: Prefs; templates: Template[]
   nav: NavState; teams: Team[]
+  /** Global across teams, in the order they were starred. Schema 15. */
+  favorites: Favorite[]
 }

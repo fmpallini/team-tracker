@@ -9,6 +9,7 @@ import { t, todayIso, formatDateWithWeekday, parseLocaleDate, type Locale } from
 import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from '../core/search'
 import { REF_KINDS } from '../core/refs'
 import { addDaysIso } from '../core/date'
+import { matchRelativeWeekdays } from '../core/relative-date'
 import type { Store } from '../core/store'
 import type { Loc } from '../core/types'
 import type { PaneManager } from './panes'
@@ -21,8 +22,8 @@ import { dismissModelessModals } from './modal'
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
   // `relativeWord` is set only for the hoje/ontem/amanhã (today/yesterday/
-  // tomorrow) matches — lets the dropdown show "@hoje · 19/07/2026" so the
-  // trigger word is discoverable, vs. a typed-exact-date match or the
+  // tomorrow) and "next/last <weekday>" matches — lets the dropdown show
+  // "@hoje · 19/07/2026" so the trigger word is discoverable, vs. a typed-exact-date match or the
   // format-hint item below, which stay unlabeled and just read as a normal
   // "go to day" result.
   | { kind: 'day'; date: string; relativeWord?: string }
@@ -41,7 +42,9 @@ const GROUP_CAP = 5
  * capped at GROUP_CAP per group. Substring match (accent/case-insensitive,
  * via core/search's normalize). Relative-day words (hoje/ontem/amanhã,
  * today/yesterday/tomorrow) always show, even on an empty query — that's
- * what makes '@today' discoverable from a bare '@'. A "go to day" item is
+ * what makes '@today' discoverable from a bare '@'. Weekday phrases
+ * ("next tuesday", "terça passada" — see core/relative-date.ts) show only
+ * once something is typed. A "go to day" item is
  * additionally appended when `typed` parses as a *complete* date in the
  * locale's format.
  */
@@ -60,6 +63,9 @@ export function filterAtItems(candidates: TeamRefCandidates, typed: string, loca
   const today = todayIso()
   for (const [word, offset] of RELATIVE_DAYS[locale]) {
     if (normalize(word).startsWith(q)) days.push({ kind: 'day', date: addDaysIso(today, offset), relativeWord: word })
+  }
+  for (const { date, word } of matchRelativeWeekdays(trimmed, today, locale)) {
+    days.push({ kind: 'day', date, relativeWord: word })
   }
   const iso = parseLocaleDate(trimmed, locale)
   if (iso) days.push({ kind: 'day', date: iso })

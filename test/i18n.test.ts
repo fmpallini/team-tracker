@@ -11,8 +11,8 @@ test('t substitutes a named {param}', () => {
 
 test('t substitutes every distinct placeholder in one message', () => {
   expect(
-    t('pt-BR', 'data_cleanup_confirm_body', { actions: '1', milestones: '2', risks: '3', dailyNotes: '4' })
-  ).toContain('1 tarefas, 2 marcos, 3 riscos e 4 notas diárias')
+    t('pt-BR', 'data_cleanup_confirm_body', { actions: '1', milestones: '2', risks: '3', dailyNotes: '4', favorites: '5' })
+  ).toContain('1 tarefas, 2 marcos, 3 riscos, 4 notas diárias e 5 favoritos inválidos')
 })
 
 test('t leaves placeholder-shaped text alone when no params are given', () => {

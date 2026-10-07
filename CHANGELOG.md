@@ -4,6 +4,24 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.10.0] - 2026-10-06
+
+### Added
+- Favorites: every pane now has a ☆ next to the print and split buttons. Click it to star that spot — a team's Daily notes for a given day, a person's notes, the member or stakeholder lists, Tasks, Milestones, Risks or General notes — and click again to remove it.
+- A ★ button in the header opens your favorites from any team. Pick one to jump to that team and open it in the pane you're working in. Press Ctrl+Alt+F to open the same list from the keyboard, move with ↑/↓ and Enter, or press 1–9 to jump straight to an entry. The list follows the text-size setting, and long names are cut short with "…" instead of wrapping.
+- In a window narrow enough that the header switches to its compact form, the ★ button is hidden, but Ctrl+Alt+F still opens your favorites.
+- Typing `@` followed by a phrase like "next tuesday" or "last friday" now offers that day as a reference — the nearest such weekday after (or before) today. In Portuguese, "terça que vem", "próxima terça" and "terça passada" work the same way. A bare `@` behaves as before.
+
+### Changed
+- The header's buttons are regrouped: the ★ favorites button now sits right after the search box, next to the other navigation controls, and on the right the save status comes first, then the view and help buttons, then settings and close file. Every header button, the search box and the app name share one height; action buttons are square, and only status chips (save, team, due) stay rounded. The app name also gets a small ▾ to hint that it opens the fast switch.
+- In the team switcher, the team you're on is now marked with a ✓ instead of a colored bar along its left edge, matching the pane history menu.
+- Person notes: the header above the notes is now a single line showing the person's role and group. Their name is no longer repeated there, since the pane's title bar already shows it. The edit and "show in org chart" buttons stay at the right of that line, and the header no longer has a background panel of its own.
+- Clean up data (Preferences → Data) now also removes favorites that no longer lead anywhere: ones for a deleted team or person, and Daily notes favorites for days older than the number of days you choose. The confirmation shows how many.
+- The header now switches to its compact form a little sooner: at a window width of 840 px instead of 820 px at the default text size, and proportionally wider at larger text sizes. In a window in that narrow band, the search box and the app name are now hidden.
+
+### Fixed
+- In Tasks, the bottom line under the Done/Cancelled column's title sat higher than under the other columns. It now lines up with them.
+
 ## [2.9.5] - 2026-10-01
 
 ### Fixed

@@ -494,3 +494,11 @@ test('the search input is disabled while the document has no teams, and enables 
   expect(input.disabled).toBe(false)
   expect(wrap.classList.contains('tt-search-disabled')).toBe(false)
 })
+
+test('the search box mounts between the app name and the header favorites ★', () => {
+  const { shell } = mount(buildStore([oneNoteTeam], 'T1'), fakePM())
+  const kids = Array.from(shell.headerLeft.children)
+  const wrap = kids.findIndex((c) => c.classList.contains('tt-search-wrap'))
+  expect(wrap).toBeGreaterThan(kids.findIndex((c) => c.classList.contains('tt-app-name')))
+  expect(wrap).toBe(kids.findIndex((c) => c.classList.contains('tt-btn-favorites')) - 1)
+})

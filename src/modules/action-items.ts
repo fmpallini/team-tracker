@@ -1225,7 +1225,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
     const doneCancelColEl = el(
       'div', { class: 'tt-kanban-col' },
-      el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl),
+      // Hidden add button gives this head the same height as the other
+      // columns' heads (which hold a real one), so the bottom rule lines up.
+      el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl,
+        el('button', { class: 'tt-btn tt-kanban-add-btn tt-kanban-head-spacer', type: 'button', tabindex: '-1', 'aria-hidden': 'true' }, t(lc, 'kanban_add_card'))),
       el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
         el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
       el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('done')!.bodyEl, cols.get('done')!.zoneEl),

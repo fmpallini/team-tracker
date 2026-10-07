@@ -21,9 +21,6 @@ function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc; secondary?: bo
   }
 }
 
-function headerName(container: HTMLElement): string | undefined {
-  return container.querySelector('.tt-person-header-name')?.textContent ?? undefined
-}
 function headerTitle(container: HTMLElement): HTMLElement | null {
   return container.querySelector('.tt-person-header-title')
 }
@@ -89,8 +86,9 @@ describe('renderPersonNotes', () => {
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
 
-    expect(headerName(container)).toBe('Bruno')
     expect(headerTitle(container)?.textContent).toBe('Dev · Team member')
+    // Name lives only in the pane bar — the header must not repeat it.
+    expect(container.querySelector('.tt-person-header')?.textContent).not.toContain('Bruno')
     expect(container.querySelector('.editor h2')?.textContent).toBe('Hi Bruno')
   })
 
@@ -99,7 +97,6 @@ describe('renderPersonNotes', () => {
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
-    expect(headerName(container)).toBe('Bruno')
     expect(headerTitle(container)?.textContent).toBe('Team member')
   })
 
@@ -129,7 +126,6 @@ describe('renderPersonNotes', () => {
 
     expect(store.doc.teams[0]!.members[0]!.name).toBe('Bruna')
     expect(store.doc.teams[0]!.members[0]!.role).toBe('Lead')
-    expect(headerName(container)).toBe('Bruna')
     expect(headerTitle(container)?.textContent).toBe('Lead · Team member')
   })
 
@@ -251,7 +247,6 @@ describe('renderPersonNotes', () => {
     const { container, store, pm } = setup(team)
     const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
     render(container, loc, store, pm)
-    expect(headerName(container)).toBe('Bruno')
     expect(headerTitle(container)?.textContent).toBe('Dev · Team member')
 
     store.update((d) => {
@@ -260,7 +255,6 @@ describe('renderPersonNotes', () => {
       p.role = 'Lead'
     })
 
-    expect(headerName(container)).toBe('Bruna')
     expect(headerTitle(container)?.textContent).toBe('Lead · Team member')
   })
 

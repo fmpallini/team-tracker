@@ -180,6 +180,10 @@ body { background: var(--bg); color: var(--fg); }
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
   gap: .5rem; padding: .5rem .75rem;
   background: var(--panel); border-bottom: 1px solid var(--border);
+  /* One height for every header control (buttons, pills, app name, search box) so the
+     bar reads as a single row; rem, so it tracks the text-size setting. Shape: square
+     (4px) buttons are actions, fully rounded pills are status chips (save, team, due). */
+  --tt-header-ctl-h: 2rem;
 }
 .tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
 /* headerLeft (app name + search bar) takes its whole 1fr column and shrinks
@@ -188,13 +192,15 @@ body { background: var(--bg); color: var(--fg); }
    forces the whole header to overflow instead. */
 .tt-header-left { min-width: 0; }
 .tt-header-right { justify-self: end; }
+/* Buttons of one purpose (view/help, settings/close-file) sit closer together than the .75rem between groups. */
+.tt-header-btn-group { display: flex; align-items: center; gap: .375rem; }
 /* The team indicator only ever gets what the two side clusters leave over: capped
    at 28vw, and never more than the window minus the sidebar-wide left cluster
    (220px: toggle, app name, a usable search box ≈ 220px + 7rem) and the right one
-   (≈ 34rem of save pill and buttons, in rem so it tracks the text size). Below
+   (≈ 47rem of save pill and buttons, in rem so it tracks the text size). Below
    that it shrinks to nothing — hence overflow:hidden — rather than pushing the
    search box under itself. */
-.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - 220px - 44rem))); overflow: hidden; }
+.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - 220px - 47rem))); overflow: hidden; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of
@@ -227,12 +233,11 @@ body { background: var(--bg); color: var(--fg); }
 /* Sidebar collapse toggle: lives in the header (prepended before the app
    name button, see sidebar.ts) rather than inside the sidebar, so it stays
    put — and the sidebar can shrink to 0 — regardless of collapsed state.
-   Deliberately tiny (smaller than the header's other icon buttons): it's a
-   secondary, infrequently-used control, not one that should compete for
-   attention with save-state/help/settings. */
+   Same height as every other header control (--tt-header-ctl-h) so the bar
+   reads as one row. */
 .tt-sidebar-toggle {
   display: flex; align-items: center; justify-content: center;
-  width: 1.5rem; height: 1.5rem; padding: 0; flex: none;
+  width: var(--tt-header-ctl-h); height: var(--tt-header-ctl-h); padding: 0; flex: none;
 }
 .tt-sidebar-toggle-icon { display: inline-flex; }
 .tt-sidebar-toggle-icon svg { display: block; }
@@ -245,7 +250,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-team-indicator {
   display: none; align-items: center; gap: .35rem;
   font-family: var(--font-display); font-weight: 600; font-size: .85rem;
-  padding: .3rem .7rem; border-radius: 999px;
+  box-sizing: border-box; height: var(--tt-header-ctl-h); padding: 0 .7rem; border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); color: var(--fg);
   white-space: nowrap; max-width: 100%; cursor: pointer;
 }
@@ -264,7 +269,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-due-summary {
   display: none; align-items: center; justify-content: center;
   font-size: .95rem; color: var(--fg); flex: none;
-  padding: .3rem .55rem; border-radius: 999px;
+  box-sizing: border-box; height: var(--tt-header-ctl-h); padding: 0 .55rem; border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); cursor: pointer;
 }
 .tt-header-due-summary.visible { display: inline-flex; }
@@ -281,10 +286,12 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-team-switcher-item {
   display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
-  cursor: pointer; border-radius: 4px; border-left: 3px solid transparent;
+  cursor: pointer; border-radius: 4px;
 }
 .tt-team-switcher-item.selected, .tt-team-switcher-item:hover { background: rgba(var(--accent-rgb), .12); }
-.tt-team-switcher-item.active { border-left-color: var(--accent); font-weight: 600; }
+.tt-team-switcher-item.active { font-weight: 600; }
+/* Same ✓ gutter as .tt-pane-menu-check / .tt-context-menu-check (history menu). */
+.tt-team-switcher-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; flex: none; }
 
 /* Space-constrained override (src/ui/responsive.ts, below
    HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every
@@ -293,12 +300,13 @@ body { background: var(--bg); color: var(--fg); }
    pill (so unsaved work stays visible), the close-file (🔒) and settings (⚙)
    buttons: closing the file and reaching prefs must always be reachable;
    everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
-   name/search) or simply isn't essential moment-to-moment. */
+   name/search, Ctrl+Alt+F for the favorites panel) or simply isn't essential moment-to-moment. */
 .tt-header.tt-header-compact .tt-sidebar-toggle,
 .tt-header.tt-header-compact .tt-app-name,
 .tt-header.tt-header-compact .tt-search-wrap,
 .tt-header.tt-header-compact .tt-header-team-indicator-group,
 .tt-header.tt-header-compact .tt-btn-promo,
+.tt-header.tt-header-compact .tt-btn-favorites,
 .tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
@@ -321,11 +329,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-app-name {
   font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; line-height: .85; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
-  width: calc(220px - 1.5rem - 1.5rem - .75rem); height: 2.25rem; flex: none;
+  width: calc(220px - 1.5rem - 1.5rem - .75rem); height: var(--tt-header-ctl-h); flex: none;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 .55rem; cursor: pointer;
 }
+.tt-app-name { gap: .4rem; }
+.tt-app-name-chevron { display: inline-flex; opacity: .55; }
+.tt-app-name-chevron svg { display: block; }
 .tt-app-name:hover:not(:disabled), .tt-app-name:focus-visible:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.tt-app-name:hover:not(:disabled) .tt-app-name-chevron, .tt-app-name:focus-visible:not(:disabled) .tt-app-name-chevron { opacity: 1; }
 /* Matches .tt-search-disabled: no team means nothing for the palette to open. */
 .tt-app-name:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -350,6 +362,12 @@ body { background: var(--bg); color: var(--fg); }
   border-radius: 4px; padding: .25rem .5rem; cursor: pointer; font-size: 1rem; line-height: 1;
 }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
+/* Header buttons: true squares at the shared control height (the pills above use the same token). */
+.tt-header .tt-btn {
+  box-sizing: border-box; height: var(--tt-header-ctl-h); min-width: var(--tt-header-ctl-h);
+  padding: 0 .4rem; display: inline-flex; align-items: center; justify-content: center;
+}
+.tt-btn-favorites:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Save-state pill (header): always visible, states differentiated by both
    the text label and a tinted background/border (color-mix keeps this to
@@ -358,7 +376,7 @@ body { background: var(--bg); color: var(--fg); }
    file already commits this app to a modern-Chromium baseline). */
 .tt-save-pill {
   display: inline-flex; align-items: center; gap: .4rem;
-  padding: .3rem .7rem; border-radius: 999px;
+  box-sizing: border-box; height: var(--tt-header-ctl-h); padding: 0 .7rem; border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); color: var(--muted);
   font-size: .78rem; font-weight: 600; white-space: nowrap; cursor: default;
   transition: background-color .2s ease, border-color .2s ease, color .2s ease;
@@ -441,7 +459,7 @@ body { background: var(--bg); color: var(--fg); }
   position: relative; z-index: 1;
   display: inline-flex; align-items: center; justify-content: flex-end;
   margin-left: -1.44rem;
-  padding: .3rem .55rem .3rem 1.75rem;
+  box-sizing: border-box; height: var(--tt-header-ctl-h); padding: 0 .55rem 0 1.75rem;
   border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); color: var(--muted);
   font-size: .78rem; cursor: default;
@@ -705,6 +723,13 @@ body { background: var(--bg); color: var(--fg); }
   position: relative; flex: none;
 }
 .tt-pane-bar-left, .tt-pane-bar-right { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+/* Favorite star: same square-ish icon button as print/split; filled state tinted with the accent. */
+.tt-pane-fav-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2rem; padding-left: 0; padding-right: 0;
+}
+.tt-pane-fav-btn[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+.tt-pane-fav-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-pane-title-trigger-wrap { position: relative; min-width: 0; display: flex; }
 .tt-pane-title-trigger {
   display: inline-flex; align-items: center; gap: .3rem; min-width: 0;
@@ -770,16 +795,42 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-item { padding: .5rem .6rem; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-palette-item.selected, .tt-palette-item:hover { background: rgba(var(--accent-rgb), .12); }
 
+/* Favorites panel (src/ui/favorites.ts): hangs under the header, right-aligned.
+   Everything in rem so it follows html[data-size]; rows are one line with an
+   ellipsis (full text on the label's title) so XL never wraps or reflows them;
+   badge and ✕ are fixed-size flex items that never shrink. */
+.tt-favorites-panel {
+  position: fixed; z-index: 1200;
+  /* --tt-fav-left is set from the header ★'s position (ui/favorites.ts); the min() keeps the panel on screen. */
+  left: min(var(--tt-fav-left, .75rem), calc(100vw - min(30rem, 92vw) - .75rem));
+  width: min(30rem, 92vw); max-height: 70vh; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .35); overflow: hidden;
+  /* Pinned so the panel doesn't inherit the header's larger type; matches the other header dropdowns. */
+  font-size: .9rem;
+}
+.tt-favorites-list { overflow-y: auto; padding: .25rem; }
+.tt-favorites-item { display: flex; align-items: center; gap: .5rem; padding: .5rem .6rem; border-radius: 4px; cursor: pointer; }
+.tt-favorites-item.selected, .tt-favorites-item:hover { background: rgba(var(--accent-rgb), .12); }
+.tt-favorites-badge { flex: none; width: 1.25rem; text-align: center; opacity: .65; font-variant-numeric: tabular-nums; }
+.tt-favorites-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-favorites-remove {
+  flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
+  background: transparent; color: var(--fg); border: none; border-radius: 4px; cursor: pointer; opacity: .6;
+}
+.tt-favorites-remove:hover { opacity: 1; color: var(--accent); }
+.tt-favorites-empty { padding: .75rem; opacity: .75; }
+
 /* Header search */
-.tt-search-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
+.tt-search-wrap { position: relative; flex: 0 1 360px; min-width: 0; }
 /* No teams yet — nothing to search. Dimmed rather than hidden so the header
    doesn't reflow the moment the first team is created. */
 .tt-search-wrap.tt-search-disabled { opacity: .45; }
 .tt-search-wrap.tt-search-disabled .tt-search-input { cursor: not-allowed; }
 .tt-search-input-box { position: relative; width: 100%; max-width: 360px; min-width: 60px; }
-.tt-search-input { width: 100%; height: 2.25rem; box-sizing: border-box; padding-right: 1.8rem; }
+.tt-search-input { width: 100%; height: var(--tt-header-ctl-h); box-sizing: border-box; padding-right: 1.8rem; }
 .tt-search-clear-btn {
-  display: none; position: absolute; right: .35rem; top: 0; height: 2.25rem; width: 1.5rem;
+  display: none; position: absolute; right: .35rem; top: 0; height: var(--tt-header-ctl-h); width: 1.5rem;
   align-items: center; justify-content: center; border: none; background: transparent;
   color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; border-radius: 4px;
 }
@@ -1158,6 +1209,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-col-head .tt-kanban-add-btn { margin-left: auto; }
 .tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
+/* Invisible height-matcher in the Done/Cancelled head, which has no add button of its own. */
+.tt-kanban-head-spacer { visibility: hidden; pointer-events: none; }
 
 .tt-kanban-add-column-btn { white-space: nowrap; }
 
@@ -1663,13 +1716,12 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-person-notes { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tt-person-header {
   flex: none; padding: .5rem .75rem;
-  background: var(--panel); border-bottom: 1px solid var(--border);
+  background: transparent; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
 }
-.tt-person-header-id { min-width: 0; display: flex; flex-direction: column; gap: .05rem; }
-.tt-person-header-name { font-weight: 700; font-family: var(--font-display); font-size: 1.05rem; line-height: 1.2; }
+.tt-person-header-id { min-width: 0; display: flex; flex-direction: column; }
 .tt-person-header-title {
-  font-size: .8rem; color: var(--muted); line-height: 1.2;
+  font-size: .85rem; color: var(--muted); line-height: 1.2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tt-person-header-right { display: flex; align-items: center; gap: .35rem; flex: none; }

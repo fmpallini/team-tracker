@@ -87,18 +87,18 @@ describe('with ResizeObserver available', () => {
     expect(hooks.sidebarCalls).toEqual([])
     expect(hooks.headerCompactCalls).toEqual([])
 
-    ro.fire(850) // crosses split (900), not headerCompact (820) or sidebar (650)
+    ro.fire(850) // crosses split (900), not headerCompact (840) or sidebar (650)
     expect(hooks.splitCalls).toEqual([true])
     expect(hooks.headerCompactCalls).toEqual([])
     expect(hooks.sidebarCalls).toEqual([])
   })
 
-  test('fires headerCompact alone crossing below 820px, above the sidebar threshold (650)', () => {
+  test('fires headerCompact alone crossing below 840px, above the sidebar threshold (650)', () => {
     const hooks = fakeHooks()
     setupResponsiveLayout(document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
-    ro.fire(700) // below headerCompact (820), still above sidebar (650)
+    ro.fire(700) // below headerCompact (840), still above sidebar (650)
     expect(hooks.headerCompactCalls).toEqual([true])
     expect(hooks.sidebarCalls).toEqual([])
   })
@@ -159,27 +159,27 @@ describe('with ResizeObserver available', () => {
       delete document.documentElement.dataset.size
     })
 
-    test('at XL the header goes compact at a width where M still fits it (820 × 1.2 = 984)', () => {
+    test('at XL the header goes compact at a width where M still fits it (840 × 1.2 = 1008)', () => {
       document.documentElement.dataset.size = 'XL'
       const hooks = fakeHooks()
       setupResponsiveLayout(document.createElement('div'), hooks)
       const ro = FakeResizeObserver.instances[0]!
 
-      ro.fire(950) // between 820 and 984
+      ro.fire(950) // between 840 and 1008
       expect(hooks.headerCompactCalls).toEqual([true])
       expect(hooks.splitCalls).toEqual([]) // the other thresholds are untouched
     })
 
-    test('at M, and below, the threshold stays 820', () => {
+    test('at M, and below, the threshold stays 840', () => {
       for (const size of ['M', 'XS']) {
         document.documentElement.dataset.size = size
         FakeResizeObserver.instances = []
         const hooks = fakeHooks()
         setupResponsiveLayout(document.createElement('div'), hooks)
         const ro = FakeResizeObserver.instances[0]!
-        ro.fire(830)
+        ro.fire(850)
         expect(hooks.headerCompactCalls).toEqual([])
-        ro.fire(810)
+        ro.fire(830)
         expect(hooks.headerCompactCalls).toEqual([true])
       }
     })

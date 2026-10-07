@@ -244,17 +244,20 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     switcherListEl = el('div', { class: 'tt-team-switcher-list' })
     switcherTeams.forEach((team, index) => {
       const dueCount = teamDueCounts.get(team.id) ?? 0
+      const isActive = team.id === store.doc.nav.activeTeamId
       const row = el(
         'div',
         {
+          ...(isActive ? { 'aria-current': 'true' } : {}),
           ...selectableRowProps({
-            class: 'tt-team-switcher-item' + (team.id === store.doc.nav.activeTeamId ? ' active' : ''),
+            class: 'tt-team-switcher-item' + (isActive ? ' active' : ''),
             selected: index === switcherSelected,
             onCommit: () => pickSwitcherTeam(team),
             onHover: () => { switcherSelected = index; paintSelection(switcherListEl, '.tt-team-switcher-item', switcherSelected) },
           }),
           ...(index < 9 ? { title: t(locale(), 'team_alt_hint') } : {}),
         },
+        el('span', { class: 'tt-team-switcher-check' }, isActive ? '✓' : ''),
         el('span', { class: 'tt-team-num' }, String(index + 1)),
         el('span', { class: 'tt-team-emoji' }, team.emoji),
         el('span', { class: 'tt-team-name' }, team.name),

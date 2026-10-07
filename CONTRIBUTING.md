@@ -28,6 +28,25 @@ npm run test:e2e      # build, then run the Playwright suite against dist/
 npm run build         # produce dist/app.html and dist/pwa/
 ```
 
+The Playwright suite's layout and the `file://` vs `http://localhost` split are
+explained in [e2e/CLAUDE.md](e2e/CLAUDE.md).
+
+## Checks and releases
+
+Run this once per machine to enable the pre-push quality gates:
+
+```
+git config core.hooksPath .githooks
+```
+
+The fast checks run locally before every push; the slower ones (e2e, weekly
+dependency audit) run in CI. [.githooks/README.md](.githooks/README.md) lists
+every gate and where it runs.
+
+A pull request that bumps the `version` in `package.json` must also add a
+matching, non-empty `## [X.Y.Z]` entry to [CHANGELOG.md](CHANGELOG.md), or CI's
+`changelog-gate` fails.
+
 The codebase has zero runtime dependencies — `esbuild`, `typescript`,
 `vitest`, `jsdom`, and `@playwright/test` are dev-only tooling. Adding a
 runtime dependency is a hard no.

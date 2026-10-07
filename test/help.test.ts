@@ -1,5 +1,6 @@
 import { showGlobalHelp, showEditorHelp, appWindowCommand } from '../src/ui/help'
 import { createShell } from '../src/ui/shell'
+import { createEmptyDocument } from '../src/core/document'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -221,4 +222,15 @@ describe('app-window command box', () => {
     expect(document.querySelector('.tt-help-hint')).toBeNull()
     expect(document.querySelector('.tt-help-cmd-copy')).toBeNull()
   })
+})
+
+test('the app name button keeps its chevron affordance across a locale switch', () => {
+  stubMatchMedia()
+  const shell = createShell('en-US')
+  document.body.appendChild(shell.root)
+  const btn = shell.headerLeft.querySelector('.tt-app-name') as HTMLButtonElement
+  expect(btn.querySelector('.tt-app-name-chevron svg')).not.toBeNull()
+  shell.applyPrefs({ ...createEmptyDocument('pt-BR').prefs })
+  expect(btn.querySelector('.tt-app-name-chevron svg')).not.toBeNull()
+  expect(btn.textContent).toBe('Team Tracker')
 })

@@ -42,13 +42,13 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   const initialBacklinks = ctx.searchIndex.backlinks(teamId, 'person', personId)
-  const headerNameEl = el('span', { class: 'tt-person-header-name' })
   const headerTitleEl = el('span', { class: 'tt-person-header-title' })
   const groupLabel = t(lc, group === 'members' ? 'person_group_member' : 'person_group_stakeholder')
-  // Muted second line: the person's role first (when they have one), then
-  // their classification (team member / stakeholder) after a "·".
+  // The person's name is deliberately not repeated here: the pane bar above
+  // already shows it (ui/panes.ts's titleFor) and keeps it live on rename.
+  // This line is the role first (when they have one), then their
+  // classification (team member / stakeholder) after a "·".
   function renderIdentity(p: Person): void {
-    headerNameEl.textContent = p.name
     headerTitleEl.textContent = p.role.trim() ? `${p.role} · ${groupLabel}` : groupLabel
   }
   renderIdentity(person)
@@ -106,7 +106,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const headerEl = el(
     'div',
     { class: 'tt-person-header' },
-    el('div', { class: 'tt-person-header-id' }, headerNameEl, headerTitleEl),
+    el('div', { class: 'tt-person-header-id' }, headerTitleEl),
     el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, editBtn, gotoOrgBtn)
   )
 
