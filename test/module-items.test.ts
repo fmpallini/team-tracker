@@ -1,20 +1,8 @@
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
-import { buildModuleItems, filterModuleItems, titleFor, type ModuleItem } from '../src/core/module-items'
+import { buildModuleItems, titleFor } from '../src/core/module-items'
 import { t } from '../src/core/i18n'
 import { KIND_ICON } from '../src/core/search'
 import type { Team } from '../src/core/types'
-
-test('filterModuleItems matches substrings case- and accent-insensitively (palette filter)', () => {
-  const items: ModuleItem[] = [
-    { label: 'María', ref: { kind: 'actions' } },
-    { label: 'Stakeholders', ref: { kind: 'stakeholders' } },
-  ]
-
-  expect(filterModuleItems(items, 'maria').map((i) => i.label)).toEqual(['María'])
-  expect(filterModuleItems(items, 'STAKE').map((i) => i.label)).toEqual(['Stakeholders'])
-  expect(filterModuleItems(items, '')).toEqual(items)
-  expect(filterModuleItems(items, 'zzz')).toEqual([])
-})
 
 test('buildModuleItems includes one entry per action item/milestone/risk, after the whole-board entries', () => {
   const team: Team = {

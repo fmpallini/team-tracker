@@ -6,7 +6,7 @@
 import type { Doc, Loc, ModuleRef, Team } from './types'
 import { findTeam } from './document'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from './i18n'
-import { KIND_ICON, normalize, teamRefCandidates } from './search'
+import { KIND_ICON, teamRefCandidates } from './search'
 
 /** Same item list feeds both the pane module dropdown and the Ctrl+Shift+K fast switch. */
 export interface ModuleItem {
@@ -21,13 +21,6 @@ export const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' |
   { kind: 'milestones', key: 'module_milestones' },
   { kind: 'risks', key: 'module_risks' },
 ]
-
-/** Pure and exported so it can be unit-tested without touching the DOM. */
-export function filterModuleItems<T extends { label: string }>(items: T[], query: string): T[] {
-  const q = normalize(query.trim())
-  if (!q) return items
-  return items.filter((item) => normalize(item.label).includes(q))
-}
 
 export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
   const items: ModuleItem[] = [

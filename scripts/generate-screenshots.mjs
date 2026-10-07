@@ -402,9 +402,9 @@ async function main() {
           await blurAway(page)
           break
         case 'command-palette':
-          // Leave the query empty — filterModuleItems() (src/ui/palette.ts)
-          // returns every fast-switch item unfiltered when the query is
-          // blank, so the screenshot shows the full list instead of one match.
+          // Leave the query empty — buildSwitcher() (src/core/switcher.ts)
+          // then shows Favorites, Due dates and the current team's rows
+          // (Other teams appear only once you type), not one filtered match.
           await page.keyboard.press('Control+Shift+k')
           await expect(page.locator('.tt-palette-overlay')).toBeVisible()
           break

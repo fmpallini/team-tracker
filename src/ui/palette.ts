@@ -32,6 +32,8 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
   let sections: SwitcherSection[] = []
   let rows: SwitcherRow[] = []
   let selected = 0
+  // What had focus before the palette opened, so a plain dismiss can hand it back.
+  let returnFocus: Element | null = null
 
   function locale(): Locale {
     return store.doc.prefs.locale
@@ -49,6 +51,13 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     listEl = null
     input = null
     document.removeEventListener('keydown', onKeydown, true)
+  }
+
+  /** Escape / backdrop click: close, then give focus back. A commit does not — the pane re-renders and owns focus. */
+  function dismiss(): void {
+    const back = returnFocus
+    close()
+    if (back instanceof HTMLElement && back.isConnected) back.focus()
   }
 
   function commit(row: SwitcherRow | undefined): void {
@@ -90,6 +99,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
       parts.push(el('button', {
         class: 'tt-palette-remove',
         type: 'button',
+        tabindex: '-1', // mouse-only: Tab from the input must not land on it
         title: t(locale(), 'pane_fav_remove_title'),
         'aria-label': t(locale(), 'pane_fav_remove_title'),
         onmousedown: (e: Event) => e.preventDefault(),
@@ -147,7 +157,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      close()
+      dismiss()
       return
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -171,6 +181,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     // (src/ui/search-ui.ts syncEnabled) — the header button is disabled to
     // match, and this guard also covers the Ctrl+Shift+K path.
     if (store.doc.teams.length === 0) return
+    returnFocus = document.activeElement
     input = el('input', {
       type: 'text',
       class: 'tt-input tt-palette-input',
@@ -180,7 +191,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     const dialog = el('div', { class: 'tt-palette-dialog' }, input, listEl)
     overlay = el('div', { class: 'tt-palette-overlay' }, dialog)
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close()
+      if (e.target === overlay) dismiss()
     })
     document.body.appendChild(overlay)
 

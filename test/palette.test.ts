@@ -224,6 +224,7 @@ describe('removing a favorite with ✕', () => {
     palette.open()
     const x = document.querySelector<HTMLButtonElement>('.tt-palette-remove')!
     expect(x.title).toBe('Remove from favorites')
+    expect(x.getAttribute('tabindex')).toBe('-1') // mouse-only: Tab from the input must not land on it
     x.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     expect(store.doc.favorites).toEqual([])
     expect(document.querySelector('.tt-palette-overlay')).not.toBeNull()
@@ -249,5 +250,51 @@ describe('removing a favorite with ✕', () => {
     key('ArrowUp') // back on the favorite row, which is also index 0
     document.querySelector<HTMLButtonElement>('.tt-palette-remove')!.click()
     expect(rows().filter((r) => r.classList.contains('selected'))).toHaveLength(1)
+  })
+})
+
+describe('focus on dismiss', () => {
+  function focusedTrigger(): HTMLInputElement {
+    const trigger = document.createElement('input')
+    document.body.appendChild(trigger)
+    trigger.focus()
+    return trigger
+  }
+
+  test('Escape hands focus back to what had it before the palette opened', () => {
+    const { palette } = setup()
+    const trigger = focusedTrigger()
+    palette.open()
+    expect(document.activeElement).not.toBe(trigger)
+    key('Escape')
+    expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  test('clicking the overlay backdrop hands focus back too', () => {
+    const { palette } = setup()
+    const trigger = focusedTrigger()
+    palette.open()
+    document.querySelector<HTMLElement>('.tt-palette-overlay')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  test('committing a row does not restore focus (the pane re-renders)', () => {
+    const { palette } = setup()
+    const trigger = focusedTrigger()
+    palette.open()
+    rows().find((r) => r.textContent?.includes('Carla'))!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+    expect(document.activeElement).not.toBe(trigger)
+  })
+
+  test('a previously focused element that left the DOM is skipped without throwing', () => {
+    const { palette } = setup()
+    const trigger = focusedTrigger()
+    palette.open()
+    trigger.remove()
+    expect(() => key('Escape')).not.toThrow()
+    expect(document.querySelector('.tt-palette-overlay')).toBeNull()
   })
 })

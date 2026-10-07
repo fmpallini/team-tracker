@@ -46,7 +46,7 @@ export function toggleFavorite(doc: Doc, loc: Loc): boolean {
 /**
  * Whether a favorite points at something that no longer exists: its team is
  * gone, or it is a person favorite whose person is gone. Ids are never
- * reused, so such an entry is inert; it is hidden from the panel (liveFavorites)
+ * reused, so such an entry is inert; it is hidden from the fast switch (liveFavorites)
  * and removed for good by the Prefs → Data cleanup (core/cleanup.ts).
  */
 export function isFavoriteOrphaned(doc: Doc, fav: Favorite): boolean {
