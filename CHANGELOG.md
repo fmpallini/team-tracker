@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.12.1] - 2026-10-07
+
+### Changed
+- With the sidebar open, the sidebar toggle, the "Team Tracker ▾" button and the search magnifier now fill exactly the width of the sidebar, with the magnifier at its right edge. The "Team Tracker" button stretches to use the space the two square buttons leave, and its text is slightly smaller so it fits. The search field still opens to the right when you click it.
+- With the sidebar closed, the magnifier sits right next to the "Team Tracker" button, which shrinks back to its label.
+
 ## [2.12.0] - 2026-10-07
 
 ### Changed
