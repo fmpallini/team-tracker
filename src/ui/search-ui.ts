@@ -11,6 +11,7 @@ import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
+import { icon as strokeIcon } from './icons'
 
 const DEBOUNCE_MS = 300
 
@@ -116,7 +117,7 @@ export function mountSearch(
         input.focus()
       },
     },
-    '×'
+    strokeIcon('close', 12)
   )
   // A query keeps the box expanded after it loses focus (.has-value), so what
   // was searched stays visible; an empty box folds back to the icon on blur.

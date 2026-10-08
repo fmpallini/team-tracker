@@ -2,6 +2,7 @@
 import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
+import { icon } from './icons'
 import { formatHHMM } from '../core/date'
 import { syncThemeColor } from '../core/theme-color'
 
@@ -247,25 +248,25 @@ export function createShell(locale: Locale): Shell {
   const fullscreenBtn = el(
     'button',
     { class: 'tt-btn tt-btn-fullscreen', type: 'button', title: t(locale, 'fullscreen'), onclick: () => toggleFullscreen() },
-    '⛶'
+    icon('fullscreen')
   )
   let closeFileHandler: (() => void) | null = null
   const closeFileBtn = el(
     'button',
     { class: 'tt-btn tt-btn-close-file', type: 'button', title: t(locale, 'close_file_title'), onclick: () => closeFileHandler?.() },
-    '🔒'
+    icon('lock')
   )
   let settingsHandler: (() => void) | null = null
   const settingsBtn = el(
     'button',
     { class: 'tt-btn tt-btn-settings', type: 'button', title: t(locale, 'settings'), onclick: () => settingsHandler?.() },
-    '⚙'
+    icon('gear')
   )
   let helpHandler: (() => void) | null = null
   const helpBtn = el(
     'button',
     { class: 'tt-btn tt-btn-help', type: 'button', title: t(locale, 'help_global_title'), onclick: () => helpHandler?.() },
-    '❓'
+    icon('help')
   )
 
   // The right cluster is status, then view/help utilities, then settings and the session-ending close-file button last, kept apart from the utilities. (mountSearch() appends the search box to headerLeft.)

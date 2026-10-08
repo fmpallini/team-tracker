@@ -29,6 +29,7 @@ import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
+import { icon } from '../ui/icons'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /**
@@ -474,13 +475,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
-      expandable.isExpanded(m.id) ? '▾' : '▸'
+      icon(expandable.isExpanded(m.id) ? 'chevDown' : 'chevRight', 14)
     )
 
     const deleteBtn = el(
       'button',
       { class: 'tt-btn tt-milestone-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_delete_title'), onclick: () => requestDelete(m) },
-      '🗑'
+      icon('trash', 16)
     )
 
     const row = el(

@@ -9,6 +9,7 @@
 import { t, todayIso, type Locale } from '../core/i18n'
 import { pad2 } from '../core/date'
 import { el } from './dom'
+import { icon } from './icons'
 
 export interface CalendarMarks {
   hasNote(dateIso: string): boolean
@@ -64,14 +65,14 @@ export function createCalendar(opts: {
       ? el(
           'button',
           { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_prev_month_title'), onclick: goPrevMonth },
-          '‹'
+          icon('back', 12)
         )
       : null
     const nextBtn = withNav
       ? el(
           'button',
           { class: 'tt-btn tt-calendar-nav-btn', type: 'button', title: t(opts.locale, 'calendar_next_month_title'), onclick: goNextMonth },
-          '›'
+          icon('next', 12)
         )
       : null
     return el(

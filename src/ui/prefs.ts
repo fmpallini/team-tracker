@@ -19,6 +19,7 @@ import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
 import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField } from './prefs-fields'
+import { icon } from './icons'
 
 /**
  * Every write in this file that only moves a preference. No module renders
@@ -715,7 +716,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           disabled: index === 0,
           onclick: () => moveTemplate(index, -1),
         },
-        '▲'
+        icon('up')
       )
       const downBtn = el(
         'button',
@@ -726,7 +727,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           disabled: index === count - 1,
           onclick: () => moveTemplate(index, 1),
         },
-        '▼'
+        icon('down')
       )
       const editBtn = el(
         'button',
@@ -736,7 +737,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           title: t(locale, 'prefs_templates_edit_btn_title'),
           onclick: () => openEditModal(tpl),
         },
-        '✎'
+        icon('edit')
       )
       const dupBtn = el(
         'button',
@@ -746,7 +747,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           title: t(locale, 'prefs_templates_duplicate_title'),
           onclick: () => duplicateTemplate(index),
         },
-        '⎘'
+        icon('copy')
       )
       const delBtn = el(
         'button',
@@ -768,7 +769,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             onConfirm: () => removeTemplate(tpl.id),
           }),
         },
-        '🗑'
+        icon('trash')
       )
       return el(
         'div',

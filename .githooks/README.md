@@ -32,7 +32,7 @@ to the checked-out branch against `origin/dev`.
 | TypeCheck (`tsc --noEmit`) | Yes | |
 | Tests (`vitest run`) | Yes | |
 | Test coverage sanity | Yes (new files only) | dev pushes only — see below |
-| Changelog entry | No | dev pushes only — warns if `package.json` version changed vs remote `dev` with no matching `## [x.y.z]` in `CHANGELOG.md`; CI hard-fails the same check on the `dev → main` PR |
+| Changelog entry | No | dev pushes only — warns if `package.json` version changed vs remote `dev` with no matching `## [x.y.z]` in `CHANGELOG.md`, and nags (also non-blocking) when that entry is wordy — more than 6 bullets or a line over 200 chars; CI hard-fails the missing-entry check on the `dev → main` PR |
 | AI: Simplify / Security review / Bug hunt / Test Coverage | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI — see [AI gates](#ai-gates) |
 
 ### Test coverage sanity

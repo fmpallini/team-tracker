@@ -28,6 +28,7 @@ import { BACKLINK_SECTIONS, normalize, KIND_ICON } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
+import { icon } from '../ui/icons'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -416,7 +417,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
             patch((item) => { item.assignee = '' }, ['actions'])
             renderAssigneeField()
           },
-        }, '×')
+        }, icon('close', 12))
         assigneeField.appendChild(el('span', { class: 'tt-kanban-assignee-chip' }, `🧑 ${display.name}`, clearBtn))
         return
       }
@@ -447,7 +448,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         type: 'button', class: 'tt-assignee-toggle',
         'aria-label': t(lc, 'kanban_assignee_open_list'), title: t(lc, 'kanban_assignee_open_list'),
         onclick: () => { if (assigneeMenu) closeMenu(); else openMenu(true); input.focus() },
-      }, '▾')
+      }, icon('chevDown', 12))
       const combo = el('div', { class: 'tt-assignee-combo' }, input, toggle)
       assigneeField.appendChild(combo)
 
@@ -593,7 +594,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           expandBtn.title = t(lc, expanded ? 'kanban_collapse_title' : 'kanban_expand_title')
         },
       },
-      '⛶'
+      icon('fullscreen')
     )
     const headerExtra = el('div', { class: 'tt-kanban-modal-header-extra' }, savePillMini, expandBtn)
 
@@ -877,7 +878,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const editBtn = el(
       'button',
       { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
-      '✎'
+      icon('edit', 13)
     )
     // The title is clamped to two lines (styles.css) so cards stay dense in a
     // split pane; its own tooltip carries the untruncated summary.
@@ -1207,12 +1208,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         }
         blurOnEnter(e)
       })
-      const gripEl = el('span', { class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint') }, '⠿')
+      const gripEl = el('span', { class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint') }, icon('grip', 12))
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
         gripEl, nameSpan, nameInput,
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card')),
-        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, '🗑')
+        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, icon('trash', 14))
       )
       wireColumnHeaderDrag(headEl, gripEl, id)
       if (pendingColumnFocusId === id) {
@@ -1230,11 +1231,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl,
         el('button', { class: 'tt-btn tt-kanban-add-btn tt-kanban-head-spacer', type: 'button', tabindex: '-1', 'aria-hidden': 'true' }, t(lc, 'kanban_add_card'))),
       el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
-        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, '🗑')),
+        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, icon('trash', 14))),
       el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('done')!.bodyEl, cols.get('done')!.zoneEl),
       el('div', { class: 'tt-kanban-divider' }),
       el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
-        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, '🗑')),
+        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, icon('trash', 14))),
       el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('cancelled')!.bodyEl, cols.get('cancelled')!.zoneEl)
     )
 
@@ -1265,7 +1266,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   // only while dragging (see dragstart in renderCard above), same rationale
   // as src/modules/people-tree.ts's rootDropEl: revealing it must not
   // reflow the board mid-dragstart, or Chrome cancels the drag.
-  const trashEl = el('div', { class: 'tt-kanban-trash' }, '🗑 ', t(lc, 'kanban_trash_hint'))
+  const trashEl = el('div', { class: 'tt-kanban-trash' }, icon('trash', 14), ' ', t(lc, 'kanban_trash_hint'))
   trashEl.addEventListener('dragover', (e) => {
     if (draggedId === null) return
     e.preventDefault()

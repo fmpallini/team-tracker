@@ -26,7 +26,7 @@ test('shell header has a ❓ help button that fires the registered onHelp callba
   const cb = vi.fn()
   shell.onHelp(cb)
 
-  const btn = Array.from(shell.root.querySelectorAll('button')).find((b) => b.textContent === '❓')!
+  const btn = Array.from(shell.root.querySelectorAll('button')).find((b) => b.classList.contains('tt-btn-help'))!
   expect(btn).not.toBeUndefined()
   btn.click()
 
@@ -83,7 +83,7 @@ test('shell header has a 🔒 close-file button that fires the registered onClos
   const cb = vi.fn()
   shell.onCloseFile(cb)
 
-  const btn = Array.from(shell.root.querySelectorAll('button')).find((b) => b.textContent === '🔒')!
+  const btn = Array.from(shell.root.querySelectorAll('button')).find((b) => b.classList.contains('tt-btn-close-file'))!
   expect(btn).not.toBeUndefined()
   btn.click()
 
@@ -233,4 +233,16 @@ test('the app name button keeps its chevron affordance across a locale switch', 
   shell.applyPrefs({ ...createEmptyDocument('pt-BR').prefs })
   expect(btn.querySelector('.tt-app-name-chevron svg')).not.toBeNull()
   expect(btn.textContent).toBe('Team Tracker')
+})
+
+test('global help draws button references as the same stroke icons the buttons use, not emoji glyphs', () => {
+  showGlobalHelp('en-US')
+  const cells = Array.from(document.querySelectorAll('.tt-help-code'))
+  const cellFor = (needle: string): Element => cells.find((c) => c.textContent?.includes(needle))!
+
+  expect(cellFor('Ctrl+Alt+L').querySelector('.tt-icon-lock')).not.toBeNull()
+  expect(cellFor('F11').querySelector('.tt-icon-fullscreen')).not.toBeNull()
+  const history = cells.find((c) => c.querySelector('.tt-icon-back') && c.querySelector('.tt-icon-next'))
+  expect(history?.querySelector('.tt-icon-mouse')).not.toBeNull()
+  expect(document.body.textContent).not.toMatch(/[🔒⛶◀▶🖱]/u)
 })

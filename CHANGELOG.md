@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.13.0] - 2026-10-08
+
+### Changed
+- Buttons across the app now use drawn icons instead of emoji and text symbols, matching the search magnifier. They follow the button's color and look the same on every system.
+- The expand caret on closed risks is easier to see.
+
 ## [2.12.1] - 2026-10-07
 
 ### Changed

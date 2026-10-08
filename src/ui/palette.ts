@@ -15,6 +15,7 @@ import type { PaneManager } from './panes'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { blockedByBlockingModal } from './hotkeys'
 import { dismissModelessModals } from './modal'
+import { icon } from './icons'
 
 export interface Palette {
   open(): void
@@ -104,7 +105,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
         'aria-label': t(locale(), 'pane_fav_remove_title'),
         onmousedown: (e: Event) => e.preventDefault(),
         onclick: (e: Event) => { e.stopPropagation(); removeFavorite(fav) },
-      }, '✕'))
+      }, icon('close', 12)))
     }
     return el(
       'div',

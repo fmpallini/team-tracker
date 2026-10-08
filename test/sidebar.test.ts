@@ -163,7 +163,7 @@ test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar even 
 
 test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   const { store } = setup()
-  clickByText('➕')
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   const emojiInput = document.querySelector('input[name="tt-team-emoji"]') as HTMLInputElement
   nameInput.value = 'Gamma'
@@ -181,7 +181,7 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
 
 test('canceling the add-team modal disposes the emoji picker (no leaked listener)', () => {
   setup()
-  clickByText('➕')
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   const emojiInput = document.querySelector<HTMLInputElement>('input[name="tt-team-emoji"]')!
   emojiInput.dispatchEvent(new Event('focus'))
   expect(document.querySelector('.tt-emoji-popup')).not.toBeNull()
@@ -197,7 +197,7 @@ test('canceling the add-team modal disposes the emoji picker (no leaked listener
 
 test('a new team is seeded with default names for the urgent/blocked/in-review colors', () => {
   const { store } = setup()
-  clickByText('➕')
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   nameInput.value = 'Gamma'
   nameInput.dispatchEvent(new Event('input'))
@@ -213,7 +213,7 @@ test('a new team is seeded with default names for the urgent/blocked/in-review c
 
 test('+ modal requires a name', () => {
   setup()
-  clickByText('➕')
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   clickByText('OK')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
@@ -221,7 +221,7 @@ test('+ modal requires a name', () => {
 
 test('+ modal allows a blank emoji — no default is silently persisted', () => {
   const { store } = setup()
-  clickByText('➕')
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   nameInput.value = 'Gamma'
   nameInput.dispatchEvent(new Event('input'))
@@ -237,7 +237,7 @@ test('adding a team while another already exists still auto-selects the new team
   addTeam(store, 'Alpha')
   store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
 
-  clickByText('➕')
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   nameInput.value = 'Beta'
   nameInput.dispatchEvent(new Event('input'))

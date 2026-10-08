@@ -8,6 +8,7 @@
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { blockedByModal } from './hotkeys'
+import { icon } from './icons'
 
 export interface UpdateNoticeOpts {
   pwa?: boolean
@@ -90,7 +91,7 @@ export function showUpdateNotice(
       title: t(locale, 'update_notice_dismiss_title'),
       onclick: () => dismiss(),
     },
-    '×'
+    icon('close', 12)
   )
 
   const row = el(

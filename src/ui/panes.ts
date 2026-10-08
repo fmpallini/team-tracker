@@ -16,6 +16,7 @@ import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { blockedByModal } from './hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
+import { icon } from './icons'
 // Runtime dependency in one direction only: modules/lifecycle.ts imports
 // ModuleCtx/ModuleRenderer from here as *types*, which are erased at build.
 import { disposeContainer } from '../modules/lifecycle'
@@ -1022,7 +1023,7 @@ ${t(lc, 'pane_history_hint')}`
         disabled: !canBack,
         onclick: () => goHistory(idx, -1),
       },
-      '◀'
+      icon('back')
     )
     const fwdBtn = el(
       'button',
@@ -1033,7 +1034,7 @@ ${t(lc, 'pane_history_hint')}`
         disabled: !canFwd,
         onclick: () => goHistory(idx, 1),
       },
-      '▶'
+      icon('next')
     )
     bindHistoryMenu(backBtn, idx)
     bindHistoryMenu(fwdBtn, idx)
@@ -1050,7 +1051,7 @@ ${t(lc, 'pane_history_hint')}`
               if (layout$.jumpToLatest(idx)) renderAll()
             },
           },
-          '⏭'
+          icon('latest')
         )
       : null
     const teamId = nav.activeTeamId
@@ -1068,7 +1069,7 @@ ${t(lc, 'pane_history_hint')}`
         { class: flashTitle ? 'tt-pane-title-text tt-pane-title-flash' : 'tt-pane-title-text' },
         cur ? titleFor(store.doc, cur, lc) : t(lc, 'pane_empty')
       ),
-      el('span', { class: 'tt-pane-title-chev' }, '▾')
+      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12))
     )
     const isFav = cur !== null && isFavorite(store.doc, cur)
     const favBtn = el(
@@ -1082,7 +1083,7 @@ ${t(lc, 'pane_history_hint')}`
         // Unscoped on purpose (core/scope.ts): a toggle is rare, and a wrong narrow scope would leave a star stale.
         onclick: () => { if (cur) store.update((d) => { toggleFavorite(d, cur) }) },
       },
-      isFav ? '★' : '☆'
+      icon(isFav ? 'starFill' : 'star')
     )
     const printBtn = el(
       'button',
@@ -1093,7 +1094,7 @@ ${t(lc, 'pane_history_hint')}`
         disabled: cur === null,
         onclick: () => printPane(idx),
       },
-      '🖨️'
+      icon('print')
     )
     const splitBtn = el(
       'button',
@@ -1103,7 +1104,7 @@ ${t(lc, 'pane_history_hint')}`
         title: t(lc, effectiveSplit() ? 'pane_unsplit_title' : 'pane_split_title'),
         onclick: () => toggleSplit(),
       },
-      '⧉'
+      icon('split')
     )
 
     const moduleTriggerWrap = el(

@@ -14,6 +14,7 @@ import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
 import { deleteWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
+import { icon } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -198,17 +199,17 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           class: 'tt-btn tt-people-notes-btn', type: 'button', title: t(lc, 'person_notes_title'),
           onclick: (e: Event) => { e.stopPropagation(); ctx.pm.openInFocused({ teamId, ref: { kind: 'person', personId: person.id, group } }) },
         },
-        '📝'
+        icon('note')
       )
       const editBtn = el(
         'button',
         { class: 'tt-btn tt-people-edit-btn', type: 'button', title: t(lc, 'person_edit_title'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(person) } },
-        '✎'
+        icon('edit')
       )
       const addChildBtn = el(
         'button',
         { class: 'tt-btn tt-people-add-child-btn', type: 'button', title: t(lc, 'person_add_child_title'), onclick: (e: Event) => { e.stopPropagation(); openAddModal(person.id) } },
-        '+'
+        icon('plus')
       )
       const deleteBtn = el(
         'button',
@@ -252,7 +253,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
             })
           },
         },
-        '🗑'
+        icon('trash')
       )
       const actions = el('div', { class: 'tt-people-actions' }, notesBtn, editBtn, addChildBtn, deleteBtn)
 

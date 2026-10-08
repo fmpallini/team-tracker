@@ -34,6 +34,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc, makeRefLabelResolver } from '../ui/atref'
 import { mdToHtml } from '../core/markdown'
+import { icon } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -856,19 +857,19 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const expandBtn = el(
       'button',
       { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => toggleExpand(r.id) },
-      expanded ? '▾' : '▸'
+      icon(expanded ? 'chevDown' : 'chevRight', 14)
     )
 
     const closeBtn = el(
       'button',
       { class: 'tt-btn tt-risk-close-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_close_title'), onclick: () => setClosed(r.id, true) },
-      '✔️'
+      icon('check', 16)
     )
 
     const deleteBtn = el(
       'button',
       { class: 'tt-btn tt-risk-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
-      '🗑'
+      icon('trash', 16)
     )
 
     // Narrow-row scaffolding, inert until the container query in styles.css
@@ -1035,13 +1036,13 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
             title: t(lc, 'risk_followup_toggle_title'),
             onclick: () => { expandable.toggle(r.id); renderAll() },
           },
-          expandable.isExpanded(r.id) ? '▾' : '▸'
+          icon(expandable.isExpanded(r.id) ? 'chevDown' : 'chevRight', 14)
         )
       : el('span', { class: 'tt-risk-header-spacer' }) // keep the column aligned with rows that do have a caret
     const reopenBtn = el(
       'button',
       { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
-      '♻️'
+      icon('reopen', 16)
     )
     // Same delete flow as an open row's — closed carries no other content
     // worth losing beyond what requestDelete already guards (confirm +
@@ -1049,7 +1050,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const deleteBtn = el(
       'button',
       { class: 'tt-btn tt-risk-delete-btn', type: 'button', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
-      '🗑'
+      icon('trash', 16)
     )
     const row = el(
       'div',
@@ -1131,7 +1132,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // A resting '⇅' hints the column is clickable even before it's ever
     // been sorted — without it, "sortable" wasn't discoverable short of
     // stumbling into a hover.
-    sortIndicatorEl.textContent = sortMode === 'desc' ? ' ▾' : sortMode === 'asc' ? ' ▲' : ' ⇅'
+    sortIndicatorEl.replaceChildren(icon(sortMode === 'desc' ? 'chevDown' : sortMode === 'asc' ? 'chevUp' : 'sort', 12))
     exposureHeaderBtn.classList.toggle('active', sortMode !== 'none')
   }
 
@@ -1209,7 +1210,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
         // inside of — a native <summary> click always does that first.
         onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); requestDeleteAllClosed() },
       },
-      '🗑'
+      icon('trash', 16)
     )
     // A hand-drawn arrow instead of the native <summary> marker — the
     // native one is a list-item marker, which forces the flex row holding
@@ -1218,7 +1219,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const summaryRow = el(
       'div',
       { class: 'tt-risks-closed-summary-row' },
-      el('span', { class: 'tt-risks-closed-arrow' }, '▸'),
+      el('span', { class: 'tt-risks-closed-arrow' }, icon('chevRight', 12)),
       t(lc, 'risks_closed_heading', { count: String(closed.length) }),
       closed.length > 0 ? clearClosedBtn : null
     )

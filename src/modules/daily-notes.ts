@@ -18,6 +18,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { actionStatusLabel } from './action-items'
+import { icon } from '../ui/icons'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
@@ -192,7 +193,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
         applyCalendarCollapsed(calendarColEntry)
       },
     },
-    '📅'
+    icon('calendar')
   )
   // Registered for the lifetime of this mount so setDailyCalendarSpaceConstrained()
   // can fold/unfold it as the window crosses the narrow threshold; unregistered
