@@ -5,6 +5,7 @@
 import type { Locale, MsgKey } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el } from './dom'
+import { icon, type IconName } from './icons'
 import { showModal } from './modal'
 
 const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
@@ -39,18 +40,18 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Alt+1 … Alt+9', 'help_global_teams'],
   ['Ctrl+Shift+K', 'help_global_palette'],
   ['Ctrl+S', 'help_global_save'],
-  ['Ctrl+Alt+L / 🔒', 'help_global_close_file'],
+  ['Ctrl+Alt+L / {lock}', 'help_global_close_file'],
   ['Ctrl+F ou /', 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
   ['Alt+Shift+← / Alt+Shift+→', 'help_global_history'],
   ['Alt+Shift+↑', 'help_global_history_latest'],
-  ['🖱 4 / 5', 'help_global_history_mouse'],
-  ['◀ / ▶ 🖱', 'help_global_history_menu'],
+  ['{mouse} 4 / 5', 'help_global_history_mouse'],
+  ['{back} / {next} {mouse}', 'help_global_history_menu'],
   ['Alt+←/→/↑/↓', 'help_global_pane_layout'],
   ['F1 … F7', 'help_global_pane_module'],
   ['Alt+[ / Alt+] / Alt+T', 'help_global_daily_nav'],
   ['Alt+, / Alt+.', 'help_global_daily_nav_content'],
-  ['F11 / ⛶', 'help_global_fullscreen'],
+  ['F11 / {fullscreen}', 'help_global_fullscreen'],
   // Enter and Space are deliberately two different actions on a focused row/
   // card (see the row/card builders in modules/risks.ts, milestones.ts and
   // action-items.ts) — documenting that split is the whole point of these
@@ -96,9 +97,6 @@ export function appWindowCommand(href: string, uaData?: UaData, userAgent = ''):
     : `${APP_LAUNCHERS[platform][brand]} ${app}`
 }
 
-const COPY_GLYPH = '⧉'
-const COPIED_GLYPH = '✓'
-
 /** Async Clipboard API where the page has it; the hidden-textarea + execCommand('copy') route otherwise (file:// is an insecure context, so navigator.clipboard is absent there — the very case this help block is shown in). */
 function copyToClipboard(text: string): void {
   const viaTextarea = (): void => {
@@ -122,21 +120,28 @@ function copyableCommand(locale: Locale, command: string): HTMLElement {
     class: 'tt-cb-btn tt-help-cmd-copy', type: 'button', title: t(locale, 'editor_cb_copy'),
     onclick: () => {
       copyToClipboard(command)
-      btn.textContent = COPIED_GLYPH
+      btn.replaceChildren(icon('check'))
       btn.title = t(locale, 'editor_cb_copied')
       if (resetTimer) clearTimeout(resetTimer)
       resetTimer = setTimeout(() => {
-        btn.textContent = COPY_GLYPH
+        btn.replaceChildren(icon('copy'))
         btn.title = t(locale, 'editor_cb_copy')
       }, 900)
     },
-  }, COPY_GLYPH)
+  }, icon('copy'))
   return el('div', { class: 'tt-help-cmd' }, el('pre', { class: 'tt-help-code-block' }, command), btn)
+}
+
+/** A shortcut cell: plain text, with `{name}` tokens swapped for that stroke icon — the same drawing as the button the row refers to. */
+function keyCell(code: string): HTMLElement {
+  const parts = code.split(/\{(\w+)\}/)
+  const nodes = parts.map((part, i) => (i % 2 === 1 ? icon(part as IconName, 13) : part))
+  return el('td', { class: 'tt-help-code' }, ...nodes)
 }
 
 function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {
   const body = rows.map(([code, key]) =>
-    el('tr', {}, el('td', { class: 'tt-help-code' }, code), el('td', {}, t(locale, key)))
+    el('tr', {}, keyCell(code), el('td', {}, t(locale, key)))
   )
   return el('table', { class: 'tt-help-table' }, el('tbody', {}, ...body))
 }

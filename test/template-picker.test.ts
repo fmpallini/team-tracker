@@ -91,8 +91,8 @@ describe('attachTemplatePicker', () => {
   }
 
   function clickTemplatesButton(): void {
-    const btn = Array.from(editor!.root.querySelectorAll('button')).find((b) => b.textContent === '📋')
-    if (!btn) throw new Error('📋 toolbar button not found')
+    const btn = Array.from(editor!.root.querySelectorAll('button')).find((b) => b.querySelector('.tt-icon-template') !== null)
+    if (!btn) throw new Error('templates toolbar button not found')
     btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   }

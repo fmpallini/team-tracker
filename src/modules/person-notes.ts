@@ -16,6 +16,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { openPersonModal } from '../ui/person-modal'
+import { icon } from '../ui/icons'
 
 export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'person') return // registered only for 'person'; defensive
@@ -86,7 +87,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
         })
       },
     },
-    '✎'
+    icon('edit')
   )
 
   const gotoOrgBtn = el(
@@ -100,7 +101,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
         { secondary: false, focusItemId: personId }
       ),
     },
-    '🗺️'
+    icon('orgchart')
   )
 
   const headerEl = el(

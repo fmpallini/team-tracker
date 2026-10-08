@@ -8,6 +8,7 @@
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { showModal, type ModalHandle } from './modal'
+import { icon } from './icons'
 
 /**
  * Test seam only — production callers (main.ts, start.ts) never pass it and
@@ -203,7 +204,7 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
         card.remove()
       },
     },
-    '×'
+    icon('close', 12)
   )
   const card = el(
     'div',
@@ -250,7 +251,7 @@ export function promoHeaderButton(locale: Locale, opts?: PromoOpts): HTMLElement
       title: t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title'),
       onclick: () => promoAction(locale, pwa, pagesUrl),
     },
-    pwa ? '⬇' : '🌐'
+    icon(pwa ? 'download' : 'globe')
   )
 }
 

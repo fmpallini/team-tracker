@@ -11,6 +11,7 @@ import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam, findTeam as docFindTeam } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport, clearClasses } from './dom'
+import { icon } from './icons'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from './undo-toast'
@@ -131,7 +132,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicatorDueBadge,
     headerTeamIndicatorCaret
   )
-  const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, '⏰')
+  const headerDueSummaryIcon = icon('clock', 13)
+  headerDueSummaryIcon.classList.add('tt-header-due-summary-icon')
   const headerDueSummary = el(
     'button',
     {
@@ -314,7 +316,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       title: t(locale(), 'team_add_title'),
       onclick: () => openAddModal(),
     },
-    '➕'
+    icon('plus')
   )
 
   const dueBtn = el(
@@ -323,7 +325,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'),
       onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     },
-    '⏰'
+    icon('clock')
   )
 
   /**
@@ -561,7 +563,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
             openEditModal(team)
           },
         },
-        '✎'
+        icon('edit', 12)
       )
       item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
 

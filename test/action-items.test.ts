@@ -825,7 +825,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     expect(assigneeInput().value).toBe('Some outside vendor')
     assigneeToggle().click()
 
@@ -851,7 +851,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     assigneeToggle().click()
     Array.from(document.querySelectorAll<HTMLElement>('.tt-kanban-form-row .tt-assignee-menu .tt-atref-item'))
       .find((r) => r.textContent === 'Bruno')!
@@ -866,7 +866,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     const staleInput = assigneeInput()
     staleInput.value = 'car'
     staleInput.dispatchEvent(new Event('input', { bubbles: true }))
@@ -888,7 +888,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     const input = assigneeInput()
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
@@ -1093,7 +1093,7 @@ describe('renderActionItems — edit modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, '')
     clickByTitleOrText(document.body, 'Delete')
 
@@ -1145,7 +1145,7 @@ describe('renderActionItems — edit modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     const rustChip = document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-rust') as HTMLButtonElement
     expect(rustChip.classList.contains('selected')).toBe(true)
     rustChip.click()
@@ -1180,7 +1180,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Old' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, 'Double-click or use ✎ to edit')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
   })
 
@@ -1288,7 +1288,7 @@ describe('renderActionItems — edit modal live persistence', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     pickDate(15)
     setValue(document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement, 'Something else')
 
@@ -1304,7 +1304,7 @@ describe('renderActionItems — edit modal live persistence', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
     setBlockText(editorEl, 'Talked to vendor today')
     fireInput(editorEl)
@@ -1320,7 +1320,7 @@ describe('renderActionItems — assignee reference chip', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     setValue(document.querySelector('.tt-kanban-form-row .tt-assignee-input') as HTMLInputElement, 'Carla')
 
     expect(store.doc.teams[0]!.actionItems[0]!.assignee).toBe('@[Carla](person:stk-1)')
@@ -1334,7 +1334,7 @@ describe('renderActionItems — assignee reference chip', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     expect(document.querySelector('.tt-kanban-form-row .tt-kanban-assignee-chip')?.textContent).toContain('Carla')
 
     store.update((d) => { d.teams[0]!.stakeholders[0]!.name = 'Carla Renamed' }, { teamId: 'T1', sections: ['people'] })
@@ -1347,7 +1347,7 @@ describe('renderActionItems — assignee reference chip', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     const clearBtn = document.querySelector<HTMLButtonElement>('.tt-kanban-form-row .tt-kanban-assignee-clear')!
     clearBtn.click()
 
@@ -1361,7 +1361,7 @@ describe('renderActionItems — assignee reference chip', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
     const chip = document.querySelector<HTMLElement>('.tt-kanban-form-row .tt-kanban-assignee-chip')!
     expect(chip.querySelectorAll('button')).toHaveLength(1)
     expect(chip.querySelector('button')?.classList.contains('tt-kanban-assignee-clear')).toBe(true)
@@ -1389,7 +1389,7 @@ describe('renderActionItems — assignee reference chip', () => {
 
 describe('renderActionItems — expand mode and the header save-state pill', () => {
   function openModal(container: HTMLElement): void {
-    clickByTitleOrText(container, '✎')
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
   }
 
   test('the expand button starts collapsed, with the mini save-state pill hidden', () => {

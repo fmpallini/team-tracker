@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.13.0] - 2026-10-08
+
+### Changed
+- Buttons across the app now use drawn icons instead of emoji and text symbols, in the same thin style as the search magnifier. They take the color of their button, so they follow hover, disabled and theme colors, and look the same on every system. This covers the header (fullscreen, help, preferences, close file), the sidebar (add team, due dates), the pane bar (back, forward, latest, favorite star, print, split view, module menu), the delete, edit, close, resolve and reopen buttons on rows and cards, the expand carets, the reorder and duplicate buttons for templates in preferences, the calendar month arrows, the install button, and the editor toolbar.
+- Editor toolbar: bullet list, quote, link, clear formatting, templates, insert reference and copy now have clearer icons. Clear formatting is a "T" with a small ×.
+- The code-block copy and collapse buttons in the editor, and the copy button in the help window, use the same icons.
+- A person's notes page now shows an org-chart icon for "go to the hierarchy chart" instead of a map.
+- The due-date clock stays red, as the alarm-clock emoji was.
+- The expand caret on closed risks that have a follow-up is easier to see.
+- The help window shows the same icons next to its shortcuts (close file, fullscreen, history buttons, mouse side buttons) instead of emoji. The kanban card hint now says "pencil" instead of showing a symbol.
+
 ## [2.12.1] - 2026-10-07
 
 ### Changed

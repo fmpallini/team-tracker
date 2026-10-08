@@ -1674,28 +1674,28 @@ describe('pane favorite star', () => {
     const { store, pm } = setup()
     openRisks(store, pm)
     const btn = (): HTMLButtonElement => paneBtn(0, 'tt-pane-fav-btn')
-    expect(btn().textContent).toBe('☆')
+    expect(btn().querySelector('.tt-icon-star')).not.toBeNull()
     expect(btn().getAttribute('aria-pressed')).toBe('false')
 
     btn().click()
     expect(store.doc.favorites).toEqual([{ teamId: 't1', ref: { kind: 'risks' } }])
-    expect(btn().textContent).toBe('★')
+    expect(btn().querySelector('.tt-icon-starFill')).not.toBeNull()
     expect(btn().getAttribute('aria-pressed')).toBe('true')
     expect(store.dirty).toBe(true)
 
     btn().click()
     expect(store.doc.favorites).toEqual([])
-    expect(btn().textContent).toBe('☆')
+    expect(btn().querySelector('.tt-icon-star')).not.toBeNull()
   })
 
   test('the star follows the live store: removing the favorite elsewhere repaints it', () => {
     const { store, pm } = setup()
     openRisks(store, pm)
     paneBtn(0, 'tt-pane-fav-btn').click()
-    expect(paneBtn(0, 'tt-pane-fav-btn').textContent).toBe('★')
+    expect(paneBtn(0, 'tt-pane-fav-btn').querySelector('.tt-icon-starFill')).not.toBeNull()
 
     store.update((d) => { d.favorites = [] })
-    expect(paneBtn(0, 'tt-pane-fav-btn').textContent).toBe('☆')
+    expect(paneBtn(0, 'tt-pane-fav-btn').querySelector('.tt-icon-star')).not.toBeNull()
   })
 
   test("each pane bar reflects its own location: starring pane 1's location leaves pane 0 unlit", () => {
@@ -1706,14 +1706,14 @@ describe('pane favorite star', () => {
     pm.toggleSplit()
     pm.openInPane(1, { teamId: 't1', ref: { kind: 'actions' } })
     store.update((d) => { d.favorites.push({ teamId: 't1', ref: { kind: 'actions' } }) })
-    expect(paneBtn(1, 'tt-pane-fav-btn').textContent).toBe('★')
-    expect(paneBtn(0, 'tt-pane-fav-btn').textContent).toBe('☆')
+    expect(paneBtn(1, 'tt-pane-fav-btn').querySelector('.tt-icon-starFill')).not.toBeNull()
+    expect(paneBtn(0, 'tt-pane-fav-btn').querySelector('.tt-icon-star')).not.toBeNull()
   })
 
   test('a favorite of a deleted team does not light any star', () => {
     const { store, pm } = setup()
     openRisks(store, pm)
     store.update((d) => { d.favorites.push({ teamId: 'gone', ref: { kind: 'risks' } }) })
-    expect(paneBtn(0, 'tt-pane-fav-btn').textContent).toBe('☆')
+    expect(paneBtn(0, 'tt-pane-fav-btn').querySelector('.tt-icon-star')).not.toBeNull()
   })
 })

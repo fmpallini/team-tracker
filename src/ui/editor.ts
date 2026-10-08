@@ -11,6 +11,7 @@ import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, type BlockCtx } from './editor-dom'
+import { icon } from './icons'
 
 export interface Editor {
   root: HTMLElement
@@ -69,10 +70,6 @@ const TAB_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 // "code-block collapse + copy chrome" section in createEditor).
 const CB_AUTO_COLLAPSE_OVER = 8 // blocks longer than this auto-collapse on load
 const CB_PEEK_LINES = 3 // lines still shown while collapsed
-const CB_COPY_GLYPH = '\u29c9'
-const CB_COPIED_GLYPH = '\u2713'
-const CB_COLLAPSE_GLYPH = '\u2303'
-const CB_EXPAND_GLYPH = '\u2304'
 
 // --- pure, unit-testable auto-format detection -----------------------------
 
@@ -1951,7 +1948,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   // --- toolbar -----------------------------------------------------------
 
-  function toolbarButton(glyph: string, title: string, action: (btn: HTMLButtonElement) => void, extraClass?: string): HTMLButtonElement {
+  function toolbarButton(glyph: string | Node, title: string, action: (btn: HTMLButtonElement) => void, extraClass?: string): HTMLButtonElement {
     const btn: HTMLButtonElement = el(
       'button',
       {
@@ -1992,21 +1989,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
-    toolbarButton('•', t(locale, 'editor_ul_title'), () => insertList('ul')),
+    toolbarButton(icon('list'), t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
-    toolbarButton('❝', t(locale, 'editor_quote_title'), () => toggleBlockquote()),
+    toolbarButton(icon('quote'), t(locale, 'editor_quote_title'), () => toggleBlockquote()),
     toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton('—', t(locale, 'editor_hr_title'), () => insertHr()),
-    toolbarButton('🔗', t(locale, 'editor_link_title'), () => { void insertLink() }),
-    toolbarButton('🧹', t(locale, 'editor_clear_format_title'), () => clearFormatting()),
+    toolbarButton(icon('link'), t(locale, 'editor_link_title'), () => { void insertLink() }),
+    toolbarButton(icon('clearFmt'), t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
-    toolbarButton('📋', t(locale, 'editor_templates_title'), () => openTemplatePicker()),
-    toolbarButton('@', t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
-    toolbarButton('🗐', t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
+    toolbarButton(icon('template'), t(locale, 'editor_templates_title'), () => openTemplatePicker()),
+    toolbarButton(icon('at'), t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
+    toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
     toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )
 
@@ -2024,11 +2021,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const cbCopyBtn = el('button', {
     class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_copy'),
     onmousedown: (e: Event) => e.preventDefault(), onclick: onCbCopy,
-  }, CB_COPY_GLYPH)
+  }, icon('copy'))
   const cbToggleBtn = el('button', {
     class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_collapse'),
     onmousedown: (e: Event) => e.preventDefault(), onclick: onCbToggle,
-  }, CB_COLLAPSE_GLYPH)
+  }, icon('chevUp'))
   const cbControls = el('div', { class: 'tt-cb-controls', contenteditable: 'false' }, cbCopyBtn, cbToggleBtn)
   cbControls.hidden = true
   root.appendChild(cbControls)
@@ -2159,7 +2156,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function syncCbGlyphs(): void {
     const collapsed = !!cbActivePre?.hasAttribute('data-collapsed')
-    cbToggleBtn.textContent = collapsed ? CB_EXPAND_GLYPH : CB_COLLAPSE_GLYPH
+    cbToggleBtn.replaceChildren(icon(collapsed ? 'chevDown' : 'chevUp'))
     cbToggleBtn.title = t(locale, collapsed ? 'editor_cb_expand' : 'editor_cb_collapse')
   }
 
@@ -2204,11 +2201,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function onCbCopy(): void {
     if (!cbActivePre) return
     copyText(preLines(cbActivePre).join('\n'))
-    cbCopyBtn.textContent = CB_COPIED_GLYPH
+    cbCopyBtn.replaceChildren(icon('check'))
     cbCopyBtn.title = t(locale, 'editor_cb_copied')
     if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
     cbCopyResetTimer = setTimeout(() => {
-      cbCopyBtn.textContent = CB_COPY_GLYPH
+      cbCopyBtn.replaceChildren(icon('copy'))
       cbCopyBtn.title = t(locale, 'editor_cb_copy')
     }, 900)
   }

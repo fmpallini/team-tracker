@@ -418,8 +418,8 @@ describe('renderMilestones', () => {
 
     const dateInput = rows(container)[0]!.querySelector('.tt-date-picker-input') as HTMLInputElement
     dateInput.dispatchEvent(new MouseEvent('click', { bubbles: true })) // opens on the row's current date: Jan 2026
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.textContent === '›')!.click() // -> Feb
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.textContent === '›')!.click() // -> Mar
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.querySelector('.tt-icon-next') !== null)!.click() // -> Feb
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-nav-btn')).find((b) => b.querySelector('.tt-icon-next') !== null)!.click() // -> Mar
     Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)'))
       .find((b) => b.textContent === '1')!
       .click()
@@ -947,15 +947,15 @@ describe('renderMilestones', () => {
     expect(container.children).toHaveLength(0)
   })
 
-  test('expand button uses the same ▸/▾ arrow glyph as risks (not a 📝 icon)', () => {
+  test('expand button uses the same chevron icons as risks (not a 📝 icon)', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     const btn = container.querySelector('.tt-milestone-expand-btn') as HTMLButtonElement
-    expect(btn.textContent).toBe('▸')
+    expect(btn.querySelector('.tt-icon-chevRight')).not.toBeNull()
     btn.click()
-    expect(container.querySelector('.tt-milestone-expand-btn')!.textContent).toBe('▾')
+    expect(container.querySelector('.tt-milestone-expand-btn .tt-icon-chevDown')).not.toBeNull()
   })
 
   describe('search-focus-item event', () => {
