@@ -304,8 +304,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-due-summary.visible { display: inline-flex; }
 .tt-header-due-summary:hover, .tt-header-due-summary:focus-visible { border-color: var(--accent); color: var(--accent); }
 .tt-header-due-summary-icon { display: inline-flex; }
-/* The alarm-clock emoji was red; the stroke icon takes the same urgency from the danger token (also the sidebar .tt-due-btn below). */
-.tt-header-due-summary-icon, .tt-due-btn .tt-icon { color: var(--danger); }
 
 /* Header team switcher dropdown (sidebar.ts openTeamSwitcher) — rows reuse
    the sidebar team list's own .tt-team-num/-emoji/-name/-due-badge classes

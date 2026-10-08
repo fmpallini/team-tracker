@@ -51,7 +51,7 @@ Tests define `__PWA__: false` in `vitest.config.ts`, so service-worker branch ne
 
 ## Changelog
 
-Every `package.json` version bump needs a matching non-empty `## [X.Y.Z]` entry in `CHANGELOG.md` (CI `changelog-gate`). Load the `changelog` skill for the full rules before writing one.
+Every `package.json` version bump needs a matching non-empty `## [X.Y.Z]` entry in `CHANGELOG.md` (CI `changelog-gate`). Load the `changelog` skill for the full rules before writing one. Keep entries short: a line or two per change, folding sweeping ones into a single headline bullet rather than listing every screen or button touched (the pre-push hook nags past 6 bullets or a 200-char line).
 
 ## Conventions
 

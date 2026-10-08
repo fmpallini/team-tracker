@@ -190,6 +190,15 @@ else
     gate_ok "Changelog entry (version unchanged)"
   elif git show "${PUSH_TO}:CHANGELOG.md" 2>/dev/null | grep -qF "## [${HEAD_VER}]"; then
     gate_ok "Changelog entry (## [${HEAD_VER}] present)"
+    # Brevity nag (non-blocking): an entry names what changed for the user in a
+    # line or two, not every screen or button it touched. Only this version's
+    # section is measured — older entries are history.
+    ENTRY=$(git show "${PUSH_TO}:CHANGELOG.md" 2>/dev/null | awk -v h="## [${HEAD_VER}]" 'index($0,h)==1{f=1;next} /^## \[/{f=0} f')
+    LONG_BULLETS=$(printf '%s\n' "$ENTRY" | awk 'length($0) > 200' | wc -l | tr -d ' ')
+    BULLETS=$(printf '%s\n' "$ENTRY" | grep -c '^- ' || true)
+    if [ "$LONG_BULLETS" -gt 0 ] || [ "$BULLETS" -gt 6 ]; then
+      gate_warn "Changelog entry — ## [${HEAD_VER}] is wordy (${BULLETS} bullets, ${LONG_BULLETS} over 200 chars). Aim for a line or two per change and fold related ones together; don't list every button or screen touched (see .claude/skills/changelog)"
+    fi
   else
     gate_warn "Changelog entry — package.json ${BASE_VER} -> ${HEAD_VER} but CHANGELOG.md has no '## [${HEAD_VER}]' section yet (CI blocks the dev -> main PR until it does)"
   fi

@@ -132,8 +132,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicatorDueBadge,
     headerTeamIndicatorCaret
   )
-  const headerDueSummaryIcon = icon('clock', 13)
-  headerDueSummaryIcon.classList.add('tt-header-due-summary-icon')
+  // The due-date clock stays an emoji on purpose: it always sits beside the team
+  // selector, whose team emoji it has to match, so a stroke icon looked out of place.
+  const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, '⏰')
   const headerDueSummary = el(
     'button',
     {
@@ -325,7 +326,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'),
       onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     },
-    icon('clock')
+    '⏰'
   )
 
   /**
