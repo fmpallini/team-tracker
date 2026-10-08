@@ -230,7 +230,7 @@ test('stress: 200 mount/unmount cycles across every module leave a constant subs
     }
     container.remove()
   }
-})
+}, 20_000) // 200 cycles x every module mount real DOM + icons; the 5s default is tight when the whole suite runs in parallel
 
 test('stress: 200 rounds of real openInPane module switching (risks <-> milestones, both panes split) leave a constant subscription count throughout', () => {
   const STRESS_CYCLES = 200

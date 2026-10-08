@@ -7,9 +7,8 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.13.0] - 2026-10-08
 
 ### Changed
-- Buttons across the app now use drawn icons instead of emoji and text symbols, in the same thin style as the search magnifier: header, sidebar, pane bar, row and card actions, expand carets, calendar arrows, the editor toolbar and the help window. They take the color of their button, so hover, disabled and theme colors apply, and they look the same on every system.
-- A person's notes page now shows an org-chart icon for "go to the hierarchy chart" instead of a map.
-- The expand caret on closed risks that have a follow-up is easier to see.
+- Buttons across the app now use drawn icons instead of emoji and text symbols, matching the search magnifier. They follow the button's color and look the same on every system.
+- The expand caret on closed risks is easier to see.
 
 ## [2.12.1] - 2026-10-07
 
