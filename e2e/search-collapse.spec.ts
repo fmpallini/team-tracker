@@ -58,20 +58,29 @@ test.describe('header search expands from an icon', () => {
     await expect.poll(() => width(page)).toBeCloseTo(collapsed, 0)
   })
 
-  test('with the sidebar open the glass sits on the sidebar edge, whatever the app-name width; collapsed, it closes up', async ({ page }) => {
+  test('with the sidebar open toggle, app name and glass fill the sidebar width; collapsed, the name hugs its label', async ({ page }) => {
     const geometry = () =>
-      page.evaluate(() => ({
-        glass: document.querySelector('.tt-search-input')!.getBoundingClientRect().left,
-        sidebarRight: document.querySelector('.tt-sidebar')!.getBoundingClientRect().right,
-        nameRight: document.querySelector('.tt-app-name')!.getBoundingClientRect().right,
-      }))
+      page.evaluate(() => {
+        const r = (q: string) => document.querySelector(q)!.getBoundingClientRect()
+        return {
+          glassRight: r('.tt-search-input').right,
+          glassLeft: r('.tt-search-input').left,
+          sidebarRight: r('.tt-sidebar').right,
+          nameRight: r('.tt-app-name').right,
+          nameWidth: r('.tt-app-name').width,
+          labelWidth: r('.tt-app-name-label').width,
+        }
+      })
     const open = await geometry()
-    expect(open.glass - open.sidebarRight).toBeGreaterThanOrEqual(0)
-    expect(open.glass - open.sidebarRight).toBeLessThanOrEqual(12)
-    expect(open.glass - open.nameRight).toBeGreaterThan(30) // the name hugs its text; the slot's remainder is empty
+    expect(open.sidebarRight - open.glassRight).toBeGreaterThanOrEqual(0)
+    expect(open.sidebarRight - open.glassRight).toBeLessThanOrEqual(20)
+    expect(open.glassLeft - open.nameRight).toBeLessThanOrEqual(16) // the button stretches up to the glass
+    expect(open.nameWidth).toBeGreaterThan(open.labelWidth + 20)
 
     await page.locator('.tt-sidebar-toggle').click()
-    await expect.poll(async () => { const g = await geometry(); return g.glass - g.nameRight }).toBeLessThan(20)
+    await expect.poll(async () => { const g = await geometry(); return g.glassLeft - g.nameRight }).toBeLessThanOrEqual(16)
+    const closed = await geometry()
+    expect(closed.nameWidth).toBeLessThan(closed.labelWidth + 60)
   })
 
   test('expanding moves no other header control', async ({ page }) => {

@@ -190,23 +190,22 @@ body { background: var(--bg); color: var(--fg); }
    into it; min-width: 0 overrides the grid item default of min-width: auto,
    which otherwise refuses to shrink below its content's intrinsic width and
    forces the whole header to overflow instead. */
-/* A three-column grid, not a flex row, so the search can stay on the sidebar's edge
-   whatever width the app-name button has: toggle | app name | search. With the sidebar
-   open the middle column is the sidebar's width less what sits before it (all in rem,
-   so it tracks the text size), which puts the search's left edge on the sidebar/panes
-   boundary below; the app-name button hugs its content inside that column and the rest
-   is empty. With it collapsed the column is just the button and the search closes up.
-   Every child names its column, so one that is hidden (compact header) can't shift
-   the others into the wrong one. */
+/* Sidebar open: toggle | app name | search fill exactly the sidebar's width (220px less the
+   header's left padding and a matching small margin on the right), so the cluster sits above the team list and the
+   search's right edge lines up with it. The app-name button stretches to take whatever the
+   two square controls leave. The magnifier's column is only the resting icon: the expanded
+   field spans on into the last column, so it can grow past the sidebar edge. Sidebar
+   collapsed: the name column hugs its label and the search closes up against it. Every
+   child names its column, so one that is hidden (compact header) can't shift the others
+   into the wrong one. */
 .tt-header-left {
-  min-width: 0; display: grid; align-items: center; column-gap: .75rem;
-  grid-template-columns: auto var(--tt-appname-slot) minmax(0, 1fr);
-  --tt-appname-slot: calc(220px - 1.5rem - 1.5rem - .75rem);
+  min-width: 0; display: grid; align-items: center; column-gap: .375rem;
+  grid-template-columns: var(--tt-header-ctl-h) calc(220px - 1.875rem - 2 * var(--tt-header-ctl-h)) var(--tt-header-ctl-h) minmax(0, 1fr);
 }
-.tt-shell:has(.tt-sidebar[data-collapsed="true"]) .tt-header-left { --tt-appname-slot: auto; }
+.tt-shell:has(.tt-sidebar[data-collapsed="true"]) .tt-header-left { grid-template-columns: var(--tt-header-ctl-h) auto var(--tt-header-ctl-h) minmax(0, 1fr); }
 .tt-header-left > .tt-sidebar-toggle { grid-column: 1; }
 .tt-header-left > .tt-app-name { grid-column: 2; }
-.tt-header-left > .tt-search-wrap { grid-column: 3; }
+.tt-header-left > .tt-search-wrap { grid-column: 3 / 5; }
 .tt-header-right { justify-self: end; }
 /* Buttons of one purpose (view/help, settings/close-file) sit closer together than the .75rem between groups. */
 .tt-header-btn-group { display: flex; align-items: center; gap: .375rem; }
@@ -350,16 +349,16 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }
 .tt-header.tt-header-compact .tt-save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-/* Hugs its content; the width of its column in .tt-header-left (above) is what keeps
-   the search lined up with the sidebar edge. */
+/* Fills its column in .tt-header-left (above): the sidebar-wide slot when the sidebar is open, just its label when collapsed. */
 .tt-app-name {
-  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; line-height: .85; white-space: nowrap;
+  font-family: var(--font-display); font-weight: 700; font-size: .95rem; line-height: .85; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
-  justify-self: start; max-width: 100%; height: var(--tt-header-ctl-h);
+  min-width: 0; height: var(--tt-header-ctl-h);
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
-  padding: 0 .55rem; cursor: pointer;
+  padding: 0 .45rem; cursor: pointer;
 }
-.tt-app-name { gap: .4rem; }
+.tt-app-name { gap: .3rem; }
+.tt-app-name-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tt-app-name-chevron { display: inline-flex; opacity: .55; }
 .tt-app-name-chevron svg { display: block; }
 .tt-app-name:hover:not(:disabled), .tt-app-name:focus-visible:not(:disabled) { border-color: var(--accent); color: var(--accent); }
