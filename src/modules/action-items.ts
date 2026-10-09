@@ -652,7 +652,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
     const buttons: ModalButton[] = []
     if (existing !== null) {
-      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => { deleting = true; closeModal(); requestDelete(existing) } })
+      buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => {
+        // Card stays open behind the confirm so Cancel returns to it; it closes
+        // only once the delete is certain. Live item, not `existing`: the
+        // summary may have been edited since the modal opened.
+        const live = items().find((i) => i.id === itemId) ?? existing
+        requestDelete(live, () => { deleting = true; closeModal() })
+      } })
     }
     buttons.push({ label: t(lc, 'kanban_close_btn'), onClick: () => closeModal() })
 
