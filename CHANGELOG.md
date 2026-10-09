@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.15.0] - 2026-10-09
+
+### Added
+- In Portuguese, `@` date references now also accept "terça próxima", "terça seguinte" and "seguinte terça" (any weekday) for the next occurrence.
+
 ## [2.14.0] - 2026-10-08
 
 ### Added
