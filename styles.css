@@ -719,10 +719,18 @@ body { background: var(--bg); color: var(--fg); }
   cursor: pointer; border-left: 3px solid transparent;
 }
 .tt-team-item:hover { background: rgba(var(--accent-rgb), .08); }
-.tt-team-item.active { border-left-color: var(--accent); background: rgba(var(--accent-rgb), .12); font-weight: 600; }
+/* Selection reads through fill + bar, not weight: bold is wider, so the active
+   row would wrap/clip sooner than its neighbours. */
+.tt-team-item.active { border-left: 4px solid var(--accent); padding-left: calc(.5rem - 1px); background: rgba(var(--accent-rgb), .2); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
-.tt-team-name { font-family: var(--font-display); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Long names wrap to two lines, then ellipsis; anywhere-breaking keeps one
+   unbroken word from forcing the row wider than the sidebar. */
+.tt-team-name {
+  font-family: var(--font-display); flex: 1; min-width: 0; line-height: 1.25;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 .tt-team-edit-btn { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-team-add-btn { width: calc(100% - 1rem); margin: .5rem; }
