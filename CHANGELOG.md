@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.14.0] - 2026-10-08
+
+### Added
+- Three new color palettes: Graphite (neutral grey), Rose (blush pink) and Citrus (pale lemon), 12 in total.
+- Two new fonts: Segoe (clean humanist sans) and Legible (wide, easy-to-read Verdana style).
+
+### Changed
+- Action-item tag colors are easier to tell apart in every palette, most of all Blueprint, Desert, Forest and Synthwave.
+
 ## [2.13.0] - 2026-10-08
 
 ### Changed

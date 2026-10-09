@@ -68,7 +68,7 @@ your machine. Team Tracker doesn't:
   history, split-view panes, and shortcuts for every module. Desktop-only by
   design: phones and tablets get a notice instead of the app, since mobile
   browsers lack the File System Access API the open/save flow depends on.
-- 🎨 **Yours to tune** — 9 color palettes, light/dark/system theme, 5 font
+- 🎨 **Yours to tune** — 12 color palettes, light/dark/system theme, 7 font
   stacks, adjustable font size, and pt-BR/en-US locales, all in Settings.
 
 ## Getting started

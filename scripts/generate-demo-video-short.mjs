@@ -223,7 +223,7 @@ async function showRiskDrag(page) {
 }
 
 async function showThemes(page) {
-  await caption(page, 'Dark mode and 9 color palettes', 1400)
+  await caption(page, 'Dark mode and 12 color palettes', 1400)
   await click(page, page.locator('.tt-btn-settings'))
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()

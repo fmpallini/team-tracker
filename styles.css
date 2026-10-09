@@ -19,7 +19,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
 :root, [data-theme=light] {
   --bg:#eee7d6; --fg:#23241d; --muted:#5c5744; --accent:#3b5a6b; --accent-rgb:59,90,107;
   --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#4a6b45;
-  --card-slate:#3b5a6b; --card-brass:#9c6b2e; --card-sage:#4a6b45; --card-rust:#a1402c; --card-plum:#6b4a7a; --card-ledger:#5c5744;
+  --card-slate:#3b5a6b; --card-brass:#9c6b2e; --card-sage:#3f7a45; --card-rust:#a1402c; --card-plum:#6b4a7a; --card-ledger:#6e6a64;
   /* Code-block token colours (core/highlight.ts) — dedicated, not the muted
      --accent/--card-* set, so they actually read against the grey <pre>
      wash in every palette. */
@@ -28,7 +28,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
-  --card-slate:#8fb6c4; --card-brass:#c99a4e; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a89a78;
+  --card-slate:#8fb6c4; --card-brass:#d4a84a; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a8a49c;
   --hl-kw:#c98fd6; --hl-str:#9cc47e; --hl-num:#d6a066; --hl-com:#8f8875;
 }
 
@@ -47,37 +47,37 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
 [data-palette=signal][data-theme=dark] {
   --bg:#0b0b0d; --fg:#f2f2f0; --muted:#a8a8a4; --accent:#5ab4f0; --accent-rgb:90,180,240;
   --panel:#17171a; --border:#3a3a3d; --brass:#e0973b; --danger:#e0763d; --ok:#3ecf9e;
-  --card-slate:#5ab4f0; --card-brass:#e0973b; --card-sage:#3ecf9e; --card-rust:#e0763d; --card-plum:#d98fc0; --card-ledger:#9aa4b0;
+  --card-slate:#5ab4f0; --card-brass:#e8b83b; --card-sage:#3ecf9e; --card-rust:#e0663d; --card-plum:#d98fc0; --card-ledger:#9aa4b0;
 }
 [data-palette=blueprint][data-theme=light] {
   --bg:#eef4f9; --fg:#10263c; --muted:#4c6a86; --accent:#0a6890; --accent-rgb:10,104,144;
   --panel:#f7fbfd; --border:#c3d9e8; --brass:#a15c1f; --danger:#b5460a; --ok:#2f7a5c;
-  --card-slate:#0a6890; --card-brass:#a15c1f; --card-sage:#2f7a5c; --card-rust:#b5460a; --card-plum:#6b4a8a; --card-ledger:#4c6a86;
+  --card-slate:#0a6890; --card-brass:#a8780f; --card-sage:#2f7a5c; --card-rust:#b83a1c; --card-plum:#6b4a8a; --card-ledger:#6f7b86;
 }
 [data-palette=blueprint][data-theme=dark] {
   --bg:#14283f; --fg:#eaf3fb; --muted:#8fb0c9; --accent:#4fc3f7; --accent-rgb:79,195,247;
   --panel:#1b3552; --border:#2f5578; --brass:#e2a35c; --danger:#e2794a; --ok:#6bc79a;
-  --card-slate:#4fc3f7; --card-brass:#e2a35c; --card-sage:#6bc79a; --card-rust:#e2794a; --card-plum:#b58fd6; --card-ledger:#8fb0c9;
+  --card-slate:#4fc3f7; --card-brass:#e8b64c; --card-sage:#6bc79a; --card-rust:#e8694a; --card-plum:#b58fd6; --card-ledger:#a9b3bc;
 }
 [data-palette=forest][data-theme=light] {
   --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#8f5814; --accent-rgb:143,88,20;
   --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3f7a5c;
-  --card-slate:#3f6b6b; --card-brass:#b8862e; --card-sage:#3f7a5c; --card-rust:#a8422e; --card-plum:#6b4a7a; --card-ledger:#5c6b52;
+  --card-slate:#2f6f9a; --card-brass:#b8862e; --card-sage:#3f7a45; --card-rust:#a8422e; --card-plum:#6b4a7a; --card-ledger:#6b6b5c;
 }
 [data-palette=forest][data-theme=dark] {
   --bg:#16211a; --fg:#e6ecda; --muted:#8fa082; --accent:#d99a4a; --accent-rgb:217,154,74;
   --panel:#1e2c22; --border:#34452f; --brass:#e0b458; --danger:#d97a5e; --ok:#6fae8a;
-  --card-slate:#6fa3a3; --card-brass:#e0b458; --card-sage:#6fae8a; --card-rust:#d97a5e; --card-plum:#b98fcb; --card-ledger:#8fa082;
+  --card-slate:#6fa8d0; --card-brass:#e0b458; --card-sage:#6fae6a; --card-rust:#d97a5e; --card-plum:#b98fcb; --card-ledger:#9a9a8a;
 }
 [data-palette=desert][data-theme=light] {
   --bg:#f3e6d2; --fg:#3a2415; --muted:#8a6b4a; --accent:#14706c; --accent-rgb:20,112,108;
   --panel:#f8efe0; --border:#ddc3a0; --brass:#a8622e; --danger:#b5432a; --ok:#4c6934;
-  --card-slate:#14706c; --card-brass:#a8622e; --card-sage:#4c6934; --card-rust:#b5432a; --card-plum:#8a3f6b; --card-ledger:#8a6b4a;
+  --card-slate:#14706c; --card-brass:#b8832a; --card-sage:#4c6934; --card-rust:#b5432a; --card-plum:#8a3f6b; --card-ledger:#7a6f66;
 }
 [data-palette=desert][data-theme=dark] {
   --bg:#241a12; --fg:#f0e2ca; --muted:#b89a78; --accent:#4fc9c2; --accent-rgb:79,201,194;
   --panel:#2e2119; --border:#4a3826; --brass:#d99a5c; --danger:#e2795a; --ok:#8fb56a;
-  --card-slate:#4fc9c2; --card-brass:#d99a5c; --card-sage:#8fb56a; --card-rust:#e2795a; --card-plum:#c97fae; --card-ledger:#b89a78;
+  --card-slate:#4fc9c2; --card-brass:#e0b24e; --card-sage:#8fb56a; --card-rust:#e2795a; --card-plum:#c97fae; --card-ledger:#b0a79c;
 }
 [data-palette=cosmic][data-theme=light] {
   --bg:#eceef2; --fg:#14141c; --muted:#55566a; --accent:#5b4bc4; --accent-rgb:91,75,196;
@@ -92,12 +92,12 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
 [data-palette=synthwave][data-theme=light] {
   --bg:#f4f1f7; --fg:#1c1128; --muted:#6b5c85; --accent:#0a6478; --accent-rgb:10,100,120;
   --panel:#faf8fc; --border:#ddd3ea; --brass:#c81c68; --danger:#b8391f; --ok:#137048;
-  --card-slate:#0a6478; --card-brass:#c81c68; --card-sage:#137048; --card-rust:#b8391f; --card-plum:#6b3fa0; --card-ledger:#6b5c85;
+  --card-slate:#0a6478; --card-brass:#c81c68; --card-sage:#137048; --card-rust:#b8391f; --card-plum:#6b3fa0; --card-ledger:#7d7a85;
 }
 [data-palette=synthwave][data-theme=dark] {
   --bg:#180a24; --fg:#f2e9ff; --muted:#a48fc4; --accent:#22d3ee; --accent-rgb:34,211,238;
   --panel:#23103a; --border:#3d1f5c; --brass:#ff3fa4; --danger:#ff5757; --ok:#39ffb0;
-  --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff5757; --card-plum:#b06bff; --card-ledger:#a48fc4;
+  --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff6a3d; --card-plum:#b06bff; --card-ledger:#a8a4b8;
 }
 [data-palette=verdant][data-theme=light] {
   --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1f8a4a; --accent-rgb:31,138,74;
@@ -119,6 +119,36 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --panel:#271510; --border:#4a2e24; --brass:#d9a83e; --danger:#d1483a; --ok:#6fae82;
   --card-slate:#6f9fc0; --card-brass:#d9a83e; --card-sage:#6fae82; --card-rust:#d1483a; --card-plum:#b98fcb; --card-ledger:#c99a8c;
 }
+[data-palette=graphite][data-theme=light] {
+  --bg:#e9e9eb; --fg:#18181b; --muted:#52525b; --accent:#27272a; --accent-rgb:39,39,42;
+  --panel:#f6f6f7; --border:#c7c7cc; --brass:#8a6a1f; --danger:#b3261e; --ok:#2e7d4f;
+  --card-slate:#3a6fa0; --card-brass:#a87a10; --card-sage:#2e7d4f; --card-rust:#c0392b; --card-plum:#7b4fa6; --card-ledger:#6b6b73;
+}
+[data-palette=graphite][data-theme=dark] {
+  --bg:#121214; --fg:#ececee; --muted:#9a9aa3; --accent:#e4e4e7; --accent-rgb:228,228,231;
+  --panel:#1c1c1f; --border:#38383d; --brass:#d4a84a; --danger:#e5675a; --ok:#5fbf8a;
+  --card-slate:#6aa6d9; --card-brass:#e0b64a; --card-sage:#5fbf8a; --card-rust:#e5675a; --card-plum:#b48ee0; --card-ledger:#9a9aa3;
+}
+[data-palette=rose][data-theme=light] {
+  --bg:#f7e6ea; --fg:#2e1620; --muted:#8a5a6a; --accent:#b0245a; --accent-rgb:176,36,90;
+  --panel:#fcf1f4; --border:#e6c3cd; --brass:#a8641a; --danger:#b3261e; --ok:#2f7a5a;
+  --card-slate:#3a5f9a; --card-brass:#b0701a; --card-sage:#2f7a5a; --card-rust:#c2412d; --card-plum:#8a3f9a; --card-ledger:#7a6a70;
+}
+[data-palette=rose][data-theme=dark] {
+  --bg:#1e0f16; --fg:#f6e3ea; --muted:#c796a8; --accent:#f06292; --accent-rgb:240,98,146;
+  --panel:#29151e; --border:#4d2a39; --brass:#e0a050; --danger:#ef6b6b; --ok:#6fc29a;
+  --card-slate:#7a9cdc; --card-brass:#e0a050; --card-sage:#6fc29a; --card-rust:#f07a58; --card-plum:#c88ae0; --card-ledger:#b0a0a8;
+}
+[data-palette=citrus][data-theme=light] {
+  --bg:#f6f3d8; --fg:#26240f; --muted:#6b6838; --accent:#b45309; --accent-rgb:180,83,9;
+  --panel:#fbf9e6; --border:#dcd79c; --brass:#8f6a00; --danger:#b3331f; --ok:#3f7d2a;
+  --card-slate:#2d6a9f; --card-brass:#a87a00; --card-sage:#3f7d2a; --card-rust:#c0392b; --card-plum:#7d4a9a; --card-ledger:#6e6c52;
+}
+[data-palette=citrus][data-theme=dark] {
+  --bg:#17160a; --fg:#f4f0cc; --muted:#b0aa6a; --accent:#facc15; --accent-rgb:250,204,21;
+  --panel:#222012; --border:#494516; --brass:#e6b422; --danger:#ef6a4a; --ok:#8ccf4d;
+  --card-slate:#6aaee0; --card-brass:#e6b422; --card-sage:#8ccf4d; --card-rust:#ef6a4a; --card-plum:#c08ae0; --card-ledger:#aaa88a;
+}
 /* Risk exposure stamp colors. Declared once, in terms of the semantic tokens
    every palette block above already defines — custom properties resolve at
    the element that uses them, so `var(--ok)` here picks up whichever palette
@@ -138,6 +168,8 @@ html[data-font=serif] body { font-family: Georgia, 'Times New Roman', serif; }
 html[data-font=mono] body { font-family: Consolas, 'Cascadia Mono', monospace; }
 html[data-font=classic] body { font-family: Constantia, Cambria, 'Times New Roman', serif; }
 html[data-font=rounded] body { font-family: Candara, Corbel, sans-serif; }
+html[data-font=segoe] body { font-family: 'Segoe UI', Calibri, Roboto, sans-serif; }
+html[data-font=legible] body { font-family: Verdana, Tahoma, 'DejaVu Sans', sans-serif; }
 html[data-size=XS] { font-size: 12px; } html[data-size=S] { font-size: 13.5px; } html[data-size=M] { font-size: 15px; } html[data-size=L] { font-size: 16.5px; } html[data-size=XL] { font-size: 18px; }
 /* --tt-fs-k = root px / 15 (M). Inline SVG text is sized in the drawing's own
    user units, so rem can't reach it; calc(9px * var(--tt-fs-k)) lets the

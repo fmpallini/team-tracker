@@ -1,9 +1,9 @@
 // src/core/types.ts — completo, copiar literalmente
-export type PaletteId = 'ledger' | 'signal' | 'blueprint' | 'forest' | 'desert' | 'cosmic' | 'synthwave' | 'verdant' | 'ember'
+export type PaletteId = 'ledger' | 'signal' | 'blueprint' | 'forest' | 'desert' | 'cosmic' | 'synthwave' | 'verdant' | 'ember' | 'graphite' | 'rose' | 'citrus'
 export interface Prefs {
   theme: 'light' | 'dark' | 'system'
   locale: 'pt-BR' | 'en-US'
-  font: 'system' | 'serif' | 'mono' | 'classic' | 'rounded'
+  font: 'system' | 'serif' | 'mono' | 'classic' | 'rounded' | 'segoe' | 'legible'
   // Five evenly-spaced steps, 12px → 18px in 1.5px increments (styles.css
   // html[data-size=…]). No schema bump / migration: the union only widened,
   // so the S/M/L a pre-existing document persisted is still a valid value.

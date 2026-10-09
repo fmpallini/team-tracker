@@ -137,6 +137,9 @@ const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; swatch: 
   { value: 'synthwave', key: 'prefs_palette_synthwave', swatch: '#22d3ee' },
   { value: 'verdant', key: 'prefs_palette_verdant', swatch: '#1f8a4a' },
   { value: 'ember', key: 'prefs_palette_ember', swatch: '#b23a2c' },
+  { value: 'graphite', key: 'prefs_palette_graphite', swatch: '#3a3a3f' },
+  { value: 'rose', key: 'prefs_palette_rose', swatch: '#b0245a' },
+  { value: 'citrus', key: 'prefs_palette_citrus', swatch: '#b45309' },
 ]
 
 const LOCALE_OPTIONS: readonly { value: Locale; key: MsgKey }[] = [
@@ -153,6 +156,8 @@ const FONT_OPTIONS: readonly { value: Prefs['font']; key: MsgKey; preview: strin
   { value: 'mono', key: 'prefs_font_mono', preview: 'Consolas, "Cascadia Mono", monospace' },
   { value: 'classic', key: 'prefs_font_classic', preview: 'Constantia, Cambria, "Times New Roman", serif' },
   { value: 'rounded', key: 'prefs_font_rounded', preview: 'Candara, Corbel, sans-serif' },
+  { value: 'segoe', key: 'prefs_font_segoe', preview: "'Segoe UI', Calibri, Roboto, sans-serif" },
+  { value: 'legible', key: 'prefs_font_legible', preview: "Verdana, Tahoma, 'DejaVu Sans', sans-serif" },
 ]
 
 // Five evenly-spaced steps, 12px → 18px (styles.css html[data-size=…] holds
