@@ -89,6 +89,13 @@ describe('matchRelativeWeekdays — pt-BR', () => {
     expect(matchRelativeWeekdays('quarta que vem', TODAY, 'pt-BR')).toEqual([{ date: '2026-10-07', word: 'quarta que vem' }])
   })
 
+  test('"<weekday> próxima" and "seguinte" forms are alternatives for next', () => {
+    expect(matchRelativeWeekdays('terça prox', TODAY, 'pt-BR')).toEqual([{ date: '2026-10-13', word: 'terça próxima' }])
+    expect(matchRelativeWeekdays('sábado próximo', TODAY, 'pt-BR')).toEqual([{ date: '2026-10-10', word: 'sábado próximo' }])
+    expect(matchRelativeWeekdays('quarta seguinte', TODAY, 'pt-BR')).toEqual([{ date: '2026-10-07', word: 'quarta seguinte' }])
+    expect(matchRelativeWeekdays('seguinte sexta', TODAY, 'pt-BR')).toEqual([{ date: '2026-10-09', word: 'seguinte sexta' }])
+  })
+
   test('-feira forms are accepted', () => {
     expect(matchRelativeWeekdays('próxima sexta-feira', TODAY, 'pt-BR')).toEqual([{ date: '2026-10-09', word: 'próxima sexta-feira' }])
   })

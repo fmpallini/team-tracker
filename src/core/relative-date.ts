@@ -47,7 +47,13 @@ const SPECS: Record<Locale, LocaleSpec> = {
     phrases(dir, dow) {
       const { aliases, feminine } = PT_DAYS[dow]!
       return aliases.flatMap((name) => dir === 'next'
-        ? [`${feminine ? 'próxima' : 'próximo'} ${name}`, `${name} que vem`]
+        ? [
+            `${feminine ? 'próxima' : 'próximo'} ${name}`,
+            `${name} que vem`,
+            `${name} ${feminine ? 'próxima' : 'próximo'}`,
+            `${name} seguinte`,
+            `seguinte ${name}`,
+          ]
         : [`${name} ${feminine ? 'passada' : 'passado'}`, `${feminine ? 'última' : 'último'} ${name}`, `${name} anterior`])
     },
   },
