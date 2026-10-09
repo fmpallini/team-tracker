@@ -13,6 +13,9 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ### Changed
 - Action-item tag colors are easier to tell apart in every palette, most of all Blueprint, Desert, Forest and Synthwave.
 
+### Fixed
+- Preferences showed small grey smudges at the top and bottom of the scrollbar area on tabs that don't scroll.
+
 ## [2.13.0] - 2026-10-08
 
 ### Changed
