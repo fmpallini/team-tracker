@@ -88,6 +88,12 @@ function clickByTitleOrText(root: ParentNode, text: string): void {
   btn.click()
 }
 
+/** Clicks "Delete" in the topmost dialog — the confirm, when it is stacked over the still-open card modal (which has its own Delete button). */
+function clickConfirmDelete(): void {
+  const dialogs = document.querySelectorAll('.tt-modal-dialog')
+  clickByTitleOrText(dialogs[dialogs.length - 1]!, 'Delete')
+}
+
 function cards(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card'))
 }
@@ -1184,7 +1190,7 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
   })
 
-  test('the edit modal\'s Delete button closes it and opens the confirm-delete flow', () => {
+  test('the edit modal\'s Delete button opens the confirm over the card, and confirming closes both', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -1193,14 +1199,16 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
 
     clickByTitleOrText(document.body, 'Delete')
-    expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
 
-    clickByTitleOrText(document.body, 'Delete')
+    clickConfirmDelete()
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
-  test('canceling the delete confirmation keeps the card', () => {
+  test('canceling the delete confirmation keeps the card and returns to the open edit modal', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -1208,6 +1216,8 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Delete')
     clickByTitleOrText(document.body, 'Cancel')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+    expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   })
 
   test('deleting an action item unlinks every reference to it across the team\'s notes', () => {
@@ -1223,7 +1233,7 @@ describe('renderActionItems — edit modal', () => {
     const cardA1 = cards(container).find((c) => c.getAttribute('data-item-id') === 'a1')!
     cardA1.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     clickByTitleOrText(document.body, 'Delete')
-    clickByTitleOrText(document.body, 'Delete')
+    clickConfirmDelete()
 
     const remaining = store.doc.teams[0]!.actionItems
     expect(remaining.map((i) => i.id)).toEqual(['a2'])
@@ -2337,7 +2347,7 @@ describe('renderActionItems — delete undo', () => {
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     clickByTitleOrText(document.body, 'Delete')
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Ship it"?')
-    clickByTitleOrText(document.body, 'Delete')
+    clickConfirmDelete()
 
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
@@ -2455,7 +2465,7 @@ describe('renderActionItems — delete behaviour pins', () => {
   function deleteViaModal(container: HTMLElement, id: string, confirm = true): void {
     openCard(container, id)
     clickByTitleOrText(document.body, 'Delete')
-    if (confirm) clickByTitleOrText(document.body, 'Delete')
+    if (confirm) clickConfirmDelete()
   }
 
   function recordScopes(store: Store): { scope: unknown; items: number }[] {
@@ -2488,7 +2498,7 @@ describe('renderActionItems — delete behaviour pins', () => {
     openCard(container, 'a1')
     clickByTitleOrText(document.body, 'Delete')
     const seen = recordScopes(store)
-    clickByTitleOrText(document.body, 'Delete')
+    clickConfirmDelete()
 
     const firstDeletion = seen.find((s) => s.items === 1)
     expect(firstDeletion?.scope).toEqual({ teamId: 'T1' })

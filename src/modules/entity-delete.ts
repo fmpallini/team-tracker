@@ -58,7 +58,7 @@ export interface EntityDelete<E> {
   /** Deletes with no capture and no undo — see the header for when that's right. */
   removeSilently: (id: string) => void
   /** Blank label → silent delete; otherwise confirm dialog, then `remove` + undo toast. */
-  requestDelete: (entity: E) => void
+  requestDelete: (entity: E, onDeleting?: () => void) => void
 }
 
 export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDeleteConfig<K>): EntityDelete<Team[K][number]> {
@@ -100,10 +100,15 @@ export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDele
     }, { teamId })
   }
 
-  function requestDelete(entity: Entity): void {
+  // `onDeleting` runs only once the delete is certain (right before the removal,
+  // after the confirm is accepted), never on Cancel — so a caller that has an
+  // editor open on the entity (the action-item card) can keep it up behind the
+  // confirm and close it only if the user goes through with it.
+  function requestDelete(entity: Entity, onDeleting?: () => void): void {
     const label = labelOf(entity)
     const id = (entity as Entity & { id: string }).id
     if (label.trim() === '') {
+      onDeleting?.()
       removeSilently(id) // an empty label carries no meaningful content to lose
       return
     }
@@ -113,6 +118,7 @@ export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDele
       confirmLabel: t(locale, messages.button),
       ...(variant ? { variant } : {}),
       onConfirm: () => {
+        onDeleting?.()
         const offer = remove(id)
         offerUndoToast(ctx.store, locale, t(locale, messages.toast, { [labelParam]: label }), offer)
       },

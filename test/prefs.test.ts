@@ -189,12 +189,14 @@ test('font and size radios update store.prefs and call shell.applyPrefs', () => 
   expect(applySpy).toHaveBeenCalledTimes(2)
 })
 
-test('font field offers 5 options (including classic/rounded) and each label previews its own font stack', () => {
+test('font field offers 7 options (including classic/rounded/segoe/legible) and each label previews its own font stack', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
 
   expect(radio('tt-prefs-font', 'classic')).not.toBeNull()
   expect(radio('tt-prefs-font', 'rounded')).not.toBeNull()
+  expect(radio('tt-prefs-font', 'segoe')).not.toBeNull()
+  expect(radio('tt-prefs-font', 'legible')).not.toBeNull()
 
   radio('tt-prefs-font', 'classic').click()
   expect(store.doc.prefs.font).toBe('classic')
@@ -223,13 +225,13 @@ test('size field offers 5 evenly-spaced steps and previews each label at its own
   expect(['XS', 'S', 'M', 'L', 'XL'].map(previewOf)).toEqual(['12px', '13.5px', '15px', '16.5px', '18px'])
 })
 
-test('palette field defaults to ledger, offers 9 swatched options, and updates store.prefs + shell on change', () => {
+test('palette field defaults to ledger, offers 12 swatched options, and updates store.prefs + shell on change', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')
   openPrefs(store, shell, 'en-US', appCtl)
 
   expect(radio('tt-prefs-palette', 'ledger').checked).toBe(true)
-  for (const value of ['signal', 'blueprint', 'forest', 'desert', 'cosmic', 'synthwave', 'verdant', 'ember']) {
+  for (const value of ['signal', 'blueprint', 'forest', 'desert', 'cosmic', 'synthwave', 'verdant', 'ember', 'graphite', 'rose', 'citrus']) {
     expect(radio('tt-prefs-palette', value)).not.toBeNull()
   }
 

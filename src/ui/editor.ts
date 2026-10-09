@@ -1990,21 +1990,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
     toolbarButton(icon('list'), t(locale, 'editor_ul_title'), () => insertList('ul')),
-    toolbarButton('1.', t(locale, 'editor_ol_title'), () => insertList('ol')),
+    toolbarButton(icon('olist'), t(locale, 'editor_ol_title'), () => insertList('ol')),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
-    toolbarButton('¶', t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
+    toolbarButton(icon('paragraph'), t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
     toolbarButton(icon('quote'), t(locale, 'editor_quote_title'), () => toggleBlockquote()),
-    toolbarButton('{}', t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
-    toolbarButton('—', t(locale, 'editor_hr_title'), () => insertHr()),
+    toolbarButton(icon('codeBlock'), t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
+    toolbarButton(icon('hr'), t(locale, 'editor_hr_title'), () => insertHr()),
     toolbarButton(icon('link'), t(locale, 'editor_link_title'), () => { void insertLink() }),
     toolbarButton(icon('clearFmt'), t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton(icon('template'), t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton(icon('at'), t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
     toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
-    toolbarButton('?', t(locale, 'editor_help_title'), () => showEditorHelp(locale))
+    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale))
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl)
