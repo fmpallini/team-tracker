@@ -1167,7 +1167,7 @@ describe('toolbar', () => {
   test('help button opens the help modal', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
-    const helpBtn = Array.from(editor.root.querySelectorAll('button')).find((b) => b.textContent === '?')!
+    const helpBtn = editor.root.querySelector<HTMLButtonElement>('button[title="Editor help"]')!
     helpBtn.click()
     expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
     editor.destroy()

@@ -952,7 +952,10 @@ body { background: var(--bg); color: var(--fg); }
   display: flex; align-items: center; gap: .25rem; padding: .35rem .5rem;
   background: var(--panel); border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap;
 }
-.tt-editor-btn { min-width: 2rem; text-align: center; }
+.tt-editor-btn {
+  min-width: 2rem; height: 1.9rem; box-sizing: border-box; padding: 0 .4rem; text-align: center;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .tt-editor-btn-bold { font-weight: 700; }
 .tt-editor-btn-italic { font-style: italic; }
 .tt-editor-btn-underline { text-decoration: underline; }
