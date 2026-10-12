@@ -6,67 +6,16 @@
 // file is what turns that into evidence, and what would catch a regression
 // that reintroduces O(document) work on a per-keystroke path.
 //
-// The document is synthesized rather than driven through the UI: creating
-// thousands of items by clicking would dominate the runtime and measure
-// Playwright, not the app. It is written straight into OPFS in the app's own
-// password-less `.tmv` format (`TMV-PLAIN\n` + JSON — see core/crypto.ts's
-// serializePlain), then opened through the same real File System Access path
-// every other e2e spec uses. `createEmptyDocument`/`createEmptyTeam` are
-// imported from src so the seed can never drift from the current schema.
+// The document is synthesized (see ./large-doc.ts) rather than driven through
+// the UI: creating thousands of items by clicking would dominate the runtime
+// and measure Playwright, not the app.
 //
 // Budgets are ceilings for "obviously broken", not targets. They are set well
 // above observed values so normal machine-to-machine variance and CI noise
 // don't cause flakes, while still failing loudly if a per-keystroke path
 // starts scaling with document size again.
-import { test, expect, type Page } from '@playwright/test'
-import { E2E_BASE_URL } from '../playwright.config'
-import { installOpfsPickerShim, writeOpfsFile, setNextOpenName } from './opfs-shim'
-import { blockUpdateCheck } from './helpers'
-import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
-import type { Doc } from '../src/core/types'
-
-const TEAMS = 20
-const ITEMS_PER_TEAM = 100
-const NOTES_PER_TEAM = 60
-
-/** A document far larger than a realistic one, so any per-keystroke work that scales with size shows up as time rather than as a hunch. */
-function buildLargeDoc(): Doc {
-  const doc = createEmptyDocument('en-US')
-  for (let t = 0; t < TEAMS; t++) {
-    const team = createEmptyTeam(`team-${t}`, `Team ${t}`, '🚀', 'en-US')
-    for (let i = 0; i < ITEMS_PER_TEAM; i++) {
-      team.actionItems.push({
-        id: `t${t}-a${i}`, summary: `Action item ${i} for team ${t}`, status: 'todo',
-        dueDate: null, assignee: `Person ${i % 7}`, order: i, notes: `Notes body ${i} `.repeat(4), color: 'ledger',
-      })
-      team.milestones.push({ id: `t${t}-m${i}`, date: `2026-${String((i % 12) + 1).padStart(2, '0')}-15`, title: `Milestone ${i}`, done: false, followup: `Follow-up ${i} `.repeat(3) })
-      team.risks.push({ id: `t${t}-r${i}`, title: `Risk ${i}`, chance: (i % 3) + 1, impact: (i % 3) + 1, plan: 'mitigate', followup: `Mitigation ${i} `.repeat(3), order: i, closed: false })
-    }
-    for (let d = 0; d < NOTES_PER_TEAM; d++) {
-      const date = `2026-06-${String((d % 28) + 1).padStart(2, '0')}`
-      team.dailyNotes[date] = `Daily note for ${date} in team ${t}. ${'Some body text. '.repeat(20)}`
-    }
-    doc.teams.push(team)
-  }
-  doc.nav.activeTeamId = doc.teams[0]!.id
-  return doc
-}
-
-async function openLargeDoc(page: Page): Promise<void> {
-  await installOpfsPickerShim(page)
-  await blockUpdateCheck(page)
-  await page.goto(`${E2E_BASE_URL}/app.html`)
-
-  const payload = `TMV-PLAIN\n${JSON.stringify(buildLargeDoc())}`
-  const bytes = Array.from(new TextEncoder().encode(payload))
-  await writeOpfsFile(page, 'large.tmv', bytes)
-  await setNextOpenName(page, 'large.tmv')
-
-  // Password-less files are detected from the header, so this opens straight
-  // through with no password prompt.
-  await page.getByRole('button', { name: /Open/ }).first().click()
-  await expect(page.locator('.tt-shell')).toBeVisible()
-}
+import { test, expect } from '@playwright/test'
+import { TEAMS, ITEMS_PER_TEAM, openLargeDoc } from './large-doc'
 
 /** Median of `runs` timings of `fn`, in ms. Median, not mean: one GC pause or one scheduler hiccup shouldn't decide whether the suite passes. */
 async function timeMedian(runs: number, fn: () => Promise<void>): Promise<number> {
