@@ -12,9 +12,24 @@ const SHELL = [
   './icon-512.png',
 ]
 
+// Each shell file is fetched with cache: 'reload', not cache.addAll(): addAll
+// goes through the HTTP cache, and GitHub Pages serves everything with
+// max-age=600, so a worker installed within 10 minutes of a previous load
+// could fill its brand-new cache with the previous release's HTML.
+function precache(cache) {
+  return Promise.all(
+    SHELL.map((url) =>
+      fetch(url, { cache: 'reload' }).then((res) => {
+        if (!res.ok) throw new Error(url + ' ' + res.status)
+        return cache.put(url, res)
+      })
+    )
+  )
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(precache).then(() => self.skipWaiting())
   )
 })
 

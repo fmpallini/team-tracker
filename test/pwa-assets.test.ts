@@ -62,6 +62,42 @@ describe('sw.js offline fallback', () => {
   })
 })
 
+describe('sw.js install', () => {
+  function install(fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
+    const listeners: Record<string, (event: { waitUntil(p: Promise<unknown>): void }) => void> = {}
+    const put = vi.fn(async () => {})
+    const cache = { match: async () => undefined, put }
+    const self = {
+      location: { origin: 'https://example.test' },
+      addEventListener: (type: string, fn: (event: { waitUntil(p: Promise<unknown>): void }) => void) => { listeners[type] = fn },
+      skipWaiting: vi.fn(async () => {}),
+      clients: { claim: async () => {} },
+    }
+    const caches = { open: async () => cache, keys: async () => [], delete: async () => true }
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    new Function('self', 'caches', 'fetch', 'Response', swSource)(self, caches, fetchImpl, Response)
+    let done!: Promise<unknown>
+    listeners['install']!({ waitUntil: (p) => { done = p } })
+    return { done, put, skipWaiting: self.skipWaiting }
+  }
+
+  it('precaches the shell bypassing the HTTP cache, so a new release never stores the previous one', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => new Response('fresh'))
+    const { done, put, skipWaiting } = install(fetchImpl)
+    await done
+    expect(fetchImpl.mock.calls.length).toBeGreaterThan(0)
+    for (const call of fetchImpl.mock.calls) expect(call[1]).toEqual({ cache: 'reload' })
+    expect(put).toHaveBeenCalledTimes(fetchImpl.mock.calls.length)
+    expect(skipWaiting).toHaveBeenCalled()
+  })
+
+  it('fails the install, without taking over, when a shell file does not load', async () => {
+    const { done, skipWaiting } = install(async () => new Response('nope', { status: 404 }))
+    await expect(done).rejects.toThrow()
+    expect(skipWaiting).not.toHaveBeenCalled()
+  })
+})
+
 describe('manifest.json', () => {
   const manifest = JSON.parse(manifestSource) as {
     icons: { src: string }[]
