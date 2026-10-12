@@ -458,6 +458,7 @@ test('search queries are delegated to the injected SearchIndex instead of one bu
     search: (q, scope) => { searchCalls.push([q, scope]); return [] },
     backlinks: () => [],
     invalidate: () => {},
+    acknowledgeNav: () => {},
   }
   const { input } = mount(store, fakePM(), () => {}, mockIndex)
 
