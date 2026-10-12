@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.16.0] - 2026-10-12
+
+### Changed
+- Navigating (switching panes, going back/forward, switching teams) is lighter: the sidebar no longer redraws its whole team list and search no longer rebuilds its index each time.
+
+### Fixed
+- The installed app could keep showing the previous version after an update when the update was fetched shortly after a previous load.
+
 ## [2.15.0] - 2026-10-09
 
 ### Added
