@@ -152,11 +152,13 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicator.title = t(locale(), 'team_switch_title')
     headerTeamIndicatorDueBadge.title = t(locale(), 'due_team_badge_title')
     headerDueSummary.title = t(locale(), 'due_badge_title')
-    if (team) headerTeamIndicatorLabel.textContent = team.emoji ? `${team.emoji} ${team.name}` : team.name
+    // Written only on change: renderCollapseState() runs on every nav mutation,
+    // and re-assigning identical text still replaces the node and repaints it.
+    if (team) setTextIfChanged(headerTeamIndicatorLabel, team.emoji ? `${team.emoji} ${team.name}` : team.name)
 
     const teamDueCounts = teamDueCountsMap(dueBuckets())
     const ownCount = team ? teamDueCounts.get(team.id) ?? 0 : 0
-    headerTeamIndicatorDueBadge.textContent = ownCount > 0 ? String(ownCount) : ''
+    setTextIfChanged(headerTeamIndicatorDueBadge, ownCount > 0 ? String(ownCount) : '')
 
     let otherCount = 0
     for (const [tid, count] of teamDueCounts) {
@@ -170,12 +172,22 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     if (!collapsed) closeTeamSwitcher()
   }
 
+  let paintedCollapsed: boolean | null = null
+  function setTextIfChanged(node: HTMLElement, text: string): void {
+    if (node.textContent !== text) node.textContent = text
+  }
+
   function renderCollapseState(): void {
     const collapsed = effectivelyCollapsed()
     shell.sidebar.dataset.collapsed = String(collapsed)
-    collapseIcon.innerHTML = collapsed
-      ? '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/></svg>'
-      : '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/><rect x="1.5" y="2.5" width="4.75" height="11" rx="1" fill="currentColor" opacity=".4" stroke="none"/></svg>'
+    // The glyph differs only between the two states; rebuilding its SVG on
+    // every nav mutation would repaint an identical icon.
+    if (paintedCollapsed !== collapsed) {
+      paintedCollapsed = collapsed
+      collapseIcon.innerHTML = collapsed
+        ? '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/></svg>'
+        : '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.25 2.5V13.5"/><rect x="1.5" y="2.5" width="4.75" height="11" rx="1" fill="currentColor" opacity=".4" stroke="none"/></svg>'
+    }
     collapseBtn.title = t(locale(), collapsed ? 'sidebar_expand_title' : 'sidebar_collapse_title')
     renderHeaderTeamIndicator()
   }
@@ -516,6 +528,89 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     }
   }
 
+  // One set of handlers on the list instead of five per row: render() rebuilds
+  // every row on each content change, and a row's wiring is identical apart
+  // from the index it carries in `data-index`. The rows' own buttons (due
+  // badge, edit) stopPropagation(), so a click on them never reaches the
+  // click handler here. dragover/drop only act when the pointer is over a row,
+  // exactly like the per-row listeners they replace (no preventDefault
+  // elsewhere, so the gaps in the list are not drop targets).
+  function rowOf(target: EventTarget | null): HTMLElement | null {
+    return target instanceof Element ? target.closest<HTMLElement>('.tt-team-item') : null
+  }
+  function indexOfRow(row: HTMLElement): number {
+    return Number(row.dataset.index)
+  }
+  function isAfterHalf(row: HTMLElement, e: Event): boolean {
+    const rect = row.getBoundingClientRect()
+    return (e as DragEvent).clientY - rect.top > rect.height / 2
+  }
+
+  listEl.addEventListener('click', (e) => {
+    const row = rowOf(e.target)
+    const team = row ? store.doc.teams[indexOfRow(row)] : undefined
+    if (team) actions.selectTeam(team.id)
+  })
+  listEl.addEventListener('dragstart', (e) => {
+    const row = rowOf(e.target)
+    if (!row) return
+    const index = indexOfRow(row)
+    dragSrcIndex = index
+    // dragend fires on the source row — which a mid-drag re-render may have
+    // detached from the list, so it would never bubble to a listener up here.
+    row.addEventListener('dragend', () => {
+      dragSrcIndex = null
+      clearDragOverClasses()
+    }, { once: true })
+    const dt = (e as DragEvent).dataTransfer
+    if (dt) {
+      dt.setData('text/plain', String(index))
+      dt.effectAllowed = 'move'
+    }
+  })
+  listEl.addEventListener('dragover', (e) => {
+    const row = rowOf(e.target)
+    if (!row) return
+    e.preventDefault()
+    if (dragSrcIndex === null) return
+    clearDragOverClasses()
+    row.classList.add(isAfterHalf(row, e) ? 'drag-over-bottom' : 'drag-over-top')
+  })
+  listEl.addEventListener('dragleave', (e) => {
+    rowOf(e.target)?.classList.remove('drag-over-top', 'drag-over-bottom')
+  })
+  listEl.addEventListener('drop', (e) => {
+    const row = rowOf(e.target)
+    if (!row) return
+    e.preventDefault()
+    clearDragOverClasses()
+    if (dragSrcIndex === null) return
+    const srcIndex = dragSrcIndex
+    dragSrcIndex = null
+    reorder(srcIndex, indexOfRow(row), isAfterHalf(row, e))
+  })
+
+  /**
+   * Nav-only mutations (pane focus, history steps, team switch, collapse
+   * toggle) never change the team list, so rebuilding it is pure churn: only
+   * the active highlight and the collapse-dependent header chrome can move.
+   * Falls back to a full render() when the rows can't be trusted to mirror the
+   * doc (count mismatch) or the calendar day rolled over since the due buckets
+   * were computed — the badges (and the OS app badge) must follow the day even
+   * if the next change the user makes is only navigation.
+   */
+  function renderNav(): void {
+    const teams = store.doc.teams
+    const rowEls = listEl.children
+    if (rowEls.length !== teams.length || (dueCache !== null && dueCache.today !== todayIso())) {
+      render()
+      return
+    }
+    const activeId = store.doc.nav.activeTeamId
+    for (let i = 0; i < teams.length; i++) rowEls[i]!.classList.toggle('active', teams[i]!.id === activeId)
+    renderCollapseState()
+  }
+
   function render(): void {
     listEl.innerHTML = ''
     // Static chrome tooltips are re-stamped here so a locale change (a store
@@ -567,44 +662,6 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         icon('edit', 12)
       )
       item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
-
-      item.addEventListener('click', () => {
-        actions.selectTeam(team.id)
-      })
-
-      item.addEventListener('dragstart', (e) => {
-        dragSrcIndex = index
-        const dt = (e as DragEvent).dataTransfer
-        if (dt) {
-          dt.setData('text/plain', String(index))
-          dt.effectAllowed = 'move'
-        }
-      })
-      item.addEventListener('dragover', (e) => {
-        e.preventDefault()
-        if (dragSrcIndex === null) return
-        clearDragOverClasses()
-        const rect = item.getBoundingClientRect()
-        const after = (e as DragEvent).clientY - rect.top > rect.height / 2
-        item.classList.add(after ? 'drag-over-bottom' : 'drag-over-top')
-      })
-      item.addEventListener('dragleave', () => {
-        item.classList.remove('drag-over-top', 'drag-over-bottom')
-      })
-      item.addEventListener('drop', (e) => {
-        e.preventDefault()
-        clearDragOverClasses()
-        if (dragSrcIndex === null) return
-        const rect = item.getBoundingClientRect()
-        const after = (e as DragEvent).clientY - rect.top > rect.height / 2
-        const srcIndex = dragSrcIndex
-        dragSrcIndex = null
-        reorder(srcIndex, index, after)
-      })
-      item.addEventListener('dragend', () => {
-        dragSrcIndex = null
-        clearDragOverClasses()
-      })
 
       listEl.appendChild(item)
     })
@@ -748,7 +805,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // above, not this onMutate() one, that keeps the sidebar in sync after a
   // reload. Don't collapse these two registrations into just onMutate().
   const unsubscribeMutate = store.onMutate((kind) => {
-    if (kind === 'nav') render()
+    if (kind === 'nav') renderNav()
   })
   const onAddTeamRequest = (): void => openAddModal()
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)

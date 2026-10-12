@@ -176,7 +176,7 @@ test('sidebar renders exactly once per content update', () => {
   })
 })
 
-test('the sidebar still renders exactly once for a nav-only change', () => {
+test('a nav-only change repaints the sidebar highlight without rebuilding the list', () => {
   const { store, shell, pm } = setup()
   mountSidebar(shell, store, pm, { selectTeam: () => {}, renderPanes: () => {} })
   store.update((d) => {
@@ -199,7 +199,8 @@ test('the sidebar still renders exactly once for a nav-only change', () => {
       if (r.type === 'childList' && r.removedNodes.length > 0) clears++
     })
     observer.disconnect()
-    expect(clears).toBe(1)
+    // Nav mutations never change the team list: only the active class moves.
+    expect(clears).toBe(0)
     expect(listEl.querySelectorAll('.tt-team-item.active')[0]!.textContent).toContain('Beta')
   })
 })
