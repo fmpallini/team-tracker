@@ -452,6 +452,15 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     }
   })
 
+  // A nav-only mutation (pane focus, history step, team switch) bumps store.rev
+  // without any content change; telling the index so keeps its prepared
+  // candidates and backlinks alive across navigation instead of rebuilding
+  // them for every team on the next read. Relies on updateNav's contract
+  // (core/store.ts): its callback touches doc.nav and nothing searchable.
+  const unsubscribeNavAck = store.onMutate((kind) => {
+    if (kind === 'nav') searchIndex.acknowledgeNav()
+  })
+
   // The narrow Shell slice every ModuleCtx gets — see SaveStatusApi's doc
   // comment for why this isn't `shell` itself.
   const saveStatus: SaveStatusApi = {
@@ -1224,6 +1233,7 @@ ${t(lc, 'pane_history_hint')}`
       closeMenu(1)
       document.removeEventListener('click', onDocumentClick)
       unsubscribeSearchIndex()
+      unsubscribeNavAck()
       // Tear down an in-flight divider drag, if any — see dragCleanup above.
       dragCleanup?.()
       dragCleanup = null

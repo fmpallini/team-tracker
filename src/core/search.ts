@@ -328,6 +328,15 @@ export interface SearchIndex {
    * `store.subscribe`, whose callback receives that scope.
    */
   invalidate(scope: ChangeScope | null | undefined): void
+  /**
+   * Declares that the store revision that just landed was a nav-only mutation
+   * (`store.updateNav()`), which by contract touches `doc.nav` alone — never a
+   * searchable field. Without this, the rev bump it causes looks like an
+   * undescribed change and the next read drops every team's caches. Wire it to
+   * `store.onMutate` for `kind === 'nav'`. Only honoured when the caches were
+   * in sync one revision earlier; otherwise the blanket drop stays in force.
+   */
+  acknowledgeNav(): void
 }
 
 /**
@@ -475,6 +484,14 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       if (scope.sections !== undefined && !scope.sections.some((s) => SEARCHABLE.includes(s))) return
       backlinksCache.delete(scope.teamId)
       candidatesCache.delete(scope.teamId)
+    },
+
+    acknowledgeNav(): void {
+      // Exactly one revision ahead = this nav mutation is the only thing the
+      // caches haven't been told about. Anything further behind means some
+      // other undescribed change slipped in, so leave it for syncRev() to
+      // clear.
+      if (knownRev === getRev() - 1) knownRev = getRev()
     },
 
     search(query: string, scopeTeamId: string | null): SearchResult[] {

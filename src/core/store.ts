@@ -28,6 +28,12 @@ export interface Store {
    * costs a redundant render.
    */
   update(fn: (d: Doc) => void, scope?: ChangeScope): void
+  /**
+   * Nav-only mutation. Contract: `fn` may touch `doc.nav` and nothing else —
+   * core/search.ts's index is told (via `onMutate`'s 'nav' kind, see
+   * ui/panes.ts) that this revision changed no searchable content, and would
+   * serve stale results if it did. Content changes go through `update()`.
+   */
   updateNav(fn: (d: Doc) => void): void
   subscribe(fn: (scope: ChangeScope | null) => void): () => void
   /**
