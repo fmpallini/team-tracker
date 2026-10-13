@@ -258,8 +258,47 @@ function prepareCandidate(candidate: Candidate): PreparedCandidate {
   return prepared
 }
 
+/**
+ * Identity of a candidate across rebuilds — which field of the team it is, not
+ * what it currently says. Two candidates with the same key are "the same field,
+ * possibly edited"; whether its text actually changed is decided by comparing
+ * `raw` and `title`, never by this key, so a collision (a corrupt document with
+ * a duplicated id) can only cost a redundant re-derive, never a wrong result.
+ */
+function candidateKey(ref: ModuleRef): string {
+  switch (ref.kind) {
+    case 'daily': return `d:${ref.date}`
+    case 'person': return `p:${ref.group}:${ref.personId}`
+    case 'actions': case 'milestones': case 'risks': return `${ref.kind}:${ref.itemId ?? ''}`
+    default: return ref.kind
+  }
+}
+
 /** Backlinks' reverse index for one team, keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
 type BacklinksByRef = Map<string, Backlink[]>
+
+/**
+ * One team's prepared candidates. `stale` means "something may have changed
+ * since `list` was built": the list is kept rather than dropped so the rebuild
+ * can reuse every entry whose text turns out to be unchanged — the expensive
+ * `stripMd` + `normalize` pass is then paid for the edited fields only.
+ */
+interface CandidateEntry { list: PreparedCandidate[]; stale: boolean }
+
+/** The mentions found in one source field, kept so an unchanged field is not re-scanned. */
+interface SourceMentions {
+  ref: ModuleRef
+  raw: string
+  title: string
+  found: { key: string; backlink: Backlink }[]
+}
+
+/**
+ * One team's reverse mention index plus the per-field scans it was assembled
+ * from. `sources` holds only fields that contain a mention — the rest are
+ * cleared by an `indexOf` — so it does not scale with the number of fields.
+ */
+interface BacklinkEntry { byRef: BacklinksByRef; sources: Map<string, SourceMentions>; stale: boolean }
 
 /**
  * A match plus its ranking data — kept separate from the public
@@ -275,6 +314,8 @@ interface ScoredHit {
   positions: number[]
   span: number
   minPos: number
+  /** Position in document order (teams, then each team's candidates) — the final tiebreak, so a narrowed result list orders ties exactly as a fresh scan would. */
+  order: number
 }
 
 /**
@@ -289,12 +330,12 @@ interface ScoredHit {
  *     (the one term's length) for single-term queries, so it naturally drops
  *     out of the sort and `minPos` alone decides.
  */
-function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: string, terms: string[]): ScoredHit | null {
+function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: string, terms: string[], order: number): ScoredHit | null {
   const positions = termPositions(candidate.normalized, terms)
   if (!positions) return null
   const minPos = Math.min(...positions)
   const maxEnd = Math.max(...positions.map((p, i) => p + terms[i]!.length))
-  return { candidate, teamId, teamName, positions, span: maxEnd - minPos, minPos }
+  return { candidate, teamId, teamName, positions, span: maxEnd - minPos, minPos, order }
 }
 
 /** Cuts the displayed snippet — the one step that needs the markdown-stripped text, so it is paid per shown result rather than per cached candidate. */
@@ -308,9 +349,14 @@ function toResult(hit: ScoredHit): SearchResult {
   }
 }
 
-/** Tightest-cluster-first, then earliest-match-first; JS's stable sort keeps same-score hits in `hits`' original (insertion) order as the final tiebreak. */
+/**
+ * Tightest-cluster-first, then earliest-match-first, then document order. The
+ * last key is explicit rather than left to the sort's stability: `hits` can
+ * arrive already ranked (narrowing re-scores the previous query's sorted
+ * matches), and insertion order would then be that earlier ranking instead.
+ */
 function rankAndLimit(hits: ScoredHit[]): SearchResult[] {
-  hits.sort((a, b) => (a.span - b.span) || (a.minPos - b.minPos))
+  hits.sort((a, b) => (a.span - b.span) || (a.minPos - b.minPos) || (a.order - b.order))
   return hits.slice(0, RESULT_LIMIT).map(toResult)
 }
 
@@ -323,9 +369,10 @@ export interface SearchIndex {
    */
   backlinks(teamId: string, kind: RefKind, targetId: string): Backlink[]
   /**
-   * Drops exactly the cached candidates a `store.update()` described by
-   * `scope` could have invalidated — see `createSearchIndex`. Wire this to
-   * `store.subscribe`, whose callback receives that scope.
+   * Marks stale exactly the teams a `store.update()` described by `scope`
+   * could have changed — see `createSearchIndex`. A stale team keeps its
+   * prepared text, so the next read only re-derives fields that differ. Wire
+   * this to `store.subscribe`, whose callback receives that scope.
    */
   invalidate(scope: ChangeScope | null | undefined): void
   /**
@@ -338,14 +385,6 @@ export interface SearchIndex {
    */
   acknowledgeNav(): void
 }
-
-/**
- * Sections `collectCandidates` actually reads. 'templates' is the only one
- * absent — a template edit can't change any searchable text. ('teams' is in:
- * a rename changes `teamName` on every result. 'prefs' is in: the locale
- * formats daily-note titles.)
- */
-const SEARCHABLE: readonly Section[] = ['notes', 'people', 'actions', 'milestones', 'risks', 'teams', 'prefs']
 
 /**
  * A `searchDocument` that prepares each team's candidates once per document
@@ -366,17 +405,30 @@ const SEARCHABLE: readonly Section[] = ['notes', 'people', 'actions', 'milestone
  *    search. Expensive, and only the Ctrl+Shift+K palette ever reads it, so it is
  *    built lazily on the first `search()` that touches a team rather than
  *    forced (and retained) by an unrelated chip render.
+ *
+ * Invalidation never throws a team's work away. A change marks the affected
+ * teams *stale*; the next read re-collects that team's fields (cheap: no
+ * strip, no normalize) and reuses the prepared form of every field whose text
+ * is identical to last time. So the cost of an edit is proportional to the
+ * fields that changed, and an invalidation that was broader than necessary —
+ * an unscoped update, a rename, an undescribed revision — costs a re-collect
+ * rather than a rebuild. Staleness is still decided by the change scope (a
+ * scope that lies about what it touched can still serve a stale result, same
+ * as before); the content comparison only makes over-invalidating cheap.
  */
 export function createSearchIndex(getDoc: () => Doc, getRev: () => number): SearchIndex {
   // The revision these caches have been *told about* — via invalidate(),
   // which rides store.subscribe() and knows which team changed. A rev that
   // moves without a matching invalidate() is a change nobody described
-  // (store.updateNav() bumps rev but deliberately bypasses subscribe()), so
-  // both caches are dropped on the next read rather than trusted: an
-  // unexplained change could have touched anything.
+  // (store.updateNav() bypasses subscribe() on purpose), so every team is
+  // marked stale on the next read rather than trusted: an unexplained change
+  // could have touched anything.
   let knownRev = -1
-  const backlinksCache = new Map<string, BacklinksByRef>()
-  const candidatesCache = new Map<string, PreparedCandidate[]>()
+  // The locale the caches were last known to be built under — the only pref
+  // that reaches a candidate (daily-note and general-notes titles).
+  let knownLocale = getDoc().prefs.locale
+  const backlinksCache = new Map<string, BacklinkEntry>()
+  const candidatesCache = new Map<string, CandidateEntry>()
 
   /**
    * The previous query's *complete* match set (pre-`RESULT_LIMIT`), kept so
@@ -387,19 +439,29 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
    * ranked 51st for "ro" can rank 1st for "rollout", and truncating first
    * would lose it for every query that follows.
    *
-   * Holds `PreparedCandidate` references, so it retains nothing the
-   * candidates cache isn't already holding — and it must be dropped whenever
-   * that cache is, or it would keep serving candidates prepared from text
-   * the document no longer has.
+   * Holds `PreparedCandidate` references, so it must be dropped whenever a
+   * cache entry is touched, or it would keep serving candidates prepared from
+   * text the document no longer has.
    */
   let lastQuery: { normalizedQuery: string; scopeTeamId: string | null; hits: ScoredHit[] } | null = null
+
+  /** Marks `teamId` (or, when `undefined`, every team) stale and forgets teams the document no longer has. */
+  function markStale(teamId: string | undefined): void {
+    const doc = getDoc()
+    for (const cache of [candidatesCache, backlinksCache] as const) {
+      for (const [id, entry] of cache) {
+        if (!docFindTeam(doc, id)) cache.delete(id)
+        else if (teamId === undefined || teamId === id) entry.stale = true
+      }
+    }
+  }
 
   function syncRev(): void {
     const rev = getRev()
     if (rev === knownRev) return
-    backlinksCache.clear()
-    candidatesCache.clear()
+    markStale(undefined)
     lastQuery = null
+    knownLocale = getDoc().prefs.locale
     knownRev = rev
   }
 
@@ -425,46 +487,70 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
 
   /** Reverse mention index for one team — a raw-text scan only, no strip/normalize. */
   function backlinksFor(team: Team, doc: Doc): BacklinksByRef {
-    const hit = backlinksCache.get(team.id)
-    if (hit) return hit
-    const byRef: BacklinksByRef = new Map()
+    const cached = backlinksCache.get(team.id)
+    if (cached && !cached.stale) return cached.byRef
     const mentionPattern = refPattern()
+    const byRef: BacklinksByRef = new Map()
+    const sources = new Map<string, SourceMentions>()
     for (const c of collectCandidates(team, doc)) {
-      mentionPattern.lastIndex = 0
-      let m: RegExpExecArray | null
-      while ((m = mentionPattern.exec(c.raw))) {
-        const key = m[2]! // "kind:target" — same key shape backlinks() looks up by.
-        const bl: Backlink = {
-          loc: { teamId: team.id, ref: c.ref },
-          moduleKind: c.ref.kind as BacklinkSourceKind,
-          title: c.title,
-          snippet: backlinkSnippet(c.raw, m.index, m[0].length),
+      const sourceKey = candidateKey(c.ref)
+      const previous = cached?.sources.get(sourceKey)
+      let source: SourceMentions | undefined
+      if (previous && previous.raw === c.raw && previous.title === c.title) {
+        source = previous
+      } else if (c.raw.includes('@[')) { // every mention starts with it — most fields never do, so skip the regex
+        const found: SourceMentions['found'] = []
+        mentionPattern.lastIndex = 0
+        let m: RegExpExecArray | null
+        while ((m = mentionPattern.exec(c.raw))) {
+          found.push({
+            key: m[2]!, // "kind:target" — same key shape backlinks() looks up by.
+            backlink: {
+              loc: { teamId: team.id, ref: c.ref },
+              moduleKind: c.ref.kind as BacklinkSourceKind,
+              title: c.title,
+              snippet: backlinkSnippet(c.raw, m.index, m[0].length),
+            },
+          })
         }
+        if (found.length > 0) source = { ref: c.ref, raw: c.raw, title: c.title, found }
+      }
+      if (!source) continue
+      sources.set(sourceKey, source)
+      for (const { key, backlink } of source.found) {
         const list = byRef.get(key)
-        if (list) list.push(bl)
-        else byRef.set(key, [bl])
+        if (list) list.push(backlink)
+        else byRef.set(key, [backlink])
       }
     }
-    backlinksCache.set(team.id, byRef)
+    backlinksCache.set(team.id, { byRef, sources, stale: false })
     return byRef
   }
 
   /** `stripMd`ped + `normalize`d candidates for one team — the expensive half, built only when something actually searches this team. */
   function candidatesFor(team: Team, doc: Doc): PreparedCandidate[] {
-    const hit = candidatesCache.get(team.id)
-    if (hit) return hit
-    const prepared = collectCandidates(team, doc).map(prepareCandidate)
-    candidatesCache.set(team.id, prepared)
-    return prepared
+    const cached = candidatesCache.get(team.id)
+    if (cached && !cached.stale) return cached.list
+    const previous = new Map<string, PreparedCandidate>()
+    if (cached) for (const p of cached.list) previous.set(candidateKey(p.ref), p)
+    const list = collectCandidates(team, doc).map((c) => {
+      const old = previous.get(candidateKey(c.ref))
+      if (!old || old.raw !== c.raw) return prepareCandidate(c)
+      // Same text: the matching form carries over untouched. Only the title can
+      // differ (a locale change reformats daily-note dates).
+      return old.title === c.title ? old : { ...old, title: c.title }
+    })
+    candidatesCache.set(team.id, { list, stale: false })
+    return list
   }
 
   return {
     invalidate(scope: ChangeScope | null | undefined): void {
       // Whatever this scope describes, we've now accounted for the revision
-      // it produced — so syncRev() won't also blanket-clear on the next
-      // read. Read before the early return below, or a non-searchable
+      // it produced — so syncRev() won't also mark everything stale on the
+      // next read. Read before the early return below, or a non-searchable
       // change (a template edit) would leave knownRev stale and trigger a
-      // full clear anyway.
+      // full re-collect anyway.
       knownRev = getRev()
       // Dropped unconditionally, even for a change no cache entry cares
       // about. The previous query's hit set is the one thing here that can
@@ -472,25 +558,27 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
       // full scan on the next keystroke — far cheaper than reasoning about
       // whether this particular scope could have touched a hit.
       lastQuery = null
-      if (!scope || scope.teamId === undefined) {
-        // No team named — "could be any/all teams" (this is also what
-        // store.replaceDoc() sends). Nothing narrower is safe.
-        backlinksCache.clear()
-        candidatesCache.clear()
-        return
-      }
-      // Both caches read from the same `collectCandidates` fields, so the
-      // same section gate applies to both.
-      if (scope.sections !== undefined && !scope.sections.some((s) => SEARCHABLE.includes(s))) return
-      backlinksCache.delete(scope.teamId)
-      candidatesCache.delete(scope.teamId)
+      // A locale flip is the one pref that changes a candidate, and it does so
+      // for every team. Detected by value, so a font-size or theme change —
+      // which arrives scoped to 'prefs' alone — leaves the caches alone, and so
+      // does a scope that forgot to name 'prefs' when the locale moved.
+      const locale = getDoc().prefs.locale
+      const localeChanged = locale !== knownLocale
+      knownLocale = locale
+      const sections = scope?.sections
+      // 'teams' is treated as content: a rename can't change a candidate, but
+      // add/delete/restore can, and re-collecting a team is cheap now.
+      if (sections !== undefined && !localeChanged && !sections.some((s) => s === 'teams' || BACKLINK_SECTIONS.includes(s))) return
+      // No team named means "could be any/all teams" (this is also what
+      // store.replaceDoc() sends). Nothing narrower is safe.
+      markStale(localeChanged ? undefined : scope?.teamId)
     },
 
     acknowledgeNav(): void {
       // Exactly one revision ahead = this nav mutation is the only thing the
       // caches haven't been told about. Anything further behind means some
       // other undescribed change slipped in, so leave it for syncRev() to
-      // clear.
+      // mark stale.
       if (knownRev === getRev() - 1) knownRev = getRev()
     },
 
@@ -509,14 +597,15 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
         // Typing forward: re-score the previous query's matches only. Each
         // hit already knows its team, so no team walk is needed here.
         for (const previous of lastQuery!.hits) {
-          const hit = scoreCandidate(previous.candidate, previous.teamId, previous.teamName, terms)
+          const hit = scoreCandidate(previous.candidate, previous.teamId, previous.teamName, terms, previous.order)
           if (hit) hits.push(hit)
         }
       } else {
         const teams = scopeTeamId === null ? doc.teams : doc.teams.filter((team) => team.id === scopeTeamId)
+        let order = 0
         for (const team of teams) {
           for (const candidate of candidatesFor(team, doc)) {
-            const hit = scoreCandidate(candidate, team.id, team.name, terms)
+            const hit = scoreCandidate(candidate, team.id, team.name, terms, order++)
             if (hit) hits.push(hit)
           }
         }
@@ -545,9 +634,10 @@ export function searchDocument(doc: Doc, query: string, scopeTeamId: string | nu
   const teams = scopeTeamId === null ? doc.teams : doc.teams.filter(team => team.id === scopeTeamId)
   const hits: ScoredHit[] = []
 
+  let order = 0
   for (const team of teams) {
     for (const candidate of collectCandidates(team, doc)) {
-      const hit = scoreCandidate(prepareCandidate(candidate), team.id, team.name, terms)
+      const hit = scoreCandidate(prepareCandidate(candidate), team.id, team.name, terms, order++)
       if (hit) hits.push(hit)
     }
   }
