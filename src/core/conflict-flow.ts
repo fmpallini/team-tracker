@@ -101,7 +101,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     // auto-save interval, a fresh backup controller, the right
     // title and a clean save state, with no new lifecycle code:
     // onDocumentOpened() already tears the previous app down.
-    // (pickCreate has also repointed the 'lastHandle' IndexedDB
+    // (forceWrite above has also repointed the 'lastHandle' IndexedDB
     // key at the fork, so "reopen last" follows it.)
     open = false
     deps.reopen(forkSession, store.doc, currentPw)

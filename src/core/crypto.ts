@@ -90,9 +90,14 @@ async function decryptRaw(bytes: Uint8Array, password: string): Promise<Record<s
     throw new CorruptFileError()
   const salt = bytes.slice(5, 21), ivKcv = bytes.slice(21, 33)
   const kcv = bytes.slice(33, 65), ivData = bytes.slice(65, 77), data = bytes.slice(77)
+  // getSessionKey caches before the key-check below has vouched for the
+  // password. A failed attempt must not leave {wrong password, this file's
+  // salt} behind: a new file created under that same string would then be
+  // written with this unrelated file's salt (see resetSessionKey).
+  const previousKey = sessionKey
   const { key } = await getSessionKey(password, salt)
   try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivKcv }, key, kcv) }
-  catch { throw new WrongPasswordError() }
+  catch { sessionKey = previousKey; throw new WrongPasswordError() }
   let plain: ArrayBuffer
   try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivData }, key, data) }
   catch { throw new CorruptFileError() }
