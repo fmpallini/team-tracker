@@ -4,6 +4,19 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [2.17.0] - 2026-10-13
+
+### Added
+- Search now finds people by name and role, not only by what is written in their notes.
+
+### Changed
+- Search stays fast while you type notes: an edit no longer makes it re-read the whole team.
+
+### Fixed
+- "Save as…" after a failed save no longer lets the new file overwrite the original's backup; automatic backup is turned off for the new file until you pick a new backup file.
+- Cancelling the password prompt when creating a file no longer makes "reopen last" report an empty file as corrupt.
+- Saving now refuses a document the app could not reopen, keeping your edits in memory instead of writing an unreadable file.
+
 ## [2.16.0] - 2026-10-12
 
 ### Changed
