@@ -60,6 +60,7 @@ const OPS: Op[] = [
   { name: 'edit general notes', run: (s, r) => { const t = teamOf(s, r); scoped(s, t, ['notes'], (_, tm) => { tm.generalNotes = text(r, tm) }) } },
   { name: 'edit person notes', run: (s, r) => { const t = teamOf(s, r); const all = [...t.stakeholders, ...t.members]; if (all.length) { const id = pick(r, all).id; scoped(s, t, ['people'], (_, tm) => { [...tm.stakeholders, ...tm.members].find((p) => p.id === id)!.notes = text(r, tm) }) } } },
   { name: 'rename person', run: (s, r) => { const t = teamOf(s, r); const all = [...t.stakeholders, ...t.members]; if (all.length) { const id = pick(r, all).id; scoped(s, t, ['people'], (_, tm) => { [...tm.stakeholders, ...tm.members].find((p) => p.id === id)!.name = `Nome ${int(r, 99)} Ç` }) } } },
+  { name: 'change person role', run: (s, r) => { const t = teamOf(s, r); const all = [...t.stakeholders, ...t.members]; if (all.length) { const id = pick(r, all).id; scoped(s, t, ['people'], (_, tm) => { [...tm.stakeholders, ...tm.members].find((p) => p.id === id)!.role = pick(r, ['', 'Eng', 'Líder Técnico', 'Diretora']) }) } } },
   { name: 'edit action item', run: (s, r) => { const t = teamOf(s, r); if (t.actionItems.length) { const id = pick(r, t.actionItems).id; const field = pick(r, ['summary', 'assignee', 'notes'] as const); scoped(s, t, ['actions'], (_, tm) => { tm.actionItems.find((a) => a.id === id)![field] = text(r, tm) }) } } },
   { name: 'add action item', run: (s, r) => { const t = teamOf(s, r); const id = `new-a${int(r, 1e6)}`; scoped(s, t, ['actions'], (_, tm) => { tm.actionItems.push({ id, summary: text(r, tm), status: 'todo', color: 'ledger', dueDate: null, assignee: 'Zé', order: 99, notes: text(r, tm) }) }) } },
   { name: 'delete action item', run: (s, r) => { const t = teamOf(s, r); if (t.actionItems.length) { const id = pick(r, t.actionItems).id; scoped(s, t, ['actions'], (_, tm) => { tm.actionItems = tm.actionItems.filter((a) => a.id !== id) }) } } },
@@ -85,7 +86,7 @@ function queriesFor(store: Store, rnd: Rnd): string[] {
   const t = store.doc.teams[0]
   const probe = t ? (Object.values(t.dailyNotes)[0] ?? t.generalNotes ?? '').replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter((w) => w.length > 3) : []
   const word = probe.length ? pick(rnd, probe) : 'rollout'
-  return [pick(rnd, ['rollout', 'acao', 'ação', 'reuniao', 'decisao auditoria', 'bigfield', 'heading', 'gone']), word, `${word} ${pick(rnd, ['entrega', 'cafe', 'stand'])}`]
+  return [pick(rnd, ['rollout', 'acao', 'ação', 'reuniao', 'decisao auditoria', 'diretora', 'tecnico', 'nome', 'bigfield', 'heading', 'gone']), word, `${word} ${pick(rnd, ['entrega', 'cafe', 'stand'])}`]
 }
 
 function checkSearch(store: Store, index: SearchIndex, rnd: Rnd, where: string): void {

@@ -114,6 +114,13 @@ describe('what an edit re-prepares', () => {
     expect(preparedBy(store, index, () => {
       store.update((d) => { d.teams[1]!.members[0]!.notes = 'edited person notes' }, { teamId: 't1', sections: ['people'] })
     })).toBe(1)
+    // Name and role are part of a person's searchable text: one person, one field.
+    expect(preparedBy(store, index, () => {
+      store.update((d) => { d.teams[1]!.members[0]!.name = 'Renamed Person' }, { teamId: 't1', sections: ['people'] })
+    })).toBe(1)
+    expect(preparedBy(store, index, () => {
+      store.update((d) => { d.teams[1]!.members[0]!.role = 'Staff Zeppelin Pilot' }, { teamId: 't1', sections: ['people'] })
+    })).toBe(1)
   })
 
   test('an edit that restores the previous text re-prepares nothing it did not have to', () => {

@@ -51,6 +51,34 @@ test('person notes searchable', () => {
   expect(r[0]!.title).toBe('Ana')
 })
 
+test('a person is found by name and by role, not only by what their notes say', () => {
+  const d = fixture()
+  const byName = searchDocument(d, 'ana', 't1').filter((r) => r.loc.ref.kind === 'person')
+  expect(byName).toHaveLength(1)
+  expect(byName[0]!.loc.ref).toEqual({ kind: 'person', personId: 'p1', group: 'members' })
+  expect(byName[0]!.title).toBe('Ana')
+  const byRole = searchDocument(d, 'dev', 't1')
+  expect(byRole).toHaveLength(1)
+  expect(byRole[0]!.loc.ref).toEqual({ kind: 'person', personId: 'p1', group: 'members' })
+  // Accent- and case-insensitive like every other field, and AND-ed with the notes.
+  expect(searchDocument(d, 'ANA promocao', 't1')).toHaveLength(1)
+  expect(searchDocument(d, 'dev promocao', 't1')).toHaveLength(1)
+  expect(searchDocument(d, 'dev zzz', 't1')).toHaveLength(0)
+})
+
+test('a stakeholder is found by role through the cached index too, and a role edit is picked up', () => {
+  const d = fixture()
+  d.teams[0]!.stakeholders.push({ id: 's1', name: 'Bia', role: 'Diretora', parentId: null, order: 0, notes: '' })
+  let rev = 0
+  const index = createSearchIndex(() => d, () => rev)
+  expect(index.search('diretora', null).map((r) => r.loc.ref)).toEqual([{ kind: 'person', personId: 's1', group: 'stakeholders' }])
+  d.teams[0]!.stakeholders[0]!.role = 'Gerente'
+  rev++
+  index.invalidate({ teamId: 't1', sections: ['people'] })
+  expect(index.search('diretora', null)).toEqual([])
+  expect(index.search('gerente', null)).toHaveLength(1)
+})
+
 test('finds text inside action-item notes', () => {
   const r = searchDocument(fixture(), 'contrato', 't1')
   expect(r[0]!.loc.ref).toMatchObject({ kind: 'actions', itemId: 'a1' })

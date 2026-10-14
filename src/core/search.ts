@@ -152,7 +152,7 @@ function collectCandidates(team: Team, doc: Doc): Candidate[] {
   out.push({ raw: team.generalNotes ?? '', title: t(doc.prefs.locale, 'module_general_notes'), ref: { kind: 'general' } })
   for (const group of ['stakeholders', 'members'] as const) {
     for (const person of team[group]) {
-      out.push({ raw: person.notes, title: person.name, ref: { kind: 'person', personId: person.id, group } })
+      out.push({ raw: `${person.name}\n${person.role}\n${person.notes}`, title: person.name, ref: { kind: 'person', personId: person.id, group } })
     }
   }
   for (const item of team.actionItems) {
