@@ -4,6 +4,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     pool: 'forks',
+    // Audits every store's update()/updateNav() against the scope it declares — see test/scope-contract.ts.
+    setupFiles: ['test/setup-scope-contract.ts'],
     // e2e/ holds Playwright specs (*.spec.ts) — a different runner/matcher
     // entirely, not vitest's to pick up.
     exclude: [...configDefaults.exclude, 'e2e/**'],

@@ -14,6 +14,13 @@ import vm from 'node:vm'
 import { createSearchIndex } from '../src/core/search'
 import { createStore } from '../src/core/store'
 import { buildRichDoc } from './search-fixture'
+import { setScopeContractEnabled } from './scope-contract'
+
+// 1700 edit cycles over a multi-megabyte document: snapshotting the document
+// around each update (the scope audit) would dominate the run, and it retains
+// nothing, so it has no bearing on what is measured here.
+beforeAll(() => setScopeContractEnabled(false))
+afterAll(() => setScopeContractEnabled(true))
 
 v8.setFlagsFromString('--expose_gc')
 const collect = vm.runInNewContext('gc') as () => void

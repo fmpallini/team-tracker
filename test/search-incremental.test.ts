@@ -29,6 +29,7 @@ import { createSearchIndex, searchDocument, type SearchIndex } from '../src/core
 import { createStore, type Store } from '../src/core/store'
 import { formatDate } from '../src/core/i18n'
 import { buildRichDoc, dateKey, type RichDocShape } from './search-fixture'
+import { expectScopeViolations, setScopeContractEnabled } from './scope-contract'
 
 const SHAPE: RichDocShape = { teams: 4, dailyNotes: 30, people: 6, actions: 20, milestones: 10, risks: 10 }
 // Daily notes + one general note per team, plus every other searchable field.
@@ -169,7 +170,12 @@ describe('what an edit re-prepares', () => {
   test('a locale change made through a scope that does not name prefs is still caught', () => {
     const { store, index } = setup()
     index.search(miss(), null)
-    store.update((d) => { d.prefs.locale = 'en-US' }, { teamId: 't0', sections: ['notes'] })
+    // A deliberate lie: the locale moves under a scope that names notes only.
+    // The suite-wide scope audit would flag it; here that is the point.
+    const flagged = expectScopeViolations(() => {
+      store.update((d) => { d.prefs.locale = 'en-US' }, { teamId: 't0', sections: ['notes'] })
+    })
+    expect(flagged.join(' ')).toContain("prefs changed but the scope does not name 'prefs'")
     const text = 'zeppelin-locale-probe'
     store.update((d) => { d.teams[3]!.generalNotes = text }, { teamId: 't3', sections: ['notes'] })
     expect(index.search(text, null)).toEqual(searchDocument(store.doc, text, null))
@@ -395,6 +401,9 @@ describe('backlinks', () => {
 describe('cost relative to a cold build', () => {
   // Same reasoning as the other search-*.test.ts timing guards: relative, same
   // fixture, same machine, minimum of several runs — only the ratio is asserted.
+  // Timed: the scope audit's snapshots would add their own cost to every update.
+  beforeAll(() => setScopeContractEnabled(false))
+  afterAll(() => setScopeContractEnabled(true))
   const BIG: RichDocShape = { teams: 8, dailyNotes: 60, people: 8, actions: 60, milestones: 30, risks: 30 }
   const timeIt = (fn: () => void): number => { const s = performance.now(); fn(); return performance.now() - s }
   const best = (reps: number, fn: () => void): number => { let b = Infinity; for (let i = 0; i < reps; i++) b = Math.min(b, timeIt(fn)); return b }
