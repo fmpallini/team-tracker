@@ -78,7 +78,8 @@ function sanitizeForUnlinkMarker(title: string): string {
 function unlinkWithPattern(text: string, re: RegExp, prefixLen: number, titles: ReadonlyMap<string, string>): string {
   return text.replace(re, (whole: string, _label: string, ref: string) => {
     const title = titles.get(ref.slice(prefixLen))
-    return title !== undefined ? `~${sanitizeForUnlinkMarker(title)}~` : whole
+    // Trimmed: the marker only renders when it hugs its text (core/markdown.ts).
+    return title !== undefined ? `~${sanitizeForUnlinkMarker(title.trim())}~` : whole
   })
 }
 

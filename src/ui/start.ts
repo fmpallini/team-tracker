@@ -15,7 +15,7 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
-import { decryptDocumentWithVersion, parsePlainWithVersion, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
+import { decryptDocumentWithVersion, parsePlainWithVersion, looksLikeTmv, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
 import { docToBytes } from '../core/doc-bytes'
 import { promptPassword, showErrorModal, toast } from './modal'
@@ -100,6 +100,13 @@ export function showStartScreen(
   }
 
   async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string; migratedFrom: Uint8Array | null } | null> {
+    // An empty file (a create flow that was cancelled before its first write)
+    // or any non-.tmv file can never be opened by any password: say so now
+    // instead of after the user has typed one.
+    if (!looksLikeTmv(bytes)) {
+      showErrorModal(locale, corruptMessage(new CorruptFileError()))
+      return null
+    }
     for (;;) {
       const result = await promptPassword(locale, { title: t(locale, 'open_file') })
       if (result === null) return null

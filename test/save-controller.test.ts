@@ -1245,3 +1245,74 @@ test('a successful save clears a lingering save-error toast', async () => {
   expect(store.dirty).toBe(false)
   expect(modalMocks.dismissToast).toHaveBeenCalledWith(key)
 })
+
+describe('backup health lookup failing after a successful primary write', () => {
+  test('the save still settles: pill ends on saved, title clean, no rejection', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 9 })
+    const shell = makeShell()
+    const states: string[] = []
+    vi.spyOn(shell, 'setSaveState').mockImplementation((s) => { states.push(s) })
+    const setTitleSpy = vi.spyOn(shell, 'setTitle')
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const backupCtl = {
+      maybeWriteBackup: vi.fn(async () => {}),
+      currentHealth: vi.fn(async () => { throw new Error('IDB blocked') }),
+    } as unknown as import('../src/core/backup-controller').BackupController
+    const ctl = createSaveController({
+      store, session: makeSession(), getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), backupCtl,
+    })
+
+    await expect(ctl.saveNow({ explicit: true })).resolves.toBeUndefined()
+
+    expect(store.dirty).toBe(false)
+    expect(states.at(-1)).toBe('saved')
+    expect(setTitleSpy).toHaveBeenLastCalledWith('x.tmv', false)
+  })
+})
+
+describe('flushPending (debounced editor changes)', () => {
+  function setup(flushPending: () => void, readOnly = false) {
+    const store = createStore(createEmptyDocument('en-US'))
+    const ctl = createSaveController({
+      store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn(), flushPending,
+    })
+    if (readOnly) store.setReadOnly(true)
+    return { store, ctl }
+  }
+
+  test('commits the pending change BEFORE the dirty check, so a Ctrl+S on a clean-looking store still saves it', async () => {
+    const ref: { store?: ReturnType<typeof createStore> } = {}
+    const { store, ctl } = setup(() => { ref.store!.update((d) => { d.prefs.autoSaveMin = 7 }) })
+    ref.store = store
+    expect(store.dirty).toBe(false)
+
+    await ctl.saveNow({ explicit: true })
+
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+    expect(store.dirty).toBe(false)
+  })
+
+  test('is not called on a read-only store', async () => {
+    const flush = vi.fn()
+    const { ctl } = setup(flush, true)
+    await ctl.saveNow({ explicit: true })
+    expect(flush).not.toHaveBeenCalled()
+  })
+
+  test('a throwing flush does not block the save', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { store, ctl } = setup(() => { throw new Error('editor gone') })
+    store.update((d) => { d.prefs.autoSaveMin = 7 })
+    await ctl.saveNow({ explicit: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('is optional: omitting it changes nothing', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 7 })
+    const ctl = createSaveController({ store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn() })
+    await ctl.saveNow({ explicit: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+})

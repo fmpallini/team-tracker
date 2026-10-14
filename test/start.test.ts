@@ -35,6 +35,7 @@ const cryptoMocks = vi.hoisted(() => {
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
     serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
     parsePlain: vi.fn((_bytes: Uint8Array) => null as unknown),
+    looksLikeTmv: vi.fn((_bytes: Uint8Array) => true),
     plainPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
     encryptedPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
     parsePlainWithVersion: vi.fn((bytes: Uint8Array) => {
@@ -226,6 +227,7 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
   const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
   fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
   cryptoMocks.decryptDocument.mockRejectedValue(new cryptoMocks.CorruptFileError())
+  cryptoMocks.looksLikeTmv.mockReturnValue(true)
 
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
@@ -242,6 +244,25 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
 
   expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Corrupt or invalid file')
   expect(onOpen).not.toHaveBeenCalled()
+})
+
+test('open flow: a file that is not a .tmv at all (empty / wrong magic) is reported as corrupt WITHOUT asking for a password first', async () => {
+  const session: FileSession = { handle: null, name: 'empty.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array(0) })
+  cryptoMocks.looksLikeTmv.mockReturnValue(false)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('📂 Open file…')
+  await flush()
+  await flush()
+
+  expect(document.querySelector('input[name="tt-password"]')).toBeNull()
+  expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Corrupt or invalid file')
+  expect(cryptoMocks.decryptDocument).not.toHaveBeenCalled()
+  expect(onOpen).not.toHaveBeenCalled()
+  cryptoMocks.looksLikeTmv.mockReturnValue(true)
 })
 
 test('open flow: a structurally invalid file names the offending field in the error modal', async () => {

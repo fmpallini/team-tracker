@@ -50,6 +50,14 @@ export interface EntityDeleteConfig<K extends TeamItemCollection> {
    * doesn't mount one for a row that's about to vanish.
    */
   beforeRemove?: (id: string) => void
+  /**
+   * Whether an entity is an untouched draft — nothing worth a confirm dialog or
+   * an undo. Defaults to "its label is blank", which is only right for modules
+   * whose label is the entity's only content; a risk, milestone or card with
+   * no title can still carry a plan, follow-up, notes or an assignee, and
+   * deleting THAT silently (no confirm, no undo) is data loss.
+   */
+  isBlank?: (entity: Team[K][number]) => boolean
 }
 
 export interface EntityDelete<E> {
@@ -63,7 +71,7 @@ export interface EntityDelete<E> {
 
 export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDeleteConfig<K>): EntityDelete<Team[K][number]> {
   type Entity = Team[K][number]
-  const { ctx, teamId, collection, refKind, labelOf, labelParam, messages, variant, beforeRemove } = cfg
+  const { ctx, teamId, collection, refKind, labelOf, labelParam, messages, variant, beforeRemove, isBlank } = cfg
   const locale = ctx.locale
 
   // Team's collections are all `{ id: string }[]`; K only narrows which one.
@@ -105,13 +113,16 @@ export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDele
   // editor open on the entity (the action-item card) can keep it up behind the
   // confirm and close it only if the user goes through with it.
   function requestDelete(entity: Entity, onDeleting?: () => void): void {
-    const label = labelOf(entity)
+    const rawLabel = labelOf(entity)
     const id = (entity as Entity & { id: string }).id
-    if (label.trim() === '') {
+    // A titled item always asks; an untitled one is silent only if it is also an untouched draft.
+    if (rawLabel.trim() === '' && (isBlank ? isBlank(entity) : true)) {
       onDeleting?.()
-      removeSilently(id) // an empty label carries no meaningful content to lose
+      removeSilently(id) // nothing meaningful to lose
       return
     }
+    // Only reachable with a blank label when `isBlank` says there IS content.
+    const label = rawLabel.trim() === '' ? t(locale, 'untitled_item') : rawLabel
     confirmDelete(locale, {
       title: t(locale, messages.title),
       message: t(locale, messages.confirm, { [labelParam]: label }),

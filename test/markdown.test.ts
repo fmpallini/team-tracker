@@ -1,3 +1,4 @@
+import { unlinkRefsInText } from '../src/core/refs'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
@@ -883,12 +884,13 @@ describe('external links', () => {
     expect(html).toContain('<strong>bold</strong>')
     expect(roundTrip('[**bold** text](https://e.com)')).toBe('[**bold** text](https://e.com)')
   })
-  test('disallowed schemes drop the link, keep the visible text', () => {
+  test('disallowed schemes never become a link; the whole [text](target) stays as inert literal text', () => {
     for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'vbscript:x', '  javascript:alert(1)', 'java\tscript:alert(1)']) {
       const html = mdToHtml(`click [here](${bad}) now`)
       const probe = document.createElement('div'); probe.innerHTML = html
       expect(probe.querySelector('a')).toBeNull()
-      expect(probe.textContent).toContain('click here now')
+      expect(probe.querySelector('script')).toBeNull()
+      expect(probe.textContent).toBe(`click [here](${bad}) now`)
     }
   })
   test('a url with markdown-special chars cannot break out of the href attribute', () => {
@@ -1199,5 +1201,169 @@ describe('flattenNestedBlockquotes', () => {
     root.innerHTML = '<blockquote>just one</blockquote>'
     flattenNestedBlockquotes(root)
     expect(root.innerHTML).toBe('<blockquote>just one</blockquote>')
+  })
+})
+
+describe('emphasis markers need to hug their text (plain text with stray * ~ must not turn into formatting)', () => {
+  const inner = (md: string) => mdToHtml(md).replace(/^<div>|<\/div>$/g, '')
+
+  test.each([
+    ['approximation tildes', 'Estimate ~5 min and ~10 min'],
+    ['currency tildes', 'cost ~$5 to ~$10'],
+    ['spaced asterisks (multiplication)', '2 * 3 * 4 = 24'],
+    ['spaced double asterisks (exponent)', '2 ** 3 ** 4'],
+    ['spaced double tildes', 'a ~~ b ~~ c'],
+    ['a lone star with a trailing space', '* not a list'],
+  ])('%s stay literal text', (_name, md) => {
+    const html = inner(md)
+    expect(html).not.toMatch(/<(em|strong|s|span)[ >]/)
+    expect(html).toBe(md)
+    expect(roundTrip(md)).toBe(md)
+  })
+
+  test.each([
+    ['italic', '*it*', '<em>it</em>'],
+    ['bold', '**bo**', '<strong>bo</strong>'],
+    ['strike', '~~st~~', '<s>st</s>'],
+    ['unlinked-ref marker', '~gone~', '<span class="tt-unlinked-ref">gone</span>'],
+    ['multi-word italic', 'a *two words* b', 'a <em>two words</em> b'],
+    ['one-character bold', '**x**', '<strong>x</strong>'],
+    ['bold ending in punctuation, then a space (template label)', '**Label:** text', '<strong>Label:</strong> text'],
+  ])('a well-formed %s still renders', (_name, md, expected) => {
+    expect(inner(md)).toContain(expected)
+    expect(roundTrip(md)).toBe(md)
+  })
+
+  test('markers padded INSIDE are not formatting; the same text padded OUTSIDE is', () => {
+    expect(inner('*padded *')).not.toContain('<em>')
+    expect(inner('**padded **')).not.toContain('<strong>')
+    expect(inner('*padded* ok')).toContain('<em>padded</em>')
+  })
+
+  test('a pair of tildes inside a URL-ish path is no longer swallowed', () => {
+    const html = inner('see https://example.com/~alice/a and ~bob/b')
+    expect(html).not.toContain('tt-unlinked-ref')
+    expect(html).toContain('https://example.com/~alice/a and ~bob/b')
+  })
+
+  test('the unlink-on-delete marker keeps rendering when the title had edge whitespace', () => {
+    const titles = new Map([['a1', '  Fix bug  ']])
+    const md = unlinkRefsInText('see @[Fix](action:a1)', 'action', titles)
+    expect(md).toBe('see ~Fix bug~')
+    expect(inner(md)).toContain('<span class="tt-unlinked-ref">Fix bug</span>')
+  })
+})
+
+describe('whitespace at the edge of formatted text moves OUTSIDE the markers on the way out (so it re-renders)', () => {
+  const toMd = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return htmlToMd(d) }
+  const reload = (md: string) => toMd(mdToHtml(md))
+
+  test.each([
+    ['bold with a trailing space', '<div><strong>hello </strong>world</div>', '**hello** world'],
+    ['bold with a leading space', '<div>hi<strong> there</strong></div>', 'hi **there**'],
+    ['italic with both', '<div>a<em> b </em>c</div>', 'a *b* c'],
+    ['strike with a trailing space', '<div><s>gone </s>now</div>', '~~gone~~ now'],
+    ['unlinked marker with a trailing space', '<div><span class="tt-unlinked-ref">Fix </span>x</div>', '~Fix~ x'],
+    ['nested bold+italic with a trailing space', '<div><strong><em>x </em></strong>y</div>', '***x*** y'],
+  ])('%s', (_name, html, md) => {
+    expect(toMd(html)).toBe(md)
+    expect(reload(md)).toBe(md) // and the result is stable after a reload
+  })
+
+  test('whitespace-only formatting leaves no empty markers', () => {
+    expect(toMd('<div>a<strong> </strong>b</div>')).toBe('a b')
+    expect(toMd('<div>a<em></em>b</div>')).toBe('ab')
+  })
+})
+
+describe('[text](target) that is not a safe link stays literal instead of losing its brackets', () => {
+  test.each([
+    'see [1](page 2)',
+    'f(x) = a[i](y)',
+    'docs [here](ftp://server/file)',
+  ])('%s', (md) => {
+    expect(mdToHtml(md)).not.toContain('<a ')
+    expect(roundTrip(md)).toBe(md) // editing the note no longer eats the brackets
+  })
+
+  test('a safe link is still a link', () => {
+    expect(mdToHtml('[x](https://e.com)')).toContain('<a href="https://e.com"')
+    expect(roundTrip('[x](https://e.com)')).toBe('[x](https://e.com)')
+  })
+
+  test('a dangerous scheme is still never an anchor; it is shown as inert text', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('click [here](javascript:alert(1)) now')
+    expect(probe.querySelector('a')).toBeNull()
+    expect(probe.textContent).toBe('click [here](javascript:alert(1)) now')
+  })
+})
+
+describe('seeded round-trip fuzz (the editor rewrites the WHOLE note on every edit, so a lossy case silently mutates untouched text)', () => {
+  let seed = 4242
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
+  const pick = (a: string[]): string => a[Math.floor(rnd() * a.length)]!
+  const words = ['alpha', 'x', 'a_b', '2', 'foo.bar', '5%', 'R$10', '#tag', '1.5', '(note)', '[ref]', 'a&b', '<tag>', '"q"', 'ünï', '→', '😀', '~3', '10~', '*', '**', '~~', '~', '---', '|', '=', '[1](page 2)', '@']
+  const marked = ['**bold**', '*it*', '~~del~~', '~gone~', '<u>und</u>', '***bi***', '**a *b* c**', '[l](https://a.com/x?y=1&z=2)', '@[Ann](person:p1)']
+  const line = (): string => {
+    const parts = Array.from({ length: 1 + Math.floor(rnd() * 5) }, () => (rnd() < 0.3 ? pick(marked) : pick(words)))
+    const s = parts.join(' ')
+    const r = rnd()
+    return r < 0.1 ? '# ' + s : r < 0.25 ? '- ' + s : r < 0.3 ? '> ' + s : s
+  }
+  const note = () => Array.from({ length: 1 + Math.floor(rnd() * 3) }, line).join('\n')
+
+  test('md -> html -> md never drifts on later edits (idempotent after the first pass)', () => {
+    const drifting: string[] = []
+    for (let i = 0; i < 3000; i++) {
+      const once = roundTrip(note())
+      if (roundTrip(once) !== once) drifting.push(once)
+    }
+    expect(drifting.slice(0, 5)).toEqual([])
+  })
+
+  test('md -> html -> md is lossless for these notes', () => {
+    const lossy: string[] = []
+    for (let i = 0; i < 3000; i++) {
+      const md = note()
+      if (roundTrip(md) !== md) lossy.push(md)
+    }
+    expect(lossy.slice(0, 5)).toEqual([])
+  })
+})
+
+describe('very long single lines cannot freeze the renderer', () => {
+  // The link / ref / underline passes were quadratic on "opener, no closer"
+  // input: 20k of "@[" took ~0.9s and 100k took tens of seconds on the UI thread.
+  test.each([
+    ['@[', 100_000],
+    ['[', 100_000],
+    ['<u>', 100_000],
+  ])('%s x %i renders in well under a second', (unit, n) => {
+    const line = unit.repeat(n)
+    const t0 = performance.now()
+    mdToHtml(line)
+    expect(performance.now() - t0).toBeLessThan(1000)
+  })
+
+  test('an over-long line is shown as plain escaped text and survives a round trip untouched', () => {
+    const line = 'a <b> & **not bold** ' + 'x'.repeat(20_000)
+    const html = mdToHtml(line)
+    expect(html).toContain('&lt;b&gt; &amp; **not bold**')
+    expect(html).not.toContain('<strong>')
+    expect(roundTrip(line)).toBe(line)
+  })
+
+  test('a line just under the limit still gets full inline formatting', () => {
+    const line = '**bold** [l](https://e.com) ' + 'x'.repeat(9_000)
+    const html = mdToHtml(line)
+    expect(html).toContain('<strong>bold</strong>')
+    expect(html).toContain('<a href="https://e.com"')
+  })
+
+  test('only the over-long line is affected; its neighbours keep their formatting', () => {
+    const html = mdToHtml('**a**\n' + 'y'.repeat(20_000) + '\n**b**')
+    expect(html).toContain('<strong>a</strong>')
+    expect(html).toContain('<strong>b</strong>')
   })
 })

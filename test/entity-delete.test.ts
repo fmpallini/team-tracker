@@ -21,7 +21,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
   }
 }
 
-interface Extra { variant?: 'danger' | 'primary'; beforeRemove?: (id: string) => void }
+interface Extra { variant?: 'danger' | 'primary'; beforeRemove?: (id: string) => void; isBlank?: (r: Risk) => boolean }
 
 function mount(team: Team, extra: Extra = {}): { store: Store; del: ReturnType<typeof createEntityDelete<'risks'>> } {
   const doc = createEmptyDocument('en-US')
@@ -175,5 +175,46 @@ describe('createEntityDelete.requestDelete', () => {
     mount(makeTeam({ risks: [entity] }), { variant: 'danger' }).del.requestDelete(entity)
 
     expect(confirmButton().className).not.toBe(plainClass)
+  })
+})
+
+describe('createEntityDelete.requestDelete — what counts as "blank" (silent, no confirm, no undo)', () => {
+  const hasConfirm = (): boolean => !!document.querySelector('.tt-modal-overlay')
+
+  test('default rule: an empty title is silent', () => {
+    const { store, del } = mount(makeTeam({ risks: [risk({ title: '  ' })] }))
+    del.requestDelete(store.doc.teams[0]!.risks[0]!)
+    expect(hasConfirm()).toBe(false)
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+  })
+
+  test('with isBlank: an empty title that still carries content is NOT deleted silently — it asks first', () => {
+    const { store, del } = mount(makeTeam({ risks: [risk({ title: '', followup: 'agreed with vendor' })] }), { isBlank: (r) => r.title.trim() === '' && r.followup.trim() === '' })
+    del.requestDelete(store.doc.teams[0]!.risks[0]!)
+    expect(hasConfirm()).toBe(true)
+    expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-message')?.textContent).toContain('(untitled)')
+  })
+
+  test('with isBlank: confirming that prompt deletes and offers undo that restores the content', () => {
+    const { store, del } = mount(makeTeam({ risks: [risk({ title: '', followup: 'agreed with vendor' })] }), { isBlank: (r) => r.followup.trim() === '' })
+    del.requestDelete(store.doc.teams[0]!.risks[0]!)
+    confirmButton().click()
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+    expect(store.doc.teams[0]!.risks[0]!.followup).toBe('agreed with vendor')
+  })
+
+  test('with isBlank: a genuinely blank draft is still silent', () => {
+    const { store, del } = mount(makeTeam({ risks: [risk({ title: '', followup: '' })] }), { isBlank: (r) => r.title.trim() === '' && r.followup.trim() === '' })
+    del.requestDelete(store.doc.teams[0]!.risks[0]!)
+    expect(hasConfirm()).toBe(false)
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+  })
+
+  test('with isBlank: a named item always asks, whatever isBlank says about the rest', () => {
+    const { store, del } = mount(makeTeam({ risks: [risk({ title: 'Slip' })] }), { isBlank: () => true })
+    del.requestDelete(store.doc.teams[0]!.risks[0]!)
+    expect(hasConfirm()).toBe(true)
   })
 })

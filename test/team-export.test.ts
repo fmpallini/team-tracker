@@ -149,3 +149,81 @@ describe('remapForImport', () => {
     expect(imported!.actionColumns).toEqual(brandNew.actionColumns)
   })
 })
+
+describe('parseImportFile validates the shape instead of trusting it', () => {
+  const enc = (o: unknown) => new TextEncoder().encode(JSON.stringify(o))
+  const file = (teams: unknown[]) => enc({ kind: 'team-tracker-teams-export', schemaVersion: SCHEMA_VERSION, exportedAt: 'x', teams })
+  const person = (over: Record<string, unknown> = {}) => ({ id: 'p', name: 'N', role: 'r', parentId: null, order: 0, ...over })
+  const team = (over: Record<string, unknown> = {}) => ({ name: 'T', emoji: '🚀', stakeholders: [], members: [], ...over })
+
+  test.each([
+    ['a team that is not an object', [null]],
+    ['a team without a name', [team({ name: undefined })]],
+    ['a team whose name is not a string', [team({ name: 5 })]],
+    ['a team missing its stakeholders list', [team({ stakeholders: undefined })]],
+    ['a team whose members is not an array', [team({ members: {} })]],
+    ['a person that is not an object', [team({ members: ['x'] })]],
+    ['a person without an id', [team({ members: [person({ id: undefined })] })]],
+    ['a person with an empty id', [team({ members: [person({ id: '' })] })]],
+    ['a person whose name is not a string', [team({ members: [person({ name: 5 })] })]],
+    ['a person without an order', [team({ members: [person({ order: undefined })] })]],
+    ['a person with a non-finite order', [team({ members: [person({ order: null })] })]],
+    ['a person whose parentId is a number', [team({ members: [person({ parentId: 3 })] })]],
+  ])('rejects %s', (_label, teams) => {
+    expect(() => parseImportFile(file(teams))).toThrow(InvalidExportFileError)
+  })
+
+  test('is lenient about what a teammate can reasonably omit: emoji, role, a missing parentId', () => {
+    const parsed = parseImportFile(file([team({ emoji: undefined, members: [person({ role: undefined, parentId: undefined })] })]))
+    expect(parsed.teams[0]!.emoji).toBe('')
+    expect(parsed.teams[0]!.members[0]).toMatchObject({ role: '', parentId: null })
+  })
+
+  test('a file produced by buildExport still parses to exactly what was exported', () => {
+    const exported = buildExport([sampleTeam()])
+    const parsed = parseImportFile(enc(exported))
+    expect(parsed.teams).toEqual(exported.teams)
+  })
+})
+
+describe('remapForImport keeps the imported structure sound', () => {
+  const t = (members: Array<{ id: string; parentId: string | null; name?: string }>) => [{
+    name: 'T', emoji: '', stakeholders: [],
+    members: members.map((m, i) => ({ id: m.id, name: m.name ?? m.id, role: '', parentId: m.parentId, order: i })),
+  }]
+
+  test('people sharing a source id still get distinct new ids', () => {
+    const out = remapForImport(t([{ id: 'd', parentId: null, name: 'one' }, { id: 'd', parentId: null, name: 'two' }]), 'en-US')
+    const ids = out[0]!.members.map((m) => m.id)
+    expect(new Set(ids).size).toBe(2)
+  })
+
+  test('a person that is its own parent becomes a root', () => {
+    const out = remapForImport(t([{ id: 'a', parentId: 'a' }]), 'en-US')
+    expect(out[0]!.members[0]!.parentId).toBeNull()
+  })
+
+  test('a parent cycle is cut so nobody becomes unreachable from a root', () => {
+    const out = remapForImport(t([{ id: 'a', parentId: 'b' }, { id: 'b', parentId: 'a' }]), 'en-US')
+    const m = out[0]!.members
+    expect(m.filter((p) => p.parentId === null).length).toBeGreaterThanOrEqual(1)
+    const byId = new Map(m.map((p) => [p.id, p]))
+    for (const p of m) { // every person reaches a root
+      let cur = p; const seen = new Set<string>()
+      while (cur.parentId !== null) { expect(seen.has(cur.id)).toBe(false); seen.add(cur.id); cur = byId.get(cur.parentId)! }
+    }
+  })
+
+  test('someone hanging off a cycle keeps their own parent', () => {
+    const out = remapForImport(t([{ id: 'a', parentId: 'b' }, { id: 'b', parentId: 'a' }, { id: 'c', parentId: 'a' }]), 'en-US')
+    const [a, , c] = out[0]!.members
+    expect(c!.parentId).toBe(a!.id)
+  })
+
+  test('a parent pointing at nobody in the file becomes a root; valid parents still map', () => {
+    const out = remapForImport(t([{ id: 'a', parentId: 'ghost' }, { id: 'b', parentId: 'a' }]), 'en-US')
+    const [a, b] = out[0]!.members
+    expect(a!.parentId).toBeNull()
+    expect(b!.parentId).toBe(a!.id)
+  })
+})

@@ -1331,6 +1331,20 @@ describe('milestone delete — behaviour pins', () => {
     expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
   })
 
+  it('an UNTITLED milestone that carries a follow-up is not deleted silently: it asks first', () => {
+    const { container, store } = mount({ milestones: [milestone({ id: 'm1', title: '', followup: 'confirm budget with finance' })] })
+    deleteRowButton(container, 'm1').click()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+  })
+
+  it('an untitled milestone already marked done is not an untouched draft', () => {
+    const { container, store } = mount({ milestones: [milestone({ id: 'm1', title: '', done: true })] })
+    deleteRowButton(container, 'm1').click()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+  })
+
   it('the silent delete is scoped the same way', () => {
     const { container, store } = mount({
       milestones: [milestone({ id: 'm1', title: '', date: '2026-01-01' }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],

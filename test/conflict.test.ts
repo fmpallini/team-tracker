@@ -119,3 +119,51 @@ test('renders the fork option in pt-BR', () => {
   const labels = Array.from(document.querySelectorAll('.tt-modal-buttons button')).map((b) => b.textContent)
   expect(labels).toEqual(['Salvar minha cópia como novo arquivo…', 'Recarregar', 'Sobrescrever'])
 })
+
+describe('onDismiss (closed without choosing)', () => {
+  const esc = (): void => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) }
+
+  test('Escape fires onDismiss exactly once', () => {
+    const onDismiss = vi.fn()
+    showConflictModal({ locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}), onDismiss })
+    esc()
+    expect(overlays()).toHaveLength(0)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  test('choosing Overwrite does not fire onDismiss', () => {
+    const onDismiss = vi.fn()
+    showConflictModal({ locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}), onDismiss })
+    clickByText('Overwrite')
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  test('confirming Reload does not fire onDismiss; cancelling its confirm then Escape on the outer modal does', () => {
+    const onDismiss = vi.fn()
+    showConflictModal({ locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}), onDismiss })
+    clickByText('Reload')
+    clickByText('Cancel') // inner confirm only
+    expect(onDismiss).not.toHaveBeenCalled()
+    esc()
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  test('confirming Reload closes both modals without onDismiss', () => {
+    const onDismiss = vi.fn()
+    showConflictModal({ locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}), onDismiss })
+    clickByText('Reload')
+    clickByText('Reload')
+    expect(overlays()).toHaveLength(0)
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  test('Fork closing the modal does not fire onDismiss, and a cancelled picker reopens it', async () => {
+    const onDismiss = vi.fn()
+    const onFork = vi.fn(async () => false)
+    showConflictModal({ locale: 'en-US', onReload: vi.fn(async () => {}), onOverwrite: vi.fn(async () => {}), onFork, onDismiss })
+    clickByText('Save my copy as a new file…')
+    await Promise.resolve(); await Promise.resolve()
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(overlays()).toHaveLength(1)
+  })
+})

@@ -2,7 +2,7 @@ import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 
-export const SCHEMA_VERSION = 15
+export const SCHEMA_VERSION = 16
 
 export class SchemaTooNewError extends Error {}
 
@@ -172,6 +172,17 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   },
   14: (d) => {
     d.favorites = Array.isArray(d.favorites) ? d.favorites : []
+  },
+  // Template placeholders moved from Portuguese to English words. The old
+  // `{time}` meant the TEAM name and the new `{time}` is the clock, so the
+  // rename has to be a single pass over each body (not four chained
+  // replaces) or a freshly renamed `{time}` would be renamed again.
+  15: (d) => {
+    const RENAMES: Record<string, string> = { '{data}': '{date}', '{hora}': '{time}', '{pessoa}': '{person}', '{time}': '{team}' }
+    if (!Array.isArray(d.templates)) return
+    for (const tpl of d.templates as Record<string, unknown>[]) {
+      if (typeof tpl?.body === 'string') tpl.body = tpl.body.replace(/{(?:data|hora|pessoa|time)}/g, (m) => RENAMES[m]!)
+    }
   },
 }
 

@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, pickCreate, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
@@ -251,4 +251,122 @@ test('writeFile repoints lastHandle once the bytes are written', async () => {
   const { handle } = mockHandle(1000)
   await writeFile({ handle, name: 'x.tmv', lastModified: 1000 }, new Uint8Array([1]))
   expect(idbMocks.idbSet).toHaveBeenCalledWith('lastHandle', handle)
+})
+
+describe('the lastHandle pointer is best-effort', () => {
+  beforeEach(() => {
+    idbMocks.idbSet.mockReset()
+    idbMocks.idbSet.mockRejectedValue(new DOMException('quota', 'QuotaExceededError'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    idbMocks.idbSet.mockReset()
+    idbMocks.idbSet.mockResolvedValue(undefined)
+    vi.restoreAllMocks()
+  })
+
+  test('writeFile still succeeds (bytes on disk, lastModified advanced) when IndexedDB rejects', async () => {
+    const { handle, getWritten } = mockHandle(1000)
+    const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
+    await expect(writeFile(s, new Uint8Array([4]))).resolves.toBeUndefined()
+    expect(getWritten()).toEqual(new Uint8Array([4]))
+    expect(s.lastModified).toBeGreaterThan(1000)
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  test('forceWrite still succeeds when IndexedDB rejects', async () => {
+    const { handle, getWritten } = mockHandle(1000)
+    await expect(forceWrite({ handle, name: 'x.tmv', lastModified: 1 }, new Uint8Array([6]))).resolves.toBeUndefined()
+    expect(getWritten()).toEqual(new Uint8Array([6]))
+  })
+
+  test('openFromHandle still returns the file when IndexedDB rejects', async () => {
+    const result = await openFromHandle(mockLaunchHandle('granted'))
+    expect(result!.bytes).toEqual(new Uint8Array([7]))
+  })
+
+  test('pickOpen still returns the file when IndexedDB rejects', async () => {
+    const handle = mockLaunchHandle('granted')
+    Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: vi.fn(async () => [handle]) })
+    try {
+      const result = await pickOpen()
+      expect(result!.session.handle).toBe(handle)
+      expect(result!.bytes).toEqual(new Uint8Array([7]))
+    } finally {
+      delete (window as unknown as Record<string, unknown>).showOpenFilePicker
+    }
+  })
+})
+
+describe('external-change detection compares content when only the mtime differs', () => {
+  /** A handle whose on-disk bytes and mtime the test controls independently. */
+  function diskHandle(initial: Uint8Array, mtime: number) {
+    let bytes = initial
+    let m = mtime
+    const handle = {
+      name: 'x.tmv',
+      async getFile() { const b = bytes; return { lastModified: m, size: b.length, async arrayBuffer() { return b.slice().buffer } } },
+      async createWritable() { return { async write(b: Uint8Array) { bytes = b }, async close() { m += 1000 } } },
+    } as unknown as FileSystemFileHandle
+    return { handle, touch: () => { m += 5000 }, replace: (b: Uint8Array) => { bytes = b; m += 5000 }, current: () => bytes }
+  }
+
+  test('a touched-but-identical file (cloud sync, antivirus) is not a conflict', async () => {
+    const disk = diskHandle(new Uint8Array([1, 2, 3]), 1000)
+    const s: FileSession = { handle: disk.handle, name: 'x.tmv', lastModified: 1000 }
+    await writeFile(s, new Uint8Array([1, 2, 3])) // records what is on disk
+    disk.touch()
+    await expect(writeFile(s, new Uint8Array([9, 9]))).resolves.toBeUndefined()
+    expect(disk.current()).toEqual(new Uint8Array([9, 9]))
+  })
+
+  test('a file whose content really changed still conflicts', async () => {
+    const disk = diskHandle(new Uint8Array([1, 2, 3]), 1000)
+    const s: FileSession = { handle: disk.handle, name: 'x.tmv', lastModified: 1000 }
+    await writeFile(s, new Uint8Array([1, 2, 3]))
+    disk.replace(new Uint8Array([1, 2, 4])) // same length, different byte
+    await expect(writeFile(s, new Uint8Array([9]))).rejects.toBeInstanceOf(ExternalChangeError)
+    expect(disk.current()).toEqual(new Uint8Array([1, 2, 4]))
+  })
+
+  test('a changed length conflicts without needing a byte compare', async () => {
+    const disk = diskHandle(new Uint8Array([1, 2, 3]), 1000)
+    const s: FileSession = { handle: disk.handle, name: 'x.tmv', lastModified: 1000 }
+    await writeFile(s, new Uint8Array([1, 2, 3]))
+    disk.replace(new Uint8Array([1, 2, 3, 4]))
+    await expect(writeFile(s, new Uint8Array([9]))).rejects.toBeInstanceOf(ExternalChangeError)
+  })
+
+  test('with no known baseline (nothing read or written yet) an mtime change still conflicts', async () => {
+    const disk = diskHandle(new Uint8Array([1]), 1000)
+    const s: FileSession = { handle: disk.handle, name: 'x.tmv', lastModified: 1000 }
+    disk.touch()
+    await expect(writeFile(s, new Uint8Array([2]))).rejects.toBeInstanceOf(ExternalChangeError)
+  })
+
+  test('the baseline follows readCurrent (a reload), so the next touch-only change is also tolerated', async () => {
+    const disk = diskHandle(new Uint8Array([5, 5]), 1000)
+    const s: FileSession = { handle: disk.handle, name: 'x.tmv', lastModified: 1 }
+    await readCurrent(s)
+    disk.touch()
+    await expect(writeFile(s, new Uint8Array([6]))).resolves.toBeUndefined()
+  })
+})
+
+describe('downloadFallback', () => {
+  test('keeps the blob URL alive long enough for Firefox/Safari to start the download', () => {
+    vi.useFakeTimers()
+    const create = vi.fn(() => 'blob:x')
+    const revoke = vi.fn()
+    Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke })
+    try {
+      downloadFallback('a.tmv', new Uint8Array([1]))
+      vi.advanceTimersByTime(1000)
+      expect(revoke).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(60_000)
+      expect(revoke).toHaveBeenCalledWith('blob:x')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

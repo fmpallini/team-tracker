@@ -112,11 +112,21 @@ describe('prefsNumberField', () => {
     expect(onCommit).toHaveBeenLastCalledWith(1)
   })
 
-  it('treats an emptied input as out of range (clamps to min)', () => {
+  it('an emptied input reverts to the last committed value and commits nothing', () => {
     const { input, onCommit } = make(12)
     input.value = ''
     input.dispatchEvent(new Event('change'))
-    // Number('') is 0, which is finite: it clamps to min rather than falling back.
-    expect(onCommit).toHaveBeenLastCalledWith(1)
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(input.value).toBe('12')
+  })
+
+  it('an emptied input reverts to the value committed most recently, not the one the field started with', () => {
+    const { input, onCommit } = make(12)
+    input.value = '30'
+    input.dispatchEvent(new Event('change'))
+    input.value = ''
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('30')
+    expect(onCommit).toHaveBeenCalledTimes(1)
   })
 })

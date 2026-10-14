@@ -2006,6 +2006,26 @@ describe('risk delete — behaviour pins', () => {
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
+  it('an UNTITLED risk that carries a plan/follow-up is not deleted silently: it asks first, and Undo brings the content back', () => {
+    const { container, store } = mount({ risks: [risk({ id: 'r1', title: '', followup: 'vendor agreed to patch by Q3' }), risk({ id: 'r2', title: 'Other', order: 1 })] })
+    deleteRowButton(container, 'r1').click()
+
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+
+    clickByTitleOrText(document.body, 'Delete')
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r2'])
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+    expect(store.doc.teams[0]!.risks.find((r) => r.id === 'r1')!.followup).toBe('vendor agreed to patch by Q3')
+  })
+
+  it('an untitled risk whose exposure was changed is not an untouched draft either', () => {
+    const { container, store } = mount({ risks: [risk({ id: 'r1', title: '', chance: 3, impact: 3 })] })
+    deleteRowButton(container, 'r1').click()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.risks).toHaveLength(1)
+  })
+
   it('the delete lands as ONE mutation scoped to the team with no sections (it rewrites mentions team-wide)', () => {
     const { container, store } = mount()
     const seen = recordScopes(store)

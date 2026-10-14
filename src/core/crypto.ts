@@ -85,9 +85,18 @@ export async function encryptDocument(doc: Doc, password: string): Promise<Uint8
   return out
 }
 
+/**
+ * Whether `bytes` carry the `.tmv` container header (magic, format version,
+ * and room for the fixed-size fields). Says nothing about the password or the
+ * payload — it lets the open flow report an empty or foreign file as corrupt
+ * BEFORE making the user type a password for it.
+ */
+export function looksLikeTmv(bytes: Uint8Array): boolean {
+  return bytes.length >= 78 && MAGIC.every((b, i) => bytes[i] === b) && bytes[4] === FORMAT_VERSION
+}
+
 async function decryptRaw(bytes: Uint8Array, password: string): Promise<Record<string, unknown>> {
-  if (bytes.length < 78 || MAGIC.some((b, i) => bytes[i] !== b) || bytes[4] !== FORMAT_VERSION)
-    throw new CorruptFileError()
+  if (!looksLikeTmv(bytes)) throw new CorruptFileError()
   const salt = bytes.slice(5, 21), ivKcv = bytes.slice(21, 33)
   const kcv = bytes.slice(33, 65), ivData = bytes.slice(65, 77), data = bytes.slice(77)
   // getSessionKey caches before the key-check below has vouched for the

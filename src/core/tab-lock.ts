@@ -20,7 +20,7 @@ import type { SaveController } from './save-controller'
 import type { FileSession } from './fs'
 import { t } from './i18n'
 import { el } from '../ui/dom'
-import { toast } from '../ui/modal'
+import { toast, dismissToast } from '../ui/modal'
 
 type TakeoverMessage = { type: 'takeover' }
 
@@ -99,6 +99,12 @@ export function createTabLock(deps: TabLockDeps): () => void {
   // window below.
   let visibleReadOnly = false
 
+  // A blocking lock request of ours is queued (or being served). A second click
+  // on "Take control" must not queue another: the leftover request would be
+  // granted the moment we hand the lock over again, silently taking it straight
+  // back from the tab that just asked for it.
+  let takeoverRequested = false
+
   function enterReadOnly(): void {
     store.setReadOnly(true)
     if (!visibleReadOnly) {
@@ -135,6 +141,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
     const opts = waitForRelease ? {} : { ifAvailable: true }
     locks
       .request(channelName, opts, (lock) => {
+        if (waitForRelease) takeoverRequested = false
         // A read-only tab can close its file while a "Take control" request
         // is still queued. Granted after that, returning undefined hands the
         // lock straight back — holding it would lock every other tab out of
@@ -163,11 +170,18 @@ export function createTabLock(deps: TabLockDeps): () => void {
           await holdUntilReleased()
         })()
       })
-      .catch((e) => console.error(e))
+      .catch((e) => {
+        if (waitForRelease) takeoverRequested = false
+        console.error(e)
+      })
   }
 
   function requestTakeover(): void {
+    // Still re-announced: the holder may have deferred an earlier one (see
+    // `handOver`), and a message to a tab that already let go is ignored.
     bc?.postMessage({ type: 'takeover' } satisfies TakeoverMessage)
+    if (takeoverRequested) return
+    takeoverRequested = true
     requestLock(true)
   }
 
@@ -197,10 +211,20 @@ export function createTabLock(deps: TabLockDeps): () => void {
     requestLock(false)
   }
 
+  // A takeover asked for while this tab's edits could not be saved. Remembered
+  // so the handover happens by itself once they are (see the onDirty hook).
+  let takeoverPending = false
+  let handingOver = false
+
   function onTakeoverMessage(ev: MessageEvent<TakeoverMessage>): void {
     if (ev.data?.type !== 'takeover' || !releaseLock) return
-    const release = releaseLock
-    ;(async () => {
+    void handOver().catch((e) => console.error(e))
+  }
+
+  async function handOver(): Promise<void> {
+    if (handingOver) return
+    handingOver = true
+    try {
       // Task 25 fix #4: `saveNow()` can return before the write actually
       // lands — it no-ops synchronously while another save is in flight
       // and just queues a trailing round. Releasing the lock right after
@@ -209,12 +233,37 @@ export function createTabLock(deps: TabLockDeps): () => void {
       // is still on its way to disk. `flush()` blocks until the controller
       // is fully idle — in-flight save and any trailing round both done —
       // before the lock (and read-write access) actually changes hands.
-      if (store.dirty) await saveCtl.saveNow()
+      //
+      // Always asked, even on a clean store: saveNow() first commits any
+      // editor change still inside its debounce window, which is what makes
+      // the store dirty in the first place.
+      await saveCtl.saveNow()
       await saveCtl.flush()
+      // `saveNow()` resolves normally when the write failed (permission, disk,
+      // an open conflict modal). Letting go now would strand those edits in a
+      // tab that is about to become read-only — and closing a read-only tab
+      // discards them without a prompt. Keep the lock; hand over when saved.
+      if (store.dirty) {
+        if (!takeoverPending) {
+          takeoverPending = true
+          toast(t(store.doc.prefs.locale, 'takeover_deferred_toast'), { sticky: true, key: 'takeover-deferred' })
+        }
+        return
+      }
+      takeoverPending = false
+      dismissToast('takeover-deferred')
+      const release = releaseLock
+      if (!release) return
       enterReadOnly()
       release()
-    })().catch((e) => console.error(e))
+    } finally {
+      handingOver = false
+    }
   }
+
+  const unsubscribeDirty = store.onDirty((dirty) => {
+    if (!dirty && takeoverPending && releaseLock) void handOver().catch((e) => console.error(e))
+  })
 
   if (deps.lockKey) {
     deps.lockKey.then(
@@ -244,5 +293,8 @@ export function createTabLock(deps: TabLockDeps): () => void {
     releaseLock?.()
     bc?.close()
     unsubscribeBlocked()
+    unsubscribeDirty()
+    takeoverPending = false
+    dismissToast('takeover-deferred')
   }
 }

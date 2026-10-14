@@ -41,6 +41,15 @@ const COLOR_KEYS: Record<ActionItemColor, 'kanban_color_slate' | 'kanban_color_b
 // --- pure, unit-testable helpers -------------------------------------------
 
 /** Items in `status`, sorted by `order`. */
+/**
+ * True when a card is an untouched draft: nothing typed anywhere. Used so the
+ * delete flow only skips its confirm + undo for a card that holds nothing, not
+ * for any card whose summary happens to be empty.
+ */
+export function isBlankActionDraft(i: ActionItem): boolean {
+  return i.summary.trim() === '' && i.notes.trim() === '' && i.assignee.trim() === '' && i.dueDate === null
+}
+
 export function itemsByStatus(items: ActionItem[], status: ActionItem['status']): ActionItem[] {
   return items.filter((i) => i.status === status).sort((a, b) => a.order - b.order)
 }
@@ -225,6 +234,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     ctx, teamId, collection: 'actionItems', refKind: 'action', labelOf: (i) => i.summary, labelParam: 'summary',
     messages: { title: 'kanban_delete_title', confirm: 'kanban_delete_confirm', button: 'kanban_delete_btn', toast: 'action_deleted_toast' },
     variant: 'danger',
+    // A card with no summary can still hold notes, an assignee or a due date.
+    isBlank: isBlankActionDraft,
   })
 
   function addColumn(): void {

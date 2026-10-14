@@ -1094,8 +1094,25 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Close')
   })
 
-  test('the Delete button on an existing card edited down to blank still closes (not blocked)', () => {
+  test('the Delete button on an existing card edited down to blank is not blocked by the name rule — it asks (the notes are real content), then closes', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Had a name', notes: 'has notes' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    clickByTitleOrText(container, 'Double-click or use the pencil to edit')
+    setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, '')
+    clickByTitleOrText(document.body, 'Delete')
+
+    // The notes make this more than an empty draft: confirm first, card stays up behind it.
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+    clickConfirmDelete()
+
+    expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+  })
+
+  test('the Delete button on an existing card edited down to blank with NOTHING else closes immediately', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Had a name', notes: '' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
@@ -1248,6 +1265,16 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Delete')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('deleting a card with no summary but real notes asks for confirmation instead of vanishing', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', summary: '', notes: 'call the vendor before Friday' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    clickByTitleOrText(document.body, 'Delete')
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
   })
 
   test('deleting a card whose summary is blank does not pay for a whole-team clone', () => {

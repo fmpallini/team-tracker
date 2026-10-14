@@ -7,7 +7,7 @@ import { docToBytes } from './doc-bytes'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
-import type { BackupController } from './backup-controller'
+import type { BackupController, BackupHealth } from './backup-controller'
 import { backupHealthPillState } from './backup-controller'
 import { toast, dismissToast } from '../ui/modal'
 
@@ -66,6 +66,16 @@ export interface SaveControllerDeps {
   backupCtl?: BackupController
   /** Opens Prefs on the Backup tab (where backup settings live) — the orphaned-backup toast's action button. Optional like backupCtl — not required by every caller/test. */
   onOpenBackupPrefs?: () => void
+  /**
+   * Commits any debounced editor change into the store. Called at the top of
+   * `saveNow()` — the one choke point every trigger funnels through — so a
+   * Ctrl+S, a save-pill click or a tab-lock handover within the editors'
+   * debounce window of a keystroke saves that keystroke instead of a document
+   * that doesn't contain it yet (and instead of no-opping on a store that only
+   * looks clean). Wired to the editors by main.ts; optional so headless
+   * callers and tests don't need it.
+   */
+  flushPending?: () => void
 }
 
 /** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
@@ -230,7 +240,12 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     } catch (e) {
       console.error(e)
     }
-    const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    let health: BackupHealth = 'ok'
+    try {
+      health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    } catch (e) {
+      console.error(e)
+    }
     // The regrant above just fixed the lapse that got us here — reset the
     // latch so a genuinely NEW backup-permission lapse before the next full
     // save cycle still gets its own toast instead of a silent pill change.
@@ -340,7 +355,16 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     permissionEpisodeToasted = false
     dismissToast(SAVE_PERMISSION_TOAST_KEY)
     dismissToast(SAVE_ERROR_TOAST_KEY)
-    const health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    // The primary file is already written and marked saved. A failing backup
+    // lookup (IndexedDB blocked, handle gone) must not leave the pill on
+    // "saving…" or reject out of the save cycle; the backup's own write path
+    // reports its failures, so an unreadable health just reads as "nothing to flag".
+    let health: BackupHealth = 'ok'
+    try {
+      health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
+    } catch (e) {
+      console.error(e)
+    }
     if (health === 'orphaned') {
       // The moved-computer case: `backupHandleId` travelled inside the .tmv
       // itself, but the handle it names only ever lived in the old machine's
@@ -417,6 +441,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // the auto-save interval firing every few minutes shouldn't pile up
     // trailing saves behind an unresolved conflict.
     if (deps.isConflictOpen?.()) return Promise.resolve()
+    try {
+      deps.flushPending?.()
+    } catch (e) {
+      console.error(e)
+    }
     const explicit = opts?.explicit ?? false
     if (saving) {
       // Reentrancy guard: never run two writes in parallel. One trailing

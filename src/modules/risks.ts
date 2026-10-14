@@ -360,6 +360,9 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     ctx, teamId, collection: 'risks', refKind: 'risk', labelOf: (r) => r.title, labelParam: 'title',
     messages: { title: 'risk_delete_title', confirm: 'risk_delete_confirm', button: 'risk_delete_btn', toast: 'risk_deleted_toast' },
     beforeRemove: (id) => expandable.collapse(id),
+    // Untitled is not the same as empty: a risk can still carry a plan,
+    // exposure or follow-up worth a confirm and an undo.
+    isBlank: (r) => isBlankRiskDraft(r, newRiskFollowup()),
   })
 
   function setClosed(id: string, closed: boolean): void {

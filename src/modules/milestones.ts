@@ -276,6 +276,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     ctx, teamId, collection: 'milestones', refKind: 'milestone', labelOf: (m) => m.title, labelParam: 'title',
     messages: { title: 'milestone_delete_title', confirm: 'milestone_delete_confirm', button: 'milestone_delete_btn', toast: 'milestone_deleted_toast' },
     beforeRemove: (id) => expandable.collapse(id),
+    isBlank: isBlankMilestoneDraft,
   })
 
   // --- timeline (SVG) -------------------------------------------------------

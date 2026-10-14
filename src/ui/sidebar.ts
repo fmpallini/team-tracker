@@ -809,6 +809,16 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   })
   const onAddTeamRequest = (): void => openAddModal()
   document.addEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
+  // A window left open overnight never fires a store change, so the due badges
+  // (and the OS app badge) kept showing yesterday's buckets until the user's
+  // first click. renderNav() already rebuilds when the calendar day moved and
+  // is a plain highlight toggle otherwise, so asking it when the user comes
+  // back is cheap.
+  const onReturn = (): void => {
+    if (document.visibilityState !== 'hidden') renderNav()
+  }
+  document.addEventListener('visibilitychange', onReturn)
+  window.addEventListener('focus', onReturn)
 
   return {
     setSpaceConstrained,
@@ -826,6 +836,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       unsubscribeContent()
       unsubscribeMutate()
       document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
+      document.removeEventListener('visibilitychange', onReturn)
+      window.removeEventListener('focus', onReturn)
     },
   }
 }

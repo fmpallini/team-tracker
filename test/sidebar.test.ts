@@ -642,6 +642,56 @@ describe('due badge', () => {
     expect(btn.querySelector('.tt-due-badge')).toBeNull()
   })
 
+  describe('calendar day rolling over while the app sits idle', () => {
+    afterEach(() => { vi.useRealTimers() })
+
+    function idleOvernight() {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 9, 14, 23, 0)) // 14 Oct, 11pm
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      // dueSoonDays defaults to 7: due on the 22nd is outside the window tonight, inside it tomorrow.
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2026-10-22' })
+      expect(items()[0]!.querySelector('.tt-team-due-badge')).toBeNull()
+      vi.setSystemTime(new Date(2026, 9, 15, 8, 0)) // next morning, nothing touched
+      return store
+    }
+
+    test('the badges follow the new day as soon as the tab becomes visible again', () => {
+      idleOvernight()
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(items()[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+    })
+
+    test('and as soon as the window regains focus', () => {
+      idleOvernight()
+      window.dispatchEvent(new Event('focus'))
+      expect(items()[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+    })
+
+    test('within the same day it does not rebuild the rows (cheap no-op)', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 9, 14, 9, 0))
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      const row = items()[0]!
+      vi.setSystemTime(new Date(2026, 9, 14, 17, 0))
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+      expect(items()[0]).toBe(row)
+      expect(store.dirty).toBe(true) // untouched by the refresh
+    })
+
+    test('disposing the sidebar removes both listeners', () => {
+      const store = idleOvernight()
+      void store
+      lastSidebarHandle!.dispose()
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+      expect(items()[0]!.querySelector('.tt-team-due-badge')).toBeNull()
+    })
+  })
+
   test('per-team badge appears next to a team row only when that team has due items', () => {
     const { store } = setup()
     addTeam(store, 'Alpha')
