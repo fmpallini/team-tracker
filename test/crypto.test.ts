@@ -369,3 +369,14 @@ describe('shape validation on load (gap 4)', () => {
     expect((caught as CorruptFileError).path).toBeUndefined()
   })
 })
+
+test('a failed open attempt does not leak its file\'s salt into a later new file', async () => {
+  // File A is encrypted under a password the user then gets wrong. Typing the
+  // wrong password "x" must not leave {x, A's salt} cached, or a brand-new
+  // file B created under "x" would be written with A's salt.
+  const a = await encryptDocument(createEmptyDocument('pt-BR'), 'right')
+  resetSessionKey()
+  await expect(decryptDocument(a, 'x')).rejects.toBeInstanceOf(WrongPasswordError)
+  const b = await encryptDocument(createEmptyDocument('pt-BR'), 'x')
+  expect(Array.from(b.slice(5, 21))).not.toEqual(Array.from(a.slice(5, 21)))
+}, 30000)

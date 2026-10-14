@@ -368,6 +368,7 @@ const pt = {
   backup_permission_toast: 'Permissão de escrita do backup perdida — os dados seguem salvos no arquivo principal',
   backup_password_mismatch_toast: 'O backup pode ainda estar criptografado com a senha anterior — veja o indicador de salvamento para atualizá-lo',
   backup_orphaned_toast: 'Backup automático desativado — o arquivo de backup configurado não foi encontrado neste computador',
+  save_as_backup_detached_toast: 'Salvo como novo arquivo — backup automático desativado para não sobrescrever o backup do original. Escolha um novo arquivo de backup nas Preferências.',
   backup_orphaned_action: 'Configurar backup…',
   // An empty tree used to borrow `pane_empty` ("Nenhum módulo aberto"), which
   // told the user the opposite of what was true — the module *is* open. Each
@@ -951,6 +952,7 @@ const en: Record<MsgKey, string> = {
   backup_permission_toast: 'Backup file write access was lost — your data is still saved to the primary file',
   backup_password_mismatch_toast: 'The backup may still be encrypted with your previous password — see the save indicator to update it',
   backup_orphaned_toast: 'Automatic backup disabled — the configured backup file wasn\'t found on this computer',
+  save_as_backup_detached_toast: 'Saved as a new file — automatic backup turned off so the backup of the original file is not overwritten. Pick a new backup file in Preferences.',
   backup_orphaned_action: 'Set up backup…',
   person_box_hint: 'Double-click to open person notes',
   person_root_drop_hint: '⬆️ Drop here to move to the top level',

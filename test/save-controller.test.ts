@@ -269,6 +269,32 @@ test('"Save as..." toast action picks a new file via pickCreate, adopts the sess
   expect(store.dirty).toBe(false)
 })
 
+test('"Save as..." detaches the backup mirror so the new file cannot overwrite the original .bck', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9; d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'bck-of-original' })
+  const shell = makeShell()
+  const session = makeSession()
+  fsMocks.writeFile.mockImplementationOnce(async () => { throw new Error('disk full') })
+  fsMocks.pickCreate.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'new-name.tmv', lastModified: 42 })
+
+  const ctl = createSaveController({
+    store, session, getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(),
+  })
+
+  await ctl.saveNow()
+  const [, opts] = modalMocks.toast.mock.calls[0] as [string, { action?: { onClick: () => void } }]
+  opts.action?.onClick()
+  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 0))
+  await ctl.flush()
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBeNull()
+  // The reset is part of what the new file persists, not a later in-memory-only change.
+  expect(store.dirty).toBe(false)
+  expect(modalMocks.toast).toHaveBeenCalledWith(expect.stringMatching(/backup/i), expect.anything())
+})
+
 test('NotAllowedError (permission revoked): sticky toast with a "Grant access..." action, doc stays dirty, state is permission', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   store.update((d) => { d.prefs.autoSaveMin = 9 })

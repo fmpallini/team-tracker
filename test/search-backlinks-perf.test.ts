@@ -13,9 +13,16 @@
 // shapes run back-to-back against the same fixture, and only their ratio is
 // asserted.
 import { createSearchIndex } from '../src/core/search'
+import { setScopeContractEnabled } from './scope-contract'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { Doc, Team } from '../src/core/types'
+
+// These tests compare the cost of reads that follow store.update(); the scope
+// audit snapshots the document around every update and would add its own
+// (equal, per-edit) cost to both sides of a ratio.
+beforeAll(() => setScopeContractEnabled(false))
+afterAll(() => setScopeContractEnabled(true))
 
 const DAILY_NOTE_COUNT = 150
 const ACTION_ITEM_COUNT = 150

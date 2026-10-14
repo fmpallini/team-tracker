@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, pickCreate, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
@@ -234,4 +234,21 @@ test('pickCreateBackup omits startIn when no handle is given', async () => {
   await pickCreateBackup('team-tracker.bck')
   const opts = picker.mock.calls[0]![0]!
   expect(opts.startIn).toBeUndefined()
+})
+
+test('pickCreate does not repoint lastHandle: the picked file is still empty until its first write', async () => {
+  // Cancelling the create flow's password prompt used to leave lastHandle on a
+  // 0-byte file, which "reopen last" then reported as corrupt. writeFile /
+  // forceWrite set the pointer once real bytes are on disk.
+  const { handle } = mockHandle(1000)
+  stubSaveFilePicker(handle)
+  const session = await pickCreate('team-tracker.tmv')
+  expect(session!.handle).toBe(handle)
+  expect(idbMocks.idbSet).not.toHaveBeenCalled()
+})
+
+test('writeFile repoints lastHandle once the bytes are written', async () => {
+  const { handle } = mockHandle(1000)
+  await writeFile({ handle, name: 'x.tmv', lastModified: 1000 }, new Uint8Array([1]))
+  expect(idbMocks.idbSet).toHaveBeenCalledWith('lastHandle', handle)
 })

@@ -263,3 +263,33 @@ test('two indexes over the same document narrow independently', () => {
   // constrain it.
   expect(second.search('roll', null)).toHaveLength(2)
 })
+
+test('tied results keep document order whether or not narrowing produced them', () => {
+  // For "ab" both notes match at offset 2 with the same span, so ranking cannot
+  // separate them and document order is all that is left. But for the prefix
+  // "a" the second note ranks first (its "a" is earlier), and a narrowed result
+  // list starts from the previous query's *ranked* hits — so without an
+  // explicit tiebreak "ab" would come out in "a"'s order when typed and in
+  // document order when pasted.
+  const doc = docWithNotes(['xxab first', 'a ab second'])
+  const fresh = createSearchIndex(() => doc, () => 0).search('ab', null).map((r) => r.snippet)
+  expect(fresh).toEqual(['xxab first', 'a ab second'])
+
+  const typed = createSearchIndex(() => doc, () => 0)
+  expect(typed.search('a', null).map((r) => r.snippet)).toEqual(['a ab second', 'xxab first'])
+  expect(typed.search('ab', null).map((r) => r.snippet)).toEqual(fresh)
+})
+
+test('the same tiebreak holds across teams', () => {
+  const doc = createEmptyDocument('en-US')
+  const a = emptyTeam('a', 'A')
+  const b = emptyTeam('b', 'B')
+  a.dailyNotes['2026-01-01'] = 'xxab in team a'
+  b.dailyNotes['2026-01-01'] = 'a ab in team b'
+  doc.teams.push(a, b)
+  const typed = createSearchIndex(() => doc, () => 0)
+  typed.search('a', null)
+  const narrowed = typed.search('ab', null)
+  expect(narrowed.map((r) => r.loc.teamId)).toEqual(['a', 'b'])
+  expect(narrowed).toEqual(createSearchIndex(() => doc, () => 0).search('ab', null))
+})

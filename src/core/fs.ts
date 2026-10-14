@@ -56,9 +56,11 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
       types: [{ description: 'Team Tracker', accept: { 'application/vnd.teamtracker.tmv': ['.tmv'] } }],
     })
     const { lastModified } = await readHandle(handle)
-    const session: FileSession = { handle, name: handle.name, lastModified }
-    await idbSet('lastHandle', handle)
-    return session
+    // No idbSet('lastHandle') here: the picker has just created an EMPTY file,
+    // and the caller may still back out (the create flow's password prompt)
+    // — "reopen last" would then land on a 0-byte file and report it corrupt.
+    // writeFile/forceWrite repoint it once real bytes are on disk.
+    return { handle, name: handle.name, lastModified }
   } catch (e) {
     if (isAbortError(e)) return null
     throw e
@@ -68,11 +70,10 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
 /**
  * Save-picker for the daily `.bck` mirror file. Deliberately NOT `pickCreate`:
  *  - it must not touch the `'lastHandle'` IndexedDB key, which is the primary
- *    file's "reopen last" pointer — pointing it at a freshly created, empty
- *    `.bck` would make the next launch try to open a 0-byte file and report a
- *    bogus "corrupt file" error instead of opening the user's real `.tmv`
- *    (same class of bug the `forceWrite`/`writeBackupBytes` split already
- *    fixed on the write side, see `core/backup-controller.ts`);
+ *    file's "reopen last" pointer — and unlike `pickCreate`, nothing here
+ *    ever repoints it later, because the `.bck` is never written through
+ *    `writeFile`/`forceWrite` (see `core/backup-controller.ts`'s
+ *    `writeBackupBytes`);
  *  - the picker filter is `.bck`, not `.tmv`.
  * Unregistered MIME type keeps the filter to .bck — see `pickOpen` above.
  *

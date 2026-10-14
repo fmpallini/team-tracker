@@ -260,6 +260,19 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     deps.session.handle = newSession.handle
     deps.session.name = newSession.name
     deps.session.lastModified = newSession.lastModified
+    // `backupHandleId` travels inside the document, so left alone the new file
+    // would mirror its saves into the ORIGINAL file's .bck and quietly
+    // overwrite the backup of a document it just diverged from — the same
+    // reasoning as conflict-flow.ts's fork. The user re-picks a target for
+    // the new file in prefs. (Unlike fork this keeps the tab lock on the old
+    // file's key: re-keying it needs a full reopen, which this dep set can't do.)
+    if (deps.store.doc.prefs.dailyBackupEnabled || deps.store.doc.prefs.backupHandleId) {
+      deps.store.update((d) => {
+        d.prefs.dailyBackupEnabled = false
+        d.prefs.backupHandleId = null
+      })
+      toast(t(deps.locale(), 'save_as_backup_detached_toast'), { sticky: true })
+    }
     await saveNow({ explicit: true })
   }
 
