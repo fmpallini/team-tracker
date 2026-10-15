@@ -8,7 +8,7 @@
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { showModal, type ModalHandle } from './modal'
-import { icon } from './icons'
+import { icon, iconLine } from './icons'
 
 /**
  * Test seam only — production callers (main.ts, start.ts) never pass it and
@@ -214,8 +214,8 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
     el(
       'ul',
       { class: 'tt-promo-advantages' },
-      el('li', {}, t(locale, 'promo_adv_updates')),
-      el('li', {}, t(locale, 'promo_adv_app'))
+      iconLine('refresh', t(locale, 'promo_adv_updates'), 14),
+      iconLine('window', t(locale, 'promo_adv_app'), 14)
     ),
     pwa ? null : el('p', { class: 'tt-promo-note' }, t(locale, 'promo_hosted_note')),
     action

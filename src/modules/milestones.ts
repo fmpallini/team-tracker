@@ -602,7 +602,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const sorted = sortByDate(milestones())
     listEl.innerHTML = ''
     if (sorted.length === 0) {
-      listEl.appendChild(emptyState({ icon: 'flag', text: t(lc, 'milestone_empty'), className: 'tt-milestone-empty' }))
+      listEl.appendChild(emptyState({ icon: 'flag', text: t(lc, 'milestone_empty'), className: 'tt-milestone-empty', action: { label: t(lc, 'milestone_add_btn'), onClick: () => addMilestone() } }))
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))

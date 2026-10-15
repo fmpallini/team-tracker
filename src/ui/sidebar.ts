@@ -132,9 +132,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicatorDueBadge,
     headerTeamIndicatorCaret
   )
-  // The due-date clock stays an emoji on purpose: it always sits beside the team
-  // selector, whose team emoji it has to match, so a stroke icon looked out of place.
-  const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, '⏰')
+  const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, icon('clock', 14))
   const headerDueSummary = el(
     'button',
     {
@@ -332,13 +330,17 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     icon('plus')
   )
 
+  // Icon and label only: each team row already shows its own due count, this
+  // button just opens the all-teams list.
+  const dueLabelEl = el('span', { class: 'tt-due-btn-label' })
   const dueBtn = el(
     'button',
     {
       class: 'tt-btn tt-due-btn', type: 'button', title: t(locale(), 'due_badge_title'),
       onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     },
-    '⏰'
+    icon('clock', 14),
+    dueLabelEl
   )
 
   /**
@@ -388,6 +390,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   function renderDueBadge(buckets: DueBuckets): void {
     const total = buckets.overdue.length + buckets.dueSoon.length
     dueBtn.classList.toggle('tt-due-empty', total === 0)
+    setTextIfChanged(dueLabelEl, t(locale(), 'switcher_due'))
     // OS-level badge (taskbar/dock/launcher icon) only makes sense for an
     // installed PWA — file:// build has no such surface to badge.
     if (__PWA__) updateAppBadge(total)

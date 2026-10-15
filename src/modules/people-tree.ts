@@ -389,7 +389,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         // module is open", which is actively false here: the module is open,
         // it just has nothing in it yet.
         const emptyKey = group === 'members' ? 'people_empty_members' : 'people_empty_stakeholders'
-        treeEl.appendChild(emptyState({ icon: 'orgchart', text: t(lc, emptyKey), className: 'tt-people-empty' }))
+        treeEl.appendChild(emptyState({ icon: 'orgchart', text: t(lc, emptyKey), className: 'tt-people-empty', action: { label: t(lc, 'person_add_btn'), onClick: () => openAddModal(null) } }))
         return
       }
       roots.forEach((r) => treeEl.appendChild(renderNode(r)))

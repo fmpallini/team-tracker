@@ -1,7 +1,6 @@
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import { buildModuleItems, titleFor } from '../src/core/module-items'
 import { t } from '../src/core/i18n'
-import { KIND_ICON } from '../src/core/search'
 import type { Team } from '../src/core/types'
 
 test('buildModuleItems includes one entry per action item/milestone/risk, after the whole-board entries', () => {
@@ -14,9 +13,9 @@ test('buildModuleItems includes one entry per action item/milestone/risk, after 
   }
   const items = buildModuleItems(team, 'en-US')
 
-  expect(items).toContainEqual({ label: `${KIND_ICON.actions} Fix bug`, ref: { kind: 'actions', itemId: 'a1' } })
-  expect(items).toContainEqual({ label: `${KIND_ICON.milestones} Ship v2`, ref: { kind: 'milestones', itemId: 'm1' } })
-  expect(items).toContainEqual({ label: `${KIND_ICON.risks} Vendor delay`, ref: { kind: 'risks', itemId: 'r1' } })
+  expect(items).toContainEqual({ label: 'Fix bug', ref: { kind: 'actions', itemId: 'a1' } })
+  expect(items).toContainEqual({ label: 'Ship v2', ref: { kind: 'milestones', itemId: 'm1' } })
+  expect(items).toContainEqual({ label: 'Vendor delay', ref: { kind: 'risks', itemId: 'r1' } })
 
   const actionsBoardIdx = items.findIndex((i) => i.ref.kind === 'actions' && !('itemId' in i.ref && i.ref.itemId))
   const actionItemIdx = items.findIndex((i) => i.ref.kind === 'actions' && 'itemId' in i.ref && i.ref.itemId === 'a1')
@@ -27,12 +26,12 @@ test('buildModuleItems with no team includes the daily-notes entry, the general-
   const items = buildModuleItems(null, 'en-US')
   expect(items).toEqual([
     { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
-    { label: `${KIND_ICON.general} General notes`, ref: { kind: 'general' } },
-    { label: `${KIND_ICON.stakeholders} Stakeholders`, ref: { kind: 'stakeholders' } },
-    { label: `${KIND_ICON.members} Members`, ref: { kind: 'members' } },
-    { label: `${KIND_ICON.actions} Tasks`, ref: { kind: 'actions' } },
-    { label: `${KIND_ICON.milestones} Milestones`, ref: { kind: 'milestones' } },
-    { label: `${KIND_ICON.risks} Risks`, ref: { kind: 'risks' } },
+    { label: 'General notes', ref: { kind: 'general' } },
+    { label: 'Stakeholders', ref: { kind: 'stakeholders' } },
+    { label: 'Members', ref: { kind: 'members' } },
+    { label: 'Tasks', ref: { kind: 'actions' } },
+    { label: 'Milestones', ref: { kind: 'milestones' } },
+    { label: 'Risks', ref: { kind: 'risks' } },
   ])
 })
 
@@ -47,7 +46,7 @@ test('buildModuleItems places the general-notes entry immediately after daily, b
   expect(items[1]!.ref).toEqual({ kind: 'general' })
 })
 
-test('buildModuleItems prefixes every entry with its module icon (daily, person, and each whole-board entry)', () => {
+test('buildModuleItems labels are plain titles — the UI draws the module icon from ref.kind', () => {
   const team: Team = {
     id: 'T1', name: 'Team 1', emoji: '🚀',
     stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
@@ -55,8 +54,8 @@ test('buildModuleItems prefixes every entry with its module icon (daily, person,
   }
   const items = buildModuleItems(team, 'en-US')
 
-  expect(items[0]!.label.startsWith(KIND_ICON.daily)).toBe(true)
-  expect(items).toContainEqual({ label: `${KIND_ICON.person} Carla`, ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
+  expect(items[0]!.label).toBe('Daily notes')
+  expect(items).toContainEqual({ label: 'Carla', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
 })
 
 describe('titleFor', () => {

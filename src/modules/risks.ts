@@ -1233,7 +1233,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const open = sortRisksForDisplay(all.filter((r) => !r.closed), sortMode)
     const closed = all.filter((r) => r.closed).sort((a, b) => a.order - b.order)
     if (open.length === 0) {
-      listEl.appendChild(emptyState({ icon: 'alert', text: t(lc, 'risk_empty'), className: 'tt-risk-empty' }))
+      listEl.appendChild(emptyState({ icon: 'alert', text: t(lc, 'risk_empty'), className: 'tt-risk-empty', action: { label: t(lc, 'risk_add_btn'), onClick: () => addRisk() } }))
     } else {
       for (const r of open) {
         listEl.appendChild(renderRow(r))

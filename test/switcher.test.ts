@@ -150,7 +150,7 @@ describe('buildSwitcher due dates', () => {
       { id: 'done', summary: 'Done task', notes: '', status: 'done', dueDate: '2026-10-01', assignee: '', color: null, order: 2 },
     )
     const rows = rowsOf(doc, '', 'due')
-    expect(rows.map((r) => r.label)).toEqual(['✅ Late task', '✅ Soon task'])
+    expect(rows.map((r) => r.label)).toEqual(['Late task', 'Soon task'])
     expect(rows.map((r) => r.dueLabel)).toEqual(['overdue by 6d', 'in 2d'])
     expect(rows[0]!.ref).toEqual({ kind: 'actions', itemId: 'late' })
     expect(rows[0]!.teamId).toBe('b')

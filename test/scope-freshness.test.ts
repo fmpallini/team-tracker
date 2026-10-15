@@ -261,7 +261,7 @@ test("a card's assignee display refreshes when the linked person is renamed from
   const [left] = panes()
   const cardAssignee = (): string | undefined =>
     panes()[1].querySelector('.tt-kanban-card-assignee')?.textContent ?? undefined
-  expect(cardAssignee()).toBe('🧑 Alice')
+  expect(cardAssignee()).toBe('Alice')
 
   // Renaming a person is scoped { teamId, sections: ['people'] } — correctly
   // so, since nothing else stores a person's name. The kanban card meta
@@ -271,7 +271,7 @@ test("a card's assignee display refreshes when the linked person is renamed from
   document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!.value = 'Alicia'
   clickButtonLabelled(document, 'OK')
 
-  expect(cardAssignee()).toBe('🧑 Alicia')
+  expect(cardAssignee()).toBe('Alicia')
 })
 
 test("the daily-notes calendar picks up a milestone added from another pane (WATCHED needs 'milestones')", () => {

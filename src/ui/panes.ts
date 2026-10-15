@@ -8,7 +8,7 @@ import { isFavorite, toggleFavorite } from '../core/favorites'
 import { FIXED_MODULE_KEYS, titleFor } from '../core/module-items'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
-import { KIND_ICON, createSearchIndex, type SearchIndex } from '../core/search'
+import { createSearchIndex, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
@@ -16,7 +16,7 @@ import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { blockedByModal } from './hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
-import { icon } from './icons'
+import { icon, kindIcon } from './icons'
 // Runtime dependency in one direction only: modules/lifecycle.ts imports
 // ModuleCtx/ModuleRenderer from here as *types*, which are erased at build.
 import { disposeContainer } from '../modules/lifecycle'
@@ -630,7 +630,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
 
   function historyEntryLabel(loc: Loc): string {
-    return `${KIND_ICON[loc.ref.kind]} ${titleFor(store.doc, loc, localeNow())}`
+    return titleFor(store.doc, loc, localeNow())
   }
 
   /** Tooltip for ◀/▶: names where the click lands (when reachable), the hotkey, and the right-click hint. */
@@ -962,7 +962,8 @@ ${t(lc, 'pane_history_hint')}`
           }),
         },
         el('span', { class: 'tt-pane-menu-check' }, row.kind === curKind ? '✓' : ''),
-        el('span', { class: 'tt-pane-menu-label' }, `${KIND_ICON[row.kind]} ${t(lc, row.labelKey)}`),
+        kindIcon(row.kind),
+        el('span', { class: 'tt-pane-menu-label' }, t(lc, row.labelKey)),
         el('span', { class: 'tt-pane-menu-hotkey' }, `F${i + 1}`)
       )
     )

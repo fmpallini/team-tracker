@@ -9,13 +9,13 @@ import { diffDays } from './date'
 import { collectDueItems } from './due'
 import { favoriteKey, liveFavorites } from './favorites'
 import { buildModuleItems, titleFor } from './module-items'
-import { KIND_ICON, normalize } from './search'
+import { normalize } from './search'
 
 export const SWITCHER_MAX_ROWS = 20
 export const SWITCHER_MIN_PER_SECTION = 4
 
 export interface SwitcherRow {
-  /** Icon + title, e.g. "⚠️ Vendor delay". */
+  /** The row title, e.g. "Vendor delay" — the UI draws the module icon from `ref.kind`. */
   label: string
   teamId: string
   ref: ModuleRef
@@ -88,7 +88,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
   for (const fav of liveFavorites(doc)) {
     const team = findTeam(doc, fav.teamId)
     if (!team) continue
-    const label = `${KIND_ICON[fav.ref.kind]} ${titleFor(doc, fav, locale)}`
+    const label = titleFor(doc, fav, locale)
     if (!matches(words, team.name, label)) continue
     favRows.push({ label, teamId: fav.teamId, ref: fav.ref, teamBadge: badge(team), favorite: fav })
   }
@@ -99,7 +99,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
   for (const item of [...buckets.overdue, ...buckets.dueSoon]) {
     const team = findTeam(doc, item.loc.teamId)
     if (!team) continue
-    const label = `${KIND_ICON[item.loc.ref.kind]} ${item.title}`
+    const label = item.title
     if (!matches(words, team.name, label)) continue
     const dueLabel = item.date < today
       ? t(locale, 'due_overdue_by', { days: String(diffDays(today, item.date)) })
@@ -149,10 +149,10 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
   }
 
   const all: { id: SwitcherSectionId; heading: string; rows: SwitcherRow[] }[] = [
-    { id: 'favorites', heading: `⭐ ${t(locale, 'switcher_favorites')}`, rows: favRows },
-    { id: 'due', heading: `⏰ ${t(locale, 'switcher_due')}`, rows: dueRows },
+    { id: 'favorites', heading: t(locale, 'switcher_favorites'), rows: favRows },
+    { id: 'due', heading: t(locale, 'switcher_due'), rows: dueRows },
     { id: 'current', heading: active ? badge(active) : '', rows: currentRows },
-    { id: 'others', heading: `🗂️ ${t(locale, 'switcher_others')}`, rows: otherRows },
+    { id: 'others', heading: t(locale, 'switcher_others'), rows: otherRows },
   ]
   return all
     .map((s, i) => ({ id: s.id, heading: s.heading, total: s.rows.length, rows: s.rows.slice(0, shown[i]) }))

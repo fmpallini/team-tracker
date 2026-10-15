@@ -651,6 +651,15 @@ describe('due badge', () => {
     expect(btn.querySelector('.tt-due-badge')).toBeNull()
   })
 
+  test('is an icon and a label only — the counts live on each team row', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    const btn = document.querySelector('.tt-due-btn')!
+    expect(btn.querySelector('.tt-icon-clock')).not.toBeNull()
+    expect(btn.textContent).toBe('Due dates')
+  })
+
   describe('calendar day rolling over while the app sits idle', () => {
     afterEach(() => { vi.useRealTimers() })
 

@@ -6,7 +6,7 @@
 import type { Doc, Loc, ModuleRef, Team } from './types'
 import { findTeam } from './document'
 import { t, todayIso, formatDateWithWeekday, type Locale, type MsgKey } from './i18n'
-import { KIND_ICON, teamRefCandidates } from './search'
+import { teamRefCandidates } from './search'
 
 /** Same item list feeds both the pane module dropdown and the Ctrl+Shift+K fast switch. */
 export interface ModuleItem {
@@ -24,22 +24,22 @@ export const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' |
 
 export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
   const items: ModuleItem[] = [
-    { label: `${KIND_ICON.daily} ${t(locale, 'module_daily')}`, ref: { kind: 'daily', date: todayIso() } },
-    { label: `${KIND_ICON.general} ${t(locale, 'module_general_notes')}`, ref: { kind: 'general' } },
+    { label: t(locale, 'module_daily'), ref: { kind: 'daily', date: todayIso() } },
+    { label: t(locale, 'module_general_notes'), ref: { kind: 'general' } },
   ]
   if (team) {
     for (const group of ['stakeholders', 'members'] as const) {
       for (const person of team[group]) {
-        items.push({ label: `${KIND_ICON.person} ${person.name}`, ref: { kind: 'person', personId: person.id, group } })
+        items.push({ label: person.name, ref: { kind: 'person', personId: person.id, group } })
       }
     }
   }
   const cands = team ? teamRefCandidates(team) : null
   for (const { kind, key } of FIXED_MODULE_KEYS) {
-    items.push({ label: `${KIND_ICON[kind]} ${t(locale, key)}`, ref: { kind } })
+    items.push({ label: t(locale, key), ref: { kind } })
     if (!cands || kind === 'stakeholders' || kind === 'members') continue
     const list = { actions: cands.actionItems, milestones: cands.milestones, risks: cands.risks }[kind]
-    for (const c of list) items.push({ label: `${KIND_ICON[kind]} ${c.title}`, ref: { kind, itemId: c.id } })
+    for (const c of list) items.push({ label: c.title, ref: { kind, itemId: c.id } })
   }
   return items
 }

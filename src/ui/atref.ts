@@ -6,7 +6,7 @@ import { AT_TRIGGER_EVENT, type Editor } from './editor'
 import { findTeam as docFindTeam } from '../core/document'
 import type { RefInfo, LabelResolver } from '../core/markdown'
 import { t, todayIso, formatDateWithWeekday, parseLocaleDate, type Locale } from '../core/i18n'
-import { normalize, KIND_ICON, type RefCandidate, type TeamRefCandidates } from '../core/search'
+import { normalize, type RefCandidate, type TeamRefCandidates } from '../core/search'
 import { REF_KINDS } from '../core/refs'
 import { addDaysIso } from '../core/date'
 import { matchRelativeWeekdays } from '../core/relative-date'
@@ -14,6 +14,7 @@ import type { Store } from '../core/store'
 import type { Loc } from '../core/types'
 import type { PaneManager } from './panes'
 import { el, clampToViewport } from './dom'
+import { kindIcon } from './icons'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from './editor-dom'
@@ -134,7 +135,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
         // Header icon/label both derive from the REF_KINDS registry (core/refs.ts).
         const spec = REF_KINDS[item.kind]
         listEl!.appendChild(
-          el('div', { class: 'tt-atref-group-header' }, `${KIND_ICON[spec.moduleKind]} ${t(opts.locale, spec.headerKey)}`)
+          el('div', { class: 'tt-atref-group-header' }, kindIcon(spec.moduleKind, 12), t(opts.locale, spec.headerKey))
         )
         lastKind = item.kind
       }

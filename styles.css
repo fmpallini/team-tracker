@@ -1631,7 +1631,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
 .tt-milestone-followup-row { padding: 0 0 .5rem .4rem; }
 .tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
-.tt-milestone-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
+.tt-milestone-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
 /* Risks module */
 /* container-type: inline-size makes the risk rows respond to the *pane's*
@@ -1801,7 +1801,7 @@ select option { background: var(--bg); color: var(--fg); }
 }
 .tt-risk-followup-row { padding: 0 0 .5rem .4rem; }
 .tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
-.tt-risk-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
+.tt-risk-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
 /* Narrow pane: the five-column row genuinely cannot hold a readable title
    and every control at once, so the controls fold onto a second line rather
@@ -2114,3 +2114,69 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-pwmeter-seg-filled.tt-pwmeter-good,
 .tt-pwmeter-seg-filled.tt-pwmeter-strong { background: var(--ok); }
 .tt-pwmeter-label { color: var(--muted); }
+
+/* ── Polish pass 2: one icon system, lanes, due button, empty states ─────────
+   Module-kind icons (ui/icons.ts kindIcon): the same glyph and color wherever
+   the app names a module — fast switch, search, pane menu, @ picker,
+   backlinks, due list. Team emoji stay emoji (they are the user's own). */
+.tt-kind-icon { flex: none; }
+.tt-kind-daily { color: var(--card-slate); }
+.tt-kind-general { color: var(--muted); }
+.tt-kind-stakeholders { color: var(--card-brass); }
+.tt-kind-person, .tt-kind-members { color: var(--card-plum); }
+.tt-kind-actions { color: var(--card-sage); }
+.tt-kind-milestones { color: var(--brass); }
+.tt-kind-risks { color: var(--danger); }
+.tt-atref-group-header, .tt-backlinks-group-header, .tt-palette-heading { display: flex; align-items: center; gap: .35rem; }
+.tt-palette-heading .tt-icon { color: var(--muted); }
+.tt-search-icon { display: inline-flex; flex: none; }
+.tt-pane-menu-item { gap: .5rem; }
+.tt-pane-menu-hotkey { margin-left: .25rem; }
+.tt-kanban-assignee-chip .tt-kind-icon { color: inherit; }
+/* Overdue / due-soon rows tint the module icon, so urgency reads before the date. */
+.tt-due-row .tt-due-row-icon { display: inline-flex; flex: none; }
+.tt-due-row.overdue .tt-kind-icon { color: var(--danger); }
+.tt-due-row.soon .tt-kind-icon { color: var(--brass); }
+/* Calendar corner markers are stroke icons now; the state (not the glyph alone) carries the color. */
+.tt-calendar-flag[data-state=pending] { color: var(--danger); }
+.tt-calendar-check[data-state=pending] { color: var(--brass); }
+.tt-calendar-flag[data-state=done], .tt-calendar-check[data-state=done] { color: var(--ok); }
+.tt-calendar-flag, .tt-calendar-check { display: inline-flex; }
+
+/* Sidebar due button: icon and label, centred; the per-team badges carry the counts. */
+.tt-due-btn .tt-icon { color: var(--brass); }
+.tt-due-btn-label { font-size: .9rem; white-space: nowrap; }
+
+/* Start screen and install card: icon bullets, no orphaned last words, the app's own font on its buttons. */
+.tt-icon-line { display: flex; align-items: flex-start; gap: .6rem; }
+.tt-icon-line > .tt-icon { margin-top: .22em; color: var(--accent); }
+.tt-icon-line > span:last-child { text-wrap: pretty; }
+.tt-start-backup-tip { text-wrap: pretty; }
+.tt-start-backup-tip > .tt-icon { margin-right: .4rem; vertical-align: -.2em; color: var(--brass); }
+.tt-start-tagline { text-wrap: balance; }
+.tt-start-btn, .tt-promo-action { font-family: inherit; }
+
+/* Kanban: tinted lanes, due pills, scroll fades. Widths grow by the lane's 1rem of padding so cards keep the room they had. */
+.tt-kanban-board-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+.tt-kanban-board-wrap > .tt-kanban-board { flex: 1; min-width: 0; }
+.tt-kanban-fade { position: absolute; top: 0; bottom: 0; width: 1.75rem; pointer-events: none; opacity: 0; transition: opacity .12s ease; z-index: 3; }
+.tt-kanban-fade.left { left: 0; background: linear-gradient(90deg, var(--bg), transparent); }
+.tt-kanban-fade.right { right: 0; background: linear-gradient(270deg, var(--bg), transparent); }
+.tt-kanban-board-wrap.can-scroll-left > .tt-kanban-fade.left,
+.tt-kanban-board-wrap.can-scroll-right > .tt-kanban-fade.right { opacity: 1; }
+.tt-kanban-board > .tt-kanban-col { flex: 1 1 15.667rem; min-width: 15.667rem; }
+.tt-kanban-board > .tt-kanban-col:last-child { flex: 1.15 1 18.333rem; min-width: 18.333rem; }
+.tt-kanban-col { background: color-mix(in srgb, var(--fg) 5%, var(--bg)); border-radius: var(--r-lg); padding: .25rem .5rem .5rem; }
+/* Cancelled sits compact under the Done cards instead of taking half the column. The floor is permanent (not set on dragstart) so a drag never reflows the board. */
+.tt-kanban-cancelled-wrap { flex: 0 1 auto; min-height: 4.5rem; max-height: 45%; }
+.tt-kanban-card-due.overdue, .tt-kanban-card-due.soon {
+  border-radius: 999px; padding: 0 .4rem; font-weight: 700;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.tt-kanban-card-due.soon { color: var(--brass); }
+.tt-kanban-card-assignee { display: inline-flex; align-items: center; gap: .2rem; }
+
+/* Empty states with an action, and forms that reserve no error line until there is an error. */
+.tt-empty-state-action { margin-top: .25rem; }
+.tt-person-form .tt-field-error:empty, .tt-team-form .tt-field-error:empty { display: none; }

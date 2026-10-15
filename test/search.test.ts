@@ -1,4 +1,4 @@
-import { searchDocument, normalize, teamRefCandidates, KIND_ICON, createSearchIndex } from '../src/core/search'
+import { searchDocument, normalize, teamRefCandidates, createSearchIndex } from '../src/core/search'
 import { createEmptyDocument } from '../src/core/document'
 import type { Doc, Team } from '../src/core/types'
 
@@ -119,13 +119,6 @@ test('a team with undefined generalNotes does not throw and never matches', () =
   const t1 = d.teams.find((tm) => tm.id === 't1')!
   delete (t1 as { generalNotes?: string }).generalNotes
   expect(() => searchDocument(d, 'anything', 't1')).not.toThrow()
-})
-
-test('KIND_ICON has an entry for every moduleKind used by search results', () => {
-  const d = fixture()
-  const results = searchDocument(d, 'orcamento', null)
-  expect(results.length).toBeGreaterThan(0)
-  for (const r of results) expect(KIND_ICON[r.moduleKind]).toBeTruthy()
 })
 
 function teamWithNote(id: string, name: string, note: string): Team {

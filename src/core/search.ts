@@ -119,10 +119,6 @@ function makeSnippet(stripped: string, positions: number[]): string {
   return out
 }
 
-export const KIND_ICON: Record<SearchResult['moduleKind'], string> = {
-  daily: '📅', general: '🗒️', person: '🧑', stakeholders: '🧑‍💼', members: '👥', actions: '✅', milestones: '🚩', risks: '⚠️',
-}
-
 export interface RefCandidate { id: string; title: string }
 export interface TeamRefCandidates {
   people: RefCandidate[]

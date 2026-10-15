@@ -2,7 +2,7 @@
 import { t, type Locale } from '../core/i18n'
 import type { Doc } from '../core/types'
 import { el } from './dom'
-import { icon } from './icons'
+import { icon, iconLine } from './icons'
 import { promoStartCard } from './promo'
 import {
   supportsFsApi,
@@ -77,8 +77,8 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
         el(
           'ul',
           { class: 'tt-start-advantages' },
-          el('li', {}, t(locale, 'mobile_block_reason_fs')),
-          el('li', {}, t(locale, 'mobile_block_reason_ux'))
+          iconLine('folder', t(locale, 'mobile_block_reason_fs')),
+          iconLine('window', t(locale, 'mobile_block_reason_ux'))
         ),
         el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_hint'))
       )
@@ -319,16 +319,17 @@ export function showStartScreen(
   const advantages = el(
     'ul',
     { class: 'tt-start-advantages' },
-    el('li', {}, t(locale, 'start_adv_offline')),
-    el('li', {}, t(locale, 'start_adv_open')),
-    el('li', {}, t(locale, 'start_adv_ownership')),
-    el('li', {}, t(locale, 'start_adv_crypto'))
+    iconLine('offline', t(locale, 'start_adv_offline')),
+    iconLine('code', t(locale, 'start_adv_open')),
+    iconLine('note', t(locale, 'start_adv_ownership')),
+    iconLine('lock', t(locale, 'start_adv_crypto'))
   )
   const cloudLink = (href: string, label: string): HTMLAnchorElement =>
     el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label)
   const backupTip = el(
     'p',
     { class: 'tt-start-backup-tip' },
+    icon('tip', 14),
     t(locale, 'start_backup_tip_prefix'),
     cloudLink(START_LINKS.googleDrive, t(locale, 'start_backup_tip_link_drive')),
     ', ',
