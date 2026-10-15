@@ -2,6 +2,7 @@
 import { t, type Locale } from '../core/i18n'
 import type { Doc } from '../core/types'
 import { el } from './dom'
+import { icon } from './icons'
 import { promoStartCard } from './promo'
 import {
   supportsFsApi,
@@ -62,7 +63,7 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
         'div',
         { class: 'tt-start-content' },
         el('h1', { class: 'tt-start-title' }, t(locale, 'app_name')),
-        el('h2', { class: 'tt-mobile-block-title' }, '📵 ' + t(locale, 'mobile_block_title')),
+        el('h2', { class: 'tt-mobile-block-title' }, t(locale, 'mobile_block_title')),
         el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_intro')),
         el(
           'ul',
@@ -264,7 +265,7 @@ export function showStartScreen(
         }
       },
     },
-    t(locale, 'start_open_ellipsis')
+    icon('folder', 14), t(locale, 'start_open_ellipsis')
   )
 
   const createBtn = el(
@@ -276,7 +277,7 @@ export function showStartScreen(
         handleCreate().catch(reportUnexpected)
       },
     },
-    t(locale, 'start_create_ellipsis')
+    icon('plus', 14), t(locale, 'start_create_ellipsis')
   )
 
   const reopenBtn = el(
@@ -288,7 +289,7 @@ export function showStartScreen(
         handleReopenLast().catch(reportUnexpected)
       },
     },
-    t(locale, 'start_reopen_ellipsis')
+    icon('reopen', 14), t(locale, 'start_reopen_ellipsis')
   )
 
   const title = el('h1', { class: 'tt-start-title' }, t(locale, 'app_name'))

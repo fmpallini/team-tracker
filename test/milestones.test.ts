@@ -265,7 +265,7 @@ describe('renderMilestones', () => {
 
     const timeline = container.querySelector('.tt-milestone-timeline') as HTMLElement
     expect(timeline.style.display).toBe('none')
-    expect(container.querySelector('.tt-milestone-empty')?.textContent).toBe('No milestones')
+    expect(container.querySelector('.tt-milestone-empty .tt-empty-state-text')?.textContent).toBe('No milestones')
   })
 
   test('renders the list sorted by date ascending, independent of storage order', () => {

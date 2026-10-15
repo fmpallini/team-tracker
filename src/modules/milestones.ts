@@ -30,6 +30,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { icon } from '../ui/icons'
+import { emptyState } from '../ui/empty-state'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 /**
@@ -564,7 +565,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const sorted = sortByDate(milestones())
     listEl.innerHTML = ''
     if (sorted.length === 0) {
-      listEl.appendChild(el('div', { class: 'tt-milestone-empty' }, t(lc, 'milestone_empty')))
+      listEl.appendChild(emptyState({ icon: 'flag', text: t(lc, 'milestone_empty'), className: 'tt-milestone-empty' }))
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))

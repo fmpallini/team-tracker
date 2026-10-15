@@ -376,7 +376,7 @@ describe('renderRisks', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    expect(container.querySelector('.tt-risk-empty')?.textContent).toBe('No risks')
+    expect(container.querySelector('.tt-risk-empty .tt-empty-state-text')?.textContent).toBe('No risks')
   })
 
   test('renders rows in manual order by default', () => {

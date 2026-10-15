@@ -101,7 +101,7 @@ test('renders start screen with open/create buttons but no reopen when no lastHa
   showStartScreen('en-US', () => {})
   await flush()
   expect(document.querySelector('.tt-start-title')?.textContent).toBe('Team Tracker')
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reopen last…')
   expect(reopenBtn).toBeDefined()
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
 })
@@ -110,7 +110,7 @@ test('shows reopen button when idbGet resolves a handle', async () => {
   idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
   showStartScreen('en-US', () => {})
   await flush()
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reopen last…')
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('')
 })
 
@@ -126,7 +126,7 @@ test('reopen-last: opens directly via reopenLast (no fallback dance)', async () 
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
-  clickByText('⏪ Reopen last…')
+  clickByText('Reopen last…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -197,7 +197,7 @@ test('open flow: wrong password loops until correct, then calls onOpen', async (
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   // first prompt: wrong password
@@ -232,7 +232,7 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -254,7 +254,7 @@ test('open flow: a file that is not a .tmv at all (empty / wrong magic) is repor
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
   await flush()
 
@@ -273,7 +273,7 @@ test('open flow: a structurally invalid file names the offending field in the er
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -296,7 +296,7 @@ test('open flow: a plain file with an invalid structure names the field too', as
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('.tt-modal-message')?.textContent)
@@ -311,7 +311,7 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('✨ Create new…')
+  clickByText('Create new…')
   await flush()
 
   const pw = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -339,7 +339,7 @@ test('create flow: "Create without password" writes serializePlain bytes and cal
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('✨ Create new…')
+  clickByText('Create new…')
   await flush()
 
   clickByText('Create without password')
@@ -365,7 +365,7 @@ test('open flow: a plain file opens directly, no password prompt at all', async 
   let opened: [FileSession, Doc, string | null] | null = null
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('input[name="tt-password"]')).toBeNull()
@@ -384,7 +384,7 @@ test('open flow: a non-plain file (parsePlain returns null) still goes through t
 
   showStartScreen('en-US', vi.fn())
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('input[name="tt-password"]')).not.toBeNull()
@@ -401,7 +401,7 @@ test('open flow: a plain file below the current schema version calls onOpen with
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(onOpen).toHaveBeenCalledTimes(1)
@@ -418,7 +418,7 @@ test('open flow: a plain file already at the current schema version calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
@@ -436,7 +436,7 @@ test('open flow: an encrypted file below the current schema version calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -458,7 +458,7 @@ test('create flow: always calls onOpen with migratedFrom null (a brand-new docum
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('✨ Create new…')
+  clickByText('Create new…')
   await flush()
   clickByText('Create without password')
   await flush()

@@ -46,6 +46,9 @@ const PATHS = {
   sort: '<path d="M5 6.5L8 3l3 3.5M5 9.5L8 13l3-3.5"/>',
   orgchart:
     '<rect x="5.5" y="2" width="5" height="3.5" rx="1"/><path d="M8 5.5V8M4 10.5V8h8v2.5"/><rect x="1.75" y="10.5" width="4.5" height="3.5" rx="1"/><rect x="9.75" y="10.5" width="4.5" height="3.5" rx="1"/>',
+  flag: '<path d="M4 14V2.5M4 3h8l-2 3 2 3H4"/>',
+  alert: '<path d="M8 2.5l6 10.5H2z"/><path d="M8 6.75v3"/><circle class="f" cx="8" cy="11.4" r=".8"/>',
+  folder: '<path d="M2.5 4.5a1 1 0 0 1 1-1h3L8 5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',
   note: '<path d="M4 2.5h5.5l3 3v8H4zM9.5 2.5v3h3M6 8.5h4M6 11h4"/>',
   link:
     '<path d="M6.67 8.67a3.33 3.33 0 0 0 5.03.36l2-2a3.33 3.33 0 0 0-4.71-4.71l-1.15 1.14M9.33 7.33a3.33 3.33 0 0 0-5.03-.36l-2 2a3.33 3.33 0 0 0 4.71 4.71l1.14-1.14"/>',

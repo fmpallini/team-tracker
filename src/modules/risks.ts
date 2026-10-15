@@ -33,6 +33,7 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc, makeRefLabelResolver } from '../ui/atref'
+import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
 import { icon } from '../ui/icons'
 
@@ -1192,7 +1193,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const open = sortRisksForDisplay(all.filter((r) => !r.closed), sortMode)
     const closed = all.filter((r) => r.closed).sort((a, b) => a.order - b.order)
     if (open.length === 0) {
-      listEl.appendChild(el('div', { class: 'tt-risk-empty' }, t(lc, 'risk_empty')))
+      listEl.appendChild(emptyState({ icon: 'alert', text: t(lc, 'risk_empty'), className: 'tt-risk-empty' }))
     } else {
       for (const r of open) {
         listEl.appendChild(renderRow(r))
