@@ -285,21 +285,30 @@ async function overlayCycle(page: Page): Promise<void> {
   // then delete the row so the cycle nets to zero.
   await switchModule(page, /Risks/i)
   await page.locator('.tt-risk-add-btn').click()
+  // A follow-up opens only under a title, so name the row first.
+  const riskTitle = page.locator('.tt-risk-title-input').first()
+  await riskTitle.fill('Leak probe')
+  await riskTitle.blur()
   await page.locator('.tt-risk-expand-btn').first().click()
   await expect(page.locator('.tt-risk-followup-row .editor')).toHaveCount(1)
   await page.locator('.tt-risk-expand-btn').first().click()
   await page.locator('.tt-risk-row').first().click({ button: 'right' })
   await page.keyboard.press('Escape')
   await page.locator('.tt-risk-delete-btn').first().click()
+  await dialog.getByRole('button', { name: 'Delete' }).click() // a named row asks before it goes
   await expect(page.locator('.tt-risk-row')).toHaveCount(0)
 
   // Milestones: same shape, plus its own date picker.
   await switchModule(page, /Milestones/i)
   await page.locator('.tt-milestone-add-btn').click()
+  const milestoneTitle = page.locator('.tt-milestone-title-input').first()
+  await milestoneTitle.fill('Leak probe')
+  await milestoneTitle.blur()
   await page.locator('.tt-milestone-expand-btn').first().click()
   await expect(page.locator('.tt-milestone-followup-row .editor')).toHaveCount(1)
   await page.locator('.tt-milestone-expand-btn').first().click()
   await page.locator('.tt-milestone-delete-btn').first().click()
+  await dialog.getByRole('button', { name: 'Delete' }).click()
   await expect(page.locator('.tt-milestone-row')).toHaveCount(0)
 
   // Tasks: the card modal hosts its own rich editor and date picker — the

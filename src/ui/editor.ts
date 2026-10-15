@@ -1255,7 +1255,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           errorEl
         ),
         buttons: [
-          { label: t(locale, 'cancel'), onClick: () => finish(null) },
+          { label: t(locale, 'cancel'), icon: 'close', onClick: () => finish(null) },
           // Only offered when editing an existing link: unwrap the <a>, keep
           // its text (handled in insertLink).
           ...(init.editing

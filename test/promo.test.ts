@@ -30,8 +30,7 @@ describe('local variant (hosted invite)', () => {
     expect(card).not.toBeNull()
     expect(card!.classList.contains('tt-promo-card')).toBe(true)
     expect(card!.textContent).toContain('Try the installable version')
-    expect(card!.textContent).toContain('install automatically')
-    expect(card!.textContent).toContain('100% offline')
+    expect(card!.textContent).toContain('Updates itself')
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     card!.querySelector<HTMLButtonElement>('.tt-promo-action')!.click()
     // #install deep link: lands on the hosted build with the install card surfaced.

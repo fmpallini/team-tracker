@@ -24,12 +24,15 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
      --accent/--card-* set, so they actually read against the grey <pre>
      wash in every palette. */
   --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
+  /* Text on a solid --accent / --danger fill (primary button, badges). White fails WCAG AA on every dark theme's bright accent, so dark themes use the page background instead (ember overrides --on-danger below). */
+  --on-accent:#fff; --on-danger:#fff;
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
   --card-slate:#8fb6c4; --card-brass:#d4a84a; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a8a49c;
   --hl-kw:#c98fd6; --hl-str:#9cc47e; --hl-num:#d6a066; --hl-com:#8f8875;
+  --on-accent:var(--bg); --on-danger:var(--bg);
 }
 
 /* Palette specimens (prefs "Color palette" picker). Each is a full
@@ -100,7 +103,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff6a3d; --card-plum:#b06bff; --card-ledger:#a8a4b8;
 }
 [data-palette=verdant][data-theme=light] {
-  --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1f8a4a; --accent-rgb:31,138,74;
+  --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1c8248; --accent-rgb:28,130,72;
   --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#6b8a2e;
   --card-slate:#3a6b7a; --card-brass:#a17a1e; --card-sage:#6b8a2e; --card-rust:#a8402c; --card-plum:#6b4a7a; --card-ledger:#57684c;
 }
@@ -118,6 +121,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --bg:#1d100c; --fg:#f2e2da; --muted:#c99a8c; --accent:#ef6a4c; --accent-rgb:239,106,76;
   --panel:#271510; --border:#4a2e24; --brass:#d9a83e; --danger:#d1483a; --ok:#6fae82;
   --card-slate:#6f9fc0; --card-brass:#d9a83e; --card-sage:#6fae82; --card-rust:#d1483a; --card-plum:#b98fcb; --card-ledger:#c99a8c;
+  --on-danger:#000;
 }
 [data-palette=graphite][data-theme=light] {
   --bg:#e9e9eb; --fg:#18181b; --muted:#52525b; --accent:#27272a; --accent-rgb:39,39,42;
@@ -156,6 +160,13 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
    literal hex values set inline from src/modules/risks.ts, which made the
    signature stamp the only element in the app that ignored the palette
    picker. */
+/* Radius scale: sm = controls and chips, md = cards and menus, lg = dialogs and panels. Pills (999px) and circles (50%) stay literal. */
+:root { --r-sm: 4px; --r-md: 6px; --r-lg: 8px; }
+/* Elevation scale: card = resting surface, pop = menus/popovers/toasts, dialog = modals and the command palette. */
+:root { --shadow-card: 0 1px 3px rgba(0, 0, 0, .1); --shadow-pop: 0 8px 24px rgba(0, 0, 0, .25); --shadow-dialog: 0 10px 40px rgba(0, 0, 0, .3); }
+/* One keyboard-focus ring for every button-like control. :where() keeps it at zero specificity so the app's own inset rings (rows, cards) and field outlines still win. */
+:root { --focus-ring: 2px solid var(--accent); }
+:where(button, a[href], select, summary, [role=button]):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 :root { --exposure-low: var(--ok); --exposure-medium: var(--brass); --exposure-high: var(--danger); }
 
 /* Display face (brand, headings, team/person names) stays serif regardless
@@ -193,7 +204,7 @@ body { background: var(--bg); color: var(--fg); }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
   background: rgba(var(--accent-rgb), .32);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -342,12 +353,12 @@ body { background: var(--bg); color: var(--fg); }
    (styles.css above) so the popup reads as that same list, just relocated. */
 .tt-team-switcher-dropdown {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   min-width: 200px; max-width: 320px; max-height: 320px; overflow-y: auto; padding: .25rem;
 }
 .tt-team-switcher-item {
   display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
-  cursor: pointer; border-radius: 4px;
+  cursor: pointer; border-radius: var(--r-sm);
 }
 .tt-team-switcher-item.selected, .tt-team-switcher-item:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-team-switcher-item.active { font-weight: 600; }
@@ -386,7 +397,7 @@ body { background: var(--bg); color: var(--fg); }
   font-family: var(--font-display); font-weight: 700; font-size: .95rem; line-height: .85; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 0; height: var(--tt-header-ctl-h);
-  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--r-sm);
   padding: 0 .45rem; cursor: pointer;
 }
 .tt-app-name { gap: .3rem; }
@@ -416,11 +427,16 @@ body { background: var(--bg); color: var(--fg); }
 
 .tt-btn {
   background: transparent; color: var(--fg); border: 1px solid var(--border);
-  border-radius: 4px; padding: .25rem .5rem; cursor: pointer; font-size: 1rem; line-height: 1;
+  border-radius: var(--r-sm); padding: .25rem .5rem; cursor: pointer; font-size: 1rem; line-height: 1;
 }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
 /* Stroke icons (src/ui/icons.ts): centred in line-height 0 so a button holding only an icon is as tall as its padding, not its font. */
 .tt-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; vertical-align: middle; }
+/* A button holding an icon (alone, or ahead of its label) centres it in both axes. Left as an inline-block/block box, the icon's baseline alignment inside the button's line box sat it ~1px low (pane back/forward/split). :where() keeps it at (0,1,0) so display:none rules (compact header) still win. */
+.tt-btn:where(:has(> .tt-icon)) { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; }
+/* Text action buttons in the panes: accent-tinted like the modal's secondary buttons. (The kanban "add card" keeps its dashed muted look.) */
+:where(.tt-people-add-btn, .tt-risk-add-btn, .tt-milestone-add-btn, .tt-risk-expand-all-btn, .tt-milestone-expand-all-btn, .tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
+:where(.tt-people-add-btn, .tt-risk-add-btn, .tt-milestone-add-btn, .tt-risk-expand-all-btn, .tt-milestone-expand-all-btn, .tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled):hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .tt-icon-svg { display: block; flex: none; }
 .tt-icon-svg .f { fill: currentColor; stroke: none; }
 /* Header buttons: true squares at the shared control height (the pills above use the same token). */
@@ -562,12 +578,50 @@ body { background: var(--bg); color: var(--fg); }
   .tt-promo-card-flash { animation: none; }
   .tt-pane-title-flash { animation: none; background: rgba(var(--accent-rgb), .4); }
 }
+/* Entrance motion only: dialogs rise and the scrim fades in, toasts rise, buttons ease their hover color. The dialog animates transform alone (no opacity) so contrast is never measured on a half-transparent surface. */
+@keyframes tt-scrim-in { from { background: transparent; } }
+@keyframes tt-rise-in { from { transform: translateY(8px) scale(.985); } }
+@keyframes tt-toast-in { from { opacity: 0; transform: translateY(8px); } }
+.tt-modal-overlay { animation: tt-scrim-in .14s ease-out; }
+.tt-modal-dialog { animation: tt-rise-in .16s ease-out; }
+.tt-toast { animation: tt-toast-in .16s ease-out; }
+.tt-btn { transition: border-color .12s ease, color .12s ease, background-color .12s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .tt-modal-overlay, .tt-modal-dialog, .tt-toast { animation: none; }
+  .tt-btn { transition: none; }
+}
 
-.tt-btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.tt-btn-primary:hover { color: #fff; opacity: .9; }
+.tt-btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.tt-btn-primary:hover { color: var(--on-accent); opacity: .9; }
 .tt-btn-left { margin-right: auto; }
 .tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
+
+/* Icon color carries meaning, nothing else is colored: red = destroys, green = confirms/restores, gold = state you set (favorite, lock), accent = changes content, slate = settings/help/dates. Every other icon keeps the button's own (neutral) text color. The icon() span carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
+.tt-btn:not(:hover):not(:disabled) .tt-icon-trash,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-close { color: var(--danger); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-resolve,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-check,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-download,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-reopen { color: var(--ok); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-star,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-starFill,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-lock { color: var(--card-brass); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-edit,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-plus { color: var(--accent); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-gear,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-help,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-calendar { color: var(--card-slate); }
+
+/* A solid-accent primary button keeps its icon in the button's own text color (a green check on the accent fill would vanish). */
+.tt-btn.tt-btn-primary:not(:hover):not(:disabled) .tt-icon { color: var(--on-accent); }
+/* Modal buttons: icon + label, tinted secondary, glowing primary, soft-filled danger. */
+.tt-modal-buttons .tt-btn { display: inline-flex; align-items: center; gap: .35rem; }
+.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
+.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger):hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.tt-modal-buttons .tt-btn-primary { box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+.tt-modal-buttons .tt-btn-danger { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.tt-modal-buttons .tt-btn-danger:hover { background: var(--danger); color: var(--on-danger); opacity: 1; }
 .tt-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-pane-nav-btn:disabled { opacity: .3; }
 .tt-btn:disabled:hover { border-color: var(--border); color: var(--fg); }
@@ -597,10 +651,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-start-backup-tip a { color: inherit; text-decoration: underline; }
 .tt-start-buttons { display: flex; flex-direction: column; gap: .75rem; min-width: 220px; }
 .tt-start-btn { padding: .6rem 1rem; font-size: 1rem; }
-.tt-start-reopen-row { display: flex; flex-direction: column; gap: .5rem; padding: .5rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); }
+.tt-start-reopen-row { display: flex; flex-direction: column; gap: .5rem; padding: .5rem; border-radius: var(--r-lg); background: var(--panel); border: 1px solid var(--border); }
 .tt-start-autoload { display: flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--muted); cursor: pointer; padding: 0 .1rem; }
 .tt-start-fallback-notice { color: var(--muted); max-width: 32em; font-size: .9rem; }
-.tt-promo-card { position: relative; max-width: 36em; margin-top: 1.25rem; padding: .9rem 2.2rem .9rem 1.1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); text-align: left; font-size: .9rem; color: var(--muted); }
+.tt-promo-card { position: relative; max-width: 36em; margin-top: 1.25rem; padding: .9rem 2.2rem .9rem 1.1rem; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel); text-align: left; font-size: .9rem; color: var(--muted); }
 .tt-promo-title { font-size: 1rem; margin: 0 0 .4rem; color: var(--fg); }
 .tt-promo-advantages { list-style: none; padding: 0; margin: 0 0 .6rem; display: flex; flex-direction: column; gap: .3rem; line-height: 1.5; }
 .tt-promo-note { margin: 0 0 .6rem; font-size: .8rem; }
@@ -617,9 +671,9 @@ body { background: var(--bg); color: var(--fg); }
   display: flex; align-items: center; justify-content: center; z-index: 1000;
 }
 .tt-modal-dialog {
-  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 3px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--r-lg);
   padding: 1.25rem; min-width: 320px; max-width: min(90vw, 480px);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, .3);
+  box-shadow: var(--shadow-dialog);
   display: flex; flex-direction: column; gap: 1rem;
 }
 .tt-modal-title { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; }
@@ -634,12 +688,12 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--danger) 10%, var(--panel));
   color: var(--danger); font-weight: 600;
 }
-.tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; }
+.tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-editor-link-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-field { display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; color: var(--muted); }
 .tt-input {
-  padding: .4rem .5rem; border: 1px solid var(--border); border-radius: 4px;
+  padding: .4rem .5rem; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--bg); color: var(--fg); font-size: 1rem;
 }
 .tt-field-error { color: var(--danger); font-size: .85rem; min-height: 1.1em; }
@@ -664,7 +718,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-date-picker-input-invalid { border-color: var(--danger); }
 .tt-date-picker-input-invalid:focus { outline-color: var(--danger); }
 .tt-date-picker-popover {
-  position: fixed; z-index: 1300; background: var(--bg); border-radius: 6px;
+  position: fixed; z-index: 1300; background: var(--bg); border-radius: var(--r-md);
   display: flex; flex-direction: column; gap: .35rem; padding-bottom: .4rem;
 }
 .tt-date-picker-popover-actions { display: flex; gap: .35rem; padding: 0 .1rem; }
@@ -676,12 +730,12 @@ body { background: var(--bg); color: var(--fg); }
   display: flex; flex-direction: column; gap: .5rem; align-items: flex-end;
 }
 .tt-toast {
-  background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
-  padding: .6rem .9rem; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); cursor: pointer; max-width: 320px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: .6rem .9rem; box-shadow: var(--shadow-pop); cursor: pointer; max-width: 320px;
   display: flex; flex-direction: column; align-items: flex-start; gap: .4rem;
 }
 .tt-toast-action {
-  background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px;
+  background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r-sm);
   padding: .2rem .6rem; cursor: pointer; font-size: .85rem; align-self: flex-end;
 }
 .tt-toast-action:hover { background: rgba(var(--accent-rgb), .12); }
@@ -697,18 +751,18 @@ body { background: var(--bg); color: var(--fg); }
 /* Update-available banner (fixed to viewport top: can show before any document is open) */
 .tt-update-banner {
   display: flex; flex-direction: column; align-items: center; gap: .3rem;
-  padding: .4rem .75rem; background: var(--accent); color: #fff; font-size: .9rem; text-align: center;
+  padding: .4rem .75rem; background: var(--accent); color: var(--on-accent); font-size: .9rem; text-align: center;
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
 }
 .tt-update-banner-row { display: flex; align-items: center; justify-content: center; gap: .75rem; width: 100%; }
-.tt-update-banner-action { border-color: rgba(255, 255, 255, .6); color: #fff; }
+.tt-update-banner-action { border-color: color-mix(in srgb, var(--on-accent) 60%, transparent); color: var(--on-accent); }
 /* Banner background is var(--accent); .tt-btn:hover would otherwise set the
    text to var(--accent) too (higher specificity than .tt-update-banner-action's
    plain color), making the label vanish on hover. Pin white and use a
    translucent-white fill as the actual hover highlight instead of dimming. */
-.tt-update-banner-action:hover { border-color: #fff; color: #fff; background: rgba(255, 255, 255, .18); }
+.tt-update-banner-action:hover { border-color: var(--on-accent); color: var(--on-accent); background: color-mix(in srgb, var(--on-accent) 18%, transparent); }
 .tt-update-banner-action:disabled { opacity: .5; cursor: default; }
-.tt-update-banner-dismiss { border: none; background: none; color: #fff; font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
+.tt-update-banner-dismiss { border: none; background: none; color: var(--on-accent); font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
 .tt-update-banner-dismiss:hover { opacity: .85; }
 .tt-update-banner-hint { margin: 0; font-size: .8rem; opacity: .9; max-width: 44em; }
 
@@ -742,7 +796,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-due-badge {
   font-family: var(--font-data); font-size: .7rem; font-weight: 700; line-height: 1.05rem;
   border-radius: 999px; min-width: 1.05rem; height: 1.05rem; padding: 0 .4rem;
-  background: var(--danger); color: #fff; flex: none; cursor: pointer; border: none;
+  background: var(--danger); color: var(--on-danger); flex: none; cursor: pointer; border: none;
   transition: filter .1s, transform .1s;
 }
 .tt-team-due-badge:empty { display: none; }
@@ -751,7 +805,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-due-list { display: flex; flex-direction: column; gap: .15rem; max-height: 60vh; overflow-y: auto; }
 .tt-due-section-heading { font-weight: 700; margin-top: .6rem; color: var(--muted); font-size: .8rem; text-transform: uppercase; }
 .tt-due-section-heading:first-child { margin-top: 0; }
-.tt-due-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .4rem; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.tt-due-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .4rem; border-radius: var(--r-md); cursor: pointer; border: 1px solid transparent; }
 .tt-due-row:hover { background: rgba(var(--accent-rgb), .1); }
 .tt-due-row:focus-visible {
   outline: none; border-color: var(--accent);
@@ -802,12 +856,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-title-trigger {
   display: inline-flex; align-items: center; gap: .3rem; min-width: 0;
   background: transparent; border: none; color: var(--fg); cursor: pointer;
-  padding: .2rem .35rem; border-radius: 4px; font-family: var(--font-display);
+  padding: .2rem .35rem; border-radius: var(--r-sm); font-family: var(--font-display);
   font-weight: 700; font-size: 1rem;
 }
 .tt-pane-title-trigger:not(:disabled):hover { background: rgba(var(--accent-rgb), .12); color: var(--accent); }
 .tt-pane-title-trigger:disabled { cursor: not-allowed; opacity: .6; }
-.tt-pane-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 3px; }
+.tt-pane-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--r-sm); }
 /* renderBar() adds this for one render when the daily-note date changed
    (Alt+[/], overscroll flip, calendar pick) — a double blink so the header
    registers as the only always-visible signal the day moved. */
@@ -824,8 +878,8 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-pane-menu {
   position: absolute; top: 100%; left: 0; z-index: 100; margin-top: .25rem;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .25); display: flex; flex-direction: column;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop); display: flex; flex-direction: column;
   min-width: 200px; max-height: 60vh; overflow-y: auto; padding: .25rem;
   /* The menu is absolutely positioned inside .tt-pane-title-trigger-wrap, which
      is only as wide as the trigger button, so shrink-to-fit would cap it at that
@@ -835,7 +889,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-pane-menu-item {
   background: transparent; color: var(--fg); border: none; text-align: left;
-  padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .95rem;
+  padding: .4rem .6rem; border-radius: var(--r-sm); cursor: pointer; font-size: .95rem;
   display: flex; align-items: center; justify-content: space-between; gap: .75rem;
 }
 .tt-pane-menu-item.selected, .tt-pane-menu-item:hover { background: rgba(var(--accent-rgb), .1); }
@@ -850,10 +904,10 @@ body { background: var(--bg); color: var(--fg); }
   display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 1200;
 }
 .tt-palette-dialog {
-  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--r-lg);
   /* As wide as Preferences and the due list (rem, so it grows with the text size). */
   width: min(42rem, 92vw); max-height: 60vh; display: flex; flex-direction: column;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, .35); overflow: hidden;
+  box-shadow: var(--shadow-dialog); overflow: hidden;
 }
 .tt-palette-input { border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: .75rem; font-size: 1.05rem; }
 .tt-palette-input:focus { outline: none; }
@@ -869,14 +923,14 @@ body { background: var(--bg); color: var(--fg); }
 /* One line per entry whatever the title length: the label ellipsizes (full text
    on its title tooltip, palette.ts); due text, team badge and ✕ are fixed items
    that never shrink. min-height keeps rows with and without the ✕ the same height. */
-.tt-palette-item { display: flex; align-items: center; gap: .5rem; box-sizing: border-box; min-height: 2.5rem; padding: .5rem .6rem; border-radius: 4px; cursor: pointer; }
+.tt-palette-item { display: flex; align-items: center; gap: .5rem; box-sizing: border-box; min-height: 2.5rem; padding: .5rem .6rem; border-radius: var(--r-sm); cursor: pointer; }
 .tt-palette-item.selected, .tt-palette-item:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-palette-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-palette-due { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
 .tt-palette-team { flex: none; max-width: 10rem; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-palette-remove {
   flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
-  background: transparent; color: var(--fg); border: none; border-radius: 4px; cursor: pointer; opacity: .6;
+  background: transparent; color: var(--fg); border: none; border-radius: var(--r-sm); cursor: pointer; opacity: .6;
 }
 .tt-palette-remove:hover { opacity: 1; color: var(--accent); }
 .tt-palette-empty { padding: .75rem; opacity: .75; }
@@ -916,14 +970,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-search-clear-btn {
   display: none; position: absolute; right: .35rem; top: 0; height: var(--tt-header-ctl-h); width: 1.5rem;
   align-items: center; justify-content: center; border: none; background: transparent;
-  color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; border-radius: 4px;
+  color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; border-radius: var(--r-sm);
 }
 .tt-search-clear-btn.visible { display: flex; }
 .tt-search-clear-btn:hover { color: var(--fg); background: rgba(var(--accent-rgb), .12); }
 .tt-search-dropdown {
   display: none; position: absolute; top: 100%; left: 0; margin-top: .25rem; z-index: 1200;
-  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .25); width: max(320px, 100%); max-height: 60vh;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop); width: max(320px, 100%); max-height: 60vh;
   overflow-y: auto; padding: .25rem;
 }
 .tt-search-dropdown.open { display: block; }
@@ -931,7 +985,7 @@ body { background: var(--bg); color: var(--fg); }
   display: flex; align-items: center; gap: .35rem; padding: .3rem .5rem;
   color: var(--muted); font-size: .85rem; border-bottom: 1px solid var(--border); margin-bottom: .25rem;
 }
-.tt-search-row { padding: .4rem .6rem; border-radius: 4px; cursor: pointer; }
+.tt-search-row { padding: .4rem .6rem; border-radius: var(--r-sm); cursor: pointer; }
 .tt-search-row.selected, .tt-search-row:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-search-row-main { display: flex; align-items: center; gap: .4rem; font-size: .95rem; }
 .tt-search-team { color: var(--muted); font-size: .8rem; }
@@ -1023,7 +1077,7 @@ body { background: var(--bg); color: var(--fg); }
 .editor ul, .editor ol { padding-left: 1.5em; }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
 .editor blockquote { margin: .5em 0; padding: .15em 0 .15em .9em; border-left: 3px solid var(--muted); color: var(--muted); }
-.editor pre { position: relative; margin: .5em 0; padding: .6em .8em; background: rgba(128, 128, 128, .14); border-radius: 6px; white-space: pre; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; }
+.editor pre { position: relative; margin: .5em 0; padding: .6em .8em; background: rgba(128, 128, 128, .14); border-radius: var(--r-md); white-space: pre; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; }
 .editor pre[data-collapsed] { max-height: 6.2em; overflow: hidden; cursor: pointer; }
 .editor pre[data-collapsed]::after {
   content: attr(data-more-label);
@@ -1042,12 +1096,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-cb-btn {
   min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; font-size: .95rem; line-height: 1;
   background: var(--panel); color: var(--fg); border: 1px solid var(--border);
-  border-radius: 5px; cursor: pointer;
+  border-radius: var(--r-sm); cursor: pointer;
 }
 .tt-cb-btn:hover { background: var(--bg); }
 .editor a[href] { color: var(--accent); text-decoration: underline; cursor: pointer; }
 .editor a.ref {
-  color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: 4px;
+  color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: var(--r-sm);
   padding: 0 .25em; cursor: pointer; text-decoration: none;
 }
 .editor a.ref[data-ref^="person:"]::before { content: "🧑 "; }
@@ -1064,10 +1118,10 @@ body { background: var(--bg); color: var(--fg); }
 /* @ reference autocomplete */
 .tt-atref-dropdown {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   min-width: 200px; max-width: 320px; max-height: 260px; overflow-y: auto; padding: .25rem;
 }
-.tt-atref-item { padding: .4rem .6rem; border-radius: 4px; cursor: pointer; font-size: .9rem; }
+.tt-atref-item { padding: .4rem .6rem; border-radius: var(--r-sm); cursor: pointer; font-size: .9rem; }
 .tt-atref-item.selected, .tt-atref-item:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
 .tt-templates-empty { color: var(--muted); cursor: default; }
@@ -1076,11 +1130,11 @@ body { background: var(--bg); color: var(--fg); }
 /* Right-click card context menu (action items / risks / milestones) */
 .tt-context-menu {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   min-width: 170px; padding: .25rem; display: flex; flex-direction: column;
 }
 .tt-context-menu-item {
-  display: block; width: 100%; text-align: left; padding: .4rem .6rem; border-radius: 4px;
+  display: block; width: 100%; text-align: left; padding: .4rem .6rem; border-radius: var(--r-sm);
   cursor: pointer; font-size: .9rem; background: none; border: none; color: inherit; font-family: inherit;
 }
 .tt-context-menu-item:hover { background: rgba(var(--accent-rgb), .12); }
@@ -1091,7 +1145,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-backlinks-chip {
   display: inline-flex; align-items: center; justify-content: center; font-size: .7rem;
   height: 1.2rem; line-height: 1.2rem; padding: 0 .4rem; border-radius: 999px;
-  border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 700;
   cursor: pointer; flex: none;
   transition: filter .1s;
   /* Now a real <button> (keyboard/AT path) rather than a bare span — the
@@ -1103,20 +1157,24 @@ body { background: var(--bg); color: var(--fg); }
 .tt-backlinks-chip:hover, .tt-backlinks-chip:focus-visible { filter: brightness(1.15); }
 .tt-backlinks-panel {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   min-width: 240px; max-width: 360px; max-height: 320px; overflow-y: auto; padding: .25rem;
 }
 .tt-backlinks-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
-.tt-backlinks-row { padding: .35rem .6rem; border-radius: 4px; cursor: pointer; }
+.tt-backlinks-row { padding: .35rem .6rem; border-radius: var(--r-sm); cursor: pointer; }
 .tt-backlinks-row:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-backlinks-row-title { font-size: .85rem; font-weight: 600; }
 .tt-backlinks-row-snippet { font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+/* Shared empty pane (ui/empty-state.ts): muted icon, one sentence, nothing else (the pane's toolbar already has the add button). */
+.tt-empty-state { display: flex; flex-direction: column; align-items: center; gap: .6rem; padding: 2.5rem 1rem; text-align: center; color: var(--muted); }
+.tt-empty-state-icon { display: inline-flex; opacity: .6; }
+.tt-empty-state-text { max-width: 28em; line-height: 1.5; }
 .tt-backlinks-empty { padding: .4rem .6rem; color: var(--muted); font-size: .85rem; }
 
 /* Emoji picker popup (team emoji fields) */
 .tt-emoji-popup {
   position: fixed; z-index: 1300; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   width: 280px; max-height: 320px; display: flex; flex-direction: column; overflow: hidden;
 }
 .tt-emoji-tabs { display: flex; border-bottom: 1px solid var(--border); flex: none; }
@@ -1131,7 +1189,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-emoji-grid button {
   background: none; border: none; font-size: 1.2rem; line-height: 1; padding: .3rem;
-  border-radius: 4px; cursor: pointer;
+  border-radius: var(--r-sm); cursor: pointer;
 }
 .tt-emoji-grid button:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-emoji-hint {
@@ -1159,7 +1217,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Calendar */
 .tt-calendar {
   display: flex; flex-direction: column; gap: .35rem; padding: .5rem;
-  border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
+  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card);
 }
 .tt-calendar-header { display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
 .tt-calendar-month-label { font-weight: 600; font-size: .9rem; text-align: center; flex: 1; }
@@ -1167,7 +1225,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-calendar-weekdays, .tt-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .tt-calendar-weekday { text-align: center; font-size: .7rem; color: var(--muted); }
 .tt-calendar-day {
-  position: relative; aspect-ratio: 1; border: none; border-radius: 4px; background: transparent;
+  position: relative; aspect-ratio: 1; border: none; border-radius: var(--r-sm); background: transparent;
   color: var(--fg); cursor: pointer; font-size: .8rem;
 }
 .tt-calendar-day:hover { background: rgba(var(--accent-rgb), .1); }
@@ -1177,7 +1235,7 @@ body { background: var(--bg); color: var(--fg); }
 /* The dark accent is a desaturated blue-gray: 15% alpha over the dark page
    background is nearly invisible, so noted days get a stronger wash there. */
 [data-theme="dark"] .tt-calendar-day-has-note { background: rgba(var(--accent-rgb), .32); }
-.tt-calendar-day-selected { background: var(--accent); color: #fff; font-weight: 700; }
+.tt-calendar-day-selected { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 [data-theme="dark"] .tt-calendar-day-selected {
   color: var(--bg);
   /* Dark theme's --accent is a light blue close in brightness to
@@ -1199,13 +1257,12 @@ body { background: var(--bg); color: var(--fg); }
    source element moves during dragstart, which made dragging look dead. */
 .tt-people-root-drop {
   display: none; position: absolute; top: .3rem; left: .3rem; right: .3rem; z-index: 5;
-  padding: .5rem .75rem; border: 2px dashed var(--accent); border-radius: 8px;
+  padding: .5rem .75rem; border: 2px dashed var(--accent); border-radius: var(--r-lg);
   color: var(--fg); background: var(--bg); font-size: .85rem; text-align: center;
 }
 .tt-people-root-drop.active { display: block; }
 .tt-people-root-drop.drag-over { color: var(--accent); background: rgba(var(--accent-rgb), .12); }
 .tt-people-tree { flex: 1; padding: 1rem; }
-.tt-people-empty { color: var(--muted); padding: .5rem; }
 
 /* Centered: an org chart reads as one structure hanging off its root, and
    the root belongs in the middle of it. (Start-anchoring was tried and
@@ -1223,7 +1280,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-org-node { display: flex; flex-direction: column; align-items: center; position: relative; }
 .tt-org-box {
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
-  min-width: 120px; max-width: 180px; padding: .4rem .6rem; border-radius: 2px;
+  min-width: 120px; max-width: 180px; padding: .4rem .6rem; border-radius: var(--r-sm);
   border: 1px solid var(--border); background: var(--panel); box-shadow: 2px 2px 0 rgba(0, 0, 0, .12);
   cursor: grab; position: relative; z-index: 1;
 }
@@ -1295,7 +1352,7 @@ body { background: var(--bg); color: var(--fg); }
    add/delete cluster together at the head's trailing edge instead of
    space-between's even spread across every child. */
 .tt-kanban-col-head .tt-kanban-add-btn { margin-left: auto; }
-.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 6px; padding: .2rem .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
+.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: var(--r-md); padding: .2rem .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
 /* Invisible height-matcher in the Done/Cancelled head, which has no add button of its own. */
 .tt-kanban-head-spacer { visibility: hidden; pointer-events: none; }
@@ -1329,7 +1386,7 @@ body { background: var(--bg); color: var(--fg); }
    "source dims, target rings" split as the card/dropzone drag above. */
 .tt-kanban-col.col-dragging { opacity: .5; }
 .tt-kanban-col.col-dragging .tt-kanban-col-head { outline: 1px dashed rgba(var(--accent-rgb), .55); outline-offset: 2px; }
-.tt-kanban-col-head.drag-over-col { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 4px; }
+.tt-kanban-col-head.drag-over-col { box-shadow: inset 0 0 0 2px var(--accent); border-radius: var(--r-sm); }
 
 .tt-kanban-col-body-wrap { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tt-kanban-col-body { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; flex: 1; min-height: 40px; padding-bottom: .5rem; }
@@ -1343,7 +1400,7 @@ body { background: var(--bg); color: var(--fg); }
    the normal case, not mid-drag. */
 .tt-kanban-dropzone {
   display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none;
-  border: 2px dashed var(--accent); border-radius: 8px;
+  border: 2px dashed var(--accent); border-radius: var(--r-lg);
 }
 .tt-kanban-dropzone.active { display: block; }
 .tt-kanban-dropzone.drag-over { background: rgba(var(--accent-rgb), .12); }
@@ -1357,8 +1414,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-divider { border-top: 1px dashed var(--border); margin: .5rem 0 .4rem; flex: none; }
 
 .tt-kanban-card {
-  position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  padding: .5rem .55rem .45rem; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); cursor: grab;
+  position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: .5rem .55rem .45rem; box-shadow: var(--shadow-card); cursor: grab;
   border-left: 8px solid var(--border); /* no color-X class → uncategorized, neutral stripe */
   overflow: hidden; /* hard backstop: nothing bleeds past the rounded border */
   /* overflow:hidden zeroes a flex item's automatic min-height, so inside the
@@ -1391,7 +1448,7 @@ body { background: var(--bg); color: var(--fg); }
 /* The tag was plain muted text, indistinguishable from the assignee beside
    it. A hairline outline in the card's own color ties it to the left edge
    stripe without adding a second filled block to the card. */
-.tt-kanban-card-tag { border: 1px solid currentColor; border-radius: 2px; padding: 0 .25rem; opacity: .85; white-space: nowrap; }
+.tt-kanban-card-tag { border: 1px solid currentColor; border-radius: var(--r-sm); padding: 0 .25rem; opacity: .85; white-space: nowrap; }
 .tt-kanban-card.color-slate .tt-kanban-card-tag { color: var(--card-slate); }
 .tt-kanban-card.color-brass .tt-kanban-card-tag { color: var(--card-brass); }
 .tt-kanban-card.color-sage .tt-kanban-card-tag { color: var(--card-sage); }
@@ -1434,7 +1491,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-trash.drag-over { background: rgba(var(--accent-rgb), .12); }
 
 .tt-kanban-form { display: flex; flex-direction: column; gap: .65rem; }
-.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
+.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
 .tt-kanban-form .editor { min-height: 240px; max-height: 55vh; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
@@ -1443,7 +1500,7 @@ body { background: var(--bg); color: var(--fg); }
    editor's contenteditable surface. */
 .tt-kanban-assignee-chip {
   display: inline-flex; align-items: center; gap: .35rem;
-  padding: .4rem .5rem; border-radius: 4px;
+  padding: .4rem .5rem; border-radius: var(--r-sm);
   background: rgba(var(--accent-rgb), .12); color: var(--accent); font-size: 1rem;
 }
 .tt-kanban-assignee-clear {
@@ -1455,19 +1512,19 @@ body { background: var(--bg); color: var(--fg); }
 .tt-assignee-combo { position: relative; display: flex; gap: .3rem; }
 .tt-assignee-combo .tt-assignee-input { flex: 1; }
 .tt-assignee-toggle {
-  flex: none; border: 1px solid var(--border); border-radius: 6px;
+  flex: none; border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--bg); color: var(--fg); cursor: pointer; padding: 0 .5rem; font-size: .8rem;
 }
 .tt-assignee-toggle:hover { background: rgba(var(--accent-rgb), .12); }
 .tt-assignee-menu {
   position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 1300;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border);
-  border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   max-height: 240px; overflow-y: auto; padding: .25rem;
 }
 .tt-kanban-color-row { display: flex; gap: .4rem; margin-top: .2rem; }
 .tt-kanban-color-chip {
-  min-width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
+  min-width: 26px; height: 26px; border-radius: var(--r-md); cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
   display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
   font-size: .72rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
 }
@@ -1528,16 +1585,37 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-toolbar { flex: none; display: flex; align-items: center; }
 .tt-milestone-expand-all-btn { margin-left: auto; }
 .tt-milestone-list { display: flex; flex-direction: column; gap: .2rem; }
-.tt-milestone-empty { color: var(--muted); padding: .5rem; }
-.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: 4px; border: 1px solid var(--border); border-left-width: 3px; border-left-color: transparent; }
+.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: var(--r-sm); border: 1px solid var(--border); border-left-width: 3px; border-left-color: transparent; }
 .tt-milestone-row:hover { background: rgba(var(--accent-rgb), .08); }
 /* State edge, in the timeline dots' own vocabulary: filled accent = done,
    muted = overdue, hollow accent = upcoming. The list is the half you edit
    and it encoded none of this; borrowing the timeline's three treatments
    rather than inventing a fourth means there's no new legend to learn. */
-.tt-milestone-row.tt-milestone-state-done { border-left-color: var(--accent); }
-.tt-milestone-row.tt-milestone-state-overdue { border-left-color: var(--muted); }
+/* Row state reads the same as the timeline dot above it: done = green, late = red, upcoming = accent. */
+.tt-milestone-row.tt-milestone-state-done { border-left-color: var(--ok); }
+.tt-milestone-row.tt-milestone-state-overdue { border-left-color: var(--danger); }
 .tt-milestone-row.tt-milestone-state-future { border-left-color: rgba(var(--accent-rgb), .45); }
+.tt-milestone-row.tt-milestone-state-overdue .tt-date-picker-input { color: var(--danger); }
+.tt-milestone-row.tt-milestone-done-row .tt-date-picker-input { color: var(--muted); }
+/* Done toggle: an open ring (red when late, accent when upcoming) that fills green with a check, like the timeline dot. A native checkbox underneath, so keyboard, label and form behavior are unchanged. */
+.tt-milestone-done-checkbox { appearance: none; -webkit-appearance: none; flex: none; width: 1.2rem; height: 1.2rem; margin: 0 .15rem; border: 2px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; display: inline-grid; place-content: center; transition: background-color .12s ease, border-color .12s ease; }
+.tt-milestone-row.tt-milestone-state-overdue .tt-milestone-done-checkbox { border-color: var(--danger); }
+.tt-milestone-done-checkbox:hover { border-color: var(--ok); }
+.tt-milestone-done-checkbox::after { content: ''; width: .3rem; height: .58rem; margin-top: -.12rem; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform .12s ease-out; }
+.tt-milestone-done-checkbox:checked { background: var(--ok); border-color: var(--ok); }
+.tt-milestone-done-checkbox:checked::after { transform: rotate(45deg) scale(1); }
+.tt-milestone-done-checkbox:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/* Completion feedback: the ring pops, the row and its timeline dot flash/pop once. Entrance-only, switched off under reduced motion. */
+@keyframes tt-done-flash { from { background: color-mix(in srgb, var(--ok) 28%, transparent); } }
+@keyframes tt-done-pop { 0% { transform: scale(.7); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.tt-milestone-row.tt-milestone-just-done { animation: tt-done-flash .7s ease-out; }
+.tt-milestone-row.tt-milestone-just-done .tt-milestone-done-checkbox { animation: tt-done-pop .3s ease-out; }
+.tt-milestone-dot.tt-milestone-just-done { transform-box: fill-box; transform-origin: center; animation: tt-done-pop .35s ease-out; }
+@media (prefers-reduced-motion: reduce) { .tt-milestone-row.tt-milestone-just-done, .tt-milestone-row.tt-milestone-just-done .tt-milestone-done-checkbox, .tt-milestone-dot.tt-milestone-just-done { animation: none; } }
+/* "5 of 9 done" next to the Add button. */
+.tt-milestone-progress { display: inline-flex; align-items: center; gap: .5rem; margin-left: .9rem; color: var(--muted); font-size: .85rem; }
+.tt-milestone-progress-bar { width: 5rem; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.tt-milestone-progress-fill { display: block; height: 100%; background: var(--ok); transition: width .2s ease; }
 .tt-milestone-date-input { font-family: var(--font-data); flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
 /* Fixed-width slot for the backlinks chip (or its placeholder, when the row
@@ -1552,7 +1630,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
 .tt-milestone-followup-row { padding: 0 0 .5rem .4rem; }
-.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
+.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
 .tt-milestone-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
 
 /* Risks module */
@@ -1653,7 +1731,7 @@ body { background: var(--bg); color: var(--fg); }
    chrome. */
 .tt-risk-chance-select, .tt-risk-impact-select, .tt-risk-plan-select {
   font-family: var(--font-data); font-size: .78rem; color: var(--muted);
-  background: transparent; border: 1px solid var(--border); border-radius: 2px;
+  background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm);
   padding: .2rem .3rem; cursor: pointer;
 }
 .tt-risk-chance-select:hover, .tt-risk-impact-select:hover, .tt-risk-plan-select:hover,
@@ -1667,8 +1745,7 @@ body { background: var(--bg); color: var(--fg); }
    select in the app). */
 select option { background: var(--bg); color: var(--fg); }
 .tt-risk-list { display: flex; flex-direction: column; gap: .2rem; }
-.tt-risk-empty { color: var(--muted); padding: .5rem; }
-.tt-risk-row { border-radius: 4px; border: 1px solid var(--border); cursor: grab; }
+.tt-risk-row { border-radius: var(--r-sm); border: 1px solid var(--border); cursor: grab; }
 .tt-risk-row:hover { background: rgba(var(--accent-rgb), .08); }
 .tt-risk-row[draggable="false"] { cursor: default; }
 .tt-risk-row.tt-risk-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
@@ -1707,6 +1784,13 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-close-btn:focus,
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }
+/* Close / Reopen: the icon sits quiet in its column; on row hover or focus the word appears beside it and the button gets a green outline. The slot is a fixed width, so nothing shifts when the label fades in. */
+.tt-risk-header-close, .tt-risk-close-btn { width: 5.6rem; }
+.tt-risk-close-btn, .tt-risk-reopen-btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: .35rem; border: 1px solid transparent; color: var(--ok); }
+.tt-risk-btn-label { font-size: .8rem; opacity: 0; transition: opacity .12s ease; white-space: nowrap; }
+.tt-risk-row:hover .tt-risk-btn-label, .tt-risk-close-btn:focus-visible .tt-risk-btn-label, .tt-risk-reopen-btn:focus-visible .tt-risk-btn-label { opacity: 1; }
+.tt-risk-row:hover .tt-risk-close-btn, .tt-risk-row:hover .tt-risk-reopen-btn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.tt-risk-close-btn:hover, .tt-risk-reopen-btn:hover { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .tt-risk-row.tt-risk-row-expanded .tt-risk-expand-btn { opacity: 1; }
 /* The row is one Tab stop that opens the context menu on Enter/Space, so it
    needs a focus ring of its own — inset, since rows sit flush against each
@@ -1716,7 +1800,7 @@ select option { background: var(--bg); color: var(--fg); }
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
 }
 .tt-risk-followup-row { padding: 0 0 .5rem .4rem; }
-.tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: 6px; }
+.tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
 .tt-risk-followup-row .editor { min-height: 160px; max-height: 320px; overflow-y: auto; }
 
 /* Narrow pane: the five-column row genuinely cannot hold a readable title
@@ -1730,9 +1814,9 @@ select option { background: var(--bg); color: var(--fg); }
    overflowing, so the wrap takes over before a horizontal scrollbar — or a
    delete button hanging off the row's border — ever appears. That width is the
    title's 12rem floor + chance/impact/exposure/plan (26rem) + the backlinks
-   chip and the three action buttons (4 × 2.6rem) + 8 gaps (3.2rem) + the row's
-   padding (.8rem) ≈ 52.4rem. Keep this above it when adding a column. */
-@container (max-width: 54rem) {
+   chip, expand and delete (3 × 2.6rem) + the wider close button (5.6rem) + 8 gaps (3.2rem) + the row's
+   padding (.8rem) ≈ 55.4rem. Keep this above it when adding a column. */
+@container (max-width: 57rem) {
   .tt-risk-row { flex-wrap: wrap; row-gap: .35rem; }
   /* The column header can't span two lines' worth of controls, and the
      mini-labels below replace it. */
@@ -1784,7 +1868,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); box-shadow: none; transform: none; }
-.tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: 1.3rem; line-height: 1; color: inherit; opacity: .55; }
+.tt-risks-closed .tt-risk-reopen-btn { flex: none; width: 5.6rem; background: transparent; font-size: 1.3rem; line-height: 1; opacity: .55; }
 .tt-risks-closed .tt-risk-reopen-btn:hover, .tt-risks-closed .tt-risk-reopen-btn:focus { opacity: 1; }
 /* The closed row's caret isn't hover-gated like an open row's — a closed
    risk is read-only, so its one interaction (peek the follow-up) should be
@@ -1794,7 +1878,7 @@ select option { background: var(--bg); color: var(--fg); }
 /* Read-only follow-up peek under a closed risk (mdToHtml output, no editor). */
 .tt-risk-followup-readonly { padding: .1rem .4rem .5rem 1.2rem; }
 .tt-risk-followup-readonly-body {
-  border: 1px solid var(--border); border-radius: 6px; padding: .4rem .6rem;
+  border: 1px solid var(--border); border-radius: var(--r-md); padding: .4rem .6rem;
   max-height: 320px; overflow-y: auto; background: var(--panel); color: var(--fg);
 }
 .tt-risk-followup-readonly-body > :first-child { margin-top: 0; }
@@ -1925,14 +2009,14 @@ select option { background: var(--bg); color: var(--fg); }
    the existing onchange handler is needed to keep it in sync. */
 .tt-prefs-radio {
   display: flex; align-items: center; gap: .45rem; font-size: .95rem;
-  padding: .35rem .65rem; border: 1px solid var(--border); border-radius: 5px;
+  padding: .35rem .65rem; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--bg); cursor: pointer;
 }
 .tt-prefs-radio:hover { border-color: var(--accent); }
 .tt-prefs-radio:has(input:checked) {
   border-color: var(--accent); background: rgba(var(--accent-rgb), .12); font-weight: 600;
 }
-.tt-prefs-radio:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tt-prefs-radio:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: 1px; }
 .tt-prefs-radio input[type="radio"] {
   appearance: none; width: 1rem; height: 1rem; margin: 0; flex: none;
   border: 1px solid var(--muted); border-radius: 50%; display: grid; place-content: center; cursor: pointer;
@@ -1959,7 +2043,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-prefs-template-list { display: flex; flex-direction: column; gap: .25rem; }
 .tt-prefs-template-empty { color: var(--muted); padding: .5rem; }
 .tt-prefs-template-row {
-  display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: 4px;
+  display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: var(--r-sm);
 }
 .tt-prefs-template-row:hover { background: rgba(var(--accent-rgb), .08); }
 .tt-prefs-template-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1982,7 +2066,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-data-empty { color: var(--muted); padding: .5rem; }
 .tt-data-team-list { display: flex; flex-direction: column; gap: .25rem; }
 .tt-data-team-row {
-  display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: 4px;
+  display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: var(--r-sm);
   border: 1px solid var(--border); cursor: pointer;
 }
 .tt-data-team-row:hover { background: rgba(var(--accent-rgb), .08); }
@@ -2008,7 +2092,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-help-text { font-size: .9rem; }
 .tt-help-code-block {
   font-family: var(--font-data); font-size: .85rem; background: var(--panel);
-  border: 1px solid var(--border); border-radius: 6px; padding: .5rem; overflow-x: auto; white-space: pre;
+  border: 1px solid var(--border); border-radius: var(--r-md); padding: .5rem; overflow-x: auto; white-space: pre;
   /* A flex child of the height-capped .tt-help-body: without this its overflow
      lets flex shrink it below one line, leaving a clipped sliver. */
   flex: none;

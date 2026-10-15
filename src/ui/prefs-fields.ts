@@ -112,6 +112,9 @@ export interface NumberFieldOpts {
 
 /** A label followed inline by a small clamped integer input, with an optional hint underneath. */
 export function prefsNumberField(opts: NumberFieldOpts): HTMLElement {
+  // The last committed value: what an emptied field reverts to. (Not
+  // `opts.value`, which is only where the field started.)
+  let committed = opts.value
   const input = el('input', {
     type: 'number',
     class: `tt-input ${opts.inputClass}`,
@@ -120,8 +123,14 @@ export function prefsNumberField(opts: NumberFieldOpts): HTMLElement {
     value: String(opts.value),
     onchange: (e: Event) => {
       const target = e.target as HTMLInputElement
-      const clamped = clampInt(Number(target.value), opts.min, opts.max, opts.value)
+      // `Number('')` is 0 — a finite number — so an emptied field used to clamp
+      // to `min` (e.g. clearing the auto-save field silently set it to 1 minute).
+      // Clearing is "I changed my mind", not "I want the minimum".
+      const raw = target.value.trim() === '' ? NaN : Number(target.value)
+      const clamped = clampInt(raw, opts.min, opts.max, committed)
       target.value = String(clamped)
+      if (clamped === committed && Number.isNaN(raw)) return
+      committed = clamped
       opts.onCommit(clamped)
     },
   })

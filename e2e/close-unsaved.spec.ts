@@ -65,10 +65,12 @@ test.describe('closing a file whose final save fails', () => {
   test('an external change keeps the document open behind the conflict dialog', async ({ page }) => {
     await openSeededDoc(page)
     await page.waitForTimeout(400) // let the debounced edit reach the store
-    // A sync client rewriting the same bytes still moves lastModified.
+    // Another program really changes the file (a trailing newline is enough: the
+    // bytes differ). A sync client merely re-touching identical bytes is NOT a
+    // conflict any more — see external-change.spec.ts.
     const cur = await readOpfsFile(page, FILE)
     await page.waitForTimeout(20)
-    await writeOpfsFile(page, FILE, cur)
+    await writeOpfsFile(page, FILE, [...cur, 10])
 
     await page.locator('.tt-btn-close-file').click()
 

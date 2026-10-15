@@ -4,6 +4,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     pool: 'forks',
+    // Vitest blanks CSS imports by default; test/palette-contrast.test.ts reads styles.css via ?raw.
+    css: { include: [/styles\.css/] },
     // Audits every store's update()/updateNav() against the scope it declares — see test/scope-contract.ts.
     setupFiles: ['test/setup-scope-contract.ts'],
     // e2e/ holds Playwright specs (*.spec.ts) — a different runner/matcher

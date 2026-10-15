@@ -25,10 +25,11 @@ import { renderActionItems } from './modules/action-items'
 import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
-import { decryptDocument, parsePlain, resetSessionKey } from './core/crypto'
+import { resetSessionKey } from './core/crypto'
+import { decodeForReload } from './core/reload-document'
 import { docToBytes } from './core/doc-bytes'
 import { readCurrent, sameEntry } from './core/fs'
-import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast } from './ui/modal'
+import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
 import { el } from './ui/dom'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
@@ -279,10 +280,19 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // another (see createTabLock's refreshBeforeWritable below).
   async function reloadFromDisk(): Promise<void> {
     const bytes = await readCurrent(session)
-    const currentPw = currentPassword()
-    const reloaded = currentPw === null ? parsePlain(bytes) : await decryptDocument(bytes, currentPw)
-    if (!reloaded) throw new Error('expected a plain file, got something else on reload')
+    // The file may no longer be under the password this tab opened it with
+    // (changed, added or removed in another tab) — see core/reload-document.ts.
+    const { doc: reloaded, password: filePassword } = await decodeForReload(bytes, currentPassword(), async (wasWrong) => {
+      const lc = store.doc.prefs.locale
+      if (wasWrong) toast(t(lc, 'err_wrong_password'))
+      const result = await promptPassword(lc, { title: t(lc, 'reload_password_title') })
+      return result === null ? null : (result as { password: string }).password
+    })
+    if (app && app.store === store) app.password = filePassword
     store.replaceDoc(reloaded)
+    // The reloaded document may carry different look-and-feel prefs (theme,
+    // palette, font, locale) than the one it replaces.
+    shell.applyPrefs(reloaded.prefs)
     pm.renderAll()
     shell.setSaveState('saved')
     shell.setTitle(session.name, false)
@@ -326,6 +336,9 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     // setup completes, never during the temporal dead zone.
     onOpenBackupPrefs: () => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl, 'backup'),
     onExternalChange: conflictFlow.onExternalChange,
+    // Ctrl+S, the save pill and a tab-lock handover all go through saveNow();
+    // this makes each of them include a keystroke still inside the editors' debounce.
+    flushPending: flushAllEditors,
   })
   disposers.push(() => saveCtl.dispose())
   app = { store, session, password, shell, pm, saveCtl, isConflictOpen: conflictFlow.isOpen, dispose }

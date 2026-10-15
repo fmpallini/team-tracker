@@ -264,7 +264,7 @@ describe('renderPeopleTree', () => {
       const team = makeTeam()
       const { container, store, pm, loc } = setup(team, group)
       render(container, loc, store, pm, group)
-      expect(container.querySelector('.tt-people-empty')!.textContent).toBe(expected)
+      expect(container.querySelector('.tt-people-empty .tt-empty-state-text')!.textContent).toBe(expected)
     }
   })
 

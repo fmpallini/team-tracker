@@ -66,7 +66,17 @@ const LINK_OPEN = ''
 const LINK_CLOSE = ''
 const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 
+/**
+ * Longest single line that still gets inline parsing. The link, ref and
+ * underline passes below are quadratic on an "opener with no closer" line
+ * (100k `@[` took ~23s on the UI thread), and no real note line is anywhere near
+ * this long — a pasted log dump or minified blob is. Past it the line is shown
+ * as plain escaped text, which htmlToMd reads back unchanged, so nothing is lost.
+ */
+const INLINE_PARSE_LIMIT = 10_000
+
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
+  if (s.length > INLINE_PARSE_LIMIT) return esc(s)
   let out = esc(s)
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
   //
@@ -107,11 +117,18 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // double-tilde strike rule right above it: strike has already consumed
   // every `~~...~~` pair by the time single-tilde runs, so only genuine
   // single-tilde spans remain.
+  //
+  // Every pair must HUG its text (no whitespace just inside either marker),
+  // the same flanking rule CommonMark uses. Without it ordinary prose turned
+  // into formatting: "~5 min and ~10 min" lost its tildes to a muted span,
+  // "2 * 3 * 4" italicised the 3, "2 ** 3 ** 4" bolded it. htmlToMd keeps
+  // the other half of the contract — see `mark()` below, which moves edge
+  // whitespace outside the markers on the way out.
   const applyMarks = (str: string): string => {
-    str = str.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    str = str.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
-    str = str.replace(/~~([^~]+)~~/g, '<s>$1</s>')
-    str = str.replace(/~([^~]+)~/g, '<span class="tt-unlinked-ref">$1</span>')
+    str = str.replace(/\*\*(?=\S)([^*]*[^*\s])\*\*/g, '<strong>$1</strong>')
+    str = str.replace(/(^|[^*])\*(?=[^*\s])([^*]*[^*\s])\*/g, '$1<em>$2</em>')
+    str = str.replace(/~~(?=[^~\s])([^~]*[^~\s])~~/g, '<s>$1</s>')
+    str = str.replace(/~(?=[^~\s])([^~]*[^~\s])~/g, '<span class="tt-unlinked-ref">$1</span>')
     str = str.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
     return str
   }
@@ -131,9 +148,13 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // with no orphan `)` left behind. A URL still cannot contain an unbalanced
   // `)` (that closes the link) — a documented boundary.
   const linkTags: string[] = []
-  out = out.replace(/\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)/g, (_m, text: string, rawUrl: string) => {
+  out = out.replace(/\[([^\]]+)\]\(((?:[^()]|\([^()]*\))+)\)/g, (m, text: string, rawUrl: string) => {
     const href = safeHref(rawUrl)
-    if (!href) return text
+    // Not a safe link: keep the WHOLE `[text](target)` as literal text. It used
+    // to return just `text`, so "see [1](page 2)" displayed "see 1" and the
+    // next edit of that note saved it back without the brackets and parens.
+    // Still inert: `m` is already esc()'d, so nothing here can become markup.
+    if (!href) return m
     // `title` shows the destination on hover (the visible link text is often
     // a label, not the URL). `linkHint`, when supplied by the editor, adds a
     // second line spelling out the Ctrl/middle-click-to-open gesture — a
@@ -356,7 +377,7 @@ function inlineMd(node: Node): string {
   // Without this case, the generic handling below would unwrap the span and
   // drop the marker entirely — re-rendering a note through the rich editor
   // (even untouched) would silently flatten it back to bare text.
-  if (tag === 'span' && node.classList.contains('tt-unlinked-ref')) return `~${kids()}~`
+  if (tag === 'span' && node.classList.contains('tt-unlinked-ref')) return mark(kids(), '~')
   // Inert on the page (never executes here — see ui/editor.ts's paste doc
   // comment on DOMParser) but its text content would otherwise leak into
   // the note as visible text via the generic handling below.
@@ -378,11 +399,23 @@ function inlineMd(node: Node): string {
   const strike = styleHasDecoration(node, 'line-through') ?? (tag === 's' || tag === 'strike' || tag === 'del')
 
   let out = kids()
-  if (bold) out = `**${out}**`
-  if (italic) out = `*${out}*`
+  if (bold) out = mark(out, '**')
+  if (italic) out = mark(out, '*')
   if (underline) out = `<u>${out}</u>`
-  if (strike) out = `~~${out}~~`
+  if (strike) out = mark(out, '~~')
   return out
+}
+
+/**
+ * Wraps `text` in a markdown marker pair with any whitespace at its edges kept
+ * OUTSIDE the pair. A selection like "hello " (word plus its trailing space)
+ * is bold in the editor's DOM, but `**hello **` no longer parses as bold
+ * (mdToHtml's markers must hug their text), so it would re-open as literal
+ * asterisks. Whitespace-only text gets no marker at all.
+ */
+function mark(text: string, marker: string): string {
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!
+  return m[2] === '' ? text : `${m[1]}${marker}${m[2]}${marker}${m[3]}`
 }
 
 // Splits `nodes` at <br> boundaries into per-line node arrays. A <br>

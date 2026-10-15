@@ -8,6 +8,7 @@ import {
   computeQuadrantLayout,
   cellFromPoint,
   isBlankRiskDraft,
+  isUntitledRiskDiscardable,
   type ExposureSort,
 } from '../src/modules/risks'
 import { createStore, type Store } from '../src/core/store'
@@ -355,6 +356,7 @@ describe('pure helpers', () => {
     })
 
     test('false when chance, impact or plan has been changed off its default', () => {
+      expect(isUntitledRiskDiscardable(risk({ title: '', chance: 2, impact: 3, plan: 'accept' }), SEED)).toBe(true) // only the explicit-delete test cares about the selects
       expect(isBlankRiskDraft(risk({ title: '', chance: 2 }), SEED)).toBe(false)
       expect(isBlankRiskDraft(risk({ title: '', impact: 3 }), SEED)).toBe(false)
       expect(isBlankRiskDraft(risk({ title: '', plan: 'accept' }), SEED)).toBe(false)
@@ -376,7 +378,7 @@ describe('renderRisks', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    expect(container.querySelector('.tt-risk-empty')?.textContent).toBe('No risks')
+    expect(container.querySelector('.tt-risk-empty .tt-empty-state-text')?.textContent).toBe('No risks')
   })
 
   test('renders rows in manual order by default', () => {
@@ -747,6 +749,9 @@ describe('renderRisks', () => {
       const { container, store, pm, loc } = setup(makeTeam())
       render(container, loc, store, pm)
       clickByTitleOrText(container, '+ Risk')
+      const title = container.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+      title.value = 'Vendor delay'
+      title.dispatchEvent(new Event('change'))
 
       container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
 
@@ -805,8 +810,79 @@ describe('renderRisks', () => {
       expect(store.doc.teams[0]!.risks).toHaveLength(1)
     })
 
-    test('a nameless row that has picked up content is kept and flagged instead of dropped', () => {
-      const team = makeTeam({ risks: [risk({ id: 'a', title: '', chance: 3, followup: '' })] })
+    test('a nameless row is dropped on leaving even with chance/impact/plan changed — a title is required', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '', chance: 3, impact: 2, plan: 'accept', followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      leaveRow(container.querySelector('.tt-risk-row') as HTMLElement)
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    })
+
+    test('a nameless row is still judged when an edit rebuilt it between focus leaving and the check', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '', followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const oldRow = container.querySelector('.tt-risk-row') as HTMLElement
+      outside.focus()
+      oldRow.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      // the list is rebuilt (a deferred rebuild flushing as focus leaves), replacing the row the check was queued for
+      store.update((d) => { d.teams[0]!.risks[0]!.chance = 3 }, { teamId: team.id, sections: ['risks'] })
+      vi.runAllTimers()
+
+      expect(oldRow.isConnected).toBe(false)
+      expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    })
+
+    test('a nameless risk refuses to open its follow-up: it flags the name and puts the caret in the title', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '', followup: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      ;(row.querySelector('.tt-risk-expand-btn') as HTMLButtonElement).click()
+
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+      expect(row.querySelector('.tt-risk-name-error')?.textContent).toBe('This risk needs a name.')
+      expect(document.activeElement).toBe(row.querySelector('.tt-risk-title-input'))
+    })
+
+    test('Expand all skips a nameless risk but opens the named ones', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '' }), risk({ id: 'b', title: 'Named' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-risk-expand-all-btn') as HTMLButtonElement).click()
+
+      expect(container.querySelectorAll('.tt-risk-followup-row')).toHaveLength(1)
+      expect(container.querySelector('.tt-risk-followup-row')?.getAttribute('data-risk-followup-id')).toBe('b')
+    })
+
+    test('pressing + Risk while an untitled draft is open reuses it instead of stacking a blank row', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+
+      clickByTitleOrText(container, '+ Risk')
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+      expect(document.activeElement).toBe(container.querySelector('.tt-risk-title-input'))
+    })
+
+    test('focus landing on the + Risk button is not leaving the list: the draft is kept for the click', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Risk')
+
+      leaveRow(container.querySelector('.tt-risk-row') as HTMLElement, container.querySelector('.tt-risk-add-btn') as HTMLElement)
+
+      expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    })
+
+    test('a nameless row that has written follow-up is kept and flagged instead of dropped', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: '', followup: 'real mitigation notes' })] })
       const { container, store, pm, loc } = setup(team)
       render(container, loc, store, pm)
 
@@ -862,6 +938,37 @@ describe('renderRisks', () => {
     expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
     expect(container.querySelectorAll('.tt-risk-list .tt-risk-row')).toHaveLength(1)
     expect(container.querySelectorAll('.tt-risks-closed .tt-risk-row')).toHaveLength(0)
+  })
+
+  test('the close button shows a hover label while keeping the full accessible name', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const btn = container.querySelector('.tt-risk-close-btn') as HTMLButtonElement
+    expect(btn.querySelector('.tt-risk-btn-label')!.textContent).toBe('Close')
+    expect(btn.getAttribute('aria-label')).toBe('Close risk')
+  })
+
+  test('closing a risk toasts where it went, and the toast Undo reopens it', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-risk-close-btn') as HTMLButtonElement).click()
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Risk "Vendor delay" closed')
+
+    ;(document.querySelector('.tt-toast-action') as HTMLButtonElement).click()
+    expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
+  })
+
+  test('a blocked close (no title) shows no toast', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-risk-close-btn') as HTMLButtonElement).click()
+    expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
   test('a closed row has its own delete button, using the same confirm+undo flow as an open row', () => {
@@ -2004,6 +2111,26 @@ describe('risk delete — behaviour pins', () => {
     expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r2'])
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+
+  it('an UNTITLED risk that carries a plan/follow-up is not deleted silently: it asks first, and Undo brings the content back', () => {
+    const { container, store } = mount({ risks: [risk({ id: 'r1', title: '', followup: 'vendor agreed to patch by Q3' }), risk({ id: 'r2', title: 'Other', order: 1 })] })
+    deleteRowButton(container, 'r1').click()
+
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+
+    clickByTitleOrText(document.body, 'Delete')
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r2'])
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+    expect(store.doc.teams[0]!.risks.find((r) => r.id === 'r1')!.followup).toBe('vendor agreed to patch by Q3')
+  })
+
+  it('an untitled risk whose exposure was changed is not an untouched draft either', () => {
+    const { container, store } = mount({ risks: [risk({ id: 'r1', title: '', chance: 3, impact: 3 })] })
+    deleteRowButton(container, 'r1').click()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.risks).toHaveLength(1)
   })
 
   it('the delete lands as ONE mutation scoped to the team with no sections (it rewrites mentions team-wide)', () => {

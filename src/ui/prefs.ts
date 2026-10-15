@@ -13,7 +13,7 @@ import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
-import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup } from '../core/fs'
+import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup, type FileSession } from '../core/fs'
 import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
@@ -349,18 +349,34 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
       // handle under 'lastHandle', which would repoint "reopen last" at the
       // empty .bck file instead of the user's .tmv.
+      const persist = (session: FileSession): Promise<boolean> => {
+        const id = crypto.randomUUID()
+        return idbSet(id, session.handle).then(() => {
+          if (generation !== pickGeneration) return false
+          store.update((d) => {
+            d.prefs.dailyBackupEnabled = true
+            d.prefs.backupHandleId = id
+          }, PREFS_ONLY)
+          return true
+        })
+      }
       return pickCreateBackup(suggested, appCtl.fileHandle() ?? undefined)
         .then((session) => {
           if (!session) return false
-          const id = crypto.randomUUID()
-          return idbSet(id, session.handle).then(() => {
-            if (generation !== pickGeneration) return false
-            store.update((d) => {
-              d.prefs.dailyBackupEnabled = true
-              d.prefs.backupHandleId = id
-            }, PREFS_ONLY)
-            return true
-          })
+          // Mirroring a file onto itself would rewrite the primary file behind
+          // its own back: every backup write moves its mtime, so the very next
+          // save would trip the external-change check. The picker lets the user
+          // choose any existing file, so refuse that one here.
+          const primary = appCtl.fileHandle()
+          const picked = session.handle
+          if (!primary || !picked || typeof primary.isSameEntry !== 'function') return persist(session)
+          return primary.isSameEntry(picked)
+            .catch((e: unknown) => { console.error(e); return false })
+            .then((same) => {
+              if (!same) return persist(session)
+              toast(t(locale, 'backup_same_file_toast'))
+              return false
+            })
         })
         .catch((err: unknown) => {
           console.error(err)
@@ -662,7 +678,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         el('div', { class: 'tt-prefs-template-hint' }, t(locale, 'prefs_templates_placeholders_hint'))
       )
 
-      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => inner.close() }
       const saveBtn: ModalButton = {
         label: t(locale, 'ok'),
         primary: true,
@@ -819,7 +835,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       const source = docFindTeam(store.doc, sourceSelect.value)
       if (!source) return
       const body = el('p', { class: 'tt-modal-message' }, t(locale, 'tags_cross_apply_confirm_body', { source: source.name }))
-      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => inner.close() }
       const confirmBtn: ModalButton = {
         label: t(locale, 'tags_cross_apply_btn'),
         primary: true,
@@ -967,7 +983,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         el('label', { class: 'tt-field' }, t(locale, 'prefs_security_current_label'), confirmInputEl),
         confirmErrorEl
       )
-      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+      const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => inner.close() }
       const confirmBtn: ModalButton = {
         label: t(locale, 'prefs_security_migrate_plain_btn'),
         primary: true,

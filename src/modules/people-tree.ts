@@ -7,6 +7,7 @@ import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
 import { confirmDelete } from '../ui/modal'
 import { openPersonModal } from '../ui/person-modal'
+import { emptyState } from '../ui/empty-state'
 import { el, wheelScrollsHorizontally, clearClasses } from '../ui/dom'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
@@ -388,7 +389,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         // module is open", which is actively false here: the module is open,
         // it just has nothing in it yet.
         const emptyKey = group === 'members' ? 'people_empty_members' : 'people_empty_stakeholders'
-        treeEl.appendChild(el('div', { class: 'tt-people-empty' }, t(lc, emptyKey)))
+        treeEl.appendChild(emptyState({ icon: 'orgchart', text: t(lc, emptyKey), className: 'tt-people-empty' }))
         return
       }
       roots.forEach((r) => treeEl.appendChild(renderNode(r)))

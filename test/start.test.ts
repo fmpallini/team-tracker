@@ -1,4 +1,4 @@
-import { showStartScreen, isMobileDevice } from '../src/ui/start'
+import { showStartScreen, isMobileDevice, START_LINKS } from '../src/ui/start'
 import { createEmptyDocument, SCHEMA_VERSION } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
@@ -35,6 +35,7 @@ const cryptoMocks = vi.hoisted(() => {
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
     serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
     parsePlain: vi.fn((_bytes: Uint8Array) => null as unknown),
+    looksLikeTmv: vi.fn((_bytes: Uint8Array) => true),
     plainPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
     encryptedPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
     parsePlainWithVersion: vi.fn((bytes: Uint8Array) => {
@@ -100,7 +101,7 @@ test('renders start screen with open/create buttons but no reopen when no lastHa
   showStartScreen('en-US', () => {})
   await flush()
   expect(document.querySelector('.tt-start-title')?.textContent).toBe('Team Tracker')
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reopen last…')
   expect(reopenBtn).toBeDefined()
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('none')
 })
@@ -109,7 +110,7 @@ test('shows reopen button when idbGet resolves a handle', async () => {
   idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
   showStartScreen('en-US', () => {})
   await flush()
-  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === '⏪ Reopen last…')
+  const reopenBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reopen last…')
   expect((reopenBtn as HTMLButtonElement).style.display).toBe('')
 })
 
@@ -125,7 +126,7 @@ test('reopen-last: opens directly via reopenLast (no fallback dance)', async () 
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
-  clickByText('⏪ Reopen last…')
+  clickByText('Reopen last…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -196,7 +197,7 @@ test('open flow: wrong password loops until correct, then calls onOpen', async (
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
 
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   // first prompt: wrong password
@@ -226,11 +227,12 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
   const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
   fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
   cryptoMocks.decryptDocument.mockRejectedValue(new cryptoMocks.CorruptFileError())
+  cryptoMocks.looksLikeTmv.mockReturnValue(true)
 
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -244,6 +246,25 @@ test('open flow: corrupt file shows error modal and does not call onOpen', async
   expect(onOpen).not.toHaveBeenCalled()
 })
 
+test('open flow: a file that is not a .tmv at all (empty / wrong magic) is reported as corrupt WITHOUT asking for a password first', async () => {
+  const session: FileSession = { handle: null, name: 'empty.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array(0) })
+  cryptoMocks.looksLikeTmv.mockReturnValue(false)
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('Open file…')
+  await flush()
+  await flush()
+
+  expect(document.querySelector('input[name="tt-password"]')).toBeNull()
+  expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Corrupt or invalid file')
+  expect(cryptoMocks.decryptDocument).not.toHaveBeenCalled()
+  expect(onOpen).not.toHaveBeenCalled()
+  cryptoMocks.looksLikeTmv.mockReturnValue(true)
+})
+
 test('open flow: a structurally invalid file names the offending field in the error modal', async () => {
   const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
   fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
@@ -252,7 +273,7 @@ test('open flow: a structurally invalid file names the offending field in the er
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -275,7 +296,7 @@ test('open flow: a plain file with an invalid structure names the field too', as
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('.tt-modal-message')?.textContent)
@@ -290,7 +311,7 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('✨ Create new…')
+  clickByText('Create new…')
   await flush()
 
   const pw = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -318,7 +339,7 @@ test('create flow: "Create without password" writes serializePlain bytes and cal
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('✨ Create new…')
+  clickByText('Create new…')
   await flush()
 
   clickByText('Create without password')
@@ -344,7 +365,7 @@ test('open flow: a plain file opens directly, no password prompt at all', async 
   let opened: [FileSession, Doc, string | null] | null = null
   showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('input[name="tt-password"]')).toBeNull()
@@ -363,7 +384,7 @@ test('open flow: a non-plain file (parsePlain returns null) still goes through t
 
   showStartScreen('en-US', vi.fn())
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('input[name="tt-password"]')).not.toBeNull()
@@ -380,7 +401,7 @@ test('open flow: a plain file below the current schema version calls onOpen with
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   expect(onOpen).toHaveBeenCalledTimes(1)
@@ -397,7 +418,7 @@ test('open flow: a plain file already at the current schema version calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
@@ -415,7 +436,7 @@ test('open flow: an encrypted file below the current schema version calls onOpen
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('📂 Open file…')
+  clickByText('Open file…')
   await flush()
 
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
@@ -437,7 +458,7 @@ test('create flow: always calls onOpen with migratedFrom null (a brand-new docum
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('✨ Create new…')
+  clickByText('Create new…')
   await flush()
   clickByText('Create without password')
   await flush()
@@ -461,7 +482,7 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
 test('renders the advantages pitch', () => {
   showStartScreen('en-US', () => {})
   const list = document.querySelectorAll('.tt-start-advantages li')
-  expect(list.length).toBe(3)
+  expect(list.length).toBe(4)
   expect(document.querySelector('.tt-start-tagline')).not.toBeNull()
 })
 
@@ -507,7 +528,7 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
   showStartScreen('en-US', () => {})
   const tip = document.querySelector('.tt-start-backup-tip')
   expect(tip).not.toBeNull()
-  expect(tip!.textContent).toContain('synced by a cloud client')
+  expect(tip!.textContent).toContain('synced folder')
   const links = Array.from(tip!.querySelectorAll('a'))
   expect(links.map((a) => a.getAttribute('href'))).toEqual([
     'https://workspace.google.com/products/drive/#download',
@@ -518,6 +539,13 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
   }
+})
+
+test('every external link on the start screen is listed in START_LINKS (so the live check covers it)', () => {
+  showStartScreen('en-US', () => {})
+  const hrefs = Array.from(document.querySelectorAll('a[href^="http"]')).map((a) => a.getAttribute('href'))
+  expect(hrefs.length).toBeGreaterThan(0)
+  expect(Object.values(START_LINKS)).toEqual(expect.arrayContaining(hrefs))
 })
 
 describe('auto-load last file on startup', () => {

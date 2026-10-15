@@ -20,13 +20,13 @@ const TEMPLATES: Template[] = [
     id: 't1',
     name: 'Decision',
     scope: 'any',
-    body: '## Decision — {data}\n- a\n- b\n**bold** text',
+    body: '## Decision — {date}\n- a\n- b\n**bold** text',
   },
   {
     id: 't2',
     name: 'Weekly status',
     scope: 'daily',
-    body: '## Status — {data}\n### Highlights\n- ',
+    body: '## Status — {date}\n### Highlights\n- ',
   },
 ]
 

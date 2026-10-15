@@ -387,6 +387,43 @@ test('backup tab: enabling daily backup opens the picker in the primary file\'s 
   expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
 })
 
+test('backup tab: picking the primary file itself as the backup target is refused — no handle stored, pref stays off, user told why', async () => {
+  const { store, shell, appCtl } = setup()
+  const picked = {} as unknown as FileSystemFileHandle
+  const primaryHandle = { isSameEntry: vi.fn(async () => true) } as unknown as FileSystemFileHandle
+  appCtl.fileHandle = () => primaryHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: picked, name: 'team-tracker.tmv', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Saving & backup')
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect((primaryHandle as unknown as { isSameEntry: ReturnType<typeof vi.fn> }).isSameEntry).toHaveBeenCalledWith(picked)
+  expect(idbMocks.idbSet).not.toHaveBeenCalled()
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
+  expect(store.doc.prefs.backupHandleId).toBeNull()
+  expect(document.querySelector('.tt-toast')?.textContent).toContain('different file')
+})
+
+test('backup tab: a genuinely different file is accepted even though the primary can compare entries', async () => {
+  const { store, shell, appCtl } = setup()
+  appCtl.fileHandle = () => ({ isSameEntry: vi.fn(async () => false) }) as unknown as FileSystemFileHandle
+  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Saving & backup')
+
+  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await new Promise((r) => setTimeout(r, 0))
+
+  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
+  expect(store.doc.prefs.backupHandleId).not.toBeNull()
+})
+
 test('backup tab: canceling the save picker leaves the pref off', async () => {
   const { store, shell, appCtl } = setup()
   fsMocks.pickCreateBackup.mockResolvedValue(null)
@@ -1001,7 +1038,7 @@ test('"+ new" adds a template with the entered name/scope/body', () => {
   scopeSelect.value = 'daily'
   scopeSelect.dispatchEvent(new Event('change'))
   const bodyTextarea = document.querySelector('.tt-prefs-template-textarea') as HTMLTextAreaElement
-  bodyTextarea.value = 'body {data}'
+  bodyTextarea.value = 'body {date}'
   bodyTextarea.dispatchEvent(new Event('input'))
   clickByText('OK')
 
@@ -1009,7 +1046,7 @@ test('"+ new" adds a template with the entered name/scope/body', () => {
   const added = store.doc.templates.find((tp) => tp.name === 'Custom')
   expect(added).toBeDefined()
   expect(added?.scope).toBe('daily')
-  expect(added?.body).toBe('body {data}')
+  expect(added?.body).toBe('body {date}')
   // Modal closed and list refreshed behind it.
   expect(document.querySelectorAll('.tt-prefs-template-row')).toHaveLength(6)
 })
@@ -1492,6 +1529,23 @@ describe('Data tab (export/import)', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Invalid file — not a Team Tracker teams export')
+  })
+
+  test('import: a structurally malformed team (missing member list) shows the invalid-file modal, no checklist and nothing imported', async () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+
+    const bad = { kind: 'team-tracker-teams-export', schemaVersion: SCHEMA_VERSION, exportedAt: '', teams: [{ name: 'X', emoji: '', stakeholders: [] }] }
+    const jsonFile = new File([JSON.stringify(bad)], 'export.json', { type: 'application/json' })
+    const fileInput = document.querySelector('input[type="file"][accept=".json"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { value: [jsonFile], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Invalid file — not a Team Tracker teams export')
+    expect(document.querySelector('.tt-data-team-summary')).toBeNull()
+    expect(store.doc.teams).toHaveLength(0)
   })
 
   test('import: a schemaVersion newer than this app shows a different error modal', async () => {

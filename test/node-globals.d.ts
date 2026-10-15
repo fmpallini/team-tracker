@@ -20,4 +20,5 @@ declare module 'node:vm' {
 
 declare const process: {
   memoryUsage(): { heapUsed: number }
+  env: Record<string, string | undefined>
 }

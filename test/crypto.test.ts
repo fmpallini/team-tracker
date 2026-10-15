@@ -1,4 +1,4 @@
-import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain, parsePlainWithVersion, decryptDocumentWithVersion } from '../src/core/crypto'
+import { encryptDocument, decryptDocument, resetSessionKey, WrongPasswordError, CorruptFileError, serializePlain, parsePlain, looksLikeTmv, parsePlainWithVersion, decryptDocumentWithVersion } from '../src/core/crypto'
 import { createEmptyDocument, SCHEMA_VERSION, SchemaTooNewError } from '../src/core/document'
 
 test('round-trip', async () => {
@@ -380,3 +380,24 @@ test('a failed open attempt does not leak its file\'s salt into a later new file
   const b = await encryptDocument(createEmptyDocument('pt-BR'), 'x')
   expect(Array.from(b.slice(5, 21))).not.toEqual(Array.from(a.slice(5, 21)))
 }, 30000)
+
+describe('looksLikeTmv', () => {
+  test('true for real encrypted output', async () => {
+    expect(looksLikeTmv(await encryptDocument(createEmptyDocument('en-US'), 'pw'))).toBe(true)
+  }, 20000)
+
+  test.each([
+    ['an empty file', new Uint8Array(0)],
+    ['a few bytes', new Uint8Array([0x54, 0x4d, 0x56])],
+    ['a long file with the wrong magic', new Uint8Array(200).fill(7)],
+    ['a plain-text file', new TextEncoder().encode('hello world, this is not a team file'.repeat(5))],
+  ])('false for %s', (_label, bytes) => {
+    expect(looksLikeTmv(bytes)).toBe(false)
+  })
+
+  test('false for the right magic but an unknown format version', async () => {
+    const bytes = await encryptDocument(createEmptyDocument('en-US'), 'pw')
+    bytes[4] = 99
+    expect(looksLikeTmv(bytes)).toBe(false)
+  }, 20000)
+})

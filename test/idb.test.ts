@@ -78,3 +78,53 @@ test('a failed open does not poison the cache — the next call gets a fresh, wo
   // Real indexedDB.open() again — no lingering rejected promise.
   await expect(idbGet('k6')).resolves.toBeUndefined()
 })
+
+describe('the cached connection recovers instead of failing every later call', () => {
+  /** Runs `fn` while recording every connection indexedDB.open() hands out. */
+  async function captureConnections<T>(fn: () => Promise<T>): Promise<{ result: T; dbs: IDBDatabase[] }> {
+    const dbs: IDBDatabase[] = []
+    const realOpen = indexedDB.open.bind(indexedDB)
+    const spy = vi.spyOn(indexedDB, 'open').mockImplementation((name: string, version?: number) => {
+      const req = realOpen(name, version)
+      req.addEventListener('success', () => { dbs.push(req.result) })
+      return req
+    })
+    try {
+      return { result: await fn(), dbs }
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  test('a connection the browser closed underneath us is reopened by the next call', async () => {
+    const { idbSet, idbGet } = await freshIdb()
+    const { dbs } = await captureConnections(async () => {
+      await idbSet('k', 'v1')
+    })
+    expect(dbs).toHaveLength(1)
+    // What Chrome does under storage pressure / "clear site data": the
+    // connection is force-closed and `close` is dispatched at it.
+    dbs[0]!.close()
+    // fake-indexeddb only accepts its own event class in dispatchEvent(), so
+    // fire the `close` listeners it holds directly.
+    const listeners = (dbs[0] as unknown as { listeners: { type: string; callback: () => void }[] }).listeners
+    listeners.filter((l) => l.type === 'close').forEach((l) => l.callback())
+
+    await expect(idbGet('k')).resolves.toBe('v1')
+  })
+
+  test('a newer-version request from another tab is not blocked by our open connection', async () => {
+    const { idbSet } = await freshIdb()
+    await idbSet('k', 'v1')
+
+    const upgraded = await new Promise<'upgraded' | 'blocked' | 'timeout'>((resolve) => {
+      const req = indexedDB.open('team-tracker', 2)
+      req.onblocked = () => resolve('blocked')
+      req.onsuccess = () => { req.result.close(); resolve('upgraded') }
+      req.onerror = () => resolve('timeout')
+      setTimeout(() => resolve('timeout'), 1000)
+    })
+
+    expect(upgraded).toBe('upgraded')
+  })
+})

@@ -1,11 +1,11 @@
 import { createTabLock } from '../src/core/tab-lock'
-import { createStore } from '../src/core/store'
+import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createShell, type Shell } from '../src/ui/shell'
 import type { FileSession } from '../src/core/fs'
 import type { SaveController } from '../src/core/save-controller'
 
-const modalMocks = vi.hoisted(() => ({ toast: vi.fn() }))
+const modalMocks = vi.hoisted(() => ({ toast: vi.fn(), dismissToast: vi.fn() }))
 vi.mock('../src/ui/modal', () => modalMocks)
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
@@ -465,4 +465,99 @@ test('lockKey: the same file under the same key still makes the second tab read-
   resolveKey('tmv:same')
   await vi.waitFor(() => expect(document.querySelectorAll('.tt-readonly-banner')).toHaveLength(1))
   expect(storeB.readOnly).toBe(true)
+})
+
+function bannerButton(shell: Shell): HTMLButtonElement {
+  const btn = shell.root.parentElement?.querySelector<HTMLButtonElement>('.tt-readonly-takeover-btn')
+  if (!btn) throw new Error('takeover button not found')
+  return btn
+}
+
+/** Two tabs on one file: A holds the lock, B is read-only behind it. */
+async function twoTabs(saveCtlA: SaveController = makeSaveCtl()) {
+  const lm = makeFakeLockManager()
+  const session = makeSession('shared.tmv')
+  const storeA = createStore(createEmptyDocument('en-US'))
+  const shellA = makeShell()
+  createTabLock({ session, store: storeA, shell: shellA, saveCtl: saveCtlA, locks: lm.locks })
+  await Promise.resolve(); await Promise.resolve()
+  const storeB = createStore(createEmptyDocument('en-US'))
+  const shellB = makeShell()
+  createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks: lm.locks })
+  await Promise.resolve(); await Promise.resolve()
+  return { lm, storeA, shellA, storeB, shellB }
+}
+
+describe('handover when the holder cannot save (#4)', () => {
+  test('keeps the lock, warns, and hands over automatically once the unsaved edits are finally saved', async () => {
+    const { storeA, shellB, storeB } = await twoTabs() // saveNow is a no-op: the save "fails"
+    storeA.update((d) => { d.prefs.autoSaveMin = 3 })
+    expect(storeA.dirty).toBe(true)
+
+    bannerButton(shellB).click()
+    await vi.waitFor(() => expect(modalMocks.toast).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 30))
+
+    expect(storeA.readOnly).toBe(false) // A still holds write access and its edits
+    expect(storeB.readOnly).toBe(true)
+
+    storeA.markSaved() // the user fixed the save problem
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    expect(storeA.readOnly).toBe(true)
+  })
+
+  test('a clean holder still goes through saveNow, so a debounced editor change gets flushed before the handover', async () => {
+    const saveNow = vi.fn(async () => {})
+    const { storeB, shellB } = await twoTabs(makeSaveCtl({ saveNow }))
+    bannerButton(shellB).click()
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    expect(saveNow).toHaveBeenCalled()
+  })
+
+  test('a successful save hands over immediately, with no warning', async () => {
+    const holder: { store?: Store } = {}
+    const saveNow = vi.fn(async () => { holder.store!.markSaved() })
+    const { storeA, storeB, shellB } = await twoTabs(makeSaveCtl({ saveNow }))
+    holder.store = storeA
+    storeA.update((d) => { d.prefs.autoSaveMin = 3 })
+    modalMocks.toast.mockClear()
+
+    bannerButton(shellB).click()
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    expect(modalMocks.toast).not.toHaveBeenCalled()
+  })
+})
+
+describe('"Take control" clicked repeatedly (#7)', () => {
+  test('queues only one blocking lock request', async () => {
+    const { lm, shellB } = await twoTabs()
+    const blocking = () => (lm.locks.request as unknown as ReturnType<typeof vi.fn>).mock.calls.filter((c) => !(c[1] as { ifAvailable?: boolean }).ifAvailable).length
+    const before = blocking()
+    const btn = bannerButton(shellB)
+    btn.click(); btn.click(); btn.click()
+    expect(blocking() - before).toBe(1)
+  })
+
+  test('after the double-clicking tab wins, the other tab can take control back with ONE click', async () => {
+    const { storeA, storeB, shellA, shellB } = await twoTabs()
+    const btnB = bannerButton(shellB)
+    btnB.click(); btnB.click()
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    await vi.waitFor(() => expect(storeA.readOnly).toBe(true))
+
+    bannerButton(shellA).click()
+    await vi.waitFor(() => expect(storeA.readOnly).toBe(false))
+    expect(storeB.readOnly).toBe(true)
+  })
+
+  test('a fresh click works again after the first request was granted and later given up', async () => {
+    const { storeA, storeB, shellA, shellB } = await twoTabs()
+    bannerButton(shellB).click()
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    bannerButton(shellA).click()
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(true))
+    bannerButton(shellB).click()
+    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    expect(storeA.readOnly).toBe(true)
+  })
 })

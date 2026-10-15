@@ -323,6 +323,45 @@ describe('v14 → v15 migration (favorites)', () => {
   })
 })
 
+describe('v15 → v16 migration (English template placeholders)', () => {
+  const v15 = (bodies: string[]) => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 15
+    d.templates = bodies.map((body, i) => ({ id: `t${i}`, name: `T${i}`, scope: 'any', body }))
+    return d
+  }
+
+  it('renames every legacy placeholder, including the old {time} = team name -> {team}', () => {
+    const doc = migrate(v15(['## {data} at {hora} with {pessoa} of {time}']))
+    expect(doc.templates[0]!.body).toBe('## {date} at {time} with {person} of {team}')
+  })
+
+  it('does not chain: the new {time} (from {hora}) is not mistaken for the old {time}', () => {
+    expect(migrate(v15(['{hora} {time}'])).templates[0]!.body).toBe('{time} {team}')
+  })
+
+  it('replaces every occurrence and leaves other braces and text alone', () => {
+    expect(migrate(v15(['{data} {data} {x} {{y}} plain'])).templates[0]!.body).toBe('{date} {date} {x} {{y}} plain')
+  })
+
+  it('migrates the built-in seeds so an existing file keeps working placeholders', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 15
+    d.templates = [{ id: 'x', name: '1:1', scope: 'personal', body: '## 1:1 — {data}\n- ' }]
+    expect(migrate(d).templates[0]!.body).toBe('## 1:1 — {date}\n- ')
+  })
+
+  it('tolerates a document with no templates array (the team-import shim)', () => {
+    expect(() => migrateTeams<any>([], 15)).not.toThrow()
+  })
+
+  it('a document already at the current version is untouched', () => {
+    const d = createEmptyDocument('en-US')
+    const before = d.templates.map((t) => t.body)
+    expect(migrate(d).templates.map((t) => t.body)).toEqual(before)
+  })
+})
+
 test('createEmptyTeam seeds a single default WIP column', () => {
   const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
   expect(team.actionColumns).toEqual([{ id: 'wip', name: 'WIP', order: 0 }])

@@ -1,6 +1,7 @@
 // src/ui/modal.ts
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
+import { icon, type IconName } from './icons'
 import { createPasswordMeter } from './password-meter'
 
 export interface ModalButton {
@@ -10,6 +11,8 @@ export interface ModalButton {
   danger?: boolean
   /** Pushes this button to the start of the row (`margin-right: auto`) so it visually separates from the rest — e.g. keeping a Delete action apart from Cancel/Save. */
   left?: boolean
+  /** Leading icon. Defaults by role — a check for `primary`, a trash for `danger` — so callers only set it for the rest (Cancel/Close pass 'close'). */
+  icon?: IconName
   onClick: () => void
 }
 
@@ -177,6 +180,7 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     if (b.primary) classes.push('tt-btn-primary')
     if (b.danger) classes.push('tt-btn-danger')
     if (b.left) classes.push('tt-btn-left')
+    const btnIcon = b.icon ?? (b.primary ? 'check' : b.danger ? 'trash' : null)
     const btn = el(
       'button',
       {
@@ -184,6 +188,7 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
         type: 'button',
         onclick: () => b.onClick(),
       },
+      ...(btnIcon ? [icon(btnIcon, 12)] : []),
       b.label
     )
     return btn
@@ -259,7 +264,7 @@ export function confirmDelete(locale: Locale, opts: {
   const body = opts.warning
     ? el('div', {}, message, el('p', { class: 'tt-modal-warning' }, opts.warning))
     : message
-  const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => handle.close() }
+  const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,
     danger: opts.variant === 'danger',
@@ -311,6 +316,7 @@ export function promptPassword(
 
     const cancelBtn: ModalButton = {
       label: t(locale, 'cancel'),
+      icon: 'close',
       onClick: () => {
         finish(null)
         close()

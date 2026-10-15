@@ -102,19 +102,65 @@ test.describe('external file change conflict', () => {
     await expect(page.locator('.tt-prefs-backup-checkbox')).not.toBeChecked()
   })
 
+  test('Escape on the conflict modal does not lock saving: the next save raises it again', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, PASSWORD)
+
+    await writeOpfsFile(page, 'team-tracker.tmv', Array(16).fill(0))
+    await addTeam(page, 'Conflict Team')
+    await page.keyboard.press('Control+s')
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // Used to be a silent no-op for the rest of the session.
+    await page.keyboard.press('Control+s')
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expect(page.getByRole('dialog').locator('.tt-modal-title')).toHaveText('File changed externally')
+  })
+
+  test('a touched-but-identical file (cloud sync, antivirus) is not a conflict: the save just goes through', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createEncryptedDoc(page, PASSWORD)
+
+    // Same bytes, new mtime — what a sync client does to a file it merely re-scanned.
+    const original = await readOpfsFile(page, 'team-tracker.tmv')
+    await writeOpfsFile(page, 'team-tracker.tmv', original)
+
+    await addTeam(page, 'No Conflict Team')
+    await page.keyboard.press('Control+s')
+
+    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    const after = await readOpfsFile(page, 'team-tracker.tmv')
+    expect(after.length).not.toBe(0)
+    expect(after).not.toEqual(original) // the new team really was written
+  })
+
   test('Reload discards local edits and re-reads the file from disk', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
-    // Re-write the same bytes already on disk: content is unchanged, but a
-    // real OPFS write still bumps lastModified — enough alone to trigger the
-    // external-change check on the next save.
+    // Another program puts a DIFFERENT (but valid) version of the file on disk:
+    // save once so the app's baseline is that save, then put the original,
+    // team-less bytes back behind its back. A mere mtime bump with identical
+    // content is deliberately NOT a conflict any more (see the next test).
     const original = await readOpfsFile(page, 'team-tracker.tmv')
+    await addTeam(page, 'Saved Before The Conflict')
+    await page.keyboard.press('Control+s')
+    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
     await writeOpfsFile(page, 'team-tracker.tmv', original)
 
-    await addTeam(page, 'Should Be Discarded')
+    // A nav-only change (sidebar toggle) is enough to make the document dirty.
+    await page.locator('.tt-sidebar-toggle').click()
     await page.keyboard.press('Control+s')
 
     const dialog = page.getByRole('dialog')

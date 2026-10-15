@@ -17,7 +17,20 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME)
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      // The connection is cached for the page's lifetime, so it must notice when
+      // it stops being usable — otherwise every later call throws
+      // InvalidStateError until the tab is reloaded:
+      //  - `close`: the browser force-closed it (storage pressure, "clear site data").
+      //  - `versionchange`: another tab (a newer build of this app) wants to
+      //    upgrade the database; staying open would block it, and with it that
+      //    tab's file open/save, forever.
+      db.addEventListener('close', () => { dbPromise = null })
+      db.addEventListener('versionchange', () => { db.close(); dbPromise = null })
+      resolve(db)
+    }
+    req.onblocked = () => console.error('IndexedDB open is blocked by another tab holding an older connection')
     req.onerror = () => {
       dbPromise = null // a failed open must not poison future calls with a rejected cache entry
       reject(req.error ?? new Error('IndexedDB open request failed'))

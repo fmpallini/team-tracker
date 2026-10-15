@@ -41,6 +41,15 @@ const COLOR_KEYS: Record<ActionItemColor, 'kanban_color_slate' | 'kanban_color_b
 // --- pure, unit-testable helpers -------------------------------------------
 
 /** Items in `status`, sorted by `order`. */
+/**
+ * True when a card is an untouched draft: nothing typed anywhere. Used so the
+ * delete flow only skips its confirm + undo for a card that holds nothing, not
+ * for any card whose summary happens to be empty.
+ */
+export function isBlankActionDraft(i: ActionItem): boolean {
+  return i.summary.trim() === '' && i.notes.trim() === '' && i.assignee.trim() === '' && i.dueDate === null
+}
+
 export function itemsByStatus(items: ActionItem[], status: ActionItem['status']): ActionItem[] {
   return items.filter((i) => i.status === status).sort((a, b) => a.order - b.order)
 }
@@ -225,6 +234,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     ctx, teamId, collection: 'actionItems', refKind: 'action', labelOf: (i) => i.summary, labelParam: 'summary',
     messages: { title: 'kanban_delete_title', confirm: 'kanban_delete_confirm', button: 'kanban_delete_btn', toast: 'action_deleted_toast' },
     variant: 'danger',
+    // A card with no summary can still hold notes, an assignee or a due date.
+    isBlank: isBlankActionDraft,
   })
 
   function addColumn(): void {
@@ -660,7 +671,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         requestDelete(live, () => { deleting = true; closeModal() })
       } })
     }
-    buttons.push({ label: t(lc, 'kanban_close_btn'), onClick: () => closeModal() })
+    buttons.push({ label: t(lc, 'kanban_close_btn'), icon: 'close', onClick: () => closeModal() })
 
     const handle: ModalHandle = showModal({
       title: t(lc, existing === null ? 'kanban_add_title' : 'kanban_edit_title'),
@@ -748,7 +759,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       return el('div', { class: 'tt-kanban-color-name-row' }, el('span', { class: `tt-kanban-color-chip color-${c}` }), input)
     })
     const body = el('div', { class: 'tt-kanban-color-name-rows' }, ...rows)
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
     const saveBtn: ModalButton = {
       label: t(lc, 'kanban_save_btn'),
       primary: true,
@@ -801,7 +812,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_column_confirm', { count: String(count) })),
       el('label', { class: 'tt-field' }, t(lc, 'kanban_column_landing_label'), select)
     )
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
       label: t(lc, 'kanban_delete_column_btn'),
       danger: true,
@@ -1415,7 +1426,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const editTagsBtn = el(
     'button',
     { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
-    t(lc, 'kanban_edit_tags_btn')
+    icon('edit', 13), t(lc, 'kanban_edit_tags_btn')
   )
   const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)
 

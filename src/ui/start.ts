@@ -2,6 +2,7 @@
 import { t, type Locale } from '../core/i18n'
 import type { Doc } from '../core/types'
 import { el } from './dom'
+import { icon } from './icons'
 import { promoStartCard } from './promo'
 import {
   supportsFsApi,
@@ -15,12 +16,21 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
-import { decryptDocumentWithVersion, parsePlainWithVersion, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
+import { decryptDocumentWithVersion, parsePlainWithVersion, looksLikeTmv, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
 import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
 import { docToBytes } from '../core/doc-bytes'
 import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
+
+// Every external link on the start screen. Single source for the markup below
+// and for test/start-links.live.test.ts, the scheduled check that they still resolve.
+export const START_LINKS = {
+  releases: 'https://github.com/fmpallini/team-tracker/releases',
+  googleDrive: 'https://workspace.google.com/products/drive/#download',
+  oneDrive: 'https://www.microsoft.com/microsoft-365/onedrive/download',
+  dropbox: 'https://www.dropbox.com/install',
+} as const
 
 // File Handling API (Chromium, PWA-installed only): OS-level "open with" /
 // double-click on a .tmv file launches the app and hands it the file's
@@ -62,7 +72,7 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
         'div',
         { class: 'tt-start-content' },
         el('h1', { class: 'tt-start-title' }, t(locale, 'app_name')),
-        el('h2', { class: 'tt-mobile-block-title' }, '📵 ' + t(locale, 'mobile_block_title')),
+        el('h2', { class: 'tt-mobile-block-title' }, t(locale, 'mobile_block_title')),
         el('p', { class: 'tt-start-tagline' }, t(locale, 'mobile_block_intro')),
         el(
           'ul',
@@ -100,6 +110,13 @@ export function showStartScreen(
   }
 
   async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string; migratedFrom: Uint8Array | null } | null> {
+    // An empty file (a create flow that was cancelled before its first write)
+    // or any non-.tmv file can never be opened by any password: say so now
+    // instead of after the user has typed one.
+    if (!looksLikeTmv(bytes)) {
+      showErrorModal(locale, corruptMessage(new CorruptFileError()))
+      return null
+    }
     for (;;) {
       const result = await promptPassword(locale, { title: t(locale, 'open_file') })
       if (result === null) return null
@@ -257,7 +274,7 @@ export function showStartScreen(
         }
       },
     },
-    t(locale, 'start_open_ellipsis')
+    icon('folder', 14), t(locale, 'start_open_ellipsis')
   )
 
   const createBtn = el(
@@ -269,7 +286,7 @@ export function showStartScreen(
         handleCreate().catch(reportUnexpected)
       },
     },
-    t(locale, 'start_create_ellipsis')
+    icon('plus', 14), t(locale, 'start_create_ellipsis')
   )
 
   const reopenBtn = el(
@@ -281,7 +298,7 @@ export function showStartScreen(
         handleReopenLast().catch(reportUnexpected)
       },
     },
-    t(locale, 'start_reopen_ellipsis')
+    icon('reopen', 14), t(locale, 'start_reopen_ellipsis')
   )
 
   const title = el('h1', { class: 'tt-start-title' }, t(locale, 'app_name'))
@@ -291,7 +308,7 @@ export function showStartScreen(
     el(
       'a',
       {
-        href: 'https://github.com/fmpallini/team-tracker/releases',
+        href: START_LINKS.releases,
         target: '_blank',
         rel: 'noopener noreferrer',
       },
@@ -303,6 +320,7 @@ export function showStartScreen(
     'ul',
     { class: 'tt-start-advantages' },
     el('li', {}, t(locale, 'start_adv_offline')),
+    el('li', {}, t(locale, 'start_adv_open')),
     el('li', {}, t(locale, 'start_adv_ownership')),
     el('li', {}, t(locale, 'start_adv_crypto'))
   )
@@ -312,11 +330,11 @@ export function showStartScreen(
     'p',
     { class: 'tt-start-backup-tip' },
     t(locale, 'start_backup_tip_prefix'),
-    cloudLink('https://workspace.google.com/products/drive/#download', t(locale, 'start_backup_tip_link_drive')),
+    cloudLink(START_LINKS.googleDrive, t(locale, 'start_backup_tip_link_drive')),
     ', ',
-    cloudLink('https://www.microsoft.com/microsoft-365/onedrive/download', t(locale, 'start_backup_tip_link_onedrive')),
+    cloudLink(START_LINKS.oneDrive, t(locale, 'start_backup_tip_link_onedrive')),
     ', ',
-    cloudLink('https://www.dropbox.com/install', t(locale, 'start_backup_tip_link_dropbox')),
+    cloudLink(START_LINKS.dropbox, t(locale, 'start_backup_tip_link_dropbox')),
     t(locale, 'start_backup_tip_suffix')
   )
   const autoLoadCheckbox = el('input', {

@@ -24,6 +24,13 @@ export interface ConflictModalOptions {
    * save picker at all) simply omit it and get the original two buttons.
    */
   onFork?: () => Promise<boolean>
+  /**
+   * Fires when the modal is closed WITHOUT any of its choices — Escape, chiefly.
+   * The conflict is still unresolved at that point, so the owner must release
+   * whatever guard it keeps against stacking a second modal; otherwise nothing
+   * ever re-raises this one and every later save silently no-ops.
+   */
+  onDismiss?: () => void
 }
 
 /**
@@ -35,14 +42,18 @@ export interface ConflictModalOptions {
  */
 export function showConflictModal(opts: ConflictModalOptions): void {
   const { locale } = opts
+  // Set by every button path BEFORE it closes the modal, so `onClose` below can
+  // tell "the user chose" from "the user walked away".
+  let settled = false
 
   function confirmReload(): void {
     const body = el('p', { class: 'tt-modal-message' }, t(locale, 'conflict_reload_confirm'))
-    const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+    const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => inner.close() }
     const confirmBtn: ModalButton = {
       label: t(locale, 'conflict_reload_btn'),
       primary: true,
       onClick: () => {
+        settled = true
         inner.close()
         handle.close()
         Promise.resolve(opts.onReload()).catch((e) => console.error(e))
@@ -52,6 +63,7 @@ export function showConflictModal(opts: ConflictModalOptions): void {
   }
 
   function overwrite(): void {
+    settled = true
     handle.close()
     Promise.resolve(opts.onOverwrite()).catch((e) => console.error(e))
   }
@@ -65,6 +77,7 @@ export function showConflictModal(opts: ConflictModalOptions): void {
   function fork(): void {
     const onFork = opts.onFork
     if (!onFork) return
+    settled = true
     handle.close()
     Promise.resolve(onFork())
       .then((done) => { if (!done) showConflictModal(opts) })
@@ -78,5 +91,10 @@ export function showConflictModal(opts: ConflictModalOptions): void {
   const buttons: ModalButton[] = opts.onFork
     ? [{ label: t(locale, 'conflict_fork_btn'), onClick: () => fork() }, reloadBtn, overwriteBtn]
     : [reloadBtn, overwriteBtn]
-  const handle: ModalHandle = showModal({ title: t(locale, 'conflict_title'), body, buttons })
+  const handle: ModalHandle = showModal({
+    title: t(locale, 'conflict_title'),
+    body,
+    buttons,
+    onClose: () => { if (!settled) opts.onDismiss?.() },
+  })
 }

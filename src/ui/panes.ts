@@ -605,7 +605,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
     noTeamsEl.style.display = hasTeams ? 'none' : ''
     if (!hasTeams) {
       noTeamsTitleEl.textContent = t(lc, 'empty_no_teams_title')
-      noTeamsBtn.textContent = t(lc, 'empty_no_teams_btn')
+      noTeamsBtn.replaceChildren(icon('plus', 14), t(lc, 'empty_no_teams_btn'))
       noTeamsHintEl.textContent = t(lc, 'empty_no_teams_hint')
     }
     const split = effectiveSplit()

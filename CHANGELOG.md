@@ -4,6 +4,20 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.0.0] - 2026-10-14
+
+### Added
+- Start screen now says plainly that the app is free, open source and auditable, and works 100% offline in the browser, the downloaded HTML or the installed app — with shorter text overall.
+- Milestones get a round done toggle with "N of M done" progress, and risks a clearer Close/Reopen with undo. Both now need a title.
+
+### Changed
+- Fresh look: icons colored by meaning, tinted buttons with icons, consistent corners and shadows, empty panes with an icon, and dialogs that ease in.
+- Template placeholders are now English (`{date}` `{time}` `{person}` `{team}`), documented in Help; existing templates convert automatically. Older versions can't open files saved by this one.
+
+### Fixed
+- Text on primary buttons was hard to read in dark themes; "~5 min and ~10 min" or "2 * 3 * 4" no longer turns into formatting, and a `[text](target)` that isn't a link keeps its brackets.
+- Safer saving: the "File changed externally" dialog, "Take control" between tabs, deleting untitled items, teams import and backup setup no longer lose edits or fail silently.
+
 ## [2.17.0] - 2026-10-13
 
 ### Added

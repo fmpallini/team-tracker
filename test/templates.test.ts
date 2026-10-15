@@ -8,10 +8,31 @@ test('five builtins with scopes', () => {
   expect(new Set(ts.map(t => t.id)).size).toBe(5)
 })
 
-test('resolveTemplate fills placeholders', () => {
-  const out = resolveTemplate('## 1:1 — {data} {hora} {pessoa} {time}',
+test('resolveTemplate fills the English placeholders', () => {
+  const out = resolveTemplate('## 1:1 — {date} {time} {person} {team}',
     { dateIso: '2026-07-02', time: '14:30', personName: 'Ana', teamName: 'Alpha', locale: 'pt-BR' })
   expect(out).toBe('## 1:1 — 02/07/2026 14:30 Ana Alpha')
+})
+
+test('the old Portuguese placeholders are no longer recognised', () => {
+  const out = resolveTemplate('{data} {hora} {pessoa}', { dateIso: '2026-07-02', time: '14:30', personName: 'Ana', teamName: 'Alpha', locale: 'pt-BR' })
+  expect(out).toBe('{data} {hora} {pessoa}')
+})
+
+test('{time} is now the wall-clock time, not the team name', () => {
+  expect(resolveTemplate('{time}', { dateIso: '2026-07-02', time: '9:05 AM', teamName: 'Alpha', locale: 'en-US' })).toBe('9:05 AM')
+})
+
+test('placeholders resolve the same in either locale; only the date format follows the locale', () => {
+  const ctx = { dateIso: '2026-07-02', time: '14:30', locale: 'en-US' as const }
+  expect(resolveTemplate('{date}', ctx)).toBe('07/02/2026')
+  expect(resolveTemplate('{date}', { ...ctx, locale: 'pt-BR' })).toBe('02/07/2026')
+})
+
+test('no built-in template, in either locale, still uses a Portuguese placeholder', () => {
+  for (const locale of ['pt-BR', 'en-US'] as const) {
+    for (const tpl of builtinTemplates(locale)) expect(tpl.body).not.toMatch(/\{(data|hora|pessoa)\}/)
+  }
 })
 
 test('empty document seeds builtins', () => {

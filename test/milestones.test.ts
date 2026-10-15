@@ -5,6 +5,7 @@ import {
   truncateTitle,
   isBlankMilestoneDraft,
 } from '../src/modules/milestones'
+import { todayIso } from '../src/core/i18n'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -103,14 +104,14 @@ describe('pure helpers', () => {
   })
 
   describe('isBlankMilestoneDraft', () => {
-    test('true for a blank title with the row otherwise untouched', () => {
-      expect(isBlankMilestoneDraft(milestone({ title: '' }))).toBe(true)
+    test('true for a blank title on the default (today) date with the row otherwise untouched', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '', date: todayIso() }))).toBe(true)
     })
     test('true even for a far-past date — the date alone never makes a nameless row worth keeping', () => {
       expect(isBlankMilestoneDraft(milestone({ title: '', date: '2001-01-01' }))).toBe(true)
     })
     test('true when the title is only whitespace', () => {
-      expect(isBlankMilestoneDraft(milestone({ title: '  ' }))).toBe(true)
+      expect(isBlankMilestoneDraft(milestone({ title: '  ', date: todayIso() }))).toBe(true)
     })
     test('false once the title has real text', () => {
       expect(isBlankMilestoneDraft(milestone({ title: 'Kickoff' }))).toBe(false)
@@ -265,7 +266,7 @@ describe('renderMilestones', () => {
 
     const timeline = container.querySelector('.tt-milestone-timeline') as HTMLElement
     expect(timeline.style.display).toBe('none')
-    expect(container.querySelector('.tt-milestone-empty')?.textContent).toBe('No milestones')
+    expect(container.querySelector('.tt-milestone-empty .tt-empty-state-text')?.textContent).toBe('No milestones')
   })
 
   test('renders the list sorted by date ascending, independent of storage order', () => {
@@ -369,11 +370,11 @@ describe('renderMilestones', () => {
     const future = dots.find((d) => d.querySelector('title')?.textContent === 'Future')!
 
     expect(done.classList.contains('tt-milestone-dot-done')).toBe(true)
-    expect(done.getAttribute('fill')).toBe('var(--accent)')
+    expect(done.getAttribute('fill')).toBe('var(--ok)')
 
     expect(overdue.classList.contains('tt-milestone-dot-overdue')).toBe(true)
     expect(overdue.getAttribute('fill')).toBe('none')
-    expect(overdue.getAttribute('stroke')).toBe('var(--muted)')
+    expect(overdue.getAttribute('stroke')).toBe('var(--danger)')
 
     expect(future.classList.contains('tt-milestone-dot-future')).toBe(true)
     expect(future.getAttribute('fill')).toBe('none')
@@ -442,8 +443,45 @@ describe('renderMilestones', () => {
     expect(rows(container)[0]!.classList.contains('tt-milestone-done-row')).toBe(true)
   })
 
+  test('the done toggle leads the row, ahead of the date', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const kids = Array.from(rows(container)[0]!.children)
+    expect(kids[0]!.classList.contains('tt-milestone-done-checkbox')).toBe(true)
+    expect(kids[1]!.classList.contains('tt-milestone-date-input')).toBe(true)
+  })
+
+  test('the toolbar counts done milestones and hides itself when there are none', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A', done: true }), milestone({ id: 'b', title: 'B' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const progress = container.querySelector('.tt-milestone-progress') as HTMLElement
+    expect(progress.querySelector('.tt-milestone-progress-label')!.textContent).toBe('1 of 2 done')
+    expect((progress.querySelector('.tt-milestone-progress-fill') as HTMLElement).style.width).toBe('50%')
+
+    const checkbox = container.querySelectorAll<HTMLInputElement>('.tt-milestone-done-checkbox')[1]!
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+    expect(container.querySelector('.tt-milestone-progress-label')!.textContent).toBe('2 of 2 done')
+  })
+
+  test('ticking a milestone done marks its rebuilt row for the one-time completion pop', () => {
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'A' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const checkbox = container.querySelector('.tt-milestone-done-checkbox') as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+
+    expect(rows(container)[0]!.classList.contains('tt-milestone-just-done')).toBe(true)
+  })
+
   test('deleting a milestone with an empty title removes it immediately with no confirmation', () => {
-    const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: todayIso() })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
@@ -458,7 +496,7 @@ describe('renderMilestones', () => {
     // spec's justification for deleteWithUndo's structuredClone cost ("paid
     // once, on an explicit user action that has already been through a
     // confirm dialog") does not apply here — this must not clone at all.
-    const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+    const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: todayIso() })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     // Restored in finally: vi.spyOn on an already-spied global returns the
@@ -502,6 +540,90 @@ describe('renderMilestones', () => {
       row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
       vi.runAllTimers()
     }
+
+    test('a nameless row is still judged when an edit rebuilt it between focus leaving and the check', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const oldRow = container.querySelector('.tt-milestone-row') as HTMLElement
+      outside.focus()
+      oldRow.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      store.update((d) => { d.teams[0]!.milestones[0]!.date = '2031-01-15' }, { teamId: team.id, sections: ['milestones'] })
+      vi.runAllTimers()
+
+      expect(oldRow.isConnected).toBe(false)
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    })
+
+    test('a nameless milestone refuses to open its follow-up: it flags the name and puts the caret in the title', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      ;(row.querySelector('.tt-milestone-expand-btn') as HTMLButtonElement).click()
+
+      expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
+      expect(row.querySelector('.tt-milestone-name-error')?.textContent).toBe('This milestone needs a name.')
+      expect(document.activeElement).toBe(row.querySelector('.tt-milestone-title-input'))
+    })
+
+    test('Expand all skips a nameless milestone but opens the named ones', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' }), milestone({ id: 'b', title: 'Named', date: '2026-02-01' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-milestone-expand-all-btn') as HTMLButtonElement).click()
+
+      expect(container.querySelectorAll('.tt-milestone-followup-row')).toHaveLength(1)
+      expect(container.querySelector('.tt-milestone-followup-row')?.getAttribute('data-milestone-followup-id')).toBe('b')
+    })
+
+    test('pressing + Milestone while an untitled draft is open reuses it instead of stacking a blank row', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      clickByTitleOrText(container, '+ Milestone')
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+      expect(document.activeElement).toBe(container.querySelector('.tt-milestone-title-input'))
+    })
+
+    test('focus landing on the + Milestone button is not leaving the list: the draft is kept for the click', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      leaveRow(container.querySelector('.tt-milestone-row') as HTMLElement, container.querySelector('.tt-milestone-add-btn') as HTMLElement)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    })
+
+    test('a nameless row is dropped on leaving even when its date was moved off today — a title is required', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: '2031-01-15' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      leaveRow(container.querySelector('.tt-milestone-row') as HTMLElement)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    })
+
+    test('pressing a day in the date popover (focus moves onto it, outside the list) does not drop the draft', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      ;(row.querySelector('.tt-date-picker-input') as HTMLInputElement).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const dayBtn = document.querySelector<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)')!
+
+      leaveRow(row, dayBtn)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    })
 
     test('a just-added milestone left with no name is dropped once focus leaves the list', () => {
       const { container, store, pm, loc } = setup(makeTeam())
@@ -1311,7 +1433,7 @@ describe('milestone delete — behaviour pins', () => {
 
   it('a blank-title delete is silent: no dialog, no toast, no undo', () => {
     const { container, store } = mount({
-      milestones: [milestone({ id: 'm1', title: '', date: '2026-01-01' }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],
+      milestones: [milestone({ id: 'm1', title: '', date: todayIso() }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],
     })
     deleteRowButton(container, 'm1').click()
 
@@ -1331,9 +1453,23 @@ describe('milestone delete — behaviour pins', () => {
     expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
   })
 
+  it('an UNTITLED milestone that carries a follow-up is not deleted silently: it asks first', () => {
+    const { container, store } = mount({ milestones: [milestone({ id: 'm1', title: '', followup: 'confirm budget with finance' })] })
+    deleteRowButton(container, 'm1').click()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+  })
+
+  it('an untitled milestone already marked done is not an untouched draft', () => {
+    const { container, store } = mount({ milestones: [milestone({ id: 'm1', title: '', done: true })] })
+    deleteRowButton(container, 'm1').click()
+    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+  })
+
   it('the silent delete is scoped the same way', () => {
     const { container, store } = mount({
-      milestones: [milestone({ id: 'm1', title: '', date: '2026-01-01' }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],
+      milestones: [milestone({ id: 'm1', title: '', date: todayIso() }), milestone({ id: 'm2', title: 'Other', date: '2026-02-01' })],
     })
     const seen = recordScopes(store)
     deleteRowButton(container, 'm1').click()

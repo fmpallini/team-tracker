@@ -71,19 +71,21 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     const forkSession = await pickCreate(`${stem} (copy).tmv`)
     if (!forkSession) return false
 
-    // Before serializing, not after: `backupHandleId` travels
-    // inside the .tmv itself, so a fork that kept it would mirror
-    // its own saves into the ORIGINAL file's .bck and quietly
-    // overwrite the backups belonging to a document it just
-    // diverged from. The user re-picks a backup target for the
-    // fork in prefs.
+    // The fork file must be written with the mirror detached: `backupHandleId`
+    // travels inside the .tmv itself, so a fork that kept it would mirror its
+    // own saves into the ORIGINAL file's .bck and quietly overwrite the
+    // backups belonging to a document it just diverged from. The user re-picks
+    // a backup target for the fork in prefs. Serialized from a detached copy
+    // and applied to the live store only AFTER the write succeeds, so a failed
+    // fork (disk full, permission) doesn't silently switch the original
+    // document's backups off.
+    const currentPw = deps.getPassword()
+    const detached: Doc = { ...store.doc, prefs: { ...store.doc.prefs, dailyBackupEnabled: false, backupHandleId: null } }
+    await forceWrite(forkSession, await docToBytes(detached, currentPw))
     store.update((d) => {
       d.prefs.dailyBackupEnabled = false
       d.prefs.backupHandleId = null
     })
-
-    const currentPw = deps.getPassword()
-    await forceWrite(forkSession, await docToBytes(store.doc, currentPw))
     // The document's content is now persisted — to the fork rather
     // than to `session`, but persisted. Clearing dirty here is what
     // stops teardown (reached via `reopen` below) from
@@ -110,10 +112,15 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
 
   async function overwrite(): Promise<void> {
     try {
+      // An edit landing while the write is in flight is not in the bytes just
+      // written; clearing `dirty` for it would drop it from every later save.
+      const revBefore = store.rev
       await forceWrite(session, await docToBytes(store.doc, deps.getPassword()))
-      store.markSaved()
-      shell.setSaveState('saved')
-      shell.setTitle(session.name, false)
+      if (store.rev === revBefore) {
+        store.markSaved()
+        shell.setSaveState('saved')
+        shell.setTitle(session.name, false)
+      }
     } catch (e) {
       console.error(e)
       if (e instanceof DOMException && e.name === 'NotAllowedError') {
@@ -153,6 +160,10 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       // that can't work.
       onFork: session.handle ? fork : undefined,
       onOverwrite: overwrite,
+      // Escape (or any close without a choice) leaves the conflict unresolved:
+      // release the guard so the next save attempt raises the modal again
+      // instead of `saveNow()` no-opping forever behind a modal nobody can see.
+      onDismiss: () => { open = false },
     })
   }
 

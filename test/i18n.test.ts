@@ -17,8 +17,20 @@ test('t substitutes every distinct placeholder in one message', () => {
 
 test('t leaves placeholder-shaped text alone when no params are given', () => {
   // This hint string literally describes the template placeholders, so its
-  // own "{data}" etc. must survive verbatim.
-  expect(t('pt-BR', 'prefs_templates_placeholders_hint')).toContain('{data}')
+  // own "{date}" etc. must survive verbatim.
+  expect(t('pt-BR', 'prefs_templates_placeholders_hint')).toContain('{date}')
+})
+
+test('both locales document the same four English template placeholders (prefs hint and help)', () => {
+  for (const locale of ['pt-BR', 'en-US'] as const) {
+    const hint = t(locale, 'prefs_templates_placeholders_hint')
+    const help = t(locale, 'help_templates_text')
+    for (const key of ['{date}', '{time}', '{person}', '{team}']) {
+      expect(hint).toContain(key)
+      expect(help).toContain(key)
+    }
+    expect(hint).not.toMatch(/\{(data|hora|pessoa)\}/)
+  }
 })
 
 test('t ignores an unused param and a message with no placeholders', () => {
