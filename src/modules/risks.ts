@@ -18,7 +18,7 @@ import { createEntityDelete } from './entity-delete'
 import { patchTeamItem } from '../core/team-items'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
-import { confirmDelete } from '../ui/modal'
+import { confirmDelete, toast } from '../ui/modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { createRichEditorBundle } from '../ui/rich-editor'
@@ -381,7 +381,16 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       }
       expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
     }
+    const closing = closed ? risks().find((rr) => rr.id === id) : undefined
     patchTeamItem(ctx.store, teamId, 'risks', id, (r) => { r.closed = closed }, { teamId, sections: ['risks'] })
+    // Closing files the row away in the Closed list, so say where it went and offer the way back. Reopening *is* the undo, so no snapshot is needed.
+    if (closing && !ctx.store.readOnly) {
+      toast(t(lc, 'risk_closed_toast', { title: closing.title }), {
+        key: 'risk-closed',
+        duration: 6000,
+        action: { label: t(lc, 'undo'), onClick: () => setClosed(id, false) },
+      })
+    }
   }
 
   /**
@@ -866,8 +875,9 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     const closeBtn = el(
       'button',
-      { class: 'tt-btn tt-risk-close-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_close_title'), onclick: () => setClosed(r.id, true) },
-      icon('check', 16)
+      { class: 'tt-btn tt-risk-close-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_close_title'), 'aria-label': t(lc, 'risk_close_title'), onclick: () => setClosed(r.id, true) },
+      icon('resolve', 16),
+      el('span', { class: 'tt-risk-btn-label' }, t(lc, 'risk_close_btn'))
     )
 
     const deleteBtn = el(
@@ -1045,8 +1055,9 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       : el('span', { class: 'tt-risk-header-spacer' }) // keep the column aligned with rows that do have a caret
     const reopenBtn = el(
       'button',
-      { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
-      icon('reopen', 16)
+      { class: 'tt-btn tt-risk-reopen-btn', type: 'button', title: t(lc, 'risk_reopen_title'), 'aria-label': t(lc, 'risk_reopen_title'), onclick: () => setClosed(r.id, false) },
+      icon('reopen', 16),
+      el('span', { class: 'tt-risk-btn-label' }, t(lc, 'risk_reopen_btn'))
     )
     // Same delete flow as an open row's — closed carries no other content
     // worth losing beyond what requestDelete already guards (confirm +
@@ -1128,7 +1139,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // row buttons, before the chip made it 3 vs. 4).
     el('span', { class: 'tt-risk-header-spacer' }),
     el('span', { class: 'tt-risk-header-spacer' }),
-    el('span', { class: 'tt-risk-header-spacer' }),
+    el('span', { class: 'tt-risk-header-spacer tt-risk-header-close' }),
     el('span', { class: 'tt-risk-header-spacer' })
   )
 

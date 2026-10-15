@@ -864,6 +864,37 @@ describe('renderRisks', () => {
     expect(container.querySelectorAll('.tt-risks-closed .tt-risk-row')).toHaveLength(0)
   })
 
+  test('the close button shows a hover label while keeping the full accessible name', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const btn = container.querySelector('.tt-risk-close-btn') as HTMLButtonElement
+    expect(btn.querySelector('.tt-risk-btn-label')!.textContent).toBe('Close')
+    expect(btn.getAttribute('aria-label')).toBe('Close risk')
+  })
+
+  test('closing a risk toasts where it went, and the toast Undo reopens it', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-risk-close-btn') as HTMLButtonElement).click()
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Risk "Vendor delay" closed')
+
+    ;(document.querySelector('.tt-toast-action') as HTMLButtonElement).click()
+    expect(store.doc.teams[0]!.risks[0]!.closed).toBe(false)
+  })
+
+  test('a blocked close (no title) shows no toast', () => {
+    const team = makeTeam({ risks: [risk({ id: 'r1', title: '' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    ;(container.querySelector('.tt-risk-close-btn') as HTMLButtonElement).click()
+    expect(document.querySelector('.tt-toast')).toBeNull()
+  })
+
   test('a closed row has its own delete button, using the same confirm+undo flow as an open row', () => {
     const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay', closed: true })] })
     const { container, store, pm, loc } = setup(team)

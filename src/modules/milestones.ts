@@ -72,16 +72,17 @@ export function truncateTitle(title: string): string {
 
 /**
  * True when a milestone row is a blank-title draft carrying nothing else
- * worth keeping: not done and no follow-up. `date` is deliberately ignored —
- * a milestone always has one (defaults to today at add), so it can never be
- * the thing that makes a nameless row worth keeping. The blank-name
- * focus-out guard drops such a row on the spot (no confirm, exactly as
- * requestDelete treats a blank row), mirroring how
+ * worth keeping: not done, no follow-up, and still on the date it was added
+ * with (today). A milestone always has a date, so the default can't make a
+ * nameless row worth keeping — but a date the user moved it to is a choice
+ * they made, and losing it with the row when focus drifts away was the bug.
+ * The blank-name focus-out guard drops a blank draft on the spot (no confirm,
+ * exactly as requestDelete treats a blank row), mirroring how
  * src/modules/action-items.ts discards an unnamed card when its modal
  * closes; a row that has picked up real content is kept and flagged instead.
  */
 export function isBlankMilestoneDraft(m: Milestone): boolean {
-  return m.title.trim() === '' && !m.done && m.followup.trim() === ''
+  return m.title.trim() === '' && !m.done && m.followup.trim() === '' && m.date === todayIso()
 }
 
 export interface TimelineLayout {
@@ -287,6 +288,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // timeline scrolls sideways — and the plain wheel drives that scroll.
   const unbindTimelineWheel = wheelScrollsHorizontally(timelineEl)
 
+  // Set when the user ticks a milestone done so the rebuilt row and timeline dot play the completion pop once. Cleared on a timer rather than on render, because a rebuild may be deferred.
+  let justDoneId: string | null = null
+
   function renderTimeline(): void {
     // Clearing the content collapses the scroll range and snaps scrollLeft to 0;
     // keep the reader's place across a re-render (an edit, a size change).
@@ -360,13 +364,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       circle.setAttribute('cx', String(cx))
       circle.setAttribute('cy', String(midY))
       circle.setAttribute('r', String(CIRCLE_R))
-      circle.setAttribute('class', `tt-milestone-dot ${m.done ? 'tt-milestone-dot-done' : overdue ? 'tt-milestone-dot-overdue' : 'tt-milestone-dot-future'}`)
+      circle.setAttribute('class', `tt-milestone-dot ${m.done ? 'tt-milestone-dot-done' : overdue ? 'tt-milestone-dot-overdue' : 'tt-milestone-dot-future'}${m.id === justDoneId ? ' tt-milestone-just-done' : ''}`)
       if (m.done) {
-        circle.setAttribute('fill', 'var(--accent)')
-        circle.setAttribute('stroke', 'var(--accent)')
+        circle.setAttribute('fill', 'var(--ok)')
+        circle.setAttribute('stroke', 'var(--ok)')
       } else if (overdue) {
         circle.setAttribute('fill', 'none')
-        circle.setAttribute('stroke', 'var(--muted)')
+        circle.setAttribute('stroke', 'var(--danger)')
       } else {
         circle.setAttribute('fill', 'none')
         circle.setAttribute('stroke', 'var(--accent)')
@@ -456,6 +460,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
           return
         }
         const checked = input.checked
+        if (checked) {
+          justDoneId = m.id
+          setTimeout(() => { if (justDoneId === m.id) justDoneId = null }, 1000)
+        }
         patchTeamItem(ctx.store, teamId, 'milestones', m.id, (found) => { found.done = checked }, { teamId, sections: ['milestones'] })
       },
     })
@@ -495,13 +503,14 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         'data-item-id': m.id,
         title: `${t(lc, 'milestone_row_context_hint')} · ${t(lc, 'risk_row_menu_hint')}`,
       },
-      datePicker.root, titleInput, doneCheckbox, backlinksChip, expandBtn, deleteBtn
+      doneCheckbox, datePicker.root, titleInput, backlinksChip, expandBtn, deleteBtn
     )
     // Left-edge state mark, mirroring the timeline dots' own three-way
     // vocabulary (done / overdue / upcoming) rather than inventing a second
     // one — the list is the half you actually edit, and it encoded none of it.
     row.classList.add(m.done ? 'tt-milestone-state-done' : m.date < todayIso() ? 'tt-milestone-state-overdue' : 'tt-milestone-state-future')
     if (m.done) row.classList.add('tt-milestone-done-row')
+    if (m.id === justDoneId) row.classList.add('tt-milestone-just-done')
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
@@ -540,6 +549,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         const active = document.activeElement
         if (active && active !== document.body && listEl.contains(active)) return
         if (!active || active === document.body) return
+        // The date picker's calendar lives in <body>, outside this list, yet
+        // pressing a day moves focus onto it (mousedown focuses the button).
+        // Judged at that instant the draft still has today's date and no
+        // title, so it was dropped mid-pick — before the click could land.
+        if (active.closest('.tt-date-picker-popover')) return
         const cur = milestones().find((mm) => mm.id === m.id)
         if (!cur) return
         if (cur.title.trim() !== '') { clearNameError(row); return }
@@ -577,6 +591,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       focusMilestoneId = null
     }
     updateExpandAllBtn(sorted)
+    updateProgress(sorted)
   }
 
   function renderAll(): void {
@@ -635,7 +650,19 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     expandAllBtn.replaceChildren(icon(all ? 'chevUp' : 'chevDown', 12), t(lc, all ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn'))
   }
 
-  const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, expandAllBtn)
+  const progressLabelEl = el('span', { class: 'tt-milestone-progress-label' })
+  const progressFillEl = el('span', { class: 'tt-milestone-progress-fill' })
+  const progressEl = el('span', { class: 'tt-milestone-progress' }, progressLabelEl, el('span', { class: 'tt-milestone-progress-bar', 'aria-hidden': 'true' }, progressFillEl))
+
+  /** "5 of 9 done" plus a thin bar; hidden while there is nothing to count. */
+  function updateProgress(sorted: Milestone[]): void {
+    const done = sorted.filter((m) => m.done).length
+    progressEl.style.display = sorted.length === 0 ? 'none' : ''
+    progressLabelEl.textContent = t(lc, 'milestone_progress', { done: String(done), total: String(sorted.length) })
+    progressFillEl.style.width = sorted.length === 0 ? '0%' : `${Math.round((done / sorted.length) * 100)}%`
+  }
+
+  const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, progressEl, expandAllBtn)
 
   /**
    * True (and returns the focused element) for the caret-sensitive elements

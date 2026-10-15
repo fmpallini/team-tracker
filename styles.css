@@ -600,6 +600,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Icon color carries meaning, nothing else is colored: red = destroys, green = confirms/restores, gold = state you set (favorite, lock), accent = changes content, slate = settings/help/dates. Every other icon keeps the button's own (neutral) text color. The icon() span carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
 .tt-btn:not(:hover):not(:disabled) .tt-icon-trash,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-close { color: var(--danger); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-resolve,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-check,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-download,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-reopen { color: var(--ok); }
@@ -1590,9 +1591,31 @@ body { background: var(--bg); color: var(--fg); }
    muted = overdue, hollow accent = upcoming. The list is the half you edit
    and it encoded none of this; borrowing the timeline's three treatments
    rather than inventing a fourth means there's no new legend to learn. */
-.tt-milestone-row.tt-milestone-state-done { border-left-color: var(--accent); }
-.tt-milestone-row.tt-milestone-state-overdue { border-left-color: var(--muted); }
+/* Row state reads the same as the timeline dot above it: done = green, late = red, upcoming = accent. */
+.tt-milestone-row.tt-milestone-state-done { border-left-color: var(--ok); }
+.tt-milestone-row.tt-milestone-state-overdue { border-left-color: var(--danger); }
 .tt-milestone-row.tt-milestone-state-future { border-left-color: rgba(var(--accent-rgb), .45); }
+.tt-milestone-row.tt-milestone-state-overdue .tt-date-picker-input { color: var(--danger); }
+.tt-milestone-row.tt-milestone-done-row .tt-date-picker-input { color: var(--muted); }
+/* Done toggle: an open ring (red when late, accent when upcoming) that fills green with a check, like the timeline dot. A native checkbox underneath, so keyboard, label and form behavior are unchanged. */
+.tt-milestone-done-checkbox { appearance: none; -webkit-appearance: none; flex: none; width: 1.2rem; height: 1.2rem; margin: 0 .15rem; border: 2px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; display: inline-grid; place-content: center; transition: background-color .12s ease, border-color .12s ease; }
+.tt-milestone-row.tt-milestone-state-overdue .tt-milestone-done-checkbox { border-color: var(--danger); }
+.tt-milestone-done-checkbox:hover { border-color: var(--ok); }
+.tt-milestone-done-checkbox::after { content: ''; width: .3rem; height: .58rem; margin-top: -.12rem; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform .12s ease-out; }
+.tt-milestone-done-checkbox:checked { background: var(--ok); border-color: var(--ok); }
+.tt-milestone-done-checkbox:checked::after { transform: rotate(45deg) scale(1); }
+.tt-milestone-done-checkbox:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/* Completion feedback: the ring pops, the row and its timeline dot flash/pop once. Entrance-only, switched off under reduced motion. */
+@keyframes tt-done-flash { from { background: color-mix(in srgb, var(--ok) 28%, transparent); } }
+@keyframes tt-done-pop { 0% { transform: scale(.7); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.tt-milestone-row.tt-milestone-just-done { animation: tt-done-flash .7s ease-out; }
+.tt-milestone-row.tt-milestone-just-done .tt-milestone-done-checkbox { animation: tt-done-pop .3s ease-out; }
+.tt-milestone-dot.tt-milestone-just-done { transform-box: fill-box; transform-origin: center; animation: tt-done-pop .35s ease-out; }
+@media (prefers-reduced-motion: reduce) { .tt-milestone-row.tt-milestone-just-done, .tt-milestone-row.tt-milestone-just-done .tt-milestone-done-checkbox, .tt-milestone-dot.tt-milestone-just-done { animation: none; } }
+/* "5 of 9 done" next to the Add button. */
+.tt-milestone-progress { display: inline-flex; align-items: center; gap: .5rem; margin-left: .9rem; color: var(--muted); font-size: .85rem; }
+.tt-milestone-progress-bar { width: 5rem; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.tt-milestone-progress-fill { display: block; height: 100%; background: var(--ok); transition: width .2s ease; }
 .tt-milestone-date-input { font-family: var(--font-data); flex: none; width: 9.5rem; }
 .tt-milestone-title-input { flex: 1; min-width: 0; }
 /* Fixed-width slot for the backlinks chip (or its placeholder, when the row
@@ -1761,6 +1784,13 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-close-btn:focus,
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }
+/* Close / Reopen: the icon sits quiet in its column; on row hover or focus the word appears beside it and the button gets a green outline. The slot is a fixed width, so nothing shifts when the label fades in. */
+.tt-risk-header-close, .tt-risk-close-btn { width: 5.6rem; }
+.tt-risk-close-btn, .tt-risk-reopen-btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: .35rem; border: 1px solid transparent; color: var(--ok); }
+.tt-risk-btn-label { font-size: .8rem; opacity: 0; transition: opacity .12s ease; white-space: nowrap; }
+.tt-risk-row:hover .tt-risk-btn-label, .tt-risk-close-btn:focus-visible .tt-risk-btn-label, .tt-risk-reopen-btn:focus-visible .tt-risk-btn-label { opacity: 1; }
+.tt-risk-row:hover .tt-risk-close-btn, .tt-risk-row:hover .tt-risk-reopen-btn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.tt-risk-close-btn:hover, .tt-risk-reopen-btn:hover { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .tt-risk-row.tt-risk-row-expanded .tt-risk-expand-btn { opacity: 1; }
 /* The row is one Tab stop that opens the context menu on Enter/Space, so it
    needs a focus ring of its own — inset, since rows sit flush against each
@@ -1784,9 +1814,9 @@ select option { background: var(--bg); color: var(--fg); }
    overflowing, so the wrap takes over before a horizontal scrollbar — or a
    delete button hanging off the row's border — ever appears. That width is the
    title's 12rem floor + chance/impact/exposure/plan (26rem) + the backlinks
-   chip and the three action buttons (4 × 2.6rem) + 8 gaps (3.2rem) + the row's
-   padding (.8rem) ≈ 52.4rem. Keep this above it when adding a column. */
-@container (max-width: 54rem) {
+   chip, expand and delete (3 × 2.6rem) + the wider close button (5.6rem) + 8 gaps (3.2rem) + the row's
+   padding (.8rem) ≈ 55.4rem. Keep this above it when adding a column. */
+@container (max-width: 57rem) {
   .tt-risk-row { flex-wrap: wrap; row-gap: .35rem; }
   /* The column header can't span two lines' worth of controls, and the
      mini-labels below replace it. */
@@ -1838,7 +1868,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); box-shadow: none; transform: none; }
-.tt-risks-closed .tt-risk-reopen-btn { flex: none; border: none; background: transparent; font-size: 1.3rem; line-height: 1; color: inherit; opacity: .55; }
+.tt-risks-closed .tt-risk-reopen-btn { flex: none; width: 5.6rem; background: transparent; font-size: 1.3rem; line-height: 1; opacity: .55; }
 .tt-risks-closed .tt-risk-reopen-btn:hover, .tt-risks-closed .tt-risk-reopen-btn:focus { opacity: 1; }
 /* The closed row's caret isn't hover-gated like an open row's — a closed
    risk is read-only, so its one interaction (peek the follow-up) should be
