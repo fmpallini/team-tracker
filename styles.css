@@ -425,8 +425,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
 /* Stroke icons (src/ui/icons.ts): centred in line-height 0 so a button holding only an icon is as tall as its padding, not its font. */
 .tt-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; vertical-align: middle; }
-/* A button holding only an icon centres it in both axes. Left as an inline-block/block box, the icon's baseline alignment inside the button's line box sat it ~1px low (pane back/forward/split). :where() keeps it at (0,1,0) so display:none rules (compact header) still win. */
-.tt-btn:where(:has(> .tt-icon:only-child)) { display: inline-flex; align-items: center; justify-content: center; }
+/* A button holding an icon (alone, or ahead of its label) centres it in both axes. Left as an inline-block/block box, the icon's baseline alignment inside the button's line box sat it ~1px low (pane back/forward/split). :where() keeps it at (0,1,0) so display:none rules (compact header) still win. */
+.tt-btn:where(:has(> .tt-icon)) { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; }
+/* Text action buttons in the panes: accent-tinted like the modal's secondary buttons. (The kanban "add card" keeps its dashed muted look.) */
+:where(.tt-people-add-btn, .tt-risk-add-btn, .tt-milestone-add-btn, .tt-risk-expand-all-btn, .tt-milestone-expand-all-btn, .tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
+:where(.tt-people-add-btn, .tt-risk-add-btn, .tt-milestone-add-btn, .tt-risk-expand-all-btn, .tt-milestone-expand-all-btn, .tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled):hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .tt-icon-svg { display: block; flex: none; }
 .tt-icon-svg .f { fill: currentColor; stroke: none; }
 /* Header buttons: true squares at the shared control height (the pills above use the same token). */
@@ -682,7 +685,7 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--danger) 10%, var(--panel));
   color: var(--danger); font-weight: 600;
 }
-.tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; }
+.tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-editor-link-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-field { display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; color: var(--muted); }

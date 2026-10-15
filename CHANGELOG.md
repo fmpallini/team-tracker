@@ -7,7 +7,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.18.0] - 2026-10-14
 
 ### Changed
-- Icons are now colored by meaning, and dialog buttons are tinted and carry icons, so the app feels less monochrome.
+- Icons are now colored by meaning, and dialog and toolbar buttons are tinted and carry icons, so the app feels less monochrome.
 - Template placeholders are now English (`{date}` `{time}` `{person}` `{team}`), documented in Help; existing templates convert automatically. Older versions can't open files saved by this one.
 - Text like "~5 min and ~10 min" or "2 * 3 * 4" no longer turns into formatting, and a `[text](target)` that isn't a link keeps its brackets.
 

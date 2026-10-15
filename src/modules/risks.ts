@@ -1273,7 +1273,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   /** Label reads "Expand all" unless every open (non-closed) row is already expanded, in which case it flips to "Collapse all" — mirrors risk_expand_all_btn/risk_collapse_all_btn i18n keys. */
   function updateExpandAllBtn(open: Risk[]): void {
-    expandAllBtn.textContent = t(lc, expandable.isAllExpanded(open.map((r) => r.id)) ? 'risk_collapse_all_btn' : 'risk_expand_all_btn')
+    const all = expandable.isAllExpanded(open.map((r) => r.id))
+    expandAllBtn.replaceChildren(icon(all ? 'chevUp' : 'chevDown', 12), t(lc, all ? 'risk_collapse_all_btn' : 'risk_expand_all_btn'))
   }
 
   const toolbar = el('div', { class: 'tt-risk-toolbar' }, addBtn, expandAllBtn)

@@ -630,7 +630,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   /** Label reads "Expand all" unless every milestone is already expanded, in which case it flips to "Collapse all" — mirrors milestone_expand_all_btn/milestone_collapse_all_btn i18n keys. */
   function updateExpandAllBtn(sorted: Milestone[]): void {
-    expandAllBtn.textContent = t(lc, expandable.isAllExpanded(sorted.map((m) => m.id)) ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn')
+    const all = expandable.isAllExpanded(sorted.map((m) => m.id))
+    expandAllBtn.replaceChildren(icon(all ? 'chevUp' : 'chevDown', 12), t(lc, all ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn'))
   }
 
   const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, expandAllBtn)

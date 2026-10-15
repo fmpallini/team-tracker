@@ -1426,7 +1426,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   const editTagsBtn = el(
     'button',
     { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
-    t(lc, 'kanban_edit_tags_btn')
+    icon('edit', 13), t(lc, 'kanban_edit_tags_btn')
   )
   const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)
 

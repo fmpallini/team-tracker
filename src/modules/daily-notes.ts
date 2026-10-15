@@ -156,7 +156,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
             type: 'button',
             onclick: () => ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: todayIso() } }),
           },
-          t(lc, 'date_picker_today_btn')
+          icon('calendar', 13), t(lc, 'date_picker_today_btn')
         )
       )
     )
