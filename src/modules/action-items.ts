@@ -671,7 +671,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         requestDelete(live, () => { deleting = true; closeModal() })
       } })
     }
-    buttons.push({ label: t(lc, 'kanban_close_btn'), onClick: () => closeModal() })
+    buttons.push({ label: t(lc, 'kanban_close_btn'), icon: 'close', onClick: () => closeModal() })
 
     const handle: ModalHandle = showModal({
       title: t(lc, existing === null ? 'kanban_add_title' : 'kanban_edit_title'),
@@ -759,7 +759,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       return el('div', { class: 'tt-kanban-color-name-row' }, el('span', { class: `tt-kanban-color-chip color-${c}` }), input)
     })
     const body = el('div', { class: 'tt-kanban-color-name-rows' }, ...rows)
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
     const saveBtn: ModalButton = {
       label: t(lc, 'kanban_save_btn'),
       primary: true,
@@ -812,7 +812,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_column_confirm', { count: String(count) })),
       el('label', { class: 'tt-field' }, t(lc, 'kanban_column_landing_label'), select)
     )
-    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
     const confirmBtn: ModalButton = {
       label: t(lc, 'kanban_delete_column_btn'),
       danger: true,

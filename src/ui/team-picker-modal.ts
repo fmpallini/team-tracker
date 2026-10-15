@@ -19,7 +19,7 @@ export function openTeamPickerModal(opts: {
   }
   const body = el('div', { class: 'tt-prefs-field' }, select)
 
-  const cancelBtn: ModalButton = { label: opts.cancelLabel, onClick: () => handle.close() }
+  const cancelBtn: ModalButton = { label: opts.cancelLabel, icon: 'close', onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,
     primary: true,
@@ -61,7 +61,7 @@ export function openTeamColumnPickerModal(opts: {
     el('label', { class: 'tt-field' }, opts.columnLabel, columnSelect)
   )
 
-  const cancelBtn: ModalButton = { label: opts.cancelLabel, onClick: () => handle.close() }
+  const cancelBtn: ModalButton = { label: opts.cancelLabel, icon: 'close', onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,
     primary: true,

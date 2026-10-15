@@ -24,12 +24,15 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
      --accent/--card-* set, so they actually read against the grey <pre>
      wash in every palette. */
   --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
+  /* Text on a solid --accent / --danger fill (primary button, badges). White fails WCAG AA on every dark theme's bright accent, so dark themes use the page background instead (ember overrides --on-danger below). */
+  --on-accent:#fff; --on-danger:#fff;
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
   --card-slate:#8fb6c4; --card-brass:#d4a84a; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a8a49c;
   --hl-kw:#c98fd6; --hl-str:#9cc47e; --hl-num:#d6a066; --hl-com:#8f8875;
+  --on-accent:var(--bg); --on-danger:var(--bg);
 }
 
 /* Palette specimens (prefs "Color palette" picker). Each is a full
@@ -100,7 +103,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff6a3d; --card-plum:#b06bff; --card-ledger:#a8a4b8;
 }
 [data-palette=verdant][data-theme=light] {
-  --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1f8a4a; --accent-rgb:31,138,74;
+  --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1c8248; --accent-rgb:28,130,72;
   --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#6b8a2e;
   --card-slate:#3a6b7a; --card-brass:#a17a1e; --card-sage:#6b8a2e; --card-rust:#a8402c; --card-plum:#6b4a7a; --card-ledger:#57684c;
 }
@@ -118,6 +121,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
   --bg:#1d100c; --fg:#f2e2da; --muted:#c99a8c; --accent:#ef6a4c; --accent-rgb:239,106,76;
   --panel:#271510; --border:#4a2e24; --brass:#d9a83e; --danger:#d1483a; --ok:#6fae82;
   --card-slate:#6f9fc0; --card-brass:#d9a83e; --card-sage:#6fae82; --card-rust:#d1483a; --card-plum:#b98fcb; --card-ledger:#c99a8c;
+  --on-danger:#000;
 }
 [data-palette=graphite][data-theme=light] {
   --bg:#e9e9eb; --fg:#18181b; --muted:#52525b; --accent:#27272a; --accent-rgb:39,39,42;
@@ -563,11 +567,53 @@ body { background: var(--bg); color: var(--fg); }
   .tt-pane-title-flash { animation: none; background: rgba(var(--accent-rgb), .4); }
 }
 
-.tt-btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.tt-btn-primary:hover { color: #fff; opacity: .9; }
+.tt-btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.tt-btn-primary:hover { color: var(--on-accent); opacity: .9; }
 .tt-btn-left { margin-right: auto; }
 .tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
+
+/* Colorful stroke icons. The icon() span already carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
+.tt-btn:not(:hover):not(:disabled) .tt-icon-trash,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-close { color: var(--danger); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-check,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-download,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-reopen { color: var(--ok); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-star,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-starFill,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-lock,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-template { color: var(--card-brass); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-edit,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-plus,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-gear,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-split { color: var(--accent); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-calendar,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-clock,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-print,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-latest,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-copy { color: var(--card-slate); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-link,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-at,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-note,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-orgchart,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-help { color: var(--card-plum); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-list,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-olist,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-quote,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-paragraph,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-codeBlock,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-hr,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-clearFmt { color: var(--card-sage); }
+
+/* A solid-accent primary button keeps its icon in the button's own text color (a green check on the accent fill would vanish). */
+.tt-btn.tt-btn-primary:not(:hover):not(:disabled) .tt-icon { color: var(--on-accent); }
+/* Modal buttons: icon + label, tinted secondary, glowing primary, soft-filled danger. */
+.tt-modal-buttons .tt-btn { display: inline-flex; align-items: center; gap: .35rem; }
+.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
+.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger):hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.tt-modal-buttons .tt-btn-primary { box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+.tt-modal-buttons .tt-btn-danger { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.tt-modal-buttons .tt-btn-danger:hover { background: var(--danger); color: var(--on-danger); opacity: 1; }
 .tt-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-pane-nav-btn:disabled { opacity: .3; }
 .tt-btn:disabled:hover { border-color: var(--border); color: var(--fg); }
@@ -697,18 +743,18 @@ body { background: var(--bg); color: var(--fg); }
 /* Update-available banner (fixed to viewport top: can show before any document is open) */
 .tt-update-banner {
   display: flex; flex-direction: column; align-items: center; gap: .3rem;
-  padding: .4rem .75rem; background: var(--accent); color: #fff; font-size: .9rem; text-align: center;
+  padding: .4rem .75rem; background: var(--accent); color: var(--on-accent); font-size: .9rem; text-align: center;
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
 }
 .tt-update-banner-row { display: flex; align-items: center; justify-content: center; gap: .75rem; width: 100%; }
-.tt-update-banner-action { border-color: rgba(255, 255, 255, .6); color: #fff; }
+.tt-update-banner-action { border-color: color-mix(in srgb, var(--on-accent) 60%, transparent); color: var(--on-accent); }
 /* Banner background is var(--accent); .tt-btn:hover would otherwise set the
    text to var(--accent) too (higher specificity than .tt-update-banner-action's
    plain color), making the label vanish on hover. Pin white and use a
    translucent-white fill as the actual hover highlight instead of dimming. */
-.tt-update-banner-action:hover { border-color: #fff; color: #fff; background: rgba(255, 255, 255, .18); }
+.tt-update-banner-action:hover { border-color: var(--on-accent); color: var(--on-accent); background: color-mix(in srgb, var(--on-accent) 18%, transparent); }
 .tt-update-banner-action:disabled { opacity: .5; cursor: default; }
-.tt-update-banner-dismiss { border: none; background: none; color: #fff; font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
+.tt-update-banner-dismiss { border: none; background: none; color: var(--on-accent); font-size: 1.1rem; cursor: pointer; padding: .1rem .3rem; }
 .tt-update-banner-dismiss:hover { opacity: .85; }
 .tt-update-banner-hint { margin: 0; font-size: .8rem; opacity: .9; max-width: 44em; }
 
@@ -742,7 +788,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-due-badge {
   font-family: var(--font-data); font-size: .7rem; font-weight: 700; line-height: 1.05rem;
   border-radius: 999px; min-width: 1.05rem; height: 1.05rem; padding: 0 .4rem;
-  background: var(--danger); color: #fff; flex: none; cursor: pointer; border: none;
+  background: var(--danger); color: var(--on-danger); flex: none; cursor: pointer; border: none;
   transition: filter .1s, transform .1s;
 }
 .tt-team-due-badge:empty { display: none; }
@@ -1091,7 +1137,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-backlinks-chip {
   display: inline-flex; align-items: center; justify-content: center; font-size: .7rem;
   height: 1.2rem; line-height: 1.2rem; padding: 0 .4rem; border-radius: 999px;
-  border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 700;
   cursor: pointer; flex: none;
   transition: filter .1s;
   /* Now a real <button> (keyboard/AT path) rather than a bare span — the
@@ -1177,7 +1223,7 @@ body { background: var(--bg); color: var(--fg); }
 /* The dark accent is a desaturated blue-gray: 15% alpha over the dark page
    background is nearly invisible, so noted days get a stronger wash there. */
 [data-theme="dark"] .tt-calendar-day-has-note { background: rgba(var(--accent-rgb), .32); }
-.tt-calendar-day-selected { background: var(--accent); color: #fff; font-weight: 700; }
+.tt-calendar-day-selected { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 [data-theme="dark"] .tt-calendar-day-selected {
   color: var(--bg);
   /* Dark theme's --accent is a light blue close in brightness to

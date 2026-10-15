@@ -694,7 +694,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   function openAddModal(): void {
     const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm()
 
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), icon: 'close', onClick: () => handle.close() }
     const okBtn: ModalButton = {
       label: t(locale(), 'ok'),
       primary: true,
@@ -723,7 +723,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   function openEditModal(team: Team): void {
     const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm({ name: team.name, emoji: team.emoji })
 
-    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), onClick: () => handle.close() }
+    const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), icon: 'close', onClick: () => handle.close() }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
       onClick: () => {

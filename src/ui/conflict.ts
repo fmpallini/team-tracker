@@ -48,7 +48,7 @@ export function showConflictModal(opts: ConflictModalOptions): void {
 
   function confirmReload(): void {
     const body = el('p', { class: 'tt-modal-message' }, t(locale, 'conflict_reload_confirm'))
-    const cancelBtn: ModalButton = { label: t(locale, 'cancel'), onClick: () => inner.close() }
+    const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => inner.close() }
     const confirmBtn: ModalButton = {
       label: t(locale, 'conflict_reload_btn'),
       primary: true,

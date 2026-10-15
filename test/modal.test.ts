@@ -526,3 +526,28 @@ test('the toast stack keeps at most three, dropping the oldest first', () => {
   const texts = [...document.querySelectorAll('.tt-toast')].map((n) => n.textContent)
   expect(texts).toEqual(['two', 'three', 'four'])
 })
+
+describe('button icons', () => {
+  const iconNames = (): string[] =>
+    [...document.querySelectorAll('.tt-modal-buttons button')].map((b) => b.querySelector('.tt-icon')?.className.split(' ').pop() ?? '')
+
+  test('primary defaults to a check, danger to a trash, a plain button to none', () => {
+    showModal({
+      title: 'T',
+      body: el('div', {}),
+      buttons: [
+        { label: 'Plain', onClick: () => {} },
+        { label: 'Delete', danger: true, onClick: () => {} },
+        { label: 'Save', primary: true, onClick: () => {} },
+      ],
+    })
+    expect(iconNames()).toEqual(['', 'tt-icon-trash', 'tt-icon-check'])
+  })
+
+  test('an explicit icon wins over the role default and leaves the label as the accessible text', () => {
+    showModal({ title: 'T', body: el('div', {}), buttons: [{ label: 'Cancel', icon: 'close', onClick: () => {} }] })
+    const btn = document.querySelector('.tt-modal-buttons button') as HTMLButtonElement
+    expect(btn.querySelector('.tt-icon-close')).not.toBeNull()
+    expect(btn.textContent).toBe('Cancel')
+  })
+})

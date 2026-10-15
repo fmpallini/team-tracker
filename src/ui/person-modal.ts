@@ -25,7 +25,7 @@ export function openPersonModal(lc: Locale, opts: {
     el('label', { class: 'tt-field' }, t(lc, 'person_role_label'), roleInput),
     errorEl
   )
-  const cancelBtn: ModalButton = { label: t(lc, 'cancel'), onClick: () => handle.close() }
+  const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
   const okBtn: ModalButton = {
     label: t(lc, 'ok'),
     primary: true,
