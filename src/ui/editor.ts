@@ -1263,7 +1263,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
             : []),
           { label: t(locale, 'ok'), primary: true, onClick: submit },
         ],
-        // Escape / overlay close routes here too, so the promise never hangs.
+        // Escape / backdrop close routes here too, so the promise never hangs.
         onClose: () => finish(null),
       })
       pendingLinkModal = handle

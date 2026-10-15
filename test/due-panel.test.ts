@@ -134,4 +134,12 @@ describe('openDuePanel', () => {
     expect(document.querySelector<HTMLElement>('.tt-due-row-title')!.title).toBe(long)
     expect(document.querySelector<HTMLElement>('.tt-due-row-team')!.title).toBe('Alpha')
   })
+
+  test('closes on a backdrop click', () => {
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem()], dueSoon: [] }, onOpenItem: () => {} })
+    const o = document.querySelector('.tt-modal-overlay')!
+    o.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    o.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
 })

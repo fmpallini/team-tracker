@@ -219,6 +219,15 @@ test('+ modal requires a name', () => {
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
 })
 
+test('+ modal closes on a backdrop click', () => {
+  setup()
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
+  const o = document.querySelector('.tt-modal-overlay')!
+  o.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  o.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(0)
+})
+
 test('+ modal allows a blank emoji — no default is silently persisted', () => {
   const { store } = setup()
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
