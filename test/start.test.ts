@@ -1,4 +1,4 @@
-import { showStartScreen, isMobileDevice } from '../src/ui/start'
+import { showStartScreen, isMobileDevice, START_LINKS } from '../src/ui/start'
 import { createEmptyDocument, SCHEMA_VERSION } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
@@ -482,7 +482,7 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
 test('renders the advantages pitch', () => {
   showStartScreen('en-US', () => {})
   const list = document.querySelectorAll('.tt-start-advantages li')
-  expect(list.length).toBe(3)
+  expect(list.length).toBe(4)
   expect(document.querySelector('.tt-start-tagline')).not.toBeNull()
 })
 
@@ -528,7 +528,7 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
   showStartScreen('en-US', () => {})
   const tip = document.querySelector('.tt-start-backup-tip')
   expect(tip).not.toBeNull()
-  expect(tip!.textContent).toContain('synced by a cloud client')
+  expect(tip!.textContent).toContain('synced folder')
   const links = Array.from(tip!.querySelectorAll('a'))
   expect(links.map((a) => a.getAttribute('href'))).toEqual([
     'https://workspace.google.com/products/drive/#download',
@@ -539,6 +539,13 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
   }
+})
+
+test('every external link on the start screen is listed in START_LINKS (so the live check covers it)', () => {
+  showStartScreen('en-US', () => {})
+  const hrefs = Array.from(document.querySelectorAll('a[href^="http"]')).map((a) => a.getAttribute('href'))
+  expect(hrefs.length).toBeGreaterThan(0)
+  expect(Object.values(START_LINKS)).toEqual(expect.arrayContaining(hrefs))
 })
 
 describe('auto-load last file on startup', () => {

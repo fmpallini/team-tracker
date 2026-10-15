@@ -23,6 +23,15 @@ import { promptPassword, showErrorModal, toast } from './modal'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
 
+// Every external link on the start screen. Single source for the markup below
+// and for test/start-links.live.test.ts, the scheduled check that they still resolve.
+export const START_LINKS = {
+  releases: 'https://github.com/fmpallini/team-tracker/releases',
+  googleDrive: 'https://workspace.google.com/products/drive/#download',
+  oneDrive: 'https://www.microsoft.com/microsoft-365/onedrive/download',
+  dropbox: 'https://www.dropbox.com/install',
+} as const
+
 // File Handling API (Chromium, PWA-installed only): OS-level "open with" /
 // double-click on a .tmv file launches the app and hands it the file's
 // FileSystemFileHandle here instead of the picker flow. Declared locally
@@ -299,7 +308,7 @@ export function showStartScreen(
     el(
       'a',
       {
-        href: 'https://github.com/fmpallini/team-tracker/releases',
+        href: START_LINKS.releases,
         target: '_blank',
         rel: 'noopener noreferrer',
       },
@@ -311,6 +320,7 @@ export function showStartScreen(
     'ul',
     { class: 'tt-start-advantages' },
     el('li', {}, t(locale, 'start_adv_offline')),
+    el('li', {}, t(locale, 'start_adv_open')),
     el('li', {}, t(locale, 'start_adv_ownership')),
     el('li', {}, t(locale, 'start_adv_crypto'))
   )
@@ -320,11 +330,11 @@ export function showStartScreen(
     'p',
     { class: 'tt-start-backup-tip' },
     t(locale, 'start_backup_tip_prefix'),
-    cloudLink('https://workspace.google.com/products/drive/#download', t(locale, 'start_backup_tip_link_drive')),
+    cloudLink(START_LINKS.googleDrive, t(locale, 'start_backup_tip_link_drive')),
     ', ',
-    cloudLink('https://www.microsoft.com/microsoft-365/onedrive/download', t(locale, 'start_backup_tip_link_onedrive')),
+    cloudLink(START_LINKS.oneDrive, t(locale, 'start_backup_tip_link_onedrive')),
     ', ',
-    cloudLink('https://www.dropbox.com/install', t(locale, 'start_backup_tip_link_dropbox')),
+    cloudLink(START_LINKS.dropbox, t(locale, 'start_backup_tip_link_dropbox')),
     t(locale, 'start_backup_tip_suffix')
   )
   const autoLoadCheckbox = el('input', {

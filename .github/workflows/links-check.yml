@@ -1,0 +1,30 @@
+name: Start-page links
+
+# The start screen links to third-party download pages (Google Drive, OneDrive,
+# Dropbox) and the GitHub releases page. Those are outside our control, so check
+# weekly that they still resolve; a failed run emails the owner. Kept out of the
+# push/PR gates on purpose: a vendor outage must not block a push.
+on:
+  schedule:
+    - cron: '41 3 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  links:
+    name: start-screen links resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: CHECK_LINKS=1 npx vitest run test/start-links.live.test.ts
