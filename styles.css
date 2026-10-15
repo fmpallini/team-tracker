@@ -425,6 +425,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn:hover { border-color: var(--accent); color: var(--accent); }
 /* Stroke icons (src/ui/icons.ts): centred in line-height 0 so a button holding only an icon is as tall as its padding, not its font. */
 .tt-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; vertical-align: middle; }
+/* A button holding only an icon centres it in both axes. Left as an inline-block/block box, the icon's baseline alignment inside the button's line box sat it ~1px low (pane back/forward/split). :where() keeps it at (0,1,0) so display:none rules (compact header) still win. */
+.tt-btn:where(:has(> .tt-icon:only-child)) { display: inline-flex; align-items: center; justify-content: center; }
 .tt-icon-svg { display: block; flex: none; }
 .tt-icon-svg .f { fill: currentColor; stroke: none; }
 /* Header buttons: true squares at the shared control height (the pills above use the same token). */
