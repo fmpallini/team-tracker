@@ -578,7 +578,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
 
-/* Colorful stroke icons. The icon() span already carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
+/* Icon color carries meaning, nothing else is colored: red = destroys, green = confirms/restores, gold = state you set (favorite, lock), accent = changes content, slate = settings/help/dates. Every other icon keeps the button's own (neutral) text color. The icon() span carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
 .tt-btn:not(:hover):not(:disabled) .tt-icon-trash,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-close { color: var(--danger); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-check,
@@ -586,29 +586,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-reopen { color: var(--ok); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-star,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-starFill,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-lock,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-template { color: var(--card-brass); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-lock { color: var(--card-brass); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-edit,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-plus,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-plus { color: var(--accent); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-gear,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-split { color: var(--accent); }
-.tt-btn:not(:hover):not(:disabled) .tt-icon-calendar,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-clock,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-print,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-latest,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-copy { color: var(--card-slate); }
-.tt-btn:not(:hover):not(:disabled) .tt-icon-link,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-at,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-note,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-orgchart,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-help { color: var(--card-plum); }
-.tt-btn:not(:hover):not(:disabled) .tt-icon-list,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-olist,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-quote,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-paragraph,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-codeBlock,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-hr,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-clearFmt { color: var(--card-sage); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-help,
+.tt-btn:not(:hover):not(:disabled) .tt-icon-calendar { color: var(--card-slate); }
 
 /* A solid-accent primary button keeps its icon in the button's own text color (a green check on the accent fill would vanish). */
 .tt-btn.tt-btn-primary:not(:hover):not(:disabled) .tt-icon { color: var(--on-accent); }
