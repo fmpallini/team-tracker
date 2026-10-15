@@ -7,10 +7,12 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [2.18.0] - 2026-10-14
 
 ### Changed
+- Icons are now colored by meaning, and dialog buttons are tinted and carry icons, so the app feels less monochrome.
 - Template placeholders are now English (`{date}` `{time}` `{person}` `{team}`), documented in Help; existing templates convert automatically. Older versions can't open files saved by this one.
 - Text like "~5 min and ~10 min" or "2 * 3 * 4" no longer turns into formatting, and a `[text](target)` that isn't a link keeps its brackets.
 
 ### Fixed
+- Text on primary buttons and highlighted items was hard to read in dark themes; it now stays readable in every color palette.
 - "File changed externally" dialog: Esc no longer stops saving for the rest of the session, and sync tools or antivirus merely touching the file no longer trigger it.
 - "Take control" between tabs is safer: a tab that can't save keeps its edits, just-typed text is included, a double-click can't steal control back, and a changed password is asked for.
 - Deleting an untitled item that has content now asks first, and a malformed teams import file is rejected instead of leaving an unsaveable document.
