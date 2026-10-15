@@ -72,17 +72,17 @@ export function truncateTitle(title: string): string {
 
 /**
  * True when a milestone row is a blank-title draft carrying nothing else
- * worth keeping: not done, no follow-up, and still on the date it was added
- * with (today). A milestone always has a date, so the default can't make a
- * nameless row worth keeping — but a date the user moved it to is a choice
- * they made, and losing it with the row when focus drifts away was the bug.
- * The blank-name focus-out guard drops a blank draft on the spot (no confirm,
- * exactly as requestDelete treats a blank row), mirroring how
- * src/modules/action-items.ts discards an unnamed card when its modal
- * closes; a row that has picked up real content is kept and flagged instead.
+ * worth keeping: not done and no follow-up. `date` is deliberately ignored —
+ * a milestone always has one (defaults to today at add), so it can never be
+ * the thing that makes a nameless row worth keeping: a title is required, as
+ * it is for a card or a risk. The blank-name focus-out guard drops such a row
+ * on the spot (no confirm, exactly as requestDelete treats a blank row),
+ * mirroring how src/modules/action-items.ts discards an unnamed card when its
+ * modal closes; a row that has picked up real content (a follow-up) is kept
+ * and flagged instead, so typed text is never thrown away.
  */
 export function isBlankMilestoneDraft(m: Milestone): boolean {
-  return m.title.trim() === '' && !m.done && m.followup.trim() === '' && m.date === todayIso()
+  return m.title.trim() === '' && !m.done && m.followup.trim() === ''
 }
 
 export interface TimelineLayout {
@@ -231,8 +231,25 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   // when expanding (so typing can start immediately), or back on the row
   // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
   // synchronously here, so the DOM is already rebuilt by the time we query it.
+  /**
+   * A follow-up is written under a title, as an action item's notes can't be
+   * saved without a name: a nameless row refuses to open one, flags itself and
+   * puts the caret in the title instead.
+   */
+  function requireTitle(id: string): boolean {
+    const cur = milestones().find((mm) => mm.id === id)
+    if (!cur || cur.title.trim() !== '') return true
+    const row = listEl.querySelector<HTMLElement>(`.tt-milestone-row[data-milestone-id="${id}"]`)
+    if (row) {
+      showNameError(row)
+      row.querySelector<HTMLInputElement>('.tt-milestone-title-input')?.focus()
+    }
+    return false
+  }
+
   function toggleExpand(id: string): void {
     const wasExpanded = expandable.isExpanded(id)
+    if (!wasExpanded && !requireTitle(id)) return
     expandable.toggle(id)
     renderAll()
     if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-milestone-id="${id}"].tt-milestone-row`)?.focus()
@@ -241,7 +258,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
   function setAllExpanded(expand: boolean): void {
-    expandable.setAll(milestones().map((m) => m.id), expand)
+    // Expanding skips nameless rows (they can't hold a follow-up); collapsing covers all.
+    expandable.setAll(milestones().filter((m) => !expand || m.title.trim() !== '').map((m) => m.id), expand)
     renderAll()
   }
 
@@ -545,9 +563,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // acts only once focus has genuinely left the milestone list).
     row.addEventListener('focusout', () => {
       setTimeout(() => {
-        if (!row.isConnected) return
+        // Same race as the risk row's guard: a deferred rebuild can replace
+        // this row the moment focus leaves, so judge the live row by id.
+        if (!listEl.isConnected) return
+        const liveRow = row.isConnected ? row : listEl.querySelector<HTMLElement>(`.tt-milestone-row[data-milestone-id="${m.id}"]`)
+        if (!liveRow) return
         const active = document.activeElement
-        if (active && active !== document.body && listEl.contains(active)) return
+        if (active && active !== document.body && (listEl.contains(active) || active === addBtn)) return
         if (!active || active === document.body) return
         // The date picker's calendar lives in <body>, outside this list, yet
         // pressing a day moves focus onto it (mousedown focuses the button).
@@ -556,9 +578,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         if (active.closest('.tt-date-picker-popover')) return
         const cur = milestones().find((mm) => mm.id === m.id)
         if (!cur) return
-        if (cur.title.trim() !== '') { clearNameError(row); return }
+        if (cur.title.trim() !== '') { clearNameError(liveRow); return }
         if (isBlankMilestoneDraft(cur)) removeMilestoneSilently(cur.id)
-        else showNameError(row)
+        else showNameError(liveRow)
       }, 0)
     })
 
@@ -566,6 +588,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // identically-shaped handler in src/modules/risks.ts.
     row.addEventListener('dblclick', (e) => {
       if ((e.target as HTMLElement).closest('input, select, button, a')) return
+      if (!expandable.isExpanded(m.id) && !requireTitle(m.id)) return
       expandable.toggle(m.id)
       renderAll()
     })
@@ -624,6 +647,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   function addMilestone(): void {
+    // An untitled draft is already waiting: put the caret back in it rather than stacking a second blank row.
+    const draft = milestones().find(isBlankMilestoneDraft)
+    if (draft) {
+      listEl.querySelector<HTMLInputElement>(`.tt-milestone-row[data-milestone-id="${draft.id}"] .tt-milestone-title-input`)?.focus()
+      return
+    }
     const newId = crypto.randomUUID()
     focusMilestoneId = newId
     ctx.store.update((d) => {

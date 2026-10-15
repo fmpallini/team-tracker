@@ -107,8 +107,8 @@ describe('pure helpers', () => {
     test('true for a blank title on the default (today) date with the row otherwise untouched', () => {
       expect(isBlankMilestoneDraft(milestone({ title: '', date: todayIso() }))).toBe(true)
     })
-    test('false once the date has been moved off the default — that is a choice worth keeping', () => {
-      expect(isBlankMilestoneDraft(milestone({ title: '', date: '2001-01-01' }))).toBe(false)
+    test('true even for a far-past date — the date alone never makes a nameless row worth keeping', () => {
+      expect(isBlankMilestoneDraft(milestone({ title: '', date: '2001-01-01' }))).toBe(true)
     })
     test('true when the title is only whitespace', () => {
       expect(isBlankMilestoneDraft(milestone({ title: '  ', date: todayIso() }))).toBe(true)
@@ -541,16 +541,74 @@ describe('renderMilestones', () => {
       vi.runAllTimers()
     }
 
-    test('a nameless row whose date was moved off today is kept and flagged instead of dropped', () => {
-      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: '2031-01-15' })] })
+    test('a nameless row is still judged when an edit rebuilt it between focus leaving and the check', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      const oldRow = container.querySelector('.tt-milestone-row') as HTMLElement
+      outside.focus()
+      oldRow.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      store.update((d) => { d.teams[0]!.milestones[0]!.date = '2031-01-15' }, { teamId: team.id, sections: ['milestones'] })
+      vi.runAllTimers()
+
+      expect(oldRow.isConnected).toBe(false)
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    })
+
+    test('a nameless milestone refuses to open its follow-up: it flags the name and puts the caret in the title', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
       const { container, store, pm, loc } = setup(team)
       render(container, loc, store, pm)
 
       const row = container.querySelector('.tt-milestone-row') as HTMLElement
-      leaveRow(row)
+      ;(row.querySelector('.tt-milestone-expand-btn') as HTMLButtonElement).click()
+
+      expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
+      expect(row.querySelector('.tt-milestone-name-error')?.textContent).toBe('This milestone needs a name.')
+      expect(document.activeElement).toBe(row.querySelector('.tt-milestone-title-input'))
+    })
+
+    test('Expand all skips a nameless milestone but opens the named ones', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' }), milestone({ id: 'b', title: 'Named', date: '2026-02-01' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      ;(container.querySelector('.tt-milestone-expand-all-btn') as HTMLButtonElement).click()
+
+      expect(container.querySelectorAll('.tt-milestone-followup-row')).toHaveLength(1)
+      expect(container.querySelector('.tt-milestone-followup-row')?.getAttribute('data-milestone-followup-id')).toBe('b')
+    })
+
+    test('pressing + Milestone while an untitled draft is open reuses it instead of stacking a blank row', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      clickByTitleOrText(container, '+ Milestone')
 
       expect(store.doc.teams[0]!.milestones).toHaveLength(1)
-      expect(row.querySelector('.tt-milestone-name-error')?.textContent).toBe('This milestone needs a name.')
+      expect(document.activeElement).toBe(container.querySelector('.tt-milestone-title-input'))
+    })
+
+    test('focus landing on the + Milestone button is not leaving the list: the draft is kept for the click', () => {
+      const { container, store, pm, loc } = setup(makeTeam())
+      render(container, loc, store, pm)
+      clickByTitleOrText(container, '+ Milestone')
+
+      leaveRow(container.querySelector('.tt-milestone-row') as HTMLElement, container.querySelector('.tt-milestone-add-btn') as HTMLElement)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    })
+
+    test('a nameless row is dropped on leaving even when its date was moved off today — a title is required', () => {
+      const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: '2031-01-15' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+
+      leaveRow(container.querySelector('.tt-milestone-row') as HTMLElement)
+
+      expect(store.doc.teams[0]!.milestones).toHaveLength(0)
     })
 
     test('pressing a day in the date popover (focus moves onto it, outside the list) does not drop the draft', () => {

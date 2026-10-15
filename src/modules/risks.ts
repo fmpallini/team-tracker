@@ -62,25 +62,26 @@ export function exposureLevel(exposure: number): ExposureLevel {
 // follows the theme like everything else.
 
 /**
- * True when a risk row is a blank-title draft carrying nothing else worth
- * keeping: every editable field still at its post-add default, and the
- * follow-up either empty or holding only the auto-inserted creation line
- * (`seededFollowup`, from newRiskFollowup below). The blank-name focus-out
- * guard drops such a row on the spot — no confirm, the same treatment
- * requestDelete already gives a blank row — mirroring how
- * src/modules/action-items.ts silently discards an unnamed card when its
- * modal closes. A row that has picked up any real content is kept and its
- * missing name flagged instead.
+ * True when an untitled risk has no written content to lose: not closed, and
+ * the follow-up either empty or holding only the auto-inserted creation line
+ * (`seededFollowup`, from newRiskFollowup below). A title is required, so
+ * the blank-name focus-out guard drops such a row once focus leaves the list
+ * — whatever chance, impact or plan was picked, which are just selects —
+ * mirroring how src/modules/action-items.ts discards an unnamed card when its
+ * modal closes. A row with real follow-up text is kept and its missing name
+ * flagged instead, so typed text is never thrown away.
+ */
+export function isUntitledRiskDiscardable(r: Risk, seededFollowup: string): boolean {
+  return r.title.trim() === '' && !r.closed && (r.followup.trim() === '' || r.followup === seededFollowup)
+}
+
+/**
+ * The stricter test for an explicit delete: discardable *and* every select
+ * still at its post-add default, so only a truly untouched draft is deleted
+ * with no confirm and no undo (see requestDelete).
  */
 export function isBlankRiskDraft(r: Risk, seededFollowup: string): boolean {
-  return (
-    r.title.trim() === '' &&
-    r.chance === 1 &&
-    r.impact === 1 &&
-    r.plan === 'mitigate' &&
-    !r.closed &&
-    (r.followup.trim() === '' || r.followup === seededFollowup)
-  )
+  return isUntitledRiskDiscardable(r, seededFollowup) && r.chance === 1 && r.impact === 1 && r.plan === 'mitigate'
 }
 
 export type ExposureSort = 'none' | 'desc' | 'asc'
@@ -436,8 +437,25 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // when expanding (so typing can start immediately), or back on the row
   // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
   // synchronously here, so the DOM is already rebuilt by the time we query it.
+  /**
+   * A follow-up is written under a title, as an action item's notes can't be
+   * saved without a name: a nameless row refuses to open one, flags itself and
+   * puts the caret in the title instead.
+   */
+  function requireTitle(id: string): boolean {
+    const cur = risks().find((rr) => rr.id === id)
+    if (!cur || cur.title.trim() !== '') return true
+    const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
+    if (row) {
+      showNameError(row)
+      row.querySelector<HTMLInputElement>('.tt-risk-title-input')?.focus()
+    }
+    return false
+  }
+
   function toggleExpand(id: string): void {
     const wasExpanded = expandable.isExpanded(id)
+    if (!wasExpanded && !requireTitle(id)) return
     expandable.toggle(id)
     renderAll()
     if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)?.focus()
@@ -446,7 +464,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   /** Expands (or collapses) every currently-open (non-closed) risk's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
   function setAllExpanded(expand: boolean): void {
-    expandable.setAll(risks().filter((r) => !r.closed).map((r) => r.id), expand)
+    // Expanding skips nameless rows (they can't hold a follow-up); collapsing covers all.
+    expandable.setAll(risks().filter((r) => !r.closed && (!expand || r.title.trim() !== '')).map((r) => r.id), expand)
     renderAll()
   }
 
@@ -961,19 +980,28 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       // hold focus. Judging synchronously (or off relatedTarget, which is
       // null on those in headless Chromium) would fire the guard on them.
       setTimeout(() => {
-        if (!row.isConnected) return // module torn down, or row already rebuilt
+        // An edit inside the list (a select, say) defers a rebuild that flushes
+        // the instant focus leaves, so this row may already have been replaced
+        // by a fresh one that never had focus and would never be judged. Judge
+        // the live row by id; only a torn-down module (listEl detached) or a
+        // risk that no longer exists ends the check.
+        if (!listEl.isConnected) return
+        const liveRow = row.isConnected ? row : listEl.querySelector<HTMLElement>(`[data-risk-id="${r.id}"].tt-risk-row`)
+        if (!liveRow) return
         const active = document.activeElement
-        // Focus still sits inside the risks list (another row, or the
-        // follow-up editor that just opened): not done with this row.
-        if (active && active !== document.body && listEl.contains(active)) return
+        // Focus still sits inside the risks list (another row, or the follow-up
+        // editor that just opened) — or on the add button, which is part of the
+        // list (pressing it would otherwise drop the draft mid-click, collapsing
+        // the layout under the cursor): not done with this row.
+        if (active && active !== document.body && (listEl.contains(active) || active === addBtn)) return
         // Focus went nowhere real — a stray blur, not a deliberate move
         // away. Leave the row on screen to be finished or deleted.
         if (!active || active === document.body) return
         const cur = risks().find((rr) => rr.id === r.id)
         if (!cur) return
-        if (cur.title.trim() !== '') { clearNameError(row); return }
-        if (isBlankRiskDraft(cur, newRiskFollowup())) removeRiskSilently(cur.id)
-        else showNameError(row)
+        if (cur.title.trim() !== '') { clearNameError(liveRow); return }
+        if (isUntitledRiskDiscardable(cur, newRiskFollowup())) removeRiskSilently(cur.id)
+        else showNameError(liveRow)
       }, 0)
     })
 
@@ -983,6 +1011,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // word-select in the title, a button press).
     row.addEventListener('dblclick', (e) => {
       if ((e.target as HTMLElement).closest('input, select, button, a')) return
+      if (!expandable.isExpanded(r.id) && !requireTitle(r.id)) return
       expandable.toggle(r.id)
       renderAll()
     })
@@ -1258,6 +1287,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   function addRisk(): void {
+    // An untitled draft is already waiting: put the caret back in it rather than stacking a second blank row.
+    const draft = risks().find((r) => isUntitledRiskDiscardable(r, newRiskFollowup()))
+    if (draft) {
+      listEl.querySelector<HTMLInputElement>(`[data-risk-id="${draft.id}"].tt-risk-row .tt-risk-title-input`)?.focus()
+      return
+    }
     const newId = crypto.randomUUID()
     focusRiskId = newId
     ctx.store.update((d) => {
