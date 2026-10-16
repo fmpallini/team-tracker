@@ -636,6 +636,39 @@ describe('renderRisks', () => {
 
     expect(badge().textContent).toBe('9')
     expect(badge().classList.contains('tt-risk-exposure-high')).toBe(true)
+    // The pill tint follows the value (styles.css keys off data-value).
+    expect(chanceSelect.dataset.value).toBe('3')
+    expect(impactSelect.dataset.value).toBe('3')
+  })
+
+  test('the pills carry marks for the customizable-select dropdown: a level dot, or the matrix shape of the plan', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', plan: 'transfer' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const chance = container.querySelector('.tt-risk-chance-select') as HTMLSelectElement
+    expect(chance.querySelector(':scope > button > selectedcontent')).not.toBeNull()
+    expect(chance.querySelectorAll('option .tt-pill-dot')).toHaveLength(3)
+    const plan = container.querySelector('.tt-risk-plan-select') as HTMLSelectElement
+    const shapes = Array.from(plan.querySelectorAll('option')).map((o) => o.querySelector('.tt-icon')?.className.match(/tt-icon-(shape\w+)/)?.[1])
+    expect(shapes).toEqual(['shapeCircle', 'shapeDiamond', 'shapeSquare', 'shapeTriangle'])
+    // The label text is untouched by the marks.
+    expect(Array.from(plan.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['Mitigate', 'Transfer', 'Eliminate', 'Accept'])
+  })
+
+  test('the exposure total shows the sum with the count of open risks', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', chance: 3, impact: 3 }), risk({ id: 'b', chance: 1, impact: 1 }), risk({ id: 'c', closed: true })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(container.querySelector('.tt-risk-exposure-total-value')!.textContent).toBe('10')
+    expect(container.querySelector('.tt-risk-exposure-total-count')!.textContent).toBe('2 open')
+  })
+
+  test('the chance/impact pills start tinted by their current value', () => {
+    const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 2 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect((container.querySelector('.tt-risk-chance-select') as HTMLSelectElement).dataset.value).toBe('1')
+    expect((container.querySelector('.tt-risk-impact-select') as HTMLSelectElement).dataset.value).toBe('2')
   })
 
   // The stored value stays the bare number; only the visible label gained the

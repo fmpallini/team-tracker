@@ -1576,7 +1576,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
 .tt-milestone-dot { stroke-width: 2; }
-.tt-milestone-date-label, .tt-milestone-title-label { font-size: calc(9px * var(--tt-fs-k, 1)); fill: var(--fg); text-anchor: middle; }
+.tt-milestone-date-label, .tt-milestone-title-label, .tt-milestone-today-label { font-size: calc(11px * var(--tt-fs-k, 1)); fill: var(--fg); text-anchor: middle; }
+.tt-milestone-today-label { fill: var(--accent); font-weight: 700; }
 .tt-milestone-date-label { font-family: var(--font-data); }
 .tt-milestone-title-label { fill: var(--muted); }
 /* Connects a dot to its title on the far stagger row. Hairline and border-
@@ -1633,6 +1634,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
 .tt-milestone-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
+/* Follow-up editors in risk and milestone rows show their toolbar only while focused, so an expanded row costs one editor, not an editor plus a 14-button strip. The press-then-release on an @ref chip that this layout shift would swallow is recovered in ui/editor.ts (onPressStart). */
+.tt-milestone-followup-row .tt-editor:not(:focus-within) .tt-editor-toolbar,
+.tt-risk-followup-row .tt-editor:not(:focus-within) .tt-editor-toolbar { display: none; }
+
 /* Risks module */
 /* container-type: inline-size makes the risk rows respond to the *pane's*
    width rather than the window's — the whole problem was that a full-width
@@ -1648,9 +1653,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-quadrant-svg { display: block; max-width: 100%; height: auto; }
 /* Sum of every open risk's exposure, next to the chart it summarizes — a
    single glanceable number rather than making someone add up the dots. */
-.tt-risk-exposure-total { flex: none; display: flex; flex-direction: column; align-items: center; gap: .3rem; }
-.tt-risk-exposure-total-label { font-size: .72rem; color: var(--muted); text-align: center; max-width: 6rem; }
-.tt-risk-exposure-total-value { font-family: var(--font-data); font-weight: 700; font-size: 3rem; line-height: 1; }
+.tt-risk-exposure-total { flex: none; display: flex; flex-direction: row; align-items: center; gap: .8rem; }
+.tt-risk-exposure-total-caption { display: flex; flex-direction: column; gap: .1rem; max-width: 7.5rem; }
+.tt-risk-exposure-total-label { font-size: .8rem; font-weight: 600; color: var(--fg); line-height: 1.25; }
+.tt-risk-exposure-total-count { font-size: .75rem; color: var(--muted); }
+/* The sum in the display face, big, in its exposure color — the single number the matrix adds up to. */
+.tt-risk-exposure-total-value { font-family: var(--font-display); font-weight: 700; font-size: 3.4rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .tt-risk-quadrant-cell { stroke: var(--border); stroke-width: 1; }
 /* Uneven opacity, not a flat 12% across all three: --danger and --brass are
    both muted earthy tones in several palettes, so an equal-alpha tint left
@@ -1704,10 +1712,9 @@ body { background: var(--bg); color: var(--fg); }
 /* Narrow-row scaffolding — inert (and invisible) until the container query
    below turns it on. */
 .tt-risk-meta-label, .tt-risk-linebreak { display: none; }
-/* 6.5rem, not the old 3.5rem: the options carry a word now ("2 · Medium",
-   "3 · Alto") rather than a bare digit, and 3.5rem clipped them to "2 · ┣". */
+/* 8.8rem: the options carry a word ("2 · Medium", "3 · Alto") and the pill adds a level dot on the left and a chevron on the right. */
 .tt-risk-header-chance, .tt-risk-chance-select,
-.tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 6.5rem; }
+.tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 8.8rem; }
 .tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
@@ -1723,20 +1730,76 @@ body { background: var(--bg); color: var(--fg); }
   background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
 }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
-.tt-risk-sort-indicator { opacity: .45; }
+.tt-risk-header-chance, .tt-risk-header-impact, .tt-risk-header-plan { text-align: center; }
+/* The indicator and an equal-width ghost on the other side keep the "Exposure" label itself centered over the badge column. */
+.tt-risk-header-exposure::before { content: ''; display: inline-block; width: .9em; }
+.tt-risk-sort-indicator { opacity: .45; display: inline-block; width: .9em; text-align: center; }
 .tt-risk-header-exposure:hover .tt-risk-sort-indicator, .tt-risk-header-exposure.active .tt-risk-sort-indicator { opacity: 1; }
 /* Monospace "tag" read for the editable data selects — bordered, muted,
    brightening to the accent on hover/focus — echoing the Field Ledger
    mockup's plain bordered tags rather than each browser's native <select>
    chrome. */
 .tt-risk-chance-select, .tt-risk-impact-select, .tt-risk-plan-select {
-  font-family: var(--font-data); font-size: .78rem; color: var(--muted);
-  background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm);
-  padding: .2rem .3rem; cursor: pointer;
+  --pill: var(--accent);
+  appearance: none; -webkit-appearance: none;
+  font-family: var(--font-data); font-size: .78rem; color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--pill) 50%, var(--border)); border-radius: 999px;
+  background-color: color-mix(in srgb, var(--pill) 10%, transparent);
+  /* Level dot on the left, chevron on the right (two currentColor triangles). */
+  background-image:
+    radial-gradient(circle, var(--pill) 3px, transparent 3.5px),
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: .55rem .55rem, 4px 4px, 4px 4px;
+  background-position: .55rem 50%, calc(100% - .7rem) 55%, calc(100% - .45rem) 55%;
+  padding: .2rem 1.4rem .2rem 1.5rem; cursor: pointer;
 }
+/* Chance and impact take the exposure palette: 1 low, 2 medium, 3 high. The plan keeps the accent. */
+.tt-risk-chance-select[data-value="1"], .tt-risk-impact-select[data-value="1"] { --pill: var(--exposure-low); }
+.tt-risk-chance-select[data-value="2"], .tt-risk-impact-select[data-value="2"] { --pill: var(--exposure-medium); }
+.tt-risk-chance-select[data-value="3"], .tt-risk-impact-select[data-value="3"] { --pill: var(--exposure-high); }
 .tt-risk-chance-select:hover, .tt-risk-impact-select:hover, .tt-risk-plan-select:hover,
 .tt-risk-chance-select:focus, .tt-risk-impact-select:focus, .tt-risk-plan-select:focus {
-  border-color: var(--accent); color: var(--fg);
+  border-color: var(--pill); background-color: color-mix(in srgb, var(--pill) 18%, transparent);
+}
+/* Browsers with customizable selects draw the control from its <selectedcontent>
+   button and let the open list keep the pill look: each option is a filled pill
+   with its own mark (a level dot, or the plan's matrix shape), so what you pick
+   from is what you get. Everywhere else the rules above and the native popup apply. */
+.tt-pill-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; background: var(--pill, var(--accent)); flex: none; }
+@supports (appearance: base-select) {
+  .tt-risk-chance-select, .tt-risk-impact-select, .tt-risk-plan-select {
+    appearance: base-select; background-image: none; padding: .2rem .55rem .2rem .7rem;
+  }
+  .tt-risk-chance-select > button, .tt-risk-impact-select > button, .tt-risk-plan-select > button {
+    display: flex; align-items: center; gap: .55rem; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+  }
+  .tt-risk-chance-select selectedcontent, .tt-risk-impact-select selectedcontent, .tt-risk-plan-select selectedcontent { display: flex; align-items: center; gap: .55rem; white-space: nowrap; }
+  .tt-risk-chance-select::picker-icon, .tt-risk-impact-select::picker-icon, .tt-risk-plan-select::picker-icon { margin-left: auto; color: var(--muted); }
+  .tt-risk-chance-select::picker(select), .tt-risk-impact-select::picker(select), .tt-risk-plan-select::picker(select) {
+    /* The open list docks against the control: exactly as wide, edge to edge, in the control's own tint, so it reads as the pill unfolding rather than a separate card. */
+    appearance: base-select; padding: 3px; overflow: hidden; margin: 0;
+    min-width: anchor-size(width); background: color-mix(in srgb, var(--pill) 8%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--pill) 50%, var(--border)); border-radius: 1rem;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, .18);
+  }
+  .tt-risk-chance-select option, .tt-risk-impact-select option, .tt-risk-plan-select option {
+    --pill: var(--accent);
+    display: flex; align-items: center; gap: .55rem; margin-block: 1px; padding: .2rem .8rem .2rem calc(.7rem - 3px); cursor: pointer;
+    font-family: var(--font-data); font-size: .78rem; color: var(--fg);
+    border: 1px solid transparent; border-radius: 999px; background: transparent;
+  }
+  .tt-risk-chance-select option[value="1"], .tt-risk-impact-select option[value="1"] { --pill: var(--exposure-low); }
+  .tt-risk-chance-select option[value="2"], .tt-risk-impact-select option[value="2"] { --pill: var(--exposure-medium); }
+  .tt-risk-chance-select option[value="3"], .tt-risk-impact-select option[value="3"] { --pill: var(--exposure-high); }
+  .tt-risk-chance-select option:hover, .tt-risk-impact-select option:hover, .tt-risk-plan-select option:hover,
+  .tt-risk-chance-select option:checked, .tt-risk-impact-select option:checked, .tt-risk-plan-select option:checked {
+    background: color-mix(in srgb, var(--pill) 22%, var(--bg));
+  }
+  .tt-risk-chance-select option:checked, .tt-risk-impact-select option:checked, .tt-risk-plan-select option:checked { border-color: color-mix(in srgb, var(--pill) 60%, transparent); font-weight: 700; }
+  .tt-risk-chance-select option::checkmark, .tt-risk-impact-select option::checkmark, .tt-risk-plan-select option::checkmark { display: none; }
+  .tt-risk-plan-select .tt-icon { color: var(--fg); }
 }
 /* The native dropdown popup ignores the select's transparent background on
    some Chromium/Windows builds even with color-scheme set — a dark theme
@@ -1758,16 +1821,14 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-milestone-row:has(> .tt-milestone-name-error) { flex-wrap: wrap; row-gap: .3rem; }
 .tt-risk-row > .tt-risk-name-error, .tt-milestone-row > .tt-milestone-name-error { flex-basis: 100%; margin: 0; }
 .tt-risk-exposure-cell { display: flex; align-items: center; justify-content: center; }
-/* "Stamp" treatment — the signature Field Ledger element: exposure reads as
-   a hand-stamped mark, not a UI pill — a hollow ink-colored circle (color
-   drives both border and text via currentColor) with a monospace numeral
-   and a slight rotation, echoing the original mockup's .fl-stamp. */
+/* Exposure disc: the level color (via currentColor) draws the ring, a light
+   wash of it fills the disc, and the number is set in the display face to match
+   the total above the matrix. */
 .tt-risk-exposure-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1.9rem; height: 1.9rem; border-radius: 50%; border: 2px solid currentColor;
-  font-family: var(--font-data); font-weight: 700; font-size: .8rem;
-  box-shadow: 0 0 0 1px currentColor inset;
-  transform: rotate(-4deg);
+  width: 2rem; height: 2rem; border-radius: 50%; border: 2px solid currentColor;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1; font-variant-numeric: tabular-nums;
 }
 /* The level class carries the color; `currentColor` above turns it into the
    border, the inset ring and the numeral in one go. Listed after the base
@@ -1813,10 +1874,10 @@ select option { background: var(--bg); color: var(--fg); }
 /* Threshold sits above the width at which the single-line row would start
    overflowing, so the wrap takes over before a horizontal scrollbar — or a
    delete button hanging off the row's border — ever appears. That width is the
-   title's 12rem floor + chance/impact/exposure/plan (26rem) + the backlinks
+   title's 12rem floor + chance/impact/exposure/plan (30.6rem) + the backlinks
    chip, expand and delete (3 × 2.6rem) + the wider close button (5.6rem) + 8 gaps (3.2rem) + the row's
-   padding (.8rem) ≈ 55.4rem. Keep this above it when adding a column. */
-@container (max-width: 57rem) {
+   padding (.8rem) ≈ 60rem. Keep this above it when adding a column. */
+@container (max-width: 60.5rem) {
   .tt-risk-row { flex-wrap: wrap; row-gap: .35rem; }
   /* The column header can't span two lines' worth of controls, and the
      mini-labels below replace it. */
@@ -1867,7 +1928,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risks-closed.tt-risks-closed-empty { display: none; }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
 .tt-risks-closed .tt-risk-title-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); box-shadow: none; transform: none; }
+.tt-risks-closed .tt-risk-exposure-badge { flex: none; color: var(--muted); }
 .tt-risks-closed .tt-risk-reopen-btn { flex: none; width: 5.6rem; background: transparent; font-size: 1.3rem; line-height: 1; opacity: .55; }
 .tt-risks-closed .tt-risk-reopen-btn:hover, .tt-risks-closed .tt-risk-reopen-btn:focus { opacity: 1; }
 /* The closed row's caret isn't hover-gated like an open row's — a closed

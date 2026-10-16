@@ -35,7 +35,7 @@ import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc, makeRefLabelResolver } from '../ui/atref'
 import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
-import { icon } from '../ui/icons'
+import { icon, type IconName } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -298,6 +298,8 @@ const LEVEL_KEYS: Record<1 | 2 | 3, MsgKey> = {
 }
 
 const PLAN_OPTIONS: RiskPlan[] = ['mitigate', 'transfer', 'eliminate', 'accept']
+/** The outline each plan wears in the matrix (createQuadrantPlanShape), reused by the plan pill. */
+const PLAN_SHAPE: Record<RiskPlan, IconName> = { mitigate: 'shapeCircle', transfer: 'shapeDiamond', eliminate: 'shapeSquare', accept: 'shapeTriangle' }
 const PLAN_KEYS: Record<RiskPlan, MsgKey> = {
   mitigate: 'risk_plan_mitigate',
   transfer: 'risk_plan_transfer',
@@ -469,7 +471,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     renderAll()
   }
 
-  function buildSelect(className: string, columnKey: MsgKey, options: { value: string; label: string }[], selected: string, onChange: (value: string) => void): HTMLSelectElement {
+  function buildSelect(className: string, columnKey: MsgKey, options: { value: string; label: string; mark?: () => HTMLElement }[], selected: string, onChange: (value: string) => void): HTMLSelectElement {
     const select = el('select', {
       class: className,
       // These selects had no accessible name at all — the column header was
@@ -478,12 +480,23 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       // travels with the control instead.
       'aria-label': t(lc, columnKey),
       title: t(lc, columnKey),
-      onchange: (e: Event) => onChange((e.target as HTMLSelectElement).value),
+      onchange: (e: Event) => {
+        const value = (e.target as HTMLSelectElement).value
+        select.dataset.value = value
+        onChange(value)
+      },
     })
+    // Customizable-select browsers (styles.css, appearance: base-select) draw the
+    // control from this <selectedcontent> button, which mirrors the chosen
+    // option's children — the colored mark included — and let the open list
+    // keep the pill look. Other browsers ignore both the button and the marks.
+    select.appendChild(el('button', { type: 'button' }, document.createElement('selectedcontent')))
     for (const opt of options) {
-      select.appendChild(el('option', { value: opt.value }, opt.label))
+      select.appendChild(el('option', { value: opt.value }, ...(opt.mark ? [opt.mark()] : []), opt.label))
     }
     select.value = selected
+    // The pill's tint (styles.css) follows the chosen value.
+    select.dataset.value = selected
     return select
   }
 
@@ -524,11 +537,14 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   const quadrantEl = el('div', { class: 'tt-risk-quadrant' })
   const quadrantChartEl = el('div', { class: 'tt-risk-quadrant-chart' })
   const exposureTotalValueEl = el('div', { class: 'tt-risk-exposure-total-value' })
+  const exposureTotalCountEl = el('div', { class: 'tt-risk-exposure-total-count' })
   const exposureTotalEl = el(
     'div',
     { class: 'tt-risk-exposure-total' },
-    el('div', { class: 'tt-risk-exposure-total-label' }, t(lc, 'risk_exposure_total_label')),
     exposureTotalValueEl,
+    el('div', { class: 'tt-risk-exposure-total-caption' },
+      el('div', { class: 'tt-risk-exposure-total-label' }, t(lc, 'risk_exposure_total_label')),
+      exposureTotalCountEl),
   )
   quadrantEl.appendChild(quadrantChartEl)
   quadrantEl.appendChild(exposureTotalEl)
@@ -690,6 +706,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     const totalExposure = open.reduce((sum, r) => sum + computeExposure(r.chance, r.impact), 0)
     exposureTotalValueEl.textContent = String(totalExposure)
+    exposureTotalCountEl.textContent = t(lc, 'risk_exposure_open_count', { n: String(open.length) })
     exposureTotalValueEl.className = `tt-risk-exposure-total-value tt-risk-exposure-${exposureLevel(totalExposure / open.length)}`
 
     const cell = computeCellSize()
@@ -841,7 +858,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // Labelled, not bare 1/2/3: the stored value is still the number, but
     // nothing on screen said whether 3 meant high chance or high confidence.
     // The dropdown is the one place with room for the word, so it carries it.
-    const numberOptions = LEVEL_OPTIONS.map((n) => ({ value: String(n), label: t(lc, LEVEL_KEYS[n]) }))
+    const numberOptions = LEVEL_OPTIONS.map((n) => ({ value: String(n), label: t(lc, LEVEL_KEYS[n]), mark: () => el('span', { class: 'tt-pill-dot', 'aria-hidden': 'true' }) }))
     const chanceSelect = buildSelect('tt-risk-chance-select', 'risk_col_chance', numberOptions, String(r.chance), (value) => {
       patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.chance = Number(value) as 1 | 2 | 3 }, { teamId, sections: ['risks'] })
     })
@@ -863,7 +880,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const planSelect = buildSelect(
       'tt-risk-plan-select',
       'risk_col_plan',
-      PLAN_OPTIONS.map((p) => ({ value: p, label: t(lc, PLAN_KEYS[p]) })),
+      PLAN_OPTIONS.map((p) => ({ value: p, label: t(lc, PLAN_KEYS[p]), mark: () => icon(PLAN_SHAPE[p], 13) })),
       r.plan,
       (value) => {
         patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.plan = value as RiskPlan }, { teamId, sections: ['risks'] })
@@ -1215,8 +1232,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       if (!r) continue
       const chanceSel = row.querySelector<HTMLSelectElement>('.tt-risk-chance-select')
       const impactSel = row.querySelector<HTMLSelectElement>('.tt-risk-impact-select')
-      if (chanceSel) chanceSel.value = String(r.chance)
-      if (impactSel) impactSel.value = String(r.impact)
+      if (chanceSel) { chanceSel.value = String(r.chance); chanceSel.dataset.value = chanceSel.value }
+      if (impactSel) { impactSel.value = String(r.impact); impactSel.dataset.value = impactSel.value }
       const badge = row.querySelector<HTMLElement>('.tt-risk-exposure-badge')
       if (badge) {
         const exposure = computeExposure(r.chance, r.impact)

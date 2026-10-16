@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.0.1] - 2026-10-15
+
+### Changed
+- Every dialog now closes when you click outside it, like Esc.
+- One set of drawn icons everywhere (fast switch, search, menus, start screen), tinted task lanes, due-date pills on cards, and empty panes that offer their add button.
+- Risks: chance, impact and plan are colored pills with a matching dropdown, and the exposure numbers are redrawn.
+- Milestone timeline labels are larger and no longer cut off, with a Today tag.
+- Notes in expanded risks and milestones show their toolbar only while editing; clicking an @mention still opens it.
+
 ## [3.0.0] - 2026-10-14
 
 ### Added

@@ -363,6 +363,51 @@ describe('ref click', () => {
     editor.destroy()
   })
 
+  describe('a press on a chip whose click is lost to a layout shift', () => {
+    // Pressing a chip in an unfocused editor can reveal the toolbar and move the
+    // text before release; the browser then clicks the common ancestor instead.
+    function pressOnChip() {
+      vi.useFakeTimers()
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('ver @[Ana](person:abc-1)')
+      const chip = editor.root.querySelector('a.ref') as HTMLAnchorElement
+      chip.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 50, clientY: 40 }))
+      return { hooks, editor, chip }
+    }
+    afterEach(() => { vi.useRealTimers() })
+
+    test('a release off the chip without moving still opens it, once', () => {
+      const { hooks, editor } = pressOnChip()
+      const elsewhere = document.createElement('div')
+      document.body.appendChild(elsewhere)
+      elsewhere.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 51, clientY: 41 }))
+      // the browser's substitute click goes to a common ancestor, not the chip
+      editor.root.querySelector('.editor')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      vi.runAllTimers()
+      expect(hooks.refs).toEqual([{ kind: 'person', id: 'abc-1' }])
+      editor.destroy()
+    })
+
+    test('a normal click on the chip is not activated twice', () => {
+      const { hooks, editor, chip } = pressOnChip()
+      chip.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 50, clientY: 40 }))
+      chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      vi.runAllTimers()
+      expect(hooks.refs).toHaveLength(1)
+      editor.destroy()
+    })
+
+    test('a release far from the press (a drag) opens nothing', () => {
+      const { hooks, editor } = pressOnChip()
+      document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 120, clientY: 90 }))
+      vi.runAllTimers()
+      expect(hooks.refs).toEqual([])
+      editor.destroy()
+    })
+  })
+
   test('plain click passes secondary: false', () => {
     const secondaryFlags: boolean[] = []
     const editor = createEditor({

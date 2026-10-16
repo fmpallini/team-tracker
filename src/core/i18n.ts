@@ -214,6 +214,7 @@ const pt = {
   risk_col_impact: 'Impacto',
   risk_col_exposure: 'Exposição',
   risk_exposure_total_label: 'Nível de exposição atual',
+  risk_exposure_open_count: '{n} em aberto',
   risk_col_plan: 'Plano',
   // Chance and impact are stored as bare 1-3. Nothing on screen said whether
   // 3 meant "high chance" or "high confidence", so the words live in the
@@ -814,6 +815,7 @@ const en: Record<MsgKey, string> = {
   risk_col_impact: 'Impact',
   risk_col_exposure: 'Exposure',
   risk_exposure_total_label: 'Current exposure level',
+  risk_exposure_open_count: '{n} open',
   risk_col_plan: 'Plan',
   risk_level_1: '1 · Low',
   risk_level_2: '2 · Medium',

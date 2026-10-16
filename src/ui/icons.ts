@@ -64,6 +64,11 @@ const PATHS = {
   olist: '<path d="M7.5 4h6M7.5 8h6M7.5 12h6M2.75 4.25L4 3.25V6.5M2.75 8.75h2.5L2.75 12h2.5"/>',
   quote: '<path d="M3 3v10M6.5 5h6.5M6.5 8h6.5M6.5 11h4"/>',
   list: '<path d="M6 4h7M6 8h7M6 12h7"/><g class="f"><circle cx="3" cy="4" r="1"/><circle cx="3" cy="8" r="1"/><circle cx="3" cy="12" r="1"/></g>',
+  // The four risk-plan outlines, the same shapes the risk matrix draws (circle, diamond, square, triangle).
+  shapeCircle: '<circle cx="8" cy="8" r="4.75"/>',
+  shapeDiamond: '<path d="M8 2.5l5.5 5.5L8 13.5 2.5 8z"/>',
+  shapeSquare: '<rect x="3.4" y="3.4" width="9.2" height="9.2"/>',
+  shapeTriangle: '<path d="M8 3l5.1 9H2.9z"/>',
   person: '<circle cx="8" cy="5.25" r="2.5"/><path d="M3 13.5c.5-2.6 2.5-4 5-4s4.5 1.4 5 4"/>',
   people:
     '<circle cx="6" cy="5.75" r="2.25"/><circle cx="11.5" cy="6.5" r="1.75"/><path d="M1.75 13c.4-2.3 2.1-3.6 4.25-3.6s3.85 1.3 4.25 3.6M10.5 9.6c1.9 0 3.2 1.1 3.75 3.1"/>',

@@ -71,7 +71,7 @@ test('SVG labels on the milestone timeline and risk quadrant follow the size set
   await openDoc(page, buildDoc('XL', { kind: 'milestones' }))
   const dateLabel = page.locator('.tt-milestone-date-label').first()
   await expect(dateLabel).toBeVisible()
-  expect(parseFloat(await dateLabel.evaluate((e) => getComputedStyle(e).fontSize))).toBeCloseTo(9 * 1.2, 1)
+  expect(parseFloat(await dateLabel.evaluate((e) => getComputedStyle(e).fontSize))).toBeCloseTo(11 * 1.2, 1)
 
   await page.keyboard.press('F7')
   const tick = page.locator('.tt-risk-quadrant-tick').first()
