@@ -193,10 +193,12 @@ export function buildSeedDoc() {
       calendarCollapsed: false,
     },
     teams,
-    // Two starred panes so the tour's fast switch opens on a Favorites group.
+    // Two starred panes — one in another team — so the tour's Favorites beat
+    // opens Fast Switch on a group that already spans teams; the tour stars the
+    // Tasks board live on top of these.
     favorites: [
-      { teamId: star.id, ref: { kind: 'risks' } },
       { teamId: star.id, ref: { kind: 'milestones' } },
+      { teamId: 't-design', ref: { kind: 'daily', date: todayIso() } },
     ],
   }
 }
