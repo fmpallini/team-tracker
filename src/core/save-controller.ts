@@ -12,8 +12,11 @@ import { backupHealthPillState } from './backup-controller'
 import { toast, dismissToast } from '../ui/modal'
 
 /** `toast()` keys for the two permission-lapse notices, shared between the toast() calls that raise them and the dismissToast() calls that clear them once the lapse is fixed through some other path than the toast's own action button (the save-state pill, or a prefs-modal regrant). */
-const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
+export const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
 const BACKUP_PERMISSION_TOAST_KEY = 'backup-permission'
+
+/** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
+export const SAVE_ERROR_TOAST_KEY = 'save-error'
 
 export interface SaveController {
   /**
@@ -77,9 +80,6 @@ export interface SaveControllerDeps {
    */
   flushPending?: () => void
 }
-
-/** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
-const SAVE_ERROR_TOAST_KEY = 'save-error'
 
 export function createSaveController(deps: SaveControllerDeps): SaveController {
   let saving = false
