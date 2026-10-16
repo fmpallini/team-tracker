@@ -641,7 +641,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     updateProgress(sorted)
   }
 
+  // The calendar day the timeline's Today marker and the rows' overdue colours
+  // were last drawn for — see onReturn below.
+  let renderedDay = todayIso()
+
   function renderAll(): void {
+    renderedDay = todayIso()
     expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
     renderTimeline()
@@ -790,6 +795,19 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     renderAll()
   })
 
+  // A window left open overnight never fires a store change, so the Today
+  // marker and overdue colours kept showing yesterday until the next edit.
+  // Same return-to-window trigger as ui/sidebar.ts's due badges; the rebuild
+  // goes through `deferred` so it never steals a field the user is typing in.
+  const onReturn = (): void => {
+    if (document.visibilityState === 'hidden' || todayIso() === renderedDay) return
+    const active = focusedCaretInput()
+    if (active) deferred.arm(active)
+    else renderAll()
+  }
+  document.addEventListener('visibilitychange', onReturn)
+  window.addEventListener('focus', onReturn)
+
   /** Expands the milestone a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's milestones or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
   function onSearchFocusItem(e: Event): void {
     const itemId = (e as CustomEvent<string>).detail
@@ -815,6 +833,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   return () => {
     unsubscribe()
+    document.removeEventListener('visibilitychange', onReturn)
+    window.removeEventListener('focus', onReturn)
     // An armed deferral would otherwise rebuild a torn-down module on the
     // field's next blur.
     deferred.dispose()

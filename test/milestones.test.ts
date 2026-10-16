@@ -1294,6 +1294,68 @@ describe('deferred rebuild while a field is focused', () => {
   })
 })
 
+describe('calendar day rolling over while the pane sits idle', () => {
+  // A milestone dated the 14th is "future" on the 14th and "overdue" from the 15th.
+  function idleOvernight() {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 14, 23, 0))
+    const ctx = setup(makeTeam({ milestones: [milestone({ id: 'm1', date: '2026-10-14' }), milestone({ id: 'm2', date: '2026-10-20' })] }))
+    render(ctx.container, ctx.loc, ctx.store, ctx.pm)
+    const state = (): string | undefined => rows(ctx.container)[0]!.className.match(/tt-milestone-state-\w+/)?.[0]
+    const todayX = (): string | null => ctx.container.querySelector('.tt-milestone-today-line')!.getAttribute('x1')
+    expect(state()).toBe('tt-milestone-state-future')
+    const before = todayX()
+    vi.setSystemTime(new Date(2026, 9, 15, 8, 0)) // next morning, nothing touched
+    return { ...ctx, state, todayX, before }
+  }
+
+  test('the Today marker and overdue colours follow the new day when the tab becomes visible again', () => {
+    const { state, todayX, before } = idleOvernight()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(state()).toBe('tt-milestone-state-overdue')
+    expect(todayX()).not.toBe(before)
+  })
+
+  test('and when the window regains focus', () => {
+    const { state } = idleOvernight()
+    window.dispatchEvent(new Event('focus'))
+    expect(state()).toBe('tt-milestone-state-overdue')
+  })
+
+  test('within the same day it does not rebuild the rows', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 14, 9, 0))
+    const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ date: '2026-10-14' })] }))
+    render(container, loc, store, pm)
+    const row = rows(container)[0]
+    vi.setSystemTime(new Date(2026, 9, 14, 17, 0))
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+    expect(rows(container)[0]).toBe(row)
+  })
+
+  test('a field being typed in is left alone until it blurs', () => {
+    const { container, state } = idleOvernight()
+    const input = container.querySelector<HTMLInputElement>('.tt-milestone-title-input')!
+    input.focus()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(state()).toBe('tt-milestone-state-future')
+    input.dispatchEvent(new FocusEvent('blur'))
+    expect(state()).toBe('tt-milestone-state-overdue')
+  })
+
+  test('tearing the module down removes both listeners', () => {
+    const { container, store, pm, loc } = idleOvernight()
+    const docOff = vi.spyOn(document, 'removeEventListener')
+    const winOff = vi.spyOn(window, 'removeEventListener')
+    render(container, loc, store, pm) // withDisposal tears the previous instance down first
+    expect(docOff.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(true)
+    expect(winOff.mock.calls.some(([type]) => type === 'focus')).toBe(true)
+    docOff.mockRestore()
+    winOff.mockRestore()
+  })
+})
+
 describe('backlink-only foreign changes patch chips in place (no full rebuild)', () => {
   test('a notes-scoped edit that adds a mention shows the chip without rebuilding the row', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'm1', title: 'Beta', date: '2026-01-01' })] })
