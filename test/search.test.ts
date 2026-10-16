@@ -398,6 +398,19 @@ describe('SearchIndex.backlinks', () => {
     expect(hit!.loc).toEqual({ teamId: 't1', ref: { kind: 'person', personId: 'p1', group: 'members' } })
   })
 
+  test('a neighbouring mention cut by the snippet window never leaks its raw syntax', () => {
+    const other = '@[Other task](action:4fffc216-575a-477c-8a48-c776fb7f8ba3)'
+    const target = '@[Migrate billing job](action:a1)'
+    // Slide the neighbour across both window edges (radius 80) so every cut position is hit.
+    for (let pad = 0; pad < other.length + 4; pad++) {
+      const doc = backlinksFixture()
+      doc.teams[0]!.generalNotes = `${'a '.repeat(40)}${' '.repeat(pad)}${other}${' '.repeat(80 - pad)}${target}${' '.repeat(80 - pad)}${other}${'b '.repeat(40)}`
+      const index = createSearchIndex(() => doc, () => 0)
+      const hit = index.backlinks('t1', 'action', 'a1').find((r) => r.moduleKind === 'general')!
+      expect(hit.snippet).not.toMatch(/action:|\]\(|@\[/)
+    }
+  })
+
   test('day-kind target keys by ISO date string, not an item id', () => {
     const doc = backlinksFixture()
     doc.teams[0]!.risks[0]!.followup = 'Follow up on @[Aug 4](day:2026-08-04)'

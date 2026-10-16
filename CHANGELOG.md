@@ -13,6 +13,9 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - Milestone timeline labels are larger and no longer cut off, with a Today tag.
 - Notes in expanded risks and milestones show their toolbar only while editing; clicking an @mention still opens it.
 
+### Fixed
+- The "↩ N" references popover no longer shows a mention's raw internal id when it sits at the edge of the preview.
+
 ## [3.0.0] - 2026-10-14
 
 ### Added

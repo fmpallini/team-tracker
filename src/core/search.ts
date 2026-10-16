@@ -191,10 +191,27 @@ export interface Backlink {
   snippet: string
 }
 
+/**
+ * Moves `pos` out to the edge of the @[label](kind:id) mention it falls
+ * inside, if any (`dir` -1: to its start, +1: to its end), else returns it
+ * unchanged. Unlike makeSnippet, backlinkSnippet cuts the *raw* text before
+ * stripMd runs, so a window edge landing mid-mention would leave a fragment
+ * stripMd can't recognise — the internal "…ne:<id>)" would show as text.
+ */
+function snapOutOfMention(raw: string, pos: number, dir: -1 | 1): number {
+  const open = raw.lastIndexOf('@[', pos - 1)
+  if (open < 0) return pos
+  const re = new RegExp(refPattern().source, 'y')
+  re.lastIndex = open
+  const m = re.exec(raw)
+  if (!m || open + m[0].length <= pos) return pos
+  return dir < 0 ? open : open + m[0].length
+}
+
 /** Same trim shape as makeSnippet above, but anchored at a known raw-text match span instead of a search term. */
 function backlinkSnippet(raw: string, matchIndex: number, matchLen: number): string {
-  const start = Math.max(0, matchIndex - SNIPPET_RADIUS)
-  const end = Math.min(raw.length, matchIndex + matchLen + SNIPPET_RADIUS)
+  const start = snapOutOfMention(raw, Math.max(0, matchIndex - SNIPPET_RADIUS), -1)
+  const end = snapOutOfMention(raw, Math.min(raw.length, matchIndex + matchLen + SNIPPET_RADIUS), 1)
   let out = stripMd(raw.slice(start, end)).trim()
   if (start > 0) out = `…${out}`
   if (end < raw.length) out = `${out}…`
