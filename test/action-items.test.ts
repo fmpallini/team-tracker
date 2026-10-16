@@ -17,7 +17,7 @@ function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) =>
       requestSaveNow: () => { requestCount++ },
       subscribeSaveState: (cb) => {
         subs.add(cb)
-        cb({ state: 'saved', label: 'Saved', title: 'Saved' })
+        cb({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false })
         return () => { subs.delete(cb) }
       },
     },
@@ -1499,7 +1499,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     const pillText = document.querySelector('.tt-save-pill-text')!
     expect(pillText.textContent).toBe('Saved') // fakeSaveStatus's immediate subscribe() callback
 
-    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes' })
+    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes', clickable: true })
     expect(pillText.textContent).toBe('Unsaved')
     expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('dirty')
   })
@@ -1514,14 +1514,25 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
 
     const pill = document.querySelector('.tt-save-pill')!
 
-    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed' })
+    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed', clickable: true })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
 
-    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password' })
+    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password', clickable: true })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
 
-    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error' })
+    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+  })
+
+  test('the mini pill follows info.clickable', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'a' })] }))
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
+    const pill = document.querySelector('.tt-save-pill')!
+    fake.emit({ state: 'saved', label: 'x', title: 'x', clickable: true })
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
   })
 
   test('clicking the mini pill triggers ctx.saveStatus.requestSaveNow(), the same explicit-save action Ctrl+S uses', () => {
