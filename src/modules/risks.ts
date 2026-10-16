@@ -534,6 +534,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     g.addEventListener('pointermove', (e) => {
       if (!quadrantDrag || quadrantDrag.id !== id) return
+      // A read-only tab can't keep a new chance/impact: leave the dot put, so
+      // the release is a plain tap (jump to the row) rather than a move that
+      // would be thrown away.
+      if (ctx.store.readOnly) return
       const ev = e as PointerEvent
       if (!quadrantDrag.moved) {
         if (Math.hypot(ev.clientX - quadrantDrag.startX, ev.clientY - quadrantDrag.startY) < QUADRANT_DRAG_THRESHOLD) return

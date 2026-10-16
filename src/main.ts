@@ -12,6 +12,7 @@ import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, 
 import { setupResponsiveLayout, wcoReservedWidth } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
+import { setReadOnlyLock } from './ui/readonly-lock'
 import { t, todayIso } from './core/i18n'
 import { currentLoc } from './core/nav'
 import { addDaysIso } from './core/date'
@@ -427,7 +428,10 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     session, store, shell, saveCtl, locks: navigator.locks,
     // Per file, not per file name — see core/file-identity.ts.
     lockKey: resolveFileLockKey(session, navigator.locks),
-    onReadOnlyChange: (readOnly) => setEditorsReadOnly(readOnly),
+    onReadOnlyChange: (readOnly) => {
+      setEditorsReadOnly(readOnly)
+      setReadOnlyLock(readOnly, () => store.doc.prefs.locale)
+    },
     // The tab that held the lock saved on its way out, so the file is newer
     // than this tab's copy whenever its lastModified moved.
     refreshBeforeWritable: async () => {

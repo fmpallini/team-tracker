@@ -21,6 +21,7 @@ import type { FileSession } from './fs'
 import { t } from './i18n'
 import { el } from '../ui/dom'
 import { toast, dismissToast } from '../ui/modal'
+import { READONLY_TOAST_KEY } from '../ui/readonly-lock'
 
 type TakeoverMessage = { type: 'takeover' }
 
@@ -186,7 +187,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
   }
 
   const unsubscribeBlocked = store.onBlockedUpdate(() => {
-    toast(t(store.doc.prefs.locale, 'readonly_blocked_toast'))
+    toast(t(store.doc.prefs.locale, 'readonly_blocked_toast'), { key: READONLY_TOAST_KEY })
   })
 
   // Task 25 re-review item #4a: without this, the tab is fully writable from

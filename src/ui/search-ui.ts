@@ -152,7 +152,7 @@ export function mountSearch(
   const listEl = el('div', { class: 'tt-search-list' })
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
   const inputBox = el('div', { class: 'tt-search-input-box' }, input, icon, clearBtn)
-  const wrap = el('div', { class: 'tt-search-wrap' }, inputBox, dropdown)
+  const wrap = el('div', { class: 'tt-search-wrap', 'data-readonly-exempt': '' }, inputBox, dropdown)
   shell.headerLeft.appendChild(wrap)
   syncEnabled()
   const unsubscribeMutate = store.onMutate(() => syncEnabled())

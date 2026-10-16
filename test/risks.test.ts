@@ -1802,6 +1802,22 @@ describe('quadrant', () => {
   })
 
   describe('drag to set chance/impact', () => {
+    test('in a read-only tab a drag does not move the dot or change anything, and still jumps to the row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'Vendor', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      store.setReadOnly(true)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+      const before = dotTranslate(dot)
+
+      dragQuadrantDot(dot, gx0 + 10, gy0 + 170, gx0 + 2 * cell + cell / 2, gy0 + cell / 2)
+
+      expect(store.doc.teams[0]!.risks[0]!.chance).toBe(1)
+      expect(dotTranslate(container.querySelector('.tt-risk-quadrant-dot')!)).toEqual(before)
+      expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"].tt-risk-row'))
+    })
+
     test('dragging a dot to another cell persists the new chance/impact', () => {
       const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
       const { container, store, pm, loc } = setup(team)

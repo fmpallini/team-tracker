@@ -178,6 +178,7 @@ test('a second tab (lock already held): enters read-only, shows the takeover ban
 
   store.update(() => {})
   expect(modalMocks.toast).toHaveBeenCalledTimes(1)
+  expect(modalMocks.toast.mock.calls[0]![1]).toMatchObject({ key: 'readonly-blocked' })
 })
 
 test('take-control handshake: holder saves+flushes before releasing, requester only exits read-only after that settles', async () => {

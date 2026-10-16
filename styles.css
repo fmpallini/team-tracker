@@ -740,6 +740,9 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-toast-action:hover { background: rgba(var(--accent-rgb), .12); }
 
+/* Read-only tab (src/ui/readonly-lock.ts): editing controls say so on hover. */
+:root[data-readonly] :is(input, select, textarea, .tt-date-picker, .tt-kanban-color-row button):not([data-readonly-exempt], [data-readonly-exempt] *) { cursor: not-allowed; }
+
 /* Read-only cross-tab banner (Task 25) */
 .tt-readonly-banner {
   display: flex; align-items: center; justify-content: center; gap: .75rem;

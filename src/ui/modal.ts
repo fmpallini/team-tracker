@@ -319,7 +319,7 @@ export function promptPassword(
 
     const body = el(
       'form',
-      { class: 'tt-password-form', onsubmit: (e: Event) => e.preventDefault() },
+      { class: 'tt-password-form', 'data-readonly-exempt': '', onsubmit: (e: Event) => e.preventDefault() },
       el('label', { class: 'tt-field' }, t(locale, 'password'), pwInput),
       meter ? meter.el : null,
       confirmInput ? el('label', { class: 'tt-field' }, t(locale, 'password_confirm'), confirmInput) : null,

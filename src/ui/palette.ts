@@ -191,6 +191,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     input = el('input', {
       type: 'text',
       class: 'tt-input tt-palette-input',
+      'data-readonly-exempt': '',
       placeholder: t(locale(), 'palette_placeholder'),
     })
     listEl = el('div', { class: 'tt-palette-list' })
