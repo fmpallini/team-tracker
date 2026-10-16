@@ -8,6 +8,7 @@
 import type { Loc, Team } from '../core/types'
 import type { ModuleCtx } from '../ui/panes'
 import { createModuleEditor } from '../ui/rich-editor'
+import { scopeAffects, type Section } from '../core/scope'
 import { findTeam as docFindTeam } from '../core/document'
 import { withDisposal } from './lifecycle'
 
@@ -31,6 +32,16 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
   })
   const editor = bundle.editor
 
+  // Mentions here show their target's *current* name, so patch the chips in
+  // place when something they point at is renamed. The content itself is
+  // never rebuilt from the store (caret safety; same rule as person-notes.ts).
+  // 'notes' is deliberately not watched: this note's own keystrokes can't
+  // rename anything.
+  const LABEL_SOURCES: readonly Section[] = ['teams', 'people', 'actions', 'milestones', 'risks']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (scopeAffects(scope, teamId, LABEL_SOURCES)) editor.refreshRefLabels()
+  })
+
   container.appendChild(editor.root)
   // Only for the pane the user is actually in — a team switch remounts both
   // panes together, and without this guard whichever pane mounts second
@@ -41,6 +52,7 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
   }
 
   return () => {
+    unsubscribe()
     bundle.dispose()
   }
 })
