@@ -997,7 +997,16 @@ ${t(lc, 'pane_history_hint')}`
 
     const content = w.document.createElement('div')
     content.className = 'tt-print-content'
-    content.appendChild(bodyEls[idx].cloneNode(true))
+    const clone = bodyEls[idx].cloneNode(true) as HTMLElement
+    // cloneNode copies an <input>'s typed value but not a <select>'s current
+    // choice: the clone falls back to each select's first option, so every
+    // printed risk read chance 1 / impact 1 / "Mitigate". Copy the choice across
+    // (same tree, so the two lists line up one to one).
+    const liveSelects = bodyEls[idx].querySelectorAll('select')
+    clone.querySelectorAll('select').forEach((s, i) => {
+      s.selectedIndex = liveSelects[i]?.selectedIndex ?? s.selectedIndex
+    })
+    content.appendChild(clone)
 
     w.document.body.append(header, content)
     w.focus()
