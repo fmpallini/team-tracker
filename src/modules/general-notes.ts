@@ -6,35 +6,28 @@
 // milestones.ts/risks.ts rely on for team deletion), so no "not found"
 // placeholder or live-deletion guard is needed here.
 import type { Loc, Team } from '../core/types'
-import { todayIso } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
-import { createRichEditorBundle } from '../ui/rich-editor'
-import { nowHHMM } from '../core/date'
+import { createModuleEditor } from '../ui/rich-editor'
 import { findTeam as docFindTeam } from '../core/document'
 import { withDisposal } from './lifecycle'
 
 export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'general') return // registered only for 'general'; defensive
   const teamId = loc.teamId
-  const lc = ctx.locale
 
   function findTeam(): Team | undefined {
     return docFindTeam(ctx.store.doc, teamId)
   }
 
-  const bundle = createRichEditorBundle({
-    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+  const bundle = createModuleEditor(ctx, teamId, {
     initialMd: findTeam()?.generalNotes ?? '',
+    templateScopes: ['any'],
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)
-        if (!tm) return
-        tm.generalNotes = md.trim() === '' ? '' : md
+        if (tm) tm.generalNotes = md
       }, { teamId, sections: ['notes'] })
     },
-    getTeam: () => findTeam(),
-    getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-    getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
   })
   const editor = bundle.editor
 

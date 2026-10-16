@@ -122,6 +122,12 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function offeredTemplates(editor: HTMLElement): string[] {
+  setBlockText(editor, '/')
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  return Array.from(document.querySelectorAll('.tt-atref-item')).map((n) => n.textContent ?? '')
+}
+
 function pickDate(day: number): void {
   const input = document.querySelector('.tt-date-picker-input') as HTMLInputElement
   input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2649,4 +2655,12 @@ describe('calendar day rolling over while the board sits idle', () => {
     docOff.mockRestore()
     winOff.mockRestore()
   })
+})
+
+test('the card notes editor offers the "any"-scope templates only', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'a', summary: 'Ship' })] }))
+  render(container, loc, store, pm)
+  cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  const editor = document.querySelector<HTMLElement>('.tt-modal-dialog .editor')!
+  expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
 })

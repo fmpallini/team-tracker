@@ -11,7 +11,7 @@ import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } fro
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
 import { isOverdue, isActionActive } from '../core/due'
-import { nowHHMM, addDaysIso, diffDays } from '../core/date'
+import { addDaysIso, diffDays } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
@@ -19,7 +19,7 @@ import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '..
 import { deleteWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { createEntityDelete } from './entity-delete'
-import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
+import { createModuleEditor, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
@@ -554,15 +554,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // needed the way the old Save-gated flow required.
     const focusItemIdOnClose = itemId
 
-    const richBundle = createRichEditorBundle({
-      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    const richBundle = createModuleEditor(ctx, teamId, {
       initialMd: existing?.notes ?? '',
-      onChange: (md) => {
-        patch((item) => { item.notes = md.trim() === '' ? '' : md }, ['actions'])
-      },
-      getTeam: () => findTeam(),
-      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
+      templateScopes: ['any'],
+      onChange: (md) => { patch((item) => { item.notes = md }, ['actions']) },
     })
     const editor = richBundle.editor
 

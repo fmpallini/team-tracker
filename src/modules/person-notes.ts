@@ -4,10 +4,9 @@
 // additionally has to cope with the person being deleted (from the people
 // tree, possibly in the *other* pane) while this module is mounted.
 import type { Loc, Person, Team } from '../core/types'
-import { t, todayIso } from '../core/i18n'
+import { t } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
-import { createRichEditorBundle } from '../ui/rich-editor'
-import { nowHHMM } from '../core/date'
+import { createModuleEditor } from '../ui/rich-editor'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
@@ -111,15 +110,16 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, editBtn, gotoOrgBtn)
   )
 
-  const bundle = createRichEditorBundle({
-    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+  const bundle = createModuleEditor(ctx, teamId, {
     initialMd: person.notes,
+    templateScopes: ['personal', 'any'],
+    personName: () => findPerson()?.name,
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)
         const p = tm?.[group].find((pp) => pp.id === personId)
         if (!p) return
-        p.notes = md.trim() === '' ? '' : md
+        p.notes = md
         // 'notes', not 'people': a person's notes are note content, same
         // bucket as daily/general notes. people-tree watches 'people' and
         // renders only name/role/hierarchy — none of it derived from notes —
@@ -128,9 +128,6 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
         // chip-bearing surface watches 'notes' too.
       }, { teamId, sections: ['notes'] })
     },
-    getTeam: () => findTeam(),
-    getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),
-    getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), personName: person.name, teamName: findTeam()?.name, locale: lc }),
   })
   const editor = bundle.editor
 

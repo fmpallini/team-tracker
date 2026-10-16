@@ -105,6 +105,12 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function offeredTemplates(editor: HTMLElement): string[] {
+  setBlockText(editor, '/')
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  return Array.from(document.querySelectorAll('.tt-atref-item')).map((n) => n.textContent ?? '')
+}
+
 function rightClick(el: HTMLElement): void {
   el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
 }
@@ -2303,4 +2309,12 @@ describe('risk name-error note — behaviour pins', () => {
       vi.useRealTimers()
     }
   })
+})
+
+test('an expanded follow-up offers the "any"-scope templates only', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor' })] }))
+  render(container, loc, store, pm)
+  container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+  const editor = container.querySelector<HTMLElement>('.tt-risk-followup-row .editor')!
+  expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
 })

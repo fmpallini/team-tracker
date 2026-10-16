@@ -17,12 +17,11 @@ import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { createEntityDelete } from './entity-delete'
 import { patchTeamItem } from '../core/team-items'
-import { createRichEditorBundle } from '../ui/rich-editor'
+import { createModuleEditor } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
-import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally, showRowError, clearRowError } from '../ui/dom'
 import { withDisposal } from './lifecycle'
@@ -277,27 +276,19 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     renderAll()
   }
 
-  /** Full rich editor for a milestone's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself with `expandable` so the caller can dispose it later. */
+  /** Full rich editor for a milestone's follow-up, via src/ui/rich-editor.ts's createModuleEditor (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself with `expandable` so the caller can dispose it later. */
   function renderFollowupRow(m: Milestone): HTMLElement {
-    const bundle = createRichEditorBundle({
-      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    const bundle = createModuleEditor(ctx, teamId, {
       initialMd: m.followup,
+      templateScopes: ['any'],
       onChange: (md) => {
         committingOwnFollowup = true
         try {
-          ctx.store.update((d) => {
-            const tm = docFindTeam(d, teamId)
-            const found = tm?.milestones.find((mm) => mm.id === m.id)
-            if (!found) return
-            found.followup = md.trim() === '' ? '' : md
-          }, { teamId, sections: ['milestones'] })
+          patchTeamItem(ctx.store, teamId, 'milestones', m.id, (found) => { found.followup = md }, { teamId, sections: ['milestones'] })
         } finally {
           committingOwnFollowup = false
         }
       },
-      getTeam: () => findTeam(),
-      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
     expandable.register(m.id, bundle)
     return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id, 'data-item-id': m.id }, bundle.editor.root)

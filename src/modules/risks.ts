@@ -21,12 +21,11 @@ import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete, toast } from '../ui/modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
-import { createRichEditorBundle } from '../ui/rich-editor'
+import { createModuleEditor } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
-import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter, createDeferredRebuild, showRowError, clearRowError, clearClasses } from '../ui/dom'
 import { withDisposal } from './lifecycle'
@@ -500,27 +499,19 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return select
   }
 
-  /** Builds the full rich editor for a risk's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself with `expandable` so the caller can dispose it later. */
+  /** Builds the full rich editor for a risk's follow-up, via src/ui/rich-editor.ts's createModuleEditor (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself with `expandable` so the caller can dispose it later. */
   function renderFollowupRow(r: Risk): HTMLElement {
-    const bundle = createRichEditorBundle({
-      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    const bundle = createModuleEditor(ctx, teamId, {
       initialMd: r.followup,
+      templateScopes: ['any'],
       onChange: (md) => {
         committingOwnFollowup = true
         try {
-          ctx.store.update((d) => {
-            const tm = docFindTeam(d, teamId)
-            const found = tm?.risks.find((rr) => rr.id === r.id)
-            if (!found) return
-            found.followup = md.trim() === '' ? '' : md
-          }, { teamId, sections: ['risks'] })
+          patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.followup = md }, { teamId, sections: ['risks'] })
         } finally {
           committingOwnFollowup = false
         }
       },
-      getTeam: () => findTeam(),
-      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
     })
     expandable.register(r.id, bundle)
     return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id, 'data-item-id': r.id }, bundle.editor.root)

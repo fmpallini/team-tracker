@@ -4,11 +4,13 @@
 // Each caller differs only in where onChange persists and which templates/
 // context apply — everything else (ref-click nav, ref-label resolution,
 // dropdown wiring, teardown order) is exactly the same across all five.
-import type { Locale } from '../core/i18n'
+import { todayIso, type Locale } from '../core/i18n'
 import type { Store } from '../core/store'
-import type { PaneManager } from './panes'
+import type { PaneManager, ModuleCtx } from './panes'
 import type { Team, Template } from '../core/types'
 import type { TemplateCtx } from '../core/templates'
+import { findTeam } from '../core/document'
+import { nowHHMM } from '../core/date'
 import { teamRefCandidates } from '../core/search'
 import { createEditor, type Editor } from './editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from './atref'
@@ -65,4 +67,37 @@ export function createRichEditorBundle(opts: {
       editor.destroy()
     },
   }
+}
+
+/**
+ * createRichEditorBundle the way every module renderer wants it: wired from
+ * its ModuleCtx, offering `templateScopes`, filling the template context live
+ * (team name, person, today or the note's own day), and collapsing a
+ * whitespace-only body to '' (how every note field stores "empty").
+ */
+export function createModuleEditor(ctx: ModuleCtx, teamId: string, opts: {
+  initialMd: string
+  /** Receives the markdown with a whitespace-only body collapsed to ''. */
+  onChange(md: string): void
+  templateScopes: readonly Template['scope'][]
+  /** The template `{date}`; defaults to today. Daily notes pass the note's own day. */
+  templateDate?: () => string
+  /** The template `{person}`; read live, so a rename is picked up. */
+  personName?: () => string | undefined
+}): RichEditorBundle {
+  const team = (): Team | undefined => findTeam(ctx.store.doc, teamId)
+  return createRichEditorBundle({
+    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: ctx.locale, teamId,
+    initialMd: opts.initialMd,
+    onChange: (md) => opts.onChange(md.trim() === '' ? '' : md),
+    getTeam: team,
+    getTemplates: () => ctx.store.doc.templates.filter((tpl) => opts.templateScopes.includes(tpl.scope)),
+    getTemplateCtx: () => ({
+      dateIso: opts.templateDate?.() ?? todayIso(),
+      time: nowHHMM(ctx.locale),
+      teamName: team()?.name,
+      ...(opts.personName ? { personName: opts.personName() } : {}),
+      locale: ctx.locale,
+    }),
+  })
 }
