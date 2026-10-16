@@ -503,3 +503,15 @@ test('the search box mounts in the header left cluster, after the app name', () 
   const wrap = kids.findIndex((c) => c.classList.contains('tt-search-wrap'))
   expect(wrap).toBeGreaterThan(kids.findIndex((c) => c.classList.contains('tt-app-name')))
 })
+
+test('reloading a document that has teams over one that had none enables the search input', () => {
+  const store = buildStore([], null)
+  const { input } = mount(store, fakePM())
+  expect(input.disabled).toBe(true)
+
+  const reloaded = createEmptyDocument('en-US')
+  reloaded.teams.push({ ...oneNoteTeam })
+  store.replaceDoc(reloaded)
+
+  expect(input.disabled).toBe(false)
+})

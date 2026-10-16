@@ -37,8 +37,8 @@ export const UNDO_TOAST_KEY = 'undo-delete'
  * Also watches the store: the offer expires the instant anything else
  * mutates the document (see `deleteWithUndo`), so the toast is dismissed
  * then rather than left on screen with a button that would refuse to work.
- * `onMutate` covers `update()`/`updateNav()`; `replaceDoc()` does not fire it,
- * which is why `offer.undo()` re-checks `rev` itself as the real backstop —
+ * `onMutate` covers `update()`, `updateNav()` and `replaceDoc()`; `offer.undo()`
+ * still re-checks `rev` itself as the real backstop —
  * and, since that backstop can still refuse, the button's click handler
  * always shows *some* toast after calling it, restored or not.
  *

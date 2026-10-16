@@ -1387,3 +1387,23 @@ describe('an edit that lands while a save is in flight', () => {
     expect(store.dirty).toBe(true)
   })
 })
+
+test('a reload (replaceDoc) during an in-flight save queues one trailing save and ends clean', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const firstWrite = deferred<void>()
+  fsMocks.writeFile.mockImplementationOnce(() => firstWrite.promise)
+  const onExternalChange = vi.fn()
+  const ctl = createSaveController({ store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange })
+
+  const p = ctl.saveNow()
+  await new Promise((r) => setTimeout(r, 0))
+  store.replaceDoc(createEmptyDocument('en-US'))
+  firstWrite.resolve()
+  await p
+  await ctl.flush()
+
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+  expect(onExternalChange).not.toHaveBeenCalled()
+  expect(store.dirty).toBe(false)
+})

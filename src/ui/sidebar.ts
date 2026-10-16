@@ -802,11 +802,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // listener filters on kind — registering it unconditionally rebuilt the
   // whole team list twice on every single content edit.
   //
-  // Load-bearing detail: store.replaceDoc() (used by the conflict-modal
-  // reload path in main.ts's onReload handler) fires subscribe() listeners
-  // but NOT onMutate() listeners — so it's the store.subscribe() render
-  // above, not this onMutate() one, that keeps the sidebar in sync after a
-  // reload. Don't collapse these two registrations into just onMutate().
+  // store.replaceDoc() (the conflict-modal reload) reaches both registrations,
+  // as 'content' here, which this one ignores. The subscribe() render above is
+  // what repaints the team list after a reload.
   const unsubscribeMutate = store.onMutate((kind) => {
     if (kind === 'nav') renderNav()
   })

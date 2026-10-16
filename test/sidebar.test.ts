@@ -142,7 +142,7 @@ test('selectTeam via updateNav re-renders the highlight immediately (hotkey path
   expect(items()[1]!.classList.contains('active')).toBe(true)
 })
 
-test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar even though it does not fire onMutate', () => {
+test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')
   expect(items()).toHaveLength(1)
