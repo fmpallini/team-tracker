@@ -4,6 +4,8 @@
 // Each caller differs only in where onChange persists and which templates/
 // context apply — everything else (ref-click nav, ref-label resolution,
 // dropdown wiring, teardown order) is exactly the same across all five.
+// Module renderers use `createModuleEditor`; `createRichEditorBundle` is the
+// low-level primitive it wraps.
 import { todayIso, type Locale } from '../core/i18n'
 import type { Store } from '../core/store'
 import type { PaneManager, ModuleCtx } from './panes'

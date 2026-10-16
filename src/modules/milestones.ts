@@ -373,7 +373,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       label.setAttribute('x', String(cx))
       label.setAttribute('y', String(titleY))
       label.setAttribute('class', 'tt-milestone-title-label')
-      // Truncated to 16 characters; the dot's own <title> a few lines up
+      // Truncated by truncateTitle; the dot's own <title> a few lines up
       // carries the full text. Deliberately not repeated here — an SVG
       // <title> child would fold into this element's textContent.
       label.textContent = truncateTitle(m.title)

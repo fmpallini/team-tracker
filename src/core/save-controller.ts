@@ -363,10 +363,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     permissionEpisodeToasted = false
     dismissToast(SAVE_PERMISSION_TOAST_KEY)
     dismissToast(SAVE_ERROR_TOAST_KEY)
-    // The primary file is already written and marked saved. A failing backup
-    // lookup (IndexedDB blocked, handle gone) must not leave the pill on
-    // "saving…" or reject out of the save cycle; the backup's own write path
-    // reports its failures, so an unreadable health just reads as "nothing to flag".
+    // The primary file is already written (and marked saved, unless an edit
+    // landed mid-round). A failing backup lookup (IndexedDB blocked, handle
+    // gone) must not leave the pill on "saving…" or reject out of the save
+    // cycle; the backup's own write path reports its failures, so an
+    // unreadable health just reads as "nothing to flag".
     let health: BackupHealth = 'ok'
     try {
       health = (await deps.backupCtl?.currentHealth()) ?? 'ok'

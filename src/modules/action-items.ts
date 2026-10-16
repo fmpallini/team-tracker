@@ -42,7 +42,6 @@ const COLOR_KEYS: Record<ActionItemColor, 'kanban_color_slate' | 'kanban_color_b
 }
 // --- pure, unit-testable helpers -------------------------------------------
 
-/** Items in `status`, sorted by `order`. */
 /**
  * True when a card is an untouched draft: nothing typed anywhere. Used so the
  * delete flow only skips its confirm + undo for a card that holds nothing, not
@@ -765,7 +764,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function deleteColumn(columnId: string): void {
     const count = items().filter((i) => i.status === columnId).length
     if (count === 0) {
-      const name = statusLabel(columnId, findTeam())
+      const name = actionStatusLabel(lc, columnId, findTeam())
       const offer = deleteInTeamWithUndo(ctx.store, teamId,
         (tm) => !!tm.actionColumns?.some((c) => c.id === columnId),
         (tm) => { tm.actionColumns = tm.actionColumns!.filter((c) => c.id !== columnId) },
@@ -780,7 +779,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const tm = findTeam()
     const targets = STATUSES.filter((s) => s !== columnId)
     const select = el('select', { class: 'tt-input tt-kanban-column-landing-select' }) as HTMLSelectElement
-    for (const s of targets) select.appendChild(el('option', { value: s }, statusLabel(s, tm)))
+    for (const s of targets) select.appendChild(el('option', { value: s }, actionStatusLabel(lc, s, tm)))
     const body = el(
       'div', { class: 'tt-prefs-field' },
       el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_column_confirm', { count: String(count) })),
@@ -792,7 +791,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       danger: true,
       onClick: () => {
         const targetStatus = select.value
-        const name = statusLabel(columnId, findTeam())
+        const name = actionStatusLabel(lc, columnId, findTeam())
         // Deep copy (taken by deleteInTeamWithUndo) before anything moves: the
         // migration below rewrites `status` and `order` in place on every card
         // it moves, so a shallow capture of actionColumns alone would restore
@@ -994,13 +993,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   /** The two ends, never renamed/removed/reordered. */
   function isFixedStatus(status: string): boolean {
     return status === 'todo' || status === 'done' || status === 'cancelled'
-  }
-
-  // Unused within Task 5 itself, when this was added as part of that task's
-  // declared skeleton interface — first used by Task 7's delete-column
-  // landing-picker labels (openDeleteColumnModal, above).
-  function statusLabel(status: string, tm: Team | undefined): string {
-    return actionStatusLabel(lc, status, tm)
   }
 
   /** Column ids in board order: fixed 'todo', the team's custom columns sorted by order, fixed 'done'/'cancelled'. */

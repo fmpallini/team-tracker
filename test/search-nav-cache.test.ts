@@ -49,7 +49,7 @@ function setup(): { store: Store; pm: PaneManager; index: SearchIndex } {
   const store = createStore(doc)
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US') as PaneManager & { searchIndex: SearchIndex }
+  const pm = createPaneManager(shell, store) as PaneManager & { searchIndex: SearchIndex }
   return { store, pm, index: pm.searchIndex }
 }
 

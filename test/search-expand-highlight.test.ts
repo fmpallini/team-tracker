@@ -38,7 +38,7 @@ function setup(team: Team): { shell: Shell; store: Store; input: HTMLInputElemen
   const store = createStore(doc)
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('milestones', renderMilestones)
   mountSearch(shell, store, pm, () => {}, pm.searchIndex)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement
@@ -140,7 +140,7 @@ test('a search result matching only an action item\'s notes (modal-only field) s
   const store = createStore(doc)
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('actions', renderActionItems)
   mountSearch(shell, store, pm, () => {}, pm.searchIndex)
   const input = shell.headerLeft.querySelector('.tt-search-input') as HTMLInputElement

@@ -29,7 +29,7 @@ function setup(): { shell: Shell; store: Store; pm: PaneManager } {
   const store = createStore(doc)
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   return { shell, store, pm }
 }
 

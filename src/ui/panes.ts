@@ -399,7 +399,7 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   pm.openBothPanes(target0, target1, isSplitVisible(store) ? 1 : 0)
 }
 
-export function createPaneManager(shell: Shell, store: Store, _locale: Locale): PaneManager & { searchIndex: SearchIndex } {
+export function createPaneManager(shell: Shell, store: Store): PaneManager & { searchIndex: SearchIndex } {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
   const menuSelected: [number, number] = [0, 0]
@@ -490,8 +490,8 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   // overwriting whatever they just set back to "whichever pane this click
   // started in" — capture runs top-down before the click ever reaches its
   // target, so this always lands first.
-  paneEls[0].addEventListener('click', () => setFocusedPane(0), true)
-  paneEls[1].addEventListener('click', () => setFocusedPane(1), true)
+  paneEls[0].addEventListener('click', () => focusPaneOnClick(0), true)
+  paneEls[1].addEventListener('click', () => focusPaneOnClick(1), true)
 
   // Set only while a drag is in flight, so dispose() (see PaneManager.dispose
   // below) can tear down a drag's document-level listeners and pending frame
@@ -589,7 +589,7 @@ export function createPaneManager(shell: Shell, store: Store, _locale: Locale): 
   }
   document.addEventListener('click', onDocumentClick)
 
-  function setFocusedPane(idx: 0 | 1): void {
+  function focusPaneOnClick(idx: 0 | 1): void {
     if (store.doc.nav.focusedPane === idx) return
     store.updateNav((d) => {
       d.nav.focusedPane = idx
@@ -1180,7 +1180,7 @@ ${t(lc, 'pane_history_hint')}`
    * `bodies` (default both) lets a caller that knows exactly which pane(s)
    * just navigated skip remounting the other one — see openInPane's own
    * calls below. renderBody() unconditionally tears down and rebuilds the
-   * module instance in that container (withDisposal), which loses any
+   * module instance in that container (disposeContainer), which loses any
    * transient in-pane state the module itself owns (an expanded follow-up
    * row in milestones/risks, an in-progress caret, ...); a pane whose Loc
    * didn't change has no reason to pay that cost; its content is already

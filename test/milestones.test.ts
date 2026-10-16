@@ -1300,7 +1300,7 @@ describe('deferred rebuild while a field is focused', () => {
     expect(document.querySelector('.tt-date-picker-popover')).not.toBeNull()
 
     // A milestones-scoped store.update from elsewhere (not this row's own
-    // date field) triggers renderAll()'s full rebuild — focusedCaretInput()
+    // date field) triggers renderAll()'s full rebuild — focusedCaretElement(container, ['text', 'date'])
     // only defers for the row's *text/date inputs*, not for focus that has
     // already moved into the popover's own calendar buttons.
     document.querySelector<HTMLButtonElement>('.tt-calendar-day:not(.tt-calendar-day-blank)')?.focus()

@@ -247,7 +247,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // Live read — never the closed-over `password` parameter alone: a password
   // change updates `app.password`, and the parameter goes stale after it.
   const currentPassword = (): string | null => (app ? app.password : password)
-  const pm = createPaneManager(shell, store, doc.prefs.locale)
+  const pm = createPaneManager(shell, store)
   pm.registerModule('daily', renderDailyNotes)
   pm.registerModule('general', renderGeneralNotes)
   pm.registerModule('stakeholders', renderPeopleTree('stakeholders'))

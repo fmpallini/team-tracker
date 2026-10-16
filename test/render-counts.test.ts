@@ -38,7 +38,7 @@ function setup(): { store: Store; shell: Shell; pm: PaneManager } {
   const store = createStore(createEmptyDocument('en-US'))
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('actions', renderActionItems)
   pm.registerModule('daily', renderDailyNotes)
   return { store, shell, pm }

@@ -703,7 +703,7 @@ describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts 
     const store = createStore(doc)
     const shell: Shell = createShell('pt-BR')
     document.body.appendChild(shell.root)
-    const pm = createPaneManager(shell, store, 'pt-BR')
+    const pm = createPaneManager(shell, store)
     pm.registerModule('actions', renderActionItems)
 
     let raf: FrameRequestCallback | null = null
@@ -734,7 +734,7 @@ describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts 
     const store = createStore(doc)
     const shell: Shell = createShell('pt-BR')
     document.body.appendChild(shell.root)
-    const pm = createPaneManager(shell, store, 'pt-BR')
+    const pm = createPaneManager(shell, store)
     pm.registerModule('actions', renderActionItems)
     pm.registerModule('daily', () => {})
 
