@@ -15,11 +15,11 @@ import type { Risk, RiskPlan, Loc, Team } from '../core/types'
 import { t, todayIso, formatDateWithWeekday, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { createEntityDelete } from './entity-delete'
-import { patchTeamItem } from '../core/team-items'
+import { patchTeamItem, nextOrder } from '../core/team-items'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete, toast } from '../ui/modal'
-import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { createModuleEditor } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
@@ -397,25 +397,19 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   /**
    * Removes every closed risk at once, unlinking @mentions for all of them in
-   * a single team clone (see entity-delete.ts's header on why deleteWithUndo
-   * needs the deep copy) rather than N separate deletes with N separate
+   * a single team clone (see entity-delete.ts's header on why the undo
+   * capture is a deep copy) rather than N separate deletes with N separate
    * captures/toasts.
    */
   function removeAllClosedRisks(): UndoOffer | null {
-    return deleteWithUndo(ctx.store, (d) => {
-      const tm = docFindTeam(d, teamId)
-      if (!tm) return null
-      const removedIds = new Set(tm.risks.filter((r) => r.closed).map((r) => r.id))
-      if (removedIds.size === 0) return null
-      const before = structuredClone(tm)
-      const titles = new Map(tm.risks.filter((r) => removedIds.has(r.id)).map((r) => [r.id, r.title]))
-      unlinkRefsInTeam(tm, 'risk', titles)
-      tm.risks = tm.risks.filter((r) => !removedIds.has(r.id))
-      return (d2) => {
-        const i = d2.teams.findIndex((t2) => t2.id === teamId)
-        if (i !== -1) d2.teams[i] = before
-      }
-    }, { teamId })
+    return deleteInTeamWithUndo(ctx.store, teamId,
+      (tm) => tm.risks.some((r) => r.closed),
+      (tm) => {
+        const titles = new Map(tm.risks.filter((r) => r.closed).map((r) => [r.id, r.title]))
+        unlinkRefsInTeam(tm, 'risk', titles)
+        tm.risks = tm.risks.filter((r) => !r.closed)
+      },
+      { teamId })
   }
 
   function requestDeleteAllClosed(): void {
@@ -1306,8 +1300,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     ctx.store.update((d) => {
       const tm = docFindTeam(d, teamId)
       if (!tm) return
-      const maxOrder = tm.risks.length === 0 ? -1 : Math.max(...tm.risks.map((r) => r.order))
-      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: newRiskFollowup(), order: maxOrder + 1, closed: false })
+      tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: newRiskFollowup(), order: nextOrder(tm.risks), closed: false })
     }, { teamId, sections: ['risks'] })
   }
 

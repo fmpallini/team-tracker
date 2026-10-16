@@ -43,3 +43,8 @@ export function patchTeamItem<K extends TeamItemCollection>(
     if (found) mutate(found)
   }, scope)
 }
+
+/** The `order` that sorts after every item in `items`: past the highest existing value, not the count, since deletes never renumber the survivors. */
+export function nextOrder(items: readonly { order: number }[]): number {
+  return items.reduce((max, i) => Math.max(max, i.order), -1) + 1
+}

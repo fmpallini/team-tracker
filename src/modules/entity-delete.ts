@@ -15,7 +15,7 @@
 //   reason: team-only is the narrowest scope that's still correct, and it
 //   won't rot if unlinkRefsInTeam's reach changes (refs never cross teams).
 // - `removeSilently` is for paths with no confirm dialog and no undo (a blank
-//   draft dropped on blur, an empty-title delete click). deleteWithUndo's
+//   draft dropped on blur, an empty-title delete click). deleteInTeamWithUndo's
 //   structuredClone(team) is only worth paying for after an explicit,
 //   confirmed user action (see core/undo-delete.ts's header), so a silent
 //   delete skips the capture entirely rather than cloning a potentially
@@ -24,7 +24,7 @@ import type { Team } from '../core/types'
 import { findTeam as docFindTeam } from '../core/document'
 import { t, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam, type IdRefKind } from '../core/refs'
-import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
+import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import type { TeamItemCollection } from '../core/team-items'
 import { confirmDelete } from '../ui/modal'
 import { offerUndoToast } from '../ui/undo-toast'
@@ -83,18 +83,10 @@ export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDele
 
   function remove(id: string): UndoOffer | null {
     beforeRemove?.(id)
-    return deleteWithUndo(ctx.store, (d) => {
-      const tm = docFindTeam(d, teamId)
-      if (!tm) return null
-      const removed = listOf(tm).find((e) => e.id === id)
-      if (!removed) return null
-      const before = structuredClone(tm)
-      dropFrom(tm, removed)
-      return (d2) => {
-        const i = d2.teams.findIndex((t2) => t2.id === teamId)
-        if (i !== -1) d2.teams[i] = before
-      }
-    }, { teamId })
+    return deleteInTeamWithUndo(ctx.store, teamId,
+      (tm) => listOf(tm).some((e) => e.id === id),
+      (tm) => { dropFrom(tm, listOf(tm).find((e) => e.id === id)!) },
+      { teamId })
   }
 
   function removeSilently(id: string): void {

@@ -1,4 +1,4 @@
-import { deleteWithUndo } from '../src/core/undo-delete'
+import { deleteWithUndo, deleteInTeamWithUndo } from '../src/core/undo-delete'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import type { Doc } from '../src/core/types'
@@ -103,5 +103,52 @@ describe('deleteWithUndo', () => {
     store.setReadOnly(true)
     expect(offer!.isAvailable()).toBe(false)
     expect(offer!.undo()).toBe(false)
+  })
+})
+
+describe('deleteInTeamWithUndo', () => {
+  function storeWithTeam() {
+    const doc = createEmptyDocument('en-US')
+    const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+    team.risks.push({ id: 'r1', title: 'Vendor', chance: 1, impact: 1, plan: 'mitigate', followup: '', order: 0, closed: false })
+    team.dailyNotes['2026-01-01'] = 'see @[Vendor](risk:r1)'
+    doc.teams.push(team)
+    return createStore(doc)
+  }
+
+  test('undo restores the whole team, including edits made outside the deleted collection', () => {
+    const store = storeWithTeam()
+    const before = structuredClone(store.doc.teams[0])
+    const offer = deleteInTeamWithUndo(store, 't1', (tm) => tm.risks.length > 0, (tm) => {
+      tm.risks = []
+      tm.dailyNotes['2026-01-01'] = 'see ~Vendor~'
+    }, { teamId: 't1' })
+    expect(store.doc.teams[0]!.dailyNotes['2026-01-01']).toBe('see ~Vendor~')
+    expect(offer!.undo()).toBe(true)
+    expect(store.doc.teams[0]).toEqual(before)
+  })
+
+  test('no target: nothing cloned, nothing removed, no offer', () => {
+    const store = storeWithTeam()
+    const clone = vi.spyOn(globalThis, 'structuredClone')
+    const remove = vi.fn()
+    expect(deleteInTeamWithUndo(store, 't1', () => false, remove, { teamId: 't1' })).toBeNull()
+    expect(clone).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    clone.mockRestore()
+  })
+
+  test('unknown team: no offer', () => {
+    const store = storeWithTeam()
+    expect(deleteInTeamWithUndo(store, 'nope', () => true, vi.fn(), { teamId: 'nope' })).toBeNull()
+  })
+
+  test('the delete and its undo are both written with the given scope', () => {
+    const store = storeWithTeam()
+    const scopes: unknown[] = []
+    store.subscribe((s) => scopes.push(s))
+    const offer = deleteInTeamWithUndo(store, 't1', () => true, (tm) => { tm.risks = [] }, { teamId: 't1', sections: ['risks'] })
+    offer!.undo()
+    expect(scopes).toEqual([{ teamId: 't1', sections: ['risks'] }, { teamId: 't1', sections: ['risks'] }])
   })
 })

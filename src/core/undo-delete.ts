@@ -27,7 +27,8 @@
 // byte-identical results on a fixture with no mentions to lose. Every
 // existing site's own test happens to plant one for exactly this reason —
 // match that when adding a new one.
-import type { Doc } from './types'
+import type { Doc, Team } from './types'
+import { findTeam } from './document'
 import type { Store } from './store'
 import type { ChangeScope } from './scope'
 
@@ -79,4 +80,30 @@ export function deleteWithUndo(
       return true
     },
   }
+}
+
+/**
+ * deleteWithUndo for the common shape: a delete confined to one team, whose
+ * capture is a deep copy of that whole team (see this file's header for why
+ * nothing shallower is safe). `hasTarget` is asked first so a delete that
+ * finds nothing never pays for the clone; `remove` then performs the delete on
+ * the live team.
+ */
+export function deleteInTeamWithUndo(
+  store: Store,
+  teamId: string,
+  hasTarget: (team: Team) => boolean,
+  remove: (team: Team) => void,
+  scope: ChangeScope,
+): UndoOffer | null {
+  return deleteWithUndo(store, (d) => {
+    const team = findTeam(d, teamId)
+    if (!team || !hasTarget(team)) return null
+    const before = structuredClone(team)
+    remove(team)
+    return (d2) => {
+      const i = d2.teams.findIndex((tm) => tm.id === teamId)
+      if (i !== -1) d2.teams[i] = before
+    }
+  }, scope)
 }
