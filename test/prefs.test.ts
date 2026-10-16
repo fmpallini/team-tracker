@@ -6,6 +6,7 @@ import { createEmptyDocument } from '../src/core/document'
 import { builtinTemplates } from '../src/core/templates'
 import { SCHEMA_VERSION } from '../src/core/document'
 import { buildExport } from '../src/core/team-export'
+import { setReadOnlyLock } from '../src/ui/readonly-lock'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
 import type { BackupHealth } from '../src/core/backup-controller'
@@ -1469,6 +1470,26 @@ describe('Data tab (export/import)', () => {
       'Create at least two teams to use this.',
       'Removes done/cancelled tasks and closed risks, plus completed milestones and daily notes dated older than the chosen number of days, and favorites that point to a deleted team or person or to a day older than that — across every team in this file. This cannot be undone.',
     ])
+  })
+
+  test('export team checkboxes still toggle in a read-only tab (export only reads); import and cleanup stay locked', () => {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => { d.teams.push(sampleTeam()) })
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    setReadOnlyLock(true, () => 'en-US')
+    try {
+      const cb = exportCheckboxes()[0] as HTMLInputElement
+      cb.click()
+      expect(cb.checked).toBe(true)
+      const other = document.createElement('input')
+      other.type = 'checkbox'
+      document.body.appendChild(other)
+      other.click()
+      expect(other.checked).toBe(false)
+    } finally {
+      setReadOnlyLock(false, () => 'en-US')
+    }
   })
 
   test('export writes a JSON file via downloadFallback, stripped of dailyNotes and person.notes', async () => {

@@ -1,5 +1,6 @@
 import { setReadOnlyLock, READONLY_TOAST_KEY } from '../src/ui/readonly-lock'
 import { t } from '../src/core/i18n'
+import { createDatePicker } from '../src/ui/date-picker'
 
 const lc = (): 'en-US' => 'en-US'
 const toasts = (): Element[] => Array.from(document.querySelectorAll(`.tt-toast[data-toast-key="${READONLY_TOAST_KEY}"]`))
@@ -15,6 +16,8 @@ function mountControls() {
     <div class="tt-kanban-color-row"><button class="tt-kanban-color-chip" type="button"></button></div>
     <div class="card" draggable="true"></div>
     <button class="nav" type="button">nav</button>
+    <input class="num" type="number" value="5">
+    <p class="plain">some text</p>
     <div data-readonly-exempt><input class="search" type="text"></div>`
   return (sel: string) => pane.querySelector<HTMLElement>(sel)!
 }
@@ -65,6 +68,78 @@ test('read-only: nothing can be dragged', () => {
   const $ = mountControls()
   setReadOnlyLock(true, lc)
   expect(fire($('.card'), new Event('dragstart', { bubbles: true, cancelable: true })).defaultPrevented).toBe(true)
+})
+
+test('read-only: a select refuses keys that open or change it, but not hotkeys or bare modifiers', () => {
+  const $ = mountControls()
+  setReadOnlyLock(true, lc)
+  const key = (k: string, init: KeyboardEventInit = {}) =>
+    fire($('.sel'), new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init })).defaultPrevented
+  expect(key('ArrowDown')).toBe(true)
+  expect(key('a')).toBe(true)
+  expect(key(' ')).toBe(true)
+  expect(key('Enter')).toBe(true)
+  expect(key('k', { ctrlKey: true })).toBe(false)
+  expect(key('1', { altKey: true })).toBe(false)
+  expect(key('ArrowLeft', { altKey: true, shiftKey: true })).toBe(false)
+  expect(key('Shift', { shiftKey: true })).toBe(false)
+  expect(key('Control', { ctrlKey: true })).toBe(false)
+  expect(toasts()).toHaveLength(1) // only the refused keys raised the notice
+})
+
+test('read-only: a hotkey on a focused select reaches the document handler', () => {
+  const $ = mountControls()
+  const hotkey = vi.fn()
+  document.addEventListener('keydown', hotkey)
+  try {
+    setReadOnlyLock(true, lc)
+    fire($('.sel'), new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(hotkey).toHaveBeenCalledTimes(1)
+  } finally {
+    document.removeEventListener('keydown', hotkey)
+  }
+})
+
+test('read-only: only draggable elements are refused on dragstart', () => {
+  const $ = mountControls()
+  setReadOnlyLock(true, lc)
+  expect(fire($('.plain'), new Event('dragstart', { bubbles: true, cancelable: true })).defaultPrevented).toBe(false)
+  const inner = $('.card').appendChild(document.createElement('span'))
+  expect(fire(inner, new Event('dragstart', { bubbles: true, cancelable: true })).defaultPrevented).toBe(true)
+})
+
+test('read-only: a number input refuses ArrowUp/ArrowDown and the mouse wheel', () => {
+  const $ = mountControls()
+  setReadOnlyLock(true, lc)
+  const num = $('.num') as HTMLInputElement
+  expect(fire(num, new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })).defaultPrevented).toBe(true)
+  expect(fire(num, new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })).defaultPrevented).toBe(true)
+  expect(fire(num, new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })).defaultPrevented).toBe(false)
+  num.focus()
+  expect(fire(num, new WheelEvent('wheel', { bubbles: true, cancelable: true })).defaultPrevented).toBe(true)
+  setReadOnlyLock(false, lc)
+  expect(fire(num, new WheelEvent('wheel', { bubbles: true, cancelable: true })).defaultPrevented).toBe(false)
+})
+
+test('read-only: focusing a date picker input opens no popover, and an already-open popover refuses its day buttons', () => {
+  const picker = createDatePicker({ value: '2026-03-10', locale: 'en-US', onChange: vi.fn() })
+  document.body.appendChild(picker.root)
+  const input = picker.root.querySelector<HTMLInputElement>('.tt-date-picker-input')!
+  setReadOnlyLock(true, lc)
+  input.focus()
+  input.dispatchEvent(new FocusEvent('focus'))
+  expect(document.querySelector('.tt-date-picker-popover')).toBeNull()
+
+  // A popover that was already open when the lock armed.
+  setReadOnlyLock(false, lc)
+  input.dispatchEvent(new FocusEvent('focus'))
+  const day = document.querySelector<HTMLButtonElement>('.tt-date-picker-popover .tt-calendar-day:not(.tt-calendar-day-blank)')!
+  const clicked = vi.fn()
+  day.addEventListener('click', clicked)
+  setReadOnlyLock(true, lc)
+  day.click()
+  expect(clicked).not.toHaveBeenCalled()
+  picker.destroy()
 })
 
 test('read-only: navigation buttons and exempt fields keep working', () => {

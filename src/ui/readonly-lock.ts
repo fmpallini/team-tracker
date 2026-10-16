@@ -13,8 +13,18 @@ import { toast } from './modal'
 
 export const READONLY_TOAST_KEY = 'readonly-blocked'
 
+/** True while the guard is armed (this tab is visibly read-only). */
+export function isReadOnlyLocked(): boolean {
+  return armed !== null
+}
+
 /** Click targets that edit without being a form control. */
-const EDITING_CLICK_TARGETS = '.tt-date-picker, .tt-kanban-color-row button'
+// The date picker's popover lives on document.body, outside .tt-date-picker, so
+// it is listed on its own (one already open when the lock armed must refuse too).
+const EDITING_CLICK_TARGETS = '.tt-date-picker, .tt-date-picker-popover, .tt-kanban-color-row button'
+
+/** Keys that open or change a focused <select> (a hotkey chord or bare modifier is not one). */
+const SELECT_EDIT_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', ' ', 'Enter'])
 
 let armed: { locale: () => Locale } | null = null
 
@@ -37,7 +47,21 @@ function onBeforeInput(e: Event): void {
 
 function onKeydown(e: KeyboardEvent): void {
   const target = lockedTarget(e)
-  if (target instanceof HTMLSelectElement && e.key !== 'Tab' && e.key !== 'Escape') refuse(e)
+  if (target instanceof HTMLSelectElement) {
+    // Only keys that open or change the select: Tab, Escape, modifier-only keys
+    // and app hotkeys (Ctrl/Alt/Meta chords) must still reach their handlers.
+    if (e.ctrlKey || e.altKey || e.metaKey) return
+    if (SELECT_EDIT_KEYS.has(e.key) || e.key.length === 1) refuse(e)
+  } else if (target instanceof HTMLInputElement && target.type === 'number' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    // Number inputs step on arrows without firing beforeinput.
+    refuse(e)
+  }
+}
+
+function onWheel(e: WheelEvent): void {
+  const target = lockedTarget(e)
+  // A wheel over a focused number input steps its value.
+  if (target instanceof HTMLInputElement && target.type === 'number' && target === document.activeElement) refuse(e)
 }
 
 function onMousedown(e: MouseEvent): void {
@@ -53,7 +77,9 @@ function onClick(e: MouseEvent): void {
 }
 
 function onDragstart(e: DragEvent): void {
-  if (lockedTarget(e)) refuse(e)
+  // Only app drag-and-drop is an edit; dragging selected text or a link out of a note is not.
+  const target = lockedTarget(e)
+  if (target?.closest('[draggable="true"]')) refuse(e)
 }
 
 /** Arms (or lifts) the guard. Idempotent: arming twice installs the listeners once. */
@@ -67,6 +93,7 @@ export function setReadOnlyLock(readOnly: boolean, locale: () => Locale): void {
     document.addEventListener('mousedown', onMousedown, true)
     document.addEventListener('click', onClick, true)
     document.addEventListener('dragstart', onDragstart, true)
+    document.addEventListener('wheel', onWheel, { capture: true, passive: false })
     return
   }
   if (!armed) return
@@ -76,4 +103,5 @@ export function setReadOnlyLock(readOnly: boolean, locale: () => Locale): void {
   document.removeEventListener('mousedown', onMousedown, true)
   document.removeEventListener('click', onClick, true)
   document.removeEventListener('dragstart', onDragstart, true)
+  document.removeEventListener('wheel', onWheel, { capture: true })
 }

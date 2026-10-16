@@ -1036,7 +1036,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     // --- Export ---
     const exportChecks = new Map<string, HTMLInputElement>()
-    const exportListEl = el('div', { class: 'tt-data-team-list' })
+    // Exempt from the read-only lock: exporting only reads, so its team checkboxes must toggle.
+    const exportListEl = el('div', { class: 'tt-data-team-list', 'data-readonly-exempt': '' })
     if (store.doc.teams.length === 0) {
       exportListEl.appendChild(el('div', { class: 'tt-data-empty' }, t(locale, 'data_export_empty')))
     } else {
