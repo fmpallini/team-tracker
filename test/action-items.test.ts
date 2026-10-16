@@ -2603,3 +2603,50 @@ describe('renderActionItems — delete behaviour pins', () => {
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
 })
+
+describe('calendar day rolling over while the board sits idle', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  function idleOvernight() {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 14, 23, 0))
+    const ctx = setup(makeTeam({ actionItems: [item({ id: 'a', dueDate: '2026-10-14' })] }))
+    render(ctx.container, ctx.loc, ctx.store, ctx.pm)
+    const due = (): HTMLElement => ctx.container.querySelector<HTMLElement>('.tt-kanban-card-due')!
+    expect(due().classList.contains('overdue')).toBe(false)
+    vi.setSystemTime(new Date(2026, 9, 15, 8, 0))
+    return { ...ctx, due }
+  }
+
+  test('a due pill turns overdue when the window is returned to on the next day', () => {
+    const { due } = idleOvernight()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(due().classList.contains('overdue')).toBe(true)
+  })
+
+  test('a column rename being typed is left alone until it blurs', () => {
+    const { container, due } = idleOvernight()
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click() // opens the rename input
+    const input = container.querySelector<HTMLInputElement>('.tt-kanban-col-rename-input')!
+    input.value = 'Half-typed'
+    window.dispatchEvent(new Event('focus'))
+    expect(input.isConnected).toBe(true)
+    expect(input.value).toBe('Half-typed')
+    // Back to the original name before leaving the field, so the blur commits
+    // no rename: whatever rebuild follows comes from the deferred day change.
+    input.value = 'WIP'
+    input.dispatchEvent(new FocusEvent('blur'))
+    expect(due().classList.contains('overdue')).toBe(true)
+  })
+
+  test('tearing the board down removes both listeners', () => {
+    const { container, store, pm, loc } = idleOvernight()
+    const docOff = vi.spyOn(document, 'removeEventListener')
+    const winOff = vi.spyOn(window, 'removeEventListener')
+    render(container, loc, store, pm)
+    expect(docOff.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(true)
+    expect(winOff.mock.calls.some(([type]) => type === 'focus')).toBe(true)
+    docOff.mockRestore()
+    winOff.mockRestore()
+  })
+})

@@ -19,6 +19,7 @@ import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { actionStatusLabel } from './action-items'
 import { icon } from '../ui/icons'
+import { watchDayChange } from '../ui/day-change'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
@@ -162,6 +163,8 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     )
   }
   rebuildCalendar()
+  // The calendar marks today; a pane left open overnight gets no store change to move it.
+  const stopDayWatch = watchDayChange(rebuildCalendar)
 
   /**
    * Toggles each rendered day cell's has-note tint from live `dailyNotes`
@@ -405,6 +408,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     mountedCalendarCols.delete(calendarColEntry)
     detachDayOverscroll()
     unsubscribe()
+    stopDayWatch()
     bundle.dispose()
   }
 })

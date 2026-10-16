@@ -30,6 +30,7 @@ import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
 import { icon, kindIcon } from '../ui/icons'
+import { watchDayChange } from '../ui/day-change'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -1387,6 +1388,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const deferredRebuild = createDeferredRebuild(renderAll)
 
+  // Due pills are coloured against today; a board left open overnight gets no
+  // store change to redraw them. Deferred like a foreign change while a column
+  // rename is being typed.
+  const stopDayWatch = watchDayChange(() => {
+    const active = focusedRenameInput()
+    if (active) deferredRebuild.arm(active)
+    else renderAll()
+  })
+
   /**
    * Re-queries each card's backlinks and swaps its chip node in place. The
    * subscribe handler uses this instead of a full `renderAll()` for a change
@@ -1492,6 +1502,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     disposeOpenBundle()
     disposeArrowFallback()
     boardResize?.disconnect()
+    stopDayWatch()
     deferredRebuild.dispose()
   }
 })

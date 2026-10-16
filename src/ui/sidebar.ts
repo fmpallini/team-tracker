@@ -6,6 +6,7 @@ import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam, locsConflict } from '../core/nav'
 import { t, todayIso, type Locale } from '../core/i18n'
+import { watchDayChange } from './day-change'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
@@ -815,11 +816,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // first click. renderNav() already rebuilds when the calendar day moved and
   // is a plain highlight toggle otherwise, so asking it when the user comes
   // back is cheap.
-  const onReturn = (): void => {
-    if (document.visibilityState !== 'hidden') renderNav()
-  }
-  document.addEventListener('visibilitychange', onReturn)
-  window.addEventListener('focus', onReturn)
+  const stopDayWatch = watchDayChange(() => renderNav())
 
   return {
     setSpaceConstrained,
@@ -837,8 +834,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       unsubscribeContent()
       unsubscribeMutate()
       document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
-      document.removeEventListener('visibilitychange', onReturn)
-      window.removeEventListener('focus', onReturn)
+      stopDayWatch()
     },
   }
 }
