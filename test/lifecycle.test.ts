@@ -344,3 +344,31 @@ test('switching modules within one container disposes the outgoing module, not j
   expect(liveSubscriptions()).toBe(1)
   container.remove()
 })
+
+describe('a pane that stops showing a module disposes the one it held', () => {
+  function mountRisks() {
+    const { store, liveSubscriptions } = countingStore()
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store, 'en-US')
+    pm.registerModule('risks', renderRisks)
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+    expect(liveSubscriptions()).toBe(2) // risks + pm's own index subscription
+    return { store, pm, liveSubscriptions }
+  }
+
+  test('when its history empties (e.g. the last team was deleted)', () => {
+    const { store, pm, liveSubscriptions } = mountRisks()
+    store.updateNav((d) => { d.nav.panes[0] = { history: [], index: -1 } })
+    pm.renderAll()
+    expect(liveSubscriptions()).toBe(1)
+  })
+
+  test('when it navigates to a kind with no registered renderer', () => {
+    const { pm, liveSubscriptions } = mountRisks()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } }) // not registered here
+    expect(liveSubscriptions()).toBe(1)
+  })
+})

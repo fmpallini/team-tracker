@@ -1130,6 +1130,11 @@ ${t(lc, 'pane_history_hint')}`
 
   function renderBody(idx: 0 | 1): void {
     const container = bodyEls[idx]
+    // Tear the outgoing module down before its DOM goes, on every path: the
+    // renderer's own withDisposal() only runs when there IS a renderer, so an
+    // emptied pane (last team deleted) or an unregistered kind used to leave
+    // the old instance subscribed to the store and listening on document.
+    disposeContainer(container)
     container.innerHTML = ''
     const lc = localeNow()
     const loc = currentLoc(store.doc.nav.panes[idx])
