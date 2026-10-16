@@ -814,6 +814,16 @@ describe('renderRisks', () => {
       vi.runAllTimers()
     }
 
+    test('a double-click on a nameless row flags the name instead of opening the follow-up', () => {
+      const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'r1', title: '' })] }))
+      render(container, loc, store, pm)
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+      expect(row.querySelector('.tt-risk-name-error')).not.toBeNull()
+      expect(document.activeElement).toBe(row.querySelector('.tt-risk-title-input'))
+    })
+
     test('a just-added risk left with no name is dropped once focus leaves the list', () => {
       const { container, store, pm, loc } = setup(makeTeam())
       render(container, loc, store, pm)

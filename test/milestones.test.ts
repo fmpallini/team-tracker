@@ -560,6 +560,16 @@ describe('renderMilestones', () => {
       vi.runAllTimers()
     }
 
+    test('a double-click on a nameless row flags the name instead of opening the follow-up', () => {
+      const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', title: '' })] }))
+      render(container, loc, store, pm)
+      const row = container.querySelector('.tt-milestone-row') as HTMLElement
+      row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-milestone-followup-row')).toBeNull()
+      expect(row.querySelector('.tt-milestone-name-error')).not.toBeNull()
+      expect(document.activeElement).toBe(row.querySelector('.tt-milestone-title-input'))
+    })
+
     test('a nameless row is still judged when an edit rebuilt it between focus leaving and the check', () => {
       const team = makeTeam({ milestones: [milestone({ id: 'a', title: '' })] })
       const { container, store, pm, loc } = setup(team)

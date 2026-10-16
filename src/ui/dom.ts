@@ -158,8 +158,8 @@ export interface DeferredRebuild {
  *
  * Extracted out of src/modules/milestones.ts and risks.ts, which each carried
  * this identical ~15-line block (only the caret-sensitive-element predicate
- * that decides *when* to call `arm` differs between them, and stays in each
- * module as `focusedCaretInput`/`focusedCaretElement`) — sharing it here is
+ * that decides *when* to call `arm` differs between them: each module passes
+ * its own input types to followup-list.ts's `focusedCaretElement`) — sharing it here is
  * what keeps a future fix to the defer/blur mechanics from having to land in
  * both places.
  */

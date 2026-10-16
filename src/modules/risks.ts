@@ -1,7 +1,8 @@
 // src/modules/risks.ts — Task 22: risks module. A flat, orderable list of
-// Risk per team (structurally close to src/modules/action-items.ts: same
-// disposer WeakMap, loc.teamId-keyed store.update helpers, flat before/after
-// drag reorder), plus two things neither action-items nor milestones need:
+// Risk per team (structurally close to src/modules/action-items.ts: the same
+// loc.teamId-keyed store.update helpers, flat before/after drag reorder; the
+// row behaviour shared with milestones.ts lives in ./followup-list.ts), plus
+// two things neither action-items nor milestones need:
 // a *computed, never-persisted* exposure column (chance*impact, colored by
 // range) and a per-row expandable follow-up editor that mirrors
 // src/modules/person-notes.ts's full editor + @ref + template-picker wiring.
@@ -21,16 +22,15 @@ import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete, toast } from '../ui/modal'
 import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
-import { createModuleEditor } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
+import { createFollowupRows, focusedCaretElement } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild, showRowError, clearRowError, clearClasses } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { makeRefLabelResolver } from '../ui/atref'
 import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
@@ -330,14 +330,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return t(lc, 'risk_created_on', { date: `@[${formatDateWithWeekday(iso, lc)}](day:${iso})` })
   }
 
-  /** Shows the "needs a name" note on a row (idempotent); it clears on its own at the next renderAll(), which rebuilds the row from scratch. */
-  function showNameError(row: HTMLElement): void {
-    showRowError(row, 'tt-risk-name-error', t(lc, 'risk_name_required'))
-  }
-  function clearNameError(row: HTMLElement): void {
-    clearRowError(row, 'tt-risk-name-error')
-  }
-
   let draggedId: string | null = null
   let sortMode: ExposureSort = 'none'
   // Every currently-expanded row's follow-up editor is mounted at once —
@@ -345,12 +337,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // simultaneously.
   const expandable = new ExpandableRowsController()
   let focusRiskId: string | null = null
-  // True only while one of this module's own follow-up editors is committing
-  // (see renderFollowupRow). A follow-up's text appears nowhere in the row
-  // list, so the subscriber below skips the full rebuild for it — and with it
-  // the rebuild-on-blur deferral, which fired as focus moved from one
-  // follow-up to another and detached the one being clicked into.
-  let committingOwnFollowup = false
 
   function clearDropClasses(): void {
     clearClasses(listEl, '.tt-risk-row', 'tt-risk-drop-before', 'tt-risk-drop-after')
@@ -372,15 +358,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     if (closed) {
       // The inline equivalent of action-items.ts's beforeClose veto: an
       // unnamed risk can't be filed away closed — flag the row and stop.
-      const target = risks().find((rr) => rr.id === id)
-      if (target && target.title.trim() === '') {
-        const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
-        if (row) {
-          showNameError(row)
-          row.querySelector<HTMLInputElement>('.tt-risk-title-input')?.focus()
-        }
-        return
-      }
+      if (!followups.requireTitle(id)) return
       expandable.collapse(id) // a closed row never renders a follow-up editor, so drop it before the subscriber rebuilds
     }
     const closing = closed ? risks().find((rr) => rr.id === id) : undefined
@@ -427,36 +405,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     })
   }
 
-  // Keyboard-driven (Enter on a focused row) needs to land focus somewhere
-  // sane after renderAll() replaces the row DOM — on the follow-up editor
-  // when expanding (so typing can start immediately), or back on the row
-  // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
-  // synchronously here, so the DOM is already rebuilt by the time we query it.
-  /**
-   * A follow-up is written under a title, as an action item's notes can't be
-   * saved without a name: a nameless row refuses to open one, flags itself and
-   * puts the caret in the title instead.
-   */
-  function requireTitle(id: string): boolean {
-    const cur = risks().find((rr) => rr.id === id)
-    if (!cur || cur.title.trim() !== '') return true
-    const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
-    if (row) {
-      showNameError(row)
-      row.querySelector<HTMLInputElement>('.tt-risk-title-input')?.focus()
-    }
-    return false
-  }
-
-  function toggleExpand(id: string): void {
-    const wasExpanded = expandable.isExpanded(id)
-    if (!wasExpanded && !requireTitle(id)) return
-    expandable.toggle(id)
-    renderAll()
-    if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)?.focus()
-    else listEl.querySelector<HTMLElement>(`[data-risk-followup-id="${id}"] .editor`)?.focus()
-  }
-
   /** Expands (or collapses) every currently-open (non-closed) risk's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
   function setAllExpanded(expand: boolean): void {
     // Expanding skips nameless rows (they can't hold a follow-up); collapsing covers all.
@@ -493,24 +441,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     return select
   }
 
-  /** Builds the full rich editor for a risk's follow-up, via src/ui/rich-editor.ts's createModuleEditor (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates since a follow-up isn't tied to a person or a day. Registers itself with `expandable` so the caller can dispose it later. */
-  function renderFollowupRow(r: Risk): HTMLElement {
-    const bundle = createModuleEditor(ctx, teamId, {
-      initialMd: r.followup,
-      templateScopes: ['any'],
-      onChange: (md) => {
-        committingOwnFollowup = true
-        try {
-          patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.followup = md }, { teamId, sections: ['risks'] })
-        } finally {
-          committingOwnFollowup = false
-        }
-      },
-    })
-    expandable.register(r.id, bundle)
-    return el('div', { class: 'tt-risk-followup-row', 'data-risk-followup-id': r.id, 'data-item-id': r.id }, bundle.editor.root)
-  }
-
   function openRowContextMenu(itemId: string, x: number, y: number): void {
     const r = risks().find((rr) => rr.id === itemId)
     if (!r) return
@@ -540,7 +470,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       expandable.expand(id)
       renderAll()
     }
-    const row = listEl.querySelector<HTMLElement>(`[data-risk-id="${id}"].tt-risk-row`)
+    const row = followups.rowFor(id)
     if (!row) return
     row.scrollIntoView({ block: 'center' })
     row.focus()
@@ -879,17 +809,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // a pointer. The buttons now rest visible-but-quiet (styles.css), and the
     // row itself is a single Tab stop that opens the same context menu on
     // Enter/Space, so every action has a keyboard path.
-    // A fixed-width slot even when there's no chip: `createBacklinksChip`
-    // returns null for zero backlinks and `el()` skips null children
-    // entirely, which would collapse this column on chip-less rows and
-    // misalign chance/impact/exposure/plan against rows that do have one.
-    const backlinksChip = createModuleBacklinksChip(ctx, teamId, 'risk', r.id)
-      ?? el('span', { class: 'tt-backlinks-chip-slot' })
+    const backlinksChip = followups.backlinksSlot(r.id)
 
     const expanded = expandable.isExpanded(r.id)
     const expandBtn = el(
       'button',
-      { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => toggleExpand(r.id) },
+      { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => followups.toggleExpand(r.id) },
       icon(expanded ? 'chevDown' : 'chevRight', 14)
     )
 
@@ -941,81 +866,17 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
 
-    // Guarded on `e.target === row` throughout so Enter inside the title
-    // input still means "commit and blur" (blurOnEnter), Space inside a
-    // select still opens the dropdown, and arrows inside a select still
-    // change its value — only a keypress on the row itself counts.
-    row.addEventListener('keydown', (e) => {
-      const ev = e as KeyboardEvent
-      if (ev.target !== row) return
-      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
-        const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-risk-row'))
-        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
-        if (!next) return
-        ev.preventDefault()
-        next.focus()
-        return
-      }
-      if (ev.key === 'Enter') {
-        ev.preventDefault()
-        toggleExpand(r.id)
-        return
-      }
-      if (ev.key !== ' ') return
-      // Keyboard equivalent of the right-click menu.
-      ev.preventDefault()
-      const rect = row.getBoundingClientRect()
-      openRowContextMenu(r.id, rect.left + 16, rect.bottom)
+    followups.wireRowKeys(row, r.id, (x, y) => openRowContextMenu(r.id, x, y))
+
+    followups.installBlankTitleGuard(row, r.id, {
+      // The add button is part of the list: pressing it would otherwise drop the
+      // draft mid-click, collapsing the layout under the cursor.
+      keepsRowOpen: (active) => active === addBtn,
+      isDiscardable: (cur) => isUntitledRiskDiscardable(cur, newRiskFollowup()),
+      discard: removeRiskSilently,
     })
 
-    // Blank-name guard, the inline-row stand-in for action-items.ts's
-    // modal-close behaviour. When focus has genuinely left the risks list
-    // with the title still blank, an untouched draft (isBlankRiskDraft:
-    // every other field at its default) is dropped silently — exactly as
-    // requestDelete treats a blank row — and a row that has gathered real
-    // content is kept with its missing name flagged instead.
-    row.addEventListener('focusout', () => {
-      // Deferred a tick on purpose: clicking the row's own caret / close /
-      // delete button, or any edit that re-renders the row, all resettle
-      // focus within the tick, and a tabindex="-1" button doesn't reliably
-      // hold focus. Judging synchronously (or off relatedTarget, which is
-      // null on those in headless Chromium) would fire the guard on them.
-      setTimeout(() => {
-        // An edit inside the list (a select, say) defers a rebuild that flushes
-        // the instant focus leaves, so this row may already have been replaced
-        // by a fresh one that never had focus and would never be judged. Judge
-        // the live row by id; only a torn-down module (listEl detached) or a
-        // risk that no longer exists ends the check.
-        if (!listEl.isConnected) return
-        const liveRow = row.isConnected ? row : listEl.querySelector<HTMLElement>(`[data-risk-id="${r.id}"].tt-risk-row`)
-        if (!liveRow) return
-        const active = document.activeElement
-        // Focus still sits inside the risks list (another row, or the follow-up
-        // editor that just opened) — or on the add button, which is part of the
-        // list (pressing it would otherwise drop the draft mid-click, collapsing
-        // the layout under the cursor): not done with this row.
-        if (active && active !== document.body && (listEl.contains(active) || active === addBtn)) return
-        // Focus went nowhere real — a stray blur, not a deliberate move
-        // away. Leave the row on screen to be finished or deleted.
-        if (!active || active === document.body) return
-        const cur = risks().find((rr) => rr.id === r.id)
-        if (!cur) return
-        if (cur.title.trim() !== '') { clearNameError(liveRow); return }
-        if (isUntitledRiskDiscardable(cur, newRiskFollowup())) removeRiskSilently(cur.id)
-        else showNameError(liveRow)
-      }, 0)
-    })
-
-    // Double-click any dead space on the row toggles the follow-up — a bigger
-    // target than the caret, matching the closed-risk row. Skipped when the
-    // double-click landed on one of the row's own controls (a field edit, a
-    // word-select in the title, a button press).
-    row.addEventListener('dblclick', (e) => {
-      if ((e.target as HTMLElement).closest('input, select, button, a')) return
-      if (!expandable.isExpanded(r.id) && !requireTitle(r.id)) return
-      expandable.toggle(r.id)
-      renderAll()
-    })
+    followups.wireDblclickToggle(row, r.id)
 
     // Drag reorder only makes sense against the manual `order` sequence — a
     // display-only exposure sort has no manual position to reorder into, so
@@ -1142,6 +1003,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   const listEl = el('div', { class: 'tt-risk-list' })
+  const followups = createFollowupRows<Risk>({
+    ctx, teamId, prefix: 'risk', listEl, expandable,
+    nameRequired: t(lc, 'risk_name_required'),
+    find: (id) => risks().find((r) => r.id === id),
+    renderAll,
+  })
   const closedEl = el('details', { class: 'tt-risks-closed' })
 
   const sortIndicatorEl = el('span', { class: 'tt-risk-sort-indicator' })
@@ -1182,27 +1049,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   /**
-   * Re-queries each open row's backlinks and swaps its chip node in place.
-   * The subscribe handler uses this instead of a full `renderAll()` for a
-   * change confined to sibling sections (another pane's notes, an action
-   * item, a milestone): those can only reach this module through backlinks
-   * chips, and rebuilding the list would tear down the quadrant SVG and
-   * every row's inputs on each debounced foreign keystroke. Closed rows
-   * carry no chip, so `listEl` (open rows only) is the whole surface.
-   */
-  function refreshBacklinkChips(): void {
-    for (const row of listEl.querySelectorAll<HTMLElement>('.tt-risk-row')) {
-      const id = row.dataset.riskId
-      if (id === undefined) continue
-      const existing = row.querySelector('.tt-backlinks-chip, .tt-backlinks-chip-slot')
-      if (!existing) continue
-      const next = createModuleBacklinksChip(ctx, teamId, 'risk', id)
-        ?? el('span', { class: 'tt-backlinks-chip-slot' })
-      existing.replaceWith(next)
-    }
-  }
-
-  /**
    * Syncs every open row's chance/impact selects and exposure badge to the
    * store in place. For the deferred-rebuild path, where a full `renderAll()`
    * would tear down the focused follow-up editor/title input. Row order under
@@ -1237,11 +1083,11 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     } else {
       for (const r of open) {
         listEl.appendChild(renderRow(r))
-        if (expandable.isExpanded(r.id)) listEl.appendChild(renderFollowupRow(r))
+        if (expandable.isExpanded(r.id)) listEl.appendChild(followups.followupEditorRow(r))
       }
     }
     updateSortIndicator()
-    updateExpandAllBtn(open)
+    followups.paintExpandAllBtn(expandAllBtn, open.map((r) => r.id), 'risk_collapse_all_btn', 'risk_expand_all_btn')
 
     closedEl.innerHTML = ''
     const clearClosedBtn = el(
@@ -1317,31 +1163,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     ''
   )
 
-  /** Label reads "Expand all" unless every open (non-closed) row is already expanded, in which case it flips to "Collapse all" — mirrors risk_expand_all_btn/risk_collapse_all_btn i18n keys. */
-  function updateExpandAllBtn(open: Risk[]): void {
-    const all = expandable.isAllExpanded(open.map((r) => r.id))
-    expandAllBtn.replaceChildren(icon(all ? 'chevUp' : 'chevDown', 12), t(lc, all ? 'risk_collapse_all_btn' : 'risk_expand_all_btn'))
-  }
-
   const toolbar = el('div', { class: 'tt-risk-toolbar' }, addBtn, expandAllBtn)
-
-  /**
-   * True (and returns the focused element) for the caret-sensitive elements
-   * this module owns: the title text input (mirrors
-   * src/modules/action-items.ts's `focusedCaretInput`) and — since a follow-up
-   * editor can be live-edited for a while before its debounced onChange
-   * commits — the expanded row's contenteditable `.editor` itself. Selects
-   * are deliberately excluded: like the checkboxes in action-items/
-   * milestones, choosing an option has no caret to preserve, so a foreign
-   * change is free to rebuild immediately.
-   */
-  function focusedCaretElement(): HTMLElement | null {
-    const active = document.activeElement
-    if (!(active instanceof HTMLElement) || !container.contains(active)) return null
-    if (active instanceof HTMLInputElement && active.type === 'text') return active
-    if (active.classList.contains('editor') && active.isContentEditable) return active
-    return null
-  }
 
   // Same rationale as action-items.ts's identically-shaped subscribe
   // callback: a full rebuild is the simplest correct way to keep row
@@ -1371,8 +1193,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     expandable.refreshAllLabels()
     // Our own follow-up commit: only its @mentions can have moved another
     // row's backlinks chip — nothing else here renders follow-up text.
-    if (committingOwnFollowup) {
-      refreshBacklinkChips()
+    if (followups.isCommittingOwnFollowup()) {
+      followups.refreshBacklinkChips()
       return
     }
     // A change confined to sibling sections can only reach this module
@@ -1383,10 +1205,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // sections, so it takes the full path).
     const sections = scope?.sections
     if (sections !== undefined && !sections.includes('risks') && !sections.includes('teams')) {
-      refreshBacklinkChips()
+      followups.refreshBacklinkChips()
       return
     }
-    const active = focusedCaretElement()
+    const active = focusedCaretElement(container, ['text'])
     if (active) {
       deferred.arm(active)
       // The rebuild waits for blur, but the chart and each row's chance/
