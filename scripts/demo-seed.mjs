@@ -52,17 +52,18 @@ const defaultPrefs = {
   theme: 'system', locale: 'en-US', font: 'system', fontSize: 'M', autoSaveMin: 10,
   palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
   dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
+  ctrlWheelFontSize: true, dailyEdgeScroll: true,
 }
 
 // builtinTemplates('en-US') (src/core/templates.ts) — only the tour's `1:1`
 // beat strictly needs one to exist, but seeding the full set keeps the `/`
 // picker realistic.
 const builtinTemplates = [
-  { id: 'tpl-1on1', name: '1:1', scope: 'personal', body: '## 1:1 — {data}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- ' },
-  { id: 'tpl-sbi', name: 'Feedback (SBI)', scope: 'personal', body: '## Feedback — {data}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed:** ' },
-  { id: 'tpl-meeting', name: 'Meeting', scope: 'daily', body: '## Meeting — {hora}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- ' },
-  { id: 'tpl-decision', name: 'Decision', scope: 'any', body: '## Decision — {data}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** ' },
-  { id: 'tpl-weekly', name: 'Weekly status', scope: 'daily', body: '## Weekly status — {data}\n### Highlights\n- \n### Lowlights\n- \n### New risks\n- \n### Next week\n- ' },
+  { id: 'tpl-1on1', name: '1:1', scope: 'personal', body: '## 1:1 — {date}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- ' },
+  { id: 'tpl-sbi', name: 'Feedback (SBI)', scope: 'personal', body: '## Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed:** ' },
+  { id: 'tpl-meeting', name: 'Meeting', scope: 'daily', body: '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- ' },
+  { id: 'tpl-decision', name: 'Decision', scope: 'any', body: '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** ' },
+  { id: 'tpl-weekly', name: 'Weekly status', scope: 'daily', body: '## Weekly status — {date}\n### Highlights\n- \n### Lowlights\n- \n### New risks\n- \n### Next week\n- ' },
 ]
 
 // SUGGESTED_TAG_NAME_KEYS (src/core/document.ts) resolved to en-US.
@@ -192,6 +193,11 @@ export function buildSeedDoc() {
       calendarCollapsed: false,
     },
     teams,
+    // Two starred panes so the tour's fast switch opens on a Favorites group.
+    favorites: [
+      { teamId: star.id, ref: { kind: 'risks' } },
+      { teamId: star.id, ref: { kind: 'milestones' } },
+    ],
   }
 }
 

@@ -63,9 +63,11 @@ async function showOrgChart(page) {
   const meiBox = await mei.boundingBox()
   await moveMouseTo(page, meiBox.x + meiBox.width / 2, meiBox.y + meiBox.height / 2)
   await pause(page, 450)
+  // clickCount on the second press is what makes Chromium dispatch the
+  // `dblclick` event; two plain presses are just two separate clicks.
   await page.mouse.down(); await pause(page, 60); await page.mouse.up()
   await pause(page, 110)
-  await page.mouse.down(); await pause(page, 60); await page.mouse.up()
+  await page.mouse.down({ clickCount: 2 }); await pause(page, 60); await page.mouse.up({ clickCount: 2 })
   await expect(pane1.locator('.tt-person-notes')).toBeVisible({ timeout: 5000 })
   await pause(page, 900)
   await hideCaption(page)
