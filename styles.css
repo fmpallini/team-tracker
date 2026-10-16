@@ -1104,11 +1104,24 @@ body { background: var(--bg); color: var(--fg); }
   color: var(--accent); background: rgba(var(--accent-rgb), .12); border-radius: var(--r-sm);
   padding: 0 .25em; cursor: pointer; text-decoration: none;
 }
-.editor a.ref[data-ref^="person:"]::before { content: "🧑 "; }
-.editor a.ref[data-ref^="day:"]::before { content: "📅 "; }
-.editor a.ref[data-ref^="action:"]::before { content: "✅ "; }
-.editor a.ref[data-ref^="milestone:"]::before { content: "🚩 "; }
-.editor a.ref[data-ref^="risk:"]::before { content: "⚠️ "; }
+/* Reference chips wear the same stroke glyph and kind color as ui/icons.ts's kindIcon (the
+   path data below is copied from there). A mask on a ::before keeps the glyph out of the
+   chip's text, like the emoji it replaced, so the editor's serialization never sees it. */
+.editor a.ref::before {
+  content: ""; display: inline-block; width: .95em; height: .95em; margin-right: .3em;
+  vertical-align: -.14em; background-color: currentColor;
+  -webkit-mask: var(--ref-glyph) center / contain no-repeat; mask: var(--ref-glyph) center / contain no-repeat;
+}
+.editor a.ref[data-ref^="person:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='5.25' r='2.5'/%3E%3Cpath d='M3 13.5c.5-2.6 2.5-4 5-4s4.5 1.4 5 4'/%3E%3C/svg%3E"); }
+.editor a.ref[data-ref^="person:"]::before { background-color: var(--card-plum); }
+.editor a.ref[data-ref^="day:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='3.5' width='11' height='10' rx='1.5'/%3E%3Cpath d='M2.5 6.5h11M5.5 2v3M10.5 2v3'/%3E%3C/svg%3E"); }
+.editor a.ref[data-ref^="day:"]::before { background-color: var(--card-slate); }
+.editor a.ref[data-ref^="action:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='2.5' width='11' height='11' rx='2'/%3E%3Cpath d='M5.5 8.2l1.9 1.9 3.2-3.8'/%3E%3C/svg%3E"); }
+.editor a.ref[data-ref^="action:"]::before { background-color: var(--card-sage); }
+.editor a.ref[data-ref^="milestone:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14V2.5M4 3h8l-2 3 2 3H4'/%3E%3C/svg%3E"); }
+.editor a.ref[data-ref^="milestone:"]::before { background-color: var(--brass); }
+.editor a.ref[data-ref^="risk:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.5l6 10.5H2z'/%3E%3Cpath d='M8 6.75v3'/%3E%3Ccircle cx='8' cy='11.4' r='.8' fill='black'/%3E%3C/svg%3E"); }
+.editor a.ref[data-ref^="risk:"]::before { background-color: var(--danger); }
 
 /* Former @-mention left behind by refs.ts's unlink-on-delete (core/markdown.ts's
    single-tilde ~Label~ rule) — a visual trace that this text used to be a
