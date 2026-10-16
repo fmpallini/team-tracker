@@ -12,7 +12,7 @@ import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { openPersonModal } from '../ui/person-modal'
 import { icon } from '../ui/icons'
@@ -41,7 +41,6 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     return
   }
 
-  const initialBacklinks = ctx.searchIndex.backlinks(teamId, 'person', personId)
   const headerTitleEl = el('span', { class: 'tt-person-header-title' })
   const groupLabel = t(lc, group === 'members' ? 'person_group_member' : 'person_group_stakeholder')
   // The person's name is deliberately not repeated here: the pane bar above
@@ -54,7 +53,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   renderIdentity(person)
 
   const headerBadgeSlot = el('div', {})
-  const initialChip = createBacklinksChip(initialBacklinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+  const initialChip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
   if (initialChip) headerBadgeSlot.appendChild(initialChip)
 
   const editBtn = el(
@@ -164,7 +163,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // way every @mention of this person elsewhere already does.
     renderIdentity(currentPerson)
     headerBadgeSlot.innerHTML = ''
-    const chip = createBacklinksChip(ctx.searchIndex.backlinks(teamId, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const chip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
     if (chip) headerBadgeSlot.appendChild(chip)
     // Patches this note's own @mention chips in place — safe even mid-typing
     // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the

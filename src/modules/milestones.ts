@@ -27,8 +27,7 @@ import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally, showR
 import { withDisposal } from './lifecycle'
 import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { icon } from '../ui/icons'
 import { emptyState } from '../ui/empty-state'
 
@@ -508,12 +507,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // visible-but-quiet instead of fully transparent, and the row is a single
     // Tab stop whose Enter/Space opens the context menu — so "reachable by
     // click/hover" is no longer the *only* way to reach them.
-    const backlinks = ctx.searchIndex.backlinks(teamId, 'milestone', m.id)
     // A fixed-width slot even when there's no chip: `createBacklinksChip`
     // returns null for zero backlinks and `el()` skips null children
     // entirely, which would shrink `.tt-milestone-title-input`'s `flex: 1`
     // column on chip-less rows relative to rows that do have one.
-    const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const backlinksChip = createModuleBacklinksChip(ctx, teamId, 'milestone', m.id)
       ?? el('span', { class: 'tt-backlinks-chip-slot' })
 
     const expandBtn = el(
@@ -655,8 +653,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       if (id === undefined) continue
       const existing = row.querySelector('.tt-backlinks-chip, .tt-backlinks-chip-slot')
       if (!existing) continue
-      const backlinks = ctx.searchIndex.backlinks(teamId, 'milestone', id)
-      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      const next = createModuleBacklinksChip(ctx, teamId, 'milestone', id)
         ?? el('span', { class: 'tt-backlinks-chip-slot' })
       existing.replaceWith(next)
     }

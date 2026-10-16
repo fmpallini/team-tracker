@@ -8,6 +8,9 @@
 // ui/atref.ts's @ dropdown, the app's other grouped popover.
 import type { Backlink, BacklinkSourceKind } from '../core/search'
 import type { Loc } from '../core/types'
+import type { RefKind } from '../core/refs'
+import type { ModuleCtx } from './panes'
+import { navigateToLoc } from './atref'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el, bindOutsideDismiss } from './dom'
 import { kindIcon } from './icons'
@@ -118,4 +121,9 @@ export function createBacklinksChip(backlinks: Backlink[], locale: Locale, onNav
     showBacklinksPanel(chip, backlinks, locale, onNavigate)
   })
   return chip
+}
+
+/** createBacklinksChip for a module renderer: `id`'s backlinks from the shared index, navigating the way every @mention click does. */
+export function createModuleBacklinksChip(ctx: ModuleCtx, teamId: string, kind: RefKind, id: string): HTMLElement | null {
+  return createBacklinksChip(ctx.searchIndex.backlinks(teamId, kind, id), ctx.locale, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
 }

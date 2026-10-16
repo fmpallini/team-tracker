@@ -27,8 +27,7 @@ import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
 import { emptyState } from '../ui/empty-state'
 import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
 import { BACKLINK_SECTIONS, normalize } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { withDisposal } from './lifecycle'
 import { icon, kindIcon } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
@@ -896,8 +895,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     }
     const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
-    const backlinks = ctx.searchIndex.backlinks(teamId, 'action', item.id)
-    const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const chip = createModuleBacklinksChip(ctx, teamId, 'action', item.id)
     if (chip) metaChildren.push(chip)
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
 
@@ -1377,8 +1375,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const meta = card.querySelector('.tt-kanban-card-meta')
       if (!meta) continue
       const existing = meta.querySelector(':scope > .tt-backlinks-chip')
-      const backlinks = ctx.searchIndex.backlinks(teamId, 'action', id)
-      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      const next = createModuleBacklinksChip(ctx, teamId, 'action', id)
       if (existing && next) existing.replaceWith(next)
       else if (existing) existing.remove()
       else if (next) meta.appendChild(next)

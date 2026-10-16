@@ -30,8 +30,8 @@ import { findTeam as docFindTeam } from '../core/document'
 import { el, blurOnEnter, createDeferredRebuild, showRowError, clearRowError, clearClasses } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc, makeRefLabelResolver } from '../ui/atref'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
+import { makeRefLabelResolver } from '../ui/atref'
 import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
 import { icon, type IconName } from '../ui/icons'
@@ -879,12 +879,11 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // a pointer. The buttons now rest visible-but-quiet (styles.css), and the
     // row itself is a single Tab stop that opens the same context menu on
     // Enter/Space, so every action has a keyboard path.
-    const backlinks = ctx.searchIndex.backlinks(teamId, 'risk', r.id)
     // A fixed-width slot even when there's no chip: `createBacklinksChip`
     // returns null for zero backlinks and `el()` skips null children
     // entirely, which would collapse this column on chip-less rows and
     // misalign chance/impact/exposure/plan against rows that do have one.
-    const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const backlinksChip = createModuleBacklinksChip(ctx, teamId, 'risk', r.id)
       ?? el('span', { class: 'tt-backlinks-chip-slot' })
 
     const expanded = expandable.isExpanded(r.id)
@@ -1197,8 +1196,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       if (id === undefined) continue
       const existing = row.querySelector('.tt-backlinks-chip, .tt-backlinks-chip-slot')
       if (!existing) continue
-      const backlinks = ctx.searchIndex.backlinks(teamId, 'risk', id)
-      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      const next = createModuleBacklinksChip(ctx, teamId, 'risk', id)
         ?? el('span', { class: 'tt-backlinks-chip-slot' })
       existing.replaceWith(next)
     }
