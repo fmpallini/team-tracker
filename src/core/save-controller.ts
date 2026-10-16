@@ -310,6 +310,10 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // never fire one; only an explicit user action (Ctrl+S, "Save as…" retry) may.
     if (!deps.session.handle && !explicit) return
     deps.shell.setSaveState('saving')
+    // What this round's bytes contain. An edit landing after this point is not
+    // in them: the onMutate guard queues a trailing round for it, and only that
+    // round may clear `dirty` (see the markSaved() below).
+    const revAtSnapshot = deps.store.rev
     let bytes: Uint8Array
     try {
       bytes = await docToBytes(deps.store.doc, deps.getPassword())
@@ -347,7 +351,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       return
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
-    deps.store.markSaved()
+    // Clearing `dirty` for bytes that predate an edit would leave that edit
+    // unmarked if the trailing round queued for it then fails: no pill, no
+    // close prompt, no beforeunload warning, and a tab handover would let it go.
+    // Same guard as conflict-flow.ts's overwrite().
+    if (deps.store.rev === revAtSnapshot) deps.store.markSaved()
     // Reaching this point at all means the primary write just succeeded —
     // true regardless of what the BACKUP's health turns out to be below — so
     // the primary latch resets unconditionally here rather than only in some
@@ -401,7 +409,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       dismissToast(BACKUP_PERMISSION_TOAST_KEY)
       deps.shell.setSaveState('saved')
     }
-    deps.shell.setTitle(deps.session.name, false)
+    deps.shell.setTitle(deps.session.name, deps.store.dirty)
   }
 
   /**
