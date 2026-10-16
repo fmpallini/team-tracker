@@ -219,6 +219,15 @@ test('+ modal requires a name', () => {
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
 })
 
+test('+ modal closes on a backdrop click', () => {
+  setup()
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
+  const o = document.querySelector('.tt-modal-overlay')!
+  o.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  o.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(0)
+})
+
 test('+ modal allows a blank emoji — no default is silently persisted', () => {
   const { store } = setup()
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
@@ -640,6 +649,15 @@ describe('due badge', () => {
     const btn = document.querySelector('.tt-due-btn')!
     expect(btn.classList.contains('tt-due-empty')).toBe(false)
     expect(btn.querySelector('.tt-due-badge')).toBeNull()
+  })
+
+  test('is an icon and a label only — the counts live on each team row', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+    const btn = document.querySelector('.tt-due-btn')!
+    expect(btn.querySelector('.tt-icon-clock')).not.toBeNull()
+    expect(btn.textContent).toBe('Due dates')
   })
 
   describe('calendar day rolling over while the app sits idle', () => {

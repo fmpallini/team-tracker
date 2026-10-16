@@ -144,8 +144,9 @@ test('renders module icons per kind, in candidate order, and toggles teamName wi
   type(input, 'widget')
   vi.advanceTimersByTime(350)
 
-  const icons = Array.from(document.querySelectorAll('.tt-search-row .tt-search-icon')).map((n) => n.textContent)
-  expect(icons).toEqual(['📅', '🧑', '✅', '🚩', '⚠️'])
+  const kinds = Array.from(document.querySelectorAll('.tt-search-row .tt-search-icon .tt-kind-icon'))
+    .map((n) => Array.from(n.classList).find((c) => c.startsWith('tt-kind-') && c !== 'tt-kind-icon'))
+  expect(kinds).toEqual(['tt-kind-daily', 'tt-kind-person', 'tt-kind-actions', 'tt-kind-milestones', 'tt-kind-risks'])
   expect(document.querySelectorAll('.tt-search-team')).toHaveLength(0)
 
   const checkbox = document.querySelector('.tt-search-all-teams input') as HTMLInputElement

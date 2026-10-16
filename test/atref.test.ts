@@ -383,9 +383,9 @@ describe('attachAtAutocomplete', () => {
     setBlockText(editorEl, '@')
     fireInput(editorEl)
 
-    const headers = Array.from(document.querySelectorAll('.tt-atref-group-header')).map((h) => h.textContent)
-    expect(headers[0]).toMatch(/^🧑/) // People
-    expect(headers[1]).toMatch(/^📅/) // Dates
+    const headers = Array.from(document.querySelectorAll('.tt-atref-group-header'))
+    expect(headers[0]!.querySelector('.tt-kind-person')).not.toBeNull() // People
+    expect(headers[1]!.querySelector('.tt-kind-daily')).not.toBeNull() // Dates
   })
 
   test('the format-hint item (today+2, no relative word) is a real, selectable item that inserts a normal day chip', () => {

@@ -1,5 +1,6 @@
 // src/ui/icons.ts
 import { el } from './dom'
+import type { SearchResult } from '../core/search'
 
 // One home for the app's stroke icons. Each is drawn on a 16×16 grid with a
 // `currentColor` stroke and round caps/joins (the style of the search glass),
@@ -63,6 +64,22 @@ const PATHS = {
   olist: '<path d="M7.5 4h6M7.5 8h6M7.5 12h6M2.75 4.25L4 3.25V6.5M2.75 8.75h2.5L2.75 12h2.5"/>',
   quote: '<path d="M3 3v10M6.5 5h6.5M6.5 8h6.5M6.5 11h4"/>',
   list: '<path d="M6 4h7M6 8h7M6 12h7"/><g class="f"><circle cx="3" cy="4" r="1"/><circle cx="3" cy="8" r="1"/><circle cx="3" cy="12" r="1"/></g>',
+  // The four risk-plan outlines, the same shapes the risk matrix draws (circle, diamond, square, triangle).
+  shapeCircle: '<circle cx="8" cy="8" r="4.75"/>',
+  shapeDiamond: '<path d="M8 2.5l5.5 5.5L8 13.5 2.5 8z"/>',
+  shapeSquare: '<rect x="3.4" y="3.4" width="9.2" height="9.2"/>',
+  shapeTriangle: '<path d="M8 3l5.1 9H2.9z"/>',
+  person: '<circle cx="8" cy="5.25" r="2.5"/><path d="M3 13.5c.5-2.6 2.5-4 5-4s4.5 1.4 5 4"/>',
+  people:
+    '<circle cx="6" cy="5.75" r="2.25"/><circle cx="11.5" cy="6.5" r="1.75"/><path d="M1.75 13c.4-2.3 2.1-3.6 4.25-3.6s3.85 1.3 4.25 3.6M10.5 9.6c1.9 0 3.2 1.1 3.75 3.1"/>',
+  tasks: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5.5 8.2l1.9 1.9 3.2-3.8"/>',
+  fileAdd: '<path d="M4 2.5h5.5l3 3v8H4zM9.5 2.5v3h3M8.25 8v3.5M6.5 9.75H10"/>',
+  offline: '<path d="M1.75 6.25a8.5 8.5 0 0 1 12.5 0M4 8.75a5.5 5.5 0 0 1 8 0M6.25 11.25a2.5 2.5 0 0 1 3.5 0M2.5 2.5l11 11"/><circle class="f" cx="8" cy="13.2" r=".8"/>',
+  code: '<path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/>',
+  cloud: '<path d="M4.75 12.5a3 3 0 0 1-.3-5.98A4 4 0 0 1 12 6.4a3.05 3.05 0 0 1-.25 6.1z"/>',
+  window: '<rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M2 6h12M5.5 14h5"/>',
+  refresh: '<path d="M13 8a5 5 0 0 1-8.7 3.4M3 8a5 5 0 0 1 8.7-3.4M11.8 2v2.8H9M4.2 14v-2.8H7"/>',
+  tip: '<path d="M6 12.5h4M6.5 14h3M8 2a4.25 4.25 0 0 0-2.4 7.75c.4.3.65.75.65 1.25h3.5c0-.5.25-.95.65-1.25A4.25 4.25 0 0 0 8 2z"/>',
 } as const
 
 export type IconName = keyof typeof PATHS
@@ -86,6 +103,11 @@ export function iconSvg(name: IconName, size = 14): string {
 // name+size is parsed once and later calls clone the parsed span.
 const CACHE = new Map<string, HTMLSpanElement>()
 
+/** A list row with a leading stroke icon and its text — the start screen's and install card's bullet lines. */
+export function iconLine(name: IconName, text: string, size = 16): HTMLLIElement {
+  return el('li', { class: 'tt-icon-line' }, icon(name, size), el('span', {}, text))
+}
+
 /** A decorative (`aria-hidden`) icon span; the owning button carries the accessible name via `title`/`aria-label`. */
 export function icon(name: IconName, size = 14): HTMLSpanElement {
   const key = `${name}:${size}`
@@ -102,4 +124,23 @@ export function icon(name: IconName, size = 14): HTMLSpanElement {
 export function setIcon(span: HTMLElement, name: IconName, size = 14): void {
   span.className = `tt-icon tt-icon-${name}`
   span.innerHTML = iconSvg(name, size)
+}
+
+type KindIconKey = SearchResult['moduleKind']
+
+const KIND_ICON_NAME: Record<KindIconKey, IconName> = {
+  daily: 'calendar', general: 'note', person: 'person', stakeholders: 'orgchart', members: 'people',
+  actions: 'tasks', milestones: 'flag', risks: 'alert',
+}
+
+/**
+ * The one icon each module kind wears everywhere the app names a module:
+ * fast switch, search results, pane menu and tabs, @ picker, backlinks, due
+ * list. Tinted per kind in styles.css (`.tt-kind-<kind>`), so a kind reads the
+ * same color wherever it shows up.
+ */
+export function kindIcon(kind: KindIconKey, size = 14): HTMLSpanElement {
+  const span = icon(KIND_ICON_NAME[kind], size)
+  span.classList.add('tt-kind-icon', `tt-kind-${kind}`)
+  return span
 }

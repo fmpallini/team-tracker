@@ -5,7 +5,6 @@ import { createPaneManager, installMouseHistoryButtons, navigateFocusedHistory, 
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
-import { KIND_ICON } from '../src/core/search'
 import type { Loc } from '../src/core/types'
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
@@ -587,7 +586,7 @@ test('opening a module already shown in the other pane focuses that pane for rea
   // 0's wrapper after openInPane's focusOther branch runs.
   paneBtn(0, 'tt-pane-modules-btn').click()
   const milestonesItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
-    .find((b) => b.querySelector('.tt-pane-menu-label')?.textContent === `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
+    .find((b) => b.querySelector('.tt-pane-menu-label')?.textContent === `${t('en-US', 'module_milestones')}`)
   if (!milestonesItem) throw new Error('milestones menu item not found')
   milestonesItem.click()
 
@@ -605,13 +604,13 @@ test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board mo
   const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
 
   expect(items.map((b) => b.querySelector('.tt-pane-menu-label')?.textContent)).toEqual([
-    `${KIND_ICON.daily} ${t('en-US', 'module_daily')}`,
-    `${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`,
-    `${KIND_ICON.stakeholders} ${t('en-US', 'module_stakeholders')}`,
-    `${KIND_ICON.members} ${t('en-US', 'module_members')}`,
-    `${KIND_ICON.actions} ${t('en-US', 'module_actions')}`,
-    `${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`,
-    `${KIND_ICON.risks} ${t('en-US', 'module_risks')}`,
+    `${t('en-US', 'module_daily')}`,
+    `${t('en-US', 'module_general_notes')}`,
+    `${t('en-US', 'module_stakeholders')}`,
+    `${t('en-US', 'module_members')}`,
+    `${t('en-US', 'module_actions')}`,
+    `${t('en-US', 'module_milestones')}`,
+    `${t('en-US', 'module_risks')}`,
   ])
 })
 
@@ -636,23 +635,23 @@ test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends
   paneBtn(0, 'tt-pane-modules-btn').click()
   const selectedLabel = () => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')?.textContent
 
-  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_daily')}`)
 
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-  expect(selectedLabel()).toBe(`${KIND_ICON.general} ${t('en-US', 'module_general_notes')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_general_notes')}`)
 
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
-  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_daily')}`)
 
   // Clamped at the top: one more ArrowUp does nothing.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
-  expect(selectedLabel()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_daily')}`)
 
   // Walk to the bottom (6 more ArrowDowns reaches Risks, the 7th row) and confirm clamping there too.
   for (let i = 0; i < 6; i++) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-  expect(selectedLabel()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_risks')}`)
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-  expect(selectedLabel()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_risks')}`)
 })
 
 test('opening the menu highlights the row matching the pane\'s current module', () => {
@@ -663,7 +662,7 @@ test('opening the menu highlights the row matching the pane\'s current module', 
 
   paneBtn(0, 'tt-pane-modules-btn').click()
   const selected = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')
-  expect(selected?.textContent).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+  expect(selected?.textContent).toBe(`${t('en-US', 'module_risks')}`)
 })
 
 test('Enter commits the highlighted pane-menu row and closes the menu', () => {
@@ -1385,7 +1384,7 @@ describe('pane history: tooltips, list menu, jump-to-latest, mouse buttons', () 
   const locB: Loc = { teamId: 'T1', ref: { kind: 'milestones' } }
   const locC: Loc = { teamId: 'T1', ref: { kind: 'risks' } }
   const label = (kind: 'actions' | 'milestones' | 'risks'): string =>
-    `${KIND_ICON[kind]} ${t('en-US', ({ actions: 'module_actions', milestones: 'module_milestones', risks: 'module_risks' } as const)[kind])}`
+    `${t('en-US', ({ actions: 'module_actions', milestones: 'module_milestones', risks: 'module_risks' } as const)[kind])}`
 
   function setupHistory(): { store: Store; pm: PaneManager } {
     const { store, pm } = setup()
@@ -1567,21 +1566,21 @@ describe('pane module menu: current-module check, typeahead, quick-pick', () => 
   test('Home/End jump to the first/last row', () => {
     openMenuOn('actions')
     key('End')
-    expect(selected()).toBe(`${KIND_ICON.risks} ${t('en-US', 'module_risks')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_risks')}`)
     key('Home')
-    expect(selected()).toBe(`${KIND_ICON.daily} ${t('en-US', 'module_daily')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_daily')}`)
   })
 
   test('typing a letter jumps to the next row starting with it, cycling on repeats', () => {
     openMenuOn('daily')
     key('m')
-    expect(selected()).toBe(`${KIND_ICON.members} ${t('en-US', 'module_members')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_members')}`)
     key('m')
-    expect(selected()).toBe(`${KIND_ICON.milestones} ${t('en-US', 'module_milestones')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_milestones')}`)
     key('m')
-    expect(selected()).toBe(`${KIND_ICON.members} ${t('en-US', 'module_members')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_members')}`)
     key('q') // no match: selection stays
-    expect(selected()).toBe(`${KIND_ICON.members} ${t('en-US', 'module_members')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_members')}`)
   })
 
   test('1..7 open that row directly and close the menu', () => {

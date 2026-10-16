@@ -1,7 +1,7 @@
 # Team Tracker
 
 A zero-runtime-dependency, single-file web app for tracking teams: people and
-hierarchy, daily/per-person notes, action items, milestones (with a calendar
+hierarchy, daily/per-person notes, tasks, milestones (with a calendar
 view), and risks.
 
 **[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
@@ -17,7 +17,7 @@ teams, jump to any module, item or favorite in any team with Fast Switch
 drop in one-key templates, run a kanban board with custom columns, drag a risk
 on the chance × impact chart to re-score it, and switch to dark mode.
 
-![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
+![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, favorites, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
 
 [▶ Watch with sound](https://github.com/fmpallini/team-tracker/blob/main/docs/videos/feature-tour-short.webm)
 (the GIF is silent; GitHub can't embed `<video>` in a README, so this link
@@ -30,8 +30,8 @@ opens the same clip in its own player).
 |---|---|
 | ![Team Tracker screenshot — daily notes and team hierarchy side by side](docs/screenshots/daily-notes-and-org.png) | ![Rich-text note with a heading, blockquote, fenced code block, and link](docs/screenshots/rich-text-editor.png) |
 | Daily notes + team hierarchy | Rich text — shortcuts + markdown |
-| ![Action items kanban board with a custom column, tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) |
-| Action items — kanban with custom columns | Milestones — timeline + list |
+| ![Tasks kanban board with a custom column, tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) |
+| Tasks — kanban with custom columns | Milestones — timeline + list |
 | ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![A person's notes page with role, backlink badge, and a filled 1:1 template](docs/screenshots/person-notes.png) |
 | Risks — chance × impact exposure | Per-person notes + backlinks |
 | ![Ctrl+Shift+K fast switch for jumping to any module, item, favorite or due item in any team](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
@@ -42,7 +42,7 @@ opens the same clip in its own player).
 ## Why
 
 Team Tracker is a personal note-taking app for people who lead several teams
-and work on their own: your notes on people, 1:1s, action items, milestones,
+and work on their own: your notes on people, 1:1s, tasks, milestones,
 and risks, kept private to you. It's deliberately not a collaboration tool —
 there's no online sharing and no shared workspace.
 
@@ -64,7 +64,7 @@ your machine. Team Tracker doesn't:
 - 🪶 **Tiny** — the entire app is one HTML file, with no dependencies
   ([why that matters](#zero-runtime-dependencies)).
 - ⌨️ **Keyboard-first** — `Ctrl+Shift+K` fast switch, `Ctrl+F` /
-  `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+←/→` pane
+  `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+Shift+←/→` pane
   history, split-view panes, and shortcuts for every module. Desktop-only by
   design: phones and tablets get a notice instead of the app, since mobile
   browsers lack the File System Access API the open/save flow depends on.
@@ -131,13 +131,14 @@ Dropbox) and every save is backed up automatically, with either build:
   machine and open it with the app.
 - **Version history for free** — most providers keep earlier versions of a
   synced file for a while (Google Drive: ~30 days). This is the only way to
-  recover an earlier state; the app itself has no undo history.
+  recover an earlier state. The app itself keeps no version history; its only
+  undo is the ten-second notice after deleting an item.
 
 ### Automatic backup file (`.bck`)
 
 A second, independent defense against the file on disk becoming unreadable
 (cloud version history covers *losing* the file; this covers *corruption*).
-Enable "Maintain automatic backup file (.bck)" in Settings → General. The app
+Enable "Maintain automatic backup file (.bck)" in Settings → Saving & backup. The app
 then keeps a `.bck` copy wherever you chose to save it (the picker defaults to
 the original's folder), refreshed daily (default) or hourly, and always right
 after a password change. It holds the same bytes as the primary file. To
@@ -181,9 +182,9 @@ provenance attestation — see [Verifying a release](docs/VERIFYING.md).
 
 ## FAQ
 
-**Where do notes or action items go if they aren't about one specific team?**
+**Where do notes or tasks go if they aren't about one specific team?**
 Every module is scoped to a team. For org-wide stuff, make a dedicated team —
-e.g. `🌐 General` or `🔗 Cross-team` — and use its General Notes / action items.
+e.g. `🌐 General` or `🔗 Cross-team` — and use its General Notes / tasks.
 Global search (`Ctrl+F`, or all teams with `Ctrl+Shift+F`) finds it alongside
 everything else.
 
@@ -219,18 +220,21 @@ no "forgot password" recovery, generate and store it in a password manager.
 
 **Can I import an org chart from a CSV or HR system?**
 No bulk import. The only import/export is team-to-team: export a team's
-people/hierarchy (no notes, action items, milestones, or risks) so a teammate
+people/hierarchy (no notes, tasks, milestones, or risks) so a teammate
 can import it — see the Data tab in preferences.
 
 **Does it send reminders or notifications for due dates?**
-No push or email. Due/overdue items only show up (sidebar badge, kanban
-highlighting) while the app is open.
+No push or email. Due and overdue items show up inside the app — sidebar and
+header badges, the due list, the "Due dates" group in Fast Switch, kanban
+highlighting — and, in the installed app, as a count on its OS icon badge where
+the OS supports it. Nothing alerts you while the app is closed.
 
 **Is the "clean up" button in preferences safe to click?**
-It's irreversible and deliberately cross-team: it permanently deletes every
-done/cancelled action item, completed milestone, closed risk, and daily note
-older than the day count you set, across **all** teams in the file. It shows
-the exact counts before you confirm — read them first.
+It's irreversible (no undo, unlike deleting a single item) and deliberately
+cross-team. Across **all** teams in the file it permanently deletes every
+done/cancelled task and closed risk, completed milestones and daily notes older
+than the day count you set, and any favorites left pointing at something gone.
+It shows the exact counts before you confirm — read them first.
 
 ## Contributing
 

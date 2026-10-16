@@ -7,9 +7,9 @@ import type { DueBuckets, DueItem } from '../core/due'
 import type { Loc } from '../core/types'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { diffDays } from '../core/date'
-import { KIND_ICON } from '../core/search'
 import { REF_KINDS } from '../core/refs'
 import { el } from './dom'
+import { kindIcon } from './icons'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
 
 export interface DuePanelOpts {
@@ -38,7 +38,6 @@ function relLabel(locale: Locale, dateIso: string): string {
 }
 
 function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
-  const icon = KIND_ICON[REF_KINDS[item.kind].moduleKind]
   function activate(): void {
     closeModal()
     onOpenItem(item.loc)
@@ -46,11 +45,12 @@ function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenIt
   const row = el(
     'div',
     {
-      class: 'tt-due-row',
+      // overdue / soon tints the module icon (styles.css), so urgency reads before the date does.
+      class: item.date < todayIso() ? 'tt-due-row overdue' : 'tt-due-row soon',
       tabindex: '0',
       onclick: activate,
     },
-    el('span', { class: 'tt-due-row-icon' }, icon),
+    el('span', { class: 'tt-due-row-icon' }, kindIcon(REF_KINDS[item.kind].moduleKind)),
     el('span', { class: 'tt-due-row-title', title: item.title }, item.title),
     // The team name only carries information when the panel spans multiple
     // teams — a team-scoped panel (teamId set) already says which team it's

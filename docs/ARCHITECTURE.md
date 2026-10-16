@@ -17,7 +17,7 @@ by `esbuild` — no framework, no virtual DOM, no templating engine.
   the backup mirror controller (`backup-controller.ts`), and the fast-switch
   model (`switcher.ts`, `module-items.ts`).
 - **`src/modules/`** — one file per feature pane: daily notes, general notes,
-  people trees (stakeholders/members), person notes, action items, milestones,
+  people trees (stakeholders/members), person notes, tasks (`action-items.ts`), milestones,
   risks. Each module exports a single render function with the signature
   `(container: HTMLElement, loc: Loc, ctx: ModuleCtx) => void` and is wired up
   in `src/main.ts` via `pm.registerModule(kind, renderFn)`.

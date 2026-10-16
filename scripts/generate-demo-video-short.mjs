@@ -63,9 +63,11 @@ async function showOrgChart(page) {
   const meiBox = await mei.boundingBox()
   await moveMouseTo(page, meiBox.x + meiBox.width / 2, meiBox.y + meiBox.height / 2)
   await pause(page, 450)
+  // clickCount on the second press is what makes Chromium dispatch the
+  // `dblclick` event; two plain presses are just two separate clicks.
   await page.mouse.down(); await pause(page, 60); await page.mouse.up()
   await pause(page, 110)
-  await page.mouse.down(); await pause(page, 60); await page.mouse.up()
+  await page.mouse.down({ clickCount: 2 }); await pause(page, 60); await page.mouse.up({ clickCount: 2 })
   await expect(pane1.locator('.tt-person-notes')).toBeVisible({ timeout: 5000 })
   await pause(page, 900)
   await hideCaption(page)
@@ -161,6 +163,13 @@ async function showTemplate(page) {
   await pause(page, 300)
 }
 
+// Boards and the risk table need the width: collapse to the focused pane (left,
+// where showTemplate returned) before they are shown.
+async function collapseToSinglePane(page) {
+  await page.keyboard.press('Alt+ArrowUp')
+  await pause(page, 700)
+}
+
 async function showCustomColumns(page) {
   await caption(page, 'Boards with columns you define', 1400)
   await switchPaneModule(page, 0, /Tasks/i)
@@ -188,6 +197,31 @@ async function showCustomColumns(page) {
   // fixed To Do / In Review columns are in frame alongside the new one.
   await pane0.locator('.tt-kanban-board').evaluate((el) => { el.scrollLeft = 0 }).catch(() => {})
   await pause(page, 700)
+  await hideCaption(page)
+}
+
+// Stars the Tasks board now on screen, then opens Fast Switch with an empty
+// box: the Favorites group leads it, spanning teams, and Enter opens the
+// Milestones favorite.
+async function showFavorites(page) {
+  await caption(page, 'Star a pane to keep it one jump away', 1500)
+  await click(page, page.locator('.tt-pane[data-pane-idx="0"] .tt-pane-fav-btn'))
+  await expect(page.locator('.tt-pane[data-pane-idx="0"] .tt-pane-fav-btn[aria-pressed="true"]')).toBeVisible()
+  await pause(page, 900)
+  await hideCaption(page)
+
+  await caption(page, 'Favorites lead Fast Switch — across every team', 1600)
+  await page.keyboard.press('Control+Shift+k')
+  await expect(page.locator('.tt-palette-overlay')).toBeVisible()
+  await pause(page, 1500)
+  // Walk down onto the other team's entry and back, then open Milestones.
+  await page.keyboard.press('ArrowDown')
+  await pause(page, 800)
+  await page.keyboard.press('ArrowUp')
+  await pause(page, 500)
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.tt-palette-overlay')).toBeHidden()
+  await pause(page, 1300)
   await hideCaption(page)
 }
 
@@ -251,7 +285,9 @@ async function script(page) {
   await showTeamSwitch(page)
   await showAtReference(page)
   await showTemplate(page)
+  await collapseToSinglePane(page)
   await showCustomColumns(page)
+  await showFavorites(page)
   await showFastSwitch(page)
   await showRiskDrag(page)
   await showThemes(page)

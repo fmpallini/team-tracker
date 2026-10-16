@@ -551,3 +551,50 @@ describe('button icons', () => {
     expect(btn.textContent).toBe('Cancel')
   })
 })
+
+function click(target: Element, opts: { pressed?: Element } = {}): void {
+  ;(opts.pressed ?? target).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+}
+
+test('clicking the backdrop closes the modal', () => {
+  const onClose = vi.fn()
+  showModal({ title: 'T', body: el('div', {}), buttons: [], onClose })
+  click(document.querySelector('.tt-modal-overlay')!)
+  expect(overlays()).toHaveLength(0)
+  expect(onClose).toHaveBeenCalledTimes(1)
+})
+
+test('clicking inside the dialog does not close it', () => {
+  showModal({ title: 'T', body: el('div', {}), buttons: [] })
+  click(document.querySelector('.tt-modal-dialog')!)
+  expect(overlays()).toHaveLength(1)
+})
+
+test('a drag that starts inside the dialog and ends on the backdrop does not close it', () => {
+  showModal({ title: 'T', body: el('div', {}), buttons: [] })
+  click(document.querySelector('.tt-modal-overlay')!, { pressed: document.querySelector('.tt-modal-dialog')! })
+  expect(overlays()).toHaveLength(1)
+})
+
+test('a backdrop click respects beforeClose', () => {
+  showModal({ title: 'T', body: el('div', {}), buttons: [], beforeClose: () => false })
+  click(document.querySelector('.tt-modal-overlay')!)
+  expect(overlays()).toHaveLength(1)
+})
+
+test('a backdrop click closes only the topmost of stacked modals (card + delete confirm)', () => {
+  showModal({ title: 'card', body: el('div', {}), buttons: [], modeless: true })
+  showModal({ title: 'confirm', body: el('div', {}), buttons: [] })
+  const top = overlays()[1]!
+  click(top)
+  expect(overlays()).toHaveLength(1)
+  expect(overlays()[0]!.classList.contains('tt-modal-modeless')).toBe(true)
+})
+
+test('promptPassword resolves null on a backdrop click', async () => {
+  const p = promptPassword('en-US', { title: 'P' })
+  click(document.querySelector('.tt-modal-overlay')!)
+  expect(overlays()).toHaveLength(0)
+  await expect(p).resolves.toBeNull()
+})

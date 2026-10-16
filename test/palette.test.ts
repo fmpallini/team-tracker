@@ -149,6 +149,16 @@ describe('sections', () => {
     expect(rows().some((r) => r.textContent?.includes('Bruno'))).toBe(true)
   })
 
+  test('every row wears its module icon and the Favorites heading a star', () => {
+    const { palette } = setup({ favorites: true })
+    palette.open()
+    expect(rows().length).toBeGreaterThan(0)
+    for (const r of rows()) expect(r.querySelector('.tt-kind-icon')).not.toBeNull()
+    expect(document.querySelector('.tt-palette-heading .tt-icon-star')).not.toBeNull()
+    // The label is the plain title — no emoji prefix to leak into matching or tooltips.
+    expect(rows().some((r) => /\p{Extended_Pictographic}/u.test(r.querySelector('.tt-palette-label')!.textContent!))).toBe(false)
+  })
+
   test('arrow keys skip headings and walk rows across sections', () => {
     const { palette } = setup({ favorites: true })
     palette.open()

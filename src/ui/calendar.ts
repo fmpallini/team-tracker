@@ -123,14 +123,18 @@ export function createCalendar(opts: {
       // nothing is lost by collapsing the icon itself to two states.
       const milestoneEntries = opts.marks.milestones(iso)
       if (milestoneEntries.length > 0) {
-        const icon = milestoneEntries.some((m) => !m.done) ? '🚩' : '🏁'
-        dayBtn.appendChild(el('span', { class: 'tt-calendar-flag', title: milestoneEntries.map((m) => m.label).join(', ') }, icon))
+        const pending = milestoneEntries.some((m) => !m.done)
+        dayBtn.appendChild(el('span', {
+          class: 'tt-calendar-flag', 'data-state': pending ? 'pending' : 'done', title: milestoneEntries.map((m) => m.label).join(', '),
+        }, icon(pending ? 'flag' : 'check', 11)))
       }
 
       const actionEntries = opts.marks.actionItems(iso)
       if (actionEntries.length > 0) {
-        const icon = actionEntries.some((a) => !a.resolved) ? '⏳' : '✅'
-        dayBtn.appendChild(el('span', { class: 'tt-calendar-check', title: actionEntries.map((a) => a.label).join(', ') }, icon))
+        const pending = actionEntries.some((a) => !a.resolved)
+        dayBtn.appendChild(el('span', {
+          class: 'tt-calendar-check', 'data-state': pending ? 'pending' : 'done', title: actionEntries.map((a) => a.label).join(', '),
+        }, icon(pending ? 'clock' : 'check', 11)))
       }
 
       grid.appendChild(dayBtn)

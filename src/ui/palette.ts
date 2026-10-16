@@ -15,7 +15,10 @@ import type { PaneManager } from './panes'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { blockedByBlockingModal } from './hotkeys'
 import { dismissModelessModals } from './modal'
-import { icon } from './icons'
+import { icon, kindIcon, type IconName } from './icons'
+
+/** Section heading glyphs; the current team's heading carries the team's own emoji instead. */
+const HEADING_ICON: Partial<Record<SwitcherSection['id'], IconName>> = { favorites: 'star', due: 'clock', others: 'folder' }
 
 export interface Palette {
   open(): void
@@ -92,7 +95,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
   }
 
   function buildRow(row: SwitcherRow, i: number): HTMLElement {
-    const parts: HTMLElement[] = [el('span', { class: 'tt-palette-label', title: row.label }, row.label)]
+    const parts: HTMLElement[] = [kindIcon(row.ref.kind), el('span', { class: 'tt-palette-label', title: row.label }, row.label)]
     if (row.dueLabel) parts.push(el('span', { class: 'tt-palette-due', title: row.dueLabel }, row.dueLabel))
     if (row.teamBadge) parts.push(el('span', { class: 'tt-palette-team', title: row.teamBadge }, row.teamBadge))
     const fav = row.favorite
@@ -139,7 +142,9 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
       const group = el(
         'div',
         { class: 'tt-palette-group', role: 'group', 'aria-labelledby': headingId },
-        el('div', { class: 'tt-palette-heading', id: headingId, title: section.heading }, `${section.heading}${count}`)
+        el('div', { class: 'tt-palette-heading', id: headingId, title: section.heading },
+          ...(HEADING_ICON[section.id] ? [icon(HEADING_ICON[section.id]!, 12)] : []),
+          `${section.heading}${count}`)
       )
       for (const row of section.rows) group.appendChild(buildRow(row, index++))
       listEl.appendChild(group)

@@ -208,6 +208,19 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     opts.footer ?? null
   )
 
+  // Close only when the press *and* the click both land on the backdrop itself.
+  // A click that merely ends there (drag-selecting text inside the dialog and
+  // releasing outside it) targets the overlay too, so mousedown's origin is
+  // the discriminator. Popups appended to <body> (date picker, emoji picker,
+  // @-mention) are siblings of the overlay, never its target.
+  let pressedOnBackdrop = false
+  overlay.addEventListener('mousedown', (e) => { pressedOnBackdrop = e.target === overlay })
+  overlay.addEventListener('click', (e) => {
+    const hit = pressedOnBackdrop && e.target === overlay
+    pressedOnBackdrop = false
+    if (hit) close()
+  })
+
   overlay.appendChild(dialog)
   openDialogs.push({ dialog, close, modeless: opts.modeless ?? false })
   document.addEventListener('keydown', onKeydown)
@@ -287,7 +300,6 @@ export function promptPassword(
     function finish(value: { password: string } | { plain: true } | null): void {
       if (settled) return
       settled = true
-      document.removeEventListener('keydown', onEsc)
       resolve(value)
     }
 
@@ -348,7 +360,7 @@ export function promptPassword(
         )
       : undefined
 
-    const { close, buttonEls } = renderDialog({ title: opts.title, body, buttons: [cancelBtn, okBtn], footer: plainFooter })
+    const { close, buttonEls } = renderDialog({ title: opts.title, body, buttons: [cancelBtn, okBtn], footer: plainFooter, onClose: () => finish(null) })
     const okEl = buttonEls[buttonEls.length - 1]!
     okEl.disabled = true
 
@@ -378,10 +390,6 @@ export function promptPassword(
       }
     }
 
-    function onEsc(e: KeyboardEvent): void {
-      if (e.key === 'Escape') finish(null)
-    }
-
     pwInput.addEventListener('input', () => {
       updateOkEnabled()
       meter?.update(pwInput.value)
@@ -389,7 +397,6 @@ export function promptPassword(
     pwInput.addEventListener('keydown', onFieldKeydown)
     confirmInput?.addEventListener('input', updateOkEnabled)
     confirmInput?.addEventListener('keydown', onFieldKeydown)
-    document.addEventListener('keydown', onEsc)
 
     pwInput.focus()
   })

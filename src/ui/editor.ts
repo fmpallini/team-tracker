@@ -1263,7 +1263,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
             : []),
           { label: t(locale, 'ok'), primary: true, onClick: submit },
         ],
-        // Escape / overlay close routes here too, so the promise never hangs.
+        // Escape / backdrop close routes here too, so the promise never hangs.
         onClose: () => finish(null),
       })
       pendingLinkModal = handle
@@ -1873,14 +1873,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return target?.closest?.('a.ref') as HTMLAnchorElement | null
   }
 
+  function activateRef(refEl: HTMLElement, secondary: boolean): void {
+    const href = refEl.dataset.ref
+    if (!href) return
+    const parsed = parseRef(href)
+    if (parsed) hooks.onRefClick(parsed, { secondary })
+  }
+
   function handleRefActivate(e: MouseEvent): void {
     const refEl = refElFromEvent(e)
     if (!refEl) return
     e.preventDefault()
-    const href = refEl.dataset.ref
-    if (!href) return
-    const parsed = parseRef(href)
-    if (parsed) hooks.onRefClick(parsed, { secondary: e.ctrlKey || e.metaKey || e.button === 1 })
+    activateRef(refEl, e.ctrlKey || e.metaKey || e.button === 1)
   }
 
   // A rendered external link (`<a href>` with no `.ref` class). Chromium
@@ -1898,15 +1902,56 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // `noopener,noreferrer` matches the anchor's own rel: `noopener` alone
   // still sends the Referer header, which in the https PWA build would leak
   // the app URL to the destination.
+  function openExternalLink(linkEl: HTMLAnchorElement): void {
+    window.open(linkEl.href, '_blank', 'noopener,noreferrer')
+  }
+
   function handleExternalLinkActivate(e: MouseEvent): void {
     const linkEl = linkElFromEvent(e)
     if (!linkEl) return
     if (!(e.ctrlKey || e.metaKey || e.button === 1)) return
     e.preventDefault()
-    window.open(linkEl.href, '_blank', 'noopener,noreferrer')
+    openExternalLink(linkEl)
+  }
+
+  // A press on a ref chip or link in an editor that was not focused yet can
+  // lose its click. Focusing the editor may reveal its toolbar (the follow-up
+  // rows in styles.css show it only while focused), which moves the text
+  // before the button is released; the release then lands on something else
+  // and the browser clicks the common ancestor instead of the chip. So the
+  // press is remembered, and a release that lands off the chip without the
+  // pointer having moved is turned into the activation it was meant to be.
+  const PRESS_SLOP_PX = 4
+  let press: { el: HTMLElement; x: number; y: number; secondary: boolean; delivered: boolean } | null = null
+
+  function onPressRelease(e: MouseEvent): void {
+    document.removeEventListener('mouseup', onPressRelease, true)
+    const p = press
+    if (!p || e.button !== 0) return
+    if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > PRESS_SLOP_PX) { press = null; return }
+    // The browser's own click, when it is going to be delivered, fires right after mouseup and sets `delivered`.
+    setTimeout(() => {
+      if (press === p && !p.delivered && p.el.isConnected) {
+        if (p.el.classList.contains('ref')) activateRef(p.el, p.secondary)
+        else if (p.secondary) openExternalLink(p.el as HTMLAnchorElement)
+      }
+      if (press === p) press = null
+    }, 0)
+  }
+
+  function onPressStart(e: MouseEvent): void {
+    document.removeEventListener('mouseup', onPressRelease, true)
+    press = null
+    if (e.button !== 0) return
+    const el = refElFromEvent(e) ?? linkElFromEvent(e)
+    if (!el) return
+    press = { el, x: e.clientX, y: e.clientY, secondary: e.ctrlKey || e.metaKey, delivered: false }
+    document.addEventListener('mouseup', onPressRelease, true)
   }
 
   function onClick(e: MouseEvent): void {
+    // Only a click that really reached the pressed element counts as delivered: after a layout shift the click goes to a common ancestor.
+    if (press && press.el.contains(e.target as Node)) press.delivered = true
     // Clicking anywhere in a collapsed code block (to read it or to place
     // the caret and edit) expands it for the rest of the session. The
     // hover ⌃ control re-collapses; a fresh file load re-auto-collapses.
@@ -1929,6 +1974,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // trigger the browser's autoscroll-pan cursor. (A ref chip has no real
   // `href`; an external link's new-tab open is handled on auxclick above.)
   function onMouseDownForRef(e: MouseEvent): void {
+    onPressStart(e)
     if (e.button !== 1) return
     if (refElFromEvent(e) || linkElFromEvent(e)) e.preventDefault()
   }
@@ -2331,6 +2377,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('click', onClick)
     editorEl.removeEventListener('auxclick', onAuxClick)
     editorEl.removeEventListener('mousedown', onMouseDownForRef)
+    document.removeEventListener('mouseup', onPressRelease, true)
     editorEl.removeEventListener('mouseover', onCbMouseOver)
     editorEl.removeEventListener('mouseleave', hideCbControlsSoon)
     editorEl.removeEventListener('scroll', hideCbControlsNow)

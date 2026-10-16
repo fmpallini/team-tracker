@@ -13,7 +13,7 @@ This produces:
 
 - `dist/app.html` — a single self-contained HTML file with no external
   references. Copy it anywhere and open it directly.
-- `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and `icon.svg`,
+- `dist/pwa/` — the same app plus `manifest.json`, `sw.js`, and the icons,
   meant to be served over http(s) so it can be installed as a PWA.
 
 ## Development
@@ -63,7 +63,7 @@ registering the module.
 1. **Shape and schema.** Add its shape to `Team` (or `Doc`) in
    `src/core/types.ts`, add a `ModuleRef` variant (`{ kind: 'decisions';
    itemId?: string }` — the `itemId?` is only needed if items are individually
-   addressable, the way action items/milestones/risks are for deep-linking
+   addressable, the way tasks/milestones/risks are for deep-linking
    from search and `@`-mentions). Bump `SCHEMA_VERSION` in
    `src/core/document.ts` and add a step to the `MIGRATIONS` ladder there if
    existing `.tmv` files need the field backfilled on open.
@@ -71,8 +71,9 @@ registering the module.
 2. **The renderer.** Write `src/modules/<name>.ts` exporting a function
    matching `ModuleRenderer` — `(container: HTMLElement, loc: Loc, ctx:
    ModuleCtx) => void`. `ctx` gives you `store`, `pm` (for opening other
-   locs), `paneIdx`, `locale`, and `searchIndex` (for backlink-chip lookups —
-   see `src/modules/milestones.ts` for an example consumer). Read the team via
+   locs), `paneIdx`, `locale`, `searchIndex` (for backlink-chip lookups —
+   see `src/modules/milestones.ts` for an example consumer), and `saveStatus`
+   (the header's save pill, for modules that show it). Read the team via
    `ctx.store.doc.teams.find(...)`, build DOM with `src/ui/dom.ts`'s `el()`
    helper, mutate through `ctx.store.update((d) => { ... })`, and re-render on
    every store change via `ctx.store.subscribe(renderAll)`. Conventions worth
@@ -119,10 +120,10 @@ registering the module.
    calls `buildModuleItems()` for every team. There's no separate fast-switch
    item list to maintain; wiring the pane switcher wires the fast switch too.
    If individual items (not just the module as a whole) should get their own
-   fast-switch entries — the way each action item/milestone/risk shows up as
+   fast-switch entries — the way each task/milestone/risk shows up as
    its own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
    `milestones`/`risks` do, sourcing the list from `teamRefCandidates()` (step
-   6 below — you'll likely want that list anyway).
+   7 below — you'll likely want that list anyway).
 
 5. **Global search.** The header search bar (`Ctrl+F` / `/`,
    `src/ui/search-ui.ts`) is backed by `searchDocument()` in
@@ -136,10 +137,11 @@ registering the module.
    `raw` is whatever free text should be searchable — `searchDocument()`
    strips markdown syntax from it and does a normalized (accent/case
    insensitive), term-by-term substring match; if there's no free-text field,
-   `raw` can just equal `title`. Then add an icon to `KIND_ICON` (same file)
-   so results render with a matching glyph — that's the only other piece;
-   snippet highlighting and the results dropdown are already generic over
-   `ref.kind`.
+   `raw` can just equal `title`. Then add an entry to `KIND_ICON_NAME` in
+   `src/ui/icons.ts` (a `Record` keyed on `SearchResult['moduleKind']`, so
+   TypeScript flags it if missing) so results render with a matching glyph —
+   that's the only other piece; snippet highlighting and the results dropdown
+   are already generic over `ref.kind`.
 
 6. **i18n.** Add `pt-BR`/`en-US` strings to `src/core/i18n.ts` — every
    user-visible string goes through `t(locale, key)`, in both locale blocks.
@@ -163,4 +165,4 @@ Beyond the explicit wiring above (steps 3–4: `registerModule`, `titleFor`,
 pane manager's rendering, history, and print machinery all work off the
 registered module list and the `Loc` union generically. The two places that
 genuinely don't come for free just from that wiring are global search
-(`collectCandidates`/`KIND_ICON`) and, if wanted, `@`-mentions (`REF_KINDS`).
+(`collectCandidates`/`KIND_ICON_NAME`) and, if wanted, `@`-mentions (`REF_KINDS`).

@@ -7,10 +7,10 @@
 // dismiss via bindOutsideDismiss); group-header styling mirrors
 // ui/atref.ts's @ dropdown, the app's other grouped popover.
 import type { Backlink, BacklinkSourceKind } from '../core/search'
-import { KIND_ICON } from '../core/search'
 import type { Loc } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el, bindOutsideDismiss } from './dom'
+import { kindIcon } from './icons'
 
 const GROUP_HEADER_KEY: Record<BacklinkSourceKind, MsgKey> = {
   daily: 'module_daily',
@@ -43,7 +43,7 @@ function showBacklinksPanel(anchor: HTMLElement, backlinks: Backlink[], locale: 
   let lastKind: BacklinkSourceKind | null = null
   for (const bl of backlinks) {
     if (bl.moduleKind !== lastKind) {
-      rows.push(el('div', { class: 'tt-backlinks-group-header' }, `${KIND_ICON[bl.moduleKind]} ${t(locale, GROUP_HEADER_KEY[bl.moduleKind])}`))
+      rows.push(el('div', { class: 'tt-backlinks-group-header' }, kindIcon(bl.moduleKind, 12), t(locale, GROUP_HEADER_KEY[bl.moduleKind])))
       lastKind = bl.moduleKind
     }
     rows.push(

@@ -738,7 +738,9 @@ describe('renderActionItems — board', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    expect(container.querySelectorAll('.tt-kanban-empty')).toHaveLength(4) // todo, wip, done, cancelled
+    expect(container.querySelectorAll('.tt-kanban-empty')).toHaveLength(3) // wip, done, cancelled
+    // A team with no tasks at all gets the richer board invitation in To Do instead.
+    expect(container.querySelectorAll('.tt-kanban-empty-board')).toHaveLength(1)
   })
 
   test('an uncategorized card (color: null) renders with no color-X class', () => {
@@ -773,6 +775,21 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     expect(container.querySelector('.tt-kanban-card-due')!.classList.contains('overdue')).toBe(true)
+  })
+
+  test('a card due inside the due-soon window gets the soon pill and a tooltip; a far one stays plain', () => {
+    const inThreeDays = new Date(Date.now() + 3 * 86400000).toLocaleDateString('en-CA')
+    const team = makeTeam({ actionItems: [
+      item({ id: 'a', dueDate: inThreeDays, status: 'todo', order: 0 }),
+      item({ id: 'b', dueDate: '2999-01-01', status: 'todo', order: 1 }),
+    ] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const [soon, far] = Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card-due'))
+    expect(soon!.classList.contains('soon')).toBe(true)
+    expect(soon!.title).toMatch(/^in \d+d$/)
+    expect(far!.classList.contains('soon')).toBe(false)
+    expect(far!.classList.contains('overdue')).toBe(false)
   })
 
   test('a done card with a past due date is not overdue', () => {
@@ -822,7 +839,8 @@ describe('renderActionItems — board', () => {
     clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
     assigneeToggle().click()
 
-    expect(assigneeMenuHeaders()).toEqual(['🧑‍💼 Stakeholders', '👥 Members'])
+    expect(assigneeMenuHeaders()).toEqual(['Stakeholders', 'Members'])
+    expect(document.querySelectorAll('.tt-assignee-menu .tt-atref-group-header .tt-kind-icon')).toHaveLength(2)
     expect(assigneeMenuRows()).toEqual(['Carla', 'Bruno'])
   })
 
@@ -849,7 +867,7 @@ describe('renderActionItems — board', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
 
     expect(assigneeMenuRows()).toEqual(['Carla'])
-    expect(assigneeMenuHeaders()).toEqual(['🧑‍💼 Stakeholders'])
+    expect(assigneeMenuHeaders()).toEqual(['Stakeholders'])
   })
 
   test('picking a person from the assignee picker commits a live reference and shows the chip', () => {
@@ -988,7 +1006,7 @@ describe('renderActionItems — edit modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const wipAddBtn = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent === '+ Card')[1]!
+    const wipAddBtn = container.querySelectorAll<HTMLButtonElement>('.tt-kanban-add-btn:not(.tt-kanban-head-spacer)')[1]!
     wipAddBtn.click()
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     setValue(summaryInput, 'WIP task')
@@ -1411,7 +1429,8 @@ describe('renderActionItems — assignee reference chip', () => {
     render(container, loc, store, pm)
 
     const assigneeEl = container.querySelector('.tt-kanban-card-assignee')!
-    expect(assigneeEl.textContent).toBe('🧑 Carla')
+    expect(assigneeEl.textContent).toBe('Carla')
+    expect(assigneeEl.querySelector('.tt-kind-person')).not.toBeNull()
   })
 
   test('deleting the referenced person turns the assignee into a muted plain marker on the card', () => {

@@ -38,8 +38,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  *
  * This used to be 24 — a dot-radius-scale number, which is what it looks like
  * it should be, and which is why the labels overprinted. A dot is 12px wide;
- * the *label* under it is up to 16 characters (see truncateTitle) at 9px,
- * around 90px, and the date above it around 55px. Two milestones 24px apart
+ * the *label* under it is up to 22 characters (see truncateTitle) at 11px,
+ * around 140px, and the date above it around 55px. Two milestones 24px apart
  * therefore cleared each other's circles and printed their text straight
  * through each other — three same-day milestones rendered as
  * "Auth cutBetarewith GA release".
@@ -49,12 +49,25 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * hence half a title's width. The date labels all share one row, so their
  * full ~55px is the real floor, and that is what this value is.
  */
-const MIN_LABEL_GAP = 64
-/** Tall enough for a date label above the axis and two staggered title rows below it. */
-const TIMELINE_HEIGHT = 104
+const MIN_LABEL_GAP = 80
+/** Tall enough for the TODAY tag, a date label above the axis and two staggered title rows below it. */
+const TIMELINE_HEIGHT = 120
 const CIRCLE_R = 6
-/** Left/right margin reserved so the first/last circle's stroke never clips against the SVG edge. */
+/** Smallest left/right margin: the first/last circle's stroke never clips against the SVG edge. */
 const H_PADDING = 24
+/** Label font in px at the default text size (styles.css `.tt-milestone-*-label`) and a typical glyph advance as a fraction of it. */
+const LABEL_FONT_PX = 11
+const GLYPH_EM = 0.62
+
+/**
+ * Side margin for the drawing: wide enough that the first and last labels,
+ * which are centered on their dots, are not cut off by the SVG edge. Takes the
+ * rendered label lengths (characters) and the text-size scale.
+ */
+export function timelinePadding(labelLengths: number[], scale: number): number {
+  const longest = Math.max(0, ...labelLengths)
+  return Math.max(H_PADDING, Math.ceil((longest * GLYPH_EM * LABEL_FONT_PX * scale) / 2) + 4)
+}
 /** Fallback drawable width used when the container hasn't been laid out yet (e.g. jsdom, or first paint before layout). */
 const FALLBACK_WIDTH = 200
 
@@ -65,9 +78,9 @@ export function sortByDate<T extends { date: string }>(milestones: T[]): T[] {
   return [...milestones].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 }
 
-/** Truncates a title to 16 chars (+ ellipsis) for the compact under-dot label; callers pair this with a full-text `<title>`/tooltip. */
+/** Truncates a title to 22 chars (+ ellipsis) for the compact under-dot label; callers pair this with a full-text `<title>`/tooltip. */
 export function truncateTitle(title: string): string {
-  return title.length > 16 ? `${title.slice(0, 16)}…` : title
+  return title.length > 22 ? `${title.slice(0, 22)}…` : title
 }
 
 /**
@@ -326,16 +339,20 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // first paint) — fall back to a fixed width so layout stays deterministic
     // rather than collapsing everything to x=0.
     const containerWidth = timelineEl.clientWidth > 0 ? timelineEl.clientWidth : FALLBACK_WIDTH
-    const drawWidth = Math.max(containerWidth - H_PADDING * 2, 1)
+    const scale = fontScale(ctx.store.doc.prefs.fontSize)
+    // The end dots' labels are centered on them, so the margin has to hold half of the longer of each end's title and date label.
+    const ends = [sorted[0]!, sorted[sorted.length - 1]!]
+    const hPad = timelinePadding(ends.flatMap((e) => [truncateTitle(e.title).length, formatDate(e.date, lc).length]), scale)
+    const drawWidth = Math.max(containerWidth - hPad * 2, 1)
     // Date labels are CSS-sized from the size setting (--tt-fs-k), so the
     // spacing floor that keeps them from touching has to grow with them.
     const layout = computeTimelineLayout(
       sorted.map((m) => ({ id: m.id, date: m.date })),
-      MIN_LABEL_GAP * fontScale(ctx.store.doc.prefs.fontSize),
+      MIN_LABEL_GAP * scale,
       drawWidth,
       today
     )
-    const svgWidth = layout.innerWidth + H_PADDING * 2
+    const svgWidth = layout.innerWidth + hPad * 2
 
     const svg = document.createElementNS(SVG_NS, 'svg')
     svg.setAttribute('width', String(svgWidth))
@@ -346,26 +363,33 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const midY = TIMELINE_HEIGHT / 2
 
     const axis = document.createElementNS(SVG_NS, 'line')
-    axis.setAttribute('x1', String(H_PADDING))
-    axis.setAttribute('x2', String(svgWidth - H_PADDING))
+    axis.setAttribute('x1', String(hPad))
+    axis.setAttribute('x2', String(svgWidth - hPad))
     axis.setAttribute('y1', String(midY))
     axis.setAttribute('y2', String(midY))
     axis.setAttribute('class', 'tt-milestone-axis')
     svg.appendChild(axis)
 
     if (layout.todayX !== null) {
-      const tx = H_PADDING + layout.todayX
+      const tx = hPad + layout.todayX
       const todayLine = document.createElementNS(SVG_NS, 'line')
       todayLine.setAttribute('x1', String(tx))
       todayLine.setAttribute('x2', String(tx))
-      todayLine.setAttribute('y1', '4')
+      todayLine.setAttribute('y1', '16')
       todayLine.setAttribute('y2', String(TIMELINE_HEIGHT - 4))
       todayLine.setAttribute('class', 'tt-milestone-today-line')
       svg.appendChild(todayLine)
+      // The dashed line alone never said what it marked.
+      const todayTag = document.createElementNS(SVG_NS, 'text')
+      todayTag.setAttribute('x', String(tx))
+      todayTag.setAttribute('y', '11')
+      todayTag.setAttribute('class', 'tt-milestone-today-label')
+      todayTag.textContent = t(lc, 'date_picker_today_btn')
+      svg.appendChild(todayTag)
     }
 
     sorted.forEach((m, i) => {
-      const cx = H_PADDING + layout.x[m.id]!
+      const cx = hPad + layout.x[m.id]!
       const overdue = m.date < today && !m.done
       // Titles alternate between a near and a far row. Two labels that would
       // have collided are now on different rows, which doubles the label
@@ -602,7 +626,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const sorted = sortByDate(milestones())
     listEl.innerHTML = ''
     if (sorted.length === 0) {
-      listEl.appendChild(emptyState({ icon: 'flag', text: t(lc, 'milestone_empty'), className: 'tt-milestone-empty' }))
+      listEl.appendChild(emptyState({ icon: 'flag', text: t(lc, 'milestone_empty'), className: 'tt-milestone-empty', action: { label: t(lc, 'milestone_add_btn'), onClick: () => addMilestone() } }))
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))

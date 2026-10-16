@@ -10,8 +10,8 @@
 import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } from '../core/types'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
-import { isOverdue } from '../core/due'
-import { nowHHMM } from '../core/date'
+import { isOverdue, isActionActive } from '../core/due'
+import { nowHHMM, addDaysIso, diffDays } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
@@ -23,12 +23,13 @@ import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
+import { emptyState } from '../ui/empty-state'
 import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
-import { BACKLINK_SECTIONS, normalize, KIND_ICON } from '../core/search'
+import { BACKLINK_SECTIONS, normalize } from '../core/search'
 import { createBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { withDisposal } from './lifecycle'
-import { icon } from '../ui/icons'
+import { icon, kindIcon } from '../ui/icons'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -405,7 +406,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // room to mark stakeholders apart from members. This custom list (same
     // select-list.ts row mechanics as the @ picker and Ctrl+Shift+K palette) opens
     // the full roster on ▾ regardless of the input text, and labels the two
-    // groups with their KIND_ICON glyphs.
+    // groups with their module icons.
     let assigneeMenu: HTMLElement | null = null
     let closeAssigneeMenu: () => void = () => {}
     const assigneeField = el('div', { class: 'tt-kanban-assignee-field' })
@@ -429,7 +430,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
             renderAssigneeField()
           },
         }, icon('close', 12))
-        assigneeField.appendChild(el('span', { class: 'tt-kanban-assignee-chip' }, `🧑 ${display.name}`, clearBtn))
+        assigneeField.appendChild(el('span', { class: 'tt-kanban-assignee-chip' }, kindIcon('person', 12), display.name, clearBtn))
         return
       }
 
@@ -484,7 +485,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           if (entry.group !== lastGroup) {
             lastGroup = entry.group
             const key = entry.group === 'stakeholders' ? 'module_stakeholders' : 'module_members'
-            assigneeMenu!.appendChild(el('div', { class: 'tt-atref-group-header' }, `${KIND_ICON[entry.group]} ${t(lc, key)}`))
+            assigneeMenu!.appendChild(el('div', { class: 'tt-atref-group-header' }, kindIcon(entry.group, 12), t(lc, key)))
           }
           assigneeMenu!.appendChild(el('div', selectableRowProps({
             class: 'tt-atref-item',
@@ -852,6 +853,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     return el('div', { class: 'tt-kanban-empty' }, t(lc, 'kanban_empty'))
   }
 
+  /** The To Do column of a team with no tasks at all: say what the board is for and offer the first card. */
+  function emptyBoardEl(): HTMLElement {
+    return emptyState({
+      icon: 'tasks', text: t(lc, 'kanban_empty_board'), className: 'tt-kanban-empty-board',
+      action: { label: t(lc, 'kanban_add_card'), onClick: () => openEditModal(null, 'todo') },
+    })
+  }
+
   function openCardContextMenu(itemId: string, x: number, y: number): void {
     const it = items().find((i) => i.id === itemId)
     if (!it) return
@@ -902,12 +911,23 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const titleEl = el('div', { class: 'tt-kanban-card-title', title: item.summary }, item.summary)
     const metaChildren: (Node | string)[] = []
     if (item.dueDate) {
-      metaChildren.push(el('span', { class: 'tt-kanban-card-due' + (isOverdue(item, today) ? ' overdue' : '') }, formatDate(item.dueDate, lc)))
+      // Date stays the text (that is what people scan for); lateness is the
+      // pill around it — red when overdue, amber inside the "due soon"
+      // window — and the tooltip says it in words ("overdue by 2d").
+      const overdue = isOverdue(item, today)
+      const soon = !overdue && isActionActive(item) && item.dueDate <= addDaysIso(today, ctx.store.doc.prefs.dueSoonDays)
+      const rel = item.dueDate < today
+        ? t(lc, 'due_overdue_by', { days: String(diffDays(today, item.dueDate)) })
+        : t(lc, 'due_in_days', { days: String(diffDays(item.dueDate, today)) })
+      metaChildren.push(el('span', {
+        class: 'tt-kanban-card-due' + (overdue ? ' overdue' : soon ? ' soon' : ''),
+        ...(isActionActive(item) ? { title: rel } : {}),
+      }, formatDate(item.dueDate, lc)))
     }
     if (item.assignee) {
       const display = team ? resolveAssigneeDisplay(item.assignee, team) : { kind: 'text' as const, text: item.assignee }
-      const assigneeText = display.kind === 'linked' ? `🧑 ${display.name}` : display.kind === 'unlinked' ? display.label : display.text
-      metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, assigneeText))
+      const assigneeText = display.kind === 'linked' ? display.name : display.kind === 'unlinked' ? display.label : display.text
+      metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, ...(display.kind === 'linked' ? [kindIcon('person', 11)] : []), assigneeText))
     }
     const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
@@ -1253,7 +1273,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('div', { class: 'tt-kanban-divider' }),
       el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
         el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, icon('trash', 14))),
-      el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('cancelled')!.bodyEl, cols.get('cancelled')!.zoneEl)
+      el('div', { class: 'tt-kanban-col-body-wrap tt-kanban-cancelled-wrap' }, cols.get('cancelled')!.bodyEl, cols.get('cancelled')!.zoneEl)
     )
 
     boardEl.innerHTML = ''
@@ -1263,6 +1283,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   const boardEl = el('div', { class: 'tt-kanban-board' })
+  // Edge fades say "there is more this way" on a board wider than its pane (a
+  // split view, a large text size). Display only: pointer-events none, and the
+  // board's own scrolling and wheel handling below are untouched.
+  const boardWrap = el('div', { class: 'tt-kanban-board-wrap' }, boardEl,
+    el('div', { class: 'tt-kanban-fade left', 'aria-hidden': 'true' }), el('div', { class: 'tt-kanban-fade right', 'aria-hidden': 'true' }))
+  function updateFades(): void {
+    boardWrap.classList.toggle('can-scroll-left', boardEl.scrollLeft > 1)
+    boardWrap.classList.toggle('can-scroll-right', boardEl.scrollLeft + boardEl.clientWidth < boardEl.scrollWidth - 1)
+  }
+  boardEl.addEventListener('scroll', updateFades, { passive: true })
+  const boardResize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateFades)
+  boardResize?.observe(boardEl)
 
   // Vertical mouse-wheel scroll becomes horizontal board scroll, but only
   // when the pointer isn't over a column body that itself needs to scroll
@@ -1326,7 +1358,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const visible = activeTagFilter === null ? group : group.filter((i) => i.color === activeTagFilter)
       const bodyEl = cols.get(s)!.bodyEl
       bodyEl.innerHTML = ''
-      if (visible.length === 0) bodyEl.appendChild(emptyEl())
+      if (visible.length === 0) bodyEl.appendChild(s === 'todo' && (tm?.actionItems.length ?? 0) === 0 ? emptyBoardEl() : emptyEl())
       else visible.forEach((it) => bodyEl.appendChild(renderCard(it, today, tagNames, tm)))
       // Same "always the full count, unaffected by activeTagFilter" rule as
       // todoTitleEl/doneCancelTitleEl below (see the comment there) — a
@@ -1343,6 +1375,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     doneCancelTitleEl.textContent = t(lc, 'kanban_col_done_cancelled', {
       count: String(byStatus.done!.length + byStatus.cancelled!.length),
     })
+    updateFades()
   }
   renderAll()
 
@@ -1430,7 +1463,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   )
   const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)
 
-  const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardEl, trashEl)
+  const kanbanRootEl = el('div', { class: 'tt-kanban' }, toolbarEl, boardWrap, trashEl)
   container.appendChild(kanbanRootEl)
   // Lands focus on the first card (To Do, then the middle columns in order,
   // then Done, then Cancelled — same order as STATUSES/the board's DOM) the
@@ -1458,6 +1491,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     closeOpenCard?.()  // clean-close an open card modal (flush + remove overlay) before its host renderer goes
     disposeOpenBundle()
     disposeArrowFallback()
+    boardResize?.disconnect()
     deferredRebuild.dispose()
   }
 })

@@ -1,4 +1,4 @@
-import { icon, iconSvg, setIcon } from '../src/ui/icons'
+import { icon, iconLine, iconSvg, kindIcon, setIcon } from '../src/ui/icons'
 
 describe('iconSvg', () => {
   test('is a 16x16-grid stroke icon sized by the argument and tinted by currentColor', () => {
@@ -48,5 +48,30 @@ describe('setIcon', () => {
     expect(span.innerHTML).not.toBe(before)
     expect(span.classList.contains('tt-icon-starFill')).toBe(true)
     expect(span.classList.contains('tt-icon-star')).toBe(false)
+  })
+})
+
+describe('kindIcon', () => {
+  test.each(['daily', 'general', 'person', 'stakeholders', 'members', 'actions', 'milestones', 'risks'] as const)(
+    '%s gets a stroke icon carrying its tint class', (kind) => {
+      const span = kindIcon(kind)
+      expect(span.querySelector('svg')).not.toBeNull()
+      expect(span.classList.contains('tt-kind-icon')).toBe(true)
+      expect(span.classList.contains(`tt-kind-${kind}`)).toBe(true)
+    }
+  )
+
+  test('does not mutate the cached icon prototype (a plain icon of the same name has no tint class)', () => {
+    kindIcon('actions')
+    expect(icon('tasks').classList.contains('tt-kind-icon')).toBe(false)
+  })
+})
+
+describe('iconLine', () => {
+  test('is a list item with the icon first and the text after it', () => {
+    const li = iconLine('lock', 'Encrypted')
+    expect(li.tagName).toBe('LI')
+    expect(li.firstElementChild!.classList.contains('tt-icon-lock')).toBe(true)
+    expect(li.textContent).toBe('Encrypted')
   })
 })

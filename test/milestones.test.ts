@@ -3,6 +3,7 @@ import {
   computeTimelineLayout,
   sortByDate,
   truncateTitle,
+  timelinePadding,
   isBlankMilestoneDraft,
 } from '../src/modules/milestones'
 import { todayIso } from '../src/core/i18n'
@@ -124,19 +125,31 @@ describe('pure helpers', () => {
     })
   })
 
+  describe('timelinePadding', () => {
+    test('never drops below the minimum margin', () => {
+      expect(timelinePadding([3], 1)).toBe(24)
+      expect(timelinePadding([], 1)).toBe(24)
+    })
+    test('holds half of the longest end label, and grows with the text size', () => {
+      const m = timelinePadding([23], 1)
+      expect(m).toBeGreaterThanOrEqual(Math.ceil((23 * 0.62 * 11) / 2))
+      expect(timelinePadding([23], 1.2)).toBeGreaterThan(m)
+    })
+  })
+
   describe('truncateTitle', () => {
     test('leaves short titles untouched', () => {
       expect(truncateTitle('Launch')).toBe('Launch')
     })
-    test('truncates to 16 chars and appends an ellipsis', () => {
-      const long = 'This title is definitely too long'
+    test('truncates to 22 chars and appends an ellipsis', () => {
+      const long = 'This title is definitely far too long to fit'
       const result = truncateTitle(long)
-      expect(result).toBe(`${long.slice(0, 16)}…`)
-      expect(result.length).toBe(17)
+      expect(result).toBe(`${long.slice(0, 22)}…`)
+      expect(result.length).toBe(23)
     })
-    test('exactly 16 chars is left untouched', () => {
-      const exact = '0123456789012345'
-      expect(exact.length).toBe(16)
+    test('exactly 22 chars is left untouched', () => {
+      const exact = '0123456789012345678901'
+      expect(exact.length).toBe(22)
       expect(truncateTitle(exact)).toBe(exact)
     })
   })
@@ -266,7 +279,7 @@ describe('renderMilestones', () => {
 
     const timeline = container.querySelector('.tt-milestone-timeline') as HTMLElement
     expect(timeline.style.display).toBe('none')
-    expect(container.querySelector('.tt-milestone-empty .tt-empty-state-text')?.textContent).toBe('No milestones')
+    expect(container.querySelector('.tt-milestone-empty .tt-empty-state-text')?.textContent).toMatch(/^No milestones/)
   })
 
   test('renders the list sorted by date ascending, independent of storage order', () => {
@@ -310,7 +323,7 @@ describe('renderMilestones', () => {
     const circle = container.querySelector('.tt-milestone-dot')!
     expect(circle.querySelector('title')?.textContent).toBe('A very long milestone title indeed')
     const label = container.querySelector('.tt-milestone-title-label')!
-    expect(label.textContent).toBe(`${'A very long milestone title indeed'.slice(0, 16)}…`)
+    expect(label.textContent).toBe(`${'A very long milestone title indeed'.slice(0, 22)}…`)
   })
 
   // Regression: three same-day milestones used to print their labels through

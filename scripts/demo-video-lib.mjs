@@ -27,7 +27,7 @@
 import { chromium, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdir, readdir, rename, rm } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { installOpfsPickerShim, setNextOpenName, writeOpfsFile } from '../e2e/opfs-shim.ts'
 import { blockUpdateCheck } from '../e2e/helpers.ts'
@@ -281,8 +281,8 @@ async function postProcessRecording(rawPath, webmDest, gifDest, tmpDir, musicPat
     await rename(rawPath, webmDest)
     return
   }
-  const vArgs = ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '30', '-pix_fmt', 'yuv420p',
-    '-deadline', 'good', '-cpu-used', '3', '-row-mt', '1']
+  const vArgs = ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '24', '-pix_fmt', 'yuv420p',
+    '-deadline', 'good', '-cpu-used', '2', '-row-mt', '1']
   if (musicPath) {
     const dur = probeDurationSec(rawPath) ?? 60
     const fadeOut = Math.max(0, dur - 2)
@@ -297,15 +297,40 @@ async function postProcessRecording(rawPath, webmDest, gifDest, tmpDir, musicPat
     runFfmpeg(['-y', '-i', rawPath, ...vArgs, '-an', webmDest])
   }
   if (gifDest) {
-    // README GIF from the ~63s tour: 1.3x speed, 12fps, 800px wide lands it
-    // near ~9MB (vs ~16MB at full rate/size) while captions stay readable.
-    const vf = 'setpts=PTS/1.3,fps=12,scale=800:-1:flags=lanczos'
+    // README GIF from the ~77s tour: 1.3x speed, 12fps, 1200px wide (GitHub
+    // shows it ~830px, so text stays sharp on retina) lands near ~9MB.
+    const vf = 'setpts=PTS/1.3,fps=12,scale=1200:-1:flags=lanczos'
     const palette = path.join(tmpDir, 'palette.png')
     runFfmpeg(['-y', '-i', webmDest, '-vf', `${vf},palettegen=stats_mode=diff`, '-update', '1', palette])
     runFfmpeg(['-y', '-i', webmDest, '-i', palette,
-      '-lavfi', `${vf} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=3`,
+      '-lavfi', `${vf} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=4`,
       '-an', '-loop', '0', gifDest])
   }
+}
+
+/**
+ * Turns the timestamped screencast frames into one near-lossless intermediate
+ * (x264 crf 6) that postProcessRecording re-encodes, holding each frame for the
+ * time until the next one. The timestamp unit isn't pinned down by the types,
+ * so it is inferred from the wall-clock length of the recording.
+ */
+async function assembleFrames(framesDir, frames, wallSec, tmpDir) {
+  if (frames.length === 0) throw new Error('screencast produced no frames')
+  const span = frames[frames.length - 1].timestamp - frames[0].timestamp
+  const perSec = span / wallSec > 100 ? 1000 : 1
+  const lines = []
+  frames.forEach((f, i) => {
+    const next = frames[i + 1]
+    const dur = next ? (next.timestamp - f.timestamp) / perSec : 0.5
+    lines.push(`file 'frames/${f.name}'`, `duration ${Math.max(dur, 0.001).toFixed(4)}`)
+  })
+  lines.push(`file 'frames/${frames[frames.length - 1].name}'`) // concat drops the last duration without a trailing file
+  const list = path.join(tmpDir, 'frames.txt')
+  await writeFile(list, `${lines.join('\n')}\n`)
+  const out = path.join(tmpDir, 'raw.mkv')
+  runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', list, '-vf', 'fps=25,format=yuv420p',
+    '-c:v', 'libx264', '-crf', '6', '-preset', 'veryfast', out])
+  return out
 }
 
 /**
@@ -341,11 +366,11 @@ export async function runDemo({ outFile, gifFile, port, script, seed, music }) {
   const startedAt = Date.now()
   try {
     await waitForServer(appUrl)
+    let rawPath
 
     const browser = await chromium.launch()
     const context = await browser.newContext({
       viewport: VIEWPORT,
-      recordVideo: { dir: tmpDir, size: VIEWPORT },
       acceptDownloads: true,
       locale: 'en-US',
     })
@@ -361,18 +386,36 @@ export async function runDemo({ outFile, gifFile, port, script, seed, music }) {
         await setNextOpenName(page, seed.filename)
       }
       await pause(page, 400)
+      // Frames come from the screencast as q100 JPEGs rather than Playwright's
+      // recordVideo, whose fixed ~1 Mbit/s VP8 stream smears text before ffmpeg
+      // ever sees it. Frames only arrive when the page changes, so each one is
+      // kept with its timestamp and replayed for exactly that long below.
+      const framesDir = path.join(tmpDir, 'frames')
+      await mkdir(framesDir, { recursive: true })
+      const frames = []
+      const writes = []
+      const recStart = Date.now()
+      await page.screencast.start({
+        size: VIEWPORT,
+        quality: 100,
+        onFrame: ({ data, timestamp }) => {
+          const name = `f${String(frames.length).padStart(6, '0')}.jpg`
+          frames.push({ name, timestamp })
+          writes.push(writeFile(path.join(framesDir, name), data))
+        },
+      })
       await script(page)
+      await page.screencast.stop()
+      await Promise.all(writes)
+      rawPath = await assembleFrames(framesDir, frames, (Date.now() - recStart) / 1000, tmpDir)
     } finally {
       await context.close()
       await browser.close()
     }
 
-    const files = await readdir(tmpDir)
-    const webm = files.find((f) => f.endsWith('.webm'))
-    if (!webm) throw new Error('No .webm recording found in ' + tmpDir)
     const dest = path.join(OUT_DIR, outFile)
     const gifDest = gifFile ? path.join(OUT_DIR, gifFile) : null
-    await postProcessRecording(path.join(tmpDir, webm), dest, gifDest, tmpDir, music)
+    await postProcessRecording(rawPath, dest, gifDest, tmpDir, music)
     await rm(tmpDir, { recursive: true, force: true })
     const elapsedS = ((Date.now() - startedAt) / 1000).toFixed(1)
     const wrote = [dest, gifDest].filter(Boolean).map((f) => path.relative(process.cwd(), f)).join(' + ')

@@ -11,3 +11,13 @@ test('className adds the module hook next to the shared class', () => {
   expect(node.classList.contains('tt-empty-state')).toBe(true)
   expect(node.classList.contains('tt-risk-empty')).toBe(true)
 })
+
+test('an action renders as a button that fires its handler; without one there is no button', () => {
+  const onClick = vi.fn()
+  const node = emptyState({ icon: 'flag', text: 'x', action: { label: '+ Milestone', onClick } })
+  const btn = node.querySelector<HTMLButtonElement>('button.tt-empty-state-action')!
+  expect(btn.textContent).toBe('+ Milestone')
+  btn.click()
+  expect(onClick).toHaveBeenCalledTimes(1)
+  expect(emptyState({ icon: 'flag', text: 'x' }).querySelector('button')).toBeNull()
+})

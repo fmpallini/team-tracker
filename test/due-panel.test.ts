@@ -134,4 +134,23 @@ describe('openDuePanel', () => {
     expect(document.querySelector<HTMLElement>('.tt-due-row-title')!.title).toBe(long)
     expect(document.querySelector<HTMLElement>('.tt-due-row-team')!.title).toBe('Alpha')
   })
+
+  test('closes on a backdrop click', () => {
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem()], dueSoon: [] }, onOpenItem: () => {} })
+    const o = document.querySelector('.tt-modal-overlay')!
+    o.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    o.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('rows carry the module icon and an overdue / soon class that tints it', () => {
+    const overdueItem = makeItem({ title: 'Late' })
+    const soonItem = makeItem({ title: 'Soon', date: '2999-01-01', kind: 'milestone', loc: { teamId: 'T1', ref: { kind: 'milestones', itemId: 'm1' } } })
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [overdueItem], dueSoon: [soonItem] }, onOpenItem: () => {} })
+    const [late, soon] = Array.from(document.querySelectorAll<HTMLElement>('.tt-due-row'))
+    expect(late!.classList.contains('overdue')).toBe(true)
+    expect(late!.querySelector('.tt-kind-actions')).not.toBeNull()
+    expect(soon!.classList.contains('soon')).toBe(true)
+    expect(soon!.querySelector('.tt-kind-milestones')).not.toBeNull()
+  })
 })

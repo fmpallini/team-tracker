@@ -5,13 +5,13 @@ import type { Shell } from './shell'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
-import { normalize, KIND_ICON, type SearchResult, type SearchIndex } from '../core/search'
+import { normalize, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
 import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
-import { icon as strokeIcon } from './icons'
+import { icon as strokeIcon, kindIcon } from './icons'
 
 const DEBOUNCE_MS = 300
 
@@ -179,7 +179,7 @@ export function mountSearch(
       return
     }
     results.forEach((result, i) => {
-      const mainChildren: (Node | string)[] = [el('span', { class: 'tt-search-icon' }, KIND_ICON[result.moduleKind])]
+      const mainChildren: (Node | string)[] = [el('span', { class: 'tt-search-icon' }, kindIcon(result.moduleKind))]
       if (allTeams) mainChildren.push(el('span', { class: 'tt-search-team' }, result.teamName))
       mainChildren.push(el('span', { class: 'tt-search-title' }, result.title))
       const main = el('div', { class: 'tt-search-row-main' }, ...mainChildren)
