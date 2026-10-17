@@ -58,9 +58,13 @@ let seed = 20260906
 const rnd = (): number => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
 const WORDS = ('Rollout release Blocker standup Vendor contrato renovação Migração incidente orçamento previsão '
   + 'reunião decisão Auditoria pendência handover Escalonamento dependência').split(' ')
+// Words added for the "real notes" variant below: pasted from Word or Outlook, notes carry
+// an em dash and curly quotes. They force a two-byte string, so that variant has its own budget.
+const PUNCTUATION_WORDS = [String.fromCharCode(0x2014), String.fromCharCode(0x201c) + 'quoted' + String.fromCharCode(0x201d)]
+let activeWords = WORDS
 const paragraph = (n: number): string => {
   const out: string[] = []
-  for (let i = 0; i < n; i++) out.push(WORDS[Math.floor(rnd() * WORDS.length)]!)
+  for (let i = 0; i < n; i++) out.push(activeWords[Math.floor(rnd() * activeWords.length)]!)
   return out.join(' ')
 }
 // Every markdown form stripMd handles, so the stripped text really does
@@ -89,7 +93,8 @@ function corpusChars(team: Team): number {
 }
 
 /** Heap the warm search cache retains, per character of corpus it was built from. */
-function cacheBytesPerChar(): number {
+function cacheBytesPerChar(withPunctuation = false): number {
+  activeWords = withPunctuation ? [...WORDS, ...PUNCTUATION_WORDS] : WORDS
   const doc: Doc = createEmptyDocument('pt-BR')
   const team = bigTeam()
   doc.teams.push(team)
@@ -124,4 +129,10 @@ test('the retained copy stays one byte per character for accented Latin text', (
   // text it came from. `normalize` folds Latin-1 accents directly for exactly
   // this reason, keeping the one copy it retains one byte wide.
   expect(cacheBytesPerChar()).toBeLessThan(1.6)
+})
+
+test('notes with an em dash or curly quotes stay within the one-derived-copy budget (no per-character offsets map is cached)', () => {
+  // Two-byte text: ~2.0 bytes/char for the single normalized copy. A retained offsets array
+  // (8 bytes/char) used to push this past 10, which is what this budget exists to catch.
+  expect(cacheBytesPerChar(true)).toBeLessThan(2.5)
 })

@@ -1525,6 +1525,33 @@ describe('literal text survives a save/reopen', () => {
     expect(pre.querySelector('pre')!.textContent).toBe('\\d+\\.')
   })
 
+  test.each([
+    ['bold', '<b>C:\\ </b>rest', '**C:\\\\** rest', (d: HTMLElement) => d.querySelector('strong')],
+    ['bold (nbsp, as Chromium writes a typed trailing space)', `<b>C:\\${String.fromCharCode(0xa0)}</b>rest`, '**C:\\\\** rest', (d: HTMLElement) => d.querySelector('strong')],
+    ['italic', '<i>C:\\ </i>rest', '*C:\\\\* rest', (d: HTMLElement) => d.querySelector('em')],
+    ['strike', '<s>C:\\ </s>rest', '~~C:\\\\~~ rest', (d: HTMLElement) => d.querySelector('s')],
+    ['unlinked ref', '<span class="tt-unlinked-ref">C:\\ </span>rest', '~C:\\\\~ rest', (d: HTMLElement) => d.querySelector('.tt-unlinked-ref')],
+  ])('a backslash then trailing whitespace inside %s does not swallow the closing marker', (_name, html, expected, marked) => {
+    const root = document.createElement('div')
+    root.innerHTML = `<div>${html}</div>`
+    const md = htmlToMd(root)
+    expect(md).toBe(expected)
+    const back = document.createElement('div')
+    back.innerHTML = mdToHtml(md)
+    expect(marked(back)?.textContent).toBe('C:\\') // still formatted, backslash intact
+    expect(htmlToMd(back)).toBe(md)
+  })
+
+  test('htmlToMd does not run the block-descendant query on inline leaf elements (it runs on every autosave)', () => {
+    const root = document.createElement('div')
+    root.innerHTML = Array.from({ length: 50 }, (_, i) => `<p>line ${i} <b>bold</b> <i>it</i> <a href="https://x.y">l</a></p>`).join('')
+    const spy = vi.spyOn(Element.prototype, 'querySelector')
+    htmlToMd(root)
+    const blockish = spy.mock.calls.filter(([sel]) => String(sel).includes('blockquote,')).length
+    spy.mockRestore()
+    expect(blockish).toBe(0)
+  })
+
   test('a text node ending in a backslash does not swallow the bold marker that follows', () => {
     const root = document.createElement('div')
     root.innerHTML = '<div>a\\<strong>b</strong></div>'

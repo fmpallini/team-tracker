@@ -90,15 +90,21 @@ export function normalizeWithOffsets(s: string): { normalized: string; offsets: 
   const normalized = decomposeAndFold(folded)
   const offsets: number[] = []
   let joined = ''
+  // Em dashes, curly quotes, a euro sign, emoji: non-Latin-1, yet every character
+  // keeps its length, so the map would be the identity. Real notes pasted from
+  // Word or Outlook are full of them, and a per-character array per cached field
+  // cost several times the text itself — so no map is kept unless a length changed.
+  let reshaped = false
   for (let i = 0; i < folded.length;) {
     const ch = String.fromCodePoint(folded.codePointAt(i)!)
     const part = NON_ASCII.test(ch) ? decomposeAndFold(ch) : ch.toLowerCase()
+    if (part.length !== ch.length) reshaped = true
     for (let k = 0; k < part.length; k++) offsets.push(i)
     joined += part
     i += ch.length
   }
   offsets.push(s.length)
-  return { normalized, offsets: joined === normalized ? offsets : null }
+  return { normalized, offsets: reshaped && joined === normalized ? offsets : null }
 }
 
 // Strips the basic markdown syntax this app produces so search snippets read

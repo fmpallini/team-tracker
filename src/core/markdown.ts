@@ -416,10 +416,11 @@ function styleHasDecoration(el: HTMLElement, line: 'underline' | 'line-through')
  * characters: every marker character gets a backslash, `<` only where it would
  * open an underline tag, and a backslash that would otherwise pair with what
  * follows it (an escapable character, or the next node's first character when
- * it ends this one) is doubled.
+ * only whitespace is left — mark() moves edge whitespace outside a marker pair,
+ * which would put the backslash right before the closing marker) is doubled.
  */
 function escapeInline(text: string): string {
-  return text.replace(/\\(?=[\\*~[\]<>#.`-]|$)|[*~[\]]|<(?=\/?u>)/g, (m) => `\\${m}`)
+  return text.replace(/\\(?=[\\*~[\]<>#.`-]|\s*$)|[*~[\]]|<(?=\/?u>)/g, (m) => `\\${m}`)
 }
 
 /**
@@ -1025,7 +1026,7 @@ const BLOCKISH_SELECTOR = [...BLOCK_TAGS, ...CONTAINER_TAGS, 'h4', 'h5', 'h6'].j
 function isBlockish(el: Element): boolean {
   const tag = el.tagName.toLowerCase()
   if (BLOCK_TAGS.has(tag) || CONTAINER_TAGS.has(tag) || /^h[1-6]$/.test(tag)) return true
-  return tag !== 'a' && el.querySelector(BLOCKISH_SELECTOR) !== null
+  return tag !== 'a' && el.firstElementChild !== null && el.querySelector(BLOCKISH_SELECTOR) !== null
 }
 
 /**

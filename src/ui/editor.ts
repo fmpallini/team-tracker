@@ -1787,12 +1787,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const html = e.clipboardData?.getData('text/html')
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
+      const styledBefore = styledElements()
       document.execCommand('insertHTML', false, renderMd(md))
       // insertHTML nests a multi-block fragment inside the caret's block when
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
       flattenTopLevelBlockWrappers(editorEl)
-      stripPastedStyles()
+      stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
@@ -1808,9 +1809,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const html = lines
         .map((l) => `<div>${l === '' ? '<br>' : l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/^ +/, (sp) => nbsp.repeat(sp.length))}</div>`)
         .join('')
+      const styledBefore = styledElements()
       document.execCommand('insertHTML', false, html)
       flattenTopLevelBlockWrappers(editorEl)
-      stripPastedStyles()
+      stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
@@ -1824,12 +1826,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * Chromium's insertHTML copies the surrounding block's computed font and
    * colour onto the inserted spans as inline `style="…"` (worst inside a
    * heading or quote), so pasted text looks unlike its neighbours until the
-   * note is reopened. Nothing inside `editorEl` ever carries a style of its
-   * own — the code-block controls and copy menu live on `root`, outside it —
-   * so dropping them all after a paste is safe.
+   * note is reopened. Only elements that were NOT styled before the insert are
+   * touched: Chromium's own merge spans elsewhere in the note (a Backspace that
+   * joined a heading into a line leaves `font-weight:700`) are real formatting
+   * that htmlToMd reads as bold, and must keep it. The code-block controls and
+   * copy menu live on `root`, outside `editorEl`, so nothing else carries a style.
    */
-  function stripPastedStyles(): void {
-    editorEl.querySelectorAll('[style]').forEach((el) => el.removeAttribute('style'))
+  function stripPastedStyles(styledBefore: ReadonlySet<Element>): void {
+    editorEl.querySelectorAll('[style]').forEach((el) => { if (!styledBefore.has(el)) el.removeAttribute('style') })
+  }
+
+  function styledElements(): Set<Element> {
+    return new Set(editorEl.querySelectorAll('[style]'))
   }
 
   /** True when the selection's start sits inside a list item of this editor. */

@@ -118,6 +118,13 @@ describe('normalizeWithOffsets (maps a normalized index back to the original tex
     expect(bad).toEqual([])
   })
 
+  test('common non-Latin-1 punctuation, symbols and emoji keep every length, so no map is built or cached', () => {
+    const s = `a ${String.fromCharCode(0x2014)} b ${String.fromCharCode(0x201c)}q${String.fromCharCode(0x201d)} ${String.fromCharCode(0x20ac)} ${String.fromCharCode(0xd83d, 0xde00)} c`
+    const { normalized, offsets } = normalizeWithOffsets(s)
+    expect(normalized).toBe(normalize(s))
+    expect(offsets).toBeNull()
+  })
+
   test('a string whose per-character mapping cannot reproduce normalize() (Greek final sigma) returns no offsets', () => {
     const s = `${String.fromCharCode(0x391, 0x3a3)} ${String.fromCharCode(0x391, 0x3a3)}`
     const { normalized, offsets } = normalizeWithOffsets(s)

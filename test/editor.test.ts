@@ -245,6 +245,21 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('a paste leaves styles on text elsewhere in the note alone (a merge span still carries its bold)', () => {
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('first line')
+    const line = editor.root.querySelector('.editor div')!
+    line.innerHTML = '<span style="font-weight: 700">kept bold</span>'
+
+    dispatchPaste(editor, { 'text/html': '<p>pasted</p>' })
+
+    expect(line.querySelector('span')!.getAttribute('style')).toBe('font-weight: 700')
+    expect(editor.getMd()).toContain('**kept bold**')
+    editor.destroy()
+  })
+
   test('a Word list paste inserts list markup, not "·" text lines', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
