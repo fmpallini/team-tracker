@@ -32,6 +32,9 @@ export function filterBucketsByTeam(buckets: DueBuckets, teamId: string | undefi
 
 function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
   function activate(): void {
+    // Close first, unconditionally: if an open card then refuses to close
+    // (revealLoc returns false), its veto focuses the card's name field and
+    // shows the error — which this blocking panel would otherwise cover.
     closeModal()
     onOpenItem(item.loc)
   }

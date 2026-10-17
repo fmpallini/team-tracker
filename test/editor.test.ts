@@ -1215,6 +1215,10 @@ describe('toolbar', () => {
     const helpBtn = editor.root.querySelector<HTMLButtonElement>('button[title="Editor help"]')!
     helpBtn.click()
     expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    // Close it for real: wiping document.body would leave the modal's
+    // document-level keydown listener live, trapping Tab in later tests.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     editor.destroy()
   })
 
@@ -3687,9 +3691,6 @@ describe('setEditorsReadOnly', () => {
     try {
       placeCaret(editorEl.querySelectorAll('li')[1]!.firstChild!, 1)
       setEditorsReadOnly(true)
-      // Keep the event inside the editor: a modal leaked by an earlier test in
-      // this file traps Tab at the document level.
-      editor.root.addEventListener('keydown', (ev) => ev.stopPropagation())
       const e = dispatchKey(editorEl, { key: 'Tab' })
       expect(e.defaultPrevented).toBe(false)
       expect(editor.getMd()).toBe('- a\n- b')
@@ -3707,11 +3708,12 @@ describe('setEditorsReadOnly', () => {
     try {
       placeCaret(editorEl.querySelector('h1')!.firstChild!, 1)
       setEditorsReadOnly(true)
-      editor.root.addEventListener('keydown', (ev) => ev.stopPropagation()) // see the Tab test
+      const exec = vi.spyOn(document, 'execCommand')
       const u = dispatchKey(editorEl, { key: 'u', code: 'KeyU', ctrlKey: true })
-      const one = dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+      const two = dispatchKey(editorEl, { key: '2', code: 'Digit2', ctrlKey: true })
       expect(u.defaultPrevented).toBe(true)
-      expect(one.defaultPrevented).toBe(true)
+      expect(two.defaultPrevented).toBe(true)
+      expect(exec).not.toHaveBeenCalled()
       expect(editor.getMd()).toBe('# Head')
     } finally {
       setEditorsReadOnly(false)
