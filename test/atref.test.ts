@@ -311,6 +311,7 @@ describe('attachAtAutocomplete', () => {
     expect(chip.getAttribute('contenteditable')).toBe('false')
     expect(chip.dataset.ref).toBe('person:ana-id')
     expect(chip.textContent).toBe('@Ana')
+    expect(chip.title).toBe(t('pt-BR', 'editor_ref_hint'))
     // Trailing separator is a non-breaking space (not a plain space): a
     // mention is almost always the last thing on the line, and a plain
     // space there is CSS-collapsed to zero width, leaving Chrome no real

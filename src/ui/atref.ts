@@ -17,7 +17,7 @@ import { el, clampToViewport } from './dom'
 import { kindIcon } from './icons'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { focusItemInPane } from './search-highlight'
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from './editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip } from './editor-dom'
 import { dismissModelessModals } from './modal'
 
 export type AtItem =
@@ -236,16 +236,13 @@ export function attachAtAutocomplete(editor: Editor, opts: {
         ? formatDateWithWeekday(item.date, opts.locale)
         : item.title
     const safeLabel = label.replace(/[[\]()]/g, '')
-    const chip = document.createElement('a')
-    chip.className = 'ref'
-    chip.setAttribute('contenteditable', 'false')
     // Chip *text content* stays exactly `@${safeLabel}` — the per-kind icon
     // is CSS-only (styles.css, keyed off this same data-ref prefix), never
     // baked into textContent. inlineMd (core/markdown.ts) derives the
     // persisted markdown label straight from textContent, so an icon inside
     // it would round-trip into storage as part of the label forever.
-    chip.dataset.ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
-    chip.textContent = `@${safeLabel}`
+    const ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
+    const chip = createRefChip(ref, safeLabel, t(opts.locale, 'editor_ref_hint'))
     range.insertNode(chip)
     // 'always': a mention is almost always the last thing on the line, where
     // a plain trailing space is CSS-collapsed to zero width and Chrome then

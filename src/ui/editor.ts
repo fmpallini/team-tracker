@@ -10,7 +10,7 @@ import { showEditorHelp } from './help'
 import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets, type BlockCtx } from './editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, type BlockCtx } from './editor-dom'
 import { icon } from './icons'
 
 export interface Editor {
@@ -2357,13 +2357,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (!target) return
       const resolved = resolve(target)
       if (resolved === null) return
-      const chip = document.createElement('a')
-      chip.className = 'ref'
-      chip.dataset.ref = span.dataset.ref!
-      chip.contentEditable = 'false'
-      chip.title = t(locale, 'editor_ref_hint')
-      chip.textContent = `@${resolved}`
-      span.replaceWith(chip)
+      span.replaceWith(createRefChip(span.dataset.ref!, resolved, t(locale, 'editor_ref_hint')))
     })
   }
 
