@@ -221,7 +221,13 @@ test('ordered list numbers preserved', () => {
 })
 
 test('nested ambiguous asterisks stay stable', () => {
-  expect(roundTrip('**a*b*c** e *i* fim')).toBe('**a*b*c** e *i* fim')
+  // The outer ** pair cannot close around the inner *b*, so it is literal text:
+  // it is written escaped, shows exactly as before, and a second save is a no-op.
+  const md = '**a*b*c** e *i* fim'
+  const saved = roundTrip(md)
+  expect(saved).toBe('\\*\\*a*b*c\\*\\* e *i* fim')
+  expect(mdToHtml(saved)).toBe(mdToHtml(md))
+  expect(roundTrip(saved)).toBe(saved)
 })
 
 test('a block-trailing space after inline formatting renders as &nbsp; (a plain trailing space is CSS-collapsed, so Chrome lands the caret inside the <strong> and typing sticks to bold — the template "**Label:** " lines)', () => {
@@ -935,8 +941,9 @@ describe('external links', () => {
   })
   test('a marker after a link no longer straddles the link text — round-trips AND is idempotent', () => {
     const md = 'see [2*3](https://e.com/m) *later*'
-    expect(roundTrip(md)).toBe(md)
-    expect(roundTrip(roundTrip(md))).toBe(md)
+    const saved = 'see [2\\*3](https://e.com/m) *later*' // the * in the link text is literal, so it is written escaped
+    expect(roundTrip(md)).toBe(saved)
+    expect(roundTrip(saved)).toBe(saved)
     const html = mdToHtml(md)
     const probe = document.createElement('div'); probe.innerHTML = html
     expect(probe.querySelector('a')!.textContent).toBe('2*3')
@@ -1240,7 +1247,10 @@ describe('emphasis markers need to hug their text (plain text with stray * ~ mus
     const html = inner(md)
     expect(html).not.toMatch(/<(em|strong|s|span)[ >]/)
     expect(html).toBe(md)
-    expect(roundTrip(md)).toBe(md)
+    // Saving writes the literal markers escaped; it shows the same and a second save is a no-op.
+    const saved = roundTrip(md)
+    expect(inner(saved)).toBe(html)
+    expect(roundTrip(saved)).toBe(saved)
   })
 
   test.each([
@@ -1305,7 +1315,10 @@ describe('[text](target) that is not a safe link stays literal instead of losing
     'docs [here](ftp://server/file)',
   ])('%s', (md) => {
     expect(mdToHtml(md)).not.toContain('<a ')
-    expect(roundTrip(md)).toBe(md) // editing the note no longer eats the brackets
+    // Editing the note never eats the brackets: the saved (escaped) form shows the same text and is stable.
+    const saved = roundTrip(md)
+    expect(mdToHtml(saved)).toBe(mdToHtml(md))
+    expect(roundTrip(saved)).toBe(saved)
   })
 
   test('a safe link is still a link', () => {
@@ -1344,11 +1357,13 @@ describe('seeded round-trip fuzz (the editor rewrites the WHOLE note on every ed
     expect(drifting.slice(0, 5)).toEqual([])
   })
 
-  test('md -> html -> md is lossless for these notes', () => {
+  test('saving a note never changes what it displays', () => {
+    // Literal markers are written escaped, so the markdown text may differ — but
+    // the rendered note must be identical before and after a save.
     const lossy: string[] = []
     for (let i = 0; i < 3000; i++) {
       const md = note()
-      if (roundTrip(md) !== md) lossy.push(md)
+      if (mdToHtml(roundTrip(md)) !== mdToHtml(md)) lossy.push(md)
     }
     expect(lossy.slice(0, 5)).toEqual([])
   })
@@ -1373,7 +1388,11 @@ describe('very long single lines cannot freeze the renderer', () => {
     const html = mdToHtml(line)
     expect(html).toContain('&lt;b&gt; &amp; **not bold**')
     expect(html).not.toContain('<strong>')
-    expect(roundTrip(line)).toBe(line)
+    // Saved with the literal ** escaped; still over the limit, so it shows the same and stays stable.
+    const saved = roundTrip(line)
+    expect(saved).toContain('\\*\\*not bold\\*\\*')
+    expect(mdToHtml(saved)).toBe(html)
+    expect(roundTrip(saved)).toBe(saved)
   })
 
   test('a line just under the limit still gets full inline formatting', () => {
@@ -1399,7 +1418,7 @@ describe('htmlToMd: containers holding blocks', () => {
 
   test('a div holding blocks keeps each block on its own line (Wikipedia shape)', () => {
     expect(md('<div><h2>History<span>[edit]</span></h2><p>Some <b>text</b></p><figure><img src="x"><figcaption>Caption</figcaption></figure><h4>Sub</h4><p>end</p></div>'))
-      .toBe('## History[edit]\nSome **text**\nCaption\n### Sub\nend')
+      .toBe('## History\\[edit\\]\nSome **text**\nCaption\n### Sub\nend')
   })
 
   test('VS Code line divs inside one pre-styled div stay separate lines', () => {
@@ -1452,4 +1471,99 @@ test('plain-text copy of an li holding two paragraphs keeps them on separate lin
   const root = document.createElement('div')
   root.innerHTML = '<ul><li><p>Then</p><p>second para</p><ul><li>sub</li></ul></li></ul>'
   expect(htmlToPlainText(root)).toBe('Then\nsecond para\n  sub')
+})
+
+describe('literal text survives a save/reopen', () => {
+  const nbsp = String.fromCharCode(0xa0)
+  const norm = (s: string): string => s.split(nbsp).join(' ').replace(/\s+/g, ' ').trim()
+  const LITERALS = [
+    'price 2*3*4 = 24', '```js', '1. first step', '- dash item', '> quoted reply', '# not a heading',
+    '[link](http://x.y)', '@[Ana](person:p1)', '*important*', '**really**', '~~old~~', '~5 days ~10 people', '---',
+    '<u>x</u>', 'a\\*b', 'ends with \\', 'C:\\Users\\me', '  - indented dash', '\\\\server\\share',
+  ]
+  const build = (position: string, text: string): HTMLElement => {
+    const root = document.createElement('div')
+    if (position === 'list item') {
+      const ul = root.appendChild(document.createElement('ul'))
+      ul.appendChild(document.createElement('li')).textContent = text
+    } else {
+      root.appendChild(document.createElement({ line: 'div', heading: 'h2', quote: 'blockquote' }[position]!)).textContent = text
+    }
+    return root
+  }
+  const reopened = (root: HTMLElement): string => {
+    const back = document.createElement('div')
+    back.innerHTML = mdToHtml(htmlToMd(root))
+    return norm(back.textContent ?? '')
+  }
+
+  test.each(['line', 'list item', 'heading', 'quote'])('a %s keeps every literal exactly', (position) => {
+    for (const text of LITERALS) expect(reopened(build(position, text)), `${position}: ${text}`).toBe(norm(text))
+  })
+
+  test('formatting written by the editor still round-trips unchanged', () => {
+    for (const md of [
+      'a **b** *i* ~~s~~ <u>u</u> [l](https://a.b) @[A](person:p1) ~Old~', '# H', '- a\n  - b', '1. x', '> q', '```\ncode *x*\n```',
+    ]) expect(roundTrip(md), md).toBe(md)
+  })
+
+  test('a plain line that would parse as a block is escaped at its start', () => {
+    const md = (text: string): string => htmlToMd(build('line', text))
+    expect(md('# x')).toBe('\\# x')
+    expect(md('> x')).toBe('\\> x')
+    expect(md('```js')).toBe('\\```js')
+    expect(md('---')).toBe('\\---')
+    expect(md('- x')).toBe('\\- x')
+    expect(md('  - x')).toBe('  \\- x')
+    expect(md('1. x')).toBe('1\\. x')
+  })
+
+  test('a backslash before a non-markdown character is left alone (Windows paths, regexes in prose)', () => {
+    expect(mdToHtml('C:\\Users\\me')).toContain('C:\\Users\\me')
+    const pre = document.createElement('div')
+    pre.innerHTML = mdToHtml('```\n\\d+\\.\n```')
+    expect(pre.querySelector('pre')!.textContent).toBe('\\d+\\.')
+  })
+
+  test('a text node ending in a backslash does not swallow the bold marker that follows', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div>a\\<strong>b</strong></div>'
+    const md = htmlToMd(root)
+    expect(md).toBe('a\\\\**b**')
+    const back = document.createElement('div')
+    back.innerHTML = mdToHtml(md)
+    expect(back.querySelector('strong')!.textContent).toBe('b')
+    expect(back.textContent).toBe('a\\b')
+  })
+
+  test('brackets inside link text do not reopen the link grammar', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div><a href="https://x.y">a[b]</a></div>'
+    expect(htmlToMd(root)).toBe('[ab](https://x.y)')
+  })
+
+  test('a tilde inside an unlinked-ref label survives', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div><span class="tt-unlinked-ref">a~b</span></div>'
+    const md = htmlToMd(root)
+    const back = document.createElement('div')
+    back.innerHTML = mdToHtml(md)
+    expect(back.querySelector('.tt-unlinked-ref')!.textContent).toBe('a~b')
+    expect(htmlToMd(back)).toBe(md)
+  })
+
+  test('a line over the inline-parse limit shows its text and stays stable across saves', () => {
+    const text = 'x*'.repeat(6000)
+    const first = htmlToMd(build('line', text))
+    const back = document.createElement('div')
+    back.innerHTML = mdToHtml(first)
+    expect(back.textContent).toBe(text)
+    expect(htmlToMd(back)).toBe(first)
+  })
+})
+
+test('a code block that starts with blank lines keeps every one across saves (the HTML parser drops one leading newline after <pre>)', () => {
+  const md = '```\n\n\nx\n```'
+  expect(roundTrip(md)).toBe(md)
+  expect(roundTrip(roundTrip(md))).toBe(md)
 })

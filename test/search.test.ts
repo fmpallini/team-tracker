@@ -524,3 +524,12 @@ describe('SearchIndex.backlinks', () => {
     })
   })
 })
+
+test('an escaped literal is found and shown without its backslash', () => {
+  const d = fixture()
+  d.teams[0]!.generalNotes = 'price 2\\*3\\*4 and a\\[b\\]'
+  const r = searchDocument(d, '2*3', 't1')
+  expect(r).toHaveLength(1)
+  expect(r[0]!.snippet).toContain('2*3*4')
+  expect(r[0]!.snippet).not.toContain('\\')
+})

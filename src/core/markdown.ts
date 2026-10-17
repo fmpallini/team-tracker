@@ -2,7 +2,7 @@ import { REF_KINDS, refPattern, type IdRefKind } from './refs'
 import { highlightCode } from './highlight'
 
 // Strip the Private-Use-Area code points inline() uses for its own
-// LINK/REF placeholder tokens (U+E000–U+E005) BEFORE anything else, so
+// LINK/REF/ESC placeholder tokens (U+E000–U+E007) BEFORE anything else, so
 // a token spliced into the text — via a crafted link URL, ref target or
 // @[label] — is unforgeable rather than merely unlikely. esc() runs on
 // every string inline() feeds downstream (the body, and thus the href /
@@ -11,7 +11,7 @@ import { highlightCode } from './highlight'
 // emitted by inline() AFTER esc() using the *_OPEN/*_CLOSE consts, so they
 // are untouched.
 const esc = (s: string) =>
-  s.replace(/[\uE000-\uE005]/g, '')
+  s.replace(/[\uE000-\uE007]/g, '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const ALLOWED_SCHEMES = ['http:', 'https:', 'mailto:']
 
@@ -66,6 +66,21 @@ const LINK_OPEN = ''
 const LINK_CLOSE = ''
 const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 
+// A backslash-escaped literal (\*, \[, \#, …) is frozen in a placeholder the
+// moment inline() has esc()'d the line — before any link, ref or mark pass can
+// see the character — and put back as plain text in the terminal splice, after
+// every other pass. Same PUA rationale again (U+E006/U+E007, stripped from the
+// input by esc()), so a token can't be forged from text.
+//
+// The escapable set is exactly what htmlToMd's escapeInline/escapeLineStart
+// write. A backslash before anything else is a literal backslash, so Windows
+// paths and regexes in prose are untouched. `<` and `>` appear as their esc()'d
+// forms because inline() sees escaped text.
+const ESC_OPEN = String.fromCharCode(0xe006)
+const ESC_CLOSE = String.fromCharCode(0xe007)
+const ESC_PLACEHOLDER = new RegExp(`${ESC_OPEN}(\\d+)${ESC_CLOSE}`, 'g')
+const ESCAPED_CHAR = /\\(&lt;|&gt;|[\\*~[\]#.`-])/g
+
 /**
  * Longest single line that still gets inline parsing. The link, ref and
  * underline passes below are quadratic on an "opener with no closer" line
@@ -76,8 +91,13 @@ const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 const INLINE_PARSE_LIMIT = 10_000
 
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
-  if (s.length > INLINE_PARSE_LIMIT) return esc(s)
+  if (s.length > INLINE_PARSE_LIMIT) return esc(s).replace(ESCAPED_CHAR, '$1')
   let out = esc(s)
+  const escapes: string[] = []
+  out = out.replace(ESCAPED_CHAR, (_, c: string) => {
+    escapes.push(c)
+    return `${ESC_OPEN}${escapes.length - 1}${ESC_CLOSE}`
+  })
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
   //
   // Each match is extracted into a placeholder token here; the actual
@@ -181,6 +201,7 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // fallback is a belt-and-braces inert default, not a reachable path.
   out = out.replace(LINK_PLACEHOLDER, (m, i: string) => linkTags[Number(i)] ?? m)
   out = out.replace(REF_PLACEHOLDER, (m, i: string) => refChips[Number(i)] ?? m)
+  out = out.replace(ESC_PLACEHOLDER, (m, i: string) => escapes[Number(i)] ?? m)
   return out
 }
 
@@ -307,7 +328,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   const flushPre = () => {
     if (preBuf === null) return
     const body = preBuf.join('\n')
-    out.push(`<pre>${body === '' ? '<br>' : highlightCode(body)}</pre>`)
+    // The HTML parser drops one newline straight after <pre>, so a block that
+    // starts with blank lines gets a sacrificial one — otherwise each save and
+    // reopen would eat a leading blank line.
+    const html = body === '' ? '<br>' : highlightCode(body)
+    out.push(`<pre>${html.startsWith('\n') ? '\n' : ''}${html}</pre>`)
     preBuf = null
   }
   for (const [i, line] of lines.entries()) {
@@ -386,16 +411,40 @@ function styleHasDecoration(el: HTMLElement, line: 'underline' | 'line-through')
   return td.includes(line)
 }
 
+/**
+ * Escapes literal text so that mdToHtml reading it back yields exactly the same
+ * characters: every marker character gets a backslash, `<` only where it would
+ * open an underline tag, and a backslash that would otherwise pair with what
+ * follows it (an escapable character, or the next node's first character when
+ * it ends this one) is doubled.
+ */
+function escapeInline(text: string): string {
+  return text.replace(/\\(?=[\\*~[\]<>#.`-]|$)|[*~[\]]|<(?=\/?u>)/g, (m) => `\\${m}`)
+}
+
+/**
+ * A plain line's leading characters that mdToHtml would parse as a block
+ * (heading, quote, fence, rule, bullet, numbered item) get one backslash, so a
+ * pasted "# x" or "1. step" stays the text it was.
+ */
+function escapeLineStart(line: string): string {
+  if (/^#{1,3} /.test(line) || line.startsWith('>') || line.startsWith('```') || /^-{3,}$/.test(line)) return `\\${line}`
+  return line.replace(/^( *)- /, '$1\\- ').replace(/^( *)(\d+)\. /, '$1$2\\. ')
+}
+
+/** escapeLineStart for every line of a multi-line string (a <br>-split block). */
+const escapeLines = (s: string): string => s.split('\n').map(escapeLineStart).join('\n')
+
 function inlineMd(node: Node): string {
   // U+00A0 → ' ': undo mdToHtml's caret-slot &nbsp; (and the nbsp Chrome
   // itself inserts while editing) so markdown only ever stores plain spaces.
-  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/\u00a0/g, ' ')
+  if (node.nodeType === Node.TEXT_NODE) return escapeInline((node.textContent ?? '').replace(/\u00a0/g, ' '))
   if (!(node instanceof HTMLElement)) return ''
   const kids = () => Array.from(node.childNodes).map(inlineMd).join('')
   const tag = node.tagName.toLowerCase()
   if (tag === 'a' && node.dataset.ref) {
     const label = (node.textContent ?? '').replace(/^@/, '')
-    const safeLabel = label.replace(/[[\]()]/g, '')
+    const safeLabel = label.replace(/[[\]()\\]/g, '')
     return `@[${safeLabel}](${node.dataset.ref})`
   }
   // External link (no data-ref). Re-validate the href through safeHref on the
@@ -404,7 +453,7 @@ function inlineMd(node: Node): string {
   // grammar on a later re-parse.
   if (tag === 'a' && !node.dataset.ref) {
     const href = safeHref(node.getAttribute('href') ?? '')
-    const text = kids().replace(/[[\]]/g, '')
+    const text = kids().replace(/\\?[[\]]/g, '')
     return href ? `[${text}](${href})` : text
   }
   if (tag === 'br') return ''
@@ -757,7 +806,12 @@ function renderTableMd(table: HTMLElement, out: string[]): void {
  */
 function liLines(li: HTMLElement, text = false): string[] {
   const nodes = liOwnContentNodes(li)
-  if (!nodes.some((n) => n instanceof HTMLElement && isBlockish(n))) return [(text ? blockToTextNodes : blockToMdNodes)(nodes)]
+  if (!nodes.some((n) => n instanceof HTMLElement && isBlockish(n))) {
+    if (text) return [blockToTextNodes(nodes)]
+    // A <br> in a bullet puts the rest on a plain line below it.
+    const [first = '', ...rest] = blockToMdNodes(nodes).split('\n')
+    return [[first, ...rest.map(escapeLineStart)].join('\n')]
+  }
   const holder = li.ownerDocument.createElement('div')
   nodes.forEach((n) => holder.appendChild(n))
   const lines: string[] = []
@@ -932,6 +986,10 @@ function isBlockish(el: Element): boolean {
  */
 function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): void {
   const lineOf = text ? blockToTextNodes : blockToMdNodes
+  // A plain line (not a heading, quote, bullet or fence body) is parsed for
+  // block syntax when it is read back, so its first characters are escaped. A
+  // list item's own lines become bullets and plain-text copy has no syntax.
+  const plain = (s: string): string => (flat || text ? s : escapeLines(s))
   let run: Node[] = []
   const flushRun = (): void => {
     const nodes = run
@@ -941,12 +999,14 @@ function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): v
     const meaningful = nodes.some((n) =>
       (n.textContent ?? '').trim() !== '' || (n instanceof HTMLElement && n.tagName.toLowerCase() === 'br'))
     if (!meaningful) return
-    out.push(lineOf(nodes).trim())
+    out.push(plain(lineOf(nodes).trim()))
   }
   const block = (node: HTMLElement, tag: string): void => {
     if (/^h[1-6]$/.test(tag)) {
-      const line = lineOf(Array.from(node.childNodes))
-      out.push(flat ? line : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + line)
+      // A <br> inside a heading puts the rest on a plain line below it.
+      const [first = '', ...rest] = lineOf(Array.from(node.childNodes)).split('\n')
+      out.push(flat ? first : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + first)
+      for (const l of rest) out.push(plain(l))
     } else if (tag === 'blockquote') {
       // A quote copied off a web page / email reaches here whole as
       // <blockquote><p>a</p><p>b</p></blockquote> (or <div>-built) — its
@@ -968,9 +1028,11 @@ function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): v
     } else if (tag === 'hr') {
       if (!flat) out.push('---')
     } else if (tag === 'table') {
-      renderTableMd(node, out)
+      const rows: string[] = []
+      renderTableMd(node, rows)
+      for (const r of rows) out.push(plain(r))
     } else if ((tag === 'div' || tag === 'p') && !Array.from(node.children).some(isBlockish)) {
-      out.push(lineOf(Array.from(node.childNodes)))
+      out.push(plain(lineOf(Array.from(node.childNodes))))
     } else {
       walkBlocks(node, out, flat, text)
     }

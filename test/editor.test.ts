@@ -1710,7 +1710,9 @@ describe('toolbar', () => {
     await answerLink({ url: 'https://example.com' })
 
     // Landed in place, replacing "docs" — NOT appended to the end.
-    expect(editor.getMd()).toBe('see [docs](https://example.com) here')
+    // (Compared as text: in a browser insertText's input event then turns the
+    // literal into a real link — e2e/link-insert.spec.ts — which this inert stand-in doesn't fire.)
+    expect(editor.root.querySelector('.editor')!.textContent).toBe('see [docs](https://example.com) here')
     // Every other test in this file destroys its editor; skipping it here left
     // this one in editor.ts's module-level `liveEditors` for the rest of the
     // run, which the shared-selectionchange-listener test downstream can see.

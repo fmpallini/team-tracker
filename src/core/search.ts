@@ -77,6 +77,20 @@ export function normalize(s: string): string {
 // @[label](ref) references (kept as their label), and refs.ts's
 // single-tilde unlinked-reference marker (also kept as its label).
 function stripMd(s: string): string {
+  return restoreEscaped(stripMdSyntax(s.replace(ESCAPED_LITERAL, (_, c: string) => String.fromCharCode(ESCAPED_BASE + c.charCodeAt(0)))))
+}
+
+// A backslash-escaped literal (\*, \[, \# … — see core/markdown.ts's
+// escapeInline) is swapped for a one-character stand-in while the syntax below
+// is stripped, then put back without its backslash: "2\*3" is found by "2*3"
+// and is never mistaken for emphasis. One character in, one out, so the
+// index alignment makeSnippet and the highlighter rely on is unchanged.
+const ESCAPED_LITERAL = /\\([\\*~[\]<>#.`-])/g
+const ESCAPED_BASE = 0xf000
+const ESCAPED_STAND_IN = new RegExp(`[${String.fromCharCode(ESCAPED_BASE)}-${String.fromCharCode(ESCAPED_BASE + 0x7f)}]`, 'g')
+const restoreEscaped = (s: string): string => s.replace(ESCAPED_STAND_IN, (c) => String.fromCharCode(c.charCodeAt(0) - ESCAPED_BASE))
+
+function stripMdSyntax(s: string): string {
   return s
     .split('\n')
     .map(line => {
