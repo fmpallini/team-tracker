@@ -206,3 +206,15 @@ describe('focusItemInPane', () => {
     expect(frames).toHaveLength(0)
   })
 })
+
+test('findMatchRanges highlights the right characters in decomposed text and never throws on Hangul', () => {
+  const nfd = `ac${String.fromCharCode(0x327)}a${String.fromCharCode(0x303)}o `.repeat(40)
+  const hangul = `${String.fromCharCode(0xd55c, 0xae00)} `.repeat(60)
+  for (const prefix of [nfd, hangul]) {
+    const root = document.createElement('div')
+    root.textContent = `${prefix}TARGETWORD tail`
+    const ranges = findMatchRanges(root, ['targetword'])
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0]!.toString()).toBe('TARGETWORD')
+  }
+})

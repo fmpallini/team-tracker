@@ -12,7 +12,7 @@
 // These tests compare against that pipeline directly rather than against
 // hand-written expectations, so they check the property that matters rather
 // than a transcription of it.
-import { normalize } from '../src/core/search'
+import { normalize, normalizeWithOffsets } from '../src/core/search'
 
 /** What `normalize` is required to be equivalent to — the whole of its old implementation. */
 const reference = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -78,4 +78,50 @@ test('normalizing precomposed Latin-1 text preserves its character count', () =>
   // normalized text, which only works while the two stay the same length.
   const sample = 'Reunião de ORÇAMENTO às três'
   expect(normalize(sample)).toHaveLength(sample.length)
+})
+
+describe('normalizeWithOffsets (maps a normalized index back to the original text when normalize() reshapes it)', () => {
+  const COMBINING_CEDILLA = String.fromCharCode(0x327)
+  const COMBINING_TILDE = String.fromCharCode(0x303)
+
+  test('plain ASCII and precomposed Latin-1 text need no offsets (the hot path stays allocation-free)', () => {
+    expect(normalizeWithOffsets('Hello World')).toEqual({ normalized: 'hello world', offsets: null })
+    expect(normalizeWithOffsets('Reunião ORÇAMENTO')).toEqual({ normalized: 'reuniao orcamento', offsets: null })
+  })
+
+  test('decomposed accents shrink the text; every normalized index maps back to its source character', () => {
+    const s = `ac${COMBINING_CEDILLA}a${COMBINING_TILDE}o x`
+    const { normalized, offsets } = normalizeWithOffsets(s)
+    expect(normalized).toBe('acao x')
+    expect(offsets).toHaveLength(normalized.length + 1)
+    expect(offsets![5]).toBe(7) // the "x"
+    expect(offsets![normalized.length]).toBe(s.length)
+  })
+
+  test('Hangul expands to jamo; the trailing text still maps back', () => {
+    const s = `${String.fromCharCode(0xd55c)} x`
+    const { normalized, offsets } = normalizeWithOffsets(s)
+    expect(normalized).toBe(normalize(s))
+    expect(normalized.endsWith(' x')).toBe(true)
+    expect(offsets![normalized.length - 1]).toBe(2)
+  })
+
+  test('for every character up to U+2FFF: the normalized text equals normalize(), and any offsets are non-decreasing and end at the original length', () => {
+    const bad: string[] = []
+    for (let cp = 0; cp <= 0x2fff; cp++) {
+      const s = `a${String.fromCodePoint(cp)}b`
+      const { normalized, offsets } = normalizeWithOffsets(s)
+      const ok = normalized === normalize(s)
+        && (offsets === null || (offsets.length === normalized.length + 1 && offsets[offsets.length - 1] === s.length && offsets.every((o, i) => i === 0 || o >= offsets[i - 1]!)))
+      if (!ok) bad.push(`U+${cp.toString(16).padStart(4, '0')}`)
+    }
+    expect(bad).toEqual([])
+  })
+
+  test('a string whose per-character mapping cannot reproduce normalize() (Greek final sigma) returns no offsets', () => {
+    const s = `${String.fromCharCode(0x391, 0x3a3)} ${String.fromCharCode(0x391, 0x3a3)}`
+    const { normalized, offsets } = normalizeWithOffsets(s)
+    expect(normalized).toBe(normalize(s))
+    expect(offsets).toBeNull()
+  })
 })

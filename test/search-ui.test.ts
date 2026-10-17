@@ -545,3 +545,21 @@ test('clicking a result while a card refuses to close keeps the dropdown open an
     card.close()
   }
 })
+
+test('highlights the original characters when the note holds decomposed (NFD) accents', () => {
+  const decomposed = `ac${String.fromCharCode(0x327)}a${String.fromCharCode(0x303)}o`
+  const team: Team = {
+    id: 'T1', name: 'Team One', emoji: '🚀',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-01': `Reuniao sobre ${decomposed} hoje com o time` },
+  }
+  const store = buildStore([team], 'T1')
+  const { input } = mount(store, fakePM())
+
+  type(input, 'acao')
+  vi.advanceTimersByTime(350)
+
+  const marks = document.querySelectorAll('.tt-search-snippet mark')
+  expect(marks).toHaveLength(1)
+  expect(marks[0]!.textContent).toBe(decomposed)
+})

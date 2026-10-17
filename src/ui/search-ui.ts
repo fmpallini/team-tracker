@@ -5,7 +5,7 @@ import type { Shell } from './shell'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
-import { normalize, type SearchResult, type SearchIndex } from '../core/search'
+import { normalize, normalizeWithOffsets, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
 import { revealLoc } from './reveal-loc'
@@ -16,15 +16,15 @@ import { icon as strokeIcon, kindIcon } from './icons'
 const DEBOUNCE_MS = 300
 
 /**
- * Builds the highlighted snippet DOM. `snippet` and `normalize(snippet)` are
- * index-aligned (see core/search.ts's `normalize` doc comment: it preserves
- * character count for the accented Latin text this app handles), so term
- * positions found in the normalized snippet slice directly into the original
- * display text. Built entirely from text nodes and `<mark>` elements (no
+ * Builds the highlighted snippet DOM. Term positions found in
+ * `normalize(snippet)` are mapped back into the original display text through
+ * `normalizeWithOffsets` (a straight copy for the accented Latin text this app
+ * mostly holds; a real map for NFD-decomposed accents and Hangul). Built entirely from text nodes and `<mark>` elements (no
  * innerHTML) since snippet content comes from user-authored notes.
  */
 function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms: string[]): void {
-  const normalized = normalize(snippet)
+  const { normalized, offsets } = normalizeWithOffsets(snippet)
+  const at = (i: number): number => Math.min(offsets ? offsets[i]! : i, snippet.length)
   const ranges: [number, number][] = []
   for (const term of terms) {
     if (!term) continue
@@ -32,7 +32,7 @@ function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms
     for (;;) {
       const idx = normalized.indexOf(term, from)
       if (idx < 0) break
-      ranges.push([idx, idx + term.length])
+      ranges.push([at(idx), at(idx + term.length)])
       from = idx + term.length
     }
   }
