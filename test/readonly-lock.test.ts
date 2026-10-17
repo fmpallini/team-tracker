@@ -1,6 +1,7 @@
 import { setReadOnlyLock, READONLY_TOAST_KEY } from '../src/ui/readonly-lock'
 import { t } from '../src/core/i18n'
 import { createDatePicker } from '../src/ui/date-picker'
+import { createEditor } from '../src/ui/editor'
 
 const lc = (): 'en-US' => 'en-US'
 const toasts = (): Element[] => Array.from(document.querySelectorAll(`.tt-toast[data-toast-key="${READONLY_TOAST_KEY}"]`))
@@ -150,6 +151,25 @@ test('read-only: navigation buttons and exempt fields keep working', () => {
   $('.nav').click()
   expect(nav).toHaveBeenCalledTimes(1)
   expect(fire($('.search'), beforeInput()).defaultPrevented).toBe(false)
+})
+
+test('read-only: editor formatting buttons are refused; copy and help are not', () => {
+  const editor = createEditor({ onChange() {}, onRefClick() {}, onAtTrigger() {}, onSlashTrigger() {} }, 'en-US')
+  document.body.appendChild(editor.root)
+  editor.setMd('a')
+  const button = (key: Parameters<typeof t>[1]): HTMLButtonElement =>
+    Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-btn')).find((b) => b.title === t('en-US', key))!
+  try {
+    setReadOnlyLock(true, lc)
+    button('editor_hr_title').click()
+    expect(editor.getMd()).toBe('a')
+    expect(toasts()).toHaveLength(1)
+
+    button('editor_copy_options_title').click()
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
+  } finally {
+    editor.destroy()
+  }
 })
 
 test('every refused attempt says why, as one toast that does not stack', () => {

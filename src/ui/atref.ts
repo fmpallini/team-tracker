@@ -216,6 +216,8 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   }
 
   function commit(item: AtItem | undefined): void {
+    // The tab went read-only (ui/editor.ts's setEditorsReadOnly) while this was open.
+    if (editorEl!.getAttribute('contenteditable') === 'false') { close(); return }
     if (!item || !lastLoc) return
     const { block, atOffset, caretOffset } = lastLoc
     const range = rangeForTextOffsets(block, atOffset, caretOffset)

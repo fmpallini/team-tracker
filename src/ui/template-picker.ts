@@ -154,7 +154,8 @@ export function attachTemplatePicker(editor: Editor, opts: {
   }
 
   function commit(tpl: Template | undefined): void {
-    if (!tpl) { close(); return }
+    // The tab went read-only (ui/editor.ts's setEditorsReadOnly) while this was open.
+    if (!tpl || editorEl!.getAttribute('contenteditable') === 'false') { close(); return }
     const ctx = triggerCtx
     // Close (and detach the typing listeners) before mutating the document:
     // the inserted template's own text may start a fresh line, and if

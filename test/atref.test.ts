@@ -326,6 +326,22 @@ describe('attachAtAutocomplete', () => {
     expect(preCaret.toString()).toBe('@Ana ')
   })
 
+  test('a dropdown left open when the editor goes read-only inserts no chip on Enter', () => {
+    const { editorEl, picks } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+    setBlockText(editorEl, '@An')
+    fireInput(editorEl)
+    editorEl.setAttribute('contenteditable', 'false') // what setEditorsReadOnly(true) does
+
+    fireKey(editorEl, 'Enter')
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(editorEl.querySelector('a.ref')).toBeNull()
+    expect(editorEl.textContent).toBe('@An')
+    expect(picks).toEqual([])
+  })
+
   test('Escape cancels and leaves the literal @text as typed', () => {
     const { editorEl, picks } = setup()
     setBlockText(editorEl, '@')

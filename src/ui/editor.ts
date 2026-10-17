@@ -1319,7 +1319,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const initUrl = anchor ? anchor.getAttribute('href') ?? '' : ''
 
     const res = await promptLink({ text: initText, url: initUrl, editing: anchor !== null })
-    if (res === null) return
+    // The tab may have gone read-only while the dialog was open.
+    if (res === null || editorsReadOnly) return
     if ('remove' in res) {
       // "Remove link": replace the <a> with its own children (its text, plus
       // any inner formatting), drop the caret after them, and merge adjacent
@@ -1635,6 +1636,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   ]
 
   function onKeydown(e: KeyboardEvent): void {
+    // Every branch below edits the DOM directly, which contenteditable="false"
+    // does not stop; a read-only editor leaves keys to the browser.
+    if (editorsReadOnly) return
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the
@@ -1795,6 +1799,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onPaste(e: ClipboardEvent): void {
     e.preventDefault()
+    if (editorsReadOnly) return
     // A paste that touches a fenced code block is always literal text —
     // never markdown / HTML — so a copied snippet keeps its own punctuation
     // and no block markup gets spliced into the `<pre>`.
@@ -1860,6 +1865,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onCut(e: ClipboardEvent): void {
+    // A read-only editor still lets the selection be copied; it just can't lose it.
+    if (editorsReadOnly) { writeSelectionToClipboard(e); return }
     if (!writeSelectionToClipboard(e)) return
     const sel = window.getSelection()
     sel?.getRangeAt(0).deleteContents()
@@ -2049,8 +2056,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton(icon('template'), t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton(icon('at'), t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
-    toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
-    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale))
+    // Read-only safe: ui/readonly-lock.ts refuses every other toolbar button in a read-only tab.
+    toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn), 'tt-editor-btn-readonly-safe'),
+    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale), 'tt-editor-btn-readonly-safe')
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl)

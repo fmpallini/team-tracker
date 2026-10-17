@@ -8,7 +8,8 @@
 // input (beforeinput), select keys/clicks, checkboxes, date pickers, drag,
 // number-input ArrowUp/ArrowDown and wheel stepping (neither fires beforeinput),
 // and IME / dead-key composition (its beforeinput is not cancelable, so
-// compositionstart blurs the field instead). Navigation (buttons,
+// compositionstart blurs the field instead), and the rich editors' toolbar
+// buttons (the editors guard their own keyboard/clipboard paths). Navigation (buttons,
 // @mention chips, menus) is untouched. Containers marked data-readonly-exempt
 // (the search box, the palette, the password prompt a takeover reload may
 // raise while still read-only) keep working.
@@ -25,7 +26,10 @@ export function isReadOnlyLocked(): boolean {
 /** Click targets that edit without being a form control. */
 // The date picker's popover lives on document.body, outside .tt-date-picker, so
 // it is listed on its own (one already open when the lock armed must refuse too).
-const EDITING_CLICK_TARGETS = '.tt-date-picker, .tt-date-picker-popover, .tt-kanban-color-row button'
+// A rich editor's toolbar buttons edit its DOM directly (not through typing),
+// so they are refused here too — all but copy and help, which only read.
+const EDITING_CLICK_TARGETS =
+  '.tt-date-picker, .tt-date-picker-popover, .tt-kanban-color-row button, .tt-editor-toolbar .tt-editor-btn:not(.tt-editor-btn-readonly-safe)'
 
 /** Keys that open or change a focused <select> (a hotkey chord or bare modifier is not one). */
 const SELECT_EDIT_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', ' ', 'Enter'])

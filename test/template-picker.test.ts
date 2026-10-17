@@ -128,6 +128,19 @@ describe('attachTemplatePicker', () => {
     expect(rowsAfter[0]!.classList.contains('selected')).toBe(false)
   })
 
+  test('a picker left open when the editor goes read-only inserts nothing on Enter', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+    editorEl.setAttribute('contenteditable', 'false') // what setEditorsReadOnly(true) does
+
+    fireKey(editorEl, 'Enter')
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(editorEl.querySelector('h2')).toBeNull()
+    expect(editorEl.textContent).toBe('/')
+  })
+
   test('Enter removes the "/" and inserts the resolved, parsed template; caret lands at the end', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '/')

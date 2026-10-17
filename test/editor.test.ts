@@ -3578,4 +3578,117 @@ describe('setEditorsReadOnly', () => {
       a.destroy()
     }
   })
+
+  // The toolbar is refused by ui/readonly-lock.ts's click guard (see
+  // test/readonly-lock.test.ts); these are the editor's own entry points.
+  function mountRo(md: string): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    return { editor, editorEl: editor.root.querySelector('.editor') as HTMLElement }
+  }
+  function clipboardEvent(type: 'cut' | 'paste', data: Record<string, string>): ClipboardEvent {
+    const clipboardData = {
+      setData: (fmt: string, val: string) => { data[fmt] = val },
+      getData: (fmt: string) => data[fmt] ?? '',
+    } as unknown as DataTransfer
+    const event = new Event(type, { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    return event
+  }
+  function placeCaret(node: Node, offset: number): void {
+    const r = document.createRange()
+    r.setStart(node, offset)
+    r.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+
+  test('read-only: cut copies the selection but removes nothing', () => {
+    const { editor, editorEl } = mountRo('cut **me** out')
+    try {
+      const r = document.createRange()
+      r.selectNodeContents(editorEl)
+      const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(r)
+      setEditorsReadOnly(true)
+      const data: Record<string, string> = {}
+      editorEl.dispatchEvent(clipboardEvent('cut', data))
+      expect(data['text/html']).toContain('<strong>me</strong>')
+      expect(editor.getMd()).toBe('cut **me** out')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: paste inserts nothing', () => {
+    const { editor, editorEl } = mountRo('a')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    try {
+      placeCaret(editorEl.querySelector('div')!.firstChild!, 1)
+      setEditorsReadOnly(true)
+      const event = clipboardEvent('paste', { 'text/plain': 'pasted', 'text/html': '<b>pasted</b>' })
+      editorEl.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(execSpy).not.toHaveBeenCalled()
+      expect(editor.getMd()).toBe('a')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: Tab in a list item moves nothing and is left to the browser', () => {
+    const { editor, editorEl } = mountRo('- a\n- b')
+    try {
+      placeCaret(editorEl.querySelectorAll('li')[1]!.firstChild!, 1)
+      setEditorsReadOnly(true)
+      // Keep the event inside the editor: a modal leaked by an earlier test in
+      // this file traps Tab at the document level.
+      editor.root.addEventListener('keydown', (ev) => ev.stopPropagation())
+      const e = dispatchKey(editorEl, { key: 'Tab' })
+      expect(e.defaultPrevented).toBe(false)
+      expect(editor.getMd()).toBe('- a\n- b')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: Enter on a "---" line converts nothing', () => {
+    const { editor, editorEl } = mountRo('a')
+    try {
+      editorEl.innerHTML = '<div>---</div>'
+      placeCaret(editorEl.firstChild!.firstChild!, 3)
+      setEditorsReadOnly(true)
+      dispatchKey(editorEl, { key: 'Enter' })
+      expect(editorEl.querySelector('hr')).toBeNull()
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: a link dialog left open when the lock arms inserts nothing on OK', async () => {
+    const { editor, editorEl } = mountRo('a')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    try {
+      placeCaret(editorEl.querySelector('div')!.firstChild!, 1)
+      dispatchKey(editorEl, { key: 'k', ctrlKey: true })
+      await Promise.resolve()
+      setEditorsReadOnly(true)
+      const url = document.querySelector('.tt-modal-dialog input[name="tt-link-url"]') as HTMLInputElement
+      url.value = 'https://example.com'
+      const ok = Array.from(document.querySelectorAll('.tt-modal-dialog button')).find((b) => b.textContent === t('en-US', 'ok')) as HTMLButtonElement
+      ok.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(execSpy.mock.calls.some((c) => c[0] === 'insertText')).toBe(false)
+      expect(editor.getMd()).toBe('a')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
 })
