@@ -3,7 +3,7 @@
 // @ref chip clicks, and @/  triggers for Tasks 16/17.
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
-import { el, clampToViewport } from './dom'
+import { el, clampToViewport, copyText } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showEditorHelp } from './help'
@@ -355,6 +355,32 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
+  /** This editor's markdown → HTML: live ref labels plus the chip and link hover hints. */
+  function renderMd(md: string): string {
+    return mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+  }
+
+  /** `md` (one line) rendered as inline nodes, ready to splice into a block: mdToHtml wraps a bare line in a <div>, whose children are lifted out. */
+  function inlineFragment(md: string): DocumentFragment {
+    const tmp = document.createElement('div')
+    tmp.innerHTML = renderMd(md)
+    const wrapper = tmp.firstElementChild ?? tmp
+    const frag = document.createDocumentFragment()
+    while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+    return frag
+  }
+
+  /** Collapses the live selection to the start of `node`'s contents — where a freshly built or converted block takes the caret. */
+  function placeCaretAtStart(node: Node): void {
+    const sel = window.getSelection()
+    if (!sel) return
+    const r = document.createRange()
+    r.selectNodeContents(node)
+    r.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+
   // --- caret/block helpers --------------------------------------------------
   // The block-walk and the text-offset→Range mapping now live in
   // ./editor-dom.ts, shared with atref.ts / template-picker.ts. This wrapper
@@ -491,10 +517,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if ((block.textContent ?? '').trim() === '') block.replaceWith(div)
     else block.after(div)
 
-    const r = document.createRange()
-    r.selectNodeContents(div)
-    r.collapse(true)
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(div)
   }
 
   function listItemDepth(li: HTMLElement): number {
@@ -760,11 +783,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const bq = document.createElement('blockquote')
     bq.appendChild(document.createElement('br'))
     block.replaceWith(bq)
-    const r = document.createRange()
-    r.selectNodeContents(bq)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(bq)
   }
 
   // A <pre>'s literal text lines — collapse threshold, the copy button and
@@ -782,11 +801,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const pre = document.createElement('pre')
     pre.appendChild(document.createElement('br'))
     block.replaceWith(pre)
-    const r = document.createRange()
-    r.selectNodeContents(pre)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(pre)
   }
 
   /**
@@ -807,13 +822,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     pre.replaceWith(frag)
     const first = divs[0]
-    if (first) {
-      const r = document.createRange()
-      r.selectNodeContents(first)
-      r.collapse(true)
-      const sel = window.getSelection()
-      if (sel) { sel.removeAllRanges(); sel.addRange(r) }
-    }
+    if (first) placeCaretAtStart(first)
   }
 
   /**
@@ -888,11 +897,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const list = document.createElement(type)
     list.appendChild(li)
     block.replaceWith(list)
-    const r = document.createRange()
-    r.selectNodeContents(li)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(li)
   }
 
   /**
@@ -906,11 +911,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const next = document.createElement('div')
     next.appendChild(document.createElement('br'))
     block.replaceWith(hr, next)
-    const r = document.createRange()
-    r.selectNodeContents(next)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(next)
   }
 
   /**
@@ -945,11 +946,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       else editorEl.append(hr, next)
       caretTarget = next
     }
-    const r = document.createRange()
-    r.selectNodeContents(caretTarget)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(caretTarget)
     scheduleChange()
   }
 
@@ -1052,12 +1049,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const range = rangeForTextOffsets(block, start, caretOffset)
       if (!range.cloneContents().querySelector('*')) {
         range.deleteContents()
-        const tmp = document.createElement('div')
-        tmp.innerHTML = mdToHtml(`[${linkM[1]!}](${linkUrl})`, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
-        // mdToHtml wraps a bare line in <div>…</div>; lift its children out.
-        const frag = document.createDocumentFragment()
-        const wrapper = tmp.firstElementChild ?? tmp
-        while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+        const frag = inlineFragment(`[${linkM[1]!}](${linkUrl})`)
         const lastNode = frag.lastChild
         range.insertNode(frag)
         if (lastNode) caretAfterInline(lastNode, 'none')
@@ -1349,11 +1341,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (anchor && editorEl.contains(anchor)) {
       // Swap the <a> node directly — see the doc comment for why insertText
       // over a selectNode(anchor) selection can't do this cleanly.
-      const tmp = document.createElement('div')
-      tmp.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
-      const wrapper = tmp.firstElementChild ?? tmp // mdToHtml wraps a bare line in <div>
-      const frag = document.createDocumentFragment()
-      while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+      const frag = inlineFragment(md)
       const lastNode = frag.lastChild
       anchor.replaceWith(frag)
       if (lastNode) caretAfterInline(lastNode, 'none')
@@ -1416,36 +1404,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     document.body.removeChild(wrapper)
   }
 
-  /** Fallback for browsers/contexts (e.g. file:// with no Clipboard API) where navigator.clipboard is unavailable — the classic hidden-textarea + execCommand('copy') technique. */
-  function copyViaTextarea(text: string): void {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy', false, undefined)
-    document.body.removeChild(ta)
-  }
-
   /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved). */
   function copyPlain(): void {
-    const text = htmlToPlainText(editorEl)
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
-    } else {
-      copyViaTextarea(text)
-    }
+    copyText(htmlToPlainText(editorEl))
   }
 
   /** Copies the editor's current content to the clipboard as its raw markdown source (the same text the field is stored as). */
   function copyMarkdown(): void {
-    const text = htmlToMd(editorEl)
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
-    } else {
-      copyViaTextarea(text)
-    }
+    copyText(htmlToMd(editorEl))
   }
 
   // --- copy-options menu (🗐 toolbar button) --------------------------------
@@ -1813,7 +1779,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const html = e.clipboardData?.getData('text/html')
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
-      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
+      document.execCommand('insertHTML', false, renderMd(md))
       // insertHTML nests a multi-block fragment inside the caret's block when
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
@@ -2249,11 +2215,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     else hideCbControlsSoon()
   }
 
-  function copyText(text: string): void {
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
-    else copyViaTextarea(text)
-  }
-
   function onCbCopy(): void {
     if (!cbActivePre) return
     copyText(preLines(cbActivePre).join('\n'))
@@ -2299,7 +2260,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // not flush — unlike destroy(), the pending change here belongs to
     // content that is being replaced outright.
     cancelChange()
-    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+    editorEl.innerHTML = renderMd(md)
     decorateCodeBlocks(true)
     // Paint the freshly-loaded blocks now. This used to happen by accident:
     // with a `selectionchange` listener per editor, the very next caret move
