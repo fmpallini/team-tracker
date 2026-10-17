@@ -156,11 +156,19 @@ export function showStartScreen(
     return e.path ? t(locale, 'err_invalid_shape', { path: e.path }) : t(locale, 'err_corrupt_file')
   }
 
+  // Set the moment any explicit open starts (picker, reopen-last, OS launch,
+  // fallback file, create). Auto-open-last checks it before acting: it runs
+  // concurrently from mount, and whichever onOpen landed last would otherwise
+  // win — replacing the file the user just chose or double-clicked.
+  let openStarted = false
+
   // Shared by every "get a {session, bytes} pair, then decrypt it" open
-  // route (picker, reopen-last, File Handling API launch) — they differ only
-  // in how the pair is obtained. A plain (password-less) file is sniffed
-  // first so it can open directly, without ever prompting for a password.
+  // route (picker, reopen-last, File Handling API launch, fallback file) —
+  // they differ only in how the pair is obtained. A plain (password-less)
+  // file is sniffed first so it can open directly, without ever prompting
+  // for a password.
   async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
+    openStarted = true
     const result = await fetchResult()
     if (!result) return
     let plain: OpenedDoc | null
@@ -189,33 +197,13 @@ export function showStartScreen(
   const handleReopenLast = (): Promise<void> => openAndDecrypt(reopenLast)
   const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
 
-  async function handleOpenFallbackFile(file: File): Promise<void> {
-    const buf = await file.arrayBuffer()
-    const bytes = new Uint8Array(buf)
-    const session: FileSession = { handle: null, name: file.name, lastModified: file.lastModified }
-    let plain: OpenedDoc | null
-    try {
-      plain = parsePlainWithVersion(bytes)
-    } catch (e) {
-      if (e instanceof CorruptFileError) {
-        showErrorModal(locale, corruptMessage(e))
-        return
-      }
-      if (e instanceof SchemaTooNewError) {
-        showErrorModal(locale, t(locale, 'err_schema_too_new'))
-        return
-      }
-      throw e
-    }
-    if (plain) {
-      onOpen(session, plain.doc, null, migratedFromFor(plain, bytes))
-      return
-    }
-    const outcome = await decryptLoop(bytes)
-    if (outcome) onOpen(session, outcome.doc, outcome.password, outcome.migratedFrom)
-  }
+  const handleOpenFallbackFile = (file: File): Promise<void> => openAndDecrypt(async () => ({
+    session: { handle: null, name: file.name, lastModified: file.lastModified },
+    bytes: new Uint8Array(await file.arrayBuffer()),
+  }))
 
   async function handleCreate(): Promise<void> {
+    openStarted = true
     if (supportsFsApi) {
       const session = await pickCreate(SUGGESTED_NAME)
       if (!session) return
@@ -394,7 +382,8 @@ export function showStartScreen(
     // just chose to leave this exact file, so re-opening it right back
     // would trap them (open/create would be unreachable). The checkbox still
     // reflects/edits the pref; only the immediate re-open is suppressed.
-    if (autoLoad && !opts?.skipAutoLoad) {
+    // ...and an open the user (or the OS launch) already started wins outright.
+    if (autoLoad && !opts?.skipAutoLoad && !openStarted) {
       onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes))
     }
   }
