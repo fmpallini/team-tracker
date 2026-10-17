@@ -126,7 +126,7 @@ export function createCalendar(opts: {
         const pending = milestoneEntries.some((m) => !m.done)
         dayBtn.appendChild(el('span', {
           class: 'tt-calendar-flag', 'data-state': pending ? 'pending' : 'done', title: milestoneEntries.map((m) => m.label).join(', '),
-        }, icon(pending ? 'flag' : 'check', 11)))
+        }, icon(pending ? 'flag' : 'flagFill', 11)))
       }
 
       const actionEntries = opts.marks.actionItems(iso)
@@ -134,7 +134,7 @@ export function createCalendar(opts: {
         const pending = actionEntries.some((a) => !a.resolved)
         dayBtn.appendChild(el('span', {
           class: 'tt-calendar-check', 'data-state': pending ? 'pending' : 'done', title: actionEntries.map((a) => a.label).join(', '),
-        }, icon(pending ? 'clock' : 'check', 11)))
+        }, icon(pending ? 'checkbox' : 'tasks', 11)))
       }
 
       grid.appendChild(dayBtn)

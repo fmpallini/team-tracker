@@ -104,7 +104,7 @@ describe('createCalendar marks', () => {
 
     const flag = dayButtonFor(root, 20).querySelector('.tt-calendar-flag')!
     expect(flag.getAttribute('data-state')).toBe('done')
-    expect(flag.querySelector('.tt-icon-check')).not.toBeNull()
+    expect(flag.querySelector('.tt-icon-flagFill')).not.toBeNull()
   })
 
   test('actionItems(day) renders a pending clock icon (any not resolved) with a title of the joined labels', () => {
@@ -118,7 +118,7 @@ describe('createCalendar marks', () => {
     const check = dayButtonFor(root, 20).querySelector('.tt-calendar-check')
     expect(check).not.toBeNull()
     expect(check!.getAttribute('data-state')).toBe('pending')
-    expect(check!.querySelector('.tt-icon-clock')).not.toBeNull()
+    expect(check!.querySelector('.tt-icon-checkbox')).not.toBeNull()
     expect(check!.getAttribute('title')).toBe('Ship report (To Do), Review budget (Done)')
     expect(dayButtonFor(root, 21).querySelector('.tt-calendar-check')).toBeNull()
   })
@@ -133,7 +133,7 @@ describe('createCalendar marks', () => {
 
     const check = dayButtonFor(root, 20).querySelector('.tt-calendar-check')!
     expect(check.getAttribute('data-state')).toBe('done')
-    expect(check.querySelector('.tt-icon-check')).not.toBeNull()
+    expect(check.querySelector('.tt-icon-tasks')).not.toBeNull()
   })
 })
 

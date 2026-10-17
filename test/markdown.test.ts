@@ -1389,3 +1389,40 @@ describe('very long single lines cannot freeze the renderer', () => {
     expect(html).toContain('<strong>b</strong>')
   })
 })
+
+describe('htmlToMd: containers holding blocks', () => {
+  const md = (html: string): string => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    return htmlToMd(root)
+  }
+
+  test('a div holding blocks keeps each block on its own line (Wikipedia shape)', () => {
+    expect(md('<div><h2>History<span>[edit]</span></h2><p>Some <b>text</b></p><figure><img src="x"><figcaption>Caption</figcaption></figure><h4>Sub</h4><p>end</p></div>'))
+      .toBe('## History[edit]\nSome **text**\nCaption\n### Sub\nend')
+  })
+
+  test('VS Code line divs inside one pre-styled div stay separate lines', () => {
+    expect(md('<div style="white-space: pre;"><div><span>const</span> x = 1</div><div>  return y</div><div><br></div><div>}</div></div>'))
+      .toBe('const x = 1\n  return y\n\n}')
+  })
+
+  test('a custom-element wrapper holding a style tag still yields its table rows (Google Sheets)', () => {
+    expect(md('<google-sheets-html-origin><style>td{}</style><table><tbody><tr><td>Name</td><td>Qty</td></tr><tr><td>Ana</td><td>3</td></tr></tbody></table></google-sheets-html-origin>'))
+      .toBe('Name | Qty\nAna | 3')
+  })
+
+  test('inline runs between blocks join into one line and br splits them (Slack shape)', () => {
+    expect(md('<span>hello <b>world</b></span><br><span>line two</span><br><ul><li>x</li></ul>'))
+      .toBe('hello **world**\nline two\n- x')
+  })
+
+  test('Outlook WordSection wrapper keeps its paragraphs apart', () => {
+    expect(md('<div class="WordSection1"><p>Oi time,</p><div><p><b>From:</b> Ana</p></div><blockquote><p>original</p></blockquote></div>'))
+      .toBe('Oi time,\n**From:** Ana\n> original')
+  })
+
+  test('head, title, style, script and template content never becomes text', () => {
+    expect(md('<title>T</title><style>.a{}</style><div>x</div><script>y</script><template>z</template>')).toBe('x')
+  })
+})

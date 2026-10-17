@@ -2214,9 +2214,9 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-due-row .tt-due-row-icon { display: inline-flex; flex: none; }
 .tt-due-row.overdue .tt-kind-icon { color: var(--danger); }
 .tt-due-row.soon .tt-kind-icon { color: var(--brass); }
-/* Calendar corner markers are stroke icons now; the state (not the glyph alone) carries the color. */
-.tt-calendar-flag[data-state=pending] { color: var(--danger); }
-.tt-calendar-check[data-state=pending] { color: var(--brass); }
+/* Calendar corner markers are stroke icons: pending ones wear their module's kind color (.tt-kind-milestones / .tt-kind-actions), done ones share the "all good" green. */
+.tt-calendar-flag[data-state=pending] { color: var(--brass); }
+.tt-calendar-check[data-state=pending] { color: var(--card-sage); }
 .tt-calendar-flag[data-state=done], .tt-calendar-check[data-state=done] { color: var(--ok); }
 .tt-calendar-flag, .tt-calendar-check { display: inline-flex; }
 

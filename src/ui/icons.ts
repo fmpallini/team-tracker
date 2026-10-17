@@ -48,6 +48,8 @@ const PATHS = {
   orgchart:
     '<rect x="5.5" y="2" width="5" height="3.5" rx="1"/><path d="M8 5.5V8M4 10.5V8h8v2.5"/><rect x="1.75" y="10.5" width="4.5" height="3.5" rx="1"/><rect x="9.75" y="10.5" width="4.5" height="3.5" rx="1"/>',
   flag: '<path d="M4 14V2.5M4 3h8l-2 3 2 3H4"/>',
+  // Filled pennant: a reached milestone on the calendar (the outline `flag` is an open one).
+  flagFill: '<path class="f" d="M4 3h8l-2 3 2 3H4z"/><path d="M4 14V2.5M4 3h8l-2 3 2 3H4"/>',
   alert: '<path d="M8 2.5l6 10.5H2z"/><path d="M8 6.75v3"/><circle class="f" cx="8" cy="11.4" r=".8"/>',
   resolve: '<path d="M8 2l5 1.75v4c0 3-2.1 5-5 6.25C5.1 13.25 3 11.25 3 8.25v-4z"/><path d="M5.75 8l1.75 1.75 3-3.25"/>',
   folder: '<path d="M2.5 4.5a1 1 0 0 1 1-1h3L8 5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',
@@ -73,6 +75,8 @@ const PATHS = {
   people:
     '<circle cx="6" cy="5.75" r="2.25"/><circle cx="11.5" cy="6.5" r="1.75"/><path d="M1.75 13c.4-2.3 2.1-3.6 4.25-3.6s3.85 1.3 4.25 3.6M10.5 9.6c1.9 0 3.2 1.1 3.75 3.1"/>',
   tasks: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5.5 8.2l1.9 1.9 3.2-3.8"/>',
+  // The unticked half of `tasks`/`check`: an open action on the calendar.
+  checkbox: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>',
   fileAdd: '<path d="M4 2.5h5.5l3 3v8H4zM9.5 2.5v3h3M8.25 8v3.5M6.5 9.75H10"/>',
   offline: '<path d="M1.75 6.25a8.5 8.5 0 0 1 12.5 0M4 8.75a5.5 5.5 0 0 1 8 0M6.25 11.25a2.5 2.5 0 0 1 3.5 0M2.5 2.5l11 11"/><circle class="f" cx="8" cy="13.2" r=".8"/>',
   code: '<path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/>',
