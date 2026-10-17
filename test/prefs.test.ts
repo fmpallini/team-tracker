@@ -1,6 +1,7 @@
 import { openPrefs, onLocaleChanged, notifyLocaleChanged, type PrefsAppCtl } from '../src/ui/prefs'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
+import { t } from '../src/core/i18n'
 import type { ChangeScope } from '../src/core/scope'
 import { createEmptyDocument } from '../src/core/document'
 import { builtinTemplates } from '../src/core/templates'
@@ -1719,6 +1720,79 @@ describe('Data tab: cross-team tags section', () => {
     expect(store.doc.teams.find((t) => t.id === 't1')!.actionTagNames).toEqual({ rust: 'Urgent' })
     expect(store.doc.teams.find((t) => t.id === 't2')!.actionTagNames).toEqual({ rust: 'Urgent' })
     expect(store.doc.teams.find((t) => t.id === 't3')!.actionTagNames).toEqual({ rust: 'Urgent' })
+  })
+})
+
+// A read-only tab's store.update() is blocked, so the Data tab's writes must
+// neither be offered (disabled at render) nor announce success when the lock
+// is lost while the tab is already open.
+describe('Data tab in a read-only tab', () => {
+  const toastTexts = (): string[] => Array.from(document.querySelectorAll('.tt-toast')).map((n) => n.textContent ?? '')
+  const buttonByText = (text: string): HTMLButtonElement =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-prefs-content button')).find((b) => b.textContent === text)!
+  function twoTeams(store: Store): void {
+    store.update((d) => {
+      const a = sampleTeam()
+      a.actionTagNames = { rust: 'Urgent' }
+      a.actionItems.push({ id: 'done1', summary: 'x', notes: '', status: 'done', dueDate: null, assignee: '', color: 'ledger', order: 1 })
+      const b = sampleTeam()
+      b.id = 't2'
+      b.name = 'Beta'
+      b.actionTagNames = { rust: 'Old' }
+      d.teams.push(a, b)
+    })
+  }
+
+  test('import, cleanup and tag cross-apply are disabled, with the read-only notice as their tooltip', () => {
+    const { store, shell, appCtl } = setup()
+    twoTeams(store)
+    openPrefs(store, shell, 'en-US', { ...appCtl, isReadOnly: () => true })
+    clickTab('Data')
+    for (const key of ['data_import_pick_btn', 'data_cleanup_btn', 'tags_cross_apply_btn'] as const) {
+      const btn = buttonByText(t('en-US', key))
+      expect(btn.disabled).toBe(true)
+      expect(btn.title).toBe(t('en-US', 'readonly_blocked_toast'))
+    }
+  })
+
+  test('lock lost while open: tag cross-apply changes nothing and claims no success', () => {
+    const { store, shell, appCtl } = setup()
+    twoTeams(store)
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    store.setReadOnly(true)
+    buttonByText(t('en-US', 'tags_cross_apply_btn')).click()
+    clickByText(t('en-US', 'tags_cross_apply_btn'))
+    expect(store.doc.teams[1]!.actionTagNames).toEqual({ rust: 'Old' })
+    expect(toastTexts()).not.toContain(t('en-US', 'tags_cross_apply_success_toast'))
+  })
+
+  test('lock lost while open: cleanup removes nothing and claims no success', () => {
+    const { store, shell, appCtl } = setup()
+    twoTeams(store)
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    store.setReadOnly(true)
+    clickByText(t('en-US', 'data_cleanup_btn'))
+    clickByText(t('en-US', 'data_cleanup_btn'))
+    expect(store.doc.teams[0]!.actionItems.some((a) => a.id === 'done1')).toBe(true)
+    expect(toastTexts()).not.toContain(t('en-US', 'data_cleanup_success_toast'))
+  })
+
+  test('lock lost while open: import adds nothing, claims no success, and keeps the checklist', async () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    const jsonFile = new File([JSON.stringify(buildExport([sampleTeam()]))], 'export.json', { type: 'application/json' })
+    const fileInput = document.querySelector('input[type="file"][accept=".json"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { value: [jsonFile], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+    await new Promise((r) => setTimeout(r, 0))
+    store.setReadOnly(true)
+    clickByText(t('en-US', 'data_import_btn'))
+    expect(store.doc.teams).toHaveLength(0)
+    expect(toastTexts()).not.toContain(t('en-US', 'data_import_success_toast'))
+    expect(document.querySelector('.tt-data-team-summary')).not.toBeNull()
   })
 })
 
