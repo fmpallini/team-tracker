@@ -1670,9 +1670,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         return
       }
       // ``` on its own line + Enter opens a code block too — the
-      // GitHub/Slack/Discord gesture, alongside the "``` " prefix. Only
-      // when the whole line is backticks and it's a plain top-level block.
-      if (ctx && ctx.block.parentElement === editorEl && !blockquoteAtCaret() && /^`{3,}$/.test(ctx.text.trim())) {
+      // GitHub/Slack/Discord gesture, alongside the "``` " prefix. Also with
+      // a language tag ("```js"), dropped exactly as mdToHtml drops it on
+      // load: left as text, that line would reopen as a fence swallowing the
+      // rest of the note. Only on a plain top-level block.
+      if (ctx && ctx.block.parentElement === editorEl && !blockquoteAtCaret() && /^`{3,}[^`]*$/.test(ctx.text.trim())) {
         e.preventDefault()
         convertBlockToPre(ctx.block)
         scheduleChange()

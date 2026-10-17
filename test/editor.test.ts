@@ -2369,6 +2369,49 @@ describe('code block editing', () => {
     editor.destroy()
   })
 
+  // Left as text, "```js" would reopen as a fence swallowing the rest of the
+  // note (core/markdown.ts), so it converts here — the tag dropped, as on load.
+  test('typing "```js" then Enter opens a code block too (language tag dropped, as on load)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>```js</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  test('a line with backticks after the fence ("```a```") is not a code-block gesture', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>```a```</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    editor.destroy()
+  })
+
+  test('"```js" + Enter inside a blockquote stays literal', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>```js</blockquote>'
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq.firstChild as Text, 5)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    editor.destroy()
+  })
+
   test('the ❝ quote button title lists Ctrl+Shift+Q as the alternate chord', () => {
     for (const loc of ['en-US', 'pt-BR'] as const) {
       expect(t(loc, 'editor_quote_title')).toMatch(/Ctrl\+Shift\+Q/)

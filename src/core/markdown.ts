@@ -161,7 +161,9 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
     // plain click only places the caret so the link text stays editable.
     // href is already safeHref-validated (no control chars, no `"`); esc()
     // covers the hint. htmlToMd ignores `title`, so nothing persists.
-    const titleAttr = ` title="${esc(linkHint ? `${href}\n${linkHint}` : href)}"`
+    // `href` is already escaped (it is a slice of esc(s)); escaping it again
+    // turned a URL's `&` into a visible `&amp;` in the tooltip.
+    const titleAttr = ` title="${href}${linkHint ? `\n${esc(linkHint)}` : ''}"`
     linkTags.push(`<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer nofollow">${applyMarks(text)}</a>`)
     return `${LINK_OPEN}${linkTags.length - 1}${LINK_CLOSE}`
   })
@@ -203,6 +205,23 @@ function preserveIndent(s: string): string {
   const m = /^( +)/.exec(s)
   if (!m) return s
   return '\u00a0'.repeat(m[1]!.length) + s.slice(m[1]!.length)
+}
+
+/** Length of the run of backticks a line starts with — a run of 3+ is a code fence. */
+function leadingBackticks(line: string): number {
+  let n = 0
+  while (line[n] === '`') n++
+  return n
+}
+
+/** The fence for a code block holding `lines`: ``` unless a line would close it early, then one backtick longer than the longest such line's run. */
+function fenceFor(lines: readonly string[]): string {
+  let len = 3
+  for (const l of lines) {
+    const run = leadingBackticks(l)
+    if (run >= len) len = run + 1
+  }
+  return '`'.repeat(len)
 }
 
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
@@ -274,7 +293,14 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // and htmlToPlainText still serialise the literal text — and ui/editor.ts
   // strips them from whichever block the caret is in so editing stays on
   // plain text.
+  //
+  // The fence that closes a block must be at least as long as the one that
+  // opened it (CommonMark's rule), so a block holding a ``` line is written
+  // with a longer fence (see fenceFor) and survives the round trip. Every
+  // file written before that opens with exactly ```, and for those "any line
+  // starting with ```" still closes the block — unchanged behaviour.
   let preBuf: string[] | null = null
+  let preFence = 0
   const flushPre = () => {
     if (preBuf === null) return
     const body = preBuf.join('\n')
@@ -283,10 +309,10 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   }
   for (const line of lines) {
     if (preBuf !== null) {
-      if (/^```/.test(line)) { flushPre(); continue }
+      if (leadingBackticks(line) >= preFence) { flushPre(); continue }
       preBuf.push(line); continue
     }
-    if (/^```/.test(line)) { flushBq(); closeList(); preBuf = []; continue }
+    if (leadingBackticks(line) >= 3) { flushBq(); closeList(); preBuf = []; preFence = leadingBackticks(line); continue }
     const bq = /^> ?(.*)$/.exec(line)
     if (bq) { closeList(); (bqBuf ??= []).push(bq[1]!); continue }
     flushBq()
@@ -871,7 +897,11 @@ export function htmlToMd(root: HTMLElement): string {
       for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
     }
     else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
-    else if (tag === 'pre') { out.push('```'); for (const l of preLines(node)) out.push(l); out.push('```') }
+    else if (tag === 'pre') {
+      const lines = preLines(node)
+      const fence = fenceFor(lines)
+      out.push(fence, ...lines, fence)
+    }
     else if (tag === 'hr') out.push('---')
     else if (tag === 'table') renderTableMd(node, out)
     else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))

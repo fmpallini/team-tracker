@@ -876,6 +876,11 @@ describe('external links', () => {
     probe.innerHTML = mdToHtml('[label](https://e.com)', undefined, undefined, 'Ctrl+click to open')
     expect(probe.querySelector('a')!.getAttribute('title')).toBe('https://e.com\nCtrl+click to open')
   })
+  test('the title shows the URL unescaped (a & is not doubled into &amp;)', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('[x](https://e.com/?a=1&b=2)')
+    expect(probe.querySelector('a')!.getAttribute('title')).toBe('https://e.com/?a=1&b=2')
+  })
   test('the title attribute does not survive the round trip (regenerated each render)', () => {
     expect(roundTrip('[x](https://e.com)')).toBe('[x](https://e.com)')
   })
@@ -1157,6 +1162,15 @@ describe('fenced code block', () => {
   test('idempotent through two cycles', () => {
     const md = '```\nx = 1\ny = 2\n```'
     expect(roundTrip(roundTrip(md))).toBe(md)
+  })
+  test('a code block holding a ``` line round-trips (the fence grows to stay unambiguous)', () => {
+    const div = document.createElement('div'); div.innerHTML = '<pre>a\n```\nb</pre>'
+    const md = htmlToMd(div)
+    expect(md).toBe('````\na\n```\nb\n````')
+    expect(roundTrip(md)).toBe(md)
+  })
+  test('files already on disk parse as before: a ``` block still closes on any ```-prefixed line', () => {
+    expect(mdToHtml('```\na\n```js\nb')).toBe('<pre>a</pre><div>b</div>')
   })
   test('text on the opening fence line (a language tag) is discarded', () => {
     const div = document.createElement('div'); div.innerHTML = mdToHtml('```js\nconst a = 1\n```')
