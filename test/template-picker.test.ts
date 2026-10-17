@@ -284,6 +284,18 @@ describe('attachTemplatePicker', () => {
     expect(dropdown.textContent).toBe('No templates available')
   })
 
+  test('Enter on an empty template list closes it and is not swallowed', () => {
+    const { editorEl } = setup([])
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+
+    const e = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editorEl.dispatchEvent(e)
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+  })
+
   test('the 📋 toolbar button opens the picker at the caret on an empty line', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '')

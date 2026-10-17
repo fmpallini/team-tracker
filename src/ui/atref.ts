@@ -203,6 +203,13 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 
   function onTypingKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return }
+    // Nothing to pick (an e-mail address, a word with no match): keys belong to
+    // the editor. Enter/Tab also end the session; arrows leave it open, since
+    // the list can refill as the user keeps typing or deletes back.
+    if (items.length === 0) {
+      if (e.key === 'Enter' || e.key === 'Tab') close()
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)

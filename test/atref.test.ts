@@ -195,8 +195,10 @@ describe('attachAtAutocomplete', () => {
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  function fireKey(editorEl: HTMLElement, key: string): void {
-    editorEl.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  function fireKey(editorEl: HTMLElement, key: string): KeyboardEvent {
+    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    editorEl.dispatchEvent(e)
+    return e
   }
 
   // Regression: attachAtAutocomplete's own dispose() — removing the AT_TRIGGER_EVENT
@@ -340,6 +342,32 @@ describe('attachAtAutocomplete', () => {
     expect(editorEl.querySelector('a.ref')).toBeNull()
     expect(editorEl.textContent).toBe('@An')
     expect(picks).toEqual([])
+  })
+
+  test('an email address (no matches) does not trap Enter: the dropdown closes and Enter reaches the editor', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, 'john@')
+    fireInput(editorEl)
+    setBlockText(editorEl, 'john@acme.com')
+    fireInput(editorEl)
+    expect(document.querySelectorAll('.tt-atref-item')).toHaveLength(0)
+
+    const e = fireKey(editorEl, 'Enter')
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+  })
+
+  test('with zero matches, arrows are not swallowed and the dropdown stays (it may refill as typing goes on)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+    setBlockText(editorEl, '@zzz')
+    fireInput(editorEl)
+    expect(document.querySelectorAll('.tt-atref-item')).toHaveLength(0)
+
+    expect(fireKey(editorEl, 'ArrowDown').defaultPrevented).toBe(false)
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
   })
 
   test('Escape cancels and leaves the literal @text as typed', () => {
