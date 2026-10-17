@@ -16,7 +16,7 @@ import type { PaneManager } from './panes'
 import { el, clampToViewport } from './dom'
 import { kindIcon } from './icons'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { focusItemInPane } from './search-highlight'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from './editor-dom'
 import { dismissModelessModals } from './modal'
 
@@ -307,8 +307,8 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * `pm.openInSecondaryPane` instead of `pm.openInPane`, splitting the view if
  * needed — and, for an actions/milestones/risks `loc` (or any `loc` when the
  * caller passes an explicit `opts.focusItemId`), scrolling to and
- * flash-highlighting the specific card afterward (same dispatch-then-
- * highlight sequence as search-ui.ts's commit()). `opts.focusItemId` is what
+ * flash-highlighting the specific card afterward (search-highlight.ts's
+ * focusItemInPane, shared with ui/reveal-loc.ts). `opts.focusItemId` is what
  * the person-notes header's "show in org chart" jump uses: a
  * stakeholders/members ref carries no itemId of its own, so the person id is
  * handed in here to land the flash on that person's org box. Shared by
@@ -335,14 +335,7 @@ export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc
   const { ref } = loc
   const itemId = opts.focusItemId
     ?? ((ref.kind === 'actions' || ref.kind === 'milestones' || ref.kind === 'risks') ? ref.itemId : undefined)
-  if (!itemId) return
-  requestAnimationFrame(() => {
-    const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined
-    if (!paneEl) return
-    dispatchSearchFocusItem(paneEl, itemId)
-    const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
-    applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
-  })
+  focusItemInPane(landedIdx, itemId)
 }
 
 /**

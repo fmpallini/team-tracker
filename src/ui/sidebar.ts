@@ -20,7 +20,7 @@ import { blockedByModal } from './hotkeys'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { openDuePanel } from './due-panel'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { revealLoc } from './reveal-loc'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -367,22 +367,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     return counts
   }
 
+  // A due item always carries an itemId (action or milestone, see core/due.ts),
+  // so revealLoc also scrolls to and flashes its card.
   function onOpenItem(loc: Loc): void {
-    if (loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(loc.teamId)
-    pm.openInFocused(loc)
-    // Scroll to and flash-highlight the specific card, mirroring
-    // search-ui.ts's commit() / atref.ts's makeRefClickHandler — a due item
-    // always carries an itemId (action or milestone, see core/due.ts).
-    const itemId = 'itemId' in loc.ref ? loc.ref.itemId : undefined
-    if (!itemId) return
-    const paneIdx = store.doc.nav.focusedPane
-    requestAnimationFrame(() => {
-      const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
-      if (!paneEl) return
-      dispatchSearchFocusItem(paneEl, itemId)
-      const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
-      applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
-    })
+    revealLoc({ store, pm, selectTeam: (id) => actions.selectTeam(id) }, loc)
   }
 
   // Only toggles visibility — each team's own count already shows next to

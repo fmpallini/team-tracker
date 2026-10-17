@@ -6,6 +6,7 @@ import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
 import { createPaneManager, type PaneManager } from '../src/ui/panes'
 import { renderActionItems } from '../src/modules/action-items'
+import { showModal } from '../src/ui/modal'
 
 function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: Loc) => void>> } {
   return {
@@ -765,6 +766,25 @@ describe('due list modal', () => {
     row.click()
     expect(selectTeam).toHaveBeenCalledWith('Beta')
   })
+})
+
+test('clicking a due row while a card refuses to close opens nothing and switches no team', () => {
+  const { store, pm, selectTeam } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+  store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+  let refuse = true
+  const card = showModal({ title: 'card', body: document.createElement('div'), buttons: [], modeless: true, beforeClose: () => !refuse })
+  try {
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    ;(document.querySelector('.tt-due-row') as HTMLElement).click()
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(pm.openInFocused).not.toHaveBeenCalled()
+  } finally {
+    refuse = false
+    card.close()
+  }
 })
 
 describe('per-team due badge (sidebar list)', () => {

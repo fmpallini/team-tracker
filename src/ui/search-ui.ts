@@ -8,7 +8,7 @@ import { t, type Locale } from '../core/i18n'
 import { normalize, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { revealLoc } from './reveal-loc'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
 import { icon as strokeIcon, kindIcon } from './icons'
@@ -227,30 +227,9 @@ export function mountSearch(
     // Opening the searched Loc below then lands on the specific result
     // within that already-consistent team switch, rather than leaving one
     // pane on the old team's content while the other jumps to the new one.
-    if (result.loc.teamId !== store.doc.nav.activeTeamId) {
-      switchTeam(result.loc.teamId)
-    }
-    pm.openInFocused(result.loc)
+    // A card that refuses to close keeps everything — dropdown included — as is.
+    if (!revealLoc({ store, pm, selectTeam: switchTeam }, result.loc, { terms })) return
     closeDropdown()
-    requestAnimationFrame(() => {
-      const paneEl = document.querySelectorAll('.tt-pane-body')[store.doc.nav.focusedPane] as HTMLElement | undefined
-      if (!paneEl) return
-      const ref = result.loc.ref
-      const itemId = 'itemId' in ref ? ref.itemId : undefined
-      // No-op for modules that don't listen (action-items, daily/person notes).
-      // For milestones/risks, this expands the matching row (if collapsed)
-      // before the anchor lookup below, so its follow-up text is in the DOM
-      // to highlight.
-      if (itemId) dispatchSearchFocusItem(paneEl, itemId)
-      const anchors = itemId
-        ? Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
-        : []
-      // anchors[0], not a range-derived position, is the scroll target: we
-      // already know exactly which element this result belongs to, and that
-      // must win even if none of its *currently visible* text matches (e.g.
-      // an action item's notes field, which only exists in its edit modal).
-      applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], terms, anchors[0])
-    })
   }
 
   checkbox.addEventListener('change', () => {

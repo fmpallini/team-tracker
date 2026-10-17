@@ -12,7 +12,7 @@ import { buildSwitcher, type SwitcherRow, type SwitcherSection } from '../core/s
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import type { PaneManager } from './panes'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { revealLoc } from './reveal-loc'
 import { blockedByBlockingModal } from './hotkeys'
 import { dismissModelessModals } from './modal'
 import { icon, kindIcon, type IconName } from './icons'
@@ -71,20 +71,9 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     // guard vetoes, keep the palette open on the still-open card.
     if (!dismissModelessModals()) return
     close()
-    if (row.teamId !== store.doc.nav.activeTeamId) deps.selectTeam(row.teamId)
-    pm.openInFocused({ teamId: row.teamId, ref: row.ref })
-    // Mirrors search-ui.ts's commit(): expand the item (if collapsible)
-    // and scroll/flash it into view, just without term highlighting —
-    // the palette has no search query, only a resolved itemId.
-    const itemId = 'itemId' in row.ref ? row.ref.itemId : undefined
-    if (!itemId) return
-    requestAnimationFrame(() => {
-      const paneEl = document.querySelectorAll('.tt-pane-body')[store.doc.nav.focusedPane] as HTMLElement | undefined
-      if (!paneEl) return
-      dispatchSearchFocusItem(paneEl, itemId)
-      const anchor = paneEl.querySelector<HTMLElement>(`[data-item-id="${itemId}"]`)
-      if (anchor) applySearchHighlight([paneEl], [], anchor)
-    })
+    // Same path as a search result, minus term highlighting: the palette has
+    // no query, only a resolved itemId. (The card was dismissed just above.)
+    revealLoc({ store, pm, selectTeam: (id) => deps.selectTeam(id) }, { teamId: row.teamId, ref: row.ref })
   }
 
   function removeFavorite(fav: Favorite): void {

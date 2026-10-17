@@ -1,4 +1,4 @@
-import { findMatchRanges, applySearchHighlight, clearSearchHighlight, SEARCH_FOCUS_ITEM_EVENT, dispatchSearchFocusItem } from '../src/ui/search-highlight'
+import { findMatchRanges, applySearchHighlight, clearSearchHighlight, SEARCH_FOCUS_ITEM_EVENT, dispatchSearchFocusItem, focusItemInPane } from '../src/ui/search-highlight'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -158,4 +158,51 @@ test('dispatchSearchFocusItem dispatches the event on the given container with i
   dispatchSearchFocusItem(container, 'm1')
 
   expect(received).toBe('m1')
+})
+
+describe('focusItemInPane', () => {
+  let frames: FrameRequestCallback[] = []
+  const originalRAF = window.requestAnimationFrame
+  beforeEach(() => {
+    frames = []
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { frames.push(cb); return frames.length }) as typeof window.requestAnimationFrame
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+  afterEach(() => { window.requestAnimationFrame = originalRAF })
+
+  function twoPanes(): HTMLElement[] {
+    document.body.innerHTML = '<div class="tt-pane-body"><p>left</p></div><div class="tt-pane-body"><div data-item-id="i1" tabindex="0">risk one</div></div>'
+    return Array.from(document.querySelectorAll<HTMLElement>('.tt-pane-body'))
+  }
+
+  test('with an itemId: on the next frame, tells that pane to reveal it, then flashes its row', () => {
+    const panes = twoPanes()
+    const seen: string[] = []
+    panes[1]!.addEventListener(SEARCH_FOCUS_ITEM_EVENT, (e) => seen.push((e as CustomEvent<string>).detail))
+
+    focusItemInPane(1, 'i1')
+    expect(seen).toEqual([]) // nothing until the frame: the pane body is only now being rendered
+    frames.forEach((f) => f(0))
+
+    expect(seen).toEqual(['i1'])
+    expect(document.querySelector('[data-item-id="i1"]')!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
+
+  test('with terms only: highlights within the pane, dispatches no item event, flashes nothing', () => {
+    const panes = twoPanes()
+    const seen = vi.fn()
+    panes[0]!.addEventListener(SEARCH_FOCUS_ITEM_EVENT, seen)
+
+    focusItemInPane(0, undefined, ['left'])
+    frames.forEach((f) => f(0))
+
+    expect(seen).not.toHaveBeenCalled()
+    expect(document.querySelector('.tt-search-target-flash')).toBeNull()
+  })
+
+  test('with neither an itemId nor terms: schedules nothing', () => {
+    twoPanes()
+    focusItemInPane(0, undefined)
+    expect(frames).toHaveLength(0)
+  })
 })

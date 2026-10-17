@@ -1,4 +1,5 @@
 import { mountSearch } from '../src/ui/search-ui'
+import { showModal } from '../src/ui/modal'
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
@@ -514,4 +515,33 @@ test('reloading a document that has teams over one that had none enables the sea
   store.replaceDoc(reloaded)
 
   expect(input.disabled).toBe(false)
+})
+
+// Same rule as the palette and @ref navigation: a modeless card open in some
+// pane must close (flushing its notes) before a result re-targets a pane; if
+// its required-name guard refuses, nothing moves.
+test('clicking a result while a card refuses to close keeps the dropdown open and neither switches team nor opens', () => {
+  const teamB: Team = { ...oneNoteTeam, id: 'T2', name: 'Team B' }
+  const store = buildStore([{ ...oneNoteTeam, dailyNotes: {} }, teamB], 'T1')
+  const pm = fakePM()
+  const switchTeam = vi.fn()
+  const { input } = mount(store, pm, switchTeam)
+  let refuse = true
+  const card = showModal({ title: 'card', body: document.createElement('div'), buttons: [], modeless: true, beforeClose: () => !refuse })
+  try {
+    const checkbox = document.querySelector('.tt-search-all-teams input') as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+    type(input, 'alpha')
+    vi.advanceTimersByTime(350)
+
+    ;(document.querySelector('.tt-search-row') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+
+    expect(switchTeam).not.toHaveBeenCalled()
+    expect(pm.calls).toEqual([])
+    expect(isOpen()).toBe(true)
+  } finally {
+    refuse = false
+    card.close()
+  }
 })
