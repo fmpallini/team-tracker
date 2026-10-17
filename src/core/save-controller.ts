@@ -356,8 +356,6 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // close prompt, no beforeunload warning, and a tab handover would let it go.
     // Same guard as conflict-flow.ts's overwrite().
     if (deps.store.rev === revAtSnapshot) deps.store.markSaved()
-    // Pill below follows `dirty` rather than assuming 'saved': after a mid-save edit the
-    // trailing round may never run (fallback mode, read-only) and nothing else refreshes it.
     // Reaching this point at all means the primary write just succeeded —
     // true regardless of what the BACKUP's health turns out to be below — so
     // the primary latch resets unconditionally here rather than only in some
@@ -413,6 +411,8 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
       dismissToast(BACKUP_PERMISSION_TOAST_KEY)
+      // Follows `dirty` rather than assuming 'saved': after a mid-save edit the
+      // trailing round may never run (fallback mode, read-only) and nothing else refreshes it.
       deps.shell.setSaveState(deps.store.dirty ? 'dirty' : 'saved')
     }
     deps.shell.setTitle(deps.session.name, deps.store.dirty)
