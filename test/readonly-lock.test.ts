@@ -178,3 +178,43 @@ test('unlocking restores every gesture; arming twice then unlocking once leaves 
   ;($('.box') as HTMLInputElement).click()
   expect(($('.box') as HTMLInputElement).checked).toBe(true)
 })
+
+// beforeinput of type insertCompositionText is not cancelable, so IME / dead-key
+// composition can only be stopped by dropping focus when it starts.
+test('read-only: starting IME composition in a text field blurs it and raises the notice', () => {
+  const $ = mountControls()
+  const title = $('.title') as HTMLInputElement
+  title.focus()
+  expect(document.activeElement).toBe(title)
+  setReadOnlyLock(true, lc)
+  fire(title, new CompositionEvent('compositionstart', { bubbles: true }))
+  expect(document.activeElement).not.toBe(title)
+  expect(toasts()).toHaveLength(1)
+  const area = $('.area') as HTMLTextAreaElement
+  area.focus()
+  fire(area, new CompositionEvent('compositionstart', { bubbles: true }))
+  expect(document.activeElement).not.toBe(area)
+})
+
+test('read-only: composition in an exempt field is left alone', () => {
+  const $ = mountControls()
+  const search = $('.search') as HTMLInputElement
+  search.focus()
+  setReadOnlyLock(true, lc)
+  fire(search, new CompositionEvent('compositionstart', { bubbles: true }))
+  expect(document.activeElement).toBe(search)
+  expect(toasts()).toHaveLength(0)
+})
+
+test('not read-only: composition is a no-op, also after the lock lifts', () => {
+  const $ = mountControls()
+  const title = $('.title') as HTMLInputElement
+  title.focus()
+  fire(title, new CompositionEvent('compositionstart', { bubbles: true }))
+  expect(document.activeElement).toBe(title)
+  setReadOnlyLock(true, lc)
+  setReadOnlyLock(false, lc)
+  fire(title, new CompositionEvent('compositionstart', { bubbles: true }))
+  expect(document.activeElement).toBe(title)
+  expect(toasts()).toHaveLength(0)
+})

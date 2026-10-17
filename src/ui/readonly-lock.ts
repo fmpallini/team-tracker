@@ -4,7 +4,11 @@
 // The rich editors go non-editable on their own (ui/editor.ts's
 // setEditorsReadOnly); this covers every other editing gesture with one
 // document-level capture-phase guard: it runs before any module listener, so
-// stopping the event there means no module ever sees it. Navigation (buttons,
+// stopping the event there means no module ever sees it. That covers text
+// input (beforeinput), select keys/clicks, checkboxes, date pickers, drag,
+// number-input ArrowUp/ArrowDown and wheel stepping (neither fires beforeinput),
+// and IME / dead-key composition (its beforeinput is not cancelable, so
+// compositionstart blurs the field instead). Navigation (buttons,
 // @mention chips, menus) is untouched. Containers marked data-readonly-exempt
 // (the search box, the palette, the password prompt a takeover reload may
 // raise while still read-only) keep working.
@@ -43,6 +47,16 @@ function lockedTarget(e: Event): Element | null {
 function onBeforeInput(e: Event): void {
   const target = lockedTarget(e)
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) refuse(e)
+}
+
+function onCompositionstart(e: Event): void {
+  // The beforeinput of IME / dead-key composition (insertCompositionText) is not
+  // cancelable, so the text can't be refused; drop focus before it lands instead.
+  const target = lockedTarget(e)
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    target.blur()
+    if (armed) toast(t(armed.locale(), 'readonly_blocked_toast'), { key: READONLY_TOAST_KEY })
+  }
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -89,6 +103,7 @@ export function setReadOnlyLock(readOnly: boolean, locale: () => Locale): void {
     if (armed) { armed.locale = locale; return }
     armed = { locale }
     document.addEventListener('beforeinput', onBeforeInput, true)
+    document.addEventListener('compositionstart', onCompositionstart, true)
     document.addEventListener('keydown', onKeydown, true)
     document.addEventListener('mousedown', onMousedown, true)
     document.addEventListener('click', onClick, true)
@@ -99,6 +114,7 @@ export function setReadOnlyLock(readOnly: boolean, locale: () => Locale): void {
   if (!armed) return
   armed = null
   document.removeEventListener('beforeinput', onBeforeInput, true)
+  document.removeEventListener('compositionstart', onCompositionstart, true)
   document.removeEventListener('keydown', onKeydown, true)
   document.removeEventListener('mousedown', onMousedown, true)
   document.removeEventListener('click', onClick, true)

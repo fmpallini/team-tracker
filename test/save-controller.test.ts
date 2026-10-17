@@ -1364,6 +1364,26 @@ describe('an edit that lands while a save is in flight', () => {
     expect(setTitleSpy.mock.calls.map((c) => c[1])).toEqual([true, false])
   })
 
+  test('fallback mode (no handle): the pill ends dirty, not saved, when the edit landed mid-serialize', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 9 })
+    const shell = makeShell()
+    const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
+    const gate = deferred<Uint8Array<ArrayBuffer>>()
+    cryptoMocks.encryptDocument.mockImplementationOnce(() => gate.promise)
+    const ctl = ctlFor(store, shell, { session: makeSession(false) })
+
+    const p = ctl.saveNow({ explicit: true })
+    await new Promise((r) => setTimeout(r, 0)) // parked inside encryptDocument
+    store.update((d) => { d.prefs.autoSaveMin = 3 }) // after the snapshot; the automatic trailing round bails in fallback mode
+    gate.resolve(new Uint8Array([1, 2, 3]))
+    await p
+    await ctl.flush()
+
+    expect(store.dirty).toBe(true)
+    expect(setSaveStateSpy.mock.calls.at(-1)?.[0]).toBe('dirty')
+  })
+
   test('during the backup mirror write (after the primary write) also stays dirty until it is written', async () => {
     const store = createStore(createEmptyDocument('en-US'))
     store.update((d) => { d.prefs.autoSaveMin = 9 })

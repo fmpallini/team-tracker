@@ -356,6 +356,8 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // close prompt, no beforeunload warning, and a tab handover would let it go.
     // Same guard as conflict-flow.ts's overwrite().
     if (deps.store.rev === revAtSnapshot) deps.store.markSaved()
+    // Pill below follows `dirty` rather than assuming 'saved': after a mid-save edit the
+    // trailing round may never run (fallback mode, read-only) and nothing else refreshes it.
     // Reaching this point at all means the primary write just succeeded —
     // true regardless of what the BACKUP's health turns out to be below — so
     // the primary latch resets unconditionally here rather than only in some
@@ -381,6 +383,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       // here (rather than just toasting) also self-heals: the pref flip is
       // itself a mutation, so the dirty guard schedules a trailing save that
       // persists `dailyBackupEnabled: false` to the primary file.
+      // Read before the self-heal below, which dirties the store itself: the pill
+      // must reflect only the user's own unsaved edits, not that queued heal.
+      const dirtyBeforeHeal = deps.store.dirty
       deps.store.update((d) => {
         d.prefs.dailyBackupEnabled = false
       })
@@ -396,7 +401,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
       dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-      deps.shell.setSaveState('saved')
+      deps.shell.setSaveState(dirtyBeforeHeal ? 'dirty' : 'saved')
     } else if (health === 'permission') {
       reportBackupPermissionNeeded()
     } else if (health === 'error') {
@@ -408,7 +413,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
       dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-      deps.shell.setSaveState('saved')
+      deps.shell.setSaveState(deps.store.dirty ? 'dirty' : 'saved')
     }
     deps.shell.setTitle(deps.session.name, deps.store.dirty)
   }
