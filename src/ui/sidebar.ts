@@ -702,7 +702,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
           d.teams.push(createEmptyTeam(newTeamId, name, emoji, locale()))
         })
         handle.close()
-        actions.selectTeam(newTeamId)
+        // A refused write (read-only tab) created nothing: selecting the id
+        // would point both panes at a team that doesn't exist.
+        if (docFindTeam(store.doc, newTeamId)) actions.selectTeam(newTeamId)
       },
     }
     const handle: ModalHandle = showModal({

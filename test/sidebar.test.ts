@@ -180,6 +180,20 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   expect(store.doc.nav.activeTeamId).toBe(store.doc.teams[0]!.id)
 })
 
+// A read-only tab (no cross-tab write lock) refuses the store write; selecting
+// the never-created team would point both panes at a team that doesn't exist.
+test('+ modal in a read-only store creates nothing and does not select a ghost team', () => {
+  const { store, selectTeam } = setup()
+  store.setReadOnly(true)
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
+  ;(document.querySelector('input[name="tt-team-name"]') as HTMLInputElement).value = 'Gamma'
+  clickByText('OK')
+
+  expect(store.doc.teams).toHaveLength(0)
+  expect(selectTeam).not.toHaveBeenCalled()
+  expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+})
+
 test('canceling the add-team modal disposes the emoji picker (no leaked listener)', () => {
   setup()
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
