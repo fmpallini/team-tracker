@@ -666,6 +666,61 @@ export function unwrapBlockContainers(root: HTMLElement): void {
   }
 }
 
+const WORD_LIST_LEVEL = /mso-list:\s*[^;"]*\blevel(\d+)/i
+const WORD_LIST_GLYPH = /^[0-9a-z]+[.)]$/i
+
+/**
+ * Word does not put lists on the clipboard as <ul>/<ol>: each item is a <p>
+ * whose style says `mso-list:l0 level2 lfo1`, led by a glyph span
+ * (`mso-list:Ignore`) holding the bullet or "1." — so a pasted list arrived as
+ * "· Item" text lines. Rebuilds real nested lists from each run of such
+ * paragraphs, in place, dropping the glyph. A glyph shaped like "1." or "a)"
+ * makes the list ordered (a numeric one keeps its number on the first item);
+ * anything else is a bullet. Input without those paragraphs is left alone.
+ */
+export function convertWordLists(root: HTMLElement): void {
+  const doc = root.ownerDocument
+  const levelOf = (el: Element): number | null => {
+    const m = WORD_LIST_LEVEL.exec(el.getAttribute('style') ?? '')
+    return m ? Math.min(Number(m[1]), MAX_LIST_DEPTH + 1) : null
+  }
+  const seen = new Set<Element>()
+  root.querySelectorAll('[style]').forEach((first) => {
+    if (seen.has(first) || levelOf(first) === null) return
+    const run: Element[] = []
+    for (let el: Element | null = first; el && levelOf(el) !== null; el = el.nextElementSibling) {
+      run.push(el)
+      seen.add(el)
+    }
+    const frag = doc.createDocumentFragment()
+    const stack: { list: HTMLElement; level: number; lastLi: HTMLElement | null }[] = []
+    for (const item of run) {
+      const level = levelOf(item)!
+      const glyph = Array.from(item.querySelectorAll('[style]')).find((s) => /mso-list:\s*ignore/i.test(s.getAttribute('style') ?? ''))
+      const glyphText = (glyph?.textContent ?? '').replace(/\s/g, '')
+      const kind = WORD_LIST_GLYPH.test(glyphText) ? 'ol' : 'ul'
+      glyph?.remove()
+      const li = doc.createElement('li')
+      while (item.firstChild) li.appendChild(item.firstChild)
+      while (stack.length && stack[stack.length - 1]!.level > level) stack.pop()
+      let top = stack[stack.length - 1]
+      if (top && top.level === level && top.list.tagName.toLowerCase() !== kind) { stack.pop(); top = stack[stack.length - 1] }
+      if (!top || top.level < level) {
+        const list = doc.createElement(kind)
+        if (top?.lastLi) top.lastLi.appendChild(list)
+        else frag.appendChild(list)
+        top = { list, level, lastLi: null }
+        stack.push(top)
+        if (kind === 'ol' && /^\d+[.)]$/.test(glyphText)) li.setAttribute('value', String(parseInt(glyphText, 10)))
+      }
+      top.list.appendChild(li)
+      top.lastLi = li
+    }
+    run[0]!.before(frag)
+    run.forEach((el) => el.remove())
+  })
+}
+
 /**
  * `document.execCommand('formatBlock', '<h1>')` on a selection spanning
  * multiple lines, or on a list, makes Chromium NEST a fresh <hN> inside the

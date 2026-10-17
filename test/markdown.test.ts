@@ -1,5 +1,5 @@
 import { unlinkRefsInText } from '../src/core/refs'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -1566,4 +1566,41 @@ test('a code block that starts with blank lines keeps every one across saves (th
   const md = '```\n\n\nx\n```'
   expect(roundTrip(md)).toBe(md)
   expect(roundTrip(roundTrip(md))).toBe(md)
+})
+
+describe('convertWordLists (Word list paragraphs are <p style="mso-list:…"> with a glyph span, not <ul>)', () => {
+  const bullet = (level: number, text: string): string =>
+    `<p class="MsoListParagraph" style="text-indent:-18.0pt;mso-list:l0 level${level} lfo1"><!--[if !supportLists]--><span style="font-family:Symbol"><span style="mso-list:Ignore">·<span style="font:7.0pt 'Times New Roman'">&nbsp;&nbsp;&nbsp;&nbsp; </span></span></span><!--[endif]-->${text}<o:p></o:p></p>`
+  const numbered = (n: number, text: string): string =>
+    `<p class="MsoListParagraph" style="mso-list:l1 level1 lfo2"><![if !supportLists]><span style="mso-list:Ignore">${n}.<span style="font:7.0pt 'Times New Roman'">&nbsp;&nbsp;</span></span><![endif]>${text}</p>`
+  const parse = (html: string): HTMLElement => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    return root
+  }
+
+  test('Word bullet paragraphs become a real nested list and lose their glyph', () => {
+    const root = parse(`<p class="MsoNormal">Texto <b>negrito</b></p>${bullet(1, 'Item um')}${bullet(2, 'Sub item')}${bullet(1, 'Item dois')}`)
+    convertWordLists(root)
+    expect(htmlToMd(root)).toBe('Texto **negrito**\n- Item um\n  - Sub item\n- Item dois')
+  })
+
+  test('Word numbered paragraphs become an ordered list', () => {
+    const root = parse(`${numbered(1, 'Primeiro')}${numbered(2, 'Segundo')}`)
+    convertWordLists(root)
+    expect(htmlToMd(root)).toBe('1. Primeiro\n2. Segundo')
+  })
+
+  test('a numbered run that starts above 1 keeps its first number', () => {
+    const root = parse(`${numbered(3, 'Terceiro')}${numbered(4, 'Quarto')}`)
+    convertWordLists(root)
+    expect(htmlToMd(root)).toBe('3. Terceiro\n4. Quarto')
+  })
+
+  test('non-Word HTML is left untouched', () => {
+    const html = '<p style="color:red">x</p><ul><li>y</li></ul><span style="mso-list:Ignore">z</span>'
+    const root = parse(html)
+    convertWordLists(root)
+    expect(root.innerHTML).toBe(html)
+  })
 })

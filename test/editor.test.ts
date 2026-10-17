@@ -192,6 +192,21 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('a Word list paste inserts list markup, not "·" text lines', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    const item = (text: string): string =>
+      `<p class="MsoListParagraph" style="mso-list:l0 level1 lfo1"><span style="mso-list:Ignore">·<span>&nbsp;&nbsp;</span></span>${text}</p>`
+    dispatchPaste(editor, { 'text/html': `<html><body><!--StartFragment-->${item('um')}${item('dois')}<!--EndFragment--></body></html>` })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).toContain('<li>')
+    expect(inserted).not.toContain('·')
+    editor.destroy()
+  })
+
   test('a legitimate ref chip (this app\'s own uuid-shaped id) survives paste as a real chip', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

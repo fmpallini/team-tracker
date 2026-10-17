@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport, copyText } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showEditorHelp } from './help'
 import { showModal } from './modal'
@@ -1758,6 +1758,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // codeql[js/xss]
     const wrapper = new DOMParser().parseFromString(html, 'text/html').body
     sanitizeRefAttrs(wrapper)
+    // Word sends list items as <p style="mso-list:…"> paragraphs; make them real lists first.
+    convertWordLists(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
     // container" fragment into real, separately-rendered blocks before the
     // block-child check below — see unwrapBlockContainers' own doc comment.
