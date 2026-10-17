@@ -1792,6 +1792,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
       flattenTopLevelBlockWrappers(editorEl)
+      stripPastedStyles()
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
@@ -1809,6 +1810,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         .join('')
       document.execCommand('insertHTML', false, html)
       flattenTopLevelBlockWrappers(editorEl)
+      stripPastedStyles()
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
@@ -1816,6 +1818,18 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     document.execCommand('insertText', false, text)
     scheduleChange()
+  }
+
+  /**
+   * Chromium's insertHTML copies the surrounding block's computed font and
+   * colour onto the inserted spans as inline `style="…"` (worst inside a
+   * heading or quote), so pasted text looks unlike its neighbours until the
+   * note is reopened. Nothing inside `editorEl` ever carries a style of its
+   * own — the code-block controls and copy menu live on `root`, outside it —
+   * so dropping them all after a paste is safe.
+   */
+  function stripPastedStyles(): void {
+    editorEl.querySelectorAll('[style]').forEach((el) => el.removeAttribute('style'))
   }
 
   /** True when the selection's start sits inside a list item of this editor. */

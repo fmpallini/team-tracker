@@ -225,6 +225,26 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('inline styles the browser adds while inserting a paste are removed', () => {
+    // Chromium puts the surrounding block's font on the inserted spans.
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
+      if (cmd === 'insertHTML' && typeof val === 'string') {
+        const ed = document.querySelector('.editor') as HTMLElement
+        ed.insertAdjacentHTML('beforeend', val.replace('<strong>', '<strong style="font-size: 32px">').replace('<div>', '<div style="color: red">'))
+      }
+      return true
+    })
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+
+    dispatchPaste(editor, { 'text/html': '<p>x <b>bold</b></p>' })
+    dispatchPaste(editor, { 'text/plain': 'a\nb' })
+
+    expect(editor.root.querySelectorAll('.editor [style]')).toHaveLength(0)
+    expect(editor.root.querySelector('.editor strong')?.textContent).toBe('bold')
+    editor.destroy()
+  })
+
   test('a Word list paste inserts list markup, not "·" text lines', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

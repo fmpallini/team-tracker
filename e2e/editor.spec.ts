@@ -219,6 +219,32 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(reopened.locator('> div').last()).toHaveText('2026-10-17 12:00:59 INFO request 1499 path=/api/v1/items_1499*')
   })
 
+  // Chromium's insertHTML into a heading or quote copies the surrounding
+  // block's computed font/colour onto the inserted spans as inline style="…",
+  // so the pasted text looks different from the rest until it is reopened.
+  test('paste into a heading leaves no inline style on the inserted text', async ({ page }) => {
+    const editor = await openEditor(page)
+    await page.evaluate(() => {
+      const ed = document.querySelector('.editor') as HTMLElement
+      ed.innerHTML = '<h2>Head text</h2>'
+      ed.focus()
+      const text = ed.querySelector('h2')!.firstChild!
+      const r = document.createRange()
+      r.setStart(text, 4)
+      r.collapse(true)
+      const sel = getSelection()!
+      sel.removeAllRanges()
+      sel.addRange(r)
+      const dt = new DataTransfer()
+      dt.setData('text/html', '<p>Texto <b>negrito</b> e <i>itálico</i></p>')
+      dt.setData('text/plain', 'Texto negrito e itálico')
+      ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    })
+    await page.waitForTimeout(400)
+    await expect(editor).toContainText('Texto negrito e itálico')
+    await expect(editor.locator('[style]')).toHaveCount(0)
+  })
+
   test('a hostile clipboard payload is disarmed and loads no resources', async ({ page }) => {
     const requests: string[] = []
     page.on('request', (r) => requests.push(r.url()))
