@@ -4,7 +4,8 @@
 // kanban card highlight (src/modules/action-items.ts) imports isOverdue from
 // here, so the badge and the board can never disagree on the semantics.
 import type { ActionItem, Doc, Loc } from './types'
-import { addDaysIso } from './date'
+import { addDaysIso, diffDays } from './date'
+import { t, type Locale } from './i18n'
 
 export interface DueItem {
   loc: Loc
@@ -27,6 +28,13 @@ export function isActionActive(item: Pick<ActionItem, 'status'>): boolean {
 /** True when the item has a due date strictly before `today` and is still active. */
 export function isOverdue(item: Pick<ActionItem, 'dueDate' | 'status'>, today: string): boolean {
   return item.dueDate !== null && item.dueDate < today && isActionActive(item)
+}
+
+/** "overdue by Nd" before `today`, else "in Nd" (0 on the day itself) — the due panel's and the fast switch's one wording. */
+export function dueRelativeLabel(locale: Locale, date: string, today: string): string {
+  return date < today
+    ? t(locale, 'due_overdue_by', { days: String(diffDays(today, date)) })
+    : t(locale, 'due_in_days', { days: String(diffDays(date, today)) })
 }
 
 export function collectDueItems(doc: Doc, today: string): DueBuckets {

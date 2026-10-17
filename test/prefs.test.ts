@@ -1723,6 +1723,18 @@ describe('Data tab: cross-team tags section', () => {
   })
 })
 
+test('cleanup days field clamps to a whole number of days in 1..3650; empty or garbage reads as 1', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Data')
+  const input = document.querySelector('.tt-data-cleanup-days-input') as HTMLInputElement
+  const commit = (v: string): string => { input.value = v; input.dispatchEvent(new Event('change')); return input.value }
+  expect(commit('12.6')).toBe('13')
+  expect(commit('9999')).toBe('3650')
+  expect(commit('-5')).toBe('1')
+  expect(commit('')).toBe('1')
+})
+
 // A read-only tab's store.update() is blocked, so the Data tab's writes must
 // neither be offered (disabled at render) nor announce success when the lock
 // is lost while the tab is already open.

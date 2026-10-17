@@ -18,7 +18,7 @@ import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
-import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField } from './prefs-fields'
+import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
 import { icon } from './icons'
 
 /**
@@ -1177,12 +1177,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     }) as HTMLInputElement
     cleanupDaysInput.addEventListener('change', () => {
       const raw = Number(cleanupDaysInput.value)
-      const clamped = Math.min(3650, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : 1))
+      const clamped = clampInt(raw, 1, 3650, 1)
       cleanupDaysInput.value = String(clamped)
     })
 
     function doCleanup(): void {
-      const days = Math.min(3650, Math.max(1, Math.round(Number(cleanupDaysInput.value)) || 1))
+      const days = clampInt(Number(cleanupDaysInput.value), 1, 3650, 1)
       const today = todayIso()
       const counts = countCleanupTargets(store.doc, days, today)
       if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0) {

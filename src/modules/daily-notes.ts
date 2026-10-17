@@ -17,6 +17,7 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { actionStatusLabel } from './action-items'
+import { isActionActive } from '../core/due'
 import { icon } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
 
@@ -105,7 +106,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     const actionItemsByDate = new Map<string, { label: string; resolved: boolean }[]>()
     for (const a of team?.actionItems ?? []) {
       if (a.dueDate === null) continue
-      const resolved = a.status === 'done' || a.status === 'cancelled'
+      const resolved = !isActionActive(a)
       const entry = { label: `${a.summary} (${actionStatusLabel(lc, a.status, team)})`, resolved }
       const list = actionItemsByDate.get(a.dueDate)
       if (list) list.push(entry)

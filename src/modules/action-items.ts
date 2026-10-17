@@ -1305,7 +1305,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const bucket = byStatus[it.status]
       if (!bucket) continue // its column was deleted elsewhere; ignore until reassigned
       bucket.push(it)
-      if (it.color !== null && it.status !== 'done' && it.status !== 'cancelled') counts[it.color]++
+      if (it.color !== null && isActionActive(it)) counts[it.color]++
     }
     renderTagChips(tagNames, counts)
     for (const s of STATUSES) {
