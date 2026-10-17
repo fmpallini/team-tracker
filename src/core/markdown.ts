@@ -880,41 +880,100 @@ export function htmlToPlainText(root: HTMLElement): string {
   return out.join('\n')
 }
 
-export function htmlToMd(root: HTMLElement): string {
-  const out: string[] = []
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const t = node.textContent?.trim(); if (t) out.push(t); return
-    }
-    // See htmlToPlainText's identical guard above: skips comment nodes
-    // (notably CF_HTML's StartFragment/EndFragment markers) instead of
-    // reading Comment.textContent as if it were real text.
-    if (!(node instanceof HTMLElement)) return
-    const tag = node.tagName.toLowerCase()
-    if (/^h[1-3]$/.test(tag)) out.push('#'.repeat(Number(tag[1])) + ' ' + blockToMd(node))
-    else if (tag === 'blockquote') {
+// Elements whose content is never note text, wherever they sit in a paste.
+const NON_CONTENT_TAGS = new Set(['head', 'title', 'style', 'script', 'template', 'noscript', 'meta', 'link'])
+
+// Wrappers real clipboard HTML puts around (or between) blocks. They carry no
+// line break of their own, but whatever they hold must keep its own lines —
+// treating one as "a line" mashed a whole VS Code / Wikipedia / Sheets paste
+// into one run-on blob.
+const CONTAINER_TAGS = new Set([
+  'html', 'body', 'section', 'article', 'header', 'footer', 'main', 'nav', 'aside', 'figure', 'figcaption',
+  'details', 'summary', 'address', 'center', 'dl', 'dt', 'dd', 'fieldset', 'form',
+])
+
+const BLOCKISH_SELECTOR = [...BLOCK_TAGS, ...CONTAINER_TAGS, 'h4', 'h5', 'h6'].join(',')
+
+/**
+ * True for a block, a known container, or any element that holds one. A link
+ * is the exception: `<a><div>card</div></a>` stays one inline link, as before.
+ */
+function isBlockish(el: Element): boolean {
+  const tag = el.tagName.toLowerCase()
+  if (BLOCK_TAGS.has(tag) || CONTAINER_TAGS.has(tag) || /^h[1-6]$/.test(tag)) return true
+  return tag !== 'a' && el.querySelector(BLOCKISH_SELECTOR) !== null
+}
+
+/**
+ * Appends one markdown line per output line for everything under `parent`.
+ * Consecutive inline children form one run (so `<br>` still splits it); a
+ * block-ish child flushes the run and is rendered on its own; a container or
+ * unknown wrapper holding blocks is walked, not read as a single line.
+ *
+ * `flat` is for a list item's own content: it is already a bullet, so a
+ * heading, quote or code block contributes its text only, without `#`, `> `
+ * or a fence, and a rule contributes nothing.
+ */
+function walkBlocks(parent: Node, out: string[], flat: boolean): void {
+  let run: Node[] = []
+  const flushRun = (): void => {
+    const nodes = run
+    run = []
+    // A run of nothing but source-formatting whitespace (the newlines between
+    // blocks) emits no line; a <br> or any text does.
+    const meaningful = nodes.some((n) =>
+      (n.textContent ?? '').trim() !== '' || (n instanceof HTMLElement && n.tagName.toLowerCase() === 'br'))
+    if (!meaningful) return
+    out.push(blockToMdNodes(nodes).trim())
+  }
+  const block = (node: HTMLElement, tag: string): void => {
+    if (/^h[1-6]$/.test(tag)) {
+      const text = blockToMd(node)
+      out.push(flat ? text : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + text)
+    } else if (tag === 'blockquote') {
       // A quote copied off a web page / email reaches here whole as
       // <blockquote><p>a</p><p>b</p></blockquote> (or <div>-built) — its
       // block children would otherwise be merged onto one run-on line by
-      // blockToMd. Recurse through htmlToMd for that shape so each child
-      // block keeps its own line. The mdToHtml <br>-joined shape
-      // (<blockquote>a<br>b</blockquote> — 'br' is NOT in BLOCK_TAGS) has no
-      // block child, so it still takes the blockToMd path and idempotency is
-      // preserved.
-      const inner = Array.from(node.children).some(isBlockTag) ? htmlToMd(node) : blockToMd(node)
-      for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
-    }
-    else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
-    else if (tag === 'pre') {
+      // blockToMd. Walk it for that shape so each child block keeps its own
+      // line. The mdToHtml <br>-joined shape (<blockquote>a<br>b</blockquote>
+      // — 'br' is NOT in BLOCK_TAGS) has no block child, so it still takes the
+      // blockToMd path and idempotency is preserved.
+      const inner: string[] = []
+      if (Array.from(node.children).some(isBlockish)) walkBlocks(node, inner, flat)
+      else inner.push(blockToMd(node))
+      for (const l of inner.join('\n').split('\n')) out.push(flat ? l : l ? `> ${l}` : '>')
+    } else if (tag === 'ul' || tag === 'ol') {
+      if (!flat) renderListMd(node, 0, out)
+    } else if (tag === 'pre') {
       const lines = preLines(node)
-      const fence = fenceFor(lines)
-      out.push(fence, ...lines, fence)
+      if (flat) out.push(...lines)
+      else { const fence = fenceFor(lines); out.push(fence, ...lines, fence) }
+    } else if (tag === 'hr') {
+      if (!flat) out.push('---')
+    } else if (tag === 'table') {
+      renderTableMd(node, out)
+    } else if ((tag === 'div' || tag === 'p') && !Array.from(node.children).some(isBlockish)) {
+      out.push(blockToMd(node))
+    } else {
+      walkBlocks(node, out, flat)
     }
-    else if (tag === 'hr') out.push('---')
-    else if (tag === 'table') renderTableMd(node, out)
-    else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))
-    else out.push(inlineMd(node))
   }
-  root.childNodes.forEach(walk)
+  parent.childNodes.forEach((node) => {
+    // Comment nodes (notably CF_HTML's StartFragment/EndFragment markers) carry
+    // no content and must not split a run.
+    if (node.nodeType === Node.TEXT_NODE) { run.push(node); return }
+    if (!(node instanceof HTMLElement)) return
+    const tag = node.tagName.toLowerCase()
+    if (NON_CONTENT_TAGS.has(tag)) return
+    if (!isBlockish(node)) { run.push(node); return }
+    flushRun()
+    block(node, tag)
+  })
+  flushRun()
+}
+
+export function htmlToMd(root: HTMLElement): string {
+  const out: string[] = []
+  walkBlocks(root, out, false)
   return out.join('\n')
 }
