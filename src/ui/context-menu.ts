@@ -7,6 +7,7 @@
 // to actually take keyboard focus, not just render.
 import { el, bindOutsideDismiss, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
+import { blockedByBlockingModal } from './hotkeys'
 
 export interface ContextMenuItem {
   label: string
@@ -83,6 +84,10 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[], 
   clampToViewport(menu)
 
   function onKeydown(e: KeyboardEvent): void {
+    // A blocking modal that appeared after the menu (an async save conflict)
+    // owns the keyboard — same guard as every other document-level dropdown.
+    // A modeless card modal does not count.
+    if (blockedByBlockingModal()) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)
