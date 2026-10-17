@@ -751,6 +751,24 @@ function renderTableMd(table: HTMLElement, out: string[]): void {
 // emit indent mdToHtml can't honour, collapsing levels 5+ into level 4 with
 // every ordered item stuck at "1." — clamping here instead flattens them to
 // level 4 cleanly, and mdToHtml's per-frame renumber makes the run sequential.
+/**
+ * An item's own content as one entry per line. Blocks pasted into an item
+ * (Chromium drops a multi-block fragment inside the caret's <li>; Docs, Word
+ * and ChatGPT wrap an item's text in <p>) become sibling items rather than
+ * one run-on line. An item with no block-level content is returned exactly
+ * as before, <br>s and all.
+ */
+function liLines(li: HTMLElement, text = false): string[] {
+  const nodes = liOwnContentNodes(li)
+  if (!nodes.some((n) => n instanceof HTMLElement && isBlockish(n))) return [(text ? blockToTextNodes : blockToMdNodes)(nodes)]
+  const holder = li.ownerDocument.createElement('div')
+  nodes.forEach((n) => holder.appendChild(n))
+  const lines: string[] = []
+  walkBlocks(holder, lines, true, text)
+  const own = lines.flatMap((l) => l.split('\n')).filter((l) => l.trim() !== '')
+  return own.length > 0 ? own : ['']
+}
+
 function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   const tag = list.tagName.toLowerCase()
   const prefix = '  '.repeat(Math.min(depth, MAX_LIST_DEPTH))
@@ -765,14 +783,15 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     if (childTag === 'ul' || childTag === 'ol') { renderListMd(child, depth + 1, out); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
-    const text = blockToMdNodes(liOwnContentNodes(child))
-    if (tag === 'ol') {
-      const v = child.getAttribute('value')
-      i = v ? Number(v) : i + 1
-      out.push(`${prefix}${i}. ${text}`)
-    } else {
-      out.push(`${prefix}- ${text}`)
-    }
+    liLines(child).forEach((text, n) => {
+      if (tag === 'ol') {
+        const v = child.getAttribute('value')
+        i = n === 0 && v ? Number(v) : i + 1
+        out.push(`${prefix}${i}. ${text}`)
+      } else {
+        out.push(`${prefix}- ${text}`)
+      }
+    })
     nestedLists.forEach(nested => renderListMd(nested, depth + 1, out))
   })
 }
@@ -842,8 +861,7 @@ function renderListText(list: HTMLElement, out: string[], depth = 0): void {
     if (childTag === 'ul' || childTag === 'ol') { renderListText(child, out, depth + 1); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
-    const text = blockToTextNodes(liOwnContentNodes(child))
-    out.push(text.split('\n').map(line => prefix + line).join('\n'))
+    out.push(liLines(child, true).flatMap(l => l.split('\n')).map(line => prefix + line).join('\n'))
     nestedLists.forEach(nested => renderListText(nested, out, depth + 1))
   })
 }
@@ -912,9 +930,11 @@ function isBlockish(el: Element): boolean {
  *
  * `flat` is for a list item's own content: it is already a bullet, so a
  * heading, quote or code block contributes its text only, without `#`, `> `
- * or a fence, and a rule contributes nothing.
+ * or a fence, and a rule contributes nothing. `text` renders lines as visible
+ * text (no markdown markers) for the plain-text copy.
  */
-function walkBlocks(parent: Node, out: string[], flat: boolean): void {
+function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): void {
+  const lineOf = text ? blockToTextNodes : blockToMdNodes
   let run: Node[] = []
   const flushRun = (): void => {
     const nodes = run
@@ -924,12 +944,12 @@ function walkBlocks(parent: Node, out: string[], flat: boolean): void {
     const meaningful = nodes.some((n) =>
       (n.textContent ?? '').trim() !== '' || (n instanceof HTMLElement && n.tagName.toLowerCase() === 'br'))
     if (!meaningful) return
-    out.push(blockToMdNodes(nodes).trim())
+    out.push(lineOf(nodes).trim())
   }
   const block = (node: HTMLElement, tag: string): void => {
     if (/^h[1-6]$/.test(tag)) {
-      const text = blockToMd(node)
-      out.push(flat ? text : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + text)
+      const line = lineOf(Array.from(node.childNodes))
+      out.push(flat ? line : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + line)
     } else if (tag === 'blockquote') {
       // A quote copied off a web page / email reaches here whole as
       // <blockquote><p>a</p><p>b</p></blockquote> (or <div>-built) — its
@@ -939,8 +959,8 @@ function walkBlocks(parent: Node, out: string[], flat: boolean): void {
       // — 'br' is NOT in BLOCK_TAGS) has no block child, so it still takes the
       // blockToMd path and idempotency is preserved.
       const inner: string[] = []
-      if (Array.from(node.children).some(isBlockish)) walkBlocks(node, inner, flat)
-      else inner.push(blockToMd(node))
+      if (Array.from(node.children).some(isBlockish)) walkBlocks(node, inner, flat, text)
+      else inner.push(lineOf(Array.from(node.childNodes)))
       for (const l of inner.join('\n').split('\n')) out.push(flat ? l : l ? `> ${l}` : '>')
     } else if (tag === 'ul' || tag === 'ol') {
       if (!flat) renderListMd(node, 0, out)
@@ -953,9 +973,9 @@ function walkBlocks(parent: Node, out: string[], flat: boolean): void {
     } else if (tag === 'table') {
       renderTableMd(node, out)
     } else if ((tag === 'div' || tag === 'p') && !Array.from(node.children).some(isBlockish)) {
-      out.push(blockToMd(node))
+      out.push(lineOf(Array.from(node.childNodes)))
     } else {
-      walkBlocks(node, out, flat)
+      walkBlocks(node, out, flat, text)
     }
   }
   parent.childNodes.forEach((node) => {

@@ -172,6 +172,26 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('pasting multi-block HTML while the caret is in a list item serializes every block as its own item', () => {
+    // Chromium's insertHTML drops a multi-block fragment inside the caret's <li>.
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
+      if (cmd === 'insertHTML' && typeof val === 'string') document.querySelector('.editor li')!.insertAdjacentHTML('beforeend', val)
+      return true
+    })
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- item')
+
+    dispatchPaste(editor, { 'text/html': '<h2>Title</h2><p>one</p><p>two</p>' })
+
+    const md = editor.getMd()
+    expect(md).toContain('- Title')
+    expect(md).toContain('- one')
+    expect(md).toContain('- two')
+    expect(md).not.toContain('Titleone')
+    editor.destroy()
+  })
+
   test('a legitimate ref chip (this app\'s own uuid-shaped id) survives paste as a real chip', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

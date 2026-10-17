@@ -1426,3 +1426,30 @@ describe('htmlToMd: containers holding blocks', () => {
     expect(md('<title>T</title><style>.a{}</style><div>x</div><script>y</script><template>z</template>')).toBe('x')
   })
 })
+
+describe('htmlToMd: list items holding blocks', () => {
+  const md = (html: string): string => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    return htmlToMd(root)
+  }
+
+  test('an li with two paragraphs keeps the word boundary as two sibling items', () => {
+    expect(md('<ol><li><p>Then</p><p>second para</p></li><li>last</li></ol>')).toBe('1. Then\n2. second para\n3. last')
+  })
+
+  test('blocks pasted mid-item become sibling bullets, the nested list still follows', () => {
+    expect(md('<ul><li>item t<h2>Title</h2><pre>const a = 1;\nconst b = 2;</pre><div>Use it</div>ext<ul><li>sub</li></ul></li></ul>'))
+      .toBe('- item t\n- Title\n- const a = 1;\n- const b = 2;\n- Use it\n- ext\n  - sub')
+  })
+
+  test('a plain li is unchanged', () => {
+    expect(md('<ul><li>a <b>b</b></li></ul>')).toBe('- a **b**')
+  })
+})
+
+test('plain-text copy of an li holding two paragraphs keeps them on separate lines', () => {
+  const root = document.createElement('div')
+  root.innerHTML = '<ul><li><p>Then</p><p>second para</p><ul><li>sub</li></ul></li></ul>'
+  expect(htmlToPlainText(root)).toBe('Then\nsecond para\n  sub')
+})
