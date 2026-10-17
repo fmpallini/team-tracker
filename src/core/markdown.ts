@@ -296,9 +296,12 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   //
   // The fence that closes a block must be at least as long as the one that
   // opened it (CommonMark's rule), so a block holding a ``` line is written
-  // with a longer fence (see fenceFor) and survives the round trip. Every
-  // file written before that opens with exactly ```, and for those "any line
-  // starting with ```" still closes the block — unchanged behaviour.
+  // with a longer fence (see fenceFor) and survives the round trip. A ```
+  // opener (every block written before long fences existed) still closes on
+  // any line starting with ``` — unchanged. A longer opener counts as long
+  // only when a closer of its length follows: older notes can hold a literal
+  // "````" text line (pasted, or typed and left without Enter), which used to
+  // close on the next ``` line and must keep doing so.
   let preBuf: string[] | null = null
   let preFence = 0
   const flushPre = () => {
@@ -307,12 +310,17 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     out.push(`<pre>${body === '' ? '<br>' : highlightCode(body)}</pre>`)
     preBuf = null
   }
-  for (const line of lines) {
+  for (const [i, line] of lines.entries()) {
     if (preBuf !== null) {
       if (leadingBackticks(line) >= preFence) { flushPre(); continue }
       preBuf.push(line); continue
     }
-    if (leadingBackticks(line) >= 3) { flushBq(); closeList(); preBuf = []; preFence = leadingBackticks(line); continue }
+    const run = leadingBackticks(line)
+    if (run >= 3) {
+      flushBq(); closeList(); preBuf = []
+      preFence = run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+      continue
+    }
     const bq = /^> ?(.*)$/.exec(line)
     if (bq) { closeList(); (bqBuf ??= []).push(bq[1]!); continue }
     flushBq()

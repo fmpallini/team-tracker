@@ -43,8 +43,8 @@ export interface BackupController {
   /**
    * True only when a backup is configured (a handle id is set) and its
    * grant is not currently 'granted'. Read-only — never prompts, never
-   * writes, never rejects (a failed lookup reads as false). Backup writes are interval-gated (daily/hourly), so unlike the
-   * primary file a lapsed backup grant can otherwise go undetected for up
+   * writes, never rejects (a failed lookup reads as false). Backup writes
+   * are interval-gated (daily/hourly), so unlike the primary file a lapsed backup grant can otherwise go undetected for up
    * to a day; save-controller.ts calls this after every successful primary
    * save (cheap — a single `queryPermission`) so the save-state pill can
    * reflect it immediately instead of waiting for the next backup attempt.

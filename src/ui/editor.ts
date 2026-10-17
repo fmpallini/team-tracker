@@ -1603,8 +1603,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onKeydown(e: KeyboardEvent): void {
     // Every branch below edits the DOM directly, which contenteditable="false"
-    // does not stop; a read-only editor leaves keys to the browser.
-    if (editorsReadOnly) return
+    // does not stop; a read-only editor runs none of them. A chord the table
+    // owns is still swallowed, as when writable: focus can sit on a link in a
+    // read-only note, and Ctrl+U / Ctrl+1..9 there are the browser's
+    // view-source and tab switch.
+    if (editorsReadOnly) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && SHORTCUTS.some((sc) => sc.match(e))) e.preventDefault()
+      return
+    }
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the

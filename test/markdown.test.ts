@@ -1172,6 +1172,14 @@ describe('fenced code block', () => {
   test('files already on disk parse as before: a ``` block still closes on any ```-prefixed line', () => {
     expect(mdToHtml('```\na\n```js\nb')).toBe('<pre>a</pre><div>b</div>')
   })
+  // A literal "````" text line in a note saved before long fences existed:
+  // with no closer of its own length anywhere after it, it is read the old
+  // way (closing on any ```-prefixed line) instead of swallowing the rest of
+  // the note into a code block.
+  test('a 4+-backtick opener with no matching long closer parses as before', () => {
+    expect(mdToHtml('````\nx\n```\nmore')).toBe('<pre>x</pre><div>more</div>')
+    expect(mdToHtml('``````js\nx\n```\ny')).toBe('<pre>x</pre><div>y</div>')
+  })
   test('text on the opening fence line (a language tag) is discarded', () => {
     const div = document.createElement('div'); div.innerHTML = mdToHtml('```js\nconst a = 1\n```')
     expect(div.querySelector('pre')!.textContent).toBe('const a = 1')

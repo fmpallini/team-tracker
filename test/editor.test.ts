@@ -3699,6 +3699,26 @@ describe('setEditorsReadOnly', () => {
     }
   })
 
+  // Focus can sit inside a read-only note (on a link). Its formatting chords
+  // must still not fall through to the browser: Ctrl+U is view-source and
+  // Ctrl+1..9 switch browser tabs in Chrome.
+  test('read-only: a formatting chord is swallowed, not run and not left to the browser', () => {
+    const { editor, editorEl } = mountRo('# Head')
+    try {
+      placeCaret(editorEl.querySelector('h1')!.firstChild!, 1)
+      setEditorsReadOnly(true)
+      editor.root.addEventListener('keydown', (ev) => ev.stopPropagation()) // see the Tab test
+      const u = dispatchKey(editorEl, { key: 'u', code: 'KeyU', ctrlKey: true })
+      const one = dispatchKey(editorEl, { key: '1', code: 'Digit1', ctrlKey: true })
+      expect(u.defaultPrevented).toBe(true)
+      expect(one.defaultPrevented).toBe(true)
+      expect(editor.getMd()).toBe('# Head')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
   test('read-only: Enter on a "---" line converts nothing', () => {
     const { editor, editorEl } = mountRo('a')
     try {
