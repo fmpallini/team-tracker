@@ -1798,8 +1798,31 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     const text = e.clipboardData?.getData('text/plain') ?? ''
+    // Chromium's insertText of many lines is quadratic (4–9 s for a 1,500-line
+    // log), while one insertHTML of escaped <div> lines takes ~100 ms. Inside a
+    // list item the native insertText is kept: it splits the text into items.
+    const lines = text.replace(/\r\n?/g, '\n').split('\n')
+    if (lines.length > 1 && !selectionInListItem()) {
+      const nbsp = String.fromCharCode(0xa0)
+      const html = lines
+        .map((l) => `<div>${l === '' ? '<br>' : l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/^ +/, (sp) => nbsp.repeat(sp.length))}</div>`)
+        .join('')
+      document.execCommand('insertHTML', false, html)
+      flattenTopLevelBlockWrappers(editorEl)
+      decorateCodeBlocks()
+      syncPreHighlight()
+      scheduleChange()
+      return
+    }
     document.execCommand('insertText', false, text)
     scheduleChange()
+  }
+
+  /** True when the selection's start sits inside a list item of this editor. */
+  function selectionInListItem(): boolean {
+    const node = window.getSelection()?.anchorNode
+    const el = node instanceof Element ? node : node?.parentElement
+    return !!el && editorEl.contains(el) && el.closest('li') !== null
   }
 
   /**

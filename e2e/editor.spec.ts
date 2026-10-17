@@ -181,6 +181,44 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(pre.locator('em')).toHaveCount(0)
   })
 
+  // Chromium's insertText of many lines is quadratic (4–9 s for a 1,500-line log
+  // paste); onPaste inserts the lines as one insertHTML instead. Also pins that
+  // the literal text ("*", "_") is still literal after the note is reloaded.
+  test('a 1,500-line plain-text paste lands in under 1.5 s and keeps every line literal', async ({ page }) => {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    const text = Array.from({ length: 1500 }, (_, i) => `2026-10-17 12:00:${String(i % 60).padStart(2, '0')} INFO request ${i} path=/api/v1/items_${i}*`).join('\n')
+
+    const ms = await page.evaluate((text) => {
+      const ed = document.querySelector('.editor') as HTMLElement
+      ed.focus()
+      const sel = getSelection()!
+      sel.removeAllRanges()
+      const r = document.createRange()
+      r.selectNodeContents(ed.lastElementChild ?? ed)
+      r.collapse(false)
+      sel.addRange(r)
+      const dt = new DataTransfer()
+      dt.setData('text/plain', text)
+      const t0 = performance.now()
+      ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      return performance.now() - t0
+    }, text)
+    expect(ms).toBeLessThan(1500)
+    await page.waitForTimeout(400)
+    await expect(editor.locator('> div')).toHaveCount(1500)
+
+    // Away to another module and back: the note is rebuilt from what was saved.
+    const pane = page.locator('.tt-pane[data-pane-idx="0"]')
+    for (const label of [/Members/i, /Daily/i]) {
+      await pane.locator('.tt-pane-modules-btn').click()
+      await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+    }
+    const reopened = page.locator('.editor').first()
+    await expect(reopened.locator('> div')).toHaveCount(1500)
+    await expect(reopened.locator('> div').last()).toHaveText('2026-10-17 12:00:59 INFO request 1499 path=/api/v1/items_1499*')
+  })
+
   test('a hostile clipboard payload is disarmed and loads no resources', async ({ page }) => {
     const requests: string[] = []
     page.on('request', (r) => requests.push(r.url()))

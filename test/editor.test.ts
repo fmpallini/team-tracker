@@ -192,6 +192,39 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('multi-line plain text is inserted as one insertHTML of literal lines', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, { 'text/plain': 'a\r\n<b>\r\n\r\n  - x' })
+
+    const inserts = execSpy.mock.calls.filter((c) => c[0] === 'insertHTML' || c[0] === 'insertText')
+    const nbsp = String.fromCharCode(0xa0)
+    expect(inserts).toEqual([['insertHTML', false, `<div>a</div><div>&lt;b&gt;</div><div><br></div><div>${nbsp}${nbsp}- x</div>`]])
+    editor.destroy()
+  })
+
+  test('multi-line plain text inside a list item still uses insertText (the browser splits it into items)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- item')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const li = editor.root.querySelector('.editor li')!
+    const range = document.createRange()
+    range.setStart(li.firstChild!, 2)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchPaste(editor, { 'text/plain': 'a\nb' })
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, 'a\nb')
+    expect(execSpy).not.toHaveBeenCalledWith('insertHTML', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
   test('a Word list paste inserts list markup, not "·" text lines', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
