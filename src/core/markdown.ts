@@ -503,6 +503,9 @@ function segmentsToLines(nodes: Node[], render: (n: Node) => string): string {
   return segmentsToLineNodes(nodes).map(seg => seg.map(render).join('')).join('\n')
 }
 
+// Splits a run of nodes at <br> boundaries and joins each segment's rendered
+// markdown with '\n', so soft line breaks survive the html -> markdown
+// conversion. A trailing <br> produces no extra empty line.
 function blockToMdNodes(nodes: Node[]): string {
   return segmentsToLines(nodes, inlineMd)
 }
@@ -537,12 +540,6 @@ function liOwnContentNodes(li: HTMLElement): Node[] {
   return Array.from(clone.childNodes)
 }
 
-// Splits a block element's children at <br> boundaries and joins each
-// segment's rendered markdown with '\n', so soft line breaks survive the
-// html -> markdown conversion. A trailing <br> produces no extra empty line.
-function blockToMd(node: HTMLElement): string {
-  return blockToMdNodes(Array.from(node.childNodes))
-}
 
 // Block-level tags htmlToMd's top-level walker recognizes as direct
 // children of its root. Also used by unwrapBlockContainers below to
