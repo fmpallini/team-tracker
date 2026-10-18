@@ -71,14 +71,30 @@ export async function setNextOpenName(page: Page, name: string): Promise<void> {
   }, name)
 }
 
-/** Reads an OPFS file's raw bytes directly — for asserting on what the app actually wrote to disk (e.g. the backup mirror), independent of app-level UI state. */
+/**
+ * Reads an OPFS file's raw bytes directly — for asserting on what the app actually wrote to disk (e.g. the backup mirror), independent of app-level UI state.
+ *
+ * While the app commits a save (`createWritable().close()`), the file is briefly
+ * reported as missing (`NotFoundError`) or unreadable (`NotReadableError`). A
+ * test polling the file for the saved text hits that window, and `expect.poll`
+ * does not retry a throwing callback — so a read racing a commit retries here
+ * instead of failing the test. A file that stays missing still throws.
+ */
 export async function readOpfsFile(page: Page, name: string): Promise<number[]> {
   return page.evaluate(async (n) => {
     const root = await navigator.storage.getDirectory()
-    const handle = await root.getFileHandle(n)
-    const file = await handle.getFile()
-    const buf = await file.arrayBuffer()
-    return Array.from(new Uint8Array(buf))
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const handle = await root.getFileHandle(n)
+        const file = await handle.getFile()
+        const buf = await file.arrayBuffer()
+        return Array.from(new Uint8Array(buf))
+      } catch (e) {
+        const transient = e instanceof DOMException && (e.name === 'NotFoundError' || e.name === 'NotReadableError')
+        if (!transient || attempt >= 50) throw e
+        await new Promise((r) => setTimeout(r, 20))
+      }
+    }
   }, name)
 }
 
