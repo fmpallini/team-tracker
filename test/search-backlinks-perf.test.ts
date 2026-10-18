@@ -71,13 +71,24 @@ function timeIt(fn: () => void): number {
   return performance.now() - start
 }
 
+/**
+ * Best of `reps` runs — the minimum is the sample least polluted by a GC pause
+ * or a CI scheduler hiccup landing mid-measurement. The cache-hit loops here
+ * last ~1ms, so a single stall otherwise swamps the ratio being asserted.
+ */
+function bestMs(reps: number, fn: () => void): number {
+  let best = Infinity
+  for (let i = 0; i < reps; i++) best = Math.min(best, timeIt(fn))
+  return best
+}
+
 test('a shared index scales far better than an uncached lookup under repeat calls', () => {
   const doc = largeFixture()
 
   // "Cold" baseline: a fresh SearchIndex (and therefore a fresh per-team
   // scan) on every single lookup — the cost shape a per-render lookup would
   // have with no cache to reuse across calls.
-  const coldMs = timeIt(() => {
+  const coldMs = bestMs(3, () => {
     for (let i = 0; i < LOOKUP_COUNT; i++) {
       const index = createSearchIndex(() => doc, () => 0)
       expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
@@ -87,9 +98,8 @@ test('a shared index scales far better than an uncached lookup under repeat call
   // Real usage shape: one Store, one shared cached index (as wired into
   // every module's ModuleCtx) — the first call pays the scan, the rest are
   // cache hits.
-  const store = createStore(doc)
-  const index = wiredIndex(store)
-  const cachedMs = timeIt(() => {
+  const cachedMs = bestMs(3, () => {
+    const index = wiredIndex(createStore(doc))
     for (let i = 0; i < LOOKUP_COUNT; i++) {
       expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
     }
@@ -109,13 +119,13 @@ test('a cold backlinks() lookup skips the stripMd/normalize pass that only searc
   // (the old single TeamIndex) made a chip render pay search()'s cost; the
   // split means a cold backlinks() lookup is materially cheaper.
   const REPS = 40
-  const backlinksMs = timeIt(() => {
+  const backlinksMs = bestMs(3, () => {
     for (let i = 0; i < REPS; i++) {
       const index = createSearchIndex(() => doc, () => 0)
       expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
     }
   })
-  const searchMs = timeIt(() => {
+  const searchMs = bestMs(3, () => {
     for (let i = 0; i < REPS; i++) {
       const index = createSearchIndex(() => doc, () => 0)
       expect(index.search('rollout', 't1').length).toBeGreaterThan(0)
@@ -148,7 +158,7 @@ test('scoped invalidation makes reading an unedited team far cheaper than readin
 
   // Each edit to t1 forces t1's own next lookup to pay a real rebuild —
   // that's correct, not a regression.
-  const editedTeamMs = timeIt(() => {
+  const editedTeamMs = bestMs(3, () => {
     for (let i = 0; i < EDIT_COUNT; i++) {
       editT1()
       expect(index.backlinks('t1', 'action', 'a0')).toHaveLength(1)
@@ -158,7 +168,7 @@ test('scoped invalidation makes reading an unedited team far cheaper than readin
   // t2 was never touched by any of those edits. With scoped invalidation,
   // its cache entry survives every one of them — these should all be cache
   // hits, not full team-text rescans.
-  const untouchedTeamMs = timeIt(() => {
+  const untouchedTeamMs = bestMs(3, () => {
     for (let i = 0; i < EDIT_COUNT; i++) {
       editT1()
       expect(index.backlinks('t2', 'action', 'a0')).toHaveLength(1)
