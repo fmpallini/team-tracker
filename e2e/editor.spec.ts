@@ -8,8 +8,7 @@
 // coverage at all. This spec fills those:
 //
 //   - paste of clipboard HTML → real converted blocks in the editor, and the
-//     pasted content survives Ctrl+S → close → reopen  (currently test.fixme —
-//     see the bug note on that test)
+//     pasted content survives Ctrl+S → close → reopen
 //   - paste inside a fenced code block stays literal text (plain, not HTML)
 //   - a hostile clipboard payload (<img onerror>, javascript: link) is
 //     disarmed in the resulting DOM and loads nothing
