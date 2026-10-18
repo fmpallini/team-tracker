@@ -17,7 +17,7 @@ function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) =>
       requestSaveNow: () => { requestCount++ },
       subscribeSaveState: (cb) => {
         subs.add(cb)
-        cb({ state: 'saved', label: 'Saved', title: 'Saved' })
+        cb({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false })
         return () => { subs.delete(cb) }
       },
     },
@@ -120,6 +120,12 @@ function setBlockText(editor: HTMLElement, text: string): void {
 
 function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function offeredTemplates(editor: HTMLElement): string[] {
+  setBlockText(editor, '/')
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  return Array.from(document.querySelectorAll('.tt-atref-item')).map((n) => n.textContent ?? '')
 }
 
 function pickDate(day: number): void {
@@ -1493,7 +1499,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     const pillText = document.querySelector('.tt-save-pill-text')!
     expect(pillText.textContent).toBe('Saved') // fakeSaveStatus's immediate subscribe() callback
 
-    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes' })
+    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes', clickable: true })
     expect(pillText.textContent).toBe('Unsaved')
     expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('dirty')
   })
@@ -1508,14 +1514,25 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
 
     const pill = document.querySelector('.tt-save-pill')!
 
-    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed' })
+    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed', clickable: true })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
 
-    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password' })
+    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password', clickable: true })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
 
-    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error' })
+    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+  })
+
+  test('the mini pill follows info.clickable', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'a' })] }))
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
+    const pill = document.querySelector('.tt-save-pill')!
+    fake.emit({ state: 'saved', label: 'x', title: 'x', clickable: true })
+    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
   })
 
   test('clicking the mini pill triggers ctx.saveStatus.requestSaveNow(), the same explicit-save action Ctrl+S uses', () => {
@@ -2602,4 +2619,59 @@ describe('renderActionItems — delete behaviour pins', () => {
     expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).toEqual(['a1', 'a2'])
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
+})
+
+describe('calendar day rolling over while the board sits idle', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  function idleOvernight() {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 14, 23, 0))
+    const ctx = setup(makeTeam({ actionItems: [item({ id: 'a', dueDate: '2026-10-14' })] }))
+    render(ctx.container, ctx.loc, ctx.store, ctx.pm)
+    const due = (): HTMLElement => ctx.container.querySelector<HTMLElement>('.tt-kanban-card-due')!
+    expect(due().classList.contains('overdue')).toBe(false)
+    vi.setSystemTime(new Date(2026, 9, 15, 8, 0))
+    return { ...ctx, due }
+  }
+
+  test('a due pill turns overdue when the window is returned to on the next day', () => {
+    const { due } = idleOvernight()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(due().classList.contains('overdue')).toBe(true)
+  })
+
+  test('a column rename being typed is left alone until it blurs', () => {
+    const { container, due } = idleOvernight()
+    ;(container.querySelector('.tt-kanban-col-name') as HTMLElement).click() // opens the rename input
+    const input = container.querySelector<HTMLInputElement>('.tt-kanban-col-rename-input')!
+    input.value = 'Half-typed'
+    window.dispatchEvent(new Event('focus'))
+    expect(input.isConnected).toBe(true)
+    expect(input.value).toBe('Half-typed')
+    // Back to the original name before leaving the field, so the blur commits
+    // no rename: whatever rebuild follows comes from the deferred day change.
+    input.value = 'WIP'
+    input.dispatchEvent(new FocusEvent('blur'))
+    expect(due().classList.contains('overdue')).toBe(true)
+  })
+
+  test('tearing the board down removes both listeners', () => {
+    const { container, store, pm, loc } = idleOvernight()
+    const docOff = vi.spyOn(document, 'removeEventListener')
+    const winOff = vi.spyOn(window, 'removeEventListener')
+    render(container, loc, store, pm)
+    expect(docOff.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(true)
+    expect(winOff.mock.calls.some(([type]) => type === 'focus')).toBe(true)
+    docOff.mockRestore()
+    winOff.mockRestore()
+  })
+})
+
+test('the card notes editor offers the "any"-scope templates only', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'a', summary: 'Ship' })] }))
+  render(container, loc, store, pm)
+  cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  const editor = document.querySelector<HTMLElement>('.tt-modal-dialog .editor')!
+  expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
 })

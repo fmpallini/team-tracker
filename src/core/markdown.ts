@@ -2,7 +2,7 @@ import { REF_KINDS, refPattern, type IdRefKind } from './refs'
 import { highlightCode } from './highlight'
 
 // Strip the Private-Use-Area code points inline() uses for its own
-// LINK/REF placeholder tokens (U+E000–U+E005) BEFORE anything else, so
+// LINK/REF/ESC placeholder tokens (U+E000–U+E007) BEFORE anything else, so
 // a token spliced into the text — via a crafted link URL, ref target or
 // @[label] — is unforgeable rather than merely unlikely. esc() runs on
 // every string inline() feeds downstream (the body, and thus the href /
@@ -11,7 +11,7 @@ import { highlightCode } from './highlight'
 // emitted by inline() AFTER esc() using the *_OPEN/*_CLOSE consts, so they
 // are untouched.
 const esc = (s: string) =>
-  s.replace(/[\uE000-\uE005]/g, '')
+  s.replace(/[\uE000-\uE007]/g, '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const ALLOWED_SCHEMES = ['http:', 'https:', 'mailto:']
 
@@ -66,6 +66,21 @@ const LINK_OPEN = ''
 const LINK_CLOSE = ''
 const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 
+// A backslash-escaped literal (\*, \[, \#, …) is frozen in a placeholder the
+// moment inline() has esc()'d the line — before any link, ref or mark pass can
+// see the character — and put back as plain text in the terminal splice, after
+// every other pass. Same PUA rationale again (U+E006/U+E007, stripped from the
+// input by esc()), so a token can't be forged from text.
+//
+// The escapable set is exactly what htmlToMd's escapeInline/escapeLineStart
+// write. A backslash before anything else is a literal backslash, so Windows
+// paths and regexes in prose are untouched. `<` and `>` appear as their esc()'d
+// forms because inline() sees escaped text.
+const ESC_OPEN = String.fromCharCode(0xe006)
+const ESC_CLOSE = String.fromCharCode(0xe007)
+const ESC_PLACEHOLDER = new RegExp(`${ESC_OPEN}(\\d+)${ESC_CLOSE}`, 'g')
+const ESCAPED_CHAR = /\\(&lt;|&gt;|[\\*~[\]#.`-])/g
+
 /**
  * Longest single line that still gets inline parsing. The link, ref and
  * underline passes below are quadratic on an "opener with no closer" line
@@ -76,8 +91,13 @@ const LINK_PLACEHOLDER = new RegExp(`${LINK_OPEN}(\\d+)${LINK_CLOSE}`, 'g')
 const INLINE_PARSE_LIMIT = 10_000
 
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
-  if (s.length > INLINE_PARSE_LIMIT) return esc(s)
+  if (s.length > INLINE_PARSE_LIMIT) return esc(s).replace(ESCAPED_CHAR, '$1')
   let out = esc(s)
+  const escapes: string[] = []
+  out = out.replace(ESCAPED_CHAR, (_, c: string) => {
+    escapes.push(c)
+    return `${ESC_OPEN}${escapes.length - 1}${ESC_CLOSE}`
+  })
   // refs primeiro (labels não contêm ]): @[label](person:ID) | @[label](day:date) | @[label](action:ID) | @[label](milestone:ID) | @[label](risk:ID)
   //
   // Each match is extracted into a placeholder token here; the actual
@@ -161,7 +181,9 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
     // plain click only places the caret so the link text stays editable.
     // href is already safeHref-validated (no control chars, no `"`); esc()
     // covers the hint. htmlToMd ignores `title`, so nothing persists.
-    const titleAttr = ` title="${esc(linkHint ? `${href}\n${linkHint}` : href)}"`
+    // `href` is already escaped (it is a slice of esc(s)); escaping it again
+    // turned a URL's `&` into a visible `&amp;` in the tooltip.
+    const titleAttr = ` title="${href}${linkHint ? `\n${esc(linkHint)}` : ''}"`
     linkTags.push(`<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer nofollow">${applyMarks(text)}</a>`)
     return `${LINK_OPEN}${linkTags.length - 1}${LINK_CLOSE}`
   })
@@ -179,6 +201,7 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // fallback is a belt-and-braces inert default, not a reachable path.
   out = out.replace(LINK_PLACEHOLDER, (m, i: string) => linkTags[Number(i)] ?? m)
   out = out.replace(REF_PLACEHOLDER, (m, i: string) => refChips[Number(i)] ?? m)
+  out = out.replace(ESC_PLACEHOLDER, (m, i: string) => escapes[Number(i)] ?? m)
   return out
 }
 
@@ -203,6 +226,23 @@ function preserveIndent(s: string): string {
   const m = /^( +)/.exec(s)
   if (!m) return s
   return '\u00a0'.repeat(m[1]!.length) + s.slice(m[1]!.length)
+}
+
+/** Length of the run of backticks a line starts with — a run of 3+ is a code fence. */
+function leadingBackticks(line: string): number {
+  let n = 0
+  while (line[n] === '`') n++
+  return n
+}
+
+/** The fence for a code block holding `lines`: ``` unless a line would close it early, then one backtick longer than the longest such line's run. */
+function fenceFor(lines: readonly string[]): string {
+  let len = 3
+  for (const l of lines) {
+    const run = leadingBackticks(l)
+    if (run >= len) len = run + 1
+  }
+  return '`'.repeat(len)
 }
 
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
@@ -274,19 +314,38 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // and htmlToPlainText still serialise the literal text — and ui/editor.ts
   // strips them from whichever block the caret is in so editing stays on
   // plain text.
+  //
+  // The fence that closes a block must be at least as long as the one that
+  // opened it (CommonMark's rule), so a block holding a ``` line is written
+  // with a longer fence (see fenceFor) and survives the round trip. A ```
+  // opener (every block written before long fences existed) still closes on
+  // any line starting with ``` — unchanged. A longer opener counts as long
+  // only when a closer of its length follows: older notes can hold a literal
+  // "````" text line (pasted, or typed and left without Enter), which used to
+  // close on the next ``` line and must keep doing so.
   let preBuf: string[] | null = null
+  let preFence = 0
   const flushPre = () => {
     if (preBuf === null) return
     const body = preBuf.join('\n')
-    out.push(`<pre>${body === '' ? '<br>' : highlightCode(body)}</pre>`)
+    // The HTML parser drops one newline straight after <pre>, so a block that
+    // starts with blank lines gets a sacrificial one — otherwise each save and
+    // reopen would eat a leading blank line.
+    const html = body === '' ? '<br>' : highlightCode(body)
+    out.push(`<pre>${html.startsWith('\n') ? '\n' : ''}${html}</pre>`)
     preBuf = null
   }
-  for (const line of lines) {
+  for (const [i, line] of lines.entries()) {
     if (preBuf !== null) {
-      if (/^```/.test(line)) { flushPre(); continue }
+      if (leadingBackticks(line) >= preFence) { flushPre(); continue }
       preBuf.push(line); continue
     }
-    if (/^```/.test(line)) { flushBq(); closeList(); preBuf = []; continue }
+    const run = leadingBackticks(line)
+    if (run >= 3) {
+      flushBq(); closeList(); preBuf = []
+      preFence = run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+      continue
+    }
     const bq = /^> ?(.*)$/.exec(line)
     if (bq) { closeList(); (bqBuf ??= []).push(bq[1]!); continue }
     flushBq()
@@ -352,16 +411,41 @@ function styleHasDecoration(el: HTMLElement, line: 'underline' | 'line-through')
   return td.includes(line)
 }
 
+/**
+ * Escapes literal text so that mdToHtml reading it back yields exactly the same
+ * characters: every marker character gets a backslash, `<` only where it would
+ * open an underline tag, and a backslash that would otherwise pair with what
+ * follows it (an escapable character, or the next node's first character when
+ * only whitespace is left — mark() moves edge whitespace outside a marker pair,
+ * which would put the backslash right before the closing marker) is doubled.
+ */
+function escapeInline(text: string): string {
+  return text.replace(/\\(?=[\\*~[\]<>#.`-]|\s*$)|[*~[\]]|<(?=\/?u>)/g, (m) => `\\${m}`)
+}
+
+/**
+ * A plain line's leading characters that mdToHtml would parse as a block
+ * (heading, quote, fence, rule, bullet, numbered item) get one backslash, so a
+ * pasted "# x" or "1. step" stays the text it was.
+ */
+function escapeLineStart(line: string): string {
+  if (/^#{1,3} /.test(line) || line.startsWith('>') || line.startsWith('```') || /^-{3,}$/.test(line)) return `\\${line}`
+  return line.replace(/^( *)- /, '$1\\- ').replace(/^( *)(\d+)\. /, '$1$2\\. ')
+}
+
+/** escapeLineStart for every line of a multi-line string (a <br>-split block). */
+const escapeLines = (s: string): string => s.split('\n').map(escapeLineStart).join('\n')
+
 function inlineMd(node: Node): string {
   // U+00A0 → ' ': undo mdToHtml's caret-slot &nbsp; (and the nbsp Chrome
   // itself inserts while editing) so markdown only ever stores plain spaces.
-  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/\u00a0/g, ' ')
+  if (node.nodeType === Node.TEXT_NODE) return escapeInline((node.textContent ?? '').replace(/\u00a0/g, ' '))
   if (!(node instanceof HTMLElement)) return ''
   const kids = () => Array.from(node.childNodes).map(inlineMd).join('')
   const tag = node.tagName.toLowerCase()
   if (tag === 'a' && node.dataset.ref) {
     const label = (node.textContent ?? '').replace(/^@/, '')
-    const safeLabel = label.replace(/[[\]()]/g, '')
+    const safeLabel = label.replace(/[[\]()\\]/g, '')
     return `@[${safeLabel}](${node.dataset.ref})`
   }
   // External link (no data-ref). Re-validate the href through safeHref on the
@@ -370,7 +454,7 @@ function inlineMd(node: Node): string {
   // grammar on a later re-parse.
   if (tag === 'a' && !node.dataset.ref) {
     const href = safeHref(node.getAttribute('href') ?? '')
-    const text = kids().replace(/[[\]]/g, '')
+    const text = kids().replace(/\\?[[\]]/g, '')
     return href ? `[${text}](${href})` : text
   }
   if (tag === 'br') return ''
@@ -469,6 +553,9 @@ function segmentsToLines(nodes: Node[], render: (n: Node) => string): string {
   return segmentsToLineNodes(nodes).map(seg => seg.map(render).join('')).join('\n')
 }
 
+// Splits a run of nodes at <br> boundaries and joins each segment's rendered
+// markdown with '\n', so soft line breaks survive the html -> markdown
+// conversion. A trailing <br> produces no extra empty line.
 function blockToMdNodes(nodes: Node[]): string {
   return segmentsToLines(nodes, inlineMd)
 }
@@ -503,12 +590,6 @@ function liOwnContentNodes(li: HTMLElement): Node[] {
   return Array.from(clone.childNodes)
 }
 
-// Splits a block element's children at <br> boundaries and joins each
-// segment's rendered markdown with '\n', so soft line breaks survive the
-// html -> markdown conversion. A trailing <br> produces no extra empty line.
-function blockToMd(node: HTMLElement): string {
-  return blockToMdNodes(Array.from(node.childNodes))
-}
 
 // Block-level tags htmlToMd's top-level walker recognizes as direct
 // children of its root. Also used by unwrapBlockContainers below to
@@ -584,6 +665,61 @@ export function unwrapBlockContainers(root: HTMLElement): void {
     }
     wrapper.replaceWith(...blocks)
   }
+}
+
+const WORD_LIST_LEVEL = /mso-list:\s*[^;"]*\blevel(\d+)/i
+const WORD_LIST_GLYPH = /^[0-9a-z]+[.)]$/i
+
+/**
+ * Word does not put lists on the clipboard as <ul>/<ol>: each item is a <p>
+ * whose style says `mso-list:l0 level2 lfo1`, led by a glyph span
+ * (`mso-list:Ignore`) holding the bullet or "1." — so a pasted list arrived as
+ * "· Item" text lines. Rebuilds real nested lists from each run of such
+ * paragraphs, in place, dropping the glyph. A glyph shaped like "1." or "a)"
+ * makes the list ordered (a numeric one keeps its number on the first item);
+ * anything else is a bullet. Input without those paragraphs is left alone.
+ */
+export function convertWordLists(root: HTMLElement): void {
+  const doc = root.ownerDocument
+  const levelOf = (el: Element): number | null => {
+    const m = WORD_LIST_LEVEL.exec(el.getAttribute('style') ?? '')
+    return m ? Math.min(Number(m[1]), MAX_LIST_DEPTH + 1) : null
+  }
+  const seen = new Set<Element>()
+  root.querySelectorAll('[style]').forEach((first) => {
+    if (seen.has(first) || levelOf(first) === null) return
+    const run: Element[] = []
+    for (let el: Element | null = first; el && levelOf(el) !== null; el = el.nextElementSibling) {
+      run.push(el)
+      seen.add(el)
+    }
+    const frag = doc.createDocumentFragment()
+    const stack: { list: HTMLElement; level: number; lastLi: HTMLElement | null }[] = []
+    for (const item of run) {
+      const level = levelOf(item)!
+      const glyph = Array.from(item.querySelectorAll('[style]')).find((s) => /mso-list:\s*ignore/i.test(s.getAttribute('style') ?? ''))
+      const glyphText = (glyph?.textContent ?? '').replace(/\s/g, '')
+      const kind = WORD_LIST_GLYPH.test(glyphText) ? 'ol' : 'ul'
+      glyph?.remove()
+      const li = doc.createElement('li')
+      while (item.firstChild) li.appendChild(item.firstChild)
+      while (stack.length && stack[stack.length - 1]!.level > level) stack.pop()
+      let top = stack[stack.length - 1]
+      if (top && top.level === level && top.list.tagName.toLowerCase() !== kind) { stack.pop(); top = stack[stack.length - 1] }
+      if (!top || top.level < level) {
+        const list = doc.createElement(kind)
+        if (top?.lastLi) top.lastLi.appendChild(list)
+        else frag.appendChild(list)
+        top = { list, level, lastLi: null }
+        stack.push(top)
+        if (kind === 'ol' && /^\d+[.)]$/.test(glyphText)) li.setAttribute('value', String(parseInt(glyphText, 10)))
+      }
+      top.list.appendChild(li)
+      top.lastLi = li
+    }
+    run[0]!.before(frag)
+    run.forEach((el) => el.remove())
+  })
 }
 
 /**
@@ -717,6 +853,29 @@ function renderTableMd(table: HTMLElement, out: string[]): void {
 // emit indent mdToHtml can't honour, collapsing levels 5+ into level 4 with
 // every ordered item stuck at "1." — clamping here instead flattens them to
 // level 4 cleanly, and mdToHtml's per-frame renumber makes the run sequential.
+/**
+ * An item's own content as one entry per line. Blocks pasted into an item
+ * (Chromium drops a multi-block fragment inside the caret's <li>; Docs, Word
+ * and ChatGPT wrap an item's text in <p>) become sibling items rather than
+ * one run-on line. An item with no block-level content is returned exactly
+ * as before, <br>s and all.
+ */
+function liLines(li: HTMLElement, text = false): string[] {
+  const nodes = liOwnContentNodes(li)
+  if (!nodes.some((n) => n instanceof HTMLElement && isBlockish(n))) {
+    if (text) return [blockToTextNodes(nodes)]
+    // A <br> in a bullet puts the rest on a plain line below it.
+    const [first = '', ...rest] = blockToMdNodes(nodes).split('\n')
+    return [[first, ...rest.map(escapeLineStart)].join('\n')]
+  }
+  const holder = li.ownerDocument.createElement('div')
+  nodes.forEach((n) => holder.appendChild(n))
+  const lines: string[] = []
+  walkBlocks(holder, lines, true, text)
+  const own = lines.flatMap((l) => l.split('\n')).filter((l) => l.trim() !== '')
+  return own.length > 0 ? own : ['']
+}
+
 function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   const tag = list.tagName.toLowerCase()
   const prefix = '  '.repeat(Math.min(depth, MAX_LIST_DEPTH))
@@ -731,14 +890,15 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     if (childTag === 'ul' || childTag === 'ol') { renderListMd(child, depth + 1, out); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
-    const text = blockToMdNodes(liOwnContentNodes(child))
-    if (tag === 'ol') {
-      const v = child.getAttribute('value')
-      i = v ? Number(v) : i + 1
-      out.push(`${prefix}${i}. ${text}`)
-    } else {
-      out.push(`${prefix}- ${text}`)
-    }
+    liLines(child).forEach((text, n) => {
+      if (tag === 'ol') {
+        const v = child.getAttribute('value')
+        i = n === 0 && v ? Number(v) : i + 1
+        out.push(`${prefix}${i}. ${text}`)
+      } else {
+        out.push(`${prefix}- ${text}`)
+      }
+    })
     nestedLists.forEach(nested => renderListMd(nested, depth + 1, out))
   })
 }
@@ -808,8 +968,7 @@ function renderListText(list: HTMLElement, out: string[], depth = 0): void {
     if (childTag === 'ul' || childTag === 'ol') { renderListText(child, out, depth + 1); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
-    const text = blockToTextNodes(liOwnContentNodes(child))
-    out.push(text.split('\n').map(line => prefix + line).join('\n'))
+    out.push(liLines(child, true).flatMap(l => l.split('\n')).map(line => prefix + line).join('\n'))
     nestedLists.forEach(nested => renderListText(nested, out, depth + 1))
   })
 }
@@ -846,37 +1005,110 @@ export function htmlToPlainText(root: HTMLElement): string {
   return out.join('\n')
 }
 
-export function htmlToMd(root: HTMLElement): string {
-  const out: string[] = []
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const t = node.textContent?.trim(); if (t) out.push(t); return
-    }
-    // See htmlToPlainText's identical guard above: skips comment nodes
-    // (notably CF_HTML's StartFragment/EndFragment markers) instead of
-    // reading Comment.textContent as if it were real text.
-    if (!(node instanceof HTMLElement)) return
-    const tag = node.tagName.toLowerCase()
-    if (/^h[1-3]$/.test(tag)) out.push('#'.repeat(Number(tag[1])) + ' ' + blockToMd(node))
-    else if (tag === 'blockquote') {
+// Elements whose content is never note text, wherever they sit in a paste.
+const NON_CONTENT_TAGS = new Set(['head', 'title', 'style', 'script', 'template', 'noscript', 'meta', 'link'])
+
+// Wrappers real clipboard HTML puts around (or between) blocks. They carry no
+// line break of their own, but whatever they hold must keep its own lines —
+// treating one as "a line" mashed a whole VS Code / Wikipedia / Sheets paste
+// into one run-on blob.
+const CONTAINER_TAGS = new Set([
+  'html', 'body', 'section', 'article', 'header', 'footer', 'main', 'nav', 'aside', 'figure', 'figcaption',
+  'details', 'summary', 'address', 'center', 'dl', 'dt', 'dd', 'fieldset', 'form',
+])
+
+const BLOCKISH_SELECTOR = [...BLOCK_TAGS, ...CONTAINER_TAGS, 'h4', 'h5', 'h6'].join(',')
+
+/**
+ * True for a block, a known container, or any element that holds one. A link
+ * is the exception: `<a><div>card</div></a>` stays one inline link, as before.
+ */
+function isBlockish(el: Element): boolean {
+  const tag = el.tagName.toLowerCase()
+  if (BLOCK_TAGS.has(tag) || CONTAINER_TAGS.has(tag) || /^h[1-6]$/.test(tag)) return true
+  return tag !== 'a' && el.firstElementChild !== null && el.querySelector(BLOCKISH_SELECTOR) !== null
+}
+
+/**
+ * Appends one markdown line per output line for everything under `parent`.
+ * Consecutive inline children form one run (so `<br>` still splits it); a
+ * block-ish child flushes the run and is rendered on its own; a container or
+ * unknown wrapper holding blocks is walked, not read as a single line.
+ *
+ * `flat` is for a list item's own content: it is already a bullet, so a
+ * heading, quote or code block contributes its text only, without `#`, `> `
+ * or a fence, and a rule contributes nothing. `text` renders lines as visible
+ * text (no markdown markers) for the plain-text copy.
+ */
+function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): void {
+  const lineOf = text ? blockToTextNodes : blockToMdNodes
+  // A plain line (not a heading, quote, bullet or fence body) is parsed for
+  // block syntax when it is read back, so its first characters are escaped. A
+  // list item's own lines become bullets and plain-text copy has no syntax.
+  const plain = (s: string): string => (flat || text ? s : escapeLines(s))
+  let run: Node[] = []
+  const flushRun = (): void => {
+    const nodes = run
+    run = []
+    // A run of nothing but source-formatting whitespace (the newlines between
+    // blocks) emits no line; a <br> or any text does.
+    const meaningful = nodes.some((n) =>
+      (n.textContent ?? '').trim() !== '' || (n instanceof HTMLElement && n.tagName.toLowerCase() === 'br'))
+    if (!meaningful) return
+    out.push(plain(lineOf(nodes).trim()))
+  }
+  const block = (node: HTMLElement, tag: string): void => {
+    if (/^h[1-6]$/.test(tag)) {
+      // A <br> inside a heading puts the rest on a plain line below it.
+      const [first = '', ...rest] = lineOf(Array.from(node.childNodes)).split('\n')
+      out.push(flat ? first : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + first)
+      for (const l of rest) out.push(plain(l))
+    } else if (tag === 'blockquote') {
       // A quote copied off a web page / email reaches here whole as
       // <blockquote><p>a</p><p>b</p></blockquote> (or <div>-built) — its
       // block children would otherwise be merged onto one run-on line by
-      // blockToMd. Recurse through htmlToMd for that shape so each child
-      // block keeps its own line. The mdToHtml <br>-joined shape
-      // (<blockquote>a<br>b</blockquote> — 'br' is NOT in BLOCK_TAGS) has no
-      // block child, so it still takes the blockToMd path and idempotency is
-      // preserved.
-      const inner = Array.from(node.children).some(isBlockTag) ? htmlToMd(node) : blockToMd(node)
-      for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
+      // blockToMd. Walk it for that shape so each child block keeps its own
+      // line. The mdToHtml <br>-joined shape (<blockquote>a<br>b</blockquote>
+      // — 'br' is NOT in BLOCK_TAGS) has no block child, so it still takes the
+      // blockToMd path and idempotency is preserved.
+      const inner: string[] = []
+      if (Array.from(node.children).some(isBlockish)) walkBlocks(node, inner, flat, text)
+      else inner.push(lineOf(Array.from(node.childNodes)))
+      for (const l of inner.join('\n').split('\n')) out.push(flat ? l : l ? `> ${l}` : '>')
+    } else if (tag === 'ul' || tag === 'ol') {
+      if (!flat) renderListMd(node, 0, out)
+    } else if (tag === 'pre') {
+      const lines = preLines(node)
+      if (flat) out.push(...lines)
+      else { const fence = fenceFor(lines); out.push(fence, ...lines, fence) }
+    } else if (tag === 'hr') {
+      if (!flat) out.push('---')
+    } else if (tag === 'table') {
+      const rows: string[] = []
+      renderTableMd(node, rows)
+      for (const r of rows) out.push(plain(r))
+    } else if ((tag === 'div' || tag === 'p') && !Array.from(node.children).some(isBlockish)) {
+      out.push(plain(lineOf(Array.from(node.childNodes))))
+    } else {
+      walkBlocks(node, out, flat, text)
     }
-    else if (tag === 'ul' || tag === 'ol') renderListMd(node, 0, out)
-    else if (tag === 'pre') { out.push('```'); for (const l of preLines(node)) out.push(l); out.push('```') }
-    else if (tag === 'hr') out.push('---')
-    else if (tag === 'table') renderTableMd(node, out)
-    else if (tag === 'div' || tag === 'p') out.push(blockToMd(node))
-    else out.push(inlineMd(node))
   }
-  root.childNodes.forEach(walk)
+  parent.childNodes.forEach((node) => {
+    // Comment nodes (notably CF_HTML's StartFragment/EndFragment markers) carry
+    // no content and must not split a run.
+    if (node.nodeType === Node.TEXT_NODE) { run.push(node); return }
+    if (!(node instanceof HTMLElement)) return
+    const tag = node.tagName.toLowerCase()
+    if (NON_CONTENT_TAGS.has(tag)) return
+    if (!isBlockish(node)) { run.push(node); return }
+    flushRun()
+    block(node, tag)
+  })
+  flushRun()
+}
+
+export function htmlToMd(root: HTMLElement): string {
+  const out: string[] = []
+  walkBlocks(root, out, false)
   return out.join('\n')
 }

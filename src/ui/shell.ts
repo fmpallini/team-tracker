@@ -13,6 +13,8 @@ export interface SaveStatusInfo {
   state: SaveState
   label: string
   title: string
+  /** Whether clicking the pill does anything in this state (save, re-grant, or rewrite the backup). */
+  clickable: boolean
 }
 
 export interface Shell {
@@ -112,6 +114,9 @@ export interface Shell {
    */
   dispose(): void
 }
+
+/** States where clicking the save pill does something (save, re-grant permission, or rewrite the backup). Single source for the pill's click look and for `SaveStatusInfo.clickable`. */
+const CLICKABLE_STATES: ReadonlySet<SaveState> = new Set<SaveState>(['dirty', 'error', 'permission', 'backup-permission', 'backup-password-mismatch'])
 
 const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
   saved: 'save_saved',
@@ -326,7 +331,7 @@ export function createShell(locale: Locale): Shell {
     if (currentState === 'dirty' && fallbackHint) {
       title += ` — ${t(currentLocale, 'save_fallback_hint')}`
     }
-    return { state: currentState, label: text, title }
+    return { state: currentState, label: text, title, clickable: CLICKABLE_STATES.has(currentState) }
   }
 
   // Redraws the pill from `currentState`/`lastSavedAt`/`fallbackHint`/
@@ -354,9 +359,7 @@ export function createShell(locale: Locale): Shell {
           ? t(currentLocale, backupFrequency === 'hourly' ? 'save_backup_tab_ok_title_hourly' : 'save_backup_tab_ok_title_daily')
           : t(currentLocale, SAVE_STATE_KEY[currentState])
     }
-    const clickable =
-      currentState === 'dirty' || currentState === 'error' || currentState === 'permission' ||
-      currentState === 'backup-permission' || currentState === 'backup-password-mismatch'
+    const clickable = info.clickable
     saveIndicator.classList.toggle('tt-save-pill-clickable', clickable)
     // Same class on the tab too (it's a sibling of saveIndicator now, not a
     // descendant) so hovering the sliver peeking out from behind the main

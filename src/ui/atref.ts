@@ -16,8 +16,8 @@ import type { PaneManager } from './panes'
 import { el, clampToViewport } from './dom'
 import { kindIcon } from './icons'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from './editor-dom'
+import { focusItemInPane } from './search-highlight'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip } from './editor-dom'
 import { dismissModelessModals } from './modal'
 
 export type AtItem =
@@ -203,6 +203,13 @@ export function attachAtAutocomplete(editor: Editor, opts: {
 
   function onTypingKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return }
+    // Nothing to pick (an e-mail address, a word with no match): keys belong to
+    // the editor. Enter/Tab also end the session; arrows leave it open, since
+    // the list can refill as the user keeps typing or deletes back.
+    if (items.length === 0) {
+      if (e.key === 'Enter' || e.key === 'Tab') close()
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, items.length)
@@ -216,6 +223,8 @@ export function attachAtAutocomplete(editor: Editor, opts: {
   }
 
   function commit(item: AtItem | undefined): void {
+    // The tab went read-only (ui/editor.ts's setEditorsReadOnly) while this was open.
+    if (editorEl!.getAttribute('contenteditable') === 'false') { close(); return }
     if (!item || !lastLoc) return
     const { block, atOffset, caretOffset } = lastLoc
     const range = rangeForTextOffsets(block, atOffset, caretOffset)
@@ -227,16 +236,13 @@ export function attachAtAutocomplete(editor: Editor, opts: {
         ? formatDateWithWeekday(item.date, opts.locale)
         : item.title
     const safeLabel = label.replace(/[[\]()]/g, '')
-    const chip = document.createElement('a')
-    chip.className = 'ref'
-    chip.setAttribute('contenteditable', 'false')
     // Chip *text content* stays exactly `@${safeLabel}` — the per-kind icon
     // is CSS-only (styles.css, keyed off this same data-ref prefix), never
     // baked into textContent. inlineMd (core/markdown.ts) derives the
     // persisted markdown label straight from textContent, so an icon inside
     // it would round-trip into storage as part of the label forever.
-    chip.dataset.ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
-    chip.textContent = `@${safeLabel}`
+    const ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
+    const chip = createRefChip(ref, safeLabel, t(opts.locale, 'editor_ref_hint'))
     range.insertNode(chip)
     // 'always': a mention is almost always the last thing on the line, where
     // a plain trailing space is CSS-collapsed to zero width and Chrome then
@@ -298,8 +304,8 @@ export function attachAtAutocomplete(editor: Editor, opts: {
  * `pm.openInSecondaryPane` instead of `pm.openInPane`, splitting the view if
  * needed — and, for an actions/milestones/risks `loc` (or any `loc` when the
  * caller passes an explicit `opts.focusItemId`), scrolling to and
- * flash-highlighting the specific card afterward (same dispatch-then-
- * highlight sequence as search-ui.ts's commit()). `opts.focusItemId` is what
+ * flash-highlighting the specific card afterward (search-highlight.ts's
+ * focusItemInPane, shared with ui/reveal-loc.ts). `opts.focusItemId` is what
  * the person-notes header's "show in org chart" jump uses: a
  * stakeholders/members ref carries no itemId of its own, so the person id is
  * handed in here to land the flash on that person's org box. Shared by
@@ -326,14 +332,7 @@ export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc
   const { ref } = loc
   const itemId = opts.focusItemId
     ?? ((ref.kind === 'actions' || ref.kind === 'milestones' || ref.kind === 'risks') ? ref.itemId : undefined)
-  if (!itemId) return
-  requestAnimationFrame(() => {
-    const paneEl = document.querySelectorAll('.tt-pane-body')[landedIdx] as HTMLElement | undefined
-    if (!paneEl) return
-    dispatchSearchFocusItem(paneEl, itemId)
-    const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
-    applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
-  })
+  focusItemInPane(landedIdx, itemId)
 }
 
 /**

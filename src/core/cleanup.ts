@@ -9,6 +9,7 @@ import type { Doc, Favorite } from './types'
 import { diffDays } from './date'
 import { unlinkRefsInTeam } from './refs'
 import { isFavoriteOrphaned } from './favorites'
+import { isActionActive } from './due'
 
 export interface CleanupCounts {
   actions: number
@@ -33,7 +34,7 @@ export function countCleanupTargets(doc: Doc, days: number, today: string): Clea
   const counts: CleanupCounts = { actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 }
   for (const team of doc.teams) {
     for (const a of team.actionItems) {
-      if (a.status === 'done' || a.status === 'cancelled') counts.actions++
+      if (!isActionActive(a)) counts.actions++
     }
     for (const m of team.milestones) {
       if (m.done && isOlderThan(m.date, days, today)) counts.milestones++
@@ -57,9 +58,9 @@ export function applyCleanup(doc: Doc, days: number, today: string): void {
     // nothing. Daily notes need no equivalent: a `day:` mention resolves from
     // its date, not from the note's existence, so deleting the note can't
     // dangle a mention (see refs.ts's header comment).
-    const removedActions = new Map(team.actionItems.filter((a) => a.status === 'done' || a.status === 'cancelled').map((a) => [a.id, a.summary]))
+    const removedActions = new Map(team.actionItems.filter((a) => !isActionActive(a)).map((a) => [a.id, a.summary]))
     unlinkRefsInTeam(team, 'action', removedActions)
-    team.actionItems = team.actionItems.filter((a) => a.status !== 'done' && a.status !== 'cancelled')
+    team.actionItems = team.actionItems.filter(isActionActive)
 
     const isPurgeableMilestone = (m: { done: boolean; date: string }): boolean => m.done && isOlderThan(m.date, days, today)
     const removedMilestones = new Map(team.milestones.filter(isPurgeableMilestone).map((m) => [m.id, m.title]))

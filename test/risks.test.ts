@@ -105,6 +105,12 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function offeredTemplates(editor: HTMLElement): string[] {
+  setBlockText(editor, '/')
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  return Array.from(document.querySelectorAll('.tt-atref-item')).map((n) => n.textContent ?? '')
+}
+
 function rightClick(el: HTMLElement): void {
   el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
 }
@@ -807,6 +813,16 @@ describe('renderRisks', () => {
       row.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
       vi.runAllTimers()
     }
+
+    test('a double-click on a nameless row flags the name instead of opening the follow-up', () => {
+      const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'r1', title: '' })] }))
+      render(container, loc, store, pm)
+      const row = container.querySelector('.tt-risk-row') as HTMLElement
+      row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(container.querySelector('.tt-risk-followup-row')).toBeNull()
+      expect(row.querySelector('.tt-risk-name-error')).not.toBeNull()
+      expect(document.activeElement).toBe(row.querySelector('.tt-risk-title-input'))
+    })
 
     test('a just-added risk left with no name is dropped once focus leaves the list', () => {
       const { container, store, pm, loc } = setup(makeTeam())
@@ -1786,6 +1802,22 @@ describe('quadrant', () => {
   })
 
   describe('drag to set chance/impact', () => {
+    test('in a read-only tab a drag does not move the dot or change anything, and still jumps to the row', () => {
+      const team = makeTeam({ risks: [risk({ id: 'a', title: 'Vendor', chance: 1, impact: 1 })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      store.setReadOnly(true)
+      const { gx0, gy0, cell } = quadrantGeometry(container)
+      const dot = container.querySelector('.tt-risk-quadrant-dot')!
+      const before = dotTranslate(dot)
+
+      dragQuadrantDot(dot, gx0 + 10, gy0 + 170, gx0 + 2 * cell + cell / 2, gy0 + cell / 2)
+
+      expect(store.doc.teams[0]!.risks[0]!.chance).toBe(1)
+      expect(dotTranslate(container.querySelector('.tt-risk-quadrant-dot')!)).toEqual(before)
+      expect(document.activeElement).toBe(container.querySelector('[data-risk-id="a"].tt-risk-row'))
+    })
+
     test('dragging a dot to another cell persists the new chance/impact', () => {
       const team = makeTeam({ risks: [risk({ id: 'a', chance: 1, impact: 1 })] })
       const { container, store, pm, loc } = setup(team)
@@ -2303,4 +2335,12 @@ describe('risk name-error note — behaviour pins', () => {
       vi.useRealTimers()
     }
   })
+})
+
+test('an expanded follow-up offers the "any"-scope templates only', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor' })] }))
+  render(container, loc, store, pm)
+  container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
+  const editor = container.querySelector<HTMLElement>('.tt-risk-followup-row .editor')!
+  expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
 })

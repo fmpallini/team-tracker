@@ -6,6 +6,7 @@ import { invalidateUnsplitStash } from './panes'
 import type { Loc, Team } from '../core/types'
 import { lastLocForTeam, locsConflict } from '../core/nav'
 import { t, todayIso, type Locale } from '../core/i18n'
+import { watchDayChange } from './day-change'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
@@ -19,7 +20,7 @@ import { blockedByModal } from './hotkeys'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { openDuePanel } from './due-panel'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { revealLoc } from './reveal-loc'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -366,22 +367,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     return counts
   }
 
+  // A due item always carries an itemId (action or milestone, see core/due.ts),
+  // so revealLoc also scrolls to and flashes its card.
   function onOpenItem(loc: Loc): void {
-    if (loc.teamId !== store.doc.nav.activeTeamId) actions.selectTeam(loc.teamId)
-    pm.openInFocused(loc)
-    // Scroll to and flash-highlight the specific card, mirroring
-    // search-ui.ts's commit() / atref.ts's makeRefClickHandler — a due item
-    // always carries an itemId (action or milestone, see core/due.ts).
-    const itemId = 'itemId' in loc.ref ? loc.ref.itemId : undefined
-    if (!itemId) return
-    const paneIdx = store.doc.nav.focusedPane
-    requestAnimationFrame(() => {
-      const paneEl = document.querySelectorAll('.tt-pane-body')[paneIdx] as HTMLElement | undefined
-      if (!paneEl) return
-      dispatchSearchFocusItem(paneEl, itemId)
-      const anchors = Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
-      applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [], anchors[0])
-    })
+    revealLoc({ store, pm, selectTeam: (id) => actions.selectTeam(id) }, loc)
   }
 
   // Only toggles visibility — each team's own count already shows next to
@@ -713,7 +702,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
           d.teams.push(createEmptyTeam(newTeamId, name, emoji, locale()))
         })
         handle.close()
-        actions.selectTeam(newTeamId)
+        // A refused write (read-only tab) created nothing: selecting the id
+        // would point both panes at a team that doesn't exist.
+        if (docFindTeam(store.doc, newTeamId)) actions.selectTeam(newTeamId)
       },
     }
     const handle: ModalHandle = showModal({
@@ -802,11 +793,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // listener filters on kind — registering it unconditionally rebuilt the
   // whole team list twice on every single content edit.
   //
-  // Load-bearing detail: store.replaceDoc() (used by the conflict-modal
-  // reload path in main.ts's onReload handler) fires subscribe() listeners
-  // but NOT onMutate() listeners — so it's the store.subscribe() render
-  // above, not this onMutate() one, that keeps the sidebar in sync after a
-  // reload. Don't collapse these two registrations into just onMutate().
+  // store.replaceDoc() (the conflict-modal reload) reaches both registrations,
+  // as 'content' here, which this one ignores. The subscribe() render above is
+  // what repaints the team list after a reload.
   const unsubscribeMutate = store.onMutate((kind) => {
     if (kind === 'nav') renderNav()
   })
@@ -817,11 +806,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // first click. renderNav() already rebuilds when the calendar day moved and
   // is a plain highlight toggle otherwise, so asking it when the user comes
   // back is cheap.
-  const onReturn = (): void => {
-    if (document.visibilityState !== 'hidden') renderNav()
-  }
-  document.addEventListener('visibilitychange', onReturn)
-  window.addEventListener('focus', onReturn)
+  const stopDayWatch = watchDayChange(() => renderNav())
 
   return {
     setSpaceConstrained,
@@ -839,8 +824,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       unsubscribeContent()
       unsubscribeMutate()
       document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
-      document.removeEventListener('visibilitychange', onReturn)
-      window.removeEventListener('focus', onReturn)
+      stopDayWatch()
     },
   }
 }

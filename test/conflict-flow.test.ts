@@ -168,6 +168,7 @@ describe('Overwrite', () => {
     expect(store.dirty).toBe(true)
     const [, opts] = mocks.toast.mock.calls[0]!
     expect(opts.sticky).toBe(true)
+    expect(opts.key).toBe('save-permission')
     expect(opts.action.label).toBe('Grant access…')
     opts.action.onClick()
     expect(deps.resolveGrants).toHaveBeenCalledTimes(1)
@@ -183,7 +184,9 @@ describe('Overwrite', () => {
 
     expect(shell.setSaveState).toHaveBeenCalledWith('error')
     expect(shell.setSaveState).not.toHaveBeenCalledWith('permission')
-    expect(mocks.toast).toHaveBeenCalledWith(expect.any(String), { sticky: true })
+    const [, errOpts] = mocks.toast.mock.calls[0]!
+    expect(errOpts.key).toBe('save-error')
+    expect(mocks.toast).toHaveBeenCalledWith(expect.any(String), { sticky: true, key: 'save-error' })
     expect(store.dirty).toBe(true)
     expect(flow.isOpen()).toBe(false)
   })

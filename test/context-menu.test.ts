@@ -1,4 +1,5 @@
 import { showContextMenu, closeAnyContextMenu } from '../src/ui/context-menu'
+import { showModal } from '../src/ui/modal'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -99,6 +100,33 @@ describe('keyboard navigation', () => {
     expect(onClickB).toHaveBeenCalledTimes(1)
     expect(onClickA).not.toHaveBeenCalled()
     expect(document.querySelector('.tt-context-menu')).toBeNull()
+  })
+
+  // e.g. an async save-conflict modal appearing while the menu is open: Enter
+  // there is the modal's, and must not also run (say) "Delete".
+  test('Enter does not run a menu item while a blocking modal opened after the menu', () => {
+    const onClick = vi.fn()
+    showContextMenu(0, 0, [{ label: 'A', onClick }])
+    const modal = showModal({ title: 'conflict', body: document.createElement('div'), buttons: [] })
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      expect(onClick).not.toHaveBeenCalled()
+    } finally {
+      modal.close()
+      closeAnyContextMenu()
+    }
+  })
+
+  test('a modeless card modal does not disable the menu', () => {
+    const onClick = vi.fn()
+    showContextMenu(0, 0, [{ label: 'A', onClick }])
+    const card = showModal({ title: 'card', body: document.createElement('div'), buttons: [], modeless: true })
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      expect(onClick).toHaveBeenCalledTimes(1)
+    } finally {
+      card.close()
+    }
   })
 
   test('closing the menu (Escape, outside click, or picking an item) restores focus to whatever opened it', () => {

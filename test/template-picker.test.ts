@@ -128,6 +128,19 @@ describe('attachTemplatePicker', () => {
     expect(rowsAfter[0]!.classList.contains('selected')).toBe(false)
   })
 
+  test('a picker left open when the editor goes read-only inserts nothing on Enter', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+    editorEl.setAttribute('contenteditable', 'false') // what setEditorsReadOnly(true) does
+
+    fireKey(editorEl, 'Enter')
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(editorEl.querySelector('h2')).toBeNull()
+    expect(editorEl.textContent).toBe('/')
+  })
+
   test('Enter removes the "/" and inserts the resolved, parsed template; caret lands at the end', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '/')
@@ -269,6 +282,18 @@ describe('attachTemplatePicker', () => {
     const dropdown = document.querySelector('.tt-atref-dropdown')!
     expect(dropdown.querySelector('.tt-templates-empty')).not.toBeNull()
     expect(dropdown.textContent).toBe('No templates available')
+  })
+
+  test('Enter on an empty template list closes it and is not swallowed', () => {
+    const { editorEl } = setup([])
+    setBlockText(editorEl, '/')
+    fireInput(editorEl)
+
+    const e = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editorEl.dispatchEvent(e)
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
   })
 
   test('the 📋 toolbar button opens the picker at the caret on an empty line', () => {

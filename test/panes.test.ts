@@ -29,7 +29,7 @@ function setup(): { shell: Shell; store: Store; pm: PaneManager } {
   const store = createStore(doc)
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   return { shell, store, pm }
 }
 
@@ -1096,6 +1096,35 @@ test('print button opens a print window with a header (team/module) and a clone 
   expect(header!.textContent).toContain('T1')
   expect(content!.className).toBe('tt-print-content')
   expect(printSpy).toHaveBeenCalled()
+})
+
+test('printing keeps every select at its current choice, not its first option', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  pm.registerModule('risks', (container) => {
+    for (const chosen of ['3', '2', '1']) {
+      const s = document.createElement('select')
+      for (const v of ['1', '2', '3']) s.appendChild(Object.assign(document.createElement('option'), { value: v, textContent: v }))
+      s.value = chosen // a property, as the risks module sets it: no `selected` attribute to clone
+      container.appendChild(s)
+    }
+  })
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+
+  const bodyAppend = vi.fn()
+  const fakeDoc = {
+    write: vi.fn(), close: vi.fn(),
+    head: { appendChild: vi.fn() },
+    body: { append: bodyAppend },
+    createElement: (tag: string) => document.createElement(tag),
+  }
+  vi.spyOn(window, 'open').mockReturnValue({ document: fakeDoc, focus: vi.fn(), print: vi.fn() } as unknown as Window)
+
+  paneBtn(0, 'tt-pane-print-btn').click()
+
+  const content = bodyAppend.mock.calls[0]![1] as HTMLElement
+  expect(Array.from(content.querySelectorAll('select')).map((s) => s.value)).toEqual(['3', '2', '1'])
 })
 
 test('printing always hides the daily-notes calendar column — it\'s a navigation aid, not printable content', () => {

@@ -74,6 +74,12 @@ function fireInput(editor: HTMLElement): void {
   editor.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function offeredTemplates(editor: HTMLElement): string[] {
+  setBlockText(editor, '/')
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  return Array.from(document.querySelectorAll('.tt-atref-item')).map((n) => n.textContent ?? '')
+}
+
 afterEach(() => {
   vi.useRealTimers()
   document.body.innerHTML = ''
@@ -368,4 +374,28 @@ describe('renderPersonNotes', () => {
     expect(chipAfter).toBe(chip)
     expect(editorEl(container).textContent).toBe('Follow up on @New Title soon')
   })
+})
+
+const PERSON_LOC: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
+
+test('the notes editor offers the "personal" and "any" templates', () => {
+  const { container, store, pm } = setup(makeTeam())
+  render(container, PERSON_LOC, store, pm)
+  expect(offeredTemplates(editorEl(container))).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any').map((tpl) => tpl.name))
+})
+
+test('a template\'s {person} uses the person\'s current name after a rename', () => {
+  vi.useFakeTimers()
+  const { container, store, pm } = setup(makeTeam())
+  store.update((d) => { d.templates.push({ id: 'greet', name: 'Greet', scope: 'personal', body: 'Hi {person}' }) })
+  render(container, PERSON_LOC, store, pm)
+  // Replaces the record (as an undo or a reload would) so a captured reference goes stale.
+  store.update((d) => { d.teams[0]!.members[0] = { ...d.teams[0]!.members[0]!, name: 'Bia' } }, { teamId: 'T1' })
+
+  offeredTemplates(editorEl(container))
+  Array.from(document.querySelectorAll<HTMLElement>('.tt-atref-item')).find((n) => n.textContent === 'Greet')!.click()
+  vi.advanceTimersByTime(500)
+
+  expect(store.doc.teams[0]!.members[0]!.notes).toContain('Hi Bia')
+  vi.useRealTimers()
 })

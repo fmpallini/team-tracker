@@ -5,8 +5,7 @@
 import type { Doc, Favorite, ModuleRef } from './types'
 import { findTeam } from './document'
 import { t, type Locale } from './i18n'
-import { diffDays } from './date'
-import { collectDueItems } from './due'
+import { collectDueItems, dueRelativeLabel } from './due'
 import { favoriteKey, liveFavorites } from './favorites'
 import { buildModuleItems, titleFor } from './module-items'
 import { normalize } from './search'
@@ -101,9 +100,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
     if (!team) continue
     const label = item.title
     if (!matches(words, team.name, label)) continue
-    const dueLabel = item.date < today
-      ? t(locale, 'due_overdue_by', { days: String(diffDays(today, item.date)) })
-      : t(locale, 'due_in_days', { days: String(diffDays(item.date, today)) })
+    const dueLabel = dueRelativeLabel(locale, item.date, today)
     dueRows.push({ label, teamId: item.loc.teamId, ref: item.loc.ref, teamBadge: badge(team), dueLabel })
   }
 

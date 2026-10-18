@@ -446,6 +446,30 @@ describe('backup-controller', () => {
     await expect(ctl.checkOrphaned()).resolves.toBe(false)
   })
 
+  // currentHealth() runs after writes that already succeeded (change-password.ts
+  // flips the in-memory password before reading it): a rejection there would
+  // report a completed change as failed.
+  test('hasMissingGrant is false (not a rejection) when the IDB lookup fails', async () => {
+    idbMocks.idbGet.mockRejectedValue(new Error('IndexedDB unavailable'))
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.hasMissingGrant()).resolves.toBe(false)
+  })
+
+  test('hasMissingGrant is false (not a rejection) when queryPermission throws', async () => {
+    queryPermissionMock.mockRejectedValue(new Error('boom'))
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.hasMissingGrant()).resolves.toBe(false)
+  })
+
+  test('currentHealth resolves when the IDB lookup fails', async () => {
+    idbMocks.idbGet.mockRejectedValue(new Error('IndexedDB unavailable'))
+    const store = storeWithBackup(true)
+    const ctl = createBackupController({ store })
+    await expect(ctl.currentHealth()).resolves.toBe('ok')
+  })
+
   describe('getStatus', () => {
     test('returns null when backups are off', async () => {
       const store = storeWithBackup(false)

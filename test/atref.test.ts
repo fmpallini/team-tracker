@@ -195,8 +195,10 @@ describe('attachAtAutocomplete', () => {
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  function fireKey(editorEl: HTMLElement, key: string): void {
-    editorEl.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  function fireKey(editorEl: HTMLElement, key: string): KeyboardEvent {
+    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    editorEl.dispatchEvent(e)
+    return e
   }
 
   // Regression: attachAtAutocomplete's own dispose() — removing the AT_TRIGGER_EVENT
@@ -309,6 +311,7 @@ describe('attachAtAutocomplete', () => {
     expect(chip.getAttribute('contenteditable')).toBe('false')
     expect(chip.dataset.ref).toBe('person:ana-id')
     expect(chip.textContent).toBe('@Ana')
+    expect(chip.title).toBe(t('pt-BR', 'editor_ref_hint'))
     // Trailing separator is a non-breaking space (not a plain space): a
     // mention is almost always the last thing on the line, and a plain
     // space there is CSS-collapsed to zero width, leaving Chrome no real
@@ -324,6 +327,48 @@ describe('attachAtAutocomplete', () => {
     preCaret.selectNodeContents(editorEl.firstElementChild as HTMLElement)
     preCaret.setEnd(caretRange.startContainer, caretRange.startOffset)
     expect(preCaret.toString()).toBe('@Ana ')
+  })
+
+  test('a dropdown left open when the editor goes read-only inserts no chip on Enter', () => {
+    const { editorEl, picks } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+    setBlockText(editorEl, '@An')
+    fireInput(editorEl)
+    editorEl.setAttribute('contenteditable', 'false') // what setEditorsReadOnly(true) does
+
+    fireKey(editorEl, 'Enter')
+
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    expect(editorEl.querySelector('a.ref')).toBeNull()
+    expect(editorEl.textContent).toBe('@An')
+    expect(picks).toEqual([])
+  })
+
+  test('an email address (no matches) does not trap Enter: the dropdown closes and Enter reaches the editor', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, 'john@')
+    fireInput(editorEl)
+    setBlockText(editorEl, 'john@acme.com')
+    fireInput(editorEl)
+    expect(document.querySelectorAll('.tt-atref-item')).toHaveLength(0)
+
+    const e = fireKey(editorEl, 'Enter')
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+  })
+
+  test('with zero matches, arrows are not swallowed and the dropdown stays (it may refill as typing goes on)', () => {
+    const { editorEl } = setup()
+    setBlockText(editorEl, '@')
+    fireInput(editorEl)
+    setBlockText(editorEl, '@zzz')
+    fireInput(editorEl)
+    expect(document.querySelectorAll('.tt-atref-item')).toHaveLength(0)
+
+    expect(fireKey(editorEl, 'ArrowDown').defaultPrevented).toBe(false)
+    expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
   })
 
   test('Escape cancels and leaves the literal @text as typed', () => {
@@ -703,7 +748,7 @@ describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts 
     const store = createStore(doc)
     const shell: Shell = createShell('pt-BR')
     document.body.appendChild(shell.root)
-    const pm = createPaneManager(shell, store, 'pt-BR')
+    const pm = createPaneManager(shell, store)
     pm.registerModule('actions', renderActionItems)
 
     let raf: FrameRequestCallback | null = null
@@ -734,7 +779,7 @@ describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts 
     const store = createStore(doc)
     const shell: Shell = createShell('pt-BR')
     document.body.appendChild(shell.root)
-    const pm = createPaneManager(shell, store, 'pt-BR')
+    const pm = createPaneManager(shell, store)
     pm.registerModule('actions', renderActionItems)
     pm.registerModule('daily', () => {})
 

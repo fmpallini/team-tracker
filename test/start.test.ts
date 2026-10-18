@@ -479,6 +479,64 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
   expect(fileInput).not.toBeNull()
 })
 
+describe('fallback mode (no FS API): opening the picked file', () => {
+  function pickFallbackFile(name = 'team.tmv'): void {
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File([new Uint8Array([9])], name, { lastModified: 42 })
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    fileInput.dispatchEvent(new Event('change'))
+  }
+
+  test('a plain file opens with a null password, a handle-less session, and no prompt', async () => {
+    fsMocks.supportsFsApi = false
+    const plainDoc = createEmptyDocument('en-US')
+    cryptoMocks.parsePlain.mockReturnValue(plainDoc)
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+    await flush()
+
+    pickFallbackFile()
+    await flush()
+
+    expect(document.querySelector('input[name="tt-password"]')).toBeNull()
+    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, plainDoc, null, null)
+  })
+
+  test('an encrypted file goes through the password prompt, then opens', async () => {
+    fsMocks.supportsFsApi = false
+    const doc = createEmptyDocument('en-US')
+    cryptoMocks.decryptDocument.mockResolvedValue(doc)
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+    await flush()
+
+    pickFallbackFile()
+    await flush()
+    const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
+    pwInput.value = 'right'
+    pwInput.dispatchEvent(new Event('input'))
+    clickByText('OK')
+    await flush()
+    await flush()
+
+    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, doc, 'right', null)
+  })
+
+  test('a corrupt plain file shows the corrupt-file error and opens nothing', async () => {
+    fsMocks.supportsFsApi = false
+    cryptoMocks.parsePlain.mockImplementation(() => { throw new cryptoMocks.CorruptFileError() })
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+    await flush()
+
+    pickFallbackFile()
+    await flush()
+
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Corrupt or invalid file')
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+})
+
 test('renders the advantages pitch', () => {
   showStartScreen('en-US', () => {})
   const list = document.querySelectorAll('.tt-start-advantages li')
@@ -552,6 +610,52 @@ describe('auto-load last file on startup', () => {
   function plainSession(): FileSession {
     return { handle: {} as unknown as FileSystemFileHandle, name: 'last.tmv', lastModified: 1 }
   }
+
+  /** Auto-load armed (pref on, last file passwordless) but its peek still pending until `release()`. */
+  function pendingAutoLoad(): { release: () => void } {
+    let release: () => void = () => {}
+    fsMocks.peekLastFile.mockImplementation(() => new Promise((resolve) => {
+      release = () => resolve({ session: plainSession(), bytes: new Uint8Array([9]) })
+    }))
+    cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+    idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? true : undefined))
+    return { release: () => release() }
+  }
+
+  test('a file launched by the OS while auto-open is pending wins: opened once, the launched file', async () => {
+    const getConsumer = mockLaunchQueue()
+    const auto = pendingAutoLoad()
+    const launched: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'launched.tmv', lastModified: 2 }
+    fsMocks.openFromHandle.mockResolvedValue({ session: launched, bytes: new Uint8Array([9]) })
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+
+    getConsumer()({ files: [launched.handle!] })
+    await flush()
+    auto.release()
+    await flush()
+    await flush()
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen.mock.calls[0]![0]).toBe(launched)
+  })
+
+  test('clicking Open before auto-open resolves suppresses the auto-open', async () => {
+    const auto = pendingAutoLoad()
+    const picked: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'picked.tmv', lastModified: 3 }
+    fsMocks.pickOpen.mockResolvedValue({ session: picked, bytes: new Uint8Array([9]) })
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+
+    clickByText('Open file…')
+    await flush()
+    auto.release()
+    await flush()
+    await flush()
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen.mock.calls[0]![0]).toBe(picked)
+  })
 
   test('checkbox hidden when peekLastFile finds nothing (no handle, or permission not silently granted)', async () => {
     fsMocks.peekLastFile.mockResolvedValue(null)

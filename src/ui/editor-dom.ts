@@ -110,3 +110,21 @@ export function rangeForTextOffsets(block: HTMLElement, start: number, end: numb
   if (!endSet) range.setEnd(block, block.childNodes.length)
   return range
 }
+
+/**
+ * A live `@`-mention chip, exactly as core/markdown.ts's mdToHtml renders one
+ * (`<a class="ref" data-ref contenteditable="false" title>@label</a>`) — for
+ * the places that build one in the DOM instead of parsing markdown: the @
+ * picker's insert (atref.ts) and the editor's relink of a mention whose target
+ * came back (editor.ts's refreshRefLabels). `label` must already be safe for
+ * the `@[label](…)` grammar (no `[]()`), as inlineMd reads it back verbatim.
+ */
+export function createRefChip(ref: string, label: string, title: string): HTMLAnchorElement {
+  const chip = document.createElement('a')
+  chip.className = 'ref'
+  chip.dataset.ref = ref
+  chip.setAttribute('contenteditable', 'false')
+  chip.title = title
+  chip.textContent = `@${label}`
+  return chip
+}

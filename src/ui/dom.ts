@@ -158,10 +158,10 @@ export interface DeferredRebuild {
  *
  * Extracted out of src/modules/milestones.ts and risks.ts, which each carried
  * this identical ~15-line block (only the caret-sensitive-element predicate
- * that decides *when* to call `arm` differs between them, and stays in each
- * module as `focusedCaretInput`/`focusedCaretElement`) — sharing it here is
- * what keeps a future fix to the defer/blur mechanics from having to land in
- * both places.
+ * that decides *when* to call `arm` differs between them: each module passes
+ * its own input types to followup-list.ts's `focusedCaretElement`) —
+ * sharing it here is what keeps a future fix to the defer/blur mechanics from
+ * having to land in both places.
  */
 export function createDeferredRebuild(rebuild: () => void): DeferredRebuild {
   let deferredEl: HTMLElement | null = null
@@ -181,4 +181,24 @@ export function createDeferredRebuild(rebuild: () => void): DeferredRebuild {
       deferredEl = null
     },
   }
+}
+
+/**
+ * Copies `text` to the clipboard as plain text: the async Clipboard API where
+ * present, else — or when it rejects (no permission, or file:// with no API at
+ * all) — the classic hidden-textarea + `execCommand('copy')`.
+ */
+export function copyText(text: string): void {
+  const viaTextarea = (): void => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy', false, undefined)
+    document.body.removeChild(ta)
+  }
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(viaTextarea)
+  else viaTextarea()
 }

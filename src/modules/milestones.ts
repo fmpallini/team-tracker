@@ -1,34 +1,33 @@
 // src/modules/milestones.ts — Task 21: milestones module. Two stacked areas
 // inside one container: a proportional-timeline SVG (top) and an editable,
 // date-sorted list (bottom). Reuses the same structural discipline as
-// src/modules/action-items.ts — a per-container disposer WeakMap, loc.teamId-
-// keyed store.update helpers, and the "skip rebuild while a text/date input
-// is focused, defer to blur" strategy so an in-progress edit's caret survives
-// a foreign store change. The SVG itself is always fully rebuilt: nothing
-// inside it can hold DOM focus, so there is nothing to preserve there.
+// src/modules/action-items.ts — loc.teamId-keyed store.update helpers and the
+// "skip rebuild while a text/date input is focused, defer to blur" strategy so
+// an in-progress edit's caret survives a foreign store change. The row
+// behaviour shared with risks.ts lives in ./followup-list.ts. The SVG itself is
+// always fully rebuilt: nothing inside it can hold DOM focus, so there is
+// nothing to preserve there.
 //
 // The calendar (src/ui/calendar.ts, Task 18) reads team.milestones directly
 // for its 🚩 markers, so any store.update here is picked up automatically —
 // this module never talks to the calendar.
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
+import { watchDayChange } from '../ui/day-change'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { createEntityDelete } from './entity-delete'
 import { patchTeamItem } from '../core/team-items'
-import { createRichEditorBundle } from '../ui/rich-editor'
 import { ExpandableRowsController } from '../ui/expandable-followup'
+import { createFollowupRows, focusedCaretElement } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
-import { nowHHMM } from '../core/date'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally, showRowError, clearRowError } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
 import { icon } from '../ui/icons'
 import { emptyState } from '../ui/empty-state'
 
@@ -205,25 +204,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     return findTeam()?.milestones ?? []
   }
 
-  /** Shows the "needs a name" note on a row (idempotent); it clears on its own at the next renderAll(), which rebuilds the row from scratch. */
-  function showNameError(row: HTMLElement): void {
-    showRowError(row, 'tt-milestone-name-error', t(lc, 'milestone_name_required'))
-  }
-  function clearNameError(row: HTMLElement): void {
-    clearRowError(row, 'tt-milestone-name-error')
-  }
-
   let focusMilestoneId: string | null = null
   // Every currently-expanded row's follow-up editor is mounted at once —
   // not just one — so expand-all/collapse-all can show every follow-up
   // simultaneously.
   const expandable = new ExpandableRowsController()
-  // True only while one of this module's own follow-up editors is committing
-  // (see renderFollowupRow) — same reasoning as risks.ts's identical flag:
-  // follow-up text appears nowhere in the list or timeline, so that commit
-  // skips the full rebuild and the rebuild-on-blur that detached the next
-  // follow-up editor being clicked into.
-  let committingOwnFollowup = false
 
   // Each row's date-picker owns a popover appended to document.body, outside
   // `container` — a plain listEl.innerHTML='' rebuild (renderList below)
@@ -239,67 +224,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     liveDatePickers = []
   }
 
-  // Keyboard-driven (Enter on a focused row) needs to land focus somewhere
-  // sane after renderAll() replaces the row DOM — on the follow-up editor
-  // when expanding (so typing can start immediately), or back on the row
-  // itself when collapsing (so ArrowUp/Down can continue). renderAll() runs
-  // synchronously here, so the DOM is already rebuilt by the time we query it.
-  /**
-   * A follow-up is written under a title, as an action item's notes can't be
-   * saved without a name: a nameless row refuses to open one, flags itself and
-   * puts the caret in the title instead.
-   */
-  function requireTitle(id: string): boolean {
-    const cur = milestones().find((mm) => mm.id === id)
-    if (!cur || cur.title.trim() !== '') return true
-    const row = listEl.querySelector<HTMLElement>(`.tt-milestone-row[data-milestone-id="${id}"]`)
-    if (row) {
-      showNameError(row)
-      row.querySelector<HTMLInputElement>('.tt-milestone-title-input')?.focus()
-    }
-    return false
-  }
-
-  function toggleExpand(id: string): void {
-    const wasExpanded = expandable.isExpanded(id)
-    if (!wasExpanded && !requireTitle(id)) return
-    expandable.toggle(id)
-    renderAll()
-    if (wasExpanded) listEl.querySelector<HTMLElement>(`[data-milestone-id="${id}"].tt-milestone-row`)?.focus()
-    else listEl.querySelector<HTMLElement>(`[data-milestone-followup-id="${id}"] .editor`)?.focus()
-  }
-
   /** Expands (or collapses) every milestone's follow-up editor at once, driving the toolbar's expand-all/collapse-all button. */
   function setAllExpanded(expand: boolean): void {
     // Expanding skips nameless rows (they can't hold a follow-up); collapsing covers all.
     expandable.setAll(milestones().filter((m) => !expand || m.title.trim() !== '').map((m) => m.id), expand)
     renderAll()
-  }
-
-  /** Full rich editor for a milestone's follow-up, via src/ui/rich-editor.ts's createRichEditorBundle (editor + @ref autocomplete + '/' template picker), scoped to 'any' templates. Registers itself with `expandable` so the caller can dispose it later. */
-  function renderFollowupRow(m: Milestone): HTMLElement {
-    const bundle = createRichEditorBundle({
-      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
-      initialMd: m.followup,
-      onChange: (md) => {
-        committingOwnFollowup = true
-        try {
-          ctx.store.update((d) => {
-            const tm = docFindTeam(d, teamId)
-            const found = tm?.milestones.find((mm) => mm.id === m.id)
-            if (!found) return
-            found.followup = md.trim() === '' ? '' : md
-          }, { teamId, sections: ['milestones'] })
-        } finally {
-          committingOwnFollowup = false
-        }
-      },
-      getTeam: () => findTeam(),
-      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
-    })
-    expandable.register(m.id, bundle)
-    return el('div', { class: 'tt-milestone-followup-row', 'data-milestone-followup-id': m.id, 'data-item-id': m.id }, bundle.editor.root)
   }
 
   // Confirm/undo/silent delete shared with risks and action items (see
@@ -444,7 +373,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       label.setAttribute('x', String(cx))
       label.setAttribute('y', String(titleY))
       label.setAttribute('class', 'tt-milestone-title-label')
-      // Truncated to 16 characters; the dot's own <title> a few lines up
+      // Truncated by truncateTitle; the dot's own <title> a few lines up
       // carries the full text. Deliberately not repeated here — an SVG
       // <title> child would fold into this element's textContent.
       label.textContent = truncateTitle(m.title)
@@ -497,7 +426,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
         // the row, and point at the title.
         if (input.checked && cur && cur.title.trim() === '') {
           input.checked = false
-          showNameError(row)
+          followups.showNameError(row)
           titleInput.focus()
           return
         }
@@ -516,17 +445,11 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // visible-but-quiet instead of fully transparent, and the row is a single
     // Tab stop whose Enter/Space opens the context menu — so "reachable by
     // click/hover" is no longer the *only* way to reach them.
-    const backlinks = ctx.searchIndex.backlinks(teamId, 'milestone', m.id)
-    // A fixed-width slot even when there's no chip: `createBacklinksChip`
-    // returns null for zero backlinks and `el()` skips null children
-    // entirely, which would shrink `.tt-milestone-title-input`'s `flex: 1`
-    // column on chip-less rows relative to rows that do have one.
-    const backlinksChip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
-      ?? el('span', { class: 'tt-backlinks-chip-slot' })
+    const backlinksChip = followups.backlinksSlot(m.id)
 
     const expandBtn = el(
       'button',
-      { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => toggleExpand(m.id) },
+      { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => followups.toggleExpand(m.id) },
       icon(expandable.isExpanded(m.id) ? 'chevDown' : 'chevRight', 14)
     )
 
@@ -557,70 +480,29 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       e.preventDefault()
       openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
-    // See the identical handler in src/modules/risks.ts for why this is
-    // guarded on `e.target === row` throughout.
-    row.addEventListener('keydown', (e) => {
-      const ev = e as KeyboardEvent
-      if (ev.target !== row) return
-      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
-        const rows = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-milestone-row'))
-        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
-        if (!next) return
-        ev.preventDefault()
-        next.focus()
-        return
-      }
-      if (ev.key === 'Enter') {
-        ev.preventDefault()
-        toggleExpand(m.id)
-        return
-      }
-      if (ev.key !== ' ') return
-      ev.preventDefault()
-      const rect = row.getBoundingClientRect()
-      openRowContextMenu(m.id, rect.left + 16, rect.bottom)
+    followups.wireRowKeys(row, m.id, (x, y) => openRowContextMenu(m.id, x, y))
+
+    followups.installBlankTitleGuard(row, m.id, {
+      // The add button is part of the list; and the date picker's calendar lives
+      // in <body>, yet pressing a day moves focus onto it. Judged at that instant
+      // the draft has no title and was dropped mid-pick, before the click landed.
+      keepsRowOpen: (active) => active === addBtn || active.closest('.tt-date-picker-popover') !== null,
+      isDiscardable: isBlankMilestoneDraft,
+      discard: removeMilestoneSilently,
     })
 
-    // Blank-name guard, the inline-row stand-in for action-items.ts's
-    // modal-close behaviour — see the identically-shaped handler in
-    // src/modules/risks.ts for the full rationale (deferred a tick;
-    // acts only once focus has genuinely left the milestone list).
-    row.addEventListener('focusout', () => {
-      setTimeout(() => {
-        // Same race as the risk row's guard: a deferred rebuild can replace
-        // this row the moment focus leaves, so judge the live row by id.
-        if (!listEl.isConnected) return
-        const liveRow = row.isConnected ? row : listEl.querySelector<HTMLElement>(`.tt-milestone-row[data-milestone-id="${m.id}"]`)
-        if (!liveRow) return
-        const active = document.activeElement
-        if (active && active !== document.body && (listEl.contains(active) || active === addBtn)) return
-        if (!active || active === document.body) return
-        // The date picker's calendar lives in <body>, outside this list, yet
-        // pressing a day moves focus onto it (mousedown focuses the button).
-        // Judged at that instant the draft still has today's date and no
-        // title, so it was dropped mid-pick — before the click could land.
-        if (active.closest('.tt-date-picker-popover')) return
-        const cur = milestones().find((mm) => mm.id === m.id)
-        if (!cur) return
-        if (cur.title.trim() !== '') { clearNameError(liveRow); return }
-        if (isBlankMilestoneDraft(cur)) removeMilestoneSilently(cur.id)
-        else showNameError(liveRow)
-      }, 0)
-    })
-
-    // Double-click any dead space on the row toggles the follow-up — see the
-    // identically-shaped handler in src/modules/risks.ts.
-    row.addEventListener('dblclick', (e) => {
-      if ((e.target as HTMLElement).closest('input, select, button, a')) return
-      if (!expandable.isExpanded(m.id) && !requireTitle(m.id)) return
-      expandable.toggle(m.id)
-      renderAll()
-    })
+    followups.wireDblclickToggle(row, m.id)
 
     return row
   }
 
   const listEl = el('div', { class: 'tt-milestone-list' })
+  const followups = createFollowupRows<Milestone>({
+    ctx, teamId, prefix: 'milestone', listEl, expandable,
+    nameRequired: t(lc, 'milestone_name_required'),
+    find: (id) => milestones().find((m) => m.id === id),
+    renderAll,
+  })
 
   function renderList(): void {
     const sorted = sortByDate(milestones())
@@ -630,14 +512,14 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     } else {
       sorted.forEach((m) => {
         listEl.appendChild(renderRow(m))
-        if (expandable.isExpanded(m.id)) listEl.appendChild(renderFollowupRow(m))
+        if (expandable.isExpanded(m.id)) listEl.appendChild(followups.followupEditorRow(m))
       })
     }
     if (focusMilestoneId) {
       listEl.querySelector<HTMLInputElement>(`[data-milestone-id="${focusMilestoneId}"] .tt-milestone-title-input`)?.focus()
       focusMilestoneId = null
     }
-    updateExpandAllBtn(sorted)
+    followups.paintExpandAllBtn(expandAllBtn, sorted.map((m) => m.id), 'milestone_collapse_all_btn', 'milestone_expand_all_btn')
     updateProgress(sorted)
   }
 
@@ -646,28 +528,6 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
     renderTimeline()
     renderList()
-  }
-
-  /**
-   * Re-queries each visible row's backlinks and swaps its chip node in place.
-   * The subscribe handler uses this instead of a full `renderAll()` for a
-   * change confined to sibling sections (another pane's notes, an action
-   * item, a risk): those can only reach this module through backlinks chips,
-   * and rebuilding the list would tear down the timeline SVG and every row's
-   * date-picker on each debounced foreign keystroke. Leaves row order,
-   * inputs, and the timeline untouched.
-   */
-  function refreshBacklinkChips(): void {
-    for (const row of listEl.querySelectorAll<HTMLElement>('.tt-milestone-row')) {
-      const id = row.dataset.milestoneId
-      if (id === undefined) continue
-      const existing = row.querySelector('.tt-backlinks-chip, .tt-backlinks-chip-slot')
-      if (!existing) continue
-      const backlinks = ctx.searchIndex.backlinks(teamId, 'milestone', id)
-      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
-        ?? el('span', { class: 'tt-backlinks-chip-slot' })
-      existing.replaceWith(next)
-    }
   }
 
   function addMilestone(): void {
@@ -697,12 +557,6 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     ''
   )
 
-  /** Label reads "Expand all" unless every milestone is already expanded, in which case it flips to "Collapse all" — mirrors milestone_expand_all_btn/milestone_collapse_all_btn i18n keys. */
-  function updateExpandAllBtn(sorted: Milestone[]): void {
-    const all = expandable.isAllExpanded(sorted.map((m) => m.id))
-    expandAllBtn.replaceChildren(icon(all ? 'chevUp' : 'chevDown', 12), t(lc, all ? 'milestone_collapse_all_btn' : 'milestone_expand_all_btn'))
-  }
-
   const progressLabelEl = el('span', { class: 'tt-milestone-progress-label' })
   const progressFillEl = el('span', { class: 'tt-milestone-progress-fill' })
   const progressEl = el('span', { class: 'tt-milestone-progress' }, progressLabelEl, el('span', { class: 'tt-milestone-progress-bar', 'aria-hidden': 'true' }, progressFillEl))
@@ -716,23 +570,6 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   const toolbar = el('div', { class: 'tt-milestone-toolbar' }, addBtn, progressEl, expandAllBtn)
-
-  /**
-   * True (and returns the focused element) for the caret-sensitive elements
-   * this module owns: text/date inputs (mirrors src/modules/action-items.ts's
-   * `focusedCaretInput` — the done checkbox has no caret and its own 'change'
-   * handler needs the row to move immediately, so it is deliberately
-   * excluded) and, since a follow-up editor can be live-edited for a while
-   * before its debounced onChange commits, the expanded row's contenteditable
-   * `.editor` itself (mirrors src/modules/risks.ts's focusedCaretElement).
-   */
-  function focusedCaretInput(): HTMLElement | null {
-    const active = document.activeElement
-    if (!(active instanceof HTMLElement) || !container.contains(active)) return null
-    if (active instanceof HTMLInputElement && (active.type === 'text' || active.type === 'date')) return active
-    if (active.classList.contains('editor') && active.isContentEditable) return active
-    return null
-  }
 
   // Same rationale as action-items.ts's identically-shaped subscribe
   // callback: a full rebuild is the simplest correct way to keep the list's
@@ -763,8 +600,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     expandable.refreshAllLabels()
     // Our own follow-up commit: only its @mentions can have moved another
     // row's backlinks chip.
-    if (committingOwnFollowup) {
-      refreshBacklinkChips()
+    if (followups.isCommittingOwnFollowup()) {
+      followups.refreshBacklinkChips()
       return
     }
     // A change confined to sibling sections can only reach this module
@@ -779,15 +616,24 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       return
     }
     if (sections !== undefined && !sections.includes('milestones') && !sections.includes('teams')) {
-      refreshBacklinkChips()
+      followups.refreshBacklinkChips()
       return
     }
-    const active = focusedCaretInput()
+    const active = focusedCaretElement(container, ['text', 'date'])
     if (active) {
       deferred.arm(active)
       return
     }
     renderAll()
+  })
+
+  // A window left open overnight never fires a store change, so the Today
+  // marker and overdue colours kept showing yesterday until the next edit. The
+  // rebuild goes through `deferred` so it never steals a field being typed in.
+  const stopDayWatch = watchDayChange(() => {
+    const active = focusedCaretElement(container, ['text', 'date'])
+    if (active) deferred.arm(active)
+    else renderAll()
   })
 
   /** Expands the milestone a search result pointed at, if it's currently collapsed, so its follow-up text (what the search actually matched) becomes visible. No-op if the id isn't one of this team's milestones or is already expanded. Safe even if a stale listener from a prior mount somehow survives — the id-membership check above makes it a no-op regardless. */
@@ -815,6 +661,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   return () => {
     unsubscribe()
+    stopDayWatch()
     // An armed deferral would otherwise rebuild a torn-down module on the
     // field's next blur.
     deferred.dispose()

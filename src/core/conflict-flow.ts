@@ -15,6 +15,7 @@ import { pickCreate, forceWrite } from './fs'
 import { docToBytes } from './doc-bytes'
 import { showConflictModal } from '../ui/conflict'
 import { toast } from '../ui/modal'
+import { SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from './save-controller'
 
 export interface ConflictFlowDeps {
   store: Store
@@ -134,13 +135,15 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
         // side-channel — the user re-confirms instead of it happening
         // unattended.
         shell.setSaveState('permission')
+        // Keyed like save-controller.ts's own toast, so the next successful save dismisses it.
         toast(t(locale(), 'save_permission_toast'), {
           sticky: true,
+          key: SAVE_PERMISSION_TOAST_KEY,
           action: { label: t(locale(), 'grant_access_ellipsis'), onClick: () => void deps.resolveGrants() },
         })
       } else {
         shell.setSaveState('error')
-        toast(t(locale(), 'save_error_toast'), { sticky: true })
+        toast(t(locale(), 'save_error_toast'), { sticky: true, key: SAVE_ERROR_TOAST_KEY })
       }
     } finally {
       open = false

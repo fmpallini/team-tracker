@@ -43,8 +43,8 @@ export interface BackupController {
   /**
    * True only when a backup is configured (a handle id is set) and its
    * grant is not currently 'granted'. Read-only — never prompts, never
-   * writes. Backup writes are interval-gated (daily/hourly), so unlike the
-   * primary file a lapsed backup grant can otherwise go undetected for up
+   * writes, never rejects (a failed lookup reads as false). Backup writes
+   * are interval-gated (daily/hourly), so unlike the primary file a lapsed backup grant can otherwise go undetected for up
    * to a day; save-controller.ts calls this after every successful primary
    * save (cheap — a single `queryPermission`) so the save-state pill can
    * reflect it immediately instead of waiting for the next backup attempt.
@@ -200,9 +200,18 @@ export function createBackupController(deps: { store: Store }): BackupController
 
   async function hasMissingGrant(): Promise<boolean> {
     if (!deps.store.doc.prefs.dailyBackupEnabled) return false
-    const handle = await loadHandle()
-    if (!handle) return false
-    return (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+    // Never rejects, like checkOrphaned: a failed lookup is not proof of a
+    // lapsed grant, and currentHealth() is read after writes that already
+    // succeeded (change-password.ts) — a rejection there reported a finished
+    // password change as failed.
+    try {
+      const handle = await loadHandle()
+      if (!handle) return false
+      return (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+    } catch (e) {
+      console.error(e)
+      return false
+    }
   }
 
   // Write backup bytes without the side effect of setting 'lastHandle' in IndexedDB.

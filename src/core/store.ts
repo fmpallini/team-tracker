@@ -37,9 +37,10 @@ export interface Store {
   updateNav(fn: (d: Doc) => void): void
   subscribe(fn: (scope: ChangeScope | null) => void): () => void
   /**
-   * Fires synchronously on EVERY mutation — both `update()` and `updateNav()`
-   * — unlike `subscribe()`, which `updateNav()` intentionally bypasses (nav
-   * changes shouldn't trigger a full content re-render). Follow-up hardening
+   * Fires synchronously on EVERY mutation — `update()` and `replaceDoc()` as
+   * 'content', `updateNav()` as 'nav' — unlike `subscribe()`, which
+   * `updateNav()` intentionally bypasses (nav changes shouldn't trigger a full
+   * content re-render). Follow-up hardening
    * for save-controller.ts's in-flight-save guard (Task 25 re-review item
    * #1): that guard used to ride on `subscribe()`, which only covered it by
    * call-site convention (every `updateNav()` site happens to also trigger a
@@ -176,6 +177,7 @@ export function createStore(initialDoc: Doc): Store {
       doc = newDoc
       setDirty(false)
       for (const fn of Array.from(subscribers)) { try { fn(null) } catch (e) { console.error(e) } }
+      notifyMutate('content')
     },
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
       if (!ro) {

@@ -12,8 +12,11 @@ import { backupHealthPillState } from './backup-controller'
 import { toast, dismissToast } from '../ui/modal'
 
 /** `toast()` keys for the two permission-lapse notices, shared between the toast() calls that raise them and the dismissToast() calls that clear them once the lapse is fixed through some other path than the toast's own action button (the save-state pill, or a prefs-modal regrant). */
-const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
+export const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
 const BACKUP_PERMISSION_TOAST_KEY = 'backup-permission'
+
+/** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
+export const SAVE_ERROR_TOAST_KEY = 'save-error'
 
 export interface SaveController {
   /**
@@ -77,9 +80,6 @@ export interface SaveControllerDeps {
    */
   flushPending?: () => void
 }
-
-/** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
-const SAVE_ERROR_TOAST_KEY = 'save-error'
 
 export function createSaveController(deps: SaveControllerDeps): SaveController {
   let saving = false
@@ -310,6 +310,10 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // never fire one; only an explicit user action (Ctrl+S, "Save as…" retry) may.
     if (!deps.session.handle && !explicit) return
     deps.shell.setSaveState('saving')
+    // What this round's bytes contain. An edit landing after this point is not
+    // in them: the onMutate guard queues a trailing round for it, and only that
+    // round may clear `dirty` (see the markSaved() below).
+    const revAtSnapshot = deps.store.rev
     let bytes: Uint8Array
     try {
       bytes = await docToBytes(deps.store.doc, deps.getPassword())
@@ -347,7 +351,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       return
     }
     await deps.backupCtl?.maybeWriteBackup(bytes)
-    deps.store.markSaved()
+    // Clearing `dirty` for bytes that predate an edit would leave that edit
+    // unmarked if the trailing round queued for it then fails: no pill, no
+    // close prompt, no beforeunload warning, and a tab handover would let it go.
+    // Same guard as conflict-flow.ts's overwrite().
+    if (deps.store.rev === revAtSnapshot) deps.store.markSaved()
     // Reaching this point at all means the primary write just succeeded —
     // true regardless of what the BACKUP's health turns out to be below — so
     // the primary latch resets unconditionally here rather than only in some
@@ -355,10 +363,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     permissionEpisodeToasted = false
     dismissToast(SAVE_PERMISSION_TOAST_KEY)
     dismissToast(SAVE_ERROR_TOAST_KEY)
-    // The primary file is already written and marked saved. A failing backup
-    // lookup (IndexedDB blocked, handle gone) must not leave the pill on
-    // "saving…" or reject out of the save cycle; the backup's own write path
-    // reports its failures, so an unreadable health just reads as "nothing to flag".
+    // The primary file is already written (and marked saved, unless an edit
+    // landed mid-round). A failing backup lookup (IndexedDB blocked, handle
+    // gone) must not leave the pill on "saving…" or reject out of the save
+    // cycle; the backup's own write path reports its failures, so an
+    // unreadable health just reads as "nothing to flag".
     let health: BackupHealth = 'ok'
     try {
       health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
@@ -372,6 +381,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       // here (rather than just toasting) also self-heals: the pref flip is
       // itself a mutation, so the dirty guard schedules a trailing save that
       // persists `dailyBackupEnabled: false` to the primary file.
+      // Read before the self-heal below, which dirties the store itself: the pill
+      // must reflect only the user's own unsaved edits, not that queued heal.
+      const dirtyBeforeHeal = deps.store.dirty
       deps.store.update((d) => {
         d.prefs.dailyBackupEnabled = false
       })
@@ -387,7 +399,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
       dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-      deps.shell.setSaveState('saved')
+      deps.shell.setSaveState(dirtyBeforeHeal ? 'dirty' : 'saved')
     } else if (health === 'permission') {
       reportBackupPermissionNeeded()
     } else if (health === 'error') {
@@ -399,9 +411,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       backupErrorEpisodeToasted = false
       backupPasswordMismatchEpisodeToasted = false
       dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-      deps.shell.setSaveState('saved')
+      // Follows `dirty` rather than assuming 'saved': after a mid-save edit the
+      // trailing round may never run (fallback mode, read-only) and nothing else refreshes it.
+      deps.shell.setSaveState(deps.store.dirty ? 'dirty' : 'saved')
     }
-    deps.shell.setTitle(deps.session.name, false)
+    deps.shell.setTitle(deps.session.name, deps.store.dirty)
   }
 
   /**

@@ -6,37 +6,41 @@
 // milestones.ts/risks.ts rely on for team deletion), so no "not found"
 // placeholder or live-deletion guard is needed here.
 import type { Loc, Team } from '../core/types'
-import { todayIso } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
-import { createRichEditorBundle } from '../ui/rich-editor'
-import { nowHHMM } from '../core/date'
+import { createModuleEditor } from '../ui/rich-editor'
+import { scopeAffects, type Section } from '../core/scope'
 import { findTeam as docFindTeam } from '../core/document'
 import { withDisposal } from './lifecycle'
 
 export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'general') return // registered only for 'general'; defensive
   const teamId = loc.teamId
-  const lc = ctx.locale
 
   function findTeam(): Team | undefined {
     return docFindTeam(ctx.store.doc, teamId)
   }
 
-  const bundle = createRichEditorBundle({
-    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+  const bundle = createModuleEditor(ctx, teamId, {
     initialMd: findTeam()?.generalNotes ?? '',
+    templateScopes: ['any'],
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)
-        if (!tm) return
-        tm.generalNotes = md.trim() === '' ? '' : md
+        if (tm) tm.generalNotes = md
       }, { teamId, sections: ['notes'] })
     },
-    getTeam: () => findTeam(),
-    getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-    getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
   })
   const editor = bundle.editor
+
+  // Mentions here show their target's *current* name, so patch the chips in
+  // place when something they point at is renamed. The content itself is
+  // never rebuilt from the store (caret safety; same rule as person-notes.ts).
+  // 'notes' is deliberately not watched: this note's own keystrokes can't
+  // rename anything.
+  const LABEL_SOURCES: readonly Section[] = ['teams', 'people', 'actions', 'milestones', 'risks']
+  const unsubscribe = ctx.store.subscribe((scope) => {
+    if (scopeAffects(scope, teamId, LABEL_SOURCES)) editor.refreshRefLabels()
+  })
 
   container.appendChild(editor.root)
   // Only for the pane the user is actually in — a team switch remounts both
@@ -48,6 +52,7 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
   }
 
   return () => {
+    unsubscribe()
     bundle.dispose()
   }
 })

@@ -147,7 +147,9 @@ test.describe('split view — an edit in one pane leaves the other pane mounted'
       row.setAttribute('data-e2e-marker', '1')
     })
 
-    await typeInPane0(page, 'follow up on @[Milestone 3](milestone:t0-m3) next week')
+    // A mention is a chip (what the @ dropdown inserts). Raw "@[..](..)" text typed by
+    // hand is literal text now — it is saved escaped and is not a mention.
+    await typeInPane0(page, 'follow up on <a class="ref" data-ref="milestone:t0-m3" contenteditable="false">@Milestone 3</a> next week')
 
     await expect(targetRow.locator('.tt-backlinks-chip')).toHaveText('↩ 1')
     // Same row node — patched in place, not rebuilt.

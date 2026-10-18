@@ -73,7 +73,7 @@ function setup(left: Loc['ref'], right: Loc['ref'], mutate?: (t: Team) => void):
   const store = createStore(createEmptyDocument('en-US'))
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('actions', renderActionItems)
   pm.registerModule('daily', renderDailyNotes)
   pm.registerModule('milestones', renderMilestones)

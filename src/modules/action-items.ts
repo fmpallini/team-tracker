@@ -11,25 +11,26 @@ import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } fro
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
 import { isOverdue, isActionActive } from '../core/due'
-import { nowHHMM, addDaysIso, diffDays } from '../core/date'
+import { addDaysIso, diffDays } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
 import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
-import { deleteWithUndo } from '../core/undo-delete'
+import { deleteInTeamWithUndo } from '../core/undo-delete'
+import { nextOrder, patchTeamItem } from '../core/team-items'
 import { offerUndoToast } from '../ui/undo-toast'
 import { createEntityDelete } from './entity-delete'
-import { createRichEditorBundle, type RichEditorBundle } from '../ui/rich-editor'
+import { createModuleEditor, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
 import { emptyState } from '../ui/empty-state'
 import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
 import { BACKLINK_SECTIONS, normalize } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { withDisposal } from './lifecycle'
 import { icon, kindIcon } from '../ui/icons'
+import { watchDayChange } from '../ui/day-change'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -41,7 +42,6 @@ const COLOR_KEYS: Record<ActionItemColor, 'kanban_color_slate' | 'kanban_color_b
 }
 // --- pure, unit-testable helpers -------------------------------------------
 
-/** Items in `status`, sorted by `order`. */
 /**
  * True when a card is an untouched draft: nothing typed anywhere. Used so the
  * delete flow only skips its confirm + undo for a card that holds nothing, not
@@ -252,8 +252,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const tm = docFindTeam(d, teamId)
       if (!tm) return
       const existing = tm.actionColumns ?? []
-      const maxOrder = existing.length === 0 ? -1 : Math.max(...existing.map((c) => c.order))
-      tm.actionColumns = [...existing, { id: newId, name: t(lc, 'kanban_new_column_default_name'), order: maxOrder + 1 }]
+      tm.actionColumns = [...existing, { id: newId, name: t(lc, 'kanban_new_column_default_name'), order: nextOrder(existing) }]
     }, { teamId, sections: ['actions'] })
   }
 
@@ -273,21 +272,16 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       confirmLabel: t(lc, 'kanban_clear_zone_btn'),
       variant: 'danger',
       onConfirm: () => {
-        const offer = deleteWithUndo(ctx.store, (d) => {
-          const tm = docFindTeam(d, teamId)
-          if (!tm) return null
-          const removedTitles = new Map(tm.actionItems.filter((i) => i.status === status).map((i) => [i.id, i.summary]))
-          if (removedTitles.size === 0) return null
-          // Deep copy — same unlinkRefsInTeam cross-section rationale as
-          // entity-delete.ts.
-          const before = structuredClone(tm)
-          unlinkRefsInTeam(tm, 'action', removedTitles)
-          tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
-          return (d2) => {
-            const i = d2.teams.findIndex((t2) => t2.id === teamId)
-            if (i !== -1) d2.teams[i] = before
-          }
-        }, { teamId })
+        // Deep copy (taken by deleteInTeamWithUndo) — same unlinkRefsInTeam
+        // cross-section rationale as entity-delete.ts.
+        const offer = deleteInTeamWithUndo(ctx.store, teamId,
+          (tm) => tm.actionItems.some((i) => i.status === status),
+          (tm) => {
+            const removedTitles = new Map(tm.actionItems.filter((i) => i.status === status).map((i) => [i.id, i.summary]))
+            unlinkRefsInTeam(tm, 'action', removedTitles)
+            tm.actionItems = tm.actionItems.filter((i) => i.status !== status)
+          },
+          { teamId })
         offerUndoToast(ctx.store, lc, t(lc, 'actions_deleted_toast', { count: String(count) }), offer)
       },
     })
@@ -335,13 +329,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         const tm = docFindTeam(d, teamId)
         if (!tm) return
         const group = itemsByStatus(tm.actionItems, defaultStatus)
-        // Not `group.length`: a prior delete can leave a gap in `order`
-        // (a card delete/clearZone never renumber survivors), so the next
-        // slot has to be past the highest existing value, not the count.
-        const nextOrder = group.length === 0 ? 0 : Math.max(...group.map((i) => i.order)) + 1
+        // nextOrder, not `group.length`: a prior delete can leave a gap in
+        // `order` (a card delete/clearZone never renumber survivors).
         tm.actionItems.push({
           id: itemId, summary: '', notes: '', status: defaultStatus,
-          dueDate: null, assignee: '', color: null, order: nextOrder,
+          dueDate: null, assignee: '', color: null, order: nextOrder(group),
         })
       }, { teamId, sections: ['actions'] })
     } else {
@@ -350,11 +342,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
     /** Every field's commit path funnels through here — finds this card by `itemId` (never stale: re-looked-up on every call) and mutates it in place inside a single store.update. `sections` defaults to unscoped (everything changed) for `summary`, since it's also the @mention label; every other field narrows to `['actions']`. */
     function patch(mutate: (item: ActionItem) => void, sections?: Section[]): void {
-      ctx.store.update((d) => {
-        const tm = docFindTeam(d, teamId)
-        const found = tm?.actionItems.find((i) => i.id === itemId)
-        if (found) mutate(found)
-      }, sections ? { teamId, sections } : { teamId })
+      patchTeamItem(ctx.store, teamId, 'actionItems', itemId, mutate, sections ? { teamId, sections } : { teamId })
     }
 
     // Shown by beforeClose when the card has content but no name (see the
@@ -553,15 +541,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // needed the way the old Save-gated flow required.
     const focusItemIdOnClose = itemId
 
-    const richBundle = createRichEditorBundle({
-      store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+    const richBundle = createModuleEditor(ctx, teamId, {
       initialMd: existing?.notes ?? '',
-      onChange: (md) => {
-        patch((item) => { item.notes = md.trim() === '' ? '' : md }, ['actions'])
-      },
-      getTeam: () => findTeam(),
-      getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'any'),
-      getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), teamName: findTeam()?.name, locale: lc }),
+      templateScopes: ['any'],
+      onChange: (md) => { patch((item) => { item.notes = md }, ['actions']) },
     })
     const editor = richBundle.editor
 
@@ -589,11 +572,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       savePillMiniText.textContent = info.label
       savePillMini.title = info.title
       savePillMini.dataset.state = info.state
-      savePillMini.classList.toggle(
-        'tt-save-pill-clickable',
-        info.state === 'dirty' || info.state === 'error' || info.state === 'permission' ||
-        info.state === 'backup-permission' || info.state === 'backup-password-mismatch'
-      )
+      savePillMini.classList.toggle('tt-save-pill-clickable', info.clickable)
     })
     const expandBtn = el(
       'button',
@@ -785,18 +764,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function deleteColumn(columnId: string): void {
     const count = items().filter((i) => i.status === columnId).length
     if (count === 0) {
-      const name = statusLabel(columnId, findTeam())
-      const offer = deleteWithUndo(ctx.store, (d) => {
-        const tm = docFindTeam(d, teamId)
-        if (!tm?.actionColumns) return null
-        if (!tm.actionColumns.some((c) => c.id === columnId)) return null
-        const before = structuredClone(tm)
-        tm.actionColumns = tm.actionColumns.filter((c) => c.id !== columnId)
-        return (d2) => {
-          const i = d2.teams.findIndex((t2) => t2.id === teamId)
-          if (i !== -1) d2.teams[i] = before
-        }
-      }, { teamId, sections: ['actions'] })
+      const name = actionStatusLabel(lc, columnId, findTeam())
+      const offer = deleteInTeamWithUndo(ctx.store, teamId,
+        (tm) => !!tm.actionColumns?.some((c) => c.id === columnId),
+        (tm) => { tm.actionColumns = tm.actionColumns!.filter((c) => c.id !== columnId) },
+        { teamId, sections: ['actions'] })
       offerUndoToast(ctx.store, lc, t(lc, 'column_deleted_toast', { name }), offer)
       return
     }
@@ -807,7 +779,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const tm = findTeam()
     const targets = STATUSES.filter((s) => s !== columnId)
     const select = el('select', { class: 'tt-input tt-kanban-column-landing-select' }) as HTMLSelectElement
-    for (const s of targets) select.appendChild(el('option', { value: s }, statusLabel(s, tm)))
+    for (const s of targets) select.appendChild(el('option', { value: s }, actionStatusLabel(lc, s, tm)))
     const body = el(
       'div', { class: 'tt-prefs-field' },
       el('p', { class: 'tt-modal-message' }, t(lc, 'kanban_delete_column_confirm', { count: String(count) })),
@@ -819,28 +791,19 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       danger: true,
       onClick: () => {
         const targetStatus = select.value
-        const name = statusLabel(columnId, findTeam())
-        const offer = deleteWithUndo(ctx.store, (d) => {
-          const team2 = docFindTeam(d, teamId)
-          if (!team2) return null
-          // Deep copy before anything moves: the migration below rewrites
-          // `status` and `order` in place on every card it moves, so a shallow
-          // capture of actionColumns alone would restore the column but leave
-          // its cards stranded in the landing column.
-          const before = structuredClone(team2)
+        const name = actionStatusLabel(lc, columnId, findTeam())
+        // Deep copy (taken by deleteInTeamWithUndo) before anything moves: the
+        // migration below rewrites `status` and `order` in place on every card
+        // it moves, so a shallow capture of actionColumns alone would restore
+        // the column but leave its cards stranded in the landing column.
+        // Appends past the destination's highest existing order (nextOrder);
+        // doesn't renumber the destination group densely, so pre-existing gaps
+        // in its order values are left untouched.
+        const offer = deleteInTeamWithUndo(ctx.store, teamId, () => true, (team2) => {
           const moving = team2.actionItems.filter((i) => i.status === columnId).sort((a, b) => a.order - b.order)
-          const destGroup = team2.actionItems.filter((i) => i.status === targetStatus)
-          // Appends past the destination's highest existing order — same
-          // nextOrder idiom as openEditModal's new-card insertion above.
-          // Doesn't renumber the destination group densely; any pre-existing
-          // gaps in its order values are left untouched.
-          let nextOrder = destGroup.length === 0 ? 0 : Math.max(...destGroup.map((i) => i.order)) + 1
-          for (const i of moving) { i.status = targetStatus; i.order = nextOrder++ }
+          let order = nextOrder(team2.actionItems.filter((i) => i.status === targetStatus))
+          for (const i of moving) { i.status = targetStatus; i.order = order++ }
           if (team2.actionColumns) team2.actionColumns = team2.actionColumns.filter((c) => c.id !== columnId)
-          return (d2) => {
-            const i = d2.teams.findIndex((t2) => t2.id === teamId)
-            if (i !== -1) d2.teams[i] = before
-          }
         }, { teamId, sections: ['actions'] })
         offerUndoToast(ctx.store, lc, t(lc, 'column_deleted_toast', { name }), offer)
         handle.close()
@@ -931,8 +894,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     }
     const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
     if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
-    const backlinks = ctx.searchIndex.backlinks(teamId, 'action', item.id)
-    const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const chip = createModuleBacklinksChip(ctx, teamId, 'action', item.id)
     if (chip) metaChildren.push(chip)
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
 
@@ -1031,13 +993,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   /** The two ends, never renamed/removed/reordered. */
   function isFixedStatus(status: string): boolean {
     return status === 'todo' || status === 'done' || status === 'cancelled'
-  }
-
-  // Unused within Task 5 itself, when this was added as part of that task's
-  // declared skeleton interface — first used by Task 7's delete-column
-  // landing-picker labels (openDeleteColumnModal, above).
-  function statusLabel(status: string, tm: Team | undefined): string {
-    return actionStatusLabel(lc, status, tm)
   }
 
   /** Column ids in board order: fixed 'todo', the team's custom columns sorted by order, fixed 'done'/'cancelled'. */
@@ -1350,7 +1305,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const bucket = byStatus[it.status]
       if (!bucket) continue // its column was deleted elsewhere; ignore until reassigned
       bucket.push(it)
-      if (it.color !== null && it.status !== 'done' && it.status !== 'cancelled') counts[it.color]++
+      if (it.color !== null && isActionActive(it)) counts[it.color]++
     }
     renderTagChips(tagNames, counts)
     for (const s of STATUSES) {
@@ -1387,6 +1342,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   const deferredRebuild = createDeferredRebuild(renderAll)
 
+  // Due pills are coloured against today; a board left open overnight gets no
+  // store change to redraw them. Deferred like a foreign change while a column
+  // rename is being typed.
+  const stopDayWatch = watchDayChange(() => {
+    const active = focusedRenameInput()
+    if (active) deferredRebuild.arm(active)
+    else renderAll()
+  })
+
   /**
    * Re-queries each card's backlinks and swaps its chip node in place. The
    * subscribe handler uses this instead of a full `renderAll()` for a change
@@ -1403,8 +1367,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const meta = card.querySelector('.tt-kanban-card-meta')
       if (!meta) continue
       const existing = meta.querySelector(':scope > .tt-backlinks-chip')
-      const backlinks = ctx.searchIndex.backlinks(teamId, 'action', id)
-      const next = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+      const next = createModuleBacklinksChip(ctx, teamId, 'action', id)
       if (existing && next) existing.replaceWith(next)
       else if (existing) existing.remove()
       else if (next) meta.appendChild(next)
@@ -1492,6 +1455,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     disposeOpenBundle()
     disposeArrowFallback()
     boardResize?.disconnect()
+    stopDayWatch()
     deferredRebuild.dispose()
   }
 })

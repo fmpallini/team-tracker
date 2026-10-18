@@ -6,6 +6,7 @@ import { todayIso } from '../src/core/i18n'
 import type { Loc } from '../src/core/types'
 import { createPaneManager, type PaneManager } from '../src/ui/panes'
 import { renderActionItems } from '../src/modules/action-items'
+import { showModal } from '../src/ui/modal'
 
 function fakePM(): PaneManager & { openInFocused: ReturnType<typeof vi.fn<(loc: Loc) => void>> } {
   return {
@@ -142,7 +143,7 @@ test('selectTeam via updateNav re-renders the highlight immediately (hotkey path
   expect(items()[1]!.classList.contains('active')).toBe(true)
 })
 
-test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar even though it does not fire onMutate', () => {
+test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar', () => {
   const { store } = setup()
   addTeam(store, 'Alpha')
   expect(items()).toHaveLength(1)
@@ -177,6 +178,20 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   expect(store.doc.teams[0]!.emoji).toBe('🐙')
   expect(store.doc.teams[0]!.id).toMatch(/[0-9a-f-]{36}/)
   expect(store.doc.nav.activeTeamId).toBe(store.doc.teams[0]!.id)
+})
+
+// A read-only tab (no cross-tab write lock) refuses the store write; selecting
+// the never-created team would point both panes at a team that doesn't exist.
+test('+ modal in a read-only store creates nothing and does not select a ghost team', () => {
+  const { store, selectTeam } = setup()
+  store.setReadOnly(true)
+  document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
+  ;(document.querySelector('input[name="tt-team-name"]') as HTMLInputElement).value = 'Gamma'
+  clickByText('OK')
+
+  expect(store.doc.teams).toHaveLength(0)
+  expect(selectTeam).not.toHaveBeenCalled()
+  expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 })
 
 test('canceling the add-team modal disposes the emoji picker (no leaked listener)', () => {
@@ -767,6 +782,25 @@ describe('due list modal', () => {
   })
 })
 
+test('clicking a due row while a card refuses to close opens nothing and switches no team', () => {
+  const { store, pm, selectTeam } = setup()
+  addTeam(store, 'Alpha')
+  addTeam(store, 'Beta')
+  addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+  store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+  let refuse = true
+  const card = showModal({ title: 'card', body: document.createElement('div'), buttons: [], modeless: true, beforeClose: () => !refuse })
+  try {
+    ;(document.querySelector('.tt-due-btn') as HTMLElement).click()
+    ;(document.querySelector('.tt-due-row') as HTMLElement).click()
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(pm.openInFocused).not.toHaveBeenCalled()
+  } finally {
+    refuse = false
+    card.close()
+  }
+})
+
 describe('per-team due badge (sidebar list)', () => {
   test('clicking it opens a panel scoped to just that team, without selecting the team', () => {
     const { store, selectTeam } = setup()
@@ -1077,7 +1111,7 @@ describe('due list modal - card highlight (real pane, mirrors search-ui.ts commi
     const store = createStore(doc)
     const shell = createShell('en-US')
     document.body.appendChild(shell.root)
-    const pm = createPaneManager(shell, store, 'en-US')
+    const pm = createPaneManager(shell, store)
     pm.registerModule('actions', renderActionItems)
     const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
     lastSidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })
@@ -1109,7 +1143,7 @@ describe('due list modal - card highlight (real pane, mirrors search-ui.ts commi
     const store = createStore(doc)
     const shell = createShell('en-US')
     document.body.appendChild(shell.root)
-    const pm = createPaneManager(shell, store, 'en-US')
+    const pm = createPaneManager(shell, store)
     pm.registerModule('actions', renderActionItems)
     const selectTeam = vi.fn((id: string) => { store.updateNav((d) => { d.nav.activeTeamId = id }) })
     lastSidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => {} })

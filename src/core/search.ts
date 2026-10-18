@@ -72,11 +72,60 @@ export function normalize(s: string): string {
   return decomposeAndFold(folded)
 }
 
+/**
+ * `normalize(s)` plus, when it reshaped the text, a map from each normalized
+ * index back to the index it came from in `s` (`offsets[normalized.length]` is
+ * `s.length`). `offsets` is null whenever the two are index-aligned — plain
+ * ASCII and the Latin-1 fold, i.e. everything the hot path sees — so the common
+ * case allocates nothing. NFD-decomposed accents (macOS, PDFs) shrink the text
+ * and Hangul expands to jamo; without the map a match after either lands at the
+ * wrong place in the original. If the per-character mapping cannot reproduce
+ * `normalize(s)` exactly (Greek final sigma lower-cases by context), there is
+ * no trustworthy map and `offsets` is null, as before.
+ */
+export function normalizeWithOffsets(s: string): { normalized: string; offsets: number[] | null } {
+  if (!NON_ASCII.test(s)) return { normalized: s.toLowerCase(), offsets: null }
+  const folded = s.replace(LATIN1_FOLD_PATTERN, (char) => LATIN1_FOLD.get(char)!)
+  if (!NON_ASCII.test(folded)) return { normalized: folded.toLowerCase(), offsets: null }
+  const normalized = decomposeAndFold(folded)
+  const offsets: number[] = []
+  let joined = ''
+  // Em dashes, curly quotes, a euro sign, emoji: non-Latin-1, yet every character
+  // keeps its length, so the map would be the identity. Real notes pasted from
+  // Word or Outlook are full of them, and a per-character array per cached field
+  // cost several times the text itself — so no map is kept unless a length changed.
+  let reshaped = false
+  for (let i = 0; i < folded.length;) {
+    const ch = String.fromCodePoint(folded.codePointAt(i)!)
+    const part = NON_ASCII.test(ch) ? decomposeAndFold(ch) : ch.toLowerCase()
+    if (part.length !== ch.length) reshaped = true
+    for (let k = 0; k < part.length; k++) offsets.push(i)
+    joined += part
+    i += ch.length
+  }
+  offsets.push(s.length)
+  return { normalized, offsets: reshaped && joined === normalized ? offsets : null }
+}
+
 // Strips the basic markdown syntax this app produces so search snippets read
 // as plain text: heading/list/ordered-list markers, bold/italic/strike/underline,
 // @[label](ref) references (kept as their label), and refs.ts's
 // single-tilde unlinked-reference marker (also kept as its label).
 function stripMd(s: string): string {
+  return restoreEscaped(stripMdSyntax(s.replace(ESCAPED_LITERAL, (_, c: string) => String.fromCharCode(ESCAPED_BASE + c.charCodeAt(0)))))
+}
+
+// A backslash-escaped literal (\*, \[, \# … — see core/markdown.ts's
+// escapeInline) is swapped for a one-character stand-in while the syntax below
+// is stripped, then put back without its backslash: "2\*3" is found by "2*3"
+// and is never mistaken for emphasis. One character in, one out, so the
+// index alignment makeSnippet and the highlighter rely on is unchanged.
+const ESCAPED_LITERAL = /\\([\\*~[\]<>#.`-])/g
+const ESCAPED_BASE = 0xf000
+const ESCAPED_STAND_IN = new RegExp(`[${String.fromCharCode(ESCAPED_BASE)}-${String.fromCharCode(ESCAPED_BASE + 0x7f)}]`, 'g')
+const restoreEscaped = (s: string): string => s.replace(ESCAPED_STAND_IN, (c) => String.fromCharCode(c.charCodeAt(0) - ESCAPED_BASE))
+
+function stripMdSyntax(s: string): string {
   return s
     .split('\n')
     .map(line => {
@@ -106,9 +155,11 @@ function termPositions(haystack: string, terms: string[]): number[] | null {
   return positions
 }
 
-// `stripped` and `normalized` are index-aligned (normalize preserves character
-// count for the accented Latin text this app handles), so an index found in
-// `normalized` can be used directly to slice the display text in `stripped`.
+// `stripped` and `normalized` are index-aligned for the accented Latin text this
+// app handles (normalize preserves character count), so an index found in
+// `normalized` slices the display text in `stripped` directly. Where they are not
+// (NFD-decomposed accents, Hangul) the caller maps the index back through the
+// candidate's `offsets` (see normalizeWithOffsets) before it gets here.
 function makeSnippet(stripped: string, positions: number[]): string {
   const idx = Math.min(...positions)
   const start = Math.max(0, idx - SNIPPET_RADIUS)
@@ -256,6 +307,8 @@ interface PreparedCandidate {
   title: string
   raw: string
   normalized: string
+  /** `normalizeWithOffsets`' map for this field, present only when normalizing reshaped it (see there). */
+  offsets?: number[]
   /** Pre-stripped display text, present only for fields >= EAGER_STRIP_MIN. */
   stripped?: string
 }
@@ -263,9 +316,9 @@ interface PreparedCandidate {
 /** The one place `raw` is turned into the forms matching and snippets need — shared by `createSearchIndex`'s cache and by the uncached `searchDocument`. */
 function prepareCandidate(candidate: Candidate): PreparedCandidate {
   const stripped = stripMd(candidate.raw)
-  const prepared: PreparedCandidate = {
-    ref: candidate.ref, title: candidate.title, raw: candidate.raw, normalized: normalize(stripped),
-  }
+  const { normalized, offsets } = normalizeWithOffsets(stripped)
+  const prepared: PreparedCandidate = { ref: candidate.ref, title: candidate.title, raw: candidate.raw, normalized }
+  if (offsets) prepared.offsets = offsets
   // Free to keep at this point — it has just been computed either way.
   if (candidate.raw.length >= EAGER_STRIP_MIN) prepared.stripped = stripped
   return prepared
@@ -353,11 +406,12 @@ function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: 
 
 /** Cuts the displayed snippet — the one step that needs the markdown-stripped text, so it is paid per shown result rather than per cached candidate. */
 function toResult(hit: ScoredHit): SearchResult {
+  const offsets = hit.candidate.offsets
   return {
     loc: { teamId: hit.teamId, ref: hit.candidate.ref },
     moduleKind: hit.candidate.ref.kind,
     title: hit.candidate.title,
-    snippet: makeSnippet(hit.candidate.stripped ?? stripMd(hit.candidate.raw), hit.positions),
+    snippet: makeSnippet(hit.candidate.stripped ?? stripMd(hit.candidate.raw), offsets ? hit.positions.map((p) => offsets[p]!) : hit.positions),
     teamName: hit.teamName,
   }
 }

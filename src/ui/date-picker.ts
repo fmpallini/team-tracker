@@ -12,6 +12,7 @@
 import { t, formatDate, parseLocaleDate, todayIso, type Locale } from '../core/i18n'
 import { createCalendar, type CalendarMarks } from './calendar'
 import { placePopover } from '../core/popover-place'
+import { isReadOnlyLocked } from './readonly-lock'
 import { el, bindOutsideDismiss, blurOnEnter } from './dom'
 
 const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [] }
@@ -124,6 +125,8 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
   }
 
   function openPopover(): void {
+    // A read-only tab can't keep a picked date; focus (mousedown, Tab) must not open the calendar either.
+    if (isReadOnlyLocked()) return
     closeCurrentPopover?.()
     const wrap = el('div', { class: 'tt-date-picker-popover' })
     wrap.appendChild(

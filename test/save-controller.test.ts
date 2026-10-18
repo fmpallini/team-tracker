@@ -3,6 +3,7 @@ import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createShell, type Shell } from '../src/ui/shell'
 import type { FileSession } from '../src/core/fs'
+import type { BackupController } from '../src/core/backup-controller'
 import type { Prefs } from '../src/core/types'
 
 const fsMocks = vi.hoisted(() => ({
@@ -1315,4 +1316,114 @@ describe('flushPending (debounced editor changes)', () => {
     await ctl.saveNow({ explicit: true })
     expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
   })
+})
+
+describe('an edit that lands while a save is in flight', () => {
+  function ctlFor(store: ReturnType<typeof createStore>, shell: Shell, extra: Partial<Parameters<typeof createSaveController>[0]> = {}) {
+    return createSaveController({ store, session: makeSession(), getPassword: () => 'pw', shell, locale: () => 'en-US', onExternalChange: vi.fn(), ...extra })
+  }
+
+  test('stays dirty when the trailing round that should write it fails', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 9 })
+    const firstWrite = deferred<void>()
+    fsMocks.writeFile
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(async () => { throw new Error('disk full') })
+    const ctl = ctlFor(store, makeShell())
+
+    const p = ctl.saveNow()
+    await new Promise((r) => setTimeout(r, 0)) // round 1 parked inside writeFile
+    store.update((d) => { d.prefs.autoSaveMin = 3 }) // after round 1's snapshot
+    firstWrite.resolve()
+    await p
+    await ctl.flush()
+
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+    expect(store.dirty).toBe(true)
+  })
+
+  test('is cleared once the trailing round lands, and the title shows unsaved in between', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 9 })
+    const shell = makeShell()
+    const setTitleSpy = vi.spyOn(shell, 'setTitle')
+    const firstWrite = deferred<void>()
+    fsMocks.writeFile.mockImplementationOnce(() => firstWrite.promise)
+    const ctl = ctlFor(store, shell)
+
+    const p = ctl.saveNow()
+    await new Promise((r) => setTimeout(r, 0))
+    store.update((d) => { d.prefs.autoSaveMin = 3 })
+    firstWrite.resolve()
+    await p
+    await ctl.flush()
+
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+    expect(store.dirty).toBe(false)
+    expect(setTitleSpy.mock.calls.map((c) => c[1])).toEqual([true, false])
+  })
+
+  test('fallback mode (no handle): the pill ends dirty, not saved, when the edit landed mid-serialize', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 9 })
+    const shell = makeShell()
+    const setSaveStateSpy = vi.spyOn(shell, 'setSaveState')
+    const gate = deferred<Uint8Array<ArrayBuffer>>()
+    cryptoMocks.encryptDocument.mockImplementationOnce(() => gate.promise)
+    const ctl = ctlFor(store, shell, { session: makeSession(false) })
+
+    const p = ctl.saveNow({ explicit: true })
+    await new Promise((r) => setTimeout(r, 0)) // parked inside encryptDocument
+    store.update((d) => { d.prefs.autoSaveMin = 3 }) // after the snapshot; the automatic trailing round bails in fallback mode
+    gate.resolve(new Uint8Array([1, 2, 3]))
+    await p
+    await ctl.flush()
+
+    expect(store.dirty).toBe(true)
+    expect(setSaveStateSpy.mock.calls.at(-1)?.[0]).toBe('dirty')
+  })
+
+  test('during the backup mirror write (after the primary write) also stays dirty until it is written', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    store.update((d) => { d.prefs.autoSaveMin = 9 })
+    const backupWrite = deferred<void>()
+    const backupCtl = {
+      maybeWriteBackup: vi.fn().mockImplementationOnce(() => backupWrite.promise).mockResolvedValue(undefined),
+      currentHealth: vi.fn(async () => 'ok'),
+    } as unknown as BackupController
+    fsMocks.writeFile
+      .mockImplementationOnce(async () => {})
+      .mockImplementationOnce(async () => { throw new Error('disk full') })
+    const ctl = ctlFor(store, makeShell(), { backupCtl })
+
+    const p = ctl.saveNow()
+    await new Promise((r) => setTimeout(r, 0)) // primary written, parked in the backup mirror
+    store.update((d) => { d.prefs.autoSaveMin = 3 })
+    backupWrite.resolve()
+    await p
+    await ctl.flush()
+
+    expect(store.dirty).toBe(true)
+  })
+})
+
+test('a reload (replaceDoc) during an in-flight save queues one trailing save and ends clean', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const firstWrite = deferred<void>()
+  fsMocks.writeFile.mockImplementationOnce(() => firstWrite.promise)
+  const onExternalChange = vi.fn()
+  const ctl = createSaveController({ store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange })
+
+  const p = ctl.saveNow()
+  await new Promise((r) => setTimeout(r, 0))
+  store.replaceDoc(createEmptyDocument('en-US'))
+  firstWrite.resolve()
+  await p
+  await ctl.flush()
+
+  expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+  expect(onExternalChange).not.toHaveBeenCalled()
+  expect(store.dirty).toBe(false)
 })

@@ -8,8 +8,7 @@
 // coverage at all. This spec fills those:
 //
 //   - paste of clipboard HTML → real converted blocks in the editor, and the
-//     pasted content survives Ctrl+S → close → reopen  (currently test.fixme —
-//     see the bug note on that test)
+//     pasted content survives Ctrl+S → close → reopen
 //   - paste inside a fenced code block stays literal text (plain, not HTML)
 //   - a hostile clipboard payload (<img onerror>, javascript: link) is
 //     disarmed in the resulting DOM and loads nothing
@@ -179,6 +178,70 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(pre).toContainText('**bold** and *italic*')
     await expect(pre.locator('strong')).toHaveCount(0)
     await expect(pre.locator('em')).toHaveCount(0)
+  })
+
+  // Chromium's insertText of many lines is quadratic (4–9 s for a 1,500-line log
+  // paste); onPaste inserts the lines as one insertHTML instead. Also pins that
+  // the literal text ("*", "_") is still literal after the note is reloaded.
+  test('a 1,500-line plain-text paste lands in under 1.5 s and keeps every line literal', async ({ page }) => {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    const text = Array.from({ length: 1500 }, (_, i) => `2026-10-17 12:00:${String(i % 60).padStart(2, '0')} INFO request ${i} path=/api/v1/items_${i}*`).join('\n')
+
+    const ms = await page.evaluate((text) => {
+      const ed = document.querySelector('.editor') as HTMLElement
+      ed.focus()
+      const sel = getSelection()!
+      sel.removeAllRanges()
+      const r = document.createRange()
+      r.selectNodeContents(ed.lastElementChild ?? ed)
+      r.collapse(false)
+      sel.addRange(r)
+      const dt = new DataTransfer()
+      dt.setData('text/plain', text)
+      const t0 = performance.now()
+      ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      return performance.now() - t0
+    }, text)
+    expect(ms).toBeLessThan(1500)
+    await page.waitForTimeout(400)
+    await expect(editor.locator('> div')).toHaveCount(1500)
+
+    // Away to another module and back: the note is rebuilt from what was saved.
+    const pane = page.locator('.tt-pane[data-pane-idx="0"]')
+    for (const label of [/Members/i, /Daily/i]) {
+      await pane.locator('.tt-pane-modules-btn').click()
+      await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+    }
+    const reopened = page.locator('.editor').first()
+    await expect(reopened.locator('> div')).toHaveCount(1500)
+    await expect(reopened.locator('> div').last()).toHaveText('2026-10-17 12:00:59 INFO request 1499 path=/api/v1/items_1499*')
+  })
+
+  // Chromium's insertHTML into a heading or quote copies the surrounding
+  // block's computed font/colour onto the inserted spans as inline style="…",
+  // so the pasted text looks different from the rest until it is reopened.
+  test('paste into a heading leaves no inline style on the inserted text', async ({ page }) => {
+    const editor = await openEditor(page)
+    await page.evaluate(() => {
+      const ed = document.querySelector('.editor') as HTMLElement
+      ed.innerHTML = '<h2>Head text</h2>'
+      ed.focus()
+      const text = ed.querySelector('h2')!.firstChild!
+      const r = document.createRange()
+      r.setStart(text, 4)
+      r.collapse(true)
+      const sel = getSelection()!
+      sel.removeAllRanges()
+      sel.addRange(r)
+      const dt = new DataTransfer()
+      dt.setData('text/html', '<p>Texto <b>negrito</b> e <i>itálico</i></p>')
+      dt.setData('text/plain', 'Texto negrito e itálico')
+      ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    })
+    await page.waitForTimeout(400)
+    await expect(editor).toContainText('Texto negrito e itálico')
+    await expect(editor.locator('[style]')).toHaveCount(0)
   })
 
   test('a hostile clipboard payload is disarmed and loads no resources', async ({ page }) => {

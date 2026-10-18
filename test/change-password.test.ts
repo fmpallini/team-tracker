@@ -3,7 +3,7 @@ import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Shell } from '../src/ui/shell'
-import type { BackupController, BackupHealth } from '../src/core/backup-controller'
+import { createBackupController, type BackupController, type BackupHealth } from '../src/core/backup-controller'
 import { t } from '../src/core/i18n'
 
 const fsMocks = vi.hoisted(() => ({
@@ -20,6 +20,9 @@ vi.mock('../src/core/crypto', () => cryptoMocks)
 
 const modalMocks = vi.hoisted(() => ({ toast: vi.fn() }))
 vi.mock('../src/ui/modal', () => modalMocks)
+
+const idbMocks = vi.hoisted(() => ({ idbGet: vi.fn(async () => undefined as unknown), idbSet: vi.fn(async () => {}) }))
+vi.mock('../src/core/idb', () => idbMocks)
 
 function makeSession(withHandle = true): FileSession {
   return { handle: withHandle ? ({} as unknown as FileSystemFileHandle) : null, name: 'team.tmv', lastModified: 1 }
@@ -237,4 +240,23 @@ test('does not mark the password-mismatch latch when the immediate backup write 
 
   expect(backupCtl.markPasswordMismatch).not.toHaveBeenCalled()
   expect(shell.setSaveState).toHaveBeenCalledWith('saved')
+})
+
+// With IndexedDB unavailable the backup handle lookup rejects. The primary
+// file is already written under the new password by the time the pill's
+// health is read, so that read must not turn the change into a reported failure.
+test('IndexedDB unavailable: the change still resolves, with the new password in effect', async () => {
+  idbMocks.idbGet.mockRejectedValue(new Error('IndexedDB unavailable'))
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'b1' })
+  const setPassword = vi.fn()
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), backupCtl: createBackupController({ store }), runExclusive: (fn) => fn(), setPassword,
+  })
+
+  await expect(changePassword('newpw')).resolves.toBeUndefined()
+
+  expect(setPassword).toHaveBeenCalledWith('newpw')
+  consoleErrorSpy.mockRestore()
 })

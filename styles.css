@@ -740,6 +740,9 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-toast-action:hover { background: rgba(var(--accent-rgb), .12); }
 
+/* Read-only tab (src/ui/readonly-lock.ts): editing controls say so on hover. */
+:root[data-readonly] :is(input, select, textarea, .tt-date-picker, .tt-kanban-color-row button):not([data-readonly-exempt], [data-readonly-exempt] *) { cursor: not-allowed; }
+
 /* Read-only cross-tab banner (Task 25) */
 .tt-readonly-banner {
   display: flex; align-items: center; justify-content: center; gap: .75rem;
@@ -2211,9 +2214,9 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-due-row .tt-due-row-icon { display: inline-flex; flex: none; }
 .tt-due-row.overdue .tt-kind-icon { color: var(--danger); }
 .tt-due-row.soon .tt-kind-icon { color: var(--brass); }
-/* Calendar corner markers are stroke icons now; the state (not the glyph alone) carries the color. */
-.tt-calendar-flag[data-state=pending] { color: var(--danger); }
-.tt-calendar-check[data-state=pending] { color: var(--brass); }
+/* Calendar corner markers are stroke icons: pending ones wear their module's kind color (.tt-kind-milestones / .tt-kind-actions), done ones share the "all good" green. */
+.tt-calendar-flag[data-state=pending] { color: var(--brass); }
+.tt-calendar-check[data-state=pending] { color: var(--card-sage); }
 .tt-calendar-flag[data-state=done], .tt-calendar-check[data-state=done] { color: var(--ok); }
 .tt-calendar-flag, .tt-calendar-check { display: inline-flex; }
 

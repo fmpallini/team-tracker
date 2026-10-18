@@ -190,4 +190,31 @@ describe('renderGeneralNotes', () => {
 
     expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } } }])
   })
+
+  test('renaming a milestone mentioned here live-updates its @mention chip in place', () => {
+    const team = makeTeam({ generalNotes: 'See @[Old](milestone:m1) soon' })
+    team.milestones.push({ id: 'm1', date: '2026-08-04', title: 'Old', done: false, followup: '' })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: 'T1', ref: { kind: 'general' } }, store, pm)
+    const chip = container.querySelector<HTMLElement>('a.ref[data-ref="milestone:m1"]')!
+
+    store.update((d) => { d.teams[0]!.milestones[0]!.title = 'New' }, { teamId: 'T1' })
+
+    const after = container.querySelector<HTMLElement>('a.ref[data-ref="milestone:m1"]')!
+    expect(after).toBe(chip)
+    expect(after.textContent).toBe('@New')
+  })
+
+  test('its own keystrokes (notes-scoped) leave the editor DOM alone', () => {
+    const team = makeTeam({ generalNotes: 'See @[Old](milestone:m1)' })
+    team.milestones.push({ id: 'm1', date: '2026-08-04', title: 'Old', done: false, followup: '' })
+    const { container, store, pm } = setup(team)
+    render(container, { teamId: 'T1', ref: { kind: 'general' } }, store, pm)
+    const editor = editorEl(container)
+    const spy = vi.spyOn(editor, 'querySelectorAll')
+
+    store.update((d) => { d.teams[0]!.generalNotes = 'typed' }, { teamId: 'T1', sections: ['notes'] })
+
+    expect(spy).not.toHaveBeenCalled()
+  })
 })

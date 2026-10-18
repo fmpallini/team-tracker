@@ -4,6 +4,18 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.1.0] - 2026-10-18
+
+### Changed
+- Pasting is more faithful: text from Word, VS Code, Wikipedia, Outlook, Sheets and Slack keeps its lines, lists and tables, and big plain-text pastes no longer freeze the app.
+- Literal characters such as `*` or `_` that you paste or type no longer turn into formatting after you save and reopen.
+
+### Fixed
+- A tab that can't save (read-only) now truly locks editing, shortcuts, date pickers and export instead of accepting input it can't keep.
+- A save no longer loses track of edits made while it was running, and the save indicator and error toasts clear correctly afterwards.
+- Due-date pills, the daily calendar and the milestones timeline update when the day changes while the app stays open.
+- Search highlights line up for accented and Korean text; general notes show renamed people and items under their new name.
+
 ## [3.0.1] - 2026-10-15
 
 ### Changed

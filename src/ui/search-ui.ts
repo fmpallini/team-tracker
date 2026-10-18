@@ -5,10 +5,10 @@ import type { Shell } from './shell'
 import type { Store } from '../core/store'
 import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
-import { normalize, type SearchResult, type SearchIndex } from '../core/search'
+import { normalize, normalizeWithOffsets, type SearchResult, type SearchIndex } from '../core/search'
 import { el } from './dom'
 import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
-import { applySearchHighlight, dispatchSearchFocusItem } from './search-highlight'
+import { revealLoc } from './reveal-loc'
 import { paintSelection } from './select-list'
 import { onLocaleChanged } from './prefs'
 import { icon as strokeIcon, kindIcon } from './icons'
@@ -16,15 +16,15 @@ import { icon as strokeIcon, kindIcon } from './icons'
 const DEBOUNCE_MS = 300
 
 /**
- * Builds the highlighted snippet DOM. `snippet` and `normalize(snippet)` are
- * index-aligned (see core/search.ts's `normalize` doc comment: it preserves
- * character count for the accented Latin text this app handles), so term
- * positions found in the normalized snippet slice directly into the original
- * display text. Built entirely from text nodes and `<mark>` elements (no
+ * Builds the highlighted snippet DOM. Term positions found in
+ * `normalize(snippet)` are mapped back into the original display text through
+ * `normalizeWithOffsets` (a straight copy for the accented Latin text this app
+ * mostly holds; a real map for NFD-decomposed accents and Hangul). Built entirely from text nodes and `<mark>` elements (no
  * innerHTML) since snippet content comes from user-authored notes.
  */
 function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms: string[]): void {
-  const normalized = normalize(snippet)
+  const { normalized, offsets } = normalizeWithOffsets(snippet)
+  const at = (i: number): number => Math.min(offsets ? offsets[i]! : i, snippet.length)
   const ranges: [number, number][] = []
   for (const term of terms) {
     if (!term) continue
@@ -32,7 +32,7 @@ function appendHighlightedSnippet(container: HTMLElement, snippet: string, terms
     for (;;) {
       const idx = normalized.indexOf(term, from)
       if (idx < 0) break
-      ranges.push([idx, idx + term.length])
+      ranges.push([at(idx), at(idx + term.length)])
       from = idx + term.length
     }
   }
@@ -152,7 +152,7 @@ export function mountSearch(
   const listEl = el('div', { class: 'tt-search-list' })
   const dropdown = el('div', { class: 'tt-search-dropdown' }, checkboxLabel, listEl)
   const inputBox = el('div', { class: 'tt-search-input-box' }, input, icon, clearBtn)
-  const wrap = el('div', { class: 'tt-search-wrap' }, inputBox, dropdown)
+  const wrap = el('div', { class: 'tt-search-wrap', 'data-readonly-exempt': '' }, inputBox, dropdown)
   shell.headerLeft.appendChild(wrap)
   syncEnabled()
   const unsubscribeMutate = store.onMutate(() => syncEnabled())
@@ -227,30 +227,9 @@ export function mountSearch(
     // Opening the searched Loc below then lands on the specific result
     // within that already-consistent team switch, rather than leaving one
     // pane on the old team's content while the other jumps to the new one.
-    if (result.loc.teamId !== store.doc.nav.activeTeamId) {
-      switchTeam(result.loc.teamId)
-    }
-    pm.openInFocused(result.loc)
+    // A card that refuses to close keeps everything — dropdown included — as is.
+    if (!revealLoc({ store, pm, selectTeam: switchTeam }, result.loc, { terms })) return
     closeDropdown()
-    requestAnimationFrame(() => {
-      const paneEl = document.querySelectorAll('.tt-pane-body')[store.doc.nav.focusedPane] as HTMLElement | undefined
-      if (!paneEl) return
-      const ref = result.loc.ref
-      const itemId = 'itemId' in ref ? ref.itemId : undefined
-      // No-op for modules that don't listen (action-items, daily/person notes).
-      // For milestones/risks, this expands the matching row (if collapsed)
-      // before the anchor lookup below, so its follow-up text is in the DOM
-      // to highlight.
-      if (itemId) dispatchSearchFocusItem(paneEl, itemId)
-      const anchors = itemId
-        ? Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`))
-        : []
-      // anchors[0], not a range-derived position, is the scroll target: we
-      // already know exactly which element this result belongs to, and that
-      // must win even if none of its *currently visible* text matches (e.g.
-      // an action item's notes field, which only exists in its edit modal).
-      applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], terms, anchors[0])
-    })
   }
 
   checkbox.addEventListener('change', () => {

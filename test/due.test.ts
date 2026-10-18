@@ -1,4 +1,4 @@
-import { collectDueItems } from '../src/core/due'
+import { collectDueItems, dueRelativeLabel } from '../src/core/due'
 import { createEmptyDocument } from '../src/core/document'
 import type { ActionItem, Doc, Milestone, Team } from '../src/core/types'
 
@@ -103,4 +103,16 @@ test('collects across multiple teams', () => {
   ])
   const { overdue } = collectDueItems(d, TODAY)
   expect(overdue.map((x) => x.loc.teamId).sort()).toEqual(['A', 'B'])
+})
+
+// The one "overdue by / in N days" wording, shared by the due panel and the fast switch.
+describe('dueRelativeLabel', () => {
+  test('a past date reads as overdue by the whole days since', () => {
+    expect(dueRelativeLabel('en-US', '2026-07-19', '2026-07-20')).toBe('overdue by 1d')
+    expect(dueRelativeLabel('pt-BR', '2026-07-10', '2026-07-20')).toBe('venceu há 10d')
+  })
+  test('today reads as in 0 days, a future date as in the days until', () => {
+    expect(dueRelativeLabel('en-US', '2026-07-20', '2026-07-20')).toBe('in 0d')
+    expect(dueRelativeLabel('pt-BR', '2026-07-23', '2026-07-20')).toBe('em 3d')
+  })
 })

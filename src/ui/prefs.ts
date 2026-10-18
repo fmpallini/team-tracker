@@ -18,7 +18,7 @@ import { idbSet } from '../core/idb'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
-import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField } from './prefs-fields'
+import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
 import { icon } from './icons'
 
 /**
@@ -817,6 +817,16 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.append(toolbar, listEl)
   }
 
+  /**
+   * The Data tab's writing buttons in a read-only tab (it lost the cross-tab
+   * write lock): disabled, with the standard read-only notice as tooltip.
+   * Static at render time, like the Security tab; a lock lost while the tab
+   * is open is caught at click time by each action's `store.readOnly` check.
+   */
+  function readOnlyButtonProps(): { disabled?: boolean; title?: string } {
+    return appCtl.isReadOnly() ? { disabled: true, title: t(locale, 'readonly_blocked_toast') } : {}
+  }
+
   // --- Data tab section: Tags (cross-apply across teams) -------------------
   function buildTagsSection(): HTMLElement {
     const teams = store.doc.teams
@@ -851,7 +861,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             }
           })
           inner.close()
-          toast(t(locale, 'tags_cross_apply_success_toast'))
+          // The lock may have gone since this tab rendered: a blocked update changed nothing.
+          if (!store.readOnly) toast(t(locale, 'tags_cross_apply_success_toast'))
         },
       }
       const inner: ModalHandle = showModal({ title: t(locale, 'tags_cross_apply_confirm_title'), body, buttons: [cancelBtn, confirmBtn] })
@@ -859,7 +870,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const applyBtn = el(
       'button',
-      { class: 'tt-btn tt-btn-primary', type: 'button', onclick: () => applyClick() },
+      { class: 'tt-btn tt-btn-primary', type: 'button', ...readOnlyButtonProps(), onclick: () => applyClick() },
       t(locale, 'tags_cross_apply_btn')
     )
 
@@ -1036,7 +1047,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     // --- Export ---
     const exportChecks = new Map<string, HTMLInputElement>()
-    const exportListEl = el('div', { class: 'tt-data-team-list' })
+    // Exempt from the read-only lock: exporting only reads, so its team checkboxes must toggle.
+    const exportListEl = el('div', { class: 'tt-data-team-list', 'data-readonly-exempt': '' })
     if (store.doc.teams.length === 0) {
       exportListEl.appendChild(el('div', { class: 'tt-data-empty' }, t(locale, 'data_export_empty')))
     } else {
@@ -1098,6 +1110,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       store.update((d) => {
         d.teams.push(...newTeams)
       })
+      // Blocked (the lock went while this tab was open): keep the checklist, claim nothing.
+      if (store.readOnly) return
       importTeams = null
       renderImportChecklist()
       toast(t(locale, 'data_import_success_toast'))
@@ -1140,7 +1154,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const pickBtn = el(
       'button',
-      { class: 'tt-btn', type: 'button', onclick: () => fileInput.click() },
+      { class: 'tt-btn', type: 'button', ...readOnlyButtonProps(), onclick: () => fileInput.click() },
       t(locale, 'data_import_pick_btn')
     )
 
@@ -1163,12 +1177,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     }) as HTMLInputElement
     cleanupDaysInput.addEventListener('change', () => {
       const raw = Number(cleanupDaysInput.value)
-      const clamped = Math.min(3650, Math.max(1, Number.isFinite(raw) ? Math.round(raw) : 1))
+      const clamped = clampInt(raw, 1, 3650, 1)
       cleanupDaysInput.value = String(clamped)
     })
 
     function doCleanup(): void {
-      const days = Math.min(3650, Math.max(1, Math.round(Number(cleanupDaysInput.value)) || 1))
+      const days = clampInt(Number(cleanupDaysInput.value), 1, 3650, 1)
       const today = todayIso()
       const counts = countCleanupTargets(store.doc, days, today)
       if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0) {
@@ -1193,14 +1207,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         variant: 'danger',
         onConfirm: () => {
           store.update((d) => applyCleanup(d, days, today))
-          toast(t(locale, 'data_cleanup_success_toast'))
+          if (!store.readOnly) toast(t(locale, 'data_cleanup_success_toast'))
         },
       })
     }
 
     const cleanupBtn = el(
       'button',
-      { class: 'tt-btn tt-btn-danger', type: 'button', onclick: () => doCleanup() },
+      { class: 'tt-btn tt-btn-danger', type: 'button', ...readOnlyButtonProps(), onclick: () => doCleanup() },
       t(locale, 'data_cleanup_btn')
     )
 

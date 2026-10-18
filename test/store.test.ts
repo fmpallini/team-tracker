@@ -314,3 +314,12 @@ describe('listener disposal', () => {
     expect(b).toEqual([1])
   })
 })
+
+test('replaceDoc fires onMutate with "content", after subscribers', () => {
+  const s = createStore(createEmptyDocument('en-US'))
+  const order: string[] = []
+  s.subscribe(() => order.push('subscribe'))
+  s.onMutate((kind) => order.push(`mutate:${kind}`))
+  s.replaceDoc(createEmptyDocument('en-US'))
+  expect(order).toEqual(['subscribe', 'mutate:content'])
+})

@@ -1,4 +1,5 @@
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets } from '../src/ui/editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip } from '../src/ui/editor-dom'
+import { mdToHtml } from '../src/core/markdown'
 
 function mount(html: string): HTMLElement {
   const ed = document.createElement('div')
@@ -157,5 +158,22 @@ describe('rangeForTextOffsets', () => {
     const r = rangeForTextOffsets(block, 99, 99)
     expect(r.collapsed).toBe(true)
     expect(r.toString()).toBe('')
+  })
+})
+
+// One builder for every DOM-built ref chip (the @ picker's insert, the
+// editor's relink after an undo), tied to the markup mdToHtml renders for the
+// same mention so the two can never drift (a chip inserted from the picker
+// used to lack the hover hint until the note was reopened).
+describe('createRefChip', () => {
+  test('matches the chip mdToHtml renders for the same mention', () => {
+    const probe = document.createElement('div')
+    probe.innerHTML = mdToHtml('@[Ana](person:p1)', undefined, 'hint')
+    const rendered = probe.querySelector('a.ref')!
+    const built = createRefChip('person:p1', 'Ana', 'hint')
+    expect(built.tagName).toBe('A')
+    expect(built.getAttributeNames().sort()).toEqual(rendered.getAttributeNames().sort())
+    for (const name of rendered.getAttributeNames()) expect(built.getAttribute(name)).toBe(rendered.getAttribute(name))
+    expect(built.textContent).toBe(rendered.textContent)
   })
 })

@@ -1,4 +1,4 @@
-import { blurOnEnter, clampToViewport, clearClasses, clearRowError, createDeferredRebuild, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
+import { blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -257,5 +257,55 @@ describe('showRowError / clearRowError', () => {
   test('clearRowError on a row with no note is a no-op', () => {
     const row = document.createElement('div')
     expect(() => clearRowError(row, 'e1')).not.toThrow()
+  })
+})
+
+describe('copyText', () => {
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  afterEach(() => {
+    if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard)
+    else delete (navigator as unknown as { clipboard?: unknown }).clipboard
+  })
+  function setClipboard(value: unknown): void {
+    Object.defineProperty(navigator, 'clipboard', { value, configurable: true })
+  }
+  function stubExecCommand(): { calls: string[]; copied: string[] } {
+    const calls: string[] = []
+    const copied: string[] = []
+    ;(document as unknown as { execCommand: (cmd: string) => boolean }).execCommand = (cmd: string) => {
+      calls.push(cmd)
+      copied.push(document.querySelector('textarea')?.value ?? '')
+      return true
+    }
+    return { calls, copied }
+  }
+
+  test('writes through the async Clipboard API when it is there', async () => {
+    const writeText = vi.fn(async () => {})
+    setClipboard({ writeText })
+    const exec = stubExecCommand()
+    copyText('hello')
+    await Promise.resolve()
+    expect(writeText).toHaveBeenCalledWith('hello')
+    expect(exec.calls).toEqual([])
+  })
+
+  test('falls back to a hidden textarea + execCommand("copy") when the API rejects, and cleans it up', async () => {
+    setClipboard({ writeText: vi.fn(async () => { throw new Error('denied') }) })
+    const exec = stubExecCommand()
+    copyText('hello')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(exec.calls).toEqual(['copy'])
+    expect(exec.copied).toEqual(['hello'])
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  test('falls back the same way when there is no Clipboard API at all (file://)', () => {
+    setClipboard(undefined)
+    const exec = stubExecCommand()
+    copyText('hello')
+    expect(exec.calls).toEqual(['copy'])
+    expect(exec.copied).toEqual(['hello'])
   })
 })

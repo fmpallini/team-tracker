@@ -87,11 +87,16 @@ describe('offerUndoToast', () => {
     expect(toasts().some((n) => n.textContent === 'Restored')).toBe(true)
   })
 
+  it('a reload (replaceDoc) dismisses the undo toast, whose offer no longer applies', () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer())
+    expect(actionButton()).not.toBeNull()
+    store.replaceDoc(createEmptyDocument('en-US'))
+    expect(actionButton()).toBeNull()
+  })
+
   it('tells the user when a click on Undo is refused', () => {
-    // The one path onMutate cannot proactively dismiss: replaceDoc() (the
-    // conflict modal's "Reload") bumps rev without firing onMutate, so the
-    // toast is still showing when offer.undo() itself refuses. Silently
-    // doing nothing would leave the user thinking the restore worked.
+    // An offer can expire while its toast is still up (any later mutation the toast was not told about). Silently doing nothing on click would leave the user thinking the restore worked.
     const store = createStore(createEmptyDocument('en-US'))
     offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer({ undo: () => false }))
     actionButton()!.click()

@@ -3,14 +3,14 @@
 // @ref chip clicks, and @/  triggers for Tasks 16/17.
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
-import { el, clampToViewport } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { el, clampToViewport, copyText } from './dom'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showEditorHelp } from './help'
 import { showModal } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets, type BlockCtx } from './editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, type BlockCtx } from './editor-dom'
 import { icon } from './icons'
 
 export interface Editor {
@@ -355,6 +355,32 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
+  /** This editor's markdown → HTML: live ref labels plus the chip and link hover hints. */
+  function renderMd(md: string): string {
+    return mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+  }
+
+  /** `md` (one line) rendered as inline nodes, ready to splice into a block: mdToHtml wraps a bare line in a <div>, whose children are lifted out. */
+  function inlineFragment(md: string): DocumentFragment {
+    const tmp = document.createElement('div')
+    tmp.innerHTML = renderMd(md)
+    const wrapper = tmp.firstElementChild ?? tmp
+    const frag = document.createDocumentFragment()
+    while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+    return frag
+  }
+
+  /** Collapses the live selection to the start of `node`'s contents — where a freshly built or converted block takes the caret. */
+  function placeCaretAtStart(node: Node): void {
+    const sel = window.getSelection()
+    if (!sel) return
+    const r = document.createRange()
+    r.selectNodeContents(node)
+    r.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+
   // --- caret/block helpers --------------------------------------------------
   // The block-walk and the text-offset→Range mapping now live in
   // ./editor-dom.ts, shared with atref.ts / template-picker.ts. This wrapper
@@ -491,10 +517,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if ((block.textContent ?? '').trim() === '') block.replaceWith(div)
     else block.after(div)
 
-    const r = document.createRange()
-    r.selectNodeContents(div)
-    r.collapse(true)
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(div)
   }
 
   function listItemDepth(li: HTMLElement): number {
@@ -760,11 +783,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const bq = document.createElement('blockquote')
     bq.appendChild(document.createElement('br'))
     block.replaceWith(bq)
-    const r = document.createRange()
-    r.selectNodeContents(bq)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(bq)
   }
 
   // A <pre>'s literal text lines — collapse threshold, the copy button and
@@ -782,11 +801,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const pre = document.createElement('pre')
     pre.appendChild(document.createElement('br'))
     block.replaceWith(pre)
-    const r = document.createRange()
-    r.selectNodeContents(pre)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(pre)
   }
 
   /**
@@ -807,13 +822,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     pre.replaceWith(frag)
     const first = divs[0]
-    if (first) {
-      const r = document.createRange()
-      r.selectNodeContents(first)
-      r.collapse(true)
-      const sel = window.getSelection()
-      if (sel) { sel.removeAllRanges(); sel.addRange(r) }
-    }
+    if (first) placeCaretAtStart(first)
   }
 
   /**
@@ -888,11 +897,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const list = document.createElement(type)
     list.appendChild(li)
     block.replaceWith(list)
-    const r = document.createRange()
-    r.selectNodeContents(li)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(li)
   }
 
   /**
@@ -906,11 +911,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const next = document.createElement('div')
     next.appendChild(document.createElement('br'))
     block.replaceWith(hr, next)
-    const r = document.createRange()
-    r.selectNodeContents(next)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(next)
   }
 
   /**
@@ -945,11 +946,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       else editorEl.append(hr, next)
       caretTarget = next
     }
-    const r = document.createRange()
-    r.selectNodeContents(caretTarget)
-    r.collapse(true)
-    const sel = window.getSelection()
-    if (sel) { sel.removeAllRanges(); sel.addRange(r) }
+    placeCaretAtStart(caretTarget)
     scheduleChange()
   }
 
@@ -1052,12 +1049,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const range = rangeForTextOffsets(block, start, caretOffset)
       if (!range.cloneContents().querySelector('*')) {
         range.deleteContents()
-        const tmp = document.createElement('div')
-        tmp.innerHTML = mdToHtml(`[${linkM[1]!}](${linkUrl})`, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
-        // mdToHtml wraps a bare line in <div>…</div>; lift its children out.
-        const frag = document.createDocumentFragment()
-        const wrapper = tmp.firstElementChild ?? tmp
-        while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+        const frag = inlineFragment(`[${linkM[1]!}](${linkUrl})`)
         const lastNode = frag.lastChild
         range.insertNode(frag)
         if (lastNode) caretAfterInline(lastNode, 'none')
@@ -1319,7 +1311,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const initUrl = anchor ? anchor.getAttribute('href') ?? '' : ''
 
     const res = await promptLink({ text: initText, url: initUrl, editing: anchor !== null })
-    if (res === null) return
+    // The tab may have gone read-only while the dialog was open.
+    if (res === null || editorsReadOnly) return
     if ('remove' in res) {
       // "Remove link": replace the <a> with its own children (its text, plus
       // any inner formatting), drop the caret after them, and merge adjacent
@@ -1348,11 +1341,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (anchor && editorEl.contains(anchor)) {
       // Swap the <a> node directly — see the doc comment for why insertText
       // over a selectNode(anchor) selection can't do this cleanly.
-      const tmp = document.createElement('div')
-      tmp.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
-      const wrapper = tmp.firstElementChild ?? tmp // mdToHtml wraps a bare line in <div>
-      const frag = document.createDocumentFragment()
-      while (wrapper.firstChild) frag.appendChild(wrapper.firstChild)
+      const frag = inlineFragment(md)
       const lastNode = frag.lastChild
       anchor.replaceWith(frag)
       if (lastNode) caretAfterInline(lastNode, 'none')
@@ -1415,36 +1404,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     document.body.removeChild(wrapper)
   }
 
-  /** Fallback for browsers/contexts (e.g. file:// with no Clipboard API) where navigator.clipboard is unavailable — the classic hidden-textarea + execCommand('copy') technique. */
-  function copyViaTextarea(text: string): void {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy', false, undefined)
-    document.body.removeChild(ta)
-  }
-
   /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved). */
   function copyPlain(): void {
-    const text = htmlToPlainText(editorEl)
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
-    } else {
-      copyViaTextarea(text)
-    }
+    copyText(htmlToPlainText(editorEl))
   }
 
   /** Copies the editor's current content to the clipboard as its raw markdown source (the same text the field is stored as). */
   function copyMarkdown(): void {
-    const text = htmlToMd(editorEl)
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
-    } else {
-      copyViaTextarea(text)
-    }
+    copyText(htmlToMd(editorEl))
   }
 
   // --- copy-options menu (🗐 toolbar button) --------------------------------
@@ -1635,6 +1602,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   ]
 
   function onKeydown(e: KeyboardEvent): void {
+    // Every branch below edits the DOM directly, which contenteditable="false"
+    // does not stop; a read-only editor runs none of them. A chord the table
+    // owns is still swallowed, as when writable: focus can sit on a link in a
+    // read-only note, and Ctrl+U / Ctrl+1..9 there are the browser's
+    // view-source and tab switch.
+    if (editorsReadOnly) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && SHORTCUTS.some((sc) => sc.match(e))) e.preventDefault()
+      return
+    }
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the
@@ -1666,9 +1642,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         return
       }
       // ``` on its own line + Enter opens a code block too — the
-      // GitHub/Slack/Discord gesture, alongside the "``` " prefix. Only
-      // when the whole line is backticks and it's a plain top-level block.
-      if (ctx && ctx.block.parentElement === editorEl && !blockquoteAtCaret() && /^`{3,}$/.test(ctx.text.trim())) {
+      // GitHub/Slack/Discord gesture, alongside the "``` " prefix. Also with
+      // a language tag ("```js"), dropped exactly as mdToHtml drops it on
+      // load: left as text, that line would reopen as a fence swallowing the
+      // rest of the note. Only on a plain top-level block.
+      if (ctx && ctx.block.parentElement === editorEl && !blockquoteAtCaret() && /^`{3,}[^`]*$/.test(ctx.text.trim())) {
         e.preventDefault()
         convertBlockToPre(ctx.block)
         scheduleChange()
@@ -1780,6 +1758,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // codeql[js/xss]
     const wrapper = new DOMParser().parseFromString(html, 'text/html').body
     sanitizeRefAttrs(wrapper)
+    // Word sends list items as <p style="mso-list:…"> paragraphs; make them real lists first.
+    convertWordLists(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
     // container" fragment into real, separately-rendered blocks before the
     // block-child check below — see unwrapBlockContainers' own doc comment.
@@ -1795,6 +1775,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function onPaste(e: ClipboardEvent): void {
     e.preventDefault()
+    if (editorsReadOnly) return
     // A paste that touches a fenced code block is always literal text —
     // never markdown / HTML — so a copied snippet keeps its own punctuation
     // and no block markup gets spliced into the `<pre>`.
@@ -1806,19 +1787,64 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const html = e.clipboardData?.getData('text/html')
     const md = html ? htmlClipboardToMd(html) : ''
     if (md.trim()) {
-      document.execCommand('insertHTML', false, mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint')))
+      const styledBefore = styledElements()
+      document.execCommand('insertHTML', false, renderMd(md))
       // insertHTML nests a multi-block fragment inside the caret's block when
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
       flattenTopLevelBlockWrappers(editorEl)
+      stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
       return
     }
     const text = e.clipboardData?.getData('text/plain') ?? ''
+    // Chromium's insertText of many lines is quadratic (4–9 s for a 1,500-line
+    // log), while one insertHTML of escaped <div> lines takes ~100 ms. Inside a
+    // list item the native insertText is kept: it splits the text into items.
+    const lines = text.replace(/\r\n?/g, '\n').split('\n')
+    if (lines.length > 1 && !selectionInListItem()) {
+      const nbsp = String.fromCharCode(0xa0)
+      const html = lines
+        .map((l) => `<div>${l === '' ? '<br>' : l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/^ +/, (sp) => nbsp.repeat(sp.length))}</div>`)
+        .join('')
+      const styledBefore = styledElements()
+      document.execCommand('insertHTML', false, html)
+      flattenTopLevelBlockWrappers(editorEl)
+      stripPastedStyles(styledBefore)
+      decorateCodeBlocks()
+      syncPreHighlight()
+      scheduleChange()
+      return
+    }
     document.execCommand('insertText', false, text)
     scheduleChange()
+  }
+
+  /**
+   * Chromium's insertHTML copies the surrounding block's computed font and
+   * colour onto the inserted spans as inline `style="…"` (worst inside a
+   * heading or quote), so pasted text looks unlike its neighbours until the
+   * note is reopened. Only elements that were NOT styled before the insert are
+   * touched: Chromium's own merge spans elsewhere in the note (a Backspace that
+   * joined a heading into a line leaves `font-weight:700`) are real formatting
+   * that htmlToMd reads as bold, and must keep it. The code-block controls and
+   * copy menu live on `root`, outside `editorEl`, so nothing else carries a style.
+   */
+  function stripPastedStyles(styledBefore: ReadonlySet<Element>): void {
+    editorEl.querySelectorAll('[style]').forEach((el) => { if (!styledBefore.has(el)) el.removeAttribute('style') })
+  }
+
+  function styledElements(): Set<Element> {
+    return new Set(editorEl.querySelectorAll('[style]'))
+  }
+
+  /** True when the selection's start sits inside a list item of this editor. */
+  function selectionInListItem(): boolean {
+    const node = window.getSelection()?.anchorNode
+    const el = node instanceof Element ? node : node?.parentElement
+    return !!el && editorEl.contains(el) && el.closest('li') !== null
   }
 
   /**
@@ -1860,6 +1886,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function onCut(e: ClipboardEvent): void {
+    // A read-only editor still lets the selection be copied; it just can't lose it.
+    if (editorsReadOnly) { writeSelectionToClipboard(e); return }
     if (!writeSelectionToClipboard(e)) return
     const sel = window.getSelection()
     sel?.getRangeAt(0).deleteContents()
@@ -2049,8 +2077,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton(icon('template'), t(locale, 'editor_templates_title'), () => openTemplatePicker()),
     toolbarButton(icon('at'), t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
-    toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn)),
-    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale))
+    // Read-only safe: ui/readonly-lock.ts refuses every other toolbar button in a read-only tab.
+    toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn), 'tt-editor-btn-readonly-safe'),
+    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale), 'tt-editor-btn-readonly-safe')
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl)
@@ -2239,11 +2268,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     else hideCbControlsSoon()
   }
 
-  function copyText(text: string): void {
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => copyViaTextarea(text))
-    else copyViaTextarea(text)
-  }
-
   function onCbCopy(): void {
     if (!cbActivePre) return
     copyText(preLines(cbActivePre).join('\n'))
@@ -2289,7 +2313,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // not flush — unlike destroy(), the pending change here belongs to
     // content that is being replaced outright.
     cancelChange()
-    editorEl.innerHTML = mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
+    editorEl.innerHTML = renderMd(md)
     decorateCodeBlocks(true)
     // Paint the freshly-loaded blocks now. This used to happen by accident:
     // with a `selectionchange` listener per editor, the very next caret move
@@ -2347,13 +2371,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (!target) return
       const resolved = resolve(target)
       if (resolved === null) return
-      const chip = document.createElement('a')
-      chip.className = 'ref'
-      chip.dataset.ref = span.dataset.ref!
-      chip.contentEditable = 'false'
-      chip.title = t(locale, 'editor_ref_hint')
-      chip.textContent = `@${resolved}`
-      span.replaceWith(chip)
+      span.replaceWith(createRefChip(span.dataset.ref!, resolved, t(locale, 'editor_ref_hint')))
     })
   }
 

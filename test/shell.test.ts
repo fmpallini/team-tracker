@@ -222,6 +222,18 @@ describe('save indicator pill', () => {
 // this narrow subscribe/trigger surface (src/ui/panes.ts's SaveStatusApi) —
 // these tests cover the shell-side half of that contract in isolation.
 describe('subscribeSaveState / requestSaveNow', () => {
+  test.each([
+    ['saved', false], ['dirty', true], ['saving', false], ['error', true], ['permission', true],
+    ['backup-error', false], ['backup-permission', true], ['backup-password-mismatch', true],
+  ] as const)('state %s: pill clickable=%s, and subscribers are told the same', (state, clickable) => {
+    const shell = setup()
+    const seen: boolean[] = []
+    shell.subscribeSaveState((info) => seen.push(info.clickable))
+    shell.setSaveState(state)
+    expect(shell.root.querySelector('.tt-save-pill')!.classList.contains('tt-save-pill-clickable')).toBe(clickable)
+    expect(seen.at(-1)).toBe(clickable)
+  })
+
   test('fires immediately on subscribe with the current, already-formatted snapshot', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 20, 14, 32))

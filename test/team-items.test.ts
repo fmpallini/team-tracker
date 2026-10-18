@@ -1,4 +1,4 @@
-import { findTeamItem, patchTeamItem } from '../src/core/team-items'
+import { findTeamItem, patchTeamItem, nextOrder } from '../src/core/team-items'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { Team } from '../src/core/types'
@@ -77,5 +77,12 @@ describe('patchTeamItem', () => {
     patchTeamItem(store, 'T1', 'milestones', 'm1', (m) => { m.done = true }, { teamId: 'T1', sections: ['milestones'] })
 
     expect(store.doc.teams[0]!.milestones[0]!.done).toBe(false)
+  })
+})
+
+describe('nextOrder', () => {
+  test('0 for an empty list', () => { expect(nextOrder([])).toBe(0) })
+  test('past the highest value, not the count (deletes leave gaps)', () => {
+    expect(nextOrder([{ order: 0 }, { order: 5 }])).toBe(6)
   })
 })

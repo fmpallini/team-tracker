@@ -5,9 +5,9 @@
 import type { Loc, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
-import { createRichEditorBundle } from '../ui/rich-editor'
+import { createModuleEditor } from '../ui/rich-editor'
 import { createCalendar, type CalendarMarks } from '../ui/calendar'
-import { nowHHMM, isWithinTwoMonthWindow } from '../core/date'
+import { isWithinTwoMonthWindow } from '../core/date'
 import { findTeam as docFindTeam, nearestDatedNote } from '../core/document'
 import { OVERSCROLL, rubberBand, easeOutCubic, overscrollCommits } from '../core/overscroll'
 import { scopeAffects, type Section } from '../core/scope'
@@ -15,10 +15,11 @@ import type { Store } from '../core/store'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
-import { navigateToLoc } from '../ui/atref'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { actionStatusLabel } from './action-items'
+import { isActionActive } from '../core/due'
 import { icon } from '../ui/icons'
+import { watchDayChange } from '../ui/day-change'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
   return docFindTeam(ctx.store.doc, teamId)
@@ -105,7 +106,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     const actionItemsByDate = new Map<string, { label: string; resolved: boolean }[]>()
     for (const a of team?.actionItems ?? []) {
       if (a.dueDate === null) continue
-      const resolved = a.status === 'done' || a.status === 'cancelled'
+      const resolved = !isActionActive(a)
       const entry = { label: `${a.summary} (${actionStatusLabel(lc, a.status, team)})`, resolved }
       const list = actionItemsByDate.get(a.dueDate)
       if (list) list.push(entry)
@@ -162,6 +163,8 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     )
   }
   rebuildCalendar()
+  // The calendar marks today; a pane left open overnight gets no store change to move it.
+  const stopDayWatch = watchDayChange(rebuildCalendar)
 
   /**
    * Toggles each rendered day cell's has-note tint from live `dailyNotes`
@@ -204,28 +207,25 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   const badgeSlot = el('div', { class: 'tt-daily-badge-slot' })
   function rebuildBadge(): void {
     badgeSlot.innerHTML = ''
-    const backlinks = ctx.searchIndex.backlinks(teamId, 'day', date)
-    const chip = createBacklinksChip(backlinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const chip = createModuleBacklinksChip(ctx, teamId, 'day', date)
     if (chip) badgeSlot.appendChild(chip)
   }
   rebuildBadge()
   const calendarHeader = el('div', { class: 'tt-daily-calendar-header' }, toggleBtn, badgeSlot)
   calendarCol.append(calendarHeader, calendarSlot)
 
-  const bundle = createRichEditorBundle({
-    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+  const bundle = createModuleEditor(ctx, teamId, {
     initialMd: findTeam(ctx, teamId)?.dailyNotes[date] ?? '',
+    templateScopes: ['daily', 'any'],
+    templateDate: () => date,
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)
         if (!tm) return
-        if (md.trim() === '') delete tm.dailyNotes[date]
+        if (md === '') delete tm.dailyNotes[date]
         else tm.dailyNotes[date] = md
       }, { teamId, sections: ['notes'] })
     },
-    getTeam: () => findTeam(ctx, teamId),
-    getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'daily' || tpl.scope === 'any'),
-    getTemplateCtx: () => ({ dateIso: date, time: nowHHMM(lc), teamName: findTeam(ctx, teamId)?.name, locale: lc }),
   })
   const editor = bundle.editor
 
@@ -405,6 +405,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     mountedCalendarCols.delete(calendarColEntry)
     detachDayOverscroll()
     unsubscribe()
+    stopDayWatch()
     bundle.dispose()
   }
 })

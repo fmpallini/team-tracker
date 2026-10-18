@@ -172,6 +172,109 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('pasting multi-block HTML while the caret is in a list item serializes every block as its own item', () => {
+    // Chromium's insertHTML drops a multi-block fragment inside the caret's <li>.
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
+      if (cmd === 'insertHTML' && typeof val === 'string') document.querySelector('.editor li')!.insertAdjacentHTML('beforeend', val)
+      return true
+    })
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- item')
+
+    dispatchPaste(editor, { 'text/html': '<h2>Title</h2><p>one</p><p>two</p>' })
+
+    const md = editor.getMd()
+    expect(md).toContain('- Title')
+    expect(md).toContain('- one')
+    expect(md).toContain('- two')
+    expect(md).not.toContain('Titleone')
+    editor.destroy()
+  })
+
+  test('multi-line plain text is inserted as one insertHTML of literal lines', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    dispatchPaste(editor, { 'text/plain': 'a\r\n<b>\r\n\r\n  - x' })
+
+    const inserts = execSpy.mock.calls.filter((c) => c[0] === 'insertHTML' || c[0] === 'insertText')
+    const nbsp = String.fromCharCode(0xa0)
+    expect(inserts).toEqual([['insertHTML', false, `<div>a</div><div>&lt;b&gt;</div><div><br></div><div>${nbsp}${nbsp}- x</div>`]])
+    editor.destroy()
+  })
+
+  test('multi-line plain text inside a list item still uses insertText (the browser splits it into items)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- item')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const li = editor.root.querySelector('.editor li')!
+    const range = document.createRange()
+    range.setStart(li.firstChild!, 2)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchPaste(editor, { 'text/plain': 'a\nb' })
+
+    expect(execSpy).toHaveBeenCalledWith('insertText', false, 'a\nb')
+    expect(execSpy).not.toHaveBeenCalledWith('insertHTML', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
+  test('inline styles the browser adds while inserting a paste are removed', () => {
+    // Chromium puts the surrounding block's font on the inserted spans.
+    vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
+      if (cmd === 'insertHTML' && typeof val === 'string') {
+        const ed = document.querySelector('.editor') as HTMLElement
+        ed.insertAdjacentHTML('beforeend', val.replace('<strong>', '<strong style="font-size: 32px">').replace('<div>', '<div style="color: red">'))
+      }
+      return true
+    })
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+
+    dispatchPaste(editor, { 'text/html': '<p>x <b>bold</b></p>' })
+    dispatchPaste(editor, { 'text/plain': 'a\nb' })
+
+    expect(editor.root.querySelectorAll('.editor [style]')).toHaveLength(0)
+    expect(editor.root.querySelector('.editor strong')?.textContent).toBe('bold')
+    editor.destroy()
+  })
+
+  test('a paste leaves styles on text elsewhere in the note alone (a merge span still carries its bold)', () => {
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('first line')
+    const line = editor.root.querySelector('.editor div')!
+    line.innerHTML = '<span style="font-weight: 700">kept bold</span>'
+
+    dispatchPaste(editor, { 'text/html': '<p>pasted</p>' })
+
+    expect(line.querySelector('span')!.getAttribute('style')).toBe('font-weight: 700')
+    expect(editor.getMd()).toContain('**kept bold**')
+    editor.destroy()
+  })
+
+  test('a Word list paste inserts list markup, not "·" text lines', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+
+    const item = (text: string): string =>
+      `<p class="MsoListParagraph" style="mso-list:l0 level1 lfo1"><span style="mso-list:Ignore">·<span>&nbsp;&nbsp;</span></span>${text}</p>`
+    dispatchPaste(editor, { 'text/html': `<html><body><!--StartFragment-->${item('um')}${item('dois')}<!--EndFragment--></body></html>` })
+
+    const inserted = execSpy.mock.calls.find((c) => c[0] === 'insertHTML')![2] as string
+    expect(inserted).toContain('<li>')
+    expect(inserted).not.toContain('·')
+    editor.destroy()
+  })
+
   test('a legitimate ref chip (this app\'s own uuid-shaped id) survives paste as a real chip', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -1215,6 +1318,10 @@ describe('toolbar', () => {
     const helpBtn = editor.root.querySelector<HTMLButtonElement>('button[title="Editor help"]')!
     helpBtn.click()
     expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    // Close it for real: wiping document.body would leave the modal's
+    // document-level keydown listener live, trapping Tab in later tests.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     editor.destroy()
   })
 
@@ -1686,7 +1793,9 @@ describe('toolbar', () => {
     await answerLink({ url: 'https://example.com' })
 
     // Landed in place, replacing "docs" — NOT appended to the end.
-    expect(editor.getMd()).toBe('see [docs](https://example.com) here')
+    // (Compared as text: in a browser insertText's input event then turns the
+    // literal into a real link — e2e/link-insert.spec.ts — which this inert stand-in doesn't fire.)
+    expect(editor.root.querySelector('.editor')!.textContent).toBe('see [docs](https://example.com) here')
     // Every other test in this file destroys its editor; skipping it here left
     // this one in editor.ts's module-level `liveEditors` for the rest of the
     // run, which the shared-selectionchange-listener test downstream can see.
@@ -2366,6 +2475,49 @@ describe('code block editing', () => {
     expect(e.defaultPrevented).toBe(true)
     expect(editorEl.querySelector('pre')).not.toBeNull()
     expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  // Left as text, "```js" would reopen as a fence swallowing the rest of the
+  // note (core/markdown.ts), so it converts here — the tag dropped, as on load.
+  test('typing "```js" then Enter opens a code block too (language tag dropped, as on load)', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>```js</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(editorEl.querySelector('pre')).not.toBeNull()
+    expect(editorEl.querySelector('div')).toBeNull()
+    editor.destroy()
+  })
+
+  test('a line with backticks after the fence ("```a```") is not a code-block gesture', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<div>```a```</div>'
+    const textNode = editorEl.firstChild!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('pre')).toBeNull()
+    editor.destroy()
+  })
+
+  test('"```js" + Enter inside a blockquote stays literal', () => {
+    const { editor, editorEl } = mount()
+    vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<blockquote>```js</blockquote>'
+    const bq = editorEl.querySelector('blockquote')!
+    caretIn(bq.firstChild as Text, 5)
+
+    dispatchKey(editorEl, { key: 'Enter' })
+
+    expect(editorEl.querySelector('pre')).toBeNull()
     editor.destroy()
   })
 
@@ -3576,6 +3728,137 @@ describe('setEditorsReadOnly', () => {
     } finally {
       setEditorsReadOnly(false)
       a.destroy()
+    }
+  })
+
+  // The toolbar is refused by ui/readonly-lock.ts's click guard (see
+  // test/readonly-lock.test.ts); these are the editor's own entry points.
+  function mountRo(md: string): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    return { editor, editorEl: editor.root.querySelector('.editor') as HTMLElement }
+  }
+  function clipboardEvent(type: 'cut' | 'paste', data: Record<string, string>): ClipboardEvent {
+    const clipboardData = {
+      setData: (fmt: string, val: string) => { data[fmt] = val },
+      getData: (fmt: string) => data[fmt] ?? '',
+    } as unknown as DataTransfer
+    const event = new Event(type, { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    return event
+  }
+  function placeCaret(node: Node, offset: number): void {
+    const r = document.createRange()
+    r.setStart(node, offset)
+    r.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+
+  test('read-only: cut copies the selection but removes nothing', () => {
+    const { editor, editorEl } = mountRo('cut **me** out')
+    try {
+      const r = document.createRange()
+      r.selectNodeContents(editorEl)
+      const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(r)
+      setEditorsReadOnly(true)
+      const data: Record<string, string> = {}
+      editorEl.dispatchEvent(clipboardEvent('cut', data))
+      expect(data['text/html']).toContain('<strong>me</strong>')
+      expect(editor.getMd()).toBe('cut **me** out')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: paste inserts nothing', () => {
+    const { editor, editorEl } = mountRo('a')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    try {
+      placeCaret(editorEl.querySelector('div')!.firstChild!, 1)
+      setEditorsReadOnly(true)
+      const event = clipboardEvent('paste', { 'text/plain': 'pasted', 'text/html': '<b>pasted</b>' })
+      editorEl.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(execSpy).not.toHaveBeenCalled()
+      expect(editor.getMd()).toBe('a')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: Tab in a list item moves nothing and is left to the browser', () => {
+    const { editor, editorEl } = mountRo('- a\n- b')
+    try {
+      placeCaret(editorEl.querySelectorAll('li')[1]!.firstChild!, 1)
+      setEditorsReadOnly(true)
+      const e = dispatchKey(editorEl, { key: 'Tab' })
+      expect(e.defaultPrevented).toBe(false)
+      expect(editor.getMd()).toBe('- a\n- b')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  // Focus can sit inside a read-only note (on a link). Its formatting chords
+  // must still not fall through to the browser: Ctrl+U is view-source and
+  // Ctrl+1..9 switch browser tabs in Chrome.
+  test('read-only: a formatting chord is swallowed, not run and not left to the browser', () => {
+    const { editor, editorEl } = mountRo('# Head')
+    try {
+      placeCaret(editorEl.querySelector('h1')!.firstChild!, 1)
+      setEditorsReadOnly(true)
+      const exec = vi.spyOn(document, 'execCommand')
+      const u = dispatchKey(editorEl, { key: 'u', code: 'KeyU', ctrlKey: true })
+      const two = dispatchKey(editorEl, { key: '2', code: 'Digit2', ctrlKey: true })
+      expect(u.defaultPrevented).toBe(true)
+      expect(two.defaultPrevented).toBe(true)
+      expect(exec).not.toHaveBeenCalled()
+      expect(editor.getMd()).toBe('# Head')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: Enter on a "---" line converts nothing', () => {
+    const { editor, editorEl } = mountRo('a')
+    try {
+      editorEl.innerHTML = '<div>---</div>'
+      placeCaret(editorEl.firstChild!.firstChild!, 3)
+      setEditorsReadOnly(true)
+      dispatchKey(editorEl, { key: 'Enter' })
+      expect(editorEl.querySelector('hr')).toBeNull()
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('read-only: a link dialog left open when the lock arms inserts nothing on OK', async () => {
+    const { editor, editorEl } = mountRo('a')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    try {
+      placeCaret(editorEl.querySelector('div')!.firstChild!, 1)
+      dispatchKey(editorEl, { key: 'k', ctrlKey: true })
+      await Promise.resolve()
+      setEditorsReadOnly(true)
+      const url = document.querySelector('.tt-modal-dialog input[name="tt-link-url"]') as HTMLInputElement
+      url.value = 'https://example.com'
+      const ok = Array.from(document.querySelectorAll('.tt-modal-dialog button')).find((b) => b.textContent === t('en-US', 'ok')) as HTMLButtonElement
+      ok.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(execSpy.mock.calls.some((c) => c[0] === 'insertText')).toBe(false)
+      expect(editor.getMd()).toBe('a')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
     }
   })
 })

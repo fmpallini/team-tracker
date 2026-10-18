@@ -168,10 +168,7 @@ function countingStore(): { store: Store; liveSubscriptions: () => number } {
 
 const RENDERERS: { name: string; render: ModuleRenderer; ref: Loc['ref']; subscribes: boolean }[] = [
   { name: 'daily-notes', render: renderDailyNotes, ref: { kind: 'daily', date: '2026-07-10' }, subscribes: true },
-  // general-notes is the one module that never subscribes (plan Task 7 scoped
-  // only the other six) — pinned here so a future subscription added there
-  // without a matching unsubscribe fails this test instead of leaking.
-  { name: 'general-notes', render: renderGeneralNotes, ref: { kind: 'general' }, subscribes: false },
+  { name: 'general-notes', render: renderGeneralNotes, ref: { kind: 'general' }, subscribes: true },
   { name: 'people-tree(stakeholders)', render: renderPeopleTree('stakeholders'), ref: { kind: 'stakeholders' }, subscribes: true },
   { name: 'people-tree(members)', render: renderPeopleTree('members'), ref: { kind: 'members' }, subscribes: true },
   { name: 'person-notes', render: renderPersonNotes, ref: { kind: 'person', personId: 'mem-1', group: 'members' }, subscribes: true },
@@ -239,7 +236,7 @@ test('stress: 200 rounds of real openInPane module switching (risks <-> mileston
   stubMatchMedia()
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('risks', renderRisks)
   pm.registerModule('milestones', renderMilestones)
   pm.registerModule('daily', renderDailyNotes)
@@ -277,7 +274,7 @@ test('an unsplit (hidden) pane 1 holds no live module instance, and regains one 
   stubMatchMedia()
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('risks', renderRisks)
   pm.registerModule('milestones', renderMilestones)
   store.updateNav((d) => { d.nav.split = true })
@@ -304,7 +301,7 @@ test('pm.dispose() tears down the modules mounted in both panes', () => {
   stubMatchMedia()
   const shell = createShell('en-US')
   document.body.appendChild(shell.root)
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   pm.registerModule('risks', renderRisks)
   pm.registerModule('milestones', renderMilestones)
   store.updateNav((d) => { d.nav.split = true })
@@ -343,4 +340,32 @@ test('switching modules within one container disposes the outgoing module, not j
 
   expect(liveSubscriptions()).toBe(1)
   container.remove()
+})
+
+describe('a pane that stops showing a module disposes the one it held', () => {
+  function mountRisks() {
+    const { store, liveSubscriptions } = countingStore()
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store)
+    pm.registerModule('risks', renderRisks)
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+    expect(liveSubscriptions()).toBe(2) // risks + pm's own index subscription
+    return { store, pm, liveSubscriptions }
+  }
+
+  test('when its history empties (e.g. the last team was deleted)', () => {
+    const { store, pm, liveSubscriptions } = mountRisks()
+    store.updateNav((d) => { d.nav.panes[0] = { history: [], index: -1 } })
+    pm.renderAll()
+    expect(liveSubscriptions()).toBe(1)
+  })
+
+  test('when it navigates to a kind with no registered renderer', () => {
+    const { pm, liveSubscriptions } = mountRisks()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } }) // not registered here
+    expect(liveSubscriptions()).toBe(1)
+  })
 })

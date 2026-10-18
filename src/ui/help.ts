@@ -4,7 +4,7 @@
 // the detected browser).
 import type { Locale, MsgKey } from '../core/i18n'
 import { t } from '../core/i18n'
-import { el } from './dom'
+import { el, copyText } from './dom'
 import { icon, type IconName } from './icons'
 import { showModal } from './modal'
 
@@ -97,29 +97,13 @@ export function appWindowCommand(href: string, uaData?: UaData, userAgent = ''):
     : `${APP_LAUNCHERS[platform][brand]} ${app}`
 }
 
-/** Async Clipboard API where the page has it; the hidden-textarea + execCommand('copy') route otherwise (file:// is an insecure context, so navigator.clipboard is absent there — the very case this help block is shown in). */
-function copyToClipboard(text: string): void {
-  const viaTextarea = (): void => {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy', false, undefined)
-    document.body.removeChild(ta)
-  }
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(viaTextarea)
-  else viaTextarea()
-}
-
 /** A `<pre>` command with a copy button that fades in on hover/focus — same look and feedback as the editor's code-block copy chrome. */
 function copyableCommand(locale: Locale, command: string): HTMLElement {
   let resetTimer: ReturnType<typeof setTimeout> | null = null
   const btn = el('button', {
     class: 'tt-cb-btn tt-help-cmd-copy', type: 'button', title: t(locale, 'editor_cb_copy'),
     onclick: () => {
-      copyToClipboard(command)
+      copyText(command)
       btn.replaceChildren(icon('check'))
       btn.title = t(locale, 'editor_cb_copied')
       if (resetTimer) clearTimeout(resetTimer)

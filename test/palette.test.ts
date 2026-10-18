@@ -35,7 +35,7 @@ function setup(opts: { favorites?: boolean; manyPeople?: number } = {}): Setup {
   if (opts.favorites) toggleFavorite(doc, { teamId: 'T2', ref: { kind: 'general' } })
   const store = createStore(doc)
   const shell = createShell('en-US')
-  const pm = createPaneManager(shell, store, 'en-US')
+  const pm = createPaneManager(shell, store)
   // Records what the focused pane showed when selectTeam ran: the team switch
   // must happen BEFORE the row opens.
   const seen: unknown[] = []

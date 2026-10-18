@@ -4,16 +4,15 @@
 // additionally has to cope with the person being deleted (from the people
 // tree, possibly in the *other* pane) while this module is mounted.
 import type { Loc, Person, Team } from '../core/types'
-import { t, todayIso } from '../core/i18n'
+import { t } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
-import { createRichEditorBundle } from '../ui/rich-editor'
-import { nowHHMM } from '../core/date'
+import { createModuleEditor } from '../ui/rich-editor'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { el } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { createBacklinksChip } from '../ui/backlinks-panel'
+import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { openPersonModal } from '../ui/person-modal'
 import { icon } from '../ui/icons'
@@ -42,7 +41,6 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     return
   }
 
-  const initialBacklinks = ctx.searchIndex.backlinks(teamId, 'person', personId)
   const headerTitleEl = el('span', { class: 'tt-person-header-title' })
   const groupLabel = t(lc, group === 'members' ? 'person_group_member' : 'person_group_stakeholder')
   // The person's name is deliberately not repeated here: the pane bar above
@@ -55,7 +53,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   renderIdentity(person)
 
   const headerBadgeSlot = el('div', {})
-  const initialChip = createBacklinksChip(initialBacklinks, lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+  const initialChip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
   if (initialChip) headerBadgeSlot.appendChild(initialChip)
 
   const editBtn = el(
@@ -111,15 +109,16 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, editBtn, gotoOrgBtn)
   )
 
-  const bundle = createRichEditorBundle({
-    store: ctx.store, pm: ctx.pm, paneIdx: ctx.paneIdx, locale: lc, teamId,
+  const bundle = createModuleEditor(ctx, teamId, {
     initialMd: person.notes,
+    templateScopes: ['personal', 'any'],
+    personName: () => findPerson()?.name,
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)
         const p = tm?.[group].find((pp) => pp.id === personId)
         if (!p) return
-        p.notes = md.trim() === '' ? '' : md
+        p.notes = md
         // 'notes', not 'people': a person's notes are note content, same
         // bucket as daily/general notes. people-tree watches 'people' and
         // renders only name/role/hierarchy — none of it derived from notes —
@@ -128,9 +127,6 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
         // chip-bearing surface watches 'notes' too.
       }, { teamId, sections: ['notes'] })
     },
-    getTeam: () => findTeam(),
-    getTemplates: () => ctx.store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any'),
-    getTemplateCtx: () => ({ dateIso: todayIso(), time: nowHHMM(lc), personName: person.name, teamName: findTeam()?.name, locale: lc }),
   })
   const editor = bundle.editor
 
@@ -167,7 +163,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // way every @mention of this person elsewhere already does.
     renderIdentity(currentPerson)
     headerBadgeSlot.innerHTML = ''
-    const chip = createBacklinksChip(ctx.searchIndex.backlinks(teamId, 'person', personId), lc, (loc, opts) => navigateToLoc(ctx.store, ctx.pm, ctx.paneIdx, loc, opts))
+    const chip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
     if (chip) headerBadgeSlot.appendChild(chip)
     // Patches this note's own @mention chips in place — safe even mid-typing
     // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the

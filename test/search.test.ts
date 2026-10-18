@@ -524,3 +524,34 @@ describe('SearchIndex.backlinks', () => {
     })
   })
 })
+
+test('an escaped literal is found and shown without its backslash', () => {
+  const d = fixture()
+  d.teams[0]!.generalNotes = 'price 2\\*3\\*4 and a\\[b\\]'
+  const r = searchDocument(d, '2*3', 't1')
+  expect(r).toHaveLength(1)
+  expect(r[0]!.snippet).toContain('2*3*4')
+  expect(r[0]!.snippet).not.toContain('\\')
+})
+
+describe('a match after text that normalize() reshapes still lands in its snippet', () => {
+  const noteWith = (prefix: string): Doc => {
+    const d = fixture()
+    d.teams[0]!.generalNotes = `${prefix}TARGETWORD tail text here`
+    return d
+  }
+
+  test('decomposed accents before the match', () => {
+    const nfd = `ac${String.fromCharCode(0x327)}a${String.fromCharCode(0x303)}o `.repeat(40)
+    const r = searchDocument(noteWith(nfd), 'targetword', 't1')
+    expect(r).toHaveLength(1)
+    expect(r[0]!.snippet).toContain('TARGETWORD')
+  })
+
+  test('Hangul before the match', () => {
+    const hangul = `${String.fromCharCode(0xd55c, 0xae00)} `.repeat(60)
+    const r = searchDocument(noteWith(hangul), 'targetword', 't1')
+    expect(r).toHaveLength(1)
+    expect(r[0]!.snippet).toContain('TARGETWORD')
+  })
+})

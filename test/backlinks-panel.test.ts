@@ -1,6 +1,10 @@
-import { createBacklinksChip, closeAnyBacklinksPanel } from '../src/ui/backlinks-panel'
+import { createBacklinksChip, closeAnyBacklinksPanel, createModuleBacklinksChip } from '../src/ui/backlinks-panel'
 import type { Backlink } from '../src/core/search'
 import type { Loc } from '../src/core/types'
+import { createStore } from '../src/core/store'
+import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
+import { createSearchIndex } from '../src/core/search'
+import type { ModuleCtx, PaneManager } from '../src/ui/panes'
 
 beforeEach(() => {
   // closeCurrent is module-level (see backlinks-panel.ts) and outlives any
@@ -152,4 +156,28 @@ test('stress: 300 open/close cycles leave no accumulated document listeners or s
 
   addSpy.mockRestore()
   removeSpy.mockRestore()
+})
+
+describe('createModuleBacklinksChip', () => {
+  function ctxFor(note: string): ModuleCtx {
+    const doc = createEmptyDocument('en-US')
+    const team = createEmptyTeam('t1', 'Alpha', '🙂', 'en-US')
+    team.members.push({ id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '' })
+    team.dailyNotes['2026-01-01'] = note
+    doc.teams.push(team)
+    const store = createStore(doc)
+    return {
+      store, pm: {} as PaneManager, paneIdx: 0, locale: 'en-US',
+      searchIndex: createSearchIndex(() => store.doc, () => store.rev),
+      saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} },
+    }
+  }
+
+  test('counts the target\'s backlinks from the shared index', () => {
+    expect(createModuleBacklinksChip(ctxFor('met @[Ana](person:p1)'), 't1', 'person', 'p1')?.textContent).toBe('↩ 1')
+  })
+
+  test('null when nothing mentions it', () => {
+    expect(createModuleBacklinksChip(ctxFor('nothing'), 't1', 'person', 'p1')).toBeNull()
+  })
 })

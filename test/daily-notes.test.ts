@@ -695,3 +695,19 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
     expect(cols[1]!.classList.contains('tt-daily-collapsed')).toBe(true) // live — folds
   })
 })
+
+describe('calendar day rolling over while the pane sits idle', () => {
+  test('the calendar\'s today mark moves to the new day when the window is returned to', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 14, 23, 0))
+    const { container, store, pm, loc } = setup(makeTeam(), '2026-10-14')
+    render(container, loc, store, pm)
+    const today = (): string | undefined => container.querySelector<HTMLElement>('.tt-calendar-day-today')?.dataset.date
+    expect(today()).toBe('2026-10-14')
+
+    vi.setSystemTime(new Date(2026, 9, 15, 8, 0))
+    window.dispatchEvent(new Event('focus'))
+
+    expect(today()).toBe('2026-10-15')
+  })
+})

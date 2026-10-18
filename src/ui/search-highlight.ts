@@ -3,7 +3,7 @@
 // mutation, unlike search-ui.ts's <mark>-based snippet highlighter — this
 // walks the *live*, already-rendered module DOM, which callers must not
 // have their own rendering logic mutate mid-match).
-import { normalize } from '../core/search'
+import { normalizeWithOffsets } from '../core/search'
 
 const HIGHLIGHT_NAME = 'tt-search'
 /** Class toggled on a search result's resolved target element (see `applySearchHighlight`'s `scrollTarget`) — an outline the CSS Custom Highlight API can't provide when there's no visible matched text to mark (a kanban card whose only match is in the modal-only `notes` field; a milestone/risk title, which lives in an `<input>` value, not a text node). */
@@ -21,11 +21,10 @@ export function dispatchSearchFocusItem(container: HTMLElement, itemId: string):
 
 /**
  * Walks text nodes under `rootEl`, finds `normalize()`-matched term
- * positions and returns a `Range` per match. `normalize()` preserves
- * character count for the accented Latin text this app handles (same
- * guarantee search-ui.ts's snippet highlighter relies on), so a match index
- * found in a text node's normalized content can be sliced directly from
- * that same node's original text.
+ * positions and returns a `Range` per match. A match index found in a text
+ * node's normalized content is mapped back to the node's original text through
+ * `normalizeWithOffsets` — a straight copy for the accented Latin text this app
+ * mostly holds, a real map for NFD-decomposed accents and Hangul.
  */
 export function findMatchRanges(rootEl: HTMLElement, terms: string[]): Range[] {
   const cleanTerms = terms.filter(Boolean)
@@ -36,15 +35,16 @@ export function findMatchRanges(rootEl: HTMLElement, terms: string[]): Range[] {
   let node: Node | null
   while ((node = walker.nextNode())) {
     const text = node.textContent ?? ''
-    const normalized = normalize(text)
+    const { normalized, offsets } = normalizeWithOffsets(text)
+    const at = (i: number): number => Math.min(offsets ? offsets[i]! : i, text.length)
     for (const term of cleanTerms) {
       let from = 0
       for (;;) {
         const idx = normalized.indexOf(term, from)
         if (idx < 0) break
         const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + term.length)
+        range.setStart(node, at(idx))
+        range.setEnd(node, at(idx + term.length))
         ranges.push(range)
         from = idx + term.length
       }
@@ -108,4 +108,30 @@ export function clearSearchHighlight(): void {
   }
   flashedEl?.classList.remove(TARGET_FLASH_CLASS)
   flashedEl = null
+}
+
+/**
+ * After a navigation lands in pane `paneIdx`, brings the result into view on
+ * the next frame (the pane body is being re-rendered in this one): tells the
+ * module to reveal `itemId` (milestones/risks expand a collapsed row — see
+ * SEARCH_FOCUS_ITEM_EVENT), then focuses, scrolls to and flashes that item's
+ * row, painting `terms` inside it — or across the whole pane when the item
+ * has no row there (or there is no item, just a search query).
+ *
+ * The one implementation behind every "open this and show me where" path:
+ * search results, due items, the palette (all via ui/reveal-loc.ts) and @ref
+ * clicks (ui/atref.ts's navigateToLoc). No-op with neither an item nor terms.
+ */
+export function focusItemInPane(paneIdx: 0 | 1, itemId: string | undefined, terms: readonly string[] = []): void {
+  if (!itemId && terms.length === 0) return
+  requestAnimationFrame(() => {
+    const paneEl = document.querySelectorAll<HTMLElement>('.tt-pane-body')[paneIdx]
+    if (!paneEl) return
+    if (itemId) dispatchSearchFocusItem(paneEl, itemId)
+    const anchors = itemId ? Array.from(paneEl.querySelectorAll<HTMLElement>(`[data-item-id="${itemId}"]`)) : []
+    // anchors[0], not a matched range, is the scroll target: the row is known,
+    // and must win even when none of its visible text matches (an action
+    // item's notes live only in its edit modal).
+    applySearchHighlight(anchors.length > 0 ? anchors : [paneEl], [...terms], anchors[0])
+  })
 }

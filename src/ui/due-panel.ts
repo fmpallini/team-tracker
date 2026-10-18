@@ -3,10 +3,9 @@
 // cache) and an onOpenItem callback instead of touching Store/PaneManager
 // directly, so every caller (sidebar's global button, per-team badges, the
 // header pill, the command palette) can reuse the exact same modal.
-import type { DueBuckets, DueItem } from '../core/due'
+import { dueRelativeLabel, type DueBuckets, type DueItem } from '../core/due'
 import type { Loc } from '../core/types'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
-import { diffDays } from '../core/date'
 import { REF_KINDS } from '../core/refs'
 import { el } from './dom'
 import { kindIcon } from './icons'
@@ -31,14 +30,11 @@ export function filterBucketsByTeam(buckets: DueBuckets, teamId: string | undefi
   }
 }
 
-function relLabel(locale: Locale, dateIso: string): string {
-  const today = todayIso()
-  if (dateIso < today) return t(locale, 'due_overdue_by', { days: String(diffDays(today, dateIso)) })
-  return t(locale, 'due_in_days', { days: String(diffDays(dateIso, today)) })
-}
-
 function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
   function activate(): void {
+    // Close first, unconditionally: if an open card then refuses to close
+    // (revealLoc returns false), its veto focuses the card's name field and
+    // shows the error — which this blocking panel would otherwise cover.
     closeModal()
     onOpenItem(item.loc)
   }
@@ -56,7 +52,7 @@ function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenIt
     // teams — a team-scoped panel (teamId set) already says which team it's
     // for in the modal title, so repeating it on every row is just noise.
     ...(showTeam ? [el('span', { class: 'tt-due-row-team', title: item.teamName }, item.teamName)] : []),
-    el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale)} · ${relLabel(locale, item.date)}`)
+    el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale)} · ${dueRelativeLabel(locale, item.date, todayIso())}`)
   )
   // Guarded on e.target === row (mirrors risks.ts/milestones.ts's row nav):
   // Enter/Space activates the row, Up/Down moves focus to the next/previous
