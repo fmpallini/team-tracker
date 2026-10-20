@@ -8,7 +8,10 @@ import { el, copyText } from './dom'
 import { icon, type IconName } from './icons'
 import { showModal } from './modal'
 
-const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
+/** Key and example text in the first column is localized too ("Space", "or", the "text" placeholder), hence rows built per locale. */
+type Rows = readonly (readonly [string, MsgKey])[]
+
+const shortcutRows = (lc: Locale): Rows => [
   ['Ctrl+B', 'help_shortcut_bold'],
   ['Ctrl+I', 'help_shortcut_italic'],
   ['Ctrl+U', 'help_shortcut_underline'],
@@ -18,30 +21,33 @@ const SHORTCUT_ROWS: readonly (readonly [string, MsgKey])[] = [
   ['Ctrl+Shift+8', 'help_shortcut_ul'],
   ['Ctrl+Shift+9 / Ctrl+Shift+Q', 'help_shortcut_quote'],
   ['Ctrl+K', 'help_shortcut_link'],
-  ['Ctrl+clique / clique do meio', 'help_shortcut_open_link'],
+  [t(lc, 'help_key_ctrl_click'), 'help_shortcut_open_link'],
   ['Ctrl+1 / Ctrl+2 / Ctrl+3', 'help_shortcut_heading'],
   ['Ctrl+0', 'help_shortcut_paragraph'],
 ]
 
-const MD_ROWS: readonly (readonly [string, MsgKey])[] = [
-  ['**texto**', 'help_md_bold'],
-  ['*texto*', 'help_md_italic'],
-  ['~~texto~~', 'help_md_strike'],
-  ['# / ## / ###', 'help_md_headings'],
-  ['- texto', 'help_md_ul'],
-  ['1. texto', 'help_md_ol'],
-  ['---', 'help_md_hr'],
-  ['```', 'help_md_codeblock'],
-  ['> texto', 'help_md_quote'],
-  ['[texto](url)', 'help_md_link'],
-]
+const mdRows = (lc: Locale): Rows => {
+  const text = t(lc, 'help_key_text')
+  return [
+    [`**${text}**`, 'help_md_bold'],
+    [`*${text}*`, 'help_md_italic'],
+    [`~~${text}~~`, 'help_md_strike'],
+    ['# / ## / ###', 'help_md_headings'],
+    [`- ${text}`, 'help_md_ul'],
+    [`1. ${text}`, 'help_md_ol'],
+    ['---', 'help_md_hr'],
+    ['```', 'help_md_codeblock'],
+    [`> ${text}`, 'help_md_quote'],
+    [`[${text}](url)`, 'help_md_link'],
+  ]
+}
 
-const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
+const globalRows = (lc: Locale): Rows => [
   ['Alt+1 … Alt+9', 'help_global_teams'],
   ['Ctrl+Shift+K', 'help_global_palette'],
   ['Ctrl+S', 'help_global_save'],
   ['Ctrl+Alt+L / {lock}', 'help_global_close_file'],
-  ['Ctrl+F ou /', 'help_global_search'],
+  [`Ctrl+F ${t(lc, 'help_key_or')} /`, 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
   ['Alt+Shift+← / Alt+Shift+→', 'help_global_history'],
   ['Alt+Shift+↑', 'help_global_history_latest'],
@@ -59,7 +65,7 @@ const GLOBAL_ROWS: readonly (readonly [string, MsgKey])[] = [
   // Espaço" row.
   ['↑ / ↓ (← / →)', 'help_global_row_nav'],
   ['Enter', 'help_global_row_enter'],
-  ['Espaço', 'help_global_row_menu'],
+  [t(lc, 'help_key_space'), 'help_global_row_menu'],
 ]
 
 type BrowserBrand = 'chrome' | 'edge' | 'chromium'
@@ -123,7 +129,7 @@ function keyCell(code: string): HTMLElement {
   return el('td', { class: 'tt-help-code' }, ...nodes)
 }
 
-function table(locale: Locale, rows: readonly (readonly [string, MsgKey])[]): HTMLElement {
+function table(locale: Locale, rows: Rows): HTMLElement {
   const body = rows.map(([code, key]) =>
     el('tr', {}, keyCell(code), el('td', {}, t(locale, key)))
   )
@@ -135,9 +141,9 @@ export function showEditorHelp(locale: Locale): void {
     'div',
     { class: 'tt-help-body' },
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_shortcuts_heading')),
-    table(locale, SHORTCUT_ROWS),
+    table(locale, shortcutRows(locale)),
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_md_heading')),
-    table(locale, MD_ROWS),
+    table(locale, mdRows(locale)),
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_refs_heading')),
     el('p', { class: 'tt-help-text' }, t(locale, 'help_refs_text')),
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_templates_heading')),
@@ -157,7 +163,7 @@ export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
     'div',
     { class: 'tt-help-body' },
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_global_shortcuts_heading')),
-    table(locale, GLOBAL_ROWS),
+    table(locale, globalRows(locale)),
     // The --app= recipe is a workaround for opening the plain
     // dist/app.html without browser chrome — moot in the PWA build, which is
     // already installable/standalone, so it's only shown there.

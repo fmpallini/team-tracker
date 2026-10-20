@@ -99,6 +99,18 @@ export function applySearchHighlight(rootEls: HTMLElement[], terms: string[], sc
   if (flashedEl && flashedEl !== scrollTarget) flashedEl.classList.remove(TARGET_FLASH_CLASS)
   flashedEl = scrollTarget ?? null
   flashedEl?.classList.add(TARGET_FLASH_CLASS)
+  // Only one item may read as "the" result: once focus leaves the landed-on
+  // row/card (arrow-key nav to a sibling, a click elsewhere) its ring and the
+  // painted matches go away, leaving just the focus ring on the new one.
+  // `relatedTarget` inside the row is focus moving to a child (an input in an
+  // expanded follow-up), not leaving; a window blur isn't leaving either.
+  if (flashedEl) {
+    const landed = flashedEl
+    landed.addEventListener('focusout', (e) => {
+      if (landed !== flashedEl || landed.contains(e.relatedTarget as Node | null) || !document.hasFocus()) return
+      clearSearchHighlight()
+    }, { once: true })
+  }
 }
 
 /** Clears any highlight painted by `applySearchHighlight`. Safe to call even if nothing was ever highlighted. */

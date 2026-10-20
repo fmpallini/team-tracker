@@ -17,7 +17,7 @@ function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) =>
       requestSaveNow: () => { requestCount++ },
       subscribeSaveState: (cb) => {
         subs.add(cb)
-        cb({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false })
+        cb({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false, backup: null })
         return () => { subs.delete(cb) }
       },
     },
@@ -1461,7 +1461,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     openModal(container)
 
     const dialog = document.querySelector('.tt-modal-dialog')!
-    const pill = dialog.querySelector<HTMLElement>('.tt-save-pill')!
+    const pill = dialog.querySelector<HTMLElement>('.tt-save-pill-wrap')!
     expect(dialog.classList.contains('tt-kanban-expanded')).toBe(false)
     // Not `.hidden`: `.tt-save-pill`'s own `display: inline-flex` rule beats
     // the low-specificity UA `[hidden]` rule, so the pill is hidden via
@@ -1477,7 +1477,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
 
     const dialog = document.querySelector('.tt-modal-dialog')!
     const expandBtn = dialog.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!
-    const pill = dialog.querySelector<HTMLElement>('.tt-save-pill')!
+    const pill = dialog.querySelector<HTMLElement>('.tt-save-pill-wrap')!
 
     expandBtn.click()
     expect(dialog.classList.contains('tt-kanban-expanded')).toBe(true)
@@ -1499,7 +1499,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     const pillText = document.querySelector('.tt-save-pill-text')!
     expect(pillText.textContent).toBe('Saved') // fakeSaveStatus's immediate subscribe() callback
 
-    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes', clickable: true })
+    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes', clickable: true, backup: null })
     expect(pillText.textContent).toBe('Unsaved')
     expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('dirty')
   })
@@ -1514,13 +1514,13 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
 
     const pill = document.querySelector('.tt-save-pill')!
 
-    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed', clickable: true })
+    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed', clickable: true, backup: null })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
 
-    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password', clickable: true })
+    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password', clickable: true, backup: null })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
 
-    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false })
+    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false, backup: null })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
   })
 
@@ -1531,7 +1531,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
     const pill = document.querySelector('.tt-save-pill')!
-    fake.emit({ state: 'saved', label: 'x', title: 'x', clickable: true })
+    fake.emit({ state: 'saved', label: 'x', title: 'x', clickable: true, backup: null })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
   })
 
@@ -1545,6 +1545,24 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
 
     document.querySelector<HTMLElement>('.tt-save-pill')!.click()
     expect(fake.requestCount()).toBe(1)
+  })
+
+  test('the mini pill shows the backup tab only while backup is on, with the health the shell reports', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    const fake = fakeSaveStatus()
+    render(container, loc, store, pm, 0, fake.api)
+    openModal(container)
+    const tab = document.querySelector<HTMLElement>('.tt-save-pill-backup-tab')!
+    expect(tab.style.display).toBe('none')
+
+    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false, backup: { health: 'error', title: 'Backup: error' } })
+    expect(tab.style.display).toBe('')
+    expect(tab.dataset.backup).toBe('error')
+    expect(tab.title).toBe('Backup: error')
+
+    fake.emit({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false, backup: null })
+    expect(tab.style.display).toBe('none')
   })
 
   test('closing the modal unsubscribes from saveStatus, same as the container disposer would if the module unmounted mid-edit', () => {

@@ -153,6 +153,8 @@ for (const [size, width] of [['M', 700], ['XL', 900], ['XL', 400]] as const) {
 // padding + --tt-wco-reserve that the media block sets from env(titlebar-area-width).
 for (const collapsed of [false, true]) {
   test(`header never overlaps itself with a 140px window-controls overlay, sidebar ${collapsed ? 'collapsed' : 'open'}`, async ({ page }) => {
+    // A 57-step resize sweep: ~5s on a quiet machine, far more on a loaded CI runner.
+    test.slow()
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'windowControlsOverlay', {
         value: { visible: true, getTitlebarAreaRect: () => ({ width: window.innerWidth - 140 }) },
@@ -164,7 +166,8 @@ for (const collapsed of [false, true]) {
     await page.keyboard.press('F1')
     for (let w = 1500; w >= 380; w -= 20) {
       await page.setViewportSize({ width: w, height: 700 })
-      await page.waitForTimeout(60)
+      // Two frames: the ResizeObserver-driven layout has run once the second one fires.
+      await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
       expect(await headerClashes(page), `window ${w}px`).toEqual([])
     }
   })

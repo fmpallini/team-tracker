@@ -681,7 +681,7 @@ body { background: var(--bg); color: var(--fg); }
    action-items.ts's expand toggle + mirrored save-state pill) — every other
    modal keeps the plain <h2> alone. */
 .tt-modal-title-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-.tt-kanban-modal-header-extra { display: flex; align-items: center; gap: .5rem; flex: none; }
+.tt-kanban-modal-header-extra { display: flex; align-items: center; gap: .5rem; flex: none; --tt-header-ctl-h: 2rem; /* the mirrored .tt-save-pill sits outside .tt-header, which is what defines this */ }
 .tt-modal-message { color: var(--fg); }
 .tt-modal-warning {
   margin: .75rem 0 0; padding: .5rem .6rem; border-left: 3px solid var(--danger);
@@ -981,7 +981,7 @@ body { background: var(--bg); color: var(--fg); }
   display: none; position: absolute; top: 100%; left: 0; margin-top: .25rem; z-index: 1200;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: var(--r-md);
   box-shadow: var(--shadow-pop); width: max(320px, 100%); max-height: 60vh;
-  overflow-y: auto; padding: .25rem;
+  overflow-y: auto; overflow-x: hidden; padding: .25rem;
 }
 .tt-search-dropdown.open { display: block; }
 .tt-search-all-teams {
@@ -993,13 +993,13 @@ body { background: var(--bg); color: var(--fg); }
 .tt-search-row-main { display: flex; align-items: center; gap: .4rem; font-size: .95rem; }
 .tt-search-team { color: var(--muted); font-size: .8rem; }
 .tt-search-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-search-snippet { color: var(--muted); font-size: .85rem; margin-top: .1rem; }
+.tt-search-snippet { color: var(--muted); font-size: .85rem; margin-top: .1rem; overflow-wrap: anywhere; /* a long URL has no break opportunity */ }
 .tt-search-snippet mark { background: rgba(var(--accent-rgb), .3); color: inherit; border-radius: 2px; }
 .tt-search-empty { padding: .5rem .6rem; color: var(--muted); }
 
 /* Search-result navigation highlight (CSS Custom Highlight API — src/ui/search-highlight.ts) */
-::highlight(tt-search) { background-color: rgba(250, 204, 21, .55); }
-[data-theme="dark"] ::highlight(tt-search) { background-color: rgba(250, 204, 21, .35); color: #1a1a1a; }
+::highlight(tt-search) { background-color: rgba(var(--accent-rgb), .35); }
+[data-theme="dark"] ::highlight(tt-search) { background-color: rgba(var(--accent-rgb), .45); }
 
 /* Marks a search result's resolved target element (src/ui/search-highlight.ts's
    applySearchHighlight scrollTarget) — the only visible marker for cases the
@@ -1674,7 +1674,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-exposure-total-label { font-size: .8rem; font-weight: 600; color: var(--fg); line-height: 1.25; }
 .tt-risk-exposure-total-count { font-size: .75rem; color: var(--muted); }
 /* The sum in the display face, big, in its exposure color — the single number the matrix adds up to. */
-.tt-risk-exposure-total-value { font-family: var(--font-display); font-weight: 700; font-size: 3.4rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.tt-risk-exposure-total-value { font-family: var(--font-display); font-weight: 700; font-size: 3.4rem; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
 .tt-risk-quadrant-cell { stroke: var(--border); stroke-width: 1; }
 /* Uneven opacity, not a flat 12% across all three: --danger and --brass are
    both muted earthy tones in several palettes, so an equal-alpha tint left
@@ -1844,7 +1844,7 @@ select option { background: var(--bg); color: var(--fg); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 2rem; height: 2rem; border-radius: 50%; border: 2px solid currentColor;
   background: color-mix(in srgb, currentColor 14%, transparent);
-  font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1; font-variant-numeric: tabular-nums;
+  font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1; font-variant-numeric: lining-nums tabular-nums;
 }
 /* The level class carries the color; `currentColor` above turns it into the
    border, the inset ring and the numeral in one go. Listed after the base
