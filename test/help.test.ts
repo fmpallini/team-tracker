@@ -111,10 +111,18 @@ test('editor help lists the code-block / blockquote / link shortcuts and syntax'
   expect(text).toContain('Ctrl+Shift+9') // blockquote shortcut
   expect(text).toContain('Ctrl+K') // link shortcut (Task 12: Ctrl+K inserts a link in the editor)
   expect(text).toContain('```') // markdown syntax row for code block
-  expect(text).toContain('> texto') // markdown syntax row for blockquote
-  expect(text).toContain('[texto](url)') // markdown syntax row for link
-  expect(text).toContain('Ctrl+clique / clique do meio') // open-link gesture row
+  expect(text).toContain('> text') // markdown syntax row for blockquote
+  expect(text).toContain('[text](url)') // markdown syntax row for link
+  expect(text).toContain('Ctrl+click / middle click') // open-link gesture row
   expect(text).toContain('Open link in a new tab')
+  expect(text).not.toMatch(/texto|clique/)
+})
+
+test('editor help (pt-BR) keeps markdown examples and key names in Portuguese', () => {
+  showEditorHelp('pt-BR')
+  const text = document.body.textContent!
+  expect(text).toContain('**texto**')
+  expect(text).toContain('Ctrl+clique / clique do meio')
 })
 
 test('editor help no longer carries the app-window recipe', () => {
@@ -149,10 +157,11 @@ test('global help documents Enter and Space as separate row/card shortcuts, not 
   expect(codes).not.toContain('Enter / Espaço')
   expect(codes).not.toContain('Enter / Space')
   expect(codes).toContain('Enter')
-  expect(codes).toContain('Espaço')
+  expect(codes).toContain('Space')
+  expect(codes).toContain('Ctrl+F or /')
 
   const enterRow = rows.find((r) => r.querySelector('.tt-help-code')?.textContent === 'Enter')!
-  const spaceRow = rows.find((r) => r.querySelector('.tt-help-code')?.textContent === 'Espaço')!
+  const spaceRow = rows.find((r) => r.querySelector('.tt-help-code')?.textContent === 'Space')!
   expect(enterRow.textContent).not.toBe(spaceRow.textContent)
 })
 

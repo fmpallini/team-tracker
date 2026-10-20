@@ -218,3 +218,40 @@ test('findMatchRanges highlights the right characters in decomposed text and nev
     expect(ranges[0]!.toString()).toBe('TARGETWORD')
   }
 })
+
+describe('flash follows focus', () => {
+  // jsdom reports the document as never focused, which the window-blur guard reads as "user is elsewhere".
+  beforeEach(() => { vi.spyOn(document, 'hasFocus').mockReturnValue(true) })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  function board(): { a: HTMLElement; b: HTMLElement; input: HTMLInputElement } {
+    const a = document.createElement('div')
+    a.tabIndex = 0
+    const input = document.createElement('input')
+    a.append(input)
+    const b = document.createElement('div')
+    b.tabIndex = 0
+    for (const c of [a, b]) c.scrollIntoView = vi.fn()
+    document.body.append(a, b)
+    return { a, b, input }
+  }
+
+  test('moving focus to a sibling drops the ring so only one item reads as selected', () => {
+    const { a, b } = board()
+    applySearchHighlight([a], ['zzz'], a)
+    expect(a.classList.contains('tt-search-target-flash')).toBe(true)
+
+    b.focus()
+
+    expect(a.classList.contains('tt-search-target-flash')).toBe(false)
+  })
+
+  test('focus moving to a child inside the flashed row keeps the ring', () => {
+    const { a, input } = board()
+    applySearchHighlight([a], ['zzz'], a)
+
+    input.focus()
+
+    expect(a.classList.contains('tt-search-target-flash')).toBe(true)
+  })
+})

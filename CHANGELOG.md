@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.1.1] - 2026-10-20
+
+### Changed
+- Search highlights now use your theme's accent color instead of yellow, and long links in search previews wrap instead of adding a horizontal scrollbar.
+
+### Fixed
+- The save indicator in the expanded action note is the same size as the main one and shows the backup status when backup is on.
+- The help window's markdown examples and key names follow your language setting.
+- Keyboard navigation in the action items board no longer leaves the search-result highlight on the previous card.
+
 ## [3.1.0] - 2026-10-18
 
 ### Changed

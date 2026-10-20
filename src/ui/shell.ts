@@ -6,6 +6,8 @@ import { icon } from './icons'
 import { formatHHMM } from '../core/date'
 import { syncThemeColor } from '../core/theme-color'
 
+export type BackupHealth = 'ok' | 'permission' | 'error' | 'mismatch'
+
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission' | 'backup-error' | 'backup-permission' | 'backup-password-mismatch'
 
 /** Already-formatted (current-locale) snapshot of the save-state pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of SAVE_STATE_KEY/renderSaveIndicator's formatting rules. */
@@ -15,6 +17,8 @@ export interface SaveStatusInfo {
   title: string
   /** Whether clicking the pill does anything in this state (save, re-grant, or rewrite the backup). */
   clickable: boolean
+  /** Backup-health tab state, or null while daily/hourly backup is off (no tab then). */
+  backup: { health: BackupHealth; title: string } | null
 }
 
 export interface Shell {
@@ -138,7 +142,7 @@ const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
  * write failure with no bearing on backup health) reads as 'ok' here: the
  * tab's job is backup health specifically, not a mirror of primary status.
  */
-const BACKUP_TAB_HEALTH: Record<SaveState, 'ok' | 'permission' | 'error' | 'mismatch'> = {
+const BACKUP_TAB_HEALTH: Record<SaveState, BackupHealth> = {
   saved: 'ok',
   dirty: 'ok',
   saving: 'ok',
@@ -147,6 +151,33 @@ const BACKUP_TAB_HEALTH: Record<SaveState, 'ok' | 'permission' | 'error' | 'mism
   'backup-error': 'error',
   'backup-permission': 'permission',
   'backup-password-mismatch': 'mismatch',
+}
+
+/**
+ * The backup-health tab tucked behind a save pill (see the long note on
+ * `.tt-save-pill-backup-tab` in styles.css), shared by the header pill and the
+ * mirrored one in the expanded action-item modal. Hidden until `paintBackupTab`
+ * says backup is on; `style.display`, not `hidden`, because the class sets its
+ * own `display` (see the trap noted where the header pill is built).
+ */
+export function createBackupTab(): HTMLElement {
+  const tab = el('span', { class: 'tt-save-pill-backup-tab', 'aria-hidden': 'true' })
+  tab.innerHTML =
+    '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="7.4" height="7.4" rx="1.5"/><path d="M5.6 5.4V3.6A1.6 1.6 0 0 1 7.2 2H11.8A1.6 1.6 0 0 1 13.4 3.6V8.2A1.6 1.6 0 0 1 11.8 9.8H10.4"/></svg>'
+  tab.style.display = 'none'
+  return tab
+}
+
+/** Syncs a `createBackupTab()` tab to a save-state snapshot. */
+export function paintBackupTab(tab: HTMLElement, info: SaveStatusInfo): void {
+  tab.style.display = info.backup ? '' : 'none'
+  if (info.backup) {
+    tab.dataset.backup = info.backup.health
+    tab.title = info.backup.title
+  }
+  // Same class on the tab as on the pill so hovering the sliver peeking out
+  // from behind the pill gets the same pointer cursor + dim-on-hover.
+  tab.classList.toggle('tt-save-pill-clickable', info.clickable)
 }
 
 function toggleFullscreen(): void {
@@ -219,16 +250,7 @@ export function createShell(locale: Locale): Shell {
   // border/background/border-radius as one box, so nesting the tab inside
   // that box would draw the tab as a second little chip stranded inside the
   // parent's padding instead of a second pill hiding behind the first one.
-  const savePillBackupTab = el('span', { class: 'tt-save-pill-backup-tab', 'aria-hidden': 'true' })
-  savePillBackupTab.innerHTML =
-    '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="7.4" height="7.4" rx="1.5"/><path d="M5.6 5.4V3.6A1.6 1.6 0 0 1 7.2 2H11.8A1.6 1.6 0 0 1 13.4 3.6V8.2A1.6 1.6 0 0 1 11.8 9.8H10.4"/></svg>'
-  // Not the plain `hidden` attribute: `.tt-save-pill-backup-tab` sets its own
-  // `display: inline-flex` (same specificity as the UA `[hidden]{display:
-  // none}` rule, and later in the cascade), so `hidden` would be silently
-  // ignored — action-items.ts's mini pill hit this exact trap first, for the
-  // same reason (`.tt-save-pill` also sets `display` unconditionally).
-  // `style.display` always wins instead.
-  savePillBackupTab.style.display = 'none'
+  const savePillBackupTab = createBackupTab()
   let saveRequestHandler: (() => void) | null = null
   let grantRequestHandler: (() => void) | null = null
   let backupRetryRequestHandler: (() => void) | null = null
@@ -331,7 +353,14 @@ export function createShell(locale: Locale): Shell {
     if (currentState === 'dirty' && fallbackHint) {
       title += ` — ${t(currentLocale, 'save_fallback_hint')}`
     }
-    return { state: currentState, label: text, title, clickable: CLICKABLE_STATES.has(currentState) }
+    const health = BACKUP_TAB_HEALTH[currentState]
+    const backup = !backupEnabled ? null : {
+      health,
+      title: health === 'ok'
+        ? t(currentLocale, backupFrequency === 'hourly' ? 'save_backup_tab_ok_title_hourly' : 'save_backup_tab_ok_title_daily')
+        : label,
+    }
+    return { state: currentState, label: text, title, clickable: CLICKABLE_STATES.has(currentState), backup }
   }
 
   // Redraws the pill from `currentState`/`lastSavedAt`/`fallbackHint`/
@@ -350,22 +379,8 @@ export function createShell(locale: Locale): Shell {
     savePillFallbackMark.hidden = !fallbackHint
     saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
     saveIndicator.dataset.state = currentState
-    savePillBackupTab.style.display = backupEnabled ? '' : 'none'
-    if (backupEnabled) {
-      const health = BACKUP_TAB_HEALTH[currentState]
-      savePillBackupTab.dataset.backup = health
-      savePillBackupTab.title =
-        health === 'ok'
-          ? t(currentLocale, backupFrequency === 'hourly' ? 'save_backup_tab_ok_title_hourly' : 'save_backup_tab_ok_title_daily')
-          : t(currentLocale, SAVE_STATE_KEY[currentState])
-    }
-    const clickable = info.clickable
-    saveIndicator.classList.toggle('tt-save-pill-clickable', clickable)
-    // Same class on the tab too (it's a sibling of saveIndicator now, not a
-    // descendant) so hovering the sliver peeking out from behind the main
-    // pill gets the same pointer cursor + dim-on-hover as the rest of the
-    // compound shape, instead of only saveIndicator reacting.
-    savePillBackupTab.classList.toggle('tt-save-pill-clickable', clickable)
+    saveIndicator.classList.toggle('tt-save-pill-clickable', info.clickable)
+    paintBackupTab(savePillBackupTab, info)
     for (const sub of saveStateSubscribers) sub(info)
   }
 
