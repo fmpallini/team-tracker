@@ -7,6 +7,7 @@ import { createStore, type Store } from './core/store'
 import type { ImageStore } from './core/image-store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
+import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar } from './ui/sidebar'
 import { resolveAppHotkey } from './ui/app-hotkeys'
 import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
@@ -509,6 +510,10 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   shell.onHelp(() => {
     showGlobalHelp(store.doc.prefs.locale)
   })
+  // The image-limit toast's "Show usage" action (ui/image-host.ts) asks for the Data tab, where the usage line lives.
+  const openDataPrefs = (): void => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl, 'data')
+  document.addEventListener(OPEN_DATA_PREFS_EVENT, openDataPrefs)
+  disposers.push(() => document.removeEventListener(OPEN_DATA_PREFS_EVENT, openDataPrefs))
   disposers.push(store.onMutate(() => clearSearchHighlight()))
   disposers.push(
     onLocaleChanged(() => {

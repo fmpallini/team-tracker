@@ -1,3 +1,4 @@
+import { normalizeImageSpacing } from '../src/ui/editor-dom'
 import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
@@ -2005,6 +2006,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_codeblock_title'),
       t('en-US', 'editor_hr_title'),
       t('en-US', 'editor_link_title'),
+      t('en-US', 'editor_image_title'),
       t('en-US', 'editor_clear_format_title'),
       t('en-US', 'editor_templates_title'),
       t('en-US', 'editor_insert_ref_title'),
@@ -3865,18 +3867,22 @@ describe('setEditorsReadOnly', () => {
 
 describe('image blocks', () => {
   const ID = 'a'.repeat(32)
+  const created: Editor[] = []
+  afterEach(() => { created.forEach((e) => e.destroy()); created.length = 0; document.body.innerHTML = '' })
   const flushAsync = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
 
   function host(known: Record<string, { mime: string; w: number; h: number }> = { [ID]: { mime: 'image/png', w: 40, h: 30 } }) {
     return {
       getDataUri: vi.fn(async (id: string) => (known[id] ? `data:${known[id]!.mime};base64,AAAA` : null)),
       getMeta: vi.fn((id: string) => (known[id] ? { ...known[id]!, bytes: 1 } : undefined)),
+      importFiles: vi.fn(async (files: File[]) => files.map(() => null as { id: string; alt: string } | null)),
       dispose: vi.fn(),
     }
   }
   function mount(images?: ReturnType<typeof host>) {
     const hooks = { ...makeHooks(), ...(images ? { images } : {}) }
     const editor = createEditor(hooks, 'en-US')
+    created.push(editor)
     document.body.appendChild(editor.root)
     return { editor, hooks }
   }
@@ -3964,5 +3970,262 @@ describe('image blocks', () => {
     editor.setMd(ref())
     await flushAsync()
     expect(editor.root.querySelectorAll('.tt-img img')).toHaveLength(1)
+  })
+})
+
+describe('adding images: button, paste, drop', () => {
+  const ID = 'a'.repeat(32)
+  const created: Editor[] = []
+  afterEach(() => { created.forEach((e) => e.destroy()); created.length = 0; document.body.innerHTML = '' })
+  const ID2 = 'b'.repeat(32)
+  const flushAsync = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
+  const pngFile = (name = 'shot.png') => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])], name, { type: 'image/png' })
+  const PNG_B64 = 'iVBORw0KGgo='
+
+  function host(answer: ({ id: string; alt: string } | null)[] = [{ id: ID, alt: 'shot' }]) {
+    return {
+      getDataUri: vi.fn(async () => 'data:image/png;base64,AAAA'),
+      getMeta: vi.fn(() => ({ mime: 'image/png', w: 10, h: 10, bytes: 1 })),
+      importFiles: vi.fn(async (_files: File[]) => answer),
+      dispose: vi.fn(),
+    }
+  }
+  function mount(images?: ReturnType<typeof host>) {
+    const hooks = { ...makeHooks(), ...(images ? { images } : {}) }
+    const editor = createEditor(hooks, 'en-US')
+    created.push(editor)
+    document.body.appendChild(editor.root)
+    const surface = editor.root.querySelector('.editor') as HTMLElement
+    // jsdom has no execCommand editing: land the HTML where insertHTML would.
+    const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd: string, _ui?: boolean, value?: string) => {
+      if (cmd === 'insertHTML') surface.insertAdjacentHTML('beforeend', value ?? '')
+      return true
+    })
+    return { editor, surface, exec }
+  }
+  function paste(surface: HTMLElement, data: { html?: string; text?: string; files?: File[] }) {
+    const clipboardData = {
+      getData: (fmt: string) => (fmt === 'text/html' ? data.html ?? '' : fmt === 'text/plain' ? data.text ?? '' : ''),
+      files: data.files ?? [],
+      items: (data.files ?? []).map((f) => ({ kind: 'file', type: f.type, getAsFile: () => f })),
+      types: [...(data.html ? ['text/html'] : []), ...(data.files?.length ? ['Files'] : [])],
+    } as unknown as DataTransfer
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    surface.dispatchEvent(event)
+    return event
+  }
+  function dropEvent(type: 'dragover' | 'drop', files: File[]) {
+    const dataTransfer = { files, types: files.length ? ['Files'] : [], dropEffect: 'none' } as unknown as DataTransfer
+    const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+    return event
+  }
+  const insertedHtml = (exec: ReturnType<typeof mount>['exec']) => exec.mock.calls.filter((c) => c[0] === 'insertHTML').map((c) => String(c[2])).join('')
+
+  describe('toolbar button', () => {
+    test('sits between the link and clear-formatting buttons and carries the translated title', () => {
+      const { editor } = mount(host())
+      const titles = Array.from(editor.root.querySelectorAll<HTMLElement>('.tt-editor-toolbar > button')).map((b) => b.title)
+      const link = titles.indexOf(t('en-US', 'editor_link_title'))
+      expect(titles[link + 1]).toBe(t('en-US', 'editor_image_title'))
+      expect(titles[link + 2]).toBe(t('en-US', 'editor_clear_format_title'))
+    })
+
+    test('clicking it opens the file picker, which takes several images', () => {
+      const { editor } = mount(host())
+      const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
+      expect(input.accept).toBe('image/*')
+      expect(input.multiple).toBe(true)
+      const click = vi.spyOn(input, 'click').mockImplementation(() => {})
+      editor.root.querySelector<HTMLElement>(`button[title="${t('en-US', 'editor_image_title')}"]`)!.click()
+      expect(click).toHaveBeenCalledTimes(1)
+    })
+
+    test('picked files are imported and land as an image block with a blank line on each side', async () => {
+      const images = host()
+      const { editor, surface, exec } = mount(images)
+      const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
+      const file = pngFile()
+      Object.defineProperty(input, 'files', { value: [file], configurable: true })
+      input.dispatchEvent(new Event('change'))
+      await flushAsync()
+      expect(images.importFiles).toHaveBeenCalledWith([file])
+      expect(insertedHtml(exec)).toBe(`<div><br></div><div class="tt-img" contenteditable="false" data-img-id="${ID}" data-alt="shot"></div><div><br></div>`)
+      expect(surface.querySelector('.tt-img img')).not.toBeNull()
+    })
+
+    test('does nothing in a read-only editor', async () => {
+      const images = host()
+      const { editor } = mount(images)
+      setEditorsReadOnly(true)
+      try {
+        const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
+        Object.defineProperty(input, 'files', { value: [pngFile()], configurable: true })
+        input.dispatchEvent(new Event('change'))
+        await flushAsync()
+        expect(images.importFiles).not.toHaveBeenCalled()
+      } finally { setEditorsReadOnly(false) }
+    })
+  })
+
+  describe('paste', () => {
+    test('an image file on the clipboard becomes one image block', async () => {
+      const images = host()
+      const { surface, exec } = mount(images)
+      const e = paste(surface, { files: [pngFile()] })
+      await flushAsync()
+      expect(e.defaultPrevented).toBe(true)
+      expect(images.importFiles).toHaveBeenCalledTimes(1)
+      expect(insertedHtml(exec)).toContain(`data-img-id="${ID}"`)
+    })
+
+    test('pasted HTML with text around a data-URI image keeps the order: text, image, text', async () => {
+      const images = host()
+      const { surface, exec } = mount(images)
+      paste(surface, { html: `<p>alpha</p><img src="data:image/png;base64,${PNG_B64}" alt="pic"><p>omega</p>` })
+      await flushAsync()
+      const html = insertedHtml(exec)
+      expect(html.indexOf('alpha')).toBeGreaterThanOrEqual(0)
+      expect(html.indexOf('alpha')).toBeLessThan(html.indexOf('tt-img'))
+      expect(html.indexOf('tt-img')).toBeLessThan(html.indexOf('omega'))
+      const [files] = images.importFiles.mock.calls[0]!
+      expect(files).toHaveLength(1)
+      expect(files![0]!.name).toBe('pic')
+      expect(files![0]!.type).toBe('image/png')
+    })
+
+    test('when one image is refused the text and the surviving images still land, with no token text left', async () => {
+      const images = host([{ id: ID, alt: 'one' }, null, { id: ID2, alt: 'three' }])
+      const { surface, exec } = mount(images)
+      const img = (n: number) => `<img src="data:image/png;base64,${PNG_B64}" alt="i${n}">`
+      paste(surface, { html: `<p>head</p>${img(1)}<p>mid ${img(2)} tail</p>${img(3)}` })
+      await flushAsync()
+      const html = insertedHtml(exec)
+      expect(html).not.toContain('⟦')
+      expect(html).not.toContain('tt-img:')
+      expect(html).toContain('head')
+      expect(html).toContain('mid')
+      expect(html).toContain('tail')
+      expect(html).toContain(`data-img-id="${ID}"`)
+      expect(html).toContain(`data-img-id="${ID2}"`)
+      expect(html.indexOf('head')).toBeLessThan(html.indexOf(ID))
+      expect(html.indexOf(ID)).toBeLessThan(html.indexOf('mid'))
+      expect(html.indexOf('tail')).toBeLessThan(html.indexOf(ID2))
+    })
+
+    test('remote images in pasted HTML are dropped and never fetched', async () => {
+      const images = host()
+      const fetchSpy = vi.fn()
+      vi.stubGlobal('fetch', fetchSpy)
+      try {
+        const { surface, exec } = mount(images)
+        paste(surface, { html: '<p>just text</p><img src="https://example.com/a.png">' })
+        await flushAsync()
+        expect(fetchSpy).not.toHaveBeenCalled()
+        expect(images.importFiles).not.toHaveBeenCalled()
+        const html = insertedHtml(exec)
+        expect(html).toContain('just text')
+        expect(html).not.toContain('example.com')
+        expect(html).not.toContain('<img')
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    test('HTML with real text wins over a preview image file that came with it', async () => {
+      const images = host()
+      const { surface, exec } = mount(images)
+      paste(surface, { html: '<p>from word</p>', files: [pngFile('preview.png')] })
+      await flushAsync()
+      expect(images.importFiles).not.toHaveBeenCalled()
+      expect(insertedHtml(exec)).toContain('from word')
+    })
+
+    test('without an image host, pasting an image file does nothing and does not throw', async () => {
+      const { surface, exec } = mount()
+      expect(() => paste(surface, { files: [pngFile()] })).not.toThrow()
+      await flushAsync()
+      expect(insertedHtml(exec)).toBe('')
+    })
+
+    test('a read-only editor ignores a pasted image', async () => {
+      const images = host()
+      const { surface } = mount(images)
+      setEditorsReadOnly(true)
+      try {
+        paste(surface, { files: [pngFile()] })
+        await flushAsync()
+        expect(images.importFiles).not.toHaveBeenCalled()
+      } finally { setEditorsReadOnly(false) }
+    })
+  })
+
+  describe('drop', () => {
+    test('dragging files over the editor allows the drop', () => {
+      const { surface } = mount(host())
+      const over = dropEvent('dragover', [pngFile()])
+      surface.dispatchEvent(over)
+      expect(over.defaultPrevented).toBe(true)
+    })
+
+    test('dragging plain text over the editor is left to the browser', () => {
+      const { surface } = mount(host())
+      const over = dropEvent('dragover', [])
+      surface.dispatchEvent(over)
+      expect(over.defaultPrevented).toBe(false)
+    })
+
+    test('two images and a text file: all three go to the host, the two it accepted are inserted', async () => {
+      const images = host([{ id: ID, alt: 'a' }, { id: ID2, alt: 'b' }, null])
+      const { surface, exec } = mount(images)
+      const files = [pngFile('a.png'), pngFile('b.png'), new File(['hi'], 'c.txt', { type: 'text/plain' })]
+      const drop = dropEvent('drop', files)
+      surface.dispatchEvent(drop)
+      await flushAsync()
+      expect(drop.defaultPrevented).toBe(true)
+      expect(images.importFiles).toHaveBeenCalledWith(files)
+      const html = insertedHtml(exec)
+      expect(html).toContain(ID)
+      expect(html).toContain(ID2)
+    })
+
+    test('a read-only editor refuses a drop', async () => {
+      const images = host()
+      const { surface } = mount(images)
+      setEditorsReadOnly(true)
+      try {
+        const drop = dropEvent('drop', [pngFile()])
+        surface.dispatchEvent(drop)
+        await flushAsync()
+        expect(images.importFiles).not.toHaveBeenCalled()
+      } finally { setEditorsReadOnly(false) }
+    })
+  })
+})
+
+describe('normalizeImageSpacing', () => {
+  const block = (id = 'a'.repeat(32)) => `<div class="tt-img" data-img-id="${id}" data-alt=""></div>`
+  const blank = '<div><br></div>'
+  const run = (html: string): string => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    normalizeImageSpacing(root)
+    return root.innerHTML
+  }
+
+  test('adds the missing blank line above and below', () => {
+    expect(run(`<div>a</div>${block()}<div>b</div>`)).toBe(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)
+  })
+
+  test('leaves a blank line that is already there, and collapses extra ones to one', () => {
+    expect(run(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)).toBe(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)
+    expect(run(`<div>a</div>${blank}${blank}${blank}${block()}${blank}${blank}<div>b</div>`)).toBe(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)
+  })
+
+  test('adds nothing before a first image or after a last one', () => {
+    expect(run(block())).toBe(block())
+  })
+
+  test('puts exactly one blank line between two adjacent images', () => {
+    expect(run(block('a'.repeat(32)) + block('b'.repeat(32)))).toBe(block('a'.repeat(32)) + blank + block('b'.repeat(32)))
   })
 })

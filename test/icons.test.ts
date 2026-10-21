@@ -75,3 +75,14 @@ describe('iconLine', () => {
     expect(li.textContent).toBe('Encrypted')
   })
 })
+
+describe('image icon', () => {
+  test('is a framed picture: a rounded rectangle, a sun and a hill line, all stroked', () => {
+    const doc = new DOMParser().parseFromString(iconSvg('image', 16), 'image/svg+xml')
+    expect(doc.querySelector('parsererror')).toBeNull()
+    expect(doc.querySelector('rect')).not.toBeNull()
+    expect(doc.querySelector('circle')).not.toBeNull()
+    expect(doc.querySelector('path')?.getAttribute('d')).toBeTruthy()
+    expect(icon('image').classList.contains('tt-icon-image')).toBe(true)
+  })
+})

@@ -37,7 +37,7 @@ export function createRichEditorBundle(opts: {
   getTemplates(): Template[]
   getTemplateCtx(): TemplateCtx
 }): RichEditorBundle {
-  const images = createImageHost(opts.store)
+  const images = createImageHost(opts.store, opts.locale)
   const editor: Editor = createEditor(
     {
       onChange() {

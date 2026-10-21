@@ -96,7 +96,7 @@ describe('imageId', () => {
 
 describe('importImage', () => {
   it('limits are the values the spec fixes', () => {
-    expect(IMAGE_LIMITS).toMatchObject({ maxBytes: 1 * MB, maxEdge: 1600, minEdge: 800, totalCapBytes: 150 * MB, warnBytes: 100 * MB })
+    expect(IMAGE_LIMITS).toMatchObject({ maxBytes: 1 * MB, maxSourceBytes: 50 * MB, maxEdge: 1600, minEdge: 800, totalCapBytes: 150 * MB, warnBytes: 100 * MB })
     expect([...IMAGE_LIMITS.qualities]).toEqual([0.85, 0.7, 0.55])
   })
 
@@ -179,6 +179,13 @@ describe('importImage', () => {
     expect(a.ok && a.alt).toBe('myphoto1.final')
     const b = await importImage({ bytes: png({ pad: 11 }), name: '' }, ctxFor(codec))
     expect(b.ok && b.alt).toBe('')
+  })
+
+  it('a codec that fails while encoding refuses the image instead of throwing', async () => {
+    const codec = fakeCodec()
+    codec.encode = async () => { throw new Error('canvas gone') }
+    const r = await importImage({ bytes: png({ pad: 5000 }), name: 'a.png' }, ctxFor(codec))
+    expect(r).toMatchObject({ ok: false, reason: 'corrupt' })
   })
 
   it('keeps the original when re-encoding would make it bigger and the original already fits', async () => {

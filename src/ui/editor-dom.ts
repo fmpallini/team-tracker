@@ -128,3 +128,35 @@ export function createRefChip(ref: string, label: string, title: string): HTMLAn
   chip.textContent = `@${label}`
   return chip
 }
+
+/** A text-less line: an empty <div>/<p> (typically `<div><br></div>`), as opposed to an image block or any content. */
+function isBlankLine(node: Element): boolean {
+  return (node.tagName === 'DIV' || node.tagName === 'P')
+    && !node.classList.contains('tt-img')
+    && node.querySelector('img, .tt-img') === null
+    && (node.textContent ?? '').trim() === ''
+}
+
+/**
+ * Gives every top-level image block exactly one blank line above it and one
+ * below it: adds the missing ones and collapses a run of several to one. An
+ * image that is the first or last block gets nothing on that side. Run after
+ * anything that can put an image next to text (insertHTML, a paste), so the
+ * rule holds in the DOM and `htmlToMd` only has to serialize it.
+ */
+export function normalizeImageSpacing(root: HTMLElement): void {
+  const doc = root.ownerDocument
+  const newBlank = (): HTMLElement => { const d = doc.createElement('div'); d.appendChild(doc.createElement('br')); return d }
+  for (const block of Array.from(root.children).filter((c) => c.classList.contains('tt-img'))) {
+    const prev = block.previousElementSibling
+    if (prev) {
+      if (!isBlankLine(prev)) block.before(newBlank())
+      else while (prev.previousElementSibling && isBlankLine(prev.previousElementSibling)) prev.previousElementSibling.remove()
+    }
+    const next = block.nextElementSibling
+    if (next) {
+      if (!isBlankLine(next)) block.after(newBlank())
+      else while (next.nextElementSibling && isBlankLine(next.nextElementSibling)) next.nextElementSibling.remove()
+    }
+  }
+}

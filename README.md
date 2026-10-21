@@ -118,6 +118,10 @@ on a password-less file at any time from the same tab. The trade-off: anyone
 with access to a password-less file — including a cloud provider's automated
 scanning — can read it as plain text.
 
+Pictures you add to notes live inside the same `.tmv` file (and are encrypted with
+the same key); there is no separate image folder to keep together. See the
+[FAQ](#faq) for what is accepted and how pictures are shrunk.
+
 ### Backing up
 
 Team Tracker has no backup service and doesn't need one. Keep your `.tmv` in a
@@ -222,6 +226,37 @@ no "forgot password" recovery, generate and store it in a password manager.
 No bulk import. The only import/export is team-to-team: export a team's
 people/hierarchy (no notes, tasks, milestones, or risks) so a teammate
 can import it — see the Data tab in preferences.
+
+**Can I put pictures in my notes?**
+Yes. Paste a screenshot or copied image (also mixed with text), drag image files
+onto a note, or use the picture button in the editor toolbar. Pictures sit on
+their own line, centered, at their natural pixel size (never scaled by the font
+size or zoom; wider than the pane, they shrink to fit), with a blank line above
+and below. Click one and press Backspace or Delete to remove it. They are stored
+inside the `.tmv` file, encrypted like everything else, and a picture no note
+uses any more is dropped from the file at the next save.
+
+- **Formats:** PNG, JPEG, WebP, GIF, AVIF and BMP. Recognized by their content,
+  not their file extension. Not supported: SVG, HEIC/HEIF, TIFF, JPEG XL, ICO,
+  or anything that is not an image. Pictures pasted as links from a web page
+  are not fetched; copy the image itself instead.
+- **Shrinking:** every picture is re-encoded in your browser to WebP, with its
+  longest side capped at 1600 px, and must end up at **1 MB or less**. If it is
+  still too big the quality is lowered in steps, then the picture is scaled down
+  further, but never below 800 px on its longest side; if it still does not
+  fit, it is refused and you are told. Pictures are never enlarged. A WebP that
+  already fits is kept untouched.
+- **Animated GIF, APNG and animated WebP** keep their animation, so they are
+  stored exactly as they are and must be 1 MB or less (otherwise refused).
+- **Total budget:** 150 MB of pictures per file, counted on the pictures your
+  notes actually use. You get a warning at 100 MB and a message with a "Show
+  usage" shortcut (Preferences → Data) when the limit is reached; there is no
+  limit on the number of pictures. Because the whole file is rewritten on every
+  save, a file full of pictures saves more slowly, which is why the budget
+  exists.
+- **Same picture twice** is stored once.
+- **Older versions:** a file saved by this version cannot be opened by Team
+  Tracker releases before 3.2.0.
 
 **Does it send reminders or notifications for due dates?**
 No push or email. Due and overdue items show up inside the app — sidebar and

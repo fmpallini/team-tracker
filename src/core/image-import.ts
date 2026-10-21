@@ -13,6 +13,8 @@ const MB = 1024 * 1024
 export const IMAGE_LIMITS = {
   /** Per image, after processing. */
   maxBytes: 1 * MB,
+  /** A picked, dropped or pasted file bigger than this is refused without being read into memory. */
+  maxSourceBytes: 50 * MB,
   /** Long edge, pixels. */
   maxEdge: 1600,
   /** The scale-down fallback never goes below this long edge. */
@@ -184,7 +186,12 @@ async function prepare(input: { bytes: Uint8Array; name: string }, ctx: ImportCo
 
   for (const edge of edgeLadder(longEdge)) {
     for (const quality of IMAGE_LIMITS.qualities) {
-      const out = await ctx.codec.encode(input.bytes, { maxEdge: edge, quality })
+      let out: Awaited<ReturnType<ImageCodec['encode']>>
+      try {
+        out = await ctx.codec.encode(input.bytes, { maxEdge: edge, quality })
+      } catch {
+        return { refusal: 'corrupt' }
+      }
       if (out.bytes.length > IMAGE_LIMITS.maxBytes) continue
       if (originalFits && out.bytes.length >= input.bytes.length) return original()
       return { id: await imageId(out.bytes), stored: out.bytes, meta: { mime: out.mime, w: out.w, h: out.h, bytes: out.bytes.length }, alt }
@@ -218,7 +225,7 @@ export async function importImage(input: { bytes: Uint8Array; name: string }, ct
 export async function importImages(
   inputs: { bytes: Uint8Array; name: string }[],
   ctx: ImportContext,
-): Promise<{ results: ImportResult[]; crossedWarn: boolean }> {
+): Promise<{ results: ImportResult[]; crossedWarn: boolean; totalBytes: number }> {
   const counted = collectImageRefs(ctx.doc)
   let before = 0
   for (const id of counted) before += ctx.doc.images[id]?.bytes ?? 0
@@ -240,5 +247,5 @@ export async function importImages(
     counted.add(p.id)
     total += added
   }
-  return { results, crossedWarn: before < IMAGE_LIMITS.warnBytes && total >= IMAGE_LIMITS.warnBytes }
+  return { results, crossedWarn: before < IMAGE_LIMITS.warnBytes && total >= IMAGE_LIMITS.warnBytes, totalBytes: total }
 }
