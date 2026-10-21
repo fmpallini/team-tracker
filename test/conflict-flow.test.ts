@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   pickCreate: vi.fn<(name: string) => Promise<FileSession | null>>(),
   forceWrite: vi.fn<(s: FileSession, b: Uint8Array) => Promise<void>>(),
-  docToBytes: vi.fn<(doc: Doc, pw: string | null) => Promise<Uint8Array>>(),
+  docToBytes: vi.fn<(doc: Doc, pw: string | null, images: unknown, stamp: { writeId: string }) => Promise<Uint8Array>>(),
 }))
 vi.mock('../src/ui/conflict', () => ({ showConflictModal: mocks.showConflictModal }))
 vi.mock('../src/ui/modal', () => ({ toast: mocks.toast }))
@@ -131,7 +131,7 @@ describe('Overwrite', () => {
     await open().onOverwrite()
 
     expect(deps.getPassword).toHaveBeenCalled()
-    expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw', store.images)
+    expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw', store.images, expect.objectContaining({ writeId: expect.any(String) }))
     expect(mocks.forceWrite).toHaveBeenCalledWith(deps.session, BYTES)
     expect(store.dirty).toBe(false)
     expect(shell.setSaveState).toHaveBeenCalledWith('saved')
@@ -150,10 +150,31 @@ describe('Overwrite', () => {
     expect(shell.setSaveState).not.toHaveBeenCalledWith('saved')
   })
 
+  test('commits the written stamp (and the revision it holds) to the persister', async () => {
+    const markFileWritten = vi.fn(async () => {})
+    const { store, open } = setup({ persister: { markFileWritten } as never })
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    const rev = store.rev
+
+    await open().onOverwrite()
+
+    const stampWritten = mocks.docToBytes.mock.calls.at(-1)![3]
+    expect(markFileWritten).toHaveBeenCalledWith(stampWritten, rev)
+  })
+
+  test('a failed overwrite does not touch the persister', async () => {
+    mocks.forceWrite.mockRejectedValue(new Error('disk full'))
+    const markFileWritten = vi.fn(async () => {})
+    const { store, open } = setup({ persister: { markFileWritten } as never })
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    await open().onOverwrite()
+    expect(markFileWritten).not.toHaveBeenCalled()
+  })
+
   test('a password-less file is written under a null password', async () => {
     const { open } = setup({ getPassword: () => null })
     await open().onOverwrite()
-    expect(mocks.docToBytes).toHaveBeenCalledWith(expect.anything(), null, expect.anything())
+    expect(mocks.docToBytes).toHaveBeenCalledWith(expect.anything(), null, expect.anything(), expect.anything())
   })
 
   test('a lapsed permission shows the permission state and a toast whose action re-requests access', async () => {
@@ -238,8 +259,25 @@ describe('Fork', () => {
     expect(mocks.forceWrite).toHaveBeenCalledWith(FORK, BYTES)
     expect(mocks.forceWrite).not.toHaveBeenCalledWith(deps.session, expect.anything())
     expect(store.dirty).toBe(false)
-    expect(deps.reopen).toHaveBeenCalledWith(FORK, store.doc, 'pw', store.images)
+    const stampWritten = mocks.docToBytes.mock.calls.at(-1)![3]
+    expect(deps.reopen).toHaveBeenCalledWith(FORK, expect.objectContaining({ prefs: store.doc.prefs }), 'pw', store.images, stampWritten)
     expect(flow.isOpen()).toBe(false)
+  })
+
+  test('the fork is a new document: it gets its own docId, the original keeps its own', async () => {
+    mocks.pickCreate.mockResolvedValue(FORK)
+    const { store, deps, open } = setup()
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    const originalId = store.doc.docId
+
+    await open().onFork!()
+
+    const written = mocks.docToBytes.mock.calls.at(-1)![0]
+    const reopened = (deps.reopen as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Doc
+    expect(written.docId).toMatch(/^[0-9a-f]{32}$/)
+    expect(written.docId).not.toBe(originalId)
+    expect(reopened.docId).toBe(written.docId)
+    expect(store.doc.docId).toBe(originalId)
   })
 
   test('releases the guard BEFORE re-opening, so the new document can raise its own conflict', async () => {

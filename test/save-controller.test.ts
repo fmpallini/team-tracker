@@ -119,6 +119,49 @@ test('saveNow happy path: encrypts, writes, marks saved, and updates title', asy
   expect(onExternalChange).not.toHaveBeenCalled()
 })
 
+test('a successful write tells the persister which stamp the file now holds, with the revision it contains', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const markFileWritten = vi.fn(async () => {})
+  const ctl = createSaveController({
+    store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn(),
+    persister: { markFileWritten } as never,
+  })
+  const revAtSave = store.rev
+
+  await ctl.saveNow()
+
+  const stampWritten = (cryptoMocks.encryptDocument.mock.calls[0] as unknown[])[4]
+  expect(markFileWritten).toHaveBeenCalledTimes(1)
+  expect(markFileWritten).toHaveBeenCalledWith(stampWritten, revAtSave)
+})
+
+test('a failed write never reaches the persister', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  fsMocks.writeFile.mockImplementationOnce(async () => { throw new Error('disk full') })
+  const markFileWritten = vi.fn(async () => {})
+  const ctl = createSaveController({
+    store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn(),
+    persister: { markFileWritten } as never,
+  })
+  await ctl.saveNow()
+  expect(markFileWritten).not.toHaveBeenCalled()
+})
+
+test('a persister that fails after a good write does not make the save look failed', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  store.update((d) => { d.prefs.autoSaveMin = 9 })
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const ctl = createSaveController({
+    store, session: makeSession(), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US', onExternalChange: vi.fn(),
+    persister: { markFileWritten: vi.fn(async () => { throw new Error('idb gone') }) } as never,
+  })
+  await ctl.saveNow()
+  expect(store.dirty).toBe(false)
+  spy.mockRestore()
+})
+
 test('fallback mode (no handle): a non-explicit saveNow() is a no-op (stays dirty, no download)', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   store.update((d) => { d.prefs.autoSaveMin = 9 })

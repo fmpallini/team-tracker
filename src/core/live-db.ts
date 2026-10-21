@@ -155,3 +155,26 @@ export async function openLiveDb(factory: IDBFactory | undefined = globalThis.in
     },
   }
 }
+
+let shared: Promise<LiveDb | null> | null = null
+
+/**
+ * The app's one connection, opened on first use. Null when the browser cannot open IndexedDB (private mode,
+ * blocked storage): the document then runs from memory and the file alone. A failure is not remembered, so the
+ * next document opened tries again.
+ */
+export function sharedLiveDb(): Promise<LiveDb | null> {
+  shared ??= openLiveDb().catch((e: unknown) => {
+    console.error(e)
+    shared = null
+    return null
+  })
+  return shared
+}
+
+/** Test seam: forgets the shared connection (closing it) so the next call opens afresh. */
+export function resetSharedLiveDb(): void {
+  const old = shared
+  shared = null
+  void old?.then((db) => db?.close())
+}

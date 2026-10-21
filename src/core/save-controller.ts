@@ -3,7 +3,8 @@
 // writer at a time and a graceful path for every failure mode.
 import type { Store } from './store'
 import type { Prefs } from './types'
-import { docToBytes } from './doc-bytes'
+import { buildSnapshot, commitSnapshot, type Snapshot } from './snapshot'
+import type { LivePersister } from './live-persist'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
@@ -67,6 +68,8 @@ export interface SaveControllerDeps {
    * doesn't stack a second modal on top of the first.
    */
   isConflictOpen?(): boolean
+  /** Told which file write just landed (null: the browser store is unavailable), so the browser copy can record the lineage. */
+  persister?: LivePersister | null
   /**
    * Commits any debounced editor change into the store. Called at the top of
    * `saveNow()` — the one choke point every trigger funnels through — so a
@@ -231,13 +234,12 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     if (!deps.session.handle && !explicit) return
     deps.shell.setSaveState('saving')
     const startedAt = now()
-    // What this round's bytes contain. An edit landing after this point is not
+    // `snapshot.revAtSnapshot` is what this round's bytes contain. An edit landing after it is not
     // in them: the onMutate guard queues a trailing round for it, and only that
     // round may clear `dirty` (see the markSaved() below).
-    const revAtSnapshot = deps.store.rev
-    let bytes: Uint8Array
+    let snapshot: Snapshot
     try {
-      bytes = await docToBytes(deps.store.doc, deps.getPassword(), deps.store.images)
+      snapshot = await buildSnapshot(deps.store, deps.getPassword())
     } catch (e) {
       console.error(e)
       reportWriteError()
@@ -245,9 +247,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
     try {
       if (deps.session.handle) {
-        await writeFile(deps.session, bytes)
+        await writeFile(deps.session, snapshot.bytes)
       } else {
-        downloadFallback(deps.session.name, bytes)
+        downloadFallback(deps.session.name, snapshot.bytes)
       }
     } catch (e) {
       if (e instanceof ExternalChangeError) {
@@ -274,11 +276,12 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     lastSavedAt = now()
     recentDurations.push(lastSavedAt - startedAt)
     if (recentDurations.length > GAP_WINDOW) recentDurations.shift()
+    await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
     // Clearing `dirty` for bytes that predate an edit would leave that edit
     // unmarked if the trailing round queued for it then fails: no pill, no
     // close prompt, no beforeunload warning, and a tab handover would let it go.
     // Same guard as conflict-flow.ts's overwrite().
-    if (deps.store.rev === revAtSnapshot) deps.store.markSaved()
+    if (deps.store.rev === snapshot.revAtSnapshot) deps.store.markSaved()
     permissionEpisodeToasted = false
     dismissToast(SAVE_PERMISSION_TOAST_KEY)
     dismissToast(SAVE_ERROR_TOAST_KEY)

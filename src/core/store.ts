@@ -65,6 +65,11 @@ export interface Store {
   onDirty(fn: (dirty: boolean) => void): () => void
   markSaved(): void
   /**
+   * Flags the document as ahead of its file without changing it — what a document opened from the browser's
+   * copy is (the file is behind), so the first file write is not skipped as "nothing changed". No mutation event, no rev bump.
+   */
+  markDirty(): void
+  /**
    * Wholesale-replaces the in-memory document (Task 25: used by the conflict
    * modal's "Reload" action after `readCurrent` + `decryptDocument`). Clears
    * `dirty` (the reloaded doc is, by definition, in sync with disk) and
@@ -178,6 +183,9 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
     },
     markSaved(): void {
       setDirty(false)
+    },
+    markDirty(): void {
+      setDirty(true)
     },
     replaceDoc(newDoc: Doc, newImages?: ImageStore): void {
       rev++

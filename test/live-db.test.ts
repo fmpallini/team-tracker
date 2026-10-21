@@ -1,5 +1,5 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
-import { openLiveDb, type LiveDb, type LiveMeta } from '../src/core/live-db'
+import { openLiveDb, sharedLiveDb, resetSharedLiveDb, type LiveDb, type LiveMeta } from '../src/core/live-db'
 
 // A fresh in-memory IndexedDB per test (jsdom has none of its own).
 let factory: IDBFactory
@@ -163,4 +163,27 @@ test('close() makes later calls reject', async () => {
   const db: LiveDb = await openLiveDb(factory)
   db.close()
   await expect(db.getMeta('d')).rejects.toThrow()
+})
+
+describe('sharedLiveDb', () => {
+  afterEach(() => { resetSharedLiveDb() })
+
+  test('opens the database once and hands every caller the same connection', async () => {
+    vi.stubGlobal('indexedDB', factory)
+    const a = await sharedLiveDb()
+    const b = await sharedLiveDb()
+    expect(a).not.toBeNull()
+    expect(b).toBe(a)
+  })
+
+  test('resolves null (not a rejection) when IndexedDB is unavailable, and tries again next time', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const saved = (globalThis as { indexedDB?: IDBFactory }).indexedDB
+    delete (globalThis as { indexedDB?: IDBFactory }).indexedDB
+    expect(await sharedLiveDb()).toBeNull()
+    vi.stubGlobal('indexedDB', factory)
+    expect(await sharedLiveDb()).not.toBeNull()
+    spy.mockRestore()
+    if (saved) (globalThis as { indexedDB?: IDBFactory }).indexedDB = saved
+  })
 })

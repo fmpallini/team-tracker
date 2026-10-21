@@ -14,6 +14,9 @@ import type { Shell } from '../ui/shell'
 import { t } from './i18n'
 import { pickCreate, forceWrite } from './fs'
 import { docToBytes } from './doc-bytes'
+import { buildSnapshot, commitSnapshot } from './snapshot'
+import { newStamp, randomHex, type FileStamp } from './file-stamp'
+import type { LivePersister } from './live-persist'
 import { showConflictModal } from '../ui/conflict'
 import { toast } from '../ui/modal'
 import { SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from './save-controller'
@@ -28,8 +31,10 @@ export interface ConflictFlowDeps {
   reloadFromDisk: () => Promise<void>
   /** Re-requests the lapsed file permission; the "Grant access…" action of the permission toast. */
   resolveGrants: () => Promise<void>
+  /** Told which file write landed (null: browser storage unavailable). */
+  persister?: LivePersister | null
   /** Re-opens the document on the fork's new file — see the note in `fork` for why not in place. */
-  reopen: (forkSession: FileSession, doc: Doc, password: string | null, images: ImageStore) => void
+  reopen: (forkSession: FileSession, doc: Doc, password: string | null, images: ImageStore, stamp: FileStamp) => void
 }
 
 export interface ConflictFlow {
@@ -74,7 +79,11 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     if (!forkSession) return false
 
     const currentPw = deps.getPassword()
-    await forceWrite(forkSession, await docToBytes(store.doc, currentPw, store.images))
+    // The fork is a different document from here on, with its own browser copy: a shared docId would let the
+    // original's copy (whose lineage the other writer's file broke) claim the fork file as its own.
+    const forkDoc: Doc = { ...store.doc, docId: randomHex(16) }
+    const stamp = newStamp()
+    await forceWrite(forkSession, await docToBytes(forkDoc, currentPw, store.images, stamp))
     // The document's content is now persisted — to the fork rather
     // than to `session`, but persisted. Clearing dirty here is what
     // stops teardown (reached via `reopen` below) from
@@ -94,7 +103,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     // (forceWrite above has also repointed the 'lastHandle' IndexedDB
     // key at the fork, so "reopen last" follows it.)
     open = false
-    deps.reopen(forkSession, store.doc, currentPw, store.images)
+    deps.reopen(forkSession, forkDoc, currentPw, store.images, stamp)
     return true
   }
 
@@ -102,9 +111,10 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     try {
       // An edit landing while the write is in flight is not in the bytes just
       // written; clearing `dirty` for it would drop it from every later save.
-      const revBefore = store.rev
-      await forceWrite(session, await docToBytes(store.doc, deps.getPassword(), store.images))
-      if (store.rev === revBefore) {
+      const snapshot = await buildSnapshot(store, deps.getPassword())
+      await forceWrite(session, snapshot.bytes)
+      await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
+      if (store.rev === snapshot.revAtSnapshot) {
         store.markSaved()
         shell.setSaveState('saved')
         shell.setTitle(session.name, false)

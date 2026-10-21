@@ -131,6 +131,19 @@ test('opening the same file again is identical: nothing is rewritten', async () 
   expect(a.both).not.toHaveBeenCalled()
 })
 
+test('only a document opened from the browser copy starts ahead of its file', async () => {
+  const doc = docWith('old')
+  const stamp = newStamp()
+  const first = await open(await opened(doc, stamp), null, asks())
+  expect(first.store.dirty).toBe(false)
+  first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'newer' })
+  await first.handle.persister.flush()
+  first.handle.persister.dispose()
+  const second = await open(await opened(doc, stamp), null, asks())
+  expect(second.source).toBe('browser')
+  expect(second.store.dirty).toBe(true)
+})
+
 test('a browser copy with unwritten edits beats the same-stamped file and asks for the file to be rewritten', async () => {
   const doc = docWith('old')
   const stamp = newStamp()

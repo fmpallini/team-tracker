@@ -13,6 +13,21 @@ test('update notifies and marks dirty', () => {
   s.markSaved(); expect(s.dirty).toBe(false); expect(dirtyStates).toEqual([true, false])
 })
 
+test('markDirty flags the document as ahead of its file without touching the document, subscribers or rev', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const dirtyStates: boolean[] = []; s.onDirty((d) => dirtyStates.push(d))
+  let renders = 0; s.subscribe(() => renders++)
+  const rev = s.rev
+  s.markDirty()
+  s.markDirty()
+  expect(s.dirty).toBe(true)
+  expect(dirtyStates).toEqual([true])
+  expect(renders).toBe(0)
+  expect(s.rev).toBe(rev)
+  s.markSaved()
+  expect(s.dirty).toBe(false)
+})
+
 test('updateNav marks dirty without render', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   let n = 0; s.subscribe(() => n++)

@@ -6,7 +6,8 @@
 // instead of only through prefs.ts's mocked PrefsAppCtl.
 import type { Store } from './store'
 import type { FileSession } from './fs'
-import { docToBytes } from './doc-bytes'
+import { buildSnapshot, commitSnapshot, type Snapshot } from './snapshot'
+import type { LivePersister } from './live-persist'
 import { blobCodec } from './crypto'
 import { writeFile, downloadFallback } from './fs'
 import { toast } from '../ui/modal'
@@ -17,6 +18,8 @@ export interface ChangePasswordDeps {
   store: Store
   session: FileSession
   shell: Shell
+  /** Told which file write landed (null: browser storage unavailable). */
+  persister?: LivePersister | null
   /** Waits out (and blocks) any concurrent save — see save-controller.ts's `runExclusive`. */
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
   /** The password the file is under right now (live read), needed to restore the image blobs' key if the write fails. */
@@ -60,12 +63,13 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       const images = deps.store.images
       const oldPw = deps.getPassword()
       await images.rekey(newPw === null ? null : await blobCodec(newPw))
+      let snapshot: Snapshot
       try {
-        const bytes = await docToBytes(deps.store.doc, newPw, images)
+        snapshot = await buildSnapshot(deps.store, newPw)
         if (deps.session.handle) {
-          await writeFile(deps.session, bytes)
+          await writeFile(deps.session, snapshot.bytes)
         } else {
-          downloadFallback(deps.session.name, bytes)
+          downloadFallback(deps.session.name, snapshot.bytes)
           // Not sticky — see the matching note in src/ui/start.ts.
           toast(t(deps.store.doc.prefs.locale, 'fallback_notice'))
         }
@@ -73,8 +77,9 @@ export function createChangePassword(deps: ChangePasswordDeps) {
         await images.rekey(oldPw === null ? null : await blobCodec(oldPw))
         throw e
       }
+      await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
       deps.setPassword(newPw)
-      deps.store.markSaved()
+      if (deps.store.rev === snapshot.revAtSnapshot) deps.store.markSaved()
       deps.shell.setSaveState('saved')
       deps.shell.setTitle(deps.session.name, false)
     })

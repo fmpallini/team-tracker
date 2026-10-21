@@ -1,6 +1,5 @@
 // src/ui/start.ts
 import { t, type Locale } from '../core/i18n'
-import type { Doc } from '../core/types'
 import { el } from './dom'
 import { icon, iconLine } from './icons'
 import { promoStartCard } from './promo'
@@ -17,10 +16,13 @@ import {
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
 import { decryptDocumentWithVersion, parsePlainWithVersion, looksLikeTmv, blobCodec, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
-import { createImageStore, type ImageStore } from '../core/image-store'
+import { createImageStore } from '../core/image-store'
 import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
 import { docToBytes } from '../core/doc-bytes'
+import { newStamp } from '../core/file-stamp'
+import { sharedLiveDb, type LiveDb } from '../core/live-db'
 import { promptPassword, showErrorModal, toast } from './modal'
+import { reconcileOpen, type OpenedDocument } from './open-document'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
 
@@ -87,15 +89,10 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
   )
 }
 
-/** The original bytes when opening just ran a migration — main.ts snapshots them to the backup before any save can overwrite the unmigrated file. */
-function migratedFromFor(opened: OpenedDoc, bytes: Uint8Array): Uint8Array | null {
-  return opened.preSchemaVersion !== null && opened.preSchemaVersion < SCHEMA_VERSION ? bytes : null
-}
-
 export function showStartScreen(
   locale: Locale,
-  onOpen: (session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null, images: ImageStore) => void,
-  opts?: { skipAutoLoad?: boolean }
+  onOpen: (opened: OpenedDocument) => void,
+  opts?: { skipAutoLoad?: boolean; /** Test seam: where the browser database comes from. */ liveDb?: () => Promise<LiveDb | null> }
 ): void {
   const container = document.getElementById('app') ?? document.body
   container.innerHTML = ''
@@ -110,7 +107,17 @@ export function showStartScreen(
     showErrorModal(locale, t(locale, 'err_unexpected'))
   }
 
-  async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string; migratedFrom: Uint8Array | null; images: ImageStore } | null> {
+  /**
+   * Every route into the app ends here: reconcile the decoded file with the browser's copy of the document
+   * (asking whatever that needs), then hand the result to main.ts. Backing out of a question leaves the start screen as it is.
+   */
+  async function finishOpen(session: FileSession, opened: OpenedDoc, password: string | null): Promise<void> {
+    const db = await (opts?.liveDb ?? sharedLiveDb)()
+    const result = await reconcileOpen({ locale, db, session, opened, password })
+    if (result) onOpen(result)
+  }
+
+  async function decryptLoop(bytes: Uint8Array): Promise<{ opened: OpenedDoc; password: string } | null> {
     // An empty file (a create flow that was cancelled before its first write)
     // or any non-.tmv file can never be opened by any password: say so now
     // instead of after the user has typed one.
@@ -124,8 +131,7 @@ export function showStartScreen(
       // allowPlain is never set for this prompt, so result is always {password}.
       const password = (result as { password: string }).password
       try {
-        const opened = await decryptDocumentWithVersion(bytes, password)
-        return { doc: opened.doc, password, migratedFrom: migratedFromFor(opened, bytes), images: opened.images }
+        return { opened: await decryptDocumentWithVersion(bytes, password), password }
       } catch (e) {
         if (e instanceof WrongPasswordError) {
           toast(t(locale, 'err_wrong_password'))
@@ -187,11 +193,11 @@ export function showStartScreen(
       throw e
     }
     if (plain) {
-      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes), plain.images)
+      await finishOpen(result.session, plain, null)
       return
     }
     const outcome = await decryptLoop(result.bytes)
-    if (outcome) onOpen(result.session, outcome.doc, outcome.password, outcome.migratedFrom, outcome.images)
+    if (outcome) await finishOpen(result.session, outcome.opened, outcome.password)
   }
 
   const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
@@ -213,22 +219,24 @@ export function showStartScreen(
       const doc = createEmptyDocument(locale)
       const password = 'plain' in result ? null : result.password
       const images = createImageStore(password === null ? null : await blobCodec(password))
-      await writeFile(session, await docToBytes(doc, password, images))
-      onOpen(session, doc, password, null, images)
+      const stamp = newStamp()
+      await writeFile(session, await docToBytes(doc, password, images, stamp))
+      await finishOpen(session, { doc, preSchemaVersion: SCHEMA_VERSION, images, stamp }, password)
     } else {
       const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
       const doc = createEmptyDocument(locale)
       const password = 'plain' in result ? null : result.password
       const images = createImageStore(password === null ? null : await blobCodec(password))
-      downloadFallback(SUGGESTED_NAME, await docToBytes(doc, password, images))
+      const stamp = newStamp()
+      downloadFallback(SUGGESTED_NAME, await docToBytes(doc, password, images, stamp))
       // Not sticky: this announces the download that just happened. The
       // *ongoing* fact that this browser has no direct file access is a mode,
       // not an event, and lives on the save pill (shell.setFallbackHint) —
       // a sticky toast here outlived the start screen and sat over the app.
       toast(t(locale, 'fallback_notice'))
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
-      onOpen(session, doc, password, null, images)
+      await finishOpen(session, { doc, preSchemaVersion: SCHEMA_VERSION, images, stamp }, password)
     }
   }
 
@@ -387,7 +395,7 @@ export function showStartScreen(
     // reflects/edits the pref; only the immediate re-open is suppressed.
     // ...and an open the user (or the OS launch) already started wins outright.
     if (autoLoad && !opts?.skipAutoLoad && !openStarted) {
-      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes), plain.images)
+      await finishOpen(result.session, plain, null)
     }
   }
   checkAutoLoad().catch((e: unknown) => console.error(e))

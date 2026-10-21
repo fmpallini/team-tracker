@@ -60,6 +60,33 @@ test('changing to a new password encrypts and writes, never touches serializePla
   expect(shell.setTitle).toHaveBeenCalledWith(session.name, false)
 })
 
+test('the new file write is committed to the persister with its stamp', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const markFileWritten = vi.fn(async () => {})
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: { markFileWritten } as never,
+    runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+  })
+
+  await changePassword('newpw')
+
+  const stampWritten = (cryptoMocks.encryptDocument.mock.calls[0] as unknown[])[4]
+  expect(markFileWritten).toHaveBeenCalledWith(stampWritten, store.rev)
+})
+
+test('a failed file write is not committed to the persister', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
+  const markFileWritten = vi.fn(async () => {})
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: { markFileWritten } as never,
+    runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+  })
+
+  await expect(changePassword('newpw')).rejects.toThrow('disk full')
+  expect(markFileWritten).not.toHaveBeenCalled()
+})
+
 test('migrating to password-less (newPw null) uses serializePlain, never encryptDocument', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession()

@@ -139,6 +139,8 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
       for (const [id, bytes] of blobs) images.adoptStored(id, bytes)
       const store = deps.createStore(doc, images)
       const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: blobs.keys() } })
+      // The file is behind this copy, so the first file write must not be skipped as "nothing changed".
+      store.markDirty()
       return { doc, images, password: key.password, stamp: opened.stamp, source: 'browser', store, handle: { live, persister }, needsFileWrite: true }
     } catch (e) {
       if (!(e instanceof CorruptFileError)) throw e

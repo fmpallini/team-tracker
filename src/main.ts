@@ -1,10 +1,11 @@
 declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string; const __REPO__: string }
 
 import type { Locale } from './core/i18n'
-import type { Doc } from './core/types'
 import type { FileSession } from './core/fs'
-import { createStore, type Store } from './core/store'
-import type { ImageStore } from './core/image-store'
+import type { Store } from './core/store'
+import type { LivePersister } from './core/live-persist'
+import { sharedLiveDb } from './core/live-db'
+import { reconcileOpen, type OpenedDocument } from './ui/open-document'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
@@ -66,6 +67,8 @@ interface AppController {
   shell: Shell
   pm: PaneManager
   saveCtl: SaveController
+  /** Keeps the browser copy of the document current; null when the browser could not open its storage. */
+  persister: LivePersister | null
   /** Whether the external-change conflict modal is up — teardown leaves it to resolve an unsaved close rather than stacking a discard prompt over it. */
   isConflictOpen(): boolean
   /**
@@ -86,8 +89,9 @@ let app: AppController | null = null
 // showStartScreen's onOpen callback is typed `=> void` — this adapts
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
-function openDocument(session: FileSession, doc: Doc, password: string | null, _migratedFrom: Uint8Array | null, images: ImageStore): void {
-  onDocumentOpened(session, doc, password, null, images).catch((e: unknown) => {
+function openDocument(opened: OpenedDocument): void {
+  const { doc } = opened
+  onDocumentOpened(opened).catch((e: unknown) => {
     console.error(e)
     // Previously silent (console.error only) — a throw here left the user
     // staring at whatever partially rendered before it, with no feedback at
@@ -114,7 +118,7 @@ function openDocument(session: FileSession, doc: Doc, password: string | null, _
  * "close without saving" choice (see confirmDiscardUnsaved). A read-only tab
  * is exempt: it can never save, so waiting on it would make it unclosable.
  */
-async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose'>, opts?: { force?: boolean }): Promise<boolean> {
+async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'persister' | 'dispose'>, opts?: { force?: boolean }): Promise<boolean> {
   // BEFORE the dirty check, not after: a debounced editor change still in
   // flight hasn't reached the store yet, so both `store.dirty` and whatever
   // `saveNow()` serializes would miss it. `a.dispose()` below flushes it
@@ -123,6 +127,8 @@ async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose
   flushAllEditors()
   if (a.store.dirty && !a.store.readOnly) await a.saveCtl.saveNow({ explicit: true })
   await a.saveCtl.flush()
+  // The browser copy gets every edit whether or not the file write landed — that is what "close anyway" relies on.
+  await a.persister?.flush()
   if (!opts?.force && a.store.dirty && !a.store.readOnly) return false
   a.dispose()
   // Both are module-level singletons (one popover open at a time, app-wide —
@@ -169,7 +175,7 @@ function confirmDiscardUnsaved(locale: Locale): Promise<boolean> {
  * land. With the conflict modal already up there is nothing to ask — its
  * Overwrite/Fork/Reload choices are the recovery — so the close just stops.
  */
-async function teardownOrConfirm(a: Pick<AppController, 'store' | 'saveCtl' | 'dispose' | 'isConflictOpen'>): Promise<boolean> {
+async function teardownOrConfirm(a: Pick<AppController, 'store' | 'saveCtl' | 'persister' | 'dispose' | 'isConflictOpen'>): Promise<boolean> {
   if (await teardownApp(a)) return true
   if (a.isConflictOpen()) return false
   if (!(await confirmDiscardUnsaved(a.store.doc.prefs.locale))) return false
@@ -180,7 +186,9 @@ function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
 }
 
-async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, _migratedFrom: Uint8Array | null, images: ImageStore): Promise<void> {
+async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
+  const { session, doc, password, store, handle, needsFileWrite } = opened
+  const persister = handle?.persister ?? null
   // A second file can be opened while one is already open — e.g. the File
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
@@ -244,7 +252,6 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // shell (and its DOM) reachable for the life of the tab — see Shell.dispose.
   disposers.push(() => shell.dispose())
 
-  const store = createStore(doc, images)
   // Live read — never the closed-over `password` parameter alone: a password
   // change updates `app.password`, and the parameter goes stale after it.
   const currentPassword = (): string | null => (app ? app.password : password)
@@ -307,7 +314,23 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     getPassword: currentPassword,
     reloadFromDisk,
     resolveGrants: () => saveCtl.resolveGrants(),
-    reopen: (forkSession, forkDoc, forkPassword, forkImages) => openDocument(forkSession, forkDoc, forkPassword, null, forkImages),
+    persister,
+    // The fork is a new document with a browser copy of its own; the original's copy (docId unchanged) goes once
+    // the fork is up, because its edits now live in the fork and the original file belongs to the other writer.
+    reopen: (forkSession, forkDoc, forkPassword, forkImages, stamp) => {
+      void (async () => {
+        const forked = await reconcileOpen({
+          locale: forkDoc.prefs.locale, db: await sharedLiveDb(), session: forkSession, password: forkPassword,
+          opened: { doc: forkDoc, preSchemaVersion: forkDoc.schemaVersion, images: forkImages, stamp },
+        })
+        if (!forked) return
+        await onDocumentOpened(forked)
+        await handle?.live.remove()
+      })().catch((e: unknown) => {
+        console.error(e)
+        showErrorModal(forkDoc.prefs.locale, t(forkDoc.prefs.locale, 'err_unexpected'))
+      })
+    },
   })
 
   // Task 25: save orchestration. `getPassword`/`onExternalChange` read live
@@ -320,14 +343,16 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     shell,
     locale: () => store.doc.prefs.locale,
     isConflictOpen: conflictFlow.isOpen,
+    persister,
     onExternalChange: conflictFlow.onExternalChange,
     // Ctrl+S, the save pill and a tab-lock handover all go through saveNow();
     // this makes each of them include a keystroke still inside the editors' debounce.
     flushPending: flushAllEditors,
   })
   disposers.push(() => saveCtl.dispose())
-  app = { store, session, password, shell, pm, saveCtl, isConflictOpen: conflictFlow.isOpen, dispose }
+  app = { store, session, password, shell, pm, saveCtl, persister, isConflictOpen: conflictFlow.isOpen, dispose }
   saveCtl.scheduleFrom(store.doc.prefs)
+  if (persister) disposers.push(() => persister.dispose())
 
   // Task 25 fix #6: `onDirty` was never wired up — the save indicator and
   // title only ever reflected `doSave()`'s own 'saving'/'saved'/'error'
@@ -341,6 +366,26 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
       shell.setTitle(session.name, dirty)
     })
   )
+  // A document opened from the browser's copy starts ahead of its file: show it, and write the file now.
+  if (store.dirty) {
+    shell.setSaveState('dirty')
+    shell.setTitle(session.name, true)
+  }
+  if (needsFileWrite) void saveCtl.saveNow({ explicit: true })
+
+  // The browser copy is the live store, so leaving the page must not strand an edit still in the debounce.
+  // Hidden covers tab switches and mobile-style backgrounding; pagehide covers the close itself.
+  const flushBrowserCopy = (): void => {
+    flushAllEditors()
+    void persister?.flush()
+  }
+  const onVisibility = (): void => { if (document.visibilityState === 'hidden') flushBrowserCopy() }
+  document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('pagehide', flushBrowserCopy)
+  disposers.push(() => {
+    document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('pagehide', flushBrowserCopy)
+  })
 
   // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes.
   // Nav-only changes (`updateNav`) don't notify `subscribe()`, and prefs are
@@ -374,7 +419,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     // Without this, closing the tab
     // within CHANGE_DEBOUNCE_MS of a keystroke both skips the "leave site?"
     // prompt (store.dirty is still false) and saves a document missing it.
-    flushAllEditors()
+    flushBrowserCopy()
     if (store.dirty) {
       void saveCtl.saveNow({ urgent: true })
       e.preventDefault()
@@ -413,6 +458,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     store,
     session,
     shell,
+    persister,
     runExclusive: (fn) => saveCtl.runExclusive(fn),
     getPassword: currentPassword,
     setPassword: (newPw) => {
@@ -465,7 +511,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     if (closing) return
     closing = true
     ;(async () => {
-      if (!(await teardownOrConfirm({ store, saveCtl, dispose, isConflictOpen: conflictFlow.isOpen }))) {
+      if (!(await teardownOrConfirm({ store, saveCtl, persister, dispose, isConflictOpen: conflictFlow.isOpen }))) {
         closing = false
         return
       }
