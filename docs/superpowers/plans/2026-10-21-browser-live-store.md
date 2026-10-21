@@ -328,7 +328,19 @@ Failure modes the spec implies but the obvious tests would not exercise, most li
 
 **Interfaces:**
 - Produces: `shell.setFileHealth(h: FileHealth, ctx: { nextWriteAt: number | null; persistent: boolean | null; storeError: boolean })` replaces `setSaveState`/`setFallbackHint`; `SaveStatusInfo = { health: FileHealth['kind'] | 'store-error'; label: string; title: string; clickable: boolean; stale: boolean }`; `shell.onPillAction(cb: (action: 'regrant' | 'export' | 'failure') => void)` replaces `onSaveRequest`/`onGrantRequest`; `requestSaveNow` becomes `requestPillAction` for the mirrored pill. The `SaveState` union and its CSS classes map to health kinds.
-- Behavior: label ok → "Salvo"/"Saved" hover tooltip "Arquivo gravado às HH:MM · próxima gravação até HH:MM" / "File written at HH:MM · next write by HH:MM" (+ a persistence warning line when `persistent === false`); `permission` → label "Conceder acesso"/"Grant access", clickable (re-grant); `error` → "Arquivo não gravado"/"File not written", clickable (opens the failure dialog); `store-error` → "Armazenamento do navegador falhou"/"Browser storage failed", not clickable, tooltip explains; `export` (no handle) → "Exportar arquivo"/"Export file" with "· há 3 h"/"· 3 h ago", always clickable, `stale` when older than the interval (amber); while a write is running: "Gravando…"/"Writing…". Nothing else is clickable. Never show a dirty/unsaved wording.
+- Behavior (approved table; colors are the existing tokens, the label is static and all times live in the hover, formatted with `formatHHMM`; never any dirty/unsaved or "last saved" wording):
+
+  | Health | Color | pt-BR / en-US label | Clickable | en-US hover |
+  | --- | --- | --- | --- | --- |
+  | `ok` | `--ok` green | Salvo / Saved | no | "Browser copy is up to date. File written HH:MM · next write by HH:MM." (+ line "Clearing site data would lose work not yet written to the file." when `persistent === false`; the color stays green) |
+  | `writing` | `--accent` | Gravando arquivo… / Writing file… | no | "Writing the file…" |
+  | `permission` | `--brass` amber | Conceder acesso / Grant access | yes: re-grant | "The browser lost permission to write the file. Click to grant it. Your changes are still safe in the browser." |
+  | `error` | `--danger` red | Arquivo não gravado / File not written | yes: opens the write-failed dialog | "The file could not be written. Your changes are still safe in the browser." |
+  | `store-error` | `--danger` red | Navegador sem armazenamento / Browser storage failed | no | "Edits are only in memory. Free up space or close the file to write it now." |
+  | `readonly` (tab lost the write lock) | muted grey | Somente leitura / Read-only | no | "Another tab is editing this file." |
+  | `export` (no file handle) | `--accent` when fresh, `--brass` when `stale` | Exportar arquivo · há 3 h / Export file · 3 h ago (just "Exportar arquivo"/"Export file" until the first export; opening the file counts as an export) | always: downloads the `.tmv` | "This browser can't write the file by itself. Click to export a copy." |
+
+  `SaveStatusInfo.health` therefore also includes `'readonly'`; `shell.setFileHealth`'s context carries `readOnly`. Nothing outside the clickable cells above responds to a click.
 - The mirrored pill in the expanded action-item modal uses the same snapshot; its backup mini-tab is already gone (Task 2).
 
 - [ ] **Step 1: Write failing tests.** Each health kind's label/title/clickable in both locales; the tooltip includes the last-written and next-write times formatted with `formatHHMM`; the stale class toggles in export mode; clicking an inert pill does nothing; clicking in `permission` calls the action once; mirrored pill follows the shell's snapshot; no `saved`/`dirty` legacy strings remain.
