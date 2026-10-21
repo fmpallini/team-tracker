@@ -7,6 +7,7 @@
 import type { Store } from './store'
 import type { FileSession } from './fs'
 import { docToBytes } from './doc-bytes'
+import { blobCodec } from './crypto'
 import { writeFile, downloadFallback } from './fs'
 import { toast } from '../ui/modal'
 import { t } from './i18n'
@@ -21,6 +22,8 @@ export interface ChangePasswordDeps {
   backupCtl: BackupController
   /** Waits out (and blocks) any concurrent save — see save-controller.ts's `runExclusive`. */
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
+  /** The password the file is under right now (live read), needed to restore the image blobs' key if the write fails. */
+  getPassword(): string | null
   /** Flips the in-memory password held by main.ts's app closure. No-ops there if the app has since been torn down. */
   setPassword(newPw: string | null): void
 }
@@ -51,13 +54,28 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // `fn` is exactly the window that needs to stay guarded once it
       // actually starts writing.
       if (deps.store.readOnly) throw new Error('read-only')
-      const bytes = await docToBytes(deps.store.doc, newPw, deps.store.images)
-      if (deps.session.handle) {
-        await writeFile(deps.session, bytes)
-      } else {
-        downloadFallback(deps.session.name, bytes)
-        // Not sticky — see the matching note in src/ui/start.ts.
-        toast(t(deps.store.doc.prefs.locale, 'fallback_notice'))
+      // The image blobs are sealed under the file's key, so they have to move
+      // to the new one before the bytes are built: `rekey` opens each image
+      // with the OLD codec first, then forgets its sealed form so the write
+      // re-seals it. A failed write puts the old key back (a fresh codec for
+      // the old password: the session key cache may already hold the new
+      // one, and the next save's header must match the key the blobs use).
+      const images = deps.store.images
+      const oldPw = deps.getPassword()
+      await images.rekey(newPw === null ? null : await blobCodec(newPw))
+      let bytes: Uint8Array
+      try {
+        bytes = await docToBytes(deps.store.doc, newPw, images)
+        if (deps.session.handle) {
+          await writeFile(deps.session, bytes)
+        } else {
+          downloadFallback(deps.session.name, bytes)
+          // Not sticky — see the matching note in src/ui/start.ts.
+          toast(t(deps.store.doc.prefs.locale, 'fallback_notice'))
+        }
+      } catch (e) {
+        await images.rekey(oldPw === null ? null : await blobCodec(oldPw))
+        throw e
       }
       // Belt-and-braces: `writeBackupNow` is contractually non-throwing, but
       // this is the one call site where an escaped rejection would be

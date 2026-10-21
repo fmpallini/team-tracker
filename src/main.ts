@@ -456,6 +456,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     shell,
     backupCtl,
     runExclusive: (fn) => saveCtl.runExclusive(fn),
+    getPassword: currentPassword,
     setPassword: (newPw) => {
       if (app) app.password = newPw
     },

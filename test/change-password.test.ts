@@ -15,6 +15,7 @@ vi.mock('../src/core/fs', () => fsMocks)
 const cryptoMocks = vi.hoisted(() => ({
   encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
   serializePlain: vi.fn(() => new Uint8Array([7, 7, 7])),
+  blobCodec: vi.fn(async () => ({ seal: async () => new Uint8Array(), open: async () => new Uint8Array() })),
 }))
 vi.mock('../src/core/crypto', () => cryptoMocks)
 
@@ -61,7 +62,7 @@ test('changing to a new password encrypts and writes, never touches serializePla
   const backupCtl = makeBackupCtl()
   const setPassword = vi.fn()
   const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword,
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await changePassword('newpw')
@@ -79,7 +80,7 @@ test('migrating to password-less (newPw null) uses serializePlain, never encrypt
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession()
   const changePassword = createChangePassword({
-    store, session, shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword(null)
@@ -93,7 +94,7 @@ test('fallback mode (no FS handle) downloads instead of writing, and toasts a no
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession(false)
   const changePassword = createChangePassword({
-    store, session, shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
@@ -107,7 +108,7 @@ test('mirrors the just-written bytes to the backup controller', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const backupCtl = makeBackupCtl()
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
@@ -137,7 +138,7 @@ test('a rejecting backup write is swallowed — password still flips and the doc
   const setPassword = vi.fn()
   const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), setPassword,
+    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await expect(changePassword('newpw')).resolves.toBeUndefined()
@@ -154,7 +155,7 @@ test('a read-only store rejects before ever encrypting, writing, backing up, or 
   const backupCtl = makeBackupCtl()
   const setPassword = vi.fn()
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), setPassword,
+    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await expect(changePassword('newpw')).rejects.toThrow('read-only')
@@ -173,7 +174,7 @@ test('runs the whole write+backup+bookkeeping sequence inside runExclusive', asy
     return fn()
   }
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive, setPassword: vi.fn(),
+    store, session: makeSession(), shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive, getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
@@ -196,7 +197,7 @@ test('does NOT mark the password-mismatch latch when the immediate backup write 
     currentHealth: vi.fn(async () => 'ok' as BackupHealth),
   })
   const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('new-password')
@@ -218,7 +219,7 @@ test('marks the password-mismatch latch and reflects it on the pill when a confi
     currentHealth: vi.fn(async () => 'password-mismatch' as BackupHealth),
   })
   const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('new-password')
@@ -233,7 +234,7 @@ test('does not mark the password-mismatch latch when the immediate backup write 
   const shell = makeShell()
   const backupCtl = makeBackupCtl({ writeBackupNow: vi.fn(async () => true), currentHealth: vi.fn(async () => 'ok' as BackupHealth) })
   const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell, backupCtl, runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('new-password')
@@ -252,7 +253,7 @@ test('IndexedDB unavailable: the change still resolves, with the new password in
   const setPassword = vi.fn()
   const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl: createBackupController({ store }), runExclusive: (fn) => fn(), setPassword,
+    store, session: makeSession(), shell: makeShell(), backupCtl: createBackupController({ store }), runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await expect(changePassword('newpw')).resolves.toBeUndefined()
