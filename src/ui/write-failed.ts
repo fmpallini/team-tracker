@@ -1,0 +1,71 @@
+// src/ui/write-failed.ts — what the user is offered when the file could not be
+// written at Lock/Close. Nothing is lost at this point (the browser copy has every
+// edit), so the choices are about the FILE: get it written after all (re-grant
+// permission, retry), take a copy out right now (download), leave it behind on
+// purpose (close anyway), or stay. Nothing here closes the document by itself.
+import { t, type Locale } from '../core/i18n'
+import { el } from './dom'
+import { showModal, type ModalButton, type ModalHandle } from './modal'
+
+export interface WriteFailedOptions {
+  locale: Locale
+  reason: 'permission' | 'error' | 'conflict'
+  /** Whether re-granting means anything here: there is a file handle to re-grant. Only offered for `permission`. */
+  canRegrant: boolean
+  /** Re-requests permission (a user gesture is on the stack); true when the grant is held. */
+  onRegrant(): Promise<boolean>
+  /** Hands the user a `.tmv` copy of the document as it is now. */
+  onDownload(): void
+  /** Tries the write again; true when it worked. */
+  onRetry(): Promise<boolean>
+}
+
+/**
+ * 'resolved': the problem is gone (the caller checks by writing once more); 'closed-anyway': the user chose to leave
+ * the file behind; 'cancelled': stay in the document (Cancel, Escape).
+ */
+export function showWriteFailedDialog(opts: WriteFailedOptions): Promise<'closed-anyway' | 'resolved' | 'cancelled'> {
+  const { locale } = opts
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: 'closed-anyway' | 'resolved' | 'cancelled'): void => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    const still = el('p', { class: 'tt-write-failed-still tt-field-error' }, t(locale, 'write_failed_still'))
+    still.hidden = true
+    let busy = false
+
+    /** Runs an async fix; a fix that did not work leaves the dialog up with a note, a working one resolves. */
+    const attempt = (fix: () => Promise<boolean>): void => {
+      if (busy) return
+      busy = true
+      still.hidden = true
+      fix()
+        .then((ok) => {
+          if (ok) { finish('resolved'); handle.close() } else still.hidden = false
+        })
+        .catch((e: unknown) => { console.error(e); still.hidden = false })
+        .finally(() => { busy = false })
+    }
+
+    const buttons: ModalButton[] = [
+      { label: t(locale, 'write_failed_close_anyway'), danger: true, left: true, onClick: () => { finish('closed-anyway'); handle.close() } },
+      { label: t(locale, 'cancel'), icon: 'close', onClick: () => { finish('cancelled'); handle.close() } },
+      { label: t(locale, 'write_failed_download'), onClick: () => opts.onDownload() },
+      { label: t(locale, 'write_failed_retry'), primary: !(opts.reason === 'permission' && opts.canRegrant), onClick: () => attempt(() => opts.onRetry()) },
+    ]
+    if (opts.reason === 'permission' && opts.canRegrant) {
+      buttons.push({ label: t(locale, 'write_failed_regrant'), primary: true, onClick: () => attempt(() => opts.onRegrant()) })
+    }
+
+    const bodyKey = opts.reason === 'permission' ? 'write_failed_body_permission' : 'write_failed_body_error'
+    const handle: ModalHandle = showModal({
+      title: t(locale, 'write_failed_title'),
+      body: el('div', {}, el('p', { class: 'tt-modal-message' }, t(locale, bodyKey)), still),
+      buttons,
+      onClose: () => finish('cancelled'),
+    })
+  })
+}

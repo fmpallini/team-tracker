@@ -32,12 +32,13 @@ import { resetSessionKey } from './core/crypto'
 import { decodeForReload, type ReloadedDocument } from './core/reload-document'
 import { readCurrent, sameEntry } from './core/fs'
 import { installCtrlWheelFontSize } from './ui/ctrl-wheel-font'
-import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
-import { el } from './ui/dom'
+import { toast, showErrorModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage } from './core/storage-persist'
 import { createFileSnapshot, type FileSnapshot, type FileHealth } from './core/file-snapshot'
+import { closeDocument, createBeforeUnloadHandler } from './core/close-document'
+import { showWriteFailedDialog } from './ui/write-failed'
 import { watchFileHealth } from './ui/file-health-toasts'
 import { createImageStore } from './core/image-store'
 import { joinDoc } from './core/doc-records'
@@ -106,87 +107,36 @@ function openDocument(opened: OpenedDocument): void {
 }
 
 /**
- * Shared by `closeFile` and `onDocumentOpened`'s already-open-elsewhere swap:
- * saves (if dirty and writable), waits out the save controller, tears down
- * this document's listeners, and resets the password-derived session key so
- * it can't leak into whichever document opens next. Does not touch `app` or
- * navigate — callers own both.
- *
- * Returns false WITHOUT tearing anything down when the document is still
- * dirty after that save — `saveNow()` resolves normally on a failed write
- * (the error surfaces as a toast or the conflict modal, not a rejection), so
- * `store.dirty` is the one signal that the edits never reached the file,
- * whatever the reason. Tearing down anyway used to drop the user on the start
- * screen with a toast still claiming their data was "safe in memory", and
- * with the beforeunload guard already removed. `force` is the explicit
- * "close without saving" choice (see confirmDiscardUnsaved). A read-only tab
- * is exempt: it can never save, so waiting on it would make it unclosable.
+ * Everything a document holds that outlives its store, released when it goes away: its listeners and timers, the two
+ * module-level popovers, the password-derived session key (so it cannot leak into whichever document opens next), and a
+ * still-showing undo toast whose restore closure captured a team from THIS document.
  */
-async function teardownApp(a: Pick<AppController, 'store' | 'snapshot' | 'persister' | 'dispose'>, opts?: { force?: boolean }): Promise<boolean> {
-  // BEFORE the dirty check, not after: a debounced editor change still in
-  // flight hasn't reached the store yet, so both `store.dirty` and whatever
-  // `saveNow()` serializes would miss it. `a.dispose()` below flushes it
-  // eventually — but only after the save has already run, i.e. into a document
-  // nobody writes again.
-  flushAllEditors()
-  // Lock/Close is the moment the user is told to rely on: the file is written now. A write that cannot be made
-  // (permission, disk, an open conflict) keeps the document open unless the user explicitly closes anyway.
-  const written = await a.snapshot.writeNow('close')
-  await a.snapshot.flush()
-  // The browser copy gets every edit whether or not the file write landed — that is what "close anyway" relies on.
-  await a.persister?.flush()
-  const fileBehind = !written.ok && written.reason !== 'readonly' && written.reason !== 'nohandle'
-  if (!opts?.force && fileBehind) return false
-  a.dispose()
-  // Both are module-level singletons (one popover open at a time, app-wide —
-  // see their own files) rather than anything a.dispose()'s per-document
-  // teardown owns. Left open across a file close, either would keep this
-  // document's store/pm reachable via its onClick/onNavigate closures, pinned
-  // by two capturing `document` listeners that would otherwise only get torn
-  // down the next time that same popover type happens to open again —
-  // possibly in a much later, unrelated document, or never.
+function releaseDocument(dispose: () => void): void {
+  dispose()
+  // Both are module-level singletons (one popover open at a time, app-wide), not anything dispose() owns. Left open
+  // across a file close, either would keep this document's store/pm reachable via its onClick/onNavigate closures,
+  // pinned by two capturing `document` listeners.
   closeAnyContextMenu()
   closeAnyBacklinksPanel()
   resetSessionKey()
-  // A still-showing undo toast (src/ui/undo-toast.ts) holds an UndoOffer
-  // whose restore closure captured a structuredClone of a team from THIS
-  // document — exactly the retention class panes.ts's dispose() doc comment
-  // exists to prevent. Left alone, it would sit over the start screen for up
-  // to ten more seconds, bound to the store/Doc just discarded above.
   dismissToast(UNDO_TOAST_KEY)
-  return true
 }
 
 /**
- * Asks whether to throw away edits whose save just failed. Resolves true only
- * on the explicit discard button; Escape, "Keep open" or any other close
- * keeps the document.
+ * Lock/Close (core/close-document.ts): writes the file, or shows why it cannot and what can be done, and releases the
+ * document unless the user stays. Shared by the lock button, Ctrl+Alt+L and the swap to another file. Resolves whether
+ * the document is gone.
  */
-function confirmDiscardUnsaved(locale: Locale): Promise<boolean> {
-  return new Promise((resolve) => {
-    let discard = false
-    const handle = showModal({
-      title: t(locale, 'close_unsaved_title'),
-      body: el('p', { class: 'tt-modal-message' }, t(locale, 'close_unsaved_body')),
-      buttons: [
-        { label: t(locale, 'close_unsaved_discard'), danger: true, left: true, onClick: () => { discard = true; handle.close() } },
-        { label: t(locale, 'close_unsaved_keep'), primary: true, onClick: () => handle.close() },
-      ],
-      onClose: () => resolve(discard),
-    })
+async function closeAppDocument(a: Pick<AppController, 'store' | 'snapshot' | 'persister' | 'session' | 'dispose' | 'isConflictOpen'> & { getPassword(): string | null }): Promise<boolean> {
+  const result = await closeDocument({
+    store: a.store, persister: a.persister, snapshot: a.snapshot, session: a.session,
+    getPassword: () => a.getPassword(),
+    flushEditors: flushAllEditors,
+    ask: (o) => showWriteFailedDialog({ ...o, locale: a.store.doc.prefs.locale }),
+    isConflictOpen: () => a.isConflictOpen(),
+    teardown: () => releaseDocument(() => a.dispose()),
   })
-}
-
-/**
- * teardownApp, falling back to asking the user when the final save didn't
- * land. With the conflict modal already up there is nothing to ask — its
- * Overwrite/Fork/Reload choices are the recovery — so the close just stops.
- */
-async function teardownOrConfirm(a: Pick<AppController, 'store' | 'snapshot' | 'persister' | 'dispose' | 'isConflictOpen'>): Promise<boolean> {
-  if (await teardownApp(a)) return true
-  if (a.isConflictOpen()) return false
-  if (!(await confirmDiscardUnsaved(a.store.doc.prefs.locale))) return false
-  return teardownApp(a, { force: true })
+  return result === 'closed'
 }
 
 function detectBrowserLocale(): Locale {
@@ -213,9 +163,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
       toast(t(prev.store.doc.prefs.locale, 'already_open_toast'))
       return
     }
-    // Edits that couldn't be saved keep the previous document open and
-    // abandon this open, unless the user explicitly discards them.
-    if (!(await teardownOrConfirm(prev))) return
+    // A file that can't be written keeps the previous document open and
+    // abandons this open, unless the user explicitly closes it anyway.
+    if (!(await closeAppDocument({ ...prev, getPassword: () => prev.password }))) return
     app = null
   }
 
@@ -424,17 +374,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     })
   )
 
-  // Closing the window cannot wait for an asynchronous file write, so the only thing done here is to get the browser
-  // copy as current as an unload allows. The "leave site?" prompt is shown only when the file is overdue (older than
-  // the timer interval): then the user is nudged towards Lock/Close, which guarantees a file write. If they leave
-  // anyway nothing is lost — the next open reconciles the file with the browser copy.
-  const onBeforeUnload = (e: BeforeUnloadEvent): void => {
-    flushBrowserCopy()
-    if (snapshot.isOverdue()) {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-  }
+  // Closing the window cannot wait for an asynchronous file write: see createBeforeUnloadHandler.
+  const onBeforeUnload = createBeforeUnloadHandler({ flushEditors: flushAllEditors, persister, snapshot })
   window.addEventListener('beforeunload', onBeforeUnload)
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
@@ -527,7 +468,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     if (closing) return
     closing = true
     ;(async () => {
-      if (!(await teardownOrConfirm({ store, snapshot, persister, dispose, isConflictOpen: conflictFlow.isOpen }))) {
+      if (!(await closeAppDocument({ store, snapshot, persister, session, dispose, isConflictOpen: conflictFlow.isOpen, getPassword: currentPassword }))) {
         closing = false
         return
       }
