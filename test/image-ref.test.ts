@@ -29,6 +29,11 @@ describe('image refs', () => {
     expect(parseImageLine(line)?.alt).toBe('abc')
   })
 
+  it('imageRefLine keeps the letter r (and every other letter) in alt, and strips backslashes and carriage returns', () => {
+    expect(parseImageLine(imageRefLine(A, 'screenshot error report'))?.alt).toBe('screenshot error report')
+    expect(parseImageLine(imageRefLine(A, 'a' + String.fromCharCode(92) + 'b' + String.fromCharCode(13) + 'c'))?.alt).toBe('abc')
+  })
+
   it('parseImageLine rejects a prefix, an uppercase id and a web url', () => {
     expect(parseImageLine(`text ![x](img:${A})`)).toBeNull()
     expect(parseImageLine(`![x](img:${A.toUpperCase()})`)).toBeNull()

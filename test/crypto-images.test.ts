@@ -152,3 +152,62 @@ describe('format v2 images', () => {
     expect(Object.keys(opened.doc.images).sort()).toEqual([A, B])
   }, 30000)
 })
+
+// The header key and the image seal key must be one key, whatever happens to the
+// module-level session-key cache while a document is open (a conflict Fork reopens
+// with the same image store after the previous app tore down; opening a second
+// file replaces the cache while the first is still open).
+describe('header key follows the image store, not the global cache', () => {
+  const A = 'a'.repeat(32)
+  const bytesA = new Uint8Array([9, 8, 7, 6])
+  const docWith = () => {
+    const doc = createEmptyDocument('en-US')
+    doc.images = { [A]: { mime: 'image/webp', w: 1, h: 1, bytes: bytesA.length } }
+    return doc
+  }
+  async function savedFile() {
+    const store = createImageStore(await blobCodec('pw'))
+    store.putPlain(A, bytesA)
+    return { store, file: await encryptDocument(docWith(), 'pw', store, [A]) }
+  }
+  const readable = async (file: Uint8Array) => {
+    resetSessionKey()
+    const re = await decryptDocumentWithVersion(file, 'pw')
+    const got = await re.images.getPlain(A)
+    return got && [...got]
+  }
+
+  it('a save after the cache was reset (fork reopen, teardown) still opens with its pictures', async () => {
+    const { store } = await savedFile()
+    resetSessionKey()
+    const next = await encryptDocument(docWith(), 'pw', store, [A])
+    expect(await readable(next)).toEqual([...bytesA])
+  }, 30000)
+
+  it('opening a second file while the first is open does not break either file\'s next save', async () => {
+    resetSessionKey()
+    const second = await encryptDocument(createEmptyDocument('en-US'), 'pw') // another file: its own salt
+    resetSessionKey()
+    const first = await savedFile()
+    const opened = await decryptDocumentWithVersion(second, 'pw') // replaces the cache with the second file's key
+    const resavedFirst = await encryptDocument(docWith(), 'pw', first.store, [A])
+    expect(await readable(resavedFirst)).toEqual([...bytesA])
+    resetSessionKey() // first app's teardown
+    const resavedSecond = await encryptDocument(opened.doc, 'pw', opened.images, [])
+    resetSessionKey()
+    await expect(decryptDocument(resavedSecond, 'pw')).resolves.toBeTruthy()
+  }, 30000)
+
+  it('a decrypt that fails after the key check leaves the cache as it was', async () => {
+    resetSessionKey()
+    const other = await encryptDocument(createEmptyDocument('en-US'), 'pw') // its own salt
+    resetSessionKey()
+    const { file } = await savedFile()
+    // Damage the second file's data so the key check passes and the payload does not.
+    const broken = other.slice()
+    broken[broken.length - 1]! ^= 0xff
+    await expect(decryptDocument(broken, 'pw')).rejects.toBeInstanceOf(CorruptFileError)
+    const next = await encryptDocument(docWith(), 'pw') // no store: header comes from the cache
+    expect(new Uint8Array(next.subarray(5, 21))).toEqual(new Uint8Array(file.subarray(5, 21)))
+  }, 30000)
+})

@@ -4092,6 +4092,60 @@ describe('image blocks', () => {
     expect(editor.getMd()).toContain('b')
   })
 
+  test('the selection does not outlive the click: any other key clears it, so Backspace then edits text', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a
+
+${ref()}
+
+b`)
+    await flushAsync()
+    const surface = editor.root.querySelector('.editor') as HTMLElement
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    dispatchKey(surface, { key: 'ArrowUp' })
+    expect(block.classList.contains('is-selected')).toBe(false)
+    const e = dispatchKey(surface, { key: 'Backspace' })
+    expect(e.defaultPrevented).toBe(false)
+    expect(editor.root.querySelector('.tt-img')).not.toBeNull()
+  })
+
+  test('leaving the editor clears the selected block', async () => {
+    const { editor } = mount(host())
+    editor.setMd(ref())
+    await flushAsync()
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    ;(editor.root.querySelector('.editor') as HTMLElement).dispatchEvent(new Event('blur'))
+    expect(block.classList.contains('is-selected')).toBe(false)
+  })
+
+  test('removal goes through the browser delete command on the selected block, so Ctrl+Z can bring it back', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a
+
+${ref()}
+
+b`)
+    await flushAsync()
+    document.body.appendChild(editor.root)
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    let selected: Node | null = null
+    const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd: string) => {
+      if (cmd !== 'delete') return false
+      const r = window.getSelection()!.getRangeAt(0)
+      selected = r.startContainer === r.endContainer && r.endOffset - r.startOffset === 1 ? r.startContainer.childNodes[r.startOffset]! : null
+      block.remove() // what the browser's command does to the selected node
+      return true
+    })
+    dispatchKey(editor.root.querySelector('.editor') as HTMLElement, { key: 'Backspace' })
+    expect(exec).toHaveBeenCalledWith('delete')
+    expect(selected).toBe(block)
+    expect(editor.root.querySelector('.tt-img')).toBeNull()
+    editor.destroy()
+  })
+
   test('typing keys without a selected block are left alone', async () => {
     const { editor } = mount(host())
     editor.setMd(`a\n\n${ref()}\n\nb`)

@@ -233,6 +233,44 @@ test.describe('pictures in notes', () => {
     await expect.poll(async () => (await readOpfsFile(page, 'team-tracker.tmv')).length, { timeout: 10_000 }).toBeLessThan(withImage - 20_000)
   })
 
+  test('Backspace removes a clicked picture and Ctrl+Z brings it back', async ({ page }) => {
+    await startEncrypted(page)
+    await pasteInto(page, { files: [{ name: 'undo.png', bytes: await makePng(page, 300, 200) }] })
+    await expect(blocks(page)).toHaveCount(1)
+    await blocks(page).first().click()
+    await page.keyboard.press('Backspace')
+    await expect(blocks(page)).toHaveCount(0)
+    await page.keyboard.press('Control+z')
+    await expect(blocks(page)).toHaveCount(1)
+    await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+  })
+
+  test('Backspace after the caret has moved on edits text, it does not delete the picture clicked earlier', async ({ page }) => {
+    await startEncrypted(page)
+    await page.keyboard.type('hello')
+    await pasteInto(page, { files: [{ name: 'keep.png', bytes: await makePng(page, 300, 200) }] })
+    await expect(blocks(page)).toHaveCount(1)
+    await blocks(page).first().click()
+    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('Backspace')
+    await expect(blocks(page)).toHaveCount(1)
+  })
+
+  test('turning a selection that includes a picture into a quote or list keeps the picture as its own line', async ({ page }) => {
+    for (const title of ['Blockquote', 'Bulleted list']) {
+      await startEncrypted(page)
+      await page.keyboard.type('hello')
+      await pasteInto(page, { files: [{ name: 'wrap.png', bytes: await makePng(page, 300, 200) }] })
+      await expect(blocks(page)).toHaveCount(1)
+      await page.locator('.editor').first().click()
+      await page.keyboard.press('Control+a')
+      await page.locator(`.tt-editor-toolbar button[title^="${title}"]`).first().click()
+      const topLevel = await page.evaluate(() => Array.from(document.querySelectorAll('.editor .tt-img')).every((b) => b.parentElement === document.querySelector('.editor')))
+      expect(topLevel, title).toBe(true)
+      await page.goto('about:blank')
+    }
+  })
+
   test('the font-size setting does not change how wide a picture is', async ({ page }) => {
     await openDoc(page, buildDoc('M', { kind: 'general' }))
     await page.locator('.editor').first().click()

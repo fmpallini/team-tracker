@@ -1627,7 +1627,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (overflow > 0) editorEl.scrollTop += overflow
   }
 
-  function onInput(): void {
+  function onInput(e?: Event): void {
+    // An undo can bring back a picture block the way the browser had it; make sure it shows its pixels.
+    if (e instanceof InputEvent && e.inputType.startsWith('history')) hydrateImages()
     ensureBlock()
     handleAutoFormat()
     checkTriggers()
@@ -1699,6 +1701,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       e.preventDefault()
       return
     }
+    // A clicked picture stays "selected" only until the next key: moving the caret on or typing must not leave
+    // a later Backspace aimed at a picture that is no longer the thing being edited.
+    if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) selectImageBlock(null)
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the
@@ -2459,6 +2464,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * blurred), so re-highlight every block unconditionally — none holds the
    * caret now. */
   function onEditorBlur(): void {
+    selectImageBlock(null)
     editorEl.querySelectorAll<HTMLElement>('pre').forEach(highlightPre)
   }
 
@@ -2581,7 +2587,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function removeSelectedImage(): boolean {
     const block = editorEl.querySelector<HTMLElement>('.tt-img.is-selected')
     if (!block) return false
-    block.remove()
+    // Through the browser's own delete command, so the removal sits on the native undo stack (Ctrl+Z brings the
+    // picture back). Without that command (or if it leaves the block), drop the node directly.
+    const sel = window.getSelection()
+    if (sel) {
+      const range = document.createRange()
+      range.selectNode(block)
+      sel.removeAllRanges()
+      sel.addRange(range)
+      document.execCommand('delete')
+    }
+    if (editorEl.contains(block)) block.remove()
     // An editor with no block left has nowhere to put the caret.
     if (!editorEl.firstChild) editorEl.innerHTML = '<div><br></div>'
     scheduleChange()

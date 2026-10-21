@@ -13,6 +13,12 @@
 export interface BlobCodec {
   seal(id: string, plain: Uint8Array): Promise<Uint8Array>
   open(id: string, sealed: Uint8Array): Promise<Uint8Array>
+  /**
+   * The key material this codec seals under (the file header's salt and the key derived from it).
+   * `encryptDocument` writes the header from here, so the header key and the blob key are one key
+   * however the module-level session-key cache moves while the document is open.
+   */
+  readonly header?: { salt: Uint8Array; key: CryptoKey }
 }
 
 export interface ImageStore {
@@ -24,6 +30,8 @@ export interface ImageStore {
   adoptStored(id: string, stored: Uint8Array): void
   /** Bytes to write to a file, or null when the image is unreadable. */
   getStored(id: string): Promise<Uint8Array | null>
+  /** The codec blobs are sealed under now; null for a password-less file. */
+  codec(): BlobCodec | null
   /** Switches the codec (password change). Loads every plain form with the OLD codec first, then forgets sealed forms. */
   rekey(codec: BlobCodec | null): Promise<void>
 }
@@ -48,6 +56,8 @@ export function createImageStore(initial: BlobCodec | null): ImageStore {
 
   return {
     has: (id) => entries.has(id),
+
+    codec: () => codec,
 
     async getPlain(id) {
       const e = entries.get(id)

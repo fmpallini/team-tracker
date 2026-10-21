@@ -7,7 +7,7 @@ const LINE_RE = /^!\[([^\]]*)\]\(img:([0-9a-f]{32})\)$/
 
 /** The own-line markdown form of an image reference. Bracket and paren characters in `alt` would break the syntax, so they are dropped. */
 export function imageRefLine(id: string, alt: string): string {
-  return `![${alt.replace(/[[\]()\\r\n]/g, '')}](img:${id})`
+  return `![${alt.replace(/[[\]()\\\r\n]/g, '')}](img:${id})`
 }
 
 /** Parses one markdown line as an image reference; anything else (prefix, suffix, other schemes) is null. */

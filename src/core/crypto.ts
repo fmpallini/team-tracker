@@ -88,9 +88,10 @@ export function resetSessionKey(): void {
  * a codec keeps opening what it sealed even after the session key moves on.
  */
 export async function blobCodec(password: string): Promise<BlobCodec> {
-  const { key } = await getSessionKey(password)
+  const { salt, key } = await getSessionKey(password)
   const aad = (id: string) => new TextEncoder().encode(id)
   return {
+    header: { salt, key },
     async seal(id, plain) {
       const iv = crypto.getRandomValues(new Uint8Array(12))
       const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource, additionalData: aad(id) as BufferSource }, key, plain as BufferSource))
@@ -134,7 +135,9 @@ export async function encryptDocument(doc: Doc, password: string, images: ImageS
   const env = await buildEnvelope(doc, images, ids)
   const ivKcv = crypto.getRandomValues(new Uint8Array(12))
   const ivData = crypto.getRandomValues(new Uint8Array(12))
-  const { salt, key } = await getSessionKey(password)
+  // The header must carry the key the blobs were sealed under, which belongs to the store's codec, not
+  // to whatever the global cache holds right now (it is reset on every teardown and replaced by every open).
+  const { salt, key } = images.codec()?.header ?? await getSessionKey(password)
   const kcv = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivKcv }, key, KCV_PLAIN))
   const data = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivData }, key,
     new TextEncoder().encode(JSON.stringify({ doc: env.doc, index: env.index }))))
@@ -178,12 +181,13 @@ async function decryptRaw(bytes: Uint8Array, password: string): Promise<RawFile>
   const { key } = await getSessionKey(password, salt)
   try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivKcv }, key, kcv) }
   catch { sessionKey = previousKey; throw new WrongPasswordError() }
+  // Past the key check the cache holds this file's key, which only stays if the open succeeds.
   let plain: ArrayBuffer
   try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivData }, key, data as BufferSource) }
-  catch { throw new CorruptFileError() }
+  catch { sessionKey = previousKey; throw new CorruptFileError() }
   let json: unknown
   try { json = JSON.parse(new TextDecoder().decode(plain)) }
-  catch { throw new CorruptFileError() }
+  catch { sessionKey = previousKey; throw new CorruptFileError() }
   return v2 ? splitEnvelope(json, bytes.subarray(docEnd)) : { parsed: json as Record<string, unknown>, index: {}, area: null }
 }
 
