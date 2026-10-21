@@ -7,7 +7,7 @@ import { el, clampToViewport, copyText } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showEditorHelp } from './help'
-import { showModal } from './modal'
+import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
@@ -1418,8 +1418,41 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * entirely — nothing here ever specifies a background.
    */
   function copyFormatted(): void {
-    const html = editorEl.innerHTML
-    const text = htmlToPlainText(editorEl)
+    const ids = Array.from(editorEl.querySelectorAll<HTMLElement>('.tt-img')).map((b) => b.dataset.imgId ?? '')
+    if (ids.length === 0) {
+      writeFormatted(formattedClone(new Map()))
+      return
+    }
+    // The pixels are fetched before anything is written: a slow one must not be missing from what lands.
+    const host = hooks.images
+    void Promise.all(ids.map(async (id) => [id, host ? await host.getDataUri(id) : null] as const))
+      .then((entries) => writeFormatted(formattedClone(new Map(entries))))
+      .catch((e) => console.error(e))
+  }
+
+  /**
+   * A detached copy of the note for the clipboard: every picture block becomes a centered
+   * `<p><img src=data:…></p>` (what Word, Docs or a mail client understand, none of the editor's
+   * `data-*` or `contenteditable`); a block whose bytes are unavailable is dropped.
+   */
+  function formattedClone(uris: Map<string, string | null>): HTMLElement {
+    const holder = document.createElement('div')
+    editorEl.childNodes.forEach((child) => holder.appendChild(child.cloneNode(true)))
+    for (const block of Array.from(holder.querySelectorAll<HTMLElement>('.tt-img'))) {
+      const id = block.dataset.imgId ?? ''
+      const uri = uris.get(id)
+      if (!uri) { block.remove(); continue }
+      const meta = hooks.images?.getMeta(id)
+      const img = el('img', { src: uri, alt: block.dataset.alt ?? '', ...(meta ? { width: String(meta.w), height: String(meta.h) } : {}) })
+      const p = el('p', { style: 'text-align:center' }, img)
+      block.replaceWith(p)
+    }
+    return holder
+  }
+
+  function writeFormatted(holder: HTMLElement): void {
+    const html = holder.innerHTML
+    const text = htmlToPlainText(editorEl, locale)
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
       navigator.clipboard
         .write([
@@ -1428,20 +1461,20 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
             'text/plain': new Blob([text], { type: 'text/plain' }),
           }),
         ])
-        .catch(() => copyFormattedViaSelection())
+        .catch(() => copyFormattedViaSelection(holder))
       return
     }
-    copyFormattedViaSelection()
+    copyFormattedViaSelection(holder)
   }
 
-  /** Fallback for browsers/contexts without the async Clipboard API's write() (or where it's denied at runtime) — selects a detached, background-free clone of the editor's *children* (not editorEl itself, whose `.editor` class carries the ruled-paper background texture) and uses the classic execCommand('copy'). */
-  function copyFormattedViaSelection(): void {
+  /** Fallback for browsers/contexts without the async Clipboard API's write() (or where it's denied at runtime) — selects the background-free clone of the editor's *children* (not editorEl itself, whose `.editor` class carries the ruled-paper background texture) and uses the classic execCommand('copy'). */
+  function copyFormattedViaSelection(holder: HTMLElement): void {
     const wrapper = document.createElement('div')
     wrapper.style.position = 'fixed'
     wrapper.style.left = '-9999px'
     wrapper.style.top = '0'
     wrapper.style.background = '#fff'
-    editorEl.childNodes.forEach((child) => wrapper.appendChild(child.cloneNode(true)))
+    wrapper.append(...Array.from(holder.childNodes))
     document.body.appendChild(wrapper)
     const range = document.createRange()
     range.selectNodeContents(wrapper)
@@ -1453,14 +1486,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     document.body.removeChild(wrapper)
   }
 
-  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved). */
+  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved; a picture shows as `[image: ALT]`). */
   function copyPlain(): void {
-    copyText(htmlToPlainText(editorEl))
+    copyText(htmlToPlainText(editorEl, locale))
   }
 
   /** Copies the editor's current content to the clipboard as its raw markdown source (the same text the field is stored as). */
   function copyMarkdown(): void {
     copyText(htmlToMd(editorEl))
+    // The references mean nothing outside this file, so say where the pictures went.
+    if (editorEl.querySelector('.tt-img')) toast(t(locale, 'img_copy_md_toast'), { key: 'image-copy-md' })
   }
 
   // --- copy-options menu (🗐 toolbar button) --------------------------------
@@ -2054,7 +2089,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const holder = document.createElement('div')
     holder.appendChild(range.cloneContents())
     e.clipboardData.setData('text/html', holder.innerHTML)
-    e.clipboardData.setData('text/plain', htmlToPlainText(holder))
+    e.clipboardData.setData('text/plain', htmlToPlainText(holder, locale))
     e.preventDefault()
     return true
   }

@@ -1699,3 +1699,35 @@ describe('image blocks', () => {
     expect(htmlToMd(dom(html))).toBe(md)
   })
 })
+
+describe('htmlToPlainText: image blocks', () => {
+  const block = (alt: string, id = 'a'.repeat(32)) => `<div class="tt-img" data-img-id="${id}" data-alt="${alt}"></div>`
+  const blank = '<div><br></div>'
+  const plain = (html: string, locale?: 'en-US' | 'pt-BR') => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    return locale ? htmlToPlainText(root, locale) : htmlToPlainText(root)
+  }
+
+  test('a block becomes one [image: ALT] line with the blank lines around it', () => {
+    expect(plain(`<div>a</div>${blank}${block('shot')}${blank}<div>b</div>`)).toBe('a\n\n[image: shot]\n\nb')
+  })
+
+  test('an empty alt gives the localized bare marker', () => {
+    expect(plain(block(''))).toBe('[image]')
+    expect(plain(block(''), 'pt-BR')).toBe('[imagem]')
+    expect(plain(block('foto'), 'pt-BR')).toBe('[imagem: foto]')
+  })
+
+  test('two image blocks are two marker lines with one blank line between', () => {
+    expect(plain(`${block('one')}${blank}${block('two', 'b'.repeat(32))}`)).toBe('[image: one]\n\n[image: two]')
+  })
+
+  test('a marker still gets its blank lines when the DOM lacks them', () => {
+    expect(plain(`<div>a</div>${block('x')}<div>b</div>`)).toBe('a\n\n[image: x]\n\nb')
+  })
+
+  test('picture markers inside a quote keep the quote prefix', () => {
+    expect(plain(`<blockquote><div>q</div>${block('x')}</blockquote>`)).toBe('> q\n>\n> [image: x]')
+  })
+})

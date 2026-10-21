@@ -1,6 +1,7 @@
 import { REF_KINDS, refPattern, type IdRefKind } from './refs'
 import { highlightCode } from './highlight'
 import { IMAGE_ID_RE, imageRefLine, parseImageLine } from './image-ref'
+import { t, type Locale } from './i18n'
 
 // Strip the Private-Use-Area code points inline() uses for its own
 // LINK/REF/ESC placeholder tokens (U+E000–U+E007) BEFORE anything else, so
@@ -978,8 +979,10 @@ function renderListText(list: HTMLElement, out: string[], depth = 0): void {
 }
 
 /** Renders the editor's rendered text with block/list-item/<br> boundaries preserved as '\n' — unlike Element.textContent, which flattens all block structure. Used for "copy without formatting" so paragraphs and list items don't run together on one line. */
-export function htmlToPlainText(root: HTMLElement): string {
+export function htmlToPlainText(root: HTMLElement, locale: Locale = 'en-US'): string {
   const out: string[] = []
+  // A picture is one marker line (`[image: ALT]`), always set off by a blank line each side, as in the note.
+  const markerAt = new Set<number>()
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent; if (t) out.push(t); return
@@ -991,14 +994,19 @@ export function htmlToPlainText(root: HTMLElement): string {
     // guard "StartFragment" would leak into the output as if it were text.
     if (!(node instanceof HTMLElement)) return
     const tag = node.tagName.toLowerCase()
-    if (tag === 'ul' || tag === 'ol') renderListText(node, out)
+    if (node.classList.contains('tt-img')) {
+      const alt = node.dataset.alt ?? ''
+      markerAt.add(out.length)
+      out.push(alt ? t(locale, 'img_plain_marker_alt', { alt }) : t(locale, 'img_plain_marker'))
+    }
+    else if (tag === 'ul' || tag === 'ol') renderListText(node, out)
     else if (tag === 'hr') out.push('---')
     else if (tag === 'blockquote') {
       // A quote pasted off a web page / email arrives with block children
       // (<blockquote><p>a</p><p>b</p></blockquote>), which blockToText would
       // merge onto one line. Recurse through htmlToPlainText for that shape;
       // the mdToHtml <br>-joined shape (no block child) keeps the flat path.
-      const inner = Array.from(node.children).some(isBlockTag) ? htmlToPlainText(node) : blockToText(node)
+      const inner = Array.from(node.children).some(isBlockTag) ? htmlToPlainText(node, locale) : blockToText(node)
       for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
     }
     else if (tag === 'pre') for (const l of preLines(node)) out.push(l)
@@ -1006,7 +1014,14 @@ export function htmlToPlainText(root: HTMLElement): string {
     else out.push(inlineText(node))
   }
   root.childNodes.forEach(walk)
-  return out.join('\n')
+  if (markerAt.size === 0) return out.join('\n')
+  const lines: string[] = []
+  out.forEach((line, i) => {
+    const near = markerAt.has(i) || markerAt.has(i - 1)
+    if (near && lines.length > 0 && lines[lines.length - 1] !== '' && line !== '') lines.push('')
+    lines.push(line)
+  })
+  return lines.join('\n')
 }
 
 // Elements whose content is never note text, wherever they sit in a paste.

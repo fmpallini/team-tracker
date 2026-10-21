@@ -1553,6 +1553,143 @@ describe('toolbar', () => {
     Reflect.deleteProperty(navigator, 'clipboard')
   })
 
+  describe('copy menu with pictures', () => {
+    const ID = 'a'.repeat(32)
+    const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+
+    function pictureEditor(uris: Record<string, string | null> = { [ID]: 'data:image/webp;base64,AAAA' }, lateFor?: Promise<void>) {
+      const images = {
+        getDataUri: vi.fn(async (id: string) => { if (lateFor) await lateFor; return uris[id] ?? null }),
+        getMeta: vi.fn(() => ({ mime: 'image/webp', w: 40, h: 30, bytes: 4 })),
+        importFiles: vi.fn(async () => []),
+        dispose: vi.fn(),
+      }
+      const editor = createEditor({ ...makeHooks(), images }, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd(`before\n\n![shot](img:${ID})\n\nafter`)
+      return { editor, images }
+    }
+
+    /** Captures what the async Clipboard API receives, flavor by flavor. */
+    function captureClipboard() {
+      const write = vi.fn().mockResolvedValue(undefined)
+      Object.assign(navigator, { clipboard: { write, writeText: vi.fn().mockResolvedValue(undefined) } })
+      class FakeClipboardItem { constructor(public items: Record<string, Blob>) {} }
+      ;(globalThis as { ClipboardItem?: unknown }).ClipboardItem = FakeClipboardItem
+      const parts: string[] = []
+      const RealBlob = Blob
+      class SpyBlob extends RealBlob {
+        constructor(p: BlobPart[], o?: BlobPropertyBag) { super(p, o); parts.push(`${o?.type}|${String(p[0])}`) }
+      }
+      vi.stubGlobal('Blob', SpyBlob)
+      return { write, flavor: (type: string) => parts.find((x) => x.startsWith(`${type}|`))?.slice(type.length + 1) }
+    }
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, 'clipboard')
+      Reflect.deleteProperty(globalThis as object, 'ClipboardItem')
+      vi.unstubAllGlobals()
+      document.querySelectorAll('.tt-toast').forEach((n) => n.remove())
+    })
+
+    test('copy formatted carries real, centered picture markup and none of the editor internals', async () => {
+      const { editor } = pictureEditor()
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      const html = cb.flavor('text/html')!
+      expect(html).toContain('<img src="data:image/webp')
+      expect(html).toContain('text-align:center')
+      expect(html).not.toContain('data-img-id')
+      expect(html).not.toContain('contenteditable')
+      expect(html).not.toContain('tt-img')
+      expect(cb.flavor('text/plain')).toBe('before\n\n[image: shot]\n\nafter')
+      editor.destroy()
+    })
+
+    test('waits for a picture that is slow to load instead of leaving it out', async () => {
+      let release!: () => void
+      const gate = new Promise<void>((r) => { release = r })
+      const { editor } = pictureEditor(undefined, gate)
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      expect(cb.write).not.toHaveBeenCalled()
+      release()
+      await flush()
+      expect(cb.write).toHaveBeenCalledOnce()
+      expect(cb.flavor('text/html')).toContain('data:image/webp')
+      editor.destroy()
+    })
+
+    test('a picture whose bytes are gone is left out of the formatted copy', async () => {
+      const { editor } = pictureEditor({ [ID]: null })
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      const html = cb.flavor('text/html')!
+      expect(html).not.toContain('<img')
+      expect(html).toContain('before')
+      expect(html).toContain('after')
+      editor.destroy()
+    })
+
+    test('the selection fallback also receives the cleaned, centered clone', async () => {
+      const { editor } = pictureEditor()
+      let wrapperHtml = ''
+      vi.spyOn(document, 'execCommand').mockImplementation((cmd: string) => {
+        if (cmd === 'copy') wrapperHtml = (document.querySelector('div[style*="-9999px"]') as HTMLElement).innerHTML
+        return true
+      })
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      expect(wrapperHtml).toContain('data:image/webp')
+      expect(wrapperHtml).toContain('text-align:center')
+      expect(wrapperHtml).not.toContain('contenteditable')
+      expect(wrapperHtml).not.toContain('data-img-id')
+      editor.destroy()
+    })
+
+    test('copy plain text shows [image: ALT] markers', () => {
+      const { editor } = pictureEditor()
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_plain'))
+      expect((navigator.clipboard.writeText as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('before\n\n[image: shot]\n\nafter')
+      expect(cb.write).not.toHaveBeenCalled()
+      editor.destroy()
+    })
+
+    test('copy markdown keeps the references and says so exactly once', async () => {
+      const { editor } = pictureEditor()
+      captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+      expect((navigator.clipboard.writeText as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(expect.stringContaining(`![shot](img:${ID})`))
+      const toasts = Array.from(document.querySelectorAll('.tt-toast[data-toast-key="image-copy-md"]'))
+      expect(toasts).toHaveLength(1)
+      expect(toasts[0]!.textContent).toBe(t('en-US', 'img_copy_md_toast'))
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+      expect(document.querySelectorAll('.tt-toast[data-toast-key="image-copy-md"]')).toHaveLength(1) // replaced, not stacked
+      editor.destroy()
+    })
+
+    test('copy markdown of a note without pictures shows no toast', () => {
+      const editor = createEditor(makeHooks(), 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('just text')
+      captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(0)
+      editor.destroy()
+    })
+  })
+
   test('@ button inserts "@" at the caret via execCommand, same path real typing takes', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
