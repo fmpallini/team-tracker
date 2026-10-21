@@ -8,7 +8,7 @@
 // coverage at all. This spec fills those:
 //
 //   - paste of clipboard HTML → real converted blocks in the editor, and the
-//     pasted content survives Ctrl+S → close → reopen
+//     pasted content survives close → reopen
 //   - paste inside a fenced code block stays literal text (plain, not HTML)
 //   - a hostile clipboard payload (<img onerror>, javascript: link) is
 //     disarmed in the resulting DOM and loads nothing
@@ -111,9 +111,7 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(editor.locator('> ul > li')).toHaveCount(2)
     await expect(editor.getByText('tail')).toBeVisible()
 
-    await page.keyboard.press('Control+s')
-    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
-    await page.click('.tt-btn-close-file')
+    await page.click('.tt-btn-close-file') // Lock/Close writes the file
     await expect(page.locator('.tt-start-screen')).toBeVisible()
 
     await page.getByRole('button', { name: /Reopen last/ }).click()

@@ -46,7 +46,7 @@ test.describe('second-open guard (src/main.ts onDocumentOpened)', () => {
 
     await expect(page.locator('.tt-toast')).toHaveText('This file is already open')
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    // The unsaved edit is still here — proves nothing was torn down/reloaded.
+    // The edit the file doesn't have yet is still here — proves nothing was torn down/reloaded.
     await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText('Alpha')
   })
 

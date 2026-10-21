@@ -69,10 +69,6 @@ async function dropOnto(page: Page, files: { name: string; bytes: number[] }[]):
 
 const blocks = (page: Page) => page.locator('.editor .tt-img img')
 
-async function waitForSaved(page: Page): Promise<void> {
-  await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
-}
-
 async function newTeamWithEditor(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Create first team/ }).click()
   const teamDialog = page.getByRole('dialog')
@@ -176,8 +172,8 @@ test.describe('pictures in notes', () => {
     await pasteInto(page, { files: [{ name: 'shot.png', bytes: await makePng(page, 400, 260) }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500) // the debounced commit
-    await page.keyboard.press('Control+s')
-    await waitForSaved(page)
+    await page.click('.tt-btn-close-file') // Lock/Close writes the file, picture included
+    await expect(page.locator('.tt-start-screen')).toBeVisible()
 
     const bytes = await readOpfsFile(page, 'team-tracker.tmv')
     expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('TMV1')
@@ -186,7 +182,7 @@ test.describe('pictures in notes', () => {
     expect(asText).not.toContain('RIFF') // a WebP header would show if the pixels were stored in the clear
     expect(asText).not.toContain('img:')
 
-    await page.click('.tt-btn-close-file')
+    await clearBrowserCopy(page) // the picture must come back from the encrypted file, not from the browser's copy
     await page.getByRole('button', { name: /Reopen last/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.locator('input[name="tt-password"]').fill(PASSWORD)

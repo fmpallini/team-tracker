@@ -363,14 +363,14 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.tt-backlinks-panel')).toHaveCount(0)
 
-  // Dirty the doc, then force a real save: one full file-snapshot write per
+  // Dirty the doc and let the browser-copy persister flush it: one diff + commit per
   // cycle. Appending (no clear) keeps the @Beacon chip intact; the few extra
   // chars per cycle are one text node, far below the heap bound.
   await switchModule(page, /Daily/i)
   const editor = pane0.locator('.editor').first()
   await editor.click()
   await editor.type(`s${i} `, { delay: 0 })
-  await page.keyboard.press('Control+s')
+  await page.waitForTimeout(450) // the editors' debounce, then the persister's
   await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
   await expect(page.locator('.tt-pane-menu')).toHaveCount(0)

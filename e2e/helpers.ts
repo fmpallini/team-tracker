@@ -26,6 +26,71 @@ export async function reopenLast(page: Page, password: string): Promise<void> {
   await expect(page.locator('.tt-shell')).toBeVisible()
 }
 
+/** Opens an existing password-less file from the start screen's "Reopen last" button. */
+export async function reopenLastPlain(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /Reopen last/ }).click()
+  await expect(page.locator('.tt-shell')).toBeVisible()
+}
+
+/** Creates a password-less document ("Create without password") and waits for the shell. */
+export async function createPlainDoc(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /Create new/ }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Create without password' }).click()
+  await expect(page.locator('.tt-shell')).toBeVisible()
+}
+
+/**
+ * Everything the browser's live database holds, flattened to one string of readable characters (keys, strings, and every
+ * byte as a latin-1 character): what someone reading the browser profile off the disk could see. For asserting that an
+ * encrypted document leaves no plaintext behind.
+ */
+export async function liveDatabaseDump(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('team-tracker-live')
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('open failed'))
+    })
+    const walk = (v: unknown): string => {
+      if (ArrayBuffer.isView(v)) return String.fromCharCode(...new Uint8Array(v.buffer, v.byteOffset, v.byteLength))
+      if (Array.isArray(v)) return v.map(walk).join(' ')
+      if (v && typeof v === 'object') return Object.entries(v).map(([k, x]) => k + ' ' + walk(x)).join(' ')
+      return String(v)
+    }
+    let out = ''
+    for (const name of Array.from(db.objectStoreNames)) {
+      const tx = db.transaction(name, 'readonly')
+      const store = tx.objectStore(name)
+      const [keys, values]: [unknown[], unknown[]] = await Promise.all([
+        new Promise<unknown[]>((res, rej) => { const r = store.getAllKeys(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error ?? new Error('keys')) }),
+        new Promise<unknown[]>((res, rej) => { const r = store.getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error ?? new Error('values')) }),
+      ])
+      out += `\n[${name}] ` + walk(keys) + ' ' + walk(values)
+    }
+    db.close()
+    return out
+  })
+}
+
+/** How many records and blobs the live database holds for the open document. */
+export async function liveRowCounts(page: Page): Promise<{ records: number; blobs: number }> {
+  return page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('team-tracker-live')
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('open failed'))
+    })
+    const count = (name: string): Promise<number> => new Promise((res, rej) => {
+      const r = db.transaction(name, 'readonly').objectStore(name).count()
+      r.onsuccess = () => res(r.result)
+      r.onerror = () => rej(r.error ?? new Error('count'))
+    })
+    const out = { records: await count('records'), blobs: await count('blobs') }
+    db.close()
+    return out
+  })
+}
+
 /** Forgets the browser's copy of every document, as "clear site data" would: the next open can only use the file. */
 export async function clearBrowserCopy(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
