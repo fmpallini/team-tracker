@@ -20,7 +20,7 @@ export interface ChangePasswordDeps {
   shell: Shell
   /** Told which file write landed (null: browser storage unavailable). */
   persister?: LivePersister | null
-  /** Waits out (and blocks) any concurrent save — see save-controller.ts's `runExclusive`. */
+  /** Waits out (and blocks) any concurrent file write — see file-snapshot.ts's `runExclusive`. */
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
   /** The password the file is under right now (live read), needed to restore the image blobs' key if the write fails. */
   getPassword(): string | null
@@ -33,11 +33,11 @@ export interface ChangePasswordDeps {
  * state (not closed over here), so this function only ever needs the new
  * password and the deps above.
  *
- * It isn't a regular dirty-driven save, so it doesn't go through
- * `saveCtl.saveNow()` — but (Task 25 fix #3) it does run inside
- * `runExclusive()` so it can't interleave with one, and mirrors its
- * post-write bookkeeping — `markSaved()` so the just-written state isn't
- * re-saved as if still dirty, plus the save indicator/title — since the disk
+ * It isn't one of the file's regular write moments, so it doesn't go through
+ * the snapshot's `writeNow()` — but it does run inside `runExclusive()` so it
+ * can't interleave with one, and does the same post-write bookkeeping —
+ * `commitSnapshot`, `markSaved()` so the just-written state isn't treated as
+ * still ahead of the file, plus the save indicator/title — since the disk
  * file is now fully in sync with `store.doc` under the new key.
  */
 export function createChangePassword(deps: ChangePasswordDeps) {
@@ -81,7 +81,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       deps.setPassword(newPw)
       if (deps.store.rev === snapshot.revAtSnapshot) deps.store.markSaved()
       deps.shell.setSaveState('saved')
-      deps.shell.setTitle(deps.session.name, false)
+      deps.shell.setTitle(deps.session.name)
     })
   }
 }

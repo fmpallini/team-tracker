@@ -36,7 +36,7 @@ export interface Shell {
    */
   setFallbackHint(active: boolean): void
   applyPrefs(prefs: Prefs): void
-  setTitle(fileName: string | null, dirty: boolean): void
+  setTitle(fileName: string | null): void
   /** Registers the click handler for the header ⚙ button (Task 24: opens the preferences modal). */
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
@@ -330,9 +330,8 @@ export function createShell(locale: Locale): Shell {
     if (localeChanged) renderSaveIndicator()
   }
 
-  function setTitle(fileName: string | null, dirty: boolean): void {
-    document.title =
-      `Team Tracker v${__APP_VERSION__}` + (fileName ? ` — ${fileName}` : '') + (dirty ? ' ●' : '')
+  function setTitle(fileName: string | null): void {
+    document.title = `Team Tracker v${__APP_VERSION__}` + (fileName ? ` — ${fileName}` : '')
   }
 
   function onSettings(cb: () => void): void {

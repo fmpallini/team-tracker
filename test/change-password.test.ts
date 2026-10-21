@@ -57,7 +57,7 @@ test('changing to a new password encrypts and writes, never touches serializePla
   expect(setPassword).toHaveBeenCalledWith('newpw')
   expect(store.dirty).toBe(false)
   expect(shell.setSaveState).toHaveBeenCalledWith('saved')
-  expect(shell.setTitle).toHaveBeenCalledWith(session.name, false)
+  expect(shell.setTitle).toHaveBeenCalledWith(session.name)
 })
 
 test('the new file write is committed to the persister with its stamp', async () => {

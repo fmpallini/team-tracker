@@ -45,7 +45,6 @@ const mdRows = (lc: Locale): Rows => {
 const globalRows = (lc: Locale): Rows => [
   ['Alt+1 … Alt+9', 'help_global_teams'],
   ['Ctrl+Shift+K', 'help_global_palette'],
-  ['Ctrl+S', 'help_global_save'],
   ['Ctrl+Alt+L / {lock}', 'help_global_close_file'],
   [`Ctrl+F ${t(lc, 'help_key_or')} /`, 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],

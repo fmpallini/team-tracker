@@ -9,10 +9,21 @@ import type { FileStamp } from '../core/file-stamp'
 import type { ImageStore } from '../core/image-store'
 import type { LiveDb } from '../core/live-db'
 import { resolveOpen, OpenCancelled, type LiveHandle } from '../core/live-open'
-import { createStore, type Store } from '../core/store'
+import { createStore as newStore, type Store } from '../core/store'
 import { t, type Locale } from '../core/i18n'
 import { askOlderFile, askBothChanged } from './reconcile-dialogs'
 import { promptPassword, toast } from './modal'
+
+/**
+ * Where the Web Locks API exists, only the tab holding the file's write lock may touch the browser copy, and a tab
+ * learns whether that is it only after it has opened (core/tab-lock.ts). So the store starts provisionally read-only —
+ * which makes the persister hold back its initial sync — and tab-lock opens it up once the lock is this tab's.
+ */
+function createStore(doc: Doc, images: ImageStore): Store {
+  const store = newStore(doc, images)
+  if (typeof navigator !== 'undefined' && navigator.locks) store.setReadOnly(true, { silent: true })
+  return store
+}
 
 export interface OpenedDocument {
   session: FileSession

@@ -29,18 +29,25 @@ afterEach(() => {
 describe('header title', () => {
   test('setTitle sets the document title, not any header element', () => {
     const shell = setup()
-    shell.setTitle('team-tracker.tmv', false)
+    shell.setTitle('team-tracker.tmv')
     expect(document.title).toContain('team-tracker.tmv')
     // filename now shows only in the tab title and Settings > About — never
     // duplicated in the header itself
     expect(shell.root.querySelector('.tt-header-filename')).toBeNull()
   })
 
-  test('setTitle(null, ...) drops the filename from the document title', () => {
+  test('setTitle(null) drops the filename from the document title', () => {
     const shell = setup()
-    shell.setTitle('team-tracker.tmv', false)
-    shell.setTitle(null, false)
+    shell.setTitle('team-tracker.tmv')
+    shell.setTitle(null)
     expect(document.title).not.toContain('team-tracker.tmv')
+  })
+
+  test('the title carries no unsaved marker: the file is nearly always behind the browser copy, so the pill says what matters', () => {
+    const shell = setup()
+    shell.setTitle('team-tracker.tmv')
+    expect(document.title).toBe(`Team Tracker v${__APP_VERSION__} — team-tracker.tmv`)
+    expect(document.title).not.toContain('●')
   })
 })
 

@@ -28,6 +28,8 @@ export interface LiveChange {
   putBlobs?: Map<string, Uint8Array>
   deleteBlobs?: string[]
   meta?: Partial<LiveMeta>
+  /** Replace the document wholesale: every existing record and blob goes in the same commit. Allowed before `load()`. */
+  clear?: boolean
 }
 
 export interface LiveStore {
@@ -108,29 +110,34 @@ export function createLiveStore(db: LiveDb, docId: string, initialCodec: RecordC
     async write(change) {
       const existing = await db.getMeta(docId)
       if (!indexed) {
-        if (existing) throw new Error('live store written before it was loaded')
+        if (existing && !change.clear) throw new Error('live store written before it was loaded')
         indexed = true
       }
+      // Clearing starts every path over: no row is reused, and the old rows go in the same commit.
+      const known = change.clear ? new Map<string, string>() : pathToKey
       const minted = new Map<string, string>()
       const putRecords: { key: string; value: unknown }[] = []
       for (const [path, value] of change.puts ?? []) {
-        const key = pathToKey.get(path) ?? randomHex(16)
-        if (!pathToKey.has(path)) minted.set(path, key)
+        const key = known.get(path) ?? randomHex(16)
+        if (!known.has(path)) minted.set(path, key)
         putRecords.push({ key, value: await seal(codec, key, { path, value }) })
       }
-      const removed = (change.deletes ?? []).filter((p) => pathToKey.has(p))
+      const removed = change.clear ? [] : (change.deletes ?? []).filter((p) => pathToKey.has(p))
       const deleteRecords = removed.map((p) => pathToKey.get(p)!)
       const needsMeta = existing === undefined || change.meta !== undefined || putRecords.length > 0 || deleteRecords.length > 0
         || (change.putBlobs?.size ?? 0) > 0 || (change.deleteBlobs?.length ?? 0) > 0
-      const base = existing ?? { ...freshMeta(codec), check: codec ? await codec.makeCheck() : null }
+      // A wholesale replacement starts the meta over: what the old one says about key, salt and lineage is about the old copy.
+      const base = change.clear || !existing ? { ...freshMeta(codec), check: codec ? await codec.makeCheck() : null } : existing
       const meta: LiveMeta | undefined = needsMeta ? { ...base, ...change.meta, docId, modifiedAt: Date.now() } : undefined
       await db.commit(docId, {
         putRecords, deleteRecords,
         putBlobs: [...(change.putBlobs ?? [])].map(([id, bytes]) => ({ id, bytes })),
         deleteBlobs: change.deleteBlobs ?? [],
         meta,
+        clear: change.clear,
       })
       // Only after the commit: a failed one must leave every path addressable for the retry.
+      if (change.clear) pathToKey = new Map()
       for (const [path, key] of minted) pathToKey.set(path, key)
       for (const p of removed) pathToKey.delete(p)
     },

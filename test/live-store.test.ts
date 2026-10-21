@@ -225,3 +225,34 @@ test('a failed delete leaves its row addressable so the retry still removes it',
   await flaky.write({ deletes: ['a'] })
   expect([...(await createLiveStore(db, 'd', null).load()).records.keys()]).toEqual(['b'])
 })
+
+test('write with clear replaces every row of the document, and the paths are addressed afresh afterwards', async () => {
+  const s = createLiveStore(db, 'd', null)
+  await s.write({ puts: puts({ a: 1, b: 2 }), putBlobs: new Map([['img', new Uint8Array([1])]]) })
+  await s.write({ puts: puts({ b: 20, c: 30 }), clear: true })
+  const loaded = await createLiveStore(db, 'd', null).load()
+  expect(Object.fromEntries(loaded.records)).toEqual({ b: 20, c: 30 })
+  expect(loaded.blobs.size).toBe(0)
+  await s.write({ puts: puts({ c: 31 }) }) // the instance still knows c's new row
+  expect((await db.readAll('d')).records).toHaveLength(2)
+})
+
+test('write with clear is allowed before load on a document that already has rows (it throws away what it never read)', async () => {
+  await createLiveStore(db, 'd', null).write({ puts: puts({ stale: 1 }) })
+  const fresh = createLiveStore(db, 'd', null)
+  await fresh.write({ puts: puts({ x: 1 }), clear: true })
+  expect([...(await createLiveStore(db, 'd', null).load()).records.keys()]).toEqual(['x'])
+})
+
+test('replacing a copy sealed under another password rebuilds the meta for the new key', async () => {
+  const oldCodec = await recordCodec('old')
+  await createLiveStore(db, 'd', oldCodec).write({ puts: puts({ a: 'old secret' }) })
+  resetSessionKey()
+  const newCodec = await recordCodec('new')
+  await createLiveStore(db, 'd', newCodec).write({ puts: puts({ a: 'new' }), clear: true })
+  const meta = (await db.getMeta('d'))!
+  expect(Array.from(meta.salt!)).toEqual(Array.from(newCodec.salt))
+  expect(await newCodec.verifyCheck(meta.check!)).toBe(true)
+  expect(await oldCodec.verifyCheck(meta.check!)).toBe(false)
+  expect((await createLiveStore(db, 'd', newCodec).load()).records.get('a')).toBe('new')
+}, 120000)

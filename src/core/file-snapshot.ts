@@ -41,6 +41,11 @@ export interface FileSnapshot {
   /** (Re)arms the timer from the last successful write (or from open). Without a file handle there is no timer. */
   scheduleFrom(prefs: Prefs): void
   health(): FileHealth
+  /**
+   * The conflict modal was resolved: `wrote` (Overwrite put the document in the file, so that counts as the last write)
+   * or `reloaded` (the file's content was taken instead). Either way a failure that was about the conflict is over.
+   */
+  conflictResolved(how: 'wrote' | 'reloaded'): void
   /** Fires at once with the current health, then on every change. */
   subscribe(fn: (h: FileHealth) => void): () => void
   /** Re-requests write permission on the handle (needs a user gesture); on success writes what was waiting. Resolves whether the grant is held. */
@@ -229,6 +234,11 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
       arm()
     },
     health,
+    conflictResolved(how) {
+      if (how === 'wrote') lastWrittenAt = now()
+      if (status === 'error' && errorMessage === 'conflict') setStatus('idle')
+      else if (how === 'wrote') emit()
+    },
     subscribe(fn) {
       subscribers.add(fn)
       fn(health())

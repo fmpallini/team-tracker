@@ -37,6 +37,13 @@ export interface LivePersister {
   markFileWritten(stamp: FileStamp, revAtSnapshot?: number): Promise<void>
   /** After the app adopted the file as the truth (conflict Reload, open from the file): full flush, then records the file's stamp and clears `unwrittenChanges`. */
   adoptFileStamp(stamp: FileStamp | null): Promise<void>
+  /**
+   * Starts the diff over from what the browser store holds now (the caller just loaded it) and re-reads the
+   * lineage and `unwrittenChanges` from its meta. For a tab that lost the write lock and took it back: another tab
+   * wrote meanwhile, so this cache is stale, and `replaceDoc`ing the stored content would otherwise be diffed
+   * against it and rewrite identical records.
+   */
+  reseed(stored: { records: DocRecords; blobIds: Iterable<string> }): Promise<void>
   /** The error of the last failed commit, or null once a later one succeeded. */
   readonly lastError: unknown
   dispose(): void
@@ -54,6 +61,11 @@ export interface LivePersisterDeps {
    * written" and "lineage written" can never leave a copy that looks unwritten and misfires the both-changed prompt.
    */
   fromFile?: FileStamp | null
+  /**
+   * With `fromFile`: the browser store already holds a copy of this document and the file wins, so the initial sync
+   * replaces it wholesale (one commit, the old rows deleted in it) instead of trusting it.
+   */
+  replaceStored?: boolean
   /**
    * What the browser store holds for this document, when the caller just loaded it. The diff then starts from that
    * rather than from the document in memory, so records the open changed (a schema migration) are written, not assumed.
@@ -74,6 +86,10 @@ interface RunOptions {
   file?: FileWrite
   /** The file is the truth: record the lineage and clear `unwrittenChanges`, whatever the diff finds. */
   adopt?: { stamp: FileStamp | null }
+  /** Delete every stored row of the document in the same commit (a wholesale replacement). */
+  clear?: boolean
+  /** This run is the initial sync: if it cannot happen (read-only, a failed commit) it is owed, not dropped. */
+  initial?: boolean
   /** The first reconcile of a loaded copy: what the diff finds is derived data (a migration), not a user edit, so it does not raise `unwrittenChanges`. */
   quiet?: boolean
 }
@@ -96,6 +112,10 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   let disposed = false
   let timer: { cancel: () => void; retry: boolean } | null = null
   let chain: Promise<void> = Promise.resolve()
+  // The initial sync, while it is still owed. Only the tab holding the write lock may touch the browser copy, and a
+  // tab learns that after it has opened, so a read-only tab (or one whose first commit failed) keeps it pending.
+  let initialOwed: RunOptions | null = null
+  let initialDone = false
 
   const serialize = (records: Map<string, unknown>): Map<string, string> =>
     new Map([...records].map(([path, value]) => [path, JSON.stringify(value)]))
@@ -107,8 +127,24 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       if (!(timer.retry && !retry)) return
       timer.cancel()
     }
-    const cancel = schedule(() => { timer = null; void enqueue({}) }, ms)
+    const cancel = schedule(() => { timer = null; void run({}) }, ms)
     timer = { cancel, retry }
+  }
+
+  /** Runs the owed initial sync first when it can run, then `opts`. */
+  async function run(opts: RunOptions): Promise<void> {
+    await runInitial()
+    await enqueue(opts)
+  }
+
+  async function runInitial(): Promise<void> {
+    const owed = initialOwed
+    if (!owed || store.readOnly || disposed) return
+    initialOwed = null
+    await enqueue(owed)
+    // Lost the lock before the run got its turn, or the commit failed: still owed.
+    if (!owed.initial) return
+    if (!initialDone) initialOwed = owed
   }
 
   function enqueue(opts: RunOptions): Promise<void> {
@@ -163,7 +199,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     if (puts.size === 0 && deletes.length === 0 && putBlobs.size === 0 && deleteBlobs.length === 0 && metaJson === lastMeta) return
 
     try {
-      await live.write({ puts, deletes, putBlobs, deleteBlobs, meta })
+      await live.write({ puts, deletes, putBlobs, deleteBlobs, meta, clear: opts.clear })
     } catch (e) {
       const first = lastError === null
       lastError = e
@@ -178,6 +214,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     lineage = nextLineage
     unwritten = nextUnwritten
     lastMeta = metaJson
+    if (opts.initial) initialDone = true
     if (file && pendingStamp === file) pendingStamp = null
     if (lastError !== null) {
       lastError = null
@@ -187,7 +224,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
 
   // --- initial sync ---------------------------------------------------------
   const existing = await live.meta()
-  if (existing) {
+  const replacing = !!existing && deps.replaceStored === true
+  if (existing && !replacing) {
     // The caller loaded this document from the browser store (or verified the file equals it), so what the
     // store holds is what the document holds: seed the cache from it rather than rewriting everything.
     for (const [path, json] of deps.stored ? serialize(deps.stored.records) : serialize(splitDoc(store.doc))) cache.set(path, json)
@@ -199,18 +237,46 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   const unsubscribers = [
     store.onMutate(() => arm(debounceMs, false)),
     store.onDirty(() => arm(debounceMs, false)),
+    // Gaining the write lock is the moment an owed initial sync can run.
+    store.onReadOnlyChange((readOnly) => { if (!readOnly) void runInitial() }),
   ]
-  if (!existing) await enqueue(deps.fromFile !== undefined ? { adopt: { stamp: deps.fromFile } } : {})
-  else if (deps.stored || existing.fileName !== deps.fileName) await enqueue({ quiet: true })
+  if (!existing || replacing) {
+    initialOwed = { initial: true, ...(deps.fromFile !== undefined ? { adopt: { stamp: deps.fromFile } } : {}), ...(replacing ? { clear: true } : {}) }
+  } else if (deps.stored || existing.fileName !== deps.fileName) {
+    initialOwed = { initial: true, quiet: true }
+  } else {
+    initialDone = true
+  }
+  await runInitial()
 
   return {
-    flush: () => enqueue({}),
+    flush: () => run({}),
     markFileWritten: (stamp, revAtSnapshot) => {
       const file: FileWrite = { stamp, revAtSnapshot }
       pendingStamp = file
-      return enqueue({ file })
+      return run({ file })
     },
-    adoptFileStamp: (stamp) => enqueue({ adopt: { stamp } }),
+    adoptFileStamp: (stamp) => run({ adopt: { stamp } }),
+    reseed: (stored) => {
+      // What the store holds now supersedes anything this tab still owed it.
+      initialOwed = null
+      initialDone = true
+      const reseeding = chain.then(async () => {
+        const meta = await live.meta()
+        cache.clear()
+        for (const [path, json] of serialize(stored.records)) cache.set(path, json)
+        persistedBlobs.clear()
+        for (const id of stored.blobIds) persistedBlobs.add(id)
+        swept.clear()
+        if (meta) {
+          lineage = { lastWriteId: meta.lastWriteId, knownWriteIds: meta.knownWriteIds, lastFileWriteAt: meta.lastFileWriteAt }
+          unwritten = meta.unwrittenChanges
+          lastMeta = JSON.stringify({ unwrittenChanges: unwritten, fileName: meta.fileName, ...lineage })
+        }
+      })
+      chain = reseeding.catch(() => {})
+      return reseeding
+    },
     get lastError() { return lastError },
     dispose() {
       disposed = true

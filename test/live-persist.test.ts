@@ -291,6 +291,119 @@ test('adoptFileStamp after the file replaced the document records the lineage an
   expect((await loadDoc(store.doc.docId)).teams[0]!.name).toBe('from the file')
 })
 
+test('reseed starts the diff from what the store holds now: a document reloaded from it writes nothing, and the flag follows the stored meta', async () => {
+  // Two tabs on one document. Tab A (the writer) edits; tab B has been read-only with a stale cache.
+  const doc = sampleDoc()
+  const stamp = newStamp()
+  const a = await rig(doc)
+  const b = await rig(JSON.parse(JSON.stringify(doc)) as Doc)
+  a.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'written by A' })
+  await a.persister.flush()
+  await a.persister.markFileWritten(stamp, a.store.rev)
+  a.store.update((d) => { d.teams[1]!.name = 'renamed after the file write' })
+  await a.persister.flush()
+
+  commits.length = 0
+  const liveB = createLiveStore(db, doc.docId, null)
+  const stored = await liveB.load()
+  const reloaded = joinDoc(stored.records)
+  const storeB = createStore(reloaded, createImageStore(null))
+  const persisterB = await createLivePersister({ store: storeB, live: liveB, fileName: 'a.tmv', schedule: manualTimers().schedule, stored: { records: stored.records, blobIds: stored.blobs.keys() } })
+  commits.length = 0
+  await persisterB.reseed({ records: stored.records, blobIds: stored.blobs.keys() })
+  storeB.replaceDoc(JSON.parse(JSON.stringify(reloaded)) as Doc)
+  await persisterB.flush()
+  expect(commits).toHaveLength(0)
+  expect((await liveB.meta())!.unwrittenChanges).toBe(true)
+  expect((await liveB.meta())!.lastWriteId).toBe(stamp.writeId)
+  b.persister.dispose()
+})
+
+describe('a tab that does not hold the write lock must not touch the browser copy', () => {
+  test('a persister made on a read-only store writes nothing until the store becomes writable, then does the initial sync', async () => {
+    const doc = sampleDoc()
+    const store = createStore(doc, createImageStore(null))
+    store.setReadOnly(true, { silent: true })
+    const live = createLiveStore(db, doc.docId, null)
+    const persister = await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: newStamp() })
+    expect(commits).toHaveLength(0)
+    expect(await live.meta()).toBeUndefined()
+
+    store.setReadOnly(false) // nobody calls flush: gaining the lock is itself the trigger
+    await vi.waitFor(() => expect(commits).toHaveLength(1))
+    expect(await loadDoc(doc.docId)).toEqual(doc)
+    expect((await live.meta())!.unwrittenChanges).toBe(false)
+    void persister
+  })
+
+  test('replacing a stored copy with the file waits too: the old rows survive until this tab holds the lock, then go in one commit', async () => {
+    const original = sampleDoc()
+    await rig(original)
+    const fromFile = JSON.parse(JSON.stringify(original)) as Doc
+    fromFile.teams = [fromFile.teams[0]!]
+    commits.length = 0
+
+    const store = createStore(fromFile, createImageStore(null))
+    store.setReadOnly(true, { silent: true })
+    const live = createLiveStore(db, fromFile.docId, null)
+    const persister = await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: newStamp(), replaceStored: true })
+    expect(commits).toHaveLength(0)
+    expect((await loadDoc(original.docId)).teams).toHaveLength(2)
+
+    store.setReadOnly(false)
+    await vi.waitFor(() => expect(commits).toHaveLength(1))
+    await persister.flush()
+    expect(commits).toHaveLength(1)
+    expect(commits[0]!.clear).toBe(true)
+    expect(await loadDoc(original.docId)).toEqual(fromFile)
+    expect((await live.meta())!.unwrittenChanges).toBe(false)
+  })
+
+  test('replacing a stored copy on a writable store happens at once', async () => {
+    const original = sampleDoc()
+    await rig(original)
+    const fromFile = JSON.parse(JSON.stringify(original)) as Doc
+    fromFile.teams = [fromFile.teams[1]!]
+    await createLivePersister({ store: createStore(fromFile, createImageStore(null)), live: createLiveStore(db, fromFile.docId, null), fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: newStamp(), replaceStored: true })
+    expect(await loadDoc(original.docId)).toEqual(fromFile)
+  })
+
+  test('reseeding from the store while the initial sync is still waiting cancels it: the holder copy is what this tab follows', async () => {
+    const original = sampleDoc()
+    await rig(original)
+    const stale = JSON.parse(JSON.stringify(original)) as Doc
+    stale.teams[0]!.name = 'a stale idea of the file'
+    commits.length = 0
+
+    const store = createStore(stale, createImageStore(null))
+    store.setReadOnly(true, { silent: true })
+    const live = createLiveStore(db, stale.docId, null)
+    const persister = await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: newStamp(), replaceStored: true })
+    const stored = await live.load()
+    await persister.reseed({ records: stored.records, blobIds: stored.blobs.keys() })
+    store.replaceDoc(joinDoc(stored.records))
+    store.setReadOnly(false)
+    await persister.flush()
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(commits).toHaveLength(0)
+    expect((await loadDoc(original.docId)).teams[0]!.name).toBe('Team T1')
+  })
+
+  test('a failed initial sync is retried as the initial sync, not as an ordinary diff', async () => {
+    const original = sampleDoc()
+    await rig(original)
+    const fromFile = JSON.parse(JSON.stringify(original)) as Doc
+    fromFile.teams = [fromFile.teams[0]!]
+    failNext.push(new Error('quota'))
+    const persister = await createLivePersister({ store: createStore(fromFile, createImageStore(null)), live: createLiveStore(db, fromFile.docId, null), fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: newStamp(), replaceStored: true })
+    expect(persister.lastError).toBeTruthy()
+    await persister.flush()
+    expect(persister.lastError).toBeNull()
+    expect(await loadDoc(original.docId)).toEqual(fromFile) // the stale second team is gone too
+  })
+})
+
 test('a store that is read-only never commits', async () => {
   const { store, persister, timers } = await rig()
   commits.length = 0
@@ -397,4 +510,21 @@ test('dispose cancels the timer and later mutations arm nothing', async () => {
   expect(timers.count()).toBe(0)
   store.update((d) => { d.nav.split = false })
   expect(timers.count()).toBe(0)
+})
+
+test('dispose releases every store subscription it took (a document that is closed must not stay reachable through its store)', async () => {
+  const store = createStore(sampleDoc(), createImageStore(null))
+  let active = 0
+  for (const name of ['onMutate', 'onDirty'] as const) {
+    const original = store[name].bind(store) as (fn: never) => () => void
+    vi.spyOn(store, name).mockImplementation(((fn: never) => {
+      active++
+      const off = original(fn)
+      return () => { active--; off() }
+    }) as never)
+  }
+  const persister = await createLivePersister({ store, live: createLiveStore(db, store.doc.docId, null), fileName: 'a.tmv', schedule: manualTimers().schedule })
+  expect(active).toBe(2)
+  persister.dispose()
+  expect(active).toBe(0)
 })

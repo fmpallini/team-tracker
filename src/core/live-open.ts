@@ -76,6 +76,7 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
   const { db, opened, fileName } = deps
   const docId = opened.doc.docId
   let meta = await db.getMeta(docId)
+  const hadCopy = meta !== undefined
 
   if (meta && meta.schemaVersion > SCHEMA_VERSION) {
     // Written by a newer build: this one must not read it. Only unwritten edits make that a loss, so only then ask;
@@ -170,12 +171,13 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
   // --- the file wins -------------------------------------------------------------------------------
 
   async function importFile(): Promise<Reconciled> {
-    await db.deleteDoc(docId)
+    // The old rows are not deleted here: only the tab holding the write lock may touch the browser copy, and this
+    // tab may turn out to be read-only. The persister replaces them in its initial commit, once it is allowed to.
     // The same key the file was just opened with (its image store holds it), not a fresh lookup of the global cache.
     const codec = deps.password === null ? null : await recordCodec(deps.password, opened.images.codec()?.header?.salt)
     const live = createLiveStore(db, docId, codec)
     const store = deps.createStore(opened.doc, opened.images)
-    const persister = await createLivePersister({ store, live, fileName, fromFile: opened.stamp })
+    const persister = await createLivePersister({ store, live, fileName, fromFile: opened.stamp, replaceStored: hadCopy })
     return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: false }
   }
 

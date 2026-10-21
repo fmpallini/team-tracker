@@ -35,6 +35,8 @@ export interface LiveBatch {
   putBlobs: { id: string; bytes: Uint8Array }[]
   deleteBlobs: string[]
   meta?: LiveMeta
+  /** Delete every record and blob of the document first, in the same transaction: the batch then replaces the document wholesale. */
+  clear?: boolean
 }
 
 export interface LiveDb {
@@ -127,6 +129,10 @@ export async function openLiveDb(factory: IDBFactory | undefined = globalThis.in
       const done = whenDone(tx)
       try {
         const records = tx.objectStore('records'), blobs = tx.objectStore('blobs')
+        if (batch.clear) {
+          records.delete(docRange(docId))
+          blobs.delete(docRange(docId))
+        }
         for (const r of batch.putRecords) records.put({ docId, key: r.key, value: r.value } satisfies RecordRow)
         for (const k of batch.deleteRecords) records.delete([docId, k])
         for (const b of batch.putBlobs) blobs.put({ docId, id: b.id, bytes: b.bytes } satisfies BlobRow)

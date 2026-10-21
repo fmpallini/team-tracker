@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile, writeOpfsFile, setNextOpenName } from './opfs-shim'
 import { installLaunchQueueCapture, relaunchWithFile } from './launch-queue-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, reopenLast } from './helpers'
 
 async function addTeam(page: import('@playwright/test').Page, name: string): Promise<void> {
   await page.locator('.tt-team-add-btn').click()
@@ -30,10 +30,9 @@ test.describe('second-open guard (src/main.ts onDocumentOpened)', () => {
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
-    // Dirty, unsaved edit — if the guard didn't short-circuit and instead
+    // An edit the file does not have yet — if the guard didn't short-circuit and instead
     // reloaded from disk, this would be silently lost.
     await addTeam(page, 'Alpha')
-    await expect(page.locator('.tt-save-pill[data-state="dirty"]')).toBeVisible()
 
     // The launch consumer still has to decrypt the file before onDocumentOpened
     // even runs its sameEntry() guard (src/ui/start.ts's openAndDecrypt) — so a
@@ -64,9 +63,8 @@ test.describe('second-open guard (src/main.ts onDocumentOpened)', () => {
     const pristine = await readOpfsFile(page, 'team-tracker.tmv')
     await writeOpfsFile(page, 'team-tracker-2.tmv', pristine)
 
-    // Dirty, unsaved edit on A — never explicitly saved.
+    // An edit on A that the file does not have yet.
     await addTeam(page, 'Alpha')
-    await expect(page.locator('.tt-save-pill[data-state="dirty"]')).toBeVisible()
 
     await relaunchWithFile(page, 'team-tracker-2.tmv')
     const dialog = page.getByRole('dialog')
@@ -91,25 +89,31 @@ test.describe('second-open guard (src/main.ts onDocumentOpened)', () => {
   })
 })
 
-test.describe('onBeforeUnload fires a save without awaiting it (src/main.ts)', () => {
+test.describe('onBeforeUnload (src/main.ts)', () => {
   const PASSWORD = 'e2e-unload-save-password'
 
-  test('a synthetic beforeunload with a dirty document still results in a completed, real disk write', async ({ page }) => {
+  test('closing the window right after typing neither prompts nor loses the edit: the browser copy is flushed, the next open rewrites the file', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
+    const fileAtOpen = Array.from(await readOpfsFile(page, 'team-tracker.tmv'))
 
     await addTeam(page, 'Alpha')
-    await expect(page.locator('.tt-save-pill[data-state="dirty"]')).toBeVisible()
 
-    // A synthetic (untrusted) event: dispatchEvent() returns synchronously,
-    // well before the fire-and-forget saveNow() it kicks off has resolved —
-    // exactly the gap onBeforeUnload's own comment describes.
-    await page.evaluate(() => window.dispatchEvent(new Event('beforeunload')))
+    // A synthetic (untrusted) event: dispatchEvent() returns synchronously, well before the flush it starts
+    // can finish. The file is not overdue (it was just opened), so there is no "leave site?" prompt either.
+    const prevented = await page.evaluate(() => {
+      const ev = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(ev)
+      return ev.defaultPrevented
+    })
+    expect(prevented).toBe(false)
+    expect(Array.from(await readOpfsFile(page, 'team-tracker.tmv'))).toEqual(fileAtOpen)
 
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
-    const bytes = await readOpfsFile(page, 'team-tracker.tmv')
-    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('TMV1')
+    await page.reload()
+    await expect(page.locator('.tt-start-screen')).toBeVisible()
+    await reopenLast(page, PASSWORD)
+    await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText('Alpha')
   })
 })

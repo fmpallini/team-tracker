@@ -11,6 +11,31 @@ export async function createEncryptedDoc(page: Page, password: string): Promise<
   await expect(page.locator('.tt-shell')).toBeVisible()
 }
 
+/** Lock/Close (the header lock button): writes the file now and returns to the start screen. */
+export async function lockClose(page: Page): Promise<void> {
+  await page.locator('.tt-btn-close-file').click()
+  await expect(page.locator('.tt-start-screen')).toBeVisible()
+}
+
+/** Start screen -> "Reopen last" -> password -> the shell. */
+export async function reopenLast(page: Page, password: string): Promise<void> {
+  await page.getByRole('button', { name: /Reopen last/ }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('input[name="tt-password"]').fill(password)
+  await dialog.getByRole('button', { name: 'OK' }).click()
+  await expect(page.locator('.tt-shell')).toBeVisible()
+}
+
+/** Forgets the browser's copy of every document, as "clear site data" would: the next open can only use the file. */
+export async function clearBrowserCopy(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('team-tracker-live')
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error ?? new Error('could not delete the live database'))
+    req.onblocked = () => resolve()
+  }))
+}
+
 /**
  * `src/main.ts` fires a real `fetch` to the GitHub releases API on every
  * boot (`runUpdateCheck`), unthrottled in a fresh browser context since

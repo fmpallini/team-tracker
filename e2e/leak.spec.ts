@@ -363,7 +363,7 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.tt-backlinks-panel')).toHaveCount(0)
 
-  // Dirty the doc, then force a real save: one full save-controller round per
+  // Dirty the doc, then force a real save: one full file-snapshot write per
   // cycle. Appending (no clear) keeps the @Beacon chip intact; the few extra
   // chars per cycle are one text node, far below the heap bound.
   await switchModule(page, /Daily/i)

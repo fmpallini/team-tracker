@@ -23,7 +23,7 @@ function editor(page: Page) {
   return page.locator('.tt-pane[data-pane-idx="0"] .editor').first()
 }
 
-test('a read-only tab takes no typing, and "Take control" picks up the other tab\'s saved edits', async ({ page: a, context }) => {
+test('a read-only tab takes no typing, and "Take control" picks up the other tab\'s edits from the browser copy', async ({ page: a, context }) => {
   await installOpfsPickerShim(context)
   await blockUpdateCheck(context)
   await a.goto(`${E2E_BASE_URL}/app.html`)
@@ -45,28 +45,31 @@ test('a read-only tab takes no typing, and "Take control" picks up the other tab
   await expect(editor(b)).not.toContainText('TYPED-WHILE-READONLY')
   expect(await b.title()).not.toContain('●')
 
-  // A edits and saves while B sits read-only on its older copy.
+  // A edits while B sits read-only on its older copy. Nothing is written to the file: the browser copy carries it.
   await editor(a).click()
   await a.keyboard.type('EDIT-FROM-A')
   await a.waitForTimeout(400)
-  await a.keyboard.press('Control+s')
-  await expect.poll(async () => new TextDecoder().decode(new Uint8Array(await readOpfsFile(a, FILE)))).toContain('EDIT-FROM-A')
 
   await b.locator('.tt-readonly-takeover-btn').click()
   await expect(b.locator('.tt-readonly-banner')).toHaveCount(0)
   await expect(editor(b)).toContainText('EDIT-FROM-A')
   await expect(editor(b)).toHaveAttribute('contenteditable', 'true')
+  const onDisk = async (): Promise<string> => new TextDecoder().decode(new Uint8Array(await readOpfsFile(b, FILE)))
+  expect(await onDisk()).not.toContain('EDIT-FROM-A')
 
-  // B's own save now lands cleanly — no external-change conflict.
+  // B's own edits land on top of A's, with no conflict dialog and none of A's work lost.
   await editor(b).click()
   await b.keyboard.press('Control+End')
   await b.keyboard.type(' EDIT-FROM-B')
   await b.waitForTimeout(400)
-  await b.keyboard.press('Control+s')
-  await expect.poll(async () => new TextDecoder().decode(new Uint8Array(await readOpfsFile(b, FILE)))).toContain('EDIT-FROM-B')
+  await expect(editor(b)).toContainText('EDIT-FROM-A')
+  await expect(editor(b)).toContainText('EDIT-FROM-B')
   await expect(b.getByRole('dialog')).toHaveCount(0)
-  const disk = new TextDecoder().decode(new Uint8Array(await readOpfsFile(b, FILE)))
-  expect(disk).toContain('EDIT-FROM-A')
+
+  // Lock/Close in the tab that now holds the lock writes everything to the file.
+  await b.locator('.tt-btn-close-file').click()
+  await expect.poll(onDisk).toContain('EDIT-FROM-B')
+  expect(await onDisk()).toContain('EDIT-FROM-A')
   await b.close()
 })
 
@@ -86,7 +89,7 @@ async function twoTabs(context: import('@playwright/test').BrowserContext, a: Pa
   return b
 }
 
-test('keystrokes typed just before another tab takes control are saved, not dropped', async ({ page: a, context }) => {
+test('keystrokes typed just before another tab takes control are kept, not dropped', async ({ page: a, context }) => {
   const b = await twoTabs(context, a)
 
   await editor(a).click()
@@ -99,27 +102,38 @@ test('keystrokes typed just before another tab takes control are saved, not drop
   await b.close()
 })
 
-test('a holder that cannot save keeps control, says so, and hands over by itself once the save problem is resolved', async ({ page: a, context }) => {
+test('a holder that cannot store its edits in the browser keeps control, says so, and hands over once asked again after the problem is gone', async ({ page: a, context }) => {
   const b = await twoTabs(context, a)
 
   await editor(a).click()
-  await a.keyboard.type('UNSAVED-IN-A')
+  await a.keyboard.type('NOT-STORED-IN-A')
   await a.waitForTimeout(400)
-  // Something else rewrites the file, so A's next save is an external-change conflict.
-  await writeOpfsFile(a, FILE, Array.from(new TextEncoder().encode('TMV-PLAIN\n' + JSON.stringify(createEmptyDocument('en-US')))))
+  // The browser refuses A's next write (a full disk, say): the edit exists only in A's memory.
+  await a.evaluate(() => {
+    const w = window as unknown as { __origPut?: unknown }
+    w.__origPut = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function () { throw new DOMException('full', 'QuotaExceededError') }
+  })
+  await editor(a).click()
+  await a.keyboard.type('-AND-MORE')
+  await a.waitForTimeout(700)
 
   await b.locator('.tt-readonly-takeover-btn').click()
 
-  // A could not save: it keeps the lock (and its edits), B stays read-only.
-  await expect(a.getByRole('dialog')).toBeVisible()
+  // A could not hand the edit over: it keeps the lock and its edits, B stays read-only.
+  await expect(a.locator('.tt-toast', { hasText: /could not store/i })).toBeVisible()
   await expect(a.locator('.tt-readonly-banner')).toHaveCount(0)
   await expect(editor(a)).toHaveAttribute('contenteditable', 'true')
   await expect(b.locator('.tt-readonly-banner')).toBeVisible()
 
-  // The user resolves A's conflict; the pending takeover then completes on its own.
-  await a.getByRole('dialog').getByRole('button', { name: 'Overwrite' }).click()
+  // The problem goes away; B asks again and now gets everything.
+  await a.evaluate(() => {
+    const w = window as unknown as { __origPut: typeof IDBObjectStore.prototype.put }
+    IDBObjectStore.prototype.put = w.__origPut
+  })
+  await b.locator('.tt-readonly-takeover-btn').click()
   await expect(b.locator('.tt-readonly-banner')).toHaveCount(0)
-  await expect(editor(b)).toContainText('UNSAVED-IN-A')
+  await expect(editor(b)).toContainText('NOT-STORED-IN-A-AND-MORE')
   await expect(a.locator('.tt-readonly-banner')).toBeVisible()
   await b.close()
 })

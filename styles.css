@@ -18,7 +18,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
    without duplicating every alpha value across a light/dark pair. */
 :root, [data-theme=light] {
   --bg:#eee7d6; --fg:#23241d; --muted:#5c5744; --accent:#3b5a6b; --accent-rgb:59,90,107;
-  --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#4a6b45;
+  --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#476742;
   --card-slate:#3b5a6b; --card-brass:#9c6b2e; --card-sage:#3f7a45; --card-rust:#a1402c; --card-plum:#6b4a7a; --card-ledger:#6e6a64;
   /* Code-block token colours (core/highlight.ts) — dedicated, not the muted
      --accent/--card-* set, so they actually read against the grey <pre>

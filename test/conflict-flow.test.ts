@@ -3,6 +3,7 @@ import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import type { FileStamp } from '../src/core/file-stamp'
 
 const mocks = vi.hoisted(() => ({
   showConflictModal: vi.fn<(opts: ConflictModalOptions) => void>(),
@@ -30,7 +31,8 @@ function setup(over: Partial<ConflictFlowDeps> = {}, session = makeSession()) {
   const deps = {
     store, session, shell,
     getPassword: vi.fn<() => string | null>(() => 'pw'),
-    reloadFromDisk: vi.fn(async () => {}),
+    readFromDisk: vi.fn(async () => ({ doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: store.images, password: 'pw' as string | null, stamp: null as FileStamp | null })),
+    applyReloaded: vi.fn(),
     resolveGrants: vi.fn(async () => {}),
     reopen: vi.fn(),
     ...over,
@@ -100,20 +102,62 @@ describe('dismissing the modal without a choice (Escape)', () => {
 })
 
 describe('Reload', () => {
-  test('re-reads the file, then lets the next conflict open the modal again', async () => {
+  test('re-reads the file, applies it to the open document, then lets the next conflict open the modal again', async () => {
     const { flow, deps, open } = setup()
 
     await open().onReload()
 
-    expect(deps.reloadFromDisk).toHaveBeenCalledTimes(1)
+    expect(deps.readFromDisk).toHaveBeenCalledTimes(1)
+    expect(deps.applyReloaded).toHaveBeenCalledTimes(1)
     expect(flow.isOpen()).toBe(false)
     expect(mocks.toast).not.toHaveBeenCalled()
     flow.onExternalChange()
     expect(mocks.showConflictModal).toHaveBeenCalledTimes(2)
   })
 
-  test('a failed reload surfaces a sticky error toast and still releases the guard', async () => {
-    const { flow, open } = setup({ reloadFromDisk: vi.fn(async () => { throw new Error('read failed') }) })
+  test('the browser copy adopts the stamp of the file that was loaded, after the document was replaced', async () => {
+    const order: string[] = []
+    const stamp = { writeId: 'c'.repeat(32), savedAt: 3 }
+    const adoptFileStamp = vi.fn(async () => { order.push('adopt') })
+    const { store, deps, open } = setup({ persister: { adoptFileStamp } as never, applyReloaded: vi.fn(() => { order.push('apply') }) })
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: store.images, password: 'pw', stamp,
+    })
+
+    await open().onReload()
+
+    expect(order).toEqual(['apply', 'adopt'])
+    expect(adoptFileStamp).toHaveBeenCalledWith(stamp)
+  })
+
+  test('a reload that went through tells the file writer the conflict is over; a refused one does not', async () => {
+    const onConflictResolved = vi.fn()
+    const { open } = setup({ onConflictResolved })
+    await open().onReload()
+    expect(onConflictResolved).toHaveBeenCalledWith('reloaded')
+
+    onConflictResolved.mockClear()
+    const refused = setup({ onConflictResolved, readFromDisk: vi.fn(async () => ({ doc: createEmptyDocument('en-US'), images: undefined as never, password: null, stamp: null })) })
+    await refused.open().onReload()
+    expect(onConflictResolved).not.toHaveBeenCalled()
+  })
+
+  test('a file with another docId is refused: the open document is untouched and the user is told', async () => {
+    const { flow, deps, store, open } = setup({
+      readFromDisk: vi.fn(async () => ({ doc: createEmptyDocument('en-US'), images: undefined as never, password: null, stamp: null })),
+    })
+    const before = JSON.stringify(store.doc)
+
+    await open().onReload()
+
+    expect(deps.applyReloaded).not.toHaveBeenCalled()
+    expect(JSON.stringify(store.doc)).toBe(before)
+    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('reload'), { sticky: true })
+    expect(flow.isOpen()).toBe(false)
+  })
+
+  test('a failed read surfaces a sticky error toast and still releases the guard', async () => {
+    const { flow, open } = setup({ readFromDisk: vi.fn(async () => { throw new Error('read failed') }) })
 
     await open().onReload()
 
@@ -135,7 +179,7 @@ describe('Overwrite', () => {
     expect(mocks.forceWrite).toHaveBeenCalledWith(deps.session, BYTES)
     expect(store.dirty).toBe(false)
     expect(shell.setSaveState).toHaveBeenCalledWith('saved')
-    expect(shell.setTitle).toHaveBeenCalledWith('team.tmv', false)
+    expect(shell.setTitle).toHaveBeenCalledWith('team.tmv')
     expect(flow.isOpen()).toBe(false)
   })
 
@@ -160,6 +204,19 @@ describe('Overwrite', () => {
 
     const stampWritten = mocks.docToBytes.mock.calls.at(-1)![3]
     expect(markFileWritten).toHaveBeenCalledWith(stampWritten, rev)
+  })
+
+  test('tells the file writer the forced write landed, and only then', async () => {
+    const onConflictResolved = vi.fn()
+    const { store, open } = setup({ onConflictResolved })
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    await open().onOverwrite()
+    expect(onConflictResolved).toHaveBeenCalledTimes(1)
+    expect(onConflictResolved).toHaveBeenCalledWith('wrote')
+
+    mocks.forceWrite.mockRejectedValueOnce(new Error('disk full'))
+    await open().onOverwrite()
+    expect(onConflictResolved).toHaveBeenCalledTimes(1)
   })
 
   test('a failed overwrite does not touch the persister', async () => {

@@ -2,14 +2,14 @@
 //
 // jsdom has no canvas, no createImageBitmap and no real contenteditable, so the
 // unit tests only see the pieces. Here the whole path runs: paste / drop / the
-// toolbar picker → real decode and WebP re-encode → block in the note → Ctrl+S →
+// toolbar picker → real decode and WebP re-encode → block in the note → Lock/Close →
 // bytes in the file → close, reopen, decrypt → the picture is back. Also the
 // layout promises that only a layout engine can keep: centered, fitted to the
 // pane, and not scaled by the font-size setting.
 import { test, expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, lockClose, reopenLast, clearBrowserCopy } from './helpers'
 import { buildDoc, openDoc } from './layout-fixtures'
 
 const PASSWORD = 'e2e-images-password'
@@ -196,41 +196,41 @@ test.describe('pictures in notes', () => {
     await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
   })
 
-  test('password-less: the picture survives save, close and reopen', async ({ page }) => {
+  test('password-less: the picture survives close and reopen', async ({ page }) => {
     await openDoc(page, buildDoc('M', { kind: 'general' }))
     await page.locator('.editor').first().click()
     await pasteInto(page, { files: [{ name: 'shot.png', bytes: await makePng(page, 400, 260) }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500)
-    await page.keyboard.press('Control+s')
-    await waitForSaved(page)
 
+    await page.click('.tt-btn-close-file') // Lock/Close writes the file
+    await expect(page.locator('.tt-start-screen')).toBeVisible()
     const bytes = await readOpfsFile(page, 'fs.tmv')
     expect(String.fromCharCode(...bytes.slice(0, 11))).toBe('TMV-PLAIN2' + String.fromCharCode(10))
 
-    await page.click('.tt-btn-close-file')
+    await clearBrowserCopy(page) // the picture must come back from the file, not from the browser's copy
     await page.getByRole('button', { name: /Reopen last/ }).click()
     await expect(page.locator('.tt-shell')).toBeVisible()
     await expect(blocks(page)).toHaveCount(1)
     await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
   })
 
-  test('deleting the note drops its picture from the file at the next save', async ({ page }) => {
+  test('deleting the note drops its picture from the file at the next write', async ({ page }) => {
     await startEncrypted(page)
     await pasteInto(page, { files: [{ name: 'noise.png', bytes: await makePng(page, 500, 400, 'noise') }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500)
-    await page.keyboard.press('Control+s')
-    await waitForSaved(page)
+    await lockClose(page)
     const withImage = (await readOpfsFile(page, 'team-tracker.tmv')).length
 
+    await reopenLast(page, PASSWORD)
     await page.locator('.editor').first().click()
     await page.keyboard.press('Control+a')
     await page.keyboard.press('Delete')
     await expect(blocks(page)).toHaveCount(0)
     await page.waitForTimeout(500)
-    await page.keyboard.press('Control+s')
-    await expect.poll(async () => (await readOpfsFile(page, 'team-tracker.tmv')).length, { timeout: 10_000 }).toBeLessThan(withImage - 20_000)
+    await lockClose(page)
+    expect((await readOpfsFile(page, 'team-tracker.tmv')).length).toBeLessThan(withImage - 20_000)
   })
 
   test('Backspace removes a clicked picture and Ctrl+Z brings it back', async ({ page }) => {

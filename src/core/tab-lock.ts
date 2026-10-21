@@ -16,7 +16,6 @@
 // it exits read-only.
 import type { Store } from './store'
 import type { Shell } from '../ui/shell'
-import type { SaveController } from './save-controller'
 import type { FileSession } from './fs'
 import { t } from './i18n'
 import { el } from '../ui/dom'
@@ -29,7 +28,12 @@ export interface TabLockDeps {
   session: FileSession
   store: Store
   shell: Shell
-  saveCtl: SaveController
+  /**
+   * Makes the browser copy current (the persister's flush) and rejects if it could not. Handing the lock over needs
+   * nothing more: the tab that takes it over reloads the document from that copy, and the file is written at the
+   * next Lock/Close or timer by whoever holds the lock then.
+   */
+  flushLive(): Promise<void>
   /**
    * `navigator.locks`, injected so tests can supply a fake `LockManager`.
    * Undefined in jsdom and in browsers without the Web Locks API — the
@@ -54,11 +58,10 @@ export interface TabLockDeps {
   /**
    * Awaited while holding a lock this tab had to wait for (it was visibly
    * read-only — e.g. "Take control"), BEFORE the tab becomes writable. The
-   * previous holder saved on its way out, so this tab's in-memory document is
-   * older than the file; main.ts reloads it here. Without that, the first
-   * save hit an external-change conflict whose "Overwrite" erased the other
-   * tab's edits. A rejection is logged and the tab goes writable anyway —
-   * the conflict modal still guards the next save.
+   * previous holder flushed its edits to the browser copy on its way out, so
+   * this tab's in-memory document is older than that copy; main.ts reloads it
+   * from there. Without that, this tab's first edit would be written over the
+   * other tab's. A rejection is logged and the tab goes writable anyway.
    */
   refreshBeforeWritable?(): Promise<void>
   /**
@@ -71,7 +74,7 @@ export interface TabLockDeps {
 }
 
 export function createTabLock(deps: TabLockDeps): () => void {
-  const { session, store, shell, saveCtl } = deps
+  const { session, store, shell } = deps
   const supportsLocks = !!deps.locks
   const locks = deps.locks
   const BC = deps.BroadcastChannelCtor ?? (typeof BroadcastChannel !== 'undefined' ? BroadcastChannel : undefined)
@@ -212,9 +215,6 @@ export function createTabLock(deps: TabLockDeps): () => void {
     requestLock(false)
   }
 
-  // A takeover asked for while this tab's edits could not be saved. Remembered
-  // so the handover happens by itself once they are (see the onDirty hook).
-  let takeoverPending = false
   let handingOver = false
 
   function onTakeoverMessage(ev: MessageEvent<TakeoverMessage>): void {
@@ -226,32 +226,17 @@ export function createTabLock(deps: TabLockDeps): () => void {
     if (handingOver) return
     handingOver = true
     try {
-      // Task 25 fix #4: `saveNow()` can return before the write actually
-      // lands — it no-ops synchronously while another save is in flight
-      // and just queues a trailing round. Releasing the lock right after
-      // `await saveNow()` could hand write access to the requesting tab
-      // while that trailing round (or the in-flight save it queued behind)
-      // is still on its way to disk. `flush()` blocks until the controller
-      // is fully idle — in-flight save and any trailing round both done —
-      // before the lock (and read-write access) actually changes hands.
-      //
-      // Always asked, even on a clean store: saveNow() first commits any
-      // editor change still inside its debounce window, which is what makes
-      // the store dirty in the first place.
-      await saveCtl.saveNow({ urgent: true })
-      await saveCtl.flush()
-      // `saveNow()` resolves normally when the write failed (permission, disk,
-      // an open conflict modal). Letting go now would strand those edits in a
-      // tab that is about to become read-only — and closing a read-only tab
-      // discards them without a prompt. Keep the lock; hand over when saved.
-      if (store.dirty) {
-        if (!takeoverPending) {
-          takeoverPending = true
-          toast(t(store.doc.prefs.locale, 'takeover_deferred_toast'), { sticky: true, key: 'takeover-deferred' })
-        }
+      // Always, even on a clean store: it also commits an editor change still inside its debounce window.
+      // If the browser copy cannot be made current, letting go now would strand edits in a tab that is about to
+      // become read-only (closing a read-only tab discards them without a prompt): keep the lock and say so.
+      // The tab that asked can ask again once the problem is fixed ("Take control" re-announces).
+      try {
+        await deps.flushLive()
+      } catch (e) {
+        console.error(e)
+        toast(t(store.doc.prefs.locale, 'takeover_deferred_toast'), { sticky: true, key: 'takeover-deferred' })
         return
       }
-      takeoverPending = false
       dismissToast('takeover-deferred')
       const release = releaseLock
       if (!release) return
@@ -261,10 +246,6 @@ export function createTabLock(deps: TabLockDeps): () => void {
       handingOver = false
     }
   }
-
-  const unsubscribeDirty = store.onDirty((dirty) => {
-    if (!dirty && takeoverPending && releaseLock) void handOver().catch((e) => console.error(e))
-  })
 
   if (deps.lockKey) {
     deps.lockKey.then(
@@ -294,8 +275,6 @@ export function createTabLock(deps: TabLockDeps): () => void {
     releaseLock?.()
     bc?.close()
     unsubscribeBlocked()
-    unsubscribeDirty()
-    takeoverPending = false
     dismissToast('takeover-deferred')
   }
 }

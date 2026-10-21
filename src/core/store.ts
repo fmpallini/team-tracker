@@ -44,7 +44,7 @@ export interface Store {
    * 'content', `updateNav()` as 'nav' — unlike `subscribe()`, which
    * `updateNav()` intentionally bypasses (nav changes shouldn't trigger a full
    * content re-render). Follow-up hardening
-   * for save-controller.ts's in-flight-save guard (Task 25 re-review item
+   * for the file writer's in-flight-write guard (Task 25 re-review item
    * #1): that guard used to ride on `subscribe()`, which only covered it by
    * call-site convention (every `updateNav()` site happens to also trigger a
    * save through some other path). `onMutate()` makes the guard correct by
@@ -91,6 +91,8 @@ export interface Store {
    * is blocked.
    */
   setReadOnly(readOnly: boolean, opts?: { silent?: boolean }): void
+  /** Fires when the store goes read-only or writable again (a silent provisional read-only counts), with the new state. Returns an unsubscribe function. */
+  onReadOnlyChange(fn: (readOnly: boolean) => void): () => void
   /** Fires at most once per read-only "session" — see `setReadOnly`. Returns an unsubscribe function, for the reason given on `onDirty`. */
   onBlockedUpdate(fn: () => void): () => void
 }
@@ -109,6 +111,7 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
   const mutationListeners = new Set<(kind: MutationKind) => void>()
   const dirtyCallbacks = new Set<(dirty: boolean) => void>()
   const blockedCallbacks = new Set<() => void>()
+  const readOnlyListeners = new Set<(readOnly: boolean) => void>()
 
   const setDirty = (newDirty: boolean) => {
     if (newDirty !== dirty) {
@@ -196,14 +199,22 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
       notifyMutate('content')
     },
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
+      const was = roState.kind !== 'writable'
       if (!ro) {
         roState = { kind: 'writable' }
-        return
+      } else {
+        roState = {
+          kind: 'blocked',
+          silent: !!opts?.silent,
+          warned: roState.kind === 'blocked' ? roState.warned : false,
+        }
       }
-      roState = {
-        kind: 'blocked',
-        silent: !!opts?.silent,
-        warned: roState.kind === 'blocked' ? roState.warned : false,
+      if (ro !== was) for (const fn of Array.from(readOnlyListeners)) { try { fn(ro) } catch (e) { console.error(e) } }
+    },
+    onReadOnlyChange(fn: (readOnly: boolean) => void): () => void {
+      readOnlyListeners.add(fn)
+      return () => {
+        readOnlyListeners.delete(fn)
       }
     },
     onBlockedUpdate(fn: () => void): () => void {

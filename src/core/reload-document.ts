@@ -11,6 +11,7 @@
 import type { Doc } from './types'
 import { decryptDocumentWithVersion, parsePlainWithVersion, WrongPasswordError } from './crypto'
 import type { ImageStore } from './image-store'
+import type { FileStamp } from './file-stamp'
 
 export class ReloadCancelledError extends Error {}
 
@@ -20,6 +21,8 @@ export interface ReloadedDocument {
   images: ImageStore
   /** The password the file is under NOW — null for a password-less file. May differ from the one passed in. */
   password: string | null
+  /** The file's write stamp (null for a file written before schema 18): the lineage the browser copy adopts. */
+  stamp: FileStamp | null
 }
 
 /**
@@ -35,12 +38,12 @@ export async function decodeForReload(
   // Format first, not password first: a file that is now password-less must not
   // be fed to the decryptor, and one that is now encrypted must not be.
   const plain = parsePlainWithVersion(bytes)
-  if (plain) return { doc: plain.doc, images: plain.images, password: null }
+  if (plain) return { doc: plain.doc, images: plain.images, password: null, stamp: plain.stamp }
 
   if (currentPassword !== null) {
     try {
       const opened = await decryptDocumentWithVersion(bytes, currentPassword)
-      return { doc: opened.doc, images: opened.images, password: currentPassword }
+      return { doc: opened.doc, images: opened.images, password: currentPassword, stamp: opened.stamp }
     } catch (e) {
       if (!(e instanceof WrongPasswordError)) throw e
     }
@@ -52,7 +55,7 @@ export async function decodeForReload(
     if (pw === null) throw new ReloadCancelledError()
     try {
       const opened = await decryptDocumentWithVersion(bytes, pw)
-      return { doc: opened.doc, images: opened.images, password: pw }
+      return { doc: opened.doc, images: opened.images, password: pw, stamp: opened.stamp }
     } catch (e) {
       if (!(e instanceof WrongPasswordError)) throw e
       wasWrong = true

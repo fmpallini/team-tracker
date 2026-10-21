@@ -13,6 +13,20 @@ test('update notifies and marks dirty', () => {
   s.markSaved(); expect(s.dirty).toBe(false); expect(dirtyStates).toEqual([true, false])
 })
 
+test('onReadOnlyChange fires once per real transition, silent ones included, and stops after unsubscribe', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const seen: boolean[] = []
+  const off = s.onReadOnlyChange((ro) => seen.push(ro))
+  s.setReadOnly(false) // already writable
+  s.setReadOnly(true, { silent: true })
+  s.setReadOnly(true) // still read-only, now loud: not a transition
+  s.setReadOnly(false)
+  expect(seen).toEqual([true, false])
+  off()
+  s.setReadOnly(true)
+  expect(seen).toEqual([true, false])
+})
+
 test('markDirty flags the document as ahead of its file without touching the document, subscribers or rev', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   const dirtyStates: boolean[] = []; s.onDirty((d) => dirtyStates.push(d))

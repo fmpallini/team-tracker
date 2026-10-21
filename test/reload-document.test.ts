@@ -83,3 +83,14 @@ test('hands back the image bytes of the file as it is now (password-less)', asyn
   expect(r.password).toBeNull()
   expect([...(await r.images.getPlain(A))!]).toEqual([1, 2, 3])
 })
+
+test('reports the write stamp of the file it decoded, plain or encrypted, so the browser copy can adopt that lineage', async () => {
+  const stamp = { writeId: 'ab'.repeat(16), savedAt: 5 }
+  const doc = createEmptyDocument('en-US')
+  const plain = await decodeForReload(await docToBytes(doc, null, createImageStore(null), stamp), null, async () => null)
+  expect(plain.stamp).toEqual(stamp)
+  const enc = await decodeForReload(await docToBytes(doc, 'pw', createImageStore(await blobCodec('pw')), stamp), 'pw', async () => null)
+  expect(enc.stamp).toEqual(stamp)
+  const bare = await decodeForReload(await serializePlain(doc), null, async () => null)
+  expect(bare.stamp).toBeNull()
+}, 30000)

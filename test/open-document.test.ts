@@ -106,3 +106,24 @@ test('another unexpected failure is not swallowed as a cancel', async () => {
   dialogs.askBothChanged.mockRejectedValue(new Error('boom'))
   await expect(reconcileOpen({ locale: 'en-US', db, session, opened: fileOf(docWith('e', doc.docId)), password: null })).rejects.toThrow('boom')
 })
+
+describe('where the Web Locks API exists, opening touches nothing until this tab holds the write lock', () => {
+  beforeEach(() => { Object.defineProperty(navigator, 'locks', { value: {}, configurable: true }) })
+  afterEach(() => { delete (navigator as unknown as { locks?: unknown }).locks })
+
+  test('the store starts read-only and the browser copy of an existing document is left alone', async () => {
+    const doc = docWith('first tab')
+    const stamp = newStamp()
+    const first = (await reconcileOpen({ locale: 'en-US', db, session, opened: fileOf(doc, stamp), password: null }))!
+    first.store.setReadOnly(false) // the first tab got the lock
+    await first.handle!.persister.flush()
+    first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'edited by the lock holder' })
+    await first.handle!.persister.flush()
+
+    // A second tab opens the same file (older content, unknown stamp): it must not delete or rewrite anything.
+    const second = (await reconcileOpen({ locale: 'en-US', db, session, opened: fileOf(docWith('stale file', doc.docId)), password: null }))!
+    expect(second.store.readOnly).toBe(true)
+    const stored = joinDoc((await createLiveStore(db, doc.docId, null).load()).records)
+    expect(stored.teams[0]!.dailyNotes['2026-07-01']).toBe('edited by the lock holder')
+  })
+})

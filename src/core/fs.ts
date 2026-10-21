@@ -172,8 +172,8 @@ export async function sameEntry(a: FileSession, b: FileSession): Promise<boolean
  * lapse mid-session. `createWritable()` in that state throws an opaque
  * `NotAllowedError` — and off a no-activation trigger (the auto-save interval)
  * Chromium can surface it as an even less specific failure that
- * `save-controller.ts`'s `doSave()` can't tell apart from a generic write
- * error, so it lands on the "Save as…" toast instead of "Grant access…".
+ * file-snapshot.ts can't tell apart from a generic write error, so it
+ * lands on the generic error instead of "Grant access…".
  * Querying first (never prompts, needs no activation) collapses every such case into one
  * recognizable `NotAllowedError` that routes to the grant-recovery path.
  */

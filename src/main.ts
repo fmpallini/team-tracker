@@ -10,7 +10,7 @@ import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar } from './ui/sidebar'
-import { resolveAppHotkey } from './ui/app-hotkeys'
+import { resolveAppHotkey, isBrowserSaveChord } from './ui/app-hotkeys'
 import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout, wcoReservedWidth } from './ui/responsive'
 import { createPalette } from './ui/palette'
@@ -29,7 +29,7 @@ import { renderMilestones } from './modules/milestones'
 import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { resetSessionKey } from './core/crypto'
-import { decodeForReload } from './core/reload-document'
+import { decodeForReload, type ReloadedDocument } from './core/reload-document'
 import { readCurrent, sameEntry } from './core/fs'
 import { installCtrlWheelFontSize } from './ui/ctrl-wheel-font'
 import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
@@ -37,11 +37,14 @@ import { el } from './ui/dom'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage } from './core/storage-persist'
-import { createSaveController, type SaveController } from './core/save-controller'
+import { createFileSnapshot, type FileSnapshot, type FileHealth } from './core/file-snapshot'
+import { watchFileHealth } from './ui/file-health-toasts'
+import { createImageStore } from './core/image-store'
+import { joinDoc } from './core/doc-records'
+import { migrate, validateDoc } from './core/document'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { resolveFileLockKey } from './core/file-identity'
-import { installBlurSave } from './core/blur-save'
 import { createConflictFlow } from './core/conflict-flow'
 import { closeAnyContextMenu } from './ui/context-menu'
 import { closeAnyBacklinksPanel } from './ui/backlinks-panel'
@@ -66,7 +69,8 @@ interface AppController {
   password: string | null
   shell: Shell
   pm: PaneManager
-  saveCtl: SaveController
+  /** Writes the `.tmv` file at open, close and on the timer, and reports whether it can. */
+  snapshot: FileSnapshot
   /** Keeps the browser copy of the document current; null when the browser could not open its storage. */
   persister: LivePersister | null
   /** Whether the external-change conflict modal is up — teardown leaves it to resolve an unsaved close rather than stacking a discard prompt over it. */
@@ -118,18 +122,21 @@ function openDocument(opened: OpenedDocument): void {
  * "close without saving" choice (see confirmDiscardUnsaved). A read-only tab
  * is exempt: it can never save, so waiting on it would make it unclosable.
  */
-async function teardownApp(a: Pick<AppController, 'store' | 'saveCtl' | 'persister' | 'dispose'>, opts?: { force?: boolean }): Promise<boolean> {
+async function teardownApp(a: Pick<AppController, 'store' | 'snapshot' | 'persister' | 'dispose'>, opts?: { force?: boolean }): Promise<boolean> {
   // BEFORE the dirty check, not after: a debounced editor change still in
   // flight hasn't reached the store yet, so both `store.dirty` and whatever
   // `saveNow()` serializes would miss it. `a.dispose()` below flushes it
   // eventually — but only after the save has already run, i.e. into a document
   // nobody writes again.
   flushAllEditors()
-  if (a.store.dirty && !a.store.readOnly) await a.saveCtl.saveNow({ explicit: true })
-  await a.saveCtl.flush()
+  // Lock/Close is the moment the user is told to rely on: the file is written now. A write that cannot be made
+  // (permission, disk, an open conflict) keeps the document open unless the user explicitly closes anyway.
+  const written = await a.snapshot.writeNow('close')
+  await a.snapshot.flush()
   // The browser copy gets every edit whether or not the file write landed — that is what "close anyway" relies on.
   await a.persister?.flush()
-  if (!opts?.force && a.store.dirty && !a.store.readOnly) return false
+  const fileBehind = !written.ok && written.reason !== 'readonly' && written.reason !== 'nohandle'
+  if (!opts?.force && fileBehind) return false
   a.dispose()
   // Both are module-level singletons (one popover open at a time, app-wide —
   // see their own files) rather than anything a.dispose()'s per-document
@@ -175,7 +182,7 @@ function confirmDiscardUnsaved(locale: Locale): Promise<boolean> {
  * land. With the conflict modal already up there is nothing to ask — its
  * Overwrite/Fork/Reload choices are the recovery — so the close just stops.
  */
-async function teardownOrConfirm(a: Pick<AppController, 'store' | 'saveCtl' | 'persister' | 'dispose' | 'isConflictOpen'>): Promise<boolean> {
+async function teardownOrConfirm(a: Pick<AppController, 'store' | 'snapshot' | 'persister' | 'dispose' | 'isConflictOpen'>): Promise<boolean> {
   if (await teardownApp(a)) return true
   if (a.isConflictOpen()) return false
   if (!(await confirmDiscardUnsaved(a.store.doc.prefs.locale))) return false
@@ -193,10 +200,10 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
   // same window/tab instead of opening a new one. Without this, `app` would
-  // just be overwritten below: the previous session's save-controller
-  // interval, its Ctrl+S/beforeunload/visibilitychange listeners, and its
+  // just be overwritten below: the previous session's file timer,
+  // its beforeunload/visibilitychange listeners, and its
   // cross-tab write lock would all keep running orphaned, and any of its
-  // unsaved edits would never be saved before the swap.
+  // unwritten edits would never reach the file before the swap.
   if (app) {
     const prev = app
     // Re-launching the file that's already open (e.g. double-clicking the
@@ -216,7 +223,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   shell.applyPrefs(doc.prefs)
   const promoBtn = promoHeaderButton(doc.prefs.locale)
   if (promoBtn) shell.headerRight.prepend(promoBtn)
-  shell.setTitle(session.name, false)
+  shell.setTitle(session.name)
   // Task 25 re-review item #4b: fallback mode (no FS handle) never
   // auto-saves — the user has to notice "Unsaved" and press Ctrl+S. Set once
   // here from whether this session ever got a handle; real fallback mode
@@ -283,38 +290,59 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
 
   disposers.push(mountSearch(shell, store, pm, selectTeam, pm.searchIndex))
 
-  // Replaces the in-memory document with the file's current contents — the
-  // conflict modal's "Reload", and a tab taking the write lock over from
-  // another (see createTabLock's refreshBeforeWritable below).
-  async function reloadFromDisk(): Promise<void> {
+  // The conflict modal's "Reload": read what is on disk now, then (conflict-flow.ts, once it has checked it is
+  // the same document) swap it in.
+  async function readFromDisk(): Promise<ReloadedDocument> {
     const bytes = await readCurrent(session)
     // The file may no longer be under the password this tab opened it with
     // (changed, added or removed in another tab) — see core/reload-document.ts.
-    const { doc: reloaded, images: reloadedImages, password: filePassword } = await decodeForReload(bytes, currentPassword(), async (wasWrong) => {
+    return decodeForReload(bytes, currentPassword(), async (wasWrong) => {
       const lc = store.doc.prefs.locale
       if (wasWrong) toast(t(lc, 'err_wrong_password'))
       const result = await promptPassword(lc, { title: t(lc, 'reload_password_title') })
       return result === null ? null : (result as { password: string }).password
     })
-    if (app && app.store === store) app.password = filePassword
-    store.replaceDoc(reloaded, reloadedImages)
+  }
+
+  function applyReloaded(reloaded: ReloadedDocument): void {
+    if (app && app.store === store) app.password = reloaded.password
+    store.replaceDoc(reloaded.doc, reloaded.images)
     // The reloaded document may carry different look-and-feel prefs (theme,
     // palette, font, locale) than the one it replaces.
-    shell.applyPrefs(reloaded.prefs)
+    shell.applyPrefs(reloaded.doc.prefs)
     pm.renderAll()
-    shell.setSaveState('saved')
-    shell.setTitle(session.name, false)
+  }
+
+  // A tab taking the write lock over from another: the previous holder flushed its edits to the browser copy on the
+  // way out, so that copy — not the file, which may be hours older — is what this tab must continue from.
+  async function reloadFromLive(): Promise<void> {
+    if (!handle || !persister) return
+    const stored = await handle.live.load()
+    const doc = migrate(joinDoc(stored.records))
+    const bad = validateDoc(doc)
+    if (bad) throw new Error(`browser copy invalid at ${bad}`)
+    const images = createImageStore(store.images.codec())
+    for (const [id, bytes] of stored.blobs) images.adoptStored(id, bytes)
+    // Reseed first: the persister's cache is from before the other tab's writes, and diffing the reloaded
+    // document against it would rewrite every record the other tab changed.
+    await persister.reseed({ records: stored.records, blobIds: stored.blobs.keys() })
+    store.replaceDoc(doc, images)
+    if ((await handle.live.meta())?.unwrittenChanges) store.markDirty()
+    shell.applyPrefs(doc.prefs)
+    pm.renderAll()
   }
 
   // The external-change conflict modal and its Reload / Overwrite / Fork choices
-  // (see core/conflict-flow.ts). `saveCtl` is assigned just below — safe because
+  // (see core/conflict-flow.ts). `snapshot` is assigned just below — safe because
   // `resolveGrants` only runs from the permission toast, long after setup.
   const conflictFlow = createConflictFlow({
     store, session, shell,
     getPassword: currentPassword,
-    reloadFromDisk,
-    resolveGrants: () => saveCtl.resolveGrants(),
+    readFromDisk,
+    applyReloaded,
+    resolveGrants: async () => { await snapshot.resolveGrants() },
     persister,
+    onConflictResolved: (how) => snapshot.conflictResolved(how),
     // The fork is a new document with a browser copy of its own; the original's copy (docId unchanged) goes once
     // the fork is up, because its edits now live in the fork and the original file belongs to the other writer.
     reopen: (forkSession, forkDoc, forkPassword, forkImages, stamp) => {
@@ -333,45 +361,40 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     },
   })
 
-  // Task 25: save orchestration. `getPassword`/`onExternalChange` read live
-  // state (never the closed-over `password`/`doc` params) so they stay
-  // correct across password changes and re-renders.
-  const saveCtl = createSaveController({
+  // The file as a periodic snapshot: written at open (when the browser copy is ahead), at Lock/Close and on the
+  // timer. `getPassword`/`onExternalChange` read live state (never the closed-over `password`/`doc` params) so they
+  // stay correct across password changes and re-renders.
+  const snapshot = createFileSnapshot({
     store,
     session,
     getPassword: currentPassword,
-    shell,
-    locale: () => store.doc.prefs.locale,
-    isConflictOpen: conflictFlow.isOpen,
     persister,
+    isConflictOpen: conflictFlow.isOpen,
     onExternalChange: conflictFlow.onExternalChange,
-    // Ctrl+S, the save pill and a tab-lock handover all go through saveNow();
-    // this makes each of them include a keystroke still inside the editors' debounce.
+    // A debounced editor change must be in the store before the document is serialized.
     flushPending: flushAllEditors,
   })
-  disposers.push(() => saveCtl.dispose())
-  app = { store, session, password, shell, pm, saveCtl, persister, isConflictOpen: conflictFlow.isOpen, dispose }
-  saveCtl.scheduleFrom(store.doc.prefs)
+  disposers.push(() => snapshot.dispose())
+  app = { store, session, password, shell, pm, snapshot, persister, isConflictOpen: conflictFlow.isOpen, dispose }
+  snapshot.scheduleFrom(store.doc.prefs)
   if (persister) disposers.push(() => persister.dispose())
 
-  // Task 25 fix #6: `onDirty` was never wired up — the save indicator and
-  // title only ever reflected `doSave()`'s own 'saving'/'saved'/'error'
-  // transitions, so an edit that landed while idle (state stuck on 'saved'
-  // from the last write) left the UI silently lying about unsaved changes
-  // until the next save cycle touched the indicator. This keeps both in sync
-  // with `store.dirty` directly, independent of the save cycle.
-  disposers.push(
-    store.onDirty((dirty) => {
-      shell.setSaveState(dirty ? 'dirty' : 'saved')
-      shell.setTitle(session.name, dirty)
-    })
-  )
-  // A document opened from the browser's copy starts ahead of its file: show it, and write the file now.
-  if (store.dirty) {
-    shell.setSaveState('dirty')
-    shell.setTitle(session.name, true)
+  // The save pill shows whether the file can be written (the browser copy is what keeps the work safe), mapped
+  // onto the pill's existing states until the pill itself is reworked.
+  const pillState = (h: FileHealth): 'saved' | 'saving' | 'permission' | 'error' | 'dirty' =>
+    h.kind === 'ok' ? 'saved' : h.kind === 'writing' ? 'saving' : h.kind === 'export' ? 'dirty' : h.kind
+  disposers.push(snapshot.subscribe((h) => shell.setSaveState(pillState(h))))
+  disposers.push(watchFileHealth(snapshot, () => store.doc.prefs.locale))
+  // A document opened from the browser's copy starts ahead of its file: write it as soon as this tab may write
+  // (the tab lock decides that a moment after opening; a read-only tab never writes the file).
+  let openWriteOwed = needsFileWrite
+  const writeOpenIfOwed = (): void => {
+    if (!openWriteOwed || store.readOnly) return
+    openWriteOwed = false
+    void snapshot.writeNow('open')
   }
-  if (needsFileWrite) void saveCtl.saveNow({ explicit: true })
+  disposers.push(store.onReadOnlyChange(writeOpenIfOwed))
+  writeOpenIfOwed()
 
   // The browser copy is the live store, so leaving the page must not strand an edit still in the debounce.
   // Hidden covers tab switches and mobile-style backgrounding; pagehide covers the close itself.
@@ -396,32 +419,18 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     store.subscribe(() => {
       if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
         lastAutoSaveMin = store.doc.prefs.autoSaveMin
-        saveCtl.scheduleFrom(store.doc.prefs)
+        snapshot.scheduleFrom(store.doc.prefs)
       }
     })
   )
 
-  // Tab hidden, window blurred or minimized: one delayed away-save (15 s, cancelled on return),
-  // not an immediate write per tab flip. The editors' debounced change is committed by
-  // saveNow()'s flushPending. See src/core/blur-save.ts.
-  disposers.push(installBlurSave({ save: () => void saveCtl.saveNow(), hasFocus: () => document.hasFocus() }))
-
-  // A confirmed-reliable save can't be awaited here — browsers don't allow
-  // async work to block unload — so this leans on Chrome's native "leave
-  // site?" prompt as the safety net for dirty state. But `saveNow()` is
-  // still started here (fire-and-forget), not left to the away-save timer
-  // alone: that fires 15 s after the page is hidden, which is only *after* the user
-  // answers this dialog, whereas kicking the save off right here overlaps
-  // it with however long the dialog stays open — real time the encrypt
-  // (600k-iteration PBKDF2 on every save, see crypto.ts) needs to finish
-  // before the page can be torn down.
+  // Closing the window cannot wait for an asynchronous file write, so the only thing done here is to get the browser
+  // copy as current as an unload allows. The "leave site?" prompt is shown only when the file is overdue (older than
+  // the timer interval): then the user is nudged towards Lock/Close, which guarantees a file write. If they leave
+  // anyway nothing is lost — the next open reconciles the file with the browser copy.
   const onBeforeUnload = (e: BeforeUnloadEvent): void => {
-    // Without this, closing the tab
-    // within CHANGE_DEBOUNCE_MS of a keystroke both skips the "leave site?"
-    // prompt (store.dirty is still false) and saves a document missing it.
     flushBrowserCopy()
-    if (store.dirty) {
-      void saveCtl.saveNow({ urgent: true })
+    if (snapshot.isOverdue()) {
       e.preventDefault()
       e.returnValue = ''
     }
@@ -430,20 +439,27 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
   const releaseTabLock = createTabLock({
-    session, store, shell, saveCtl, locks: navigator.locks,
+    session, store, shell, locks: navigator.locks,
+    flushLive: async () => {
+      // A keystroke still inside the editors' debounce is not in the store yet, so not in the browser copy either.
+      flushAllEditors()
+      // No browser storage: the file is all there is to hand over through.
+      if (!persister) {
+        const r = await snapshot.writeNow('close')
+        if (!r.ok && r.reason !== 'nohandle' && r.reason !== 'readonly') throw new Error(`file write failed: ${r.reason}`)
+        return
+      }
+      await persister.flush()
+      if (persister.lastError) throw persister.lastError instanceof Error ? persister.lastError : new Error('the browser could not store the latest changes')
+    },
     // Per file, not per file name — see core/file-identity.ts.
     lockKey: resolveFileLockKey(session, navigator.locks),
     onReadOnlyChange: (readOnly) => {
       setEditorsReadOnly(readOnly)
       setReadOnlyLock(readOnly, () => store.doc.prefs.locale)
     },
-    // The tab that held the lock saved on its way out, so the file is newer
-    // than this tab's copy whenever its lastModified moved.
-    refreshBeforeWritable: async () => {
-      if (!session.handle) return
-      const file = await session.handle.getFile()
-      if (file.lastModified !== session.lastModified) await reloadFromDisk()
-    },
+    // The tab that held the lock flushed its edits to the browser copy on its way out.
+    refreshBeforeWritable: reloadFromLive,
   })
   disposers.push(releaseTabLock)
 
@@ -459,7 +475,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     session,
     shell,
     persister,
-    runExclusive: (fn) => saveCtl.runExclusive(fn),
+    runExclusive: (fn) => snapshot.runExclusive(fn),
     getPassword: currentPassword,
     setPassword: (newPw) => {
       if (app) app.password = newPw
@@ -511,7 +527,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     if (closing) return
     closing = true
     ;(async () => {
-      if (!(await teardownOrConfirm({ store, saveCtl, persister, dispose, isConflictOpen: conflictFlow.isOpen }))) {
+      if (!(await teardownOrConfirm({ store, snapshot, persister, dispose, isConflictOpen: conflictFlow.isOpen }))) {
         closing = false
         return
       }
@@ -526,8 +542,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     })
   }
   shell.onCloseFile(closeFile)
-  shell.onSaveRequest(() => void saveCtl.saveNow({ explicit: true }))
-  shell.onGrantRequest(() => void saveCtl.resolveGrants())
+  // The pill's click: re-grant a lapsed permission; retry after an error; export where no file can be written silently.
+  shell.onSaveRequest(() => void snapshot.writeNow(session.handle ? 'close' : 'export'))
+  shell.onGrantRequest(() => void snapshot.resolveGrants())
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was
@@ -576,6 +593,11 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   // preventDefault on exactly the branches that ran it inline before.
   const onKeyDown = (e: KeyboardEvent): void => {
     const focusedLoc = currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])
+    // There is no manual save, but the browser's own "save page" dialog must still never appear.
+    if (isBrowserSaveChord(e)) {
+      e.preventDefault()
+      return
+    }
     const action = resolveAppHotkey(e, {
       teamCount: store.doc.teams.length,
       focusedPaneShowsDailyNote: !!focusedLoc && focusedLoc.ref.kind === 'daily',
@@ -583,9 +605,6 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     if (!action) return
     e.preventDefault()
     switch (action.type) {
-      case 'save':
-        void saveCtl.saveNow({ explicit: true })
-        return
       case 'palette':
         palette.open()
         return
@@ -652,22 +671,20 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
 
 /**
  * The update banner's PWA reload action. Must guarantee no silent data loss:
- * `saveCtl.flush()` alone only waits out an *already in-flight* save, and
- * `saveNow()` resolves normally even when the write itself fails (errors
- * surface via save-controller.ts's own toast, not a rejection here). So this
- * explicitly saves, waits for that save (and any trailing round) to settle,
- * then checks `store.dirty` as the one signal that survives regardless of
- * *why* the save didn't land (write error, external-change conflict, or a
- * read-only tab that never attempts one in the first place) — if still
- * dirty, abort the reload and leave whatever error UI save-controller.ts
- * already raised as the user's recovery path.
+ * it writes the file as Lock/Close would (the browser copy keeps the edits
+ * either way), and a write that fails — which `writeNow()` reports in its
+ * result and through the health toasts, not as a rejection — aborts the
+ * reload and leaves that error UI as the user's recovery path.
  */
 async function reloadForUpdate(): Promise<void> {
   const current = app
   if (current) {
-    await current.saveCtl.saveNow({ explicit: true })
-    await current.saveCtl.flush()
-    if (current.store.dirty) return
+    flushAllEditors()
+    const written = await current.snapshot.writeNow('close')
+    await current.snapshot.flush()
+    await current.persister?.flush()
+    // A write that failed leaves whatever error UI the snapshot raised as the user's way out; the page stays.
+    if (!written.ok && written.reason !== 'readonly' && written.reason !== 'nohandle') return
   }
   location.reload()
 }

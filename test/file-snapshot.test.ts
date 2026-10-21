@@ -216,6 +216,38 @@ describe('failures', () => {
   })
 })
 
+describe('conflictResolved', () => {
+  test('after the conflict overwrite wrote the file, the health is ok again and the write counts as the last one', async () => {
+    const { snap } = rig()
+    fsMocks.writeFile.mockRejectedValueOnce(new fsMocks.ExternalChangeError())
+    await snap.writeNow('close')
+    expect(snap.health()).toMatchObject({ kind: 'error', message: 'conflict' })
+    clock += 5000
+    snap.conflictResolved('wrote')
+    expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: clock })
+    expect(snap.isOverdue()).toBe(false)
+  })
+
+  test('after a reload the health is ok again but no write is claimed', async () => {
+    const { snap } = rig()
+    fsMocks.writeFile.mockRejectedValueOnce(new fsMocks.ExternalChangeError())
+    await snap.writeNow('close')
+    clock += 5000
+    snap.conflictResolved('reloaded')
+    expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: null })
+  })
+
+  test('it never hides some other kind of failure', async () => {
+    const { snap } = rig()
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
+    await snap.writeNow('close')
+    snap.conflictResolved('reloaded')
+    expect(snap.health().kind).toBe('error')
+    spy.mockRestore()
+  })
+})
+
 describe('without a file handle (browsers that cannot write silently)', () => {
   test('only an export downloads; nothing else writes', async () => {
     const { store, snap } = rig({ handle: false })

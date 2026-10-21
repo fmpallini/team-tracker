@@ -59,6 +59,18 @@ test('commit applies puts, deletes and meta together; a later commit overwrites 
   expect((await db.getMeta('d'))!.unwrittenChanges).toBe(true)
 })
 
+test('a commit with clear replaces this document rows in the same transaction and leaves other documents alone', async () => {
+  const db = await openLiveDb(factory)
+  await db.commit('d', { putRecords: [{ key: 'old1', value: 1 }, { key: 'old2', value: 2 }], deleteRecords: [], putBlobs: [{ id: 'oldimg', bytes: new Uint8Array([1]) }], deleteBlobs: [], meta: meta('d') })
+  await db.commit('other', { putRecords: [{ key: 'keep', value: 9 }], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: meta('other') })
+  await db.commit('d', { putRecords: [{ key: 'fresh', value: 3 }], deleteRecords: [], putBlobs: [], deleteBlobs: [], clear: true, meta: meta('d', { fileName: 'new.tmv' }) })
+  const all = await db.readAll('d')
+  expect(all.records).toEqual([{ key: 'fresh', value: 3 }])
+  expect(all.blobs).toEqual([])
+  expect((await db.getMeta('d'))!.fileName).toBe('new.tmv')
+  expect((await db.readAll('other')).records).toEqual([{ key: 'keep', value: 9 }])
+})
+
 test('a commit without meta leaves the stored meta alone', async () => {
   const db = await openLiveDb(factory)
   await db.commit('d', { ...empty, meta: meta('d', { fileName: 'keep.tmv' }) })
