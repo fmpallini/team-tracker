@@ -82,6 +82,23 @@ export function resetSessionKey(): void {
   sessionKey = null
 }
 
+/** AES-GCM seal with a fresh 12-byte IV ahead of the ciphertext; `aad` binds the output to its slot. */
+async function sealWith(key: CryptoKey, aad: string, plain: Uint8Array): Promise<Uint8Array> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource, additionalData: new TextEncoder().encode(aad) as BufferSource }, key, plain as BufferSource))
+  const out = new Uint8Array(12 + ct.length)
+  out.set(iv, 0); out.set(ct, 12)
+  return out
+}
+
+async function openWith(key: CryptoKey, aad: string, sealed: Uint8Array): Promise<Uint8Array> {
+  if (sealed.length < 12 + 16) throw new CorruptFileError()
+  try {
+    return new Uint8Array(await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: sealed.subarray(0, 12) as BufferSource, additionalData: new TextEncoder().encode(aad) as BufferSource }, key, sealed.subarray(12) as BufferSource))
+  } catch { throw new CorruptFileError() }
+}
+
 /**
  * Seals/opens one image blob under the session key: a fresh 12-byte IV ahead
  * of the AES-GCM ciphertext, with the image id as additional data so a blob
@@ -90,22 +107,51 @@ export function resetSessionKey(): void {
  */
 export async function blobCodec(password: string): Promise<BlobCodec> {
   const { salt, key } = await getSessionKey(password)
-  const aad = (id: string) => new TextEncoder().encode(id)
   return {
     header: { salt, key },
-    async seal(id, plain) {
-      const iv = crypto.getRandomValues(new Uint8Array(12))
-      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource, additionalData: aad(id) as BufferSource }, key, plain as BufferSource))
-      const out = new Uint8Array(12 + ct.length)
-      out.set(iv, 0); out.set(ct, 12)
-      return out
-    },
-    async open(id, sealed) {
-      if (sealed.length < 12 + 16) throw new CorruptFileError()
-      try {
-        return new Uint8Array(await crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: sealed.subarray(0, 12) as BufferSource, additionalData: aad(id) as BufferSource }, key, sealed.subarray(12) as BufferSource))
-      } catch { throw new CorruptFileError() }
+    seal: (id, plain) => sealWith(key, id, plain),
+    open: (id, sealed) => openWith(key, id, sealed),
+  }
+}
+
+/**
+ * Seals the browser store's records (live-store.ts) under the file's own key.
+ * Same key as the file header and the image blobs, but every AAD carries a
+ * `live:` prefix, so a record can never be opened as an image blob or the
+ * reverse, and a record is bound to its slot. Without `salt` it is the session
+ * key (the open document's); with another salt it derives a fresh key WITHOUT
+ * touching the session-key cache, so probing a browser copy that was sealed
+ * under a different password cannot evict the open document's key.
+ */
+export interface RecordCodec {
+  readonly salt: Uint8Array
+  seal(aad: string, plain: Uint8Array): Promise<Uint8Array>
+  open(aad: string, sealed: Uint8Array): Promise<Uint8Array>
+  /** A sealed known plaintext, stored beside the salt so a password can be tested without opening any record. */
+  makeCheck(): Promise<Uint8Array>
+  /** False for a wrong key or malformed input; never throws. */
+  verifyCheck(check: Uint8Array): Promise<boolean>
+}
+
+const LIVE_CHECK_AAD = 'check'
+
+export async function recordCodec(password: string, salt?: Uint8Array): Promise<RecordCodec> {
+  let useSalt: Uint8Array, key: CryptoKey
+  if (!salt || (sessionKey && sessionKey.password === password && sameBytes(sessionKey.salt, salt))) {
+    ({ salt: useSalt, key } = await getSessionKey(password))
+  } else {
+    useSalt = salt
+    key = await deriveKey(password, salt)
+  }
+  const seal = (aad: string, plain: Uint8Array) => sealWith(key, 'live:' + aad, plain)
+  const open = (aad: string, sealed: Uint8Array) => openWith(key, 'live:' + aad, sealed)
+  return {
+    salt: useSalt,
+    seal,
+    open,
+    makeCheck: () => seal(LIVE_CHECK_AAD, KCV_PLAIN),
+    async verifyCheck(check) {
+      try { return sameBytes(await open(LIVE_CHECK_AAD, check), KCV_PLAIN) } catch { return false }
     },
   }
 }
