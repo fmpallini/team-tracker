@@ -10,23 +10,18 @@ import { buildExport } from '../src/core/team-export'
 import { setReadOnlyLock } from '../src/ui/readonly-lock'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
-import type { BackupHealth } from '../src/core/backup-controller'
 
 // `fsApi` overrides `supportsFsApi` (always false under jsdom) for the few
-// tests that need the Backup tab's controls to be enabled at all; setup()
-// resets it to jsdom's real value.
-const fsMocks = vi.hoisted(() => ({ pickCreateBackup: vi.fn(), fsApi: false }))
+// tests that need the FS-API branch; setup() resets it to jsdom's real value.
+const fsMocks = vi.hoisted(() => ({ fsApi: false }))
 vi.mock('../src/core/fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/fs')>()
   return {
     ...actual,
     get supportsFsApi() { return fsMocks.fsApi },
     downloadFallback: vi.fn(),
-    pickCreateBackup: fsMocks.pickCreateBackup,
   }
 })
-const idbMocks = vi.hoisted(() => ({ idbSet: vi.fn(async () => {}) }))
-vi.mock('../src/core/idb', () => idbMocks)
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
 function stubMatchMedia(): void {
@@ -53,9 +48,7 @@ interface Setup {
 function setup(): Setup {
   document.body.innerHTML = ''
   stubMatchMedia()
-  fsMocks.pickCreateBackup.mockReset()
   fsMocks.fsApi = false
-  idbMocks.idbSet.mockReset().mockResolvedValue(undefined)
   const doc = createEmptyDocument('en-US')
   const store = createStore(doc)
   const shell = createShell('en-US')
@@ -66,14 +59,8 @@ function setup(): Setup {
     changePassword,
     currentPassword,
     isReadOnly: () => false,
-    hasFileHandle: () => true,
-    fileHandle: () => null,
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
-    backupStatus: vi.fn(async () => null),
-    backupHealth: vi.fn(async () => 'ok' as BackupHealth),
-    regrantBackupPermission: vi.fn(async () => {}),
-    retryBackupWrite: vi.fn(async () => {}),
   }
   return { store, shell, appCtl, changePassword, currentPassword }
 }
@@ -110,7 +97,7 @@ test('renders 6 tabs, defaulting to Geral/General', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['General', 'Saving & backup', 'Templates', 'Security', 'Data', 'About'])
+  expect(tabs).toEqual(['General', 'Saving', 'Templates', 'Security', 'Data', 'About'])
   expect(document.querySelector('.tt-prefs-tab-btn.active')?.textContent).toBe('General')
   expect(document.querySelector('input[name="tt-prefs-theme"][value="system"]')).not.toBeNull()
 })
@@ -250,7 +237,7 @@ test('palette field defaults to ledger, offers 12 swatched options, and updates 
 test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
+  clickTab('Saving')
 
   const input = document.querySelector('.tt-prefs-autosave-input') as HTMLInputElement
   input.value = '15'
@@ -347,618 +334,20 @@ test('the two new General-tab toggles are prefs-scoped', () => {
 
 test('an initialTab argument opens directly on that tab instead of defaulting to General', () => {
   const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl, 'backup')
+  openPrefs(store, shell, 'en-US', appCtl, 'saving')
 
-  expect(document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox')).not.toBeNull()
+  expect(document.querySelector('.tt-prefs-autosave-input')).not.toBeNull()
   const activeBtn = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).find((b) => b.classList.contains('active'))
-  expect(activeBtn?.textContent).toBe('Saving & backup')
+  expect(activeBtn?.textContent).toBe('Saving')
 })
 
-test('backup tab: enabling daily backup with no existing handle opens the save picker, persists the handle id', async () => {
-  const { store, shell, appCtl } = setup()
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', undefined)
-  expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-  expect(store.doc.prefs.backupHandleId).not.toBeNull()
-})
-
-test('backup tab: enabling daily backup opens the picker in the primary file\'s folder (startIn)', async () => {
-  const { store, shell, appCtl } = setup()
-  const primaryHandle = {} as unknown as FileSystemFileHandle
-  appCtl.fileHandle = () => primaryHandle
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
-})
-
-test('backup tab: picking the primary file itself as the backup target is refused — no handle stored, pref stays off, user told why', async () => {
-  const { store, shell, appCtl } = setup()
-  const picked = {} as unknown as FileSystemFileHandle
-  const primaryHandle = { isSameEntry: vi.fn(async () => true) } as unknown as FileSystemFileHandle
-  appCtl.fileHandle = () => primaryHandle
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: picked, name: 'team-tracker.tmv', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await new Promise((r) => setTimeout(r, 0))
-
-  expect((primaryHandle as unknown as { isSameEntry: ReturnType<typeof vi.fn> }).isSameEntry).toHaveBeenCalledWith(picked)
-  expect(idbMocks.idbSet).not.toHaveBeenCalled()
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-  expect(store.doc.prefs.backupHandleId).toBeNull()
-  expect(document.querySelector('.tt-toast')?.textContent).toContain('different file')
-})
-
-test('backup tab: a genuinely different file is accepted even though the primary can compare entries', async () => {
-  const { store, shell, appCtl } = setup()
-  appCtl.fileHandle = () => ({ isSameEntry: vi.fn(async () => false) }) as unknown as FileSystemFileHandle
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await new Promise((r) => setTimeout(r, 0))
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-  expect(store.doc.prefs.backupHandleId).not.toBeNull()
-})
-
-test('backup tab: canceling the save picker leaves the pref off', async () => {
-  const { store, shell, appCtl } = setup()
-  fsMocks.pickCreateBackup.mockResolvedValue(null)
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-})
-
-// Regression: unchecking the daily-backup checkbox while its own async file
-// picker is still in flight used to let the picker's stale `.then()`
-// silently re-enable `dailyBackupEnabled` right after the user turned it off.
-test('backup tab: unchecking the backup checkbox while the picker is still in flight is not clobbered by the picker resolving afterward', async () => {
-  const { store, shell, appCtl } = setup()
-  let resolvePicker!: (v: { handle: FileSystemFileHandle; name: string; lastModified: number } | null) => void
-  fsMocks.pickCreateBackup.mockImplementation(() => new Promise((resolve) => { resolvePicker = resolve }))
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await Promise.resolve() // let pickCreateBackup() be called; its promise is still pending
-
-  // The user changes their mind before the picker resolves.
-  checkbox.checked = false
-  checkbox.dispatchEvent(new Event('change'))
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-
-  // The picker resolves late, as if the user had picked a file.
-  resolvePicker({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-})
-
-test('backup tab: a rejecting save picker (e.g. permission denied) leaves the pref off, same as a cancel', async () => {
-  const { store, shell, appCtl } = setup()
-  fsMocks.pickCreateBackup.mockRejectedValue(new Error('not allowed'))
-  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  // One extra tick versus the plain-cancel test: the rejection has to pass
-  // through pickAndStoreBackupTarget's own `.catch` before the checkbox's
-  // outer `.then` sees `picked === false`.
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-  expect(store.doc.prefs.backupHandleId).toBeNull()
-  expect(checkbox.checked).toBe(false)
-  expect(consoleErrorSpy).toHaveBeenCalled()
-  consoleErrorSpy.mockRestore()
-})
-
-test('backup tab: re-enabling with an existing backupHandleId skips the picker', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.backupHandleId = 'already-set' })
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', undefined)
-  expect(store.doc.prefs.backupHandleId).not.toBe('already-set')
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-})
-
-test('backup tab: no "Change backup location" button when no backup target exists yet', () => {
+test('there is no backup control anywhere in the Saving tab', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
+  clickTab('Saving')
 
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
-})
-
-test('backup tab: no "Change backup location" button while backup is off, even with a stored target', () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = false; d.prefs.backupHandleId = 'existing' })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
-})
-
-test('backup tab: "Change backup location" button appears once backup is enabled with a target', () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
-})
-
-test('backup tab: "Change backup location" re-opens the picker and re-enables the pref', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
-  const primaryHandle = {} as unknown as FileSystemFileHandle
-  appCtl.fileHandle = () => primaryHandle
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  // `.click()` is a no-op on a genuinely `disabled` element (matches real
-  // browser behavior) — dispatchEvent bypasses that, same workaround the
-  // checkbox tests above use, since `supportsFsApi` (and so `backupAvailable`)
-  // is false under jsdom regardless of what `hasFileHandle()` returns.
-  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  changeBtn.dispatchEvent(new Event('click'))
-  // Flush the whole microtask queue (not just N `Promise.resolve()` ticks) —
-  // `backupCheckbox.checked = true` runs in an extra `.then()` layered on
-  // top of `pickAndStoreBackupTarget`'s own picker→idbSet→store.update
-  // chain, and its exact tick depth isn't worth pinning down by hand.
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalledWith('team-tracker.bck', primaryHandle)
-  expect(idbMocks.idbSet).toHaveBeenCalledTimes(1)
-  expect(store.doc.prefs.backupHandleId).not.toBe('old-id')
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  expect(checkbox.checked).toBe(true)
-})
-
-// Regression: double-clicking "Change backup location" before the first
-// picker resolves used to let whichever picker resolved *last* win, even if
-// it was the stale first attempt — the second, more recent pick should win
-// instead.
-test('backup tab: double-clicking "Change backup location" is not clobbered by the first, stale pick resolving after the second', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
-  let resolveFirst!: (v: { handle: FileSystemFileHandle; name: string; lastModified: number }) => void
-  fsMocks.pickCreateBackup
-    .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
-    .mockResolvedValueOnce({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 2 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  changeBtn.dispatchEvent(new Event('click')) // first pick starts, stays pending
-  await Promise.resolve()
-  changeBtn.dispatchEvent(new Event('click')) // second pick starts and resolves immediately
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  const idAfterSecondPick = store.doc.prefs.backupHandleId
-  expect(idAfterSecondPick).not.toBe('old-id')
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-
-  // The first pick finally resolves, late — it must not overwrite the
-  // second, more recent pick's outcome.
-  resolveFirst({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(store.doc.prefs.backupHandleId).toBe(idAfterSecondPick)
-})
-
-test('backup tab: canceling "Change backup location" leaves the existing target and pref state untouched', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
-  fsMocks.pickCreateBackup.mockResolvedValue(null)
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  changeBtn.dispatchEvent(new Event('click'))
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(store.doc.prefs.backupHandleId).toBe('old-id')
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-})
-
-test('backup tab: disabling the pref does not clear the stored handle id', () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = false
-  checkbox.dispatchEvent(new Event('change'))
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-  expect(store.doc.prefs.backupHandleId).toBe('existing')
-})
-
-test('backup tab: checkbox is disabled with a hint when hasFileHandle() is false', () => {
-  const { store, shell, appCtl } = setup()
-  appCtl.hasFileHandle = () => false
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  expect(checkbox.disabled).toBe(true)
-  expect(document.querySelector('.tt-prefs-backup-disabled-hint')?.textContent).toBe(
-    'Unavailable: this browser has no direct file access, or this file has not been saved to disk yet.'
-  )
-})
-
-test('backup tab: backup frequency defaults to Daily and updates the pref when changed to Hourly', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(radio('tt-prefs-backup-frequency', 'daily').checked).toBe(true)
-  // `.click()` is a no-op here: `backupAvailable` (and so the radios'
-  // `disabled` state) is always false under jsdom (no File System Access
-  // API), same reason the backup-checkbox tests above dispatch 'change'
-  // directly instead of clicking.
-  const hourly = radio('tt-prefs-backup-frequency', 'hourly')
-  hourly.checked = true
-  hourly.dispatchEvent(new Event('change'))
-  expect(store.doc.prefs.backupFrequency).toBe('hourly')
-})
-
-test('backup tab: frequency selector stays disabled until backup is turned on, then enables', async () => {
-  const { store, shell, appCtl } = setup()
-  fsMocks.fsApi = true
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {}, name: 'team.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  expect(checkbox.disabled).toBe(false)
-  expect(radio('tt-prefs-backup-frequency', 'daily').disabled).toBe(true)
-  expect(radio('tt-prefs-backup-frequency', 'hourly').disabled).toBe(true)
-
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await vi.waitFor(() => expect(radio('tt-prefs-backup-frequency', 'hourly').disabled).toBe(false))
-  expect(radio('tt-prefs-backup-frequency', 'daily').disabled).toBe(false)
-
-  const box = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  box.checked = false
-  box.dispatchEvent(new Event('change'))
-  expect(radio('tt-prefs-backup-frequency', 'hourly').disabled).toBe(true)
-})
-
-test('backup tab: no status table when backup is off', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
-})
-
-test('backup tab: no status table when enabled but no target picked yet', () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = null })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
-})
-
-test('backup tab: shows filename, size, and last backup time once status resolves', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  const lastBackupAt = new Date('2026-08-20T14:30:00').getTime()
-  appCtl.backupStatus = vi.fn(async () => ({
-    fileName: 'team-tracker.bck',
-    size: 2048,
-    lastBackupAt,
-  }))
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
-
-  const table = document.querySelector('.tt-prefs-backup-status')
-  expect(table).not.toBeNull()
-  expect(table?.textContent).toContain('team-tracker.bck')
-  expect(table?.textContent).toContain('2')
-  expect(table?.textContent).toMatch(/KB/)
-})
-
-// Backups aren't scheduled — they ride along with saves, throttled to the
-// chosen interval — so the tab must not present a wall-clock "next backup"
-// time the app has no timer to honour (a stale one, hours in the past after
-// a machine restart with no edits since, is what made this misleading).
-test('backup tab: status table shows no "next backup" schedule row', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  appCtl.backupStatus = vi.fn(async () => ({
-    fileName: 'team-tracker.bck',
-    size: 2048,
-    lastBackupAt: new Date('2026-08-20T14:30:00').getTime(),
-  }))
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(document.querySelector('.tt-prefs-backup-status')?.textContent).not.toContain('Next backup')
-})
-
-test('backup tab: shows a "never backed up yet" state when lastBackupAt is 0', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  appCtl.backupStatus = vi.fn(async () => ({
-    fileName: 'team-tracker.bck',
-    size: 0,
-    lastBackupAt: 0,
-  }))
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
-
-  expect(document.querySelector('.tt-prefs-backup-status')?.textContent).toContain('Never backed up yet')
-})
-
-// "Change backup location" is a same-state shortcut, secondary to the
-// toggle/frequency/status — moved to the bottom of the tab so those primary
-// controls read first.
-test('backup tab: "Change backup location" button is the last element in the tab', () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  const content = document.querySelector('.tt-prefs-content')
-  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn')
-  expect(changeBtn).not.toBeNull()
-  // Last child of the last section (the Auto-save section comes first).
-  expect(content?.lastElementChild?.lastElementChild).toBe(changeBtn)
-})
-
-test('backup tab: enabling backup live-updates the tab to show the status block and "Change location" button', async () => {
-  const { store, shell, appCtl } = setup()
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = true
-  checkbox.dispatchEvent(new Event('change'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(document.querySelector('.tt-prefs-backup-status')).not.toBeNull()
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
-})
-
-test('backup tab: disabling backup live-updates the tab to hide the status block and "Change location" button', () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-
-  expect(document.querySelector('.tt-prefs-backup-status')).not.toBeNull()
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).not.toBeNull()
-
-  const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-  checkbox.checked = false
-  checkbox.dispatchEvent(new Event('change'))
-
-  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
-  expect(document.querySelector('.tt-prefs-backup-change-btn')).toBeNull()
-})
-
-test('backup tab: "Change location" live-refreshes the status block for the newly picked target', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'old-id' })
-  const primaryHandle = {} as unknown as FileSystemFileHandle
-  appCtl.fileHandle = () => primaryHandle
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'new-target.bck', lastModified: 1 })
-  const statusMock = vi.fn(async () => null)
-  appCtl.backupStatus = statusMock
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  const callsBeforeChange = statusMock.mock.calls.length
-
-  const changeBtn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  changeBtn.dispatchEvent(new Event('click'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(statusMock.mock.calls.length).toBeGreaterThan(callsBeforeChange)
-})
-
-// The cross-browser scenario: a .tmv carries `backupHandleId` + the enabled
-// flag, but the handle it names only ever lived in the IndexedDB of the
-// machine/browser that picked it. Opening elsewhere, the id resolves to
-// nothing — `backupHealth()` resolves 'orphaned'. The tab must self-heal (turn the
-// pref off, matching save-controller.ts) and show a re-setup notice instead of
-// a silently-empty status table.
-test('backup tab: an orphaned backup handle turns the pref off and shows the re-setup notice', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'gone-with-the-other-browser' })
-  appCtl.backupHealth = vi.fn(async () => 'orphaned' as BackupHealth)
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(false)
-  expect(store.doc.prefs.backupHandleId).toBe('gone-with-the-other-browser') // id kept, only the flag flips
-  const hint = document.querySelector('.tt-prefs-backup-orphaned-hint')
-  expect(hint).not.toBeNull()
-  const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…')
-  expect(setupBtn).toBeDefined()
-  expect(document.querySelector('.tt-prefs-backup-status')).toBeNull()
-})
-
-test('backup tab: the orphaned notice\'s "Set up backup…" button re-picks a target and restores the enabled state', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'orphan' })
-  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('orphaned').mockResolvedValue('ok')
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…')!
-  setupBtn.dispatchEvent(new Event('click'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalled()
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-  expect(store.doc.prefs.backupHandleId).not.toBe('orphan')
-  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull()
-})
-
-test('backup tab: an orphaned backup handle in read-only mode shows the notice without flipping the pref', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'orphan' })
-  appCtl.backupHealth = vi.fn(async () => 'orphaned' as BackupHealth)
-  appCtl.isReadOnly = () => true
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(store.doc.prefs.dailyBackupEnabled).toBe(true) // read-only tab must not mutate the doc
-  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).not.toBeNull()
-  const setupBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Set up backup…') as HTMLButtonElement
-  expect(setupBtn.disabled).toBe(true)
-})
-
-test('backup tab: a lapsed backup grant shows a permission notice with a regrant action', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('permission').mockResolvedValue('ok')
-  appCtl.regrantBackupPermission = vi.fn(async () => {})
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  const hint = document.querySelector('.tt-prefs-backup-orphaned-hint')
-  expect(hint).not.toBeNull()
-  const btn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  btn.dispatchEvent(new Event('click'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(appCtl.regrantBackupPermission).toHaveBeenCalledTimes(1)
-  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the regrant resolves
-})
-
-test('backup tab: a stale backup password shows a retry action', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('password-mismatch').mockResolvedValue('ok')
-  appCtl.retryBackupWrite = vi.fn(async () => {})
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  const btn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  btn.dispatchEvent(new Event('click'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(appCtl.retryBackupWrite).toHaveBeenCalledTimes(1)
-  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the retry resolves
-})
-
-test('backup tab: a generic backup error shows a retry action', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('error').mockResolvedValue('ok')
-  appCtl.retryBackupWrite = vi.fn(async () => {})
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  const btn = document.querySelector('.tt-prefs-backup-change-btn') as HTMLButtonElement
-  btn.dispatchEvent(new Event('click'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(appCtl.retryBackupWrite).toHaveBeenCalledTimes(1)
-  expect(document.querySelector('.tt-prefs-backup-orphaned-hint')).toBeNull() // stale notice cleared once the retry resolves
-})
-
-// A permission/error/password-mismatch health must not remove the user's
-// only escape hatch for a target that's actually gone (e.g. a moved/deleted
-// .bck file, which the 'error' hint text itself suggests checking) — only
-// 'orphaned' hides this button, since re-picking IS that notice's own action.
-test('backup tab: the "Change backup location" button stays visible and usable for a non-orphan (error) health', async () => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'backup-1' })
-  appCtl.backupHealth = vi.fn<() => Promise<BackupHealth>>().mockResolvedValueOnce('error').mockResolvedValue('ok')
-  fsMocks.pickCreateBackup.mockResolvedValue({ handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.bck', lastModified: 1 })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Saving & backup')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  // `.click()` is a no-op on a genuinely `disabled` element (matches real
-  // browser behavior) — dispatchEvent bypasses that, same workaround the
-  // other changeBackupBtn tests use, since `supportsFsApi` (and so
-  // `backupAvailable`) is false under jsdom regardless of `hasFileHandle()`.
-  const relocateBtn = document.querySelector('.tt-prefs-backup-relocate-btn') as HTMLButtonElement | null
-  expect(relocateBtn).not.toBeNull()
-
-  relocateBtn!.dispatchEvent(new Event('click'))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-
-  expect(fsMocks.pickCreateBackup).toHaveBeenCalled()
-  expect(store.doc.prefs.backupHandleId).not.toBe('backup-1')
+  expect(document.querySelector('[class*="backup"]')).toBeNull()
+  expect(document.body.textContent).not.toMatch(/backup/i)
 })
 
 test('locale radio updates store.prefs, notifies locale-changed listeners, and reopens the modal in the new locale', () => {
@@ -977,7 +366,7 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   // tab labels should now read in Portuguese.
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['Geral', 'Salvamento e backup', 'Templates', 'Segurança', 'Dados', 'Sobre'])
+  expect(tabs).toEqual(['Geral', 'Salvamento', 'Templates', 'Segurança', 'Dados', 'Sobre'])
 })
 
 test('notifyLocaleChanged is a plain document event: dispatching with zero listeners registered never throws (ui/prefs.ts has no direct PaneManager dependency)', () => {
@@ -1886,14 +1275,14 @@ describe('preferences layout', () => {
     expect(sizeField.nextElementSibling?.querySelector('.tt-prefs-ctrl-wheel-font-checkbox')).not.toBeNull()
   })
 
-  test('auto-save moved out of General into the Saving & backup tab', () => {
+  test('auto-save moved out of General into the Saving tab', () => {
     const { store, shell, appCtl } = setup()
     openPrefs(store, shell, 'en-US', appCtl)
     expect(document.querySelector('.tt-prefs-autosave-input')).toBeNull()
-    clickTab('Saving & backup')
+    clickTab('Saving')
     expect(document.querySelector('.tt-prefs-autosave-input')).not.toBeNull()
     const titles = Array.from(document.querySelectorAll('.tt-prefs-section-title')).map((n) => n.textContent)
-    expect(titles).toEqual(['Auto-save', 'Backup'])
+    expect(titles).toEqual(['Auto-save'])
   })
 
   test('cross-team tags live in the Data tab, before the destructive cleanup section', () => {
@@ -1958,16 +1347,17 @@ describe('preferences scroll behaviour', () => {
     expect(scroll.value).toBe(0)
   })
 
-  test('rebuilding the tab already on screen keeps the scroll position', () => {
+  test('rebuilding the tab already on screen keeps the scroll position', async () => {
     const { store, shell, appCtl } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'existing' })
-    openPrefs(store, shell, 'en-US', appCtl, 'backup')
+    appCtl.currentPassword = () => null
+    openPrefs(store, shell, 'en-US', appCtl, 'security')
     const scroll = trackScroll(document.querySelector('.tt-prefs-content') as HTMLElement)
     scroll.value = 180
-    // Turning backup off rebuilds the Saving & backup tab in place.
-    const checkbox = document.querySelector('input[type="checkbox"].tt-prefs-backup-checkbox') as HTMLInputElement
-    checkbox.checked = false
-    checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+    // Setting a password rebuilds the Security tab in place (plain → encrypted UI).
+    ;(document.querySelector('input[name="tt-prefs-new-password"]') as HTMLInputElement).value = 'brandnewpw'
+    ;(document.querySelector('input[name="tt-prefs-new-password-confirm"]') as HTMLInputElement).value = 'brandnewpw'
+    clickByText('Set password')
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(scroll.value).toBe(180)
   })
 })

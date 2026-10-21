@@ -243,8 +243,7 @@ function schemaVersionOf(parsed: unknown): number | null {
 
 /**
  * decryptDocument for the open path (ui/start.ts): also reports the file's
- * pre-migration schema version, which decides whether main.ts's
- * onDocumentOpened snapshots the original, unmigrated bytes to the backup.
+ * pre-migration schema version.
  * Decrypts and parses once — reading the version through a second full
  * decrypt+parse used to double the cost of every open.
  */

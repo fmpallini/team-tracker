@@ -12,7 +12,7 @@ export function createEmptyDocument(locale: Locale): Doc {
   return {
     docId: randomHex(16),
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily', ctrlWheelFontSize: true, dailyEdgeScroll: true },
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true },
     templates: builtinTemplates(locale),
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false },
@@ -193,6 +193,9 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   },
   17: (d) => {
     d.docId = randomHex(16)
+    // The second backup file was removed (the browser holds the live copy now).
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs) { delete prefs.dailyBackupEnabled; delete prefs.backupHandleId; delete prefs.backupFrequency }
   },
 }
 

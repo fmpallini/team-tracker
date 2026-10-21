@@ -6,7 +6,6 @@ test('createEmptyDocument shape', () => {
   expect(d.prefs).toEqual({
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
     autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
-    dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
     ctrlWheelFontSize: true, dailyEdgeScroll: true,
   })
   expect(d.teams).toEqual([])
@@ -169,43 +168,17 @@ describe('v7 → v8 migration (open refs in secondary pane)', () => {
   })
 })
 
-describe('v8 → v9 migration (daily backup prefs)', () => {
-  it('defaults dailyBackupEnabled to false and backupHandleId to null when missing', () => {
+describe('backup prefs (removed in schema 18)', () => {
+  it('drops the three backup fields from a pre-18 document', () => {
     const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 8
-    delete d.prefs.dailyBackupEnabled
-    delete d.prefs.backupHandleId
-    const doc = migrate(d)
-    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
-    expect(doc.prefs.dailyBackupEnabled).toBe(false)
-    expect(doc.prefs.backupHandleId).toBeNull()
-  })
-  it('leaves existing values untouched', () => {
-    const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 8
+    d.schemaVersion = 9
     d.prefs.dailyBackupEnabled = true
     d.prefs.backupHandleId = 'abc-123'
-    const doc = migrate(d)
-    expect(doc.prefs.dailyBackupEnabled).toBe(true)
-    expect(doc.prefs.backupHandleId).toBe('abc-123')
-  })
-})
-
-describe('v9 → v10 migration (backup frequency)', () => {
-  it('defaults backupFrequency to "daily" when missing', () => {
-    const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 9
-    delete d.prefs.backupFrequency
-    const doc = migrate(d)
-    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
-    expect(doc.prefs.backupFrequency).toBe('daily')
-  })
-  it('leaves an existing backupFrequency untouched', () => {
-    const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 9
     d.prefs.backupFrequency = 'hourly'
     const doc = migrate(d)
-    expect(doc.prefs.backupFrequency).toBe('hourly')
+    expect(doc.prefs).not.toHaveProperty('dailyBackupEnabled')
+    expect(doc.prefs).not.toHaveProperty('backupHandleId')
+    expect(doc.prefs).not.toHaveProperty('backupFrequency')
   })
 })
 

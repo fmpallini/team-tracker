@@ -29,7 +29,6 @@ import { renderRisks } from './modules/risks'
 import { openPrefs, onLocaleChanged, type PrefsAppCtl } from './ui/prefs'
 import { resetSessionKey } from './core/crypto'
 import { decodeForReload } from './core/reload-document'
-import { docToBytes } from './core/doc-bytes'
 import { readCurrent, sameEntry } from './core/fs'
 import { installCtrlWheelFontSize } from './ui/ctrl-wheel-font'
 import { toast, showErrorModal, showModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
@@ -38,7 +37,6 @@ import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage } from './core/storage-persist'
 import { createSaveController, type SaveController } from './core/save-controller'
-import { createBackupController, backupHealthPillState } from './core/backup-controller'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { resolveFileLockKey } from './core/file-identity'
@@ -88,8 +86,8 @@ let app: AppController | null = null
 // showStartScreen's onOpen callback is typed `=> void` — this adapts
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
-function openDocument(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null, images: ImageStore): void {
-  onDocumentOpened(session, doc, password, migratedFrom, images).catch((e: unknown) => {
+function openDocument(session: FileSession, doc: Doc, password: string | null, _migratedFrom: Uint8Array | null, images: ImageStore): void {
+  onDocumentOpened(session, doc, password, null, images).catch((e: unknown) => {
     console.error(e)
     // Previously silent (console.error only) — a throw here left the user
     // staring at whatever partially rendered before it, with no feedback at
@@ -182,7 +180,7 @@ function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
 }
 
-async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null, images: ImageStore): Promise<void> {
+async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, _migratedFrom: Uint8Array | null, images: ImageStore): Promise<void> {
   // A second file can be opened while one is already open — e.g. the File
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
@@ -301,17 +299,6 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     shell.setTitle(session.name, false)
   }
 
-  const backupCtl = createBackupController({ store })
-
-  // A migration just ran on open (see crypto.ts's parsePlainWithVersion/
-  // decryptDocumentWithVersion, used by start.ts) — snapshot the original, unmigrated bytes to
-  // the backup mirror once, before any edit/autosave can overwrite it with
-  // post-migration state. Fire-and-forget: writeBackupNow never throws, and
-  // nothing downstream depends on this completing before the shell renders.
-  if (migratedFrom) {
-    void backupCtl.writeBackupNow(migratedFrom)
-  }
-
   // The external-change conflict modal and its Reload / Overwrite / Fork choices
   // (see core/conflict-flow.ts). `saveCtl` is assigned just below — safe because
   // `resolveGrants` only runs from the permission toast, long after setup.
@@ -333,11 +320,6 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     shell,
     locale: () => store.doc.prefs.locale,
     isConflictOpen: conflictFlow.isOpen,
-    backupCtl,
-    // prefsAppCtl is assigned later in this same function scope (below) —
-    // safe because this closure only runs on a save failure well after
-    // setup completes, never during the temporal dead zone.
-    onOpenBackupPrefs: () => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl, 'backup'),
     onExternalChange: conflictFlow.onExternalChange,
     // Ctrl+S, the save pill and a tab-lock handover all go through saveNow();
     // this makes each of them include a keystroke still inside the editors' debounce.
@@ -360,28 +342,16 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     })
   )
 
-  // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes, and
-  // re-sync the header pill's backup tab whenever `dailyBackupEnabled` or
-  // `backupFrequency` does (ui/prefs.ts's Backup tab toggles/radios flip
-  // these with a plain `store.update`, with no direct reference to `shell` —
-  // without this, the tab stayed visible/wrong-labeled until some *other*
-  // reason happened to call `shell.applyPrefs()`, e.g. a locale switch).
+  // Re-arm the auto-save timer whenever `prefs.autoSaveMin` changes.
   // Nav-only changes (`updateNav`) don't notify `subscribe()`, and prefs are
   // only ever touched via `store.update`, so this is a simple, single-point
   // hook that doesn't need to widen ui/prefs.ts's contract.
   let lastAutoSaveMin = store.doc.prefs.autoSaveMin
-  let lastDailyBackupEnabled = store.doc.prefs.dailyBackupEnabled
-  let lastBackupFrequency = store.doc.prefs.backupFrequency
   disposers.push(
     store.subscribe(() => {
       if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
         lastAutoSaveMin = store.doc.prefs.autoSaveMin
         saveCtl.scheduleFrom(store.doc.prefs)
-      }
-      if (store.doc.prefs.dailyBackupEnabled !== lastDailyBackupEnabled || store.doc.prefs.backupFrequency !== lastBackupFrequency) {
-        lastDailyBackupEnabled = store.doc.prefs.dailyBackupEnabled
-        lastBackupFrequency = store.doc.prefs.backupFrequency
-        shell.applyPrefs(store.doc.prefs)
       }
     })
   )
@@ -443,26 +413,12 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     store,
     session,
     shell,
-    backupCtl,
     runExclusive: (fn) => saveCtl.runExclusive(fn),
     getPassword: currentPassword,
     setPassword: (newPw) => {
       if (app) app.password = newPw
     },
   })
-
-  async function retryBackupWrite(): Promise<void> {
-    try {
-      await backupCtl.writeBackupNow(await docToBytes(store.doc, currentPassword(), store.images))
-    } catch (e) {
-      console.error(e)
-    }
-    // Whether the retry succeeded or not, currentHealth() now reflects the
-    // truth — the pill otherwise keeps showing the pre-retry state until the
-    // next full save cycle, which a password change (this button's usual
-    // trigger) just pushed off by calling markSaved().
-    shell.setSaveState(backupHealthPillState(await backupCtl.currentHealth()))
-  }
 
   const prefsAppCtl: PrefsAppCtl = {
     changePassword,
@@ -473,24 +429,8 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     isReadOnly(): boolean {
       return store.readOnly
     },
-    hasFileHandle(): boolean {
-      return session.handle !== null
-    },
-    fileHandle(): FileSystemFileHandle | null {
-      return session.handle
-    },
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
-    backupStatus: () => backupCtl.getStatus(),
-    backupHealth: () => backupCtl.currentHealth(),
-    // Routed through resolveGrants() rather than calling backupCtl directly:
-    // resolveGrants() is what the save-pill's own "Grant access…" click uses,
-    // and it's the one place that also rewrites the backup file, recomputes
-    // health, refreshes the pill, and dismisses the now-stale permission
-    // toast — a bare backupCtl.regrantPermission() call would fix the grant
-    // but leave the pill/toast showing the lapse until the next save cycle.
-    regrantBackupPermission: () => saveCtl.resolveGrants(),
-    retryBackupWrite,
   }
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)
@@ -542,7 +482,6 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   shell.onCloseFile(closeFile)
   shell.onSaveRequest(() => void saveCtl.saveNow({ explicit: true }))
   shell.onGrantRequest(() => void saveCtl.resolveGrants())
-  shell.onBackupRetryRequest(() => void retryBackupWrite())
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was

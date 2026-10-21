@@ -73,21 +73,8 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     const forkSession = await pickCreate(`${stem} (copy).tmv`)
     if (!forkSession) return false
 
-    // The fork file must be written with the mirror detached: `backupHandleId`
-    // travels inside the .tmv itself, so a fork that kept it would mirror its
-    // own saves into the ORIGINAL file's .bck and quietly overwrite the
-    // backups belonging to a document it just diverged from. The user re-picks
-    // a backup target for the fork in prefs. Serialized from a detached copy
-    // and applied to the live store only AFTER the write succeeds, so a failed
-    // fork (disk full, permission) doesn't silently switch the original
-    // document's backups off.
     const currentPw = deps.getPassword()
-    const detached: Doc = { ...store.doc, prefs: { ...store.doc.prefs, dailyBackupEnabled: false, backupHandleId: null } }
-    await forceWrite(forkSession, await docToBytes(detached, currentPw, store.images))
-    store.update((d) => {
-      d.prefs.dailyBackupEnabled = false
-      d.prefs.backupHandleId = null
-    })
+    await forceWrite(forkSession, await docToBytes(store.doc, currentPw, store.images))
     // The document's content is now persisted — to the fork rather
     // than to `session`, but persisted. Clearing dirty here is what
     // stops teardown (reached via `reopen` below) from
@@ -102,8 +89,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     // file's write lock, i.e. two documents contending for one
     // lock. Going back through openDocument() gives the fork a
     // correctly-keyed tab lock, a fresh save controller and
-    // auto-save interval, a fresh backup controller, the right
-    // title and a clean save state, with no new lifecycle code:
+    // auto-save interval, the right title and a clean save state, with no new lifecycle code:
     // onDocumentOpened() already tears the previous app down.
     // (forceWrite above has also repointed the 'lastHandle' IndexedDB
     // key at the fork, so "reopen last" follows it.)

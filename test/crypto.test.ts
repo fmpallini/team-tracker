@@ -281,8 +281,7 @@ test('parsePlain rejects a plain file claiming a newer schema than this build su
 })
 
 // Open-time variants that also report the file's pre-migration schema
-// version (main.ts snapshots the unmigrated bytes to the backup when a
-// migration ran). They decrypt/parse exactly once — the separate "peek"
+// version. They decrypt/parse exactly once — the separate "peek"
 // helpers they replaced repeated the whole AES decrypt and JSON.parse of the
 // document on every open.
 test('decryptDocumentWithVersion returns the migrated doc and the pre-migration schema version', async () => {

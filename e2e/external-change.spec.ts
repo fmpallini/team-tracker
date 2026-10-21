@@ -54,19 +54,6 @@ test.describe('external file change conflict', () => {
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
-    // Turn the daily backup mirror on first, so the fork's own prefs can be
-    // checked for it afterwards: a fork that inherited backupHandleId would
-    // mirror its saves into the ORIGINAL file's .bck.
-    await page.click('.tt-btn-settings')
-    await page.getByRole('tab', { name: 'Saving & backup' }).click()
-    const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
-    await expect(backupCheckbox).toBeEnabled()
-    await backupCheckbox.check()
-    // See fs-api.spec.ts's backup test: the picker→idbSet→store.update chain
-    // that actually persists backupHandleId has no DOM signal to wait on.
-    await page.waitForTimeout(500)
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Control+s')
     await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
 
     // Another program clobbers the file behind the app's back.
@@ -95,11 +82,6 @@ test.describe('external file change conflict', () => {
 
     // The in-memory edit that caused the conflict came along to the fork.
     await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText('Forked Team')
-
-    // The fork does not inherit the original's backup target.
-    await page.click('.tt-btn-settings')
-    await page.getByRole('tab', { name: 'Saving & backup' }).click()
-    await expect(page.locator('.tt-prefs-backup-checkbox')).not.toBeChecked()
   })
 
   test('Escape on the conflict modal does not lock saving: the next save raises it again', async ({ page }) => {

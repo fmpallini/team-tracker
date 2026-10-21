@@ -24,7 +24,7 @@ const lastKnownBytes = new WeakMap<FileSession, Uint8Array>()
  * The "reopen last" pointer is a convenience. A failure to persist it
  * (IndexedDB quota, blocked, closed) must never turn an already-completed read
  * or write into an error — the save would report failure, stay dirty and skip
- * the backup mirror even though the bytes are on disk.
+ * the bookkeeping that follows even though the bytes are on disk.
  */
 async function rememberHandle(handle: FileSystemFileHandle): Promise<void> {
   try {
@@ -85,35 +85,6 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
     // and the caller may still back out (the create flow's password prompt)
     // — "reopen last" would then land on a 0-byte file and report it corrupt.
     // writeFile/forceWrite repoint it once real bytes are on disk.
-    return { handle, name: handle.name, lastModified }
-  } catch (e) {
-    if (isAbortError(e)) return null
-    throw e
-  }
-}
-
-/**
- * Save-picker for the daily `.bck` mirror file. Deliberately NOT `pickCreate`:
- *  - it must not touch the `'lastHandle'` IndexedDB key, which is the primary
- *    file's "reopen last" pointer — and unlike `pickCreate`, nothing here
- *    ever repoints it later, because the `.bck` is never written through
- *    `writeFile`/`forceWrite` (see `core/backup-controller.ts`'s
- *    `writeBackupBytes`);
- *  - the picker filter is `.bck`, not `.tmv`.
- * Unregistered MIME type keeps the filter to .bck — see `pickOpen` above.
- *
- * `startIn`, when given the primary file's handle, opens the picker in that
- * file's folder by default — the user can still navigate elsewhere, so this
- * is a starting point, not a guarantee (see `prefs_backup_hint`'s wording).
- */
-export async function pickCreateBackup(suggestedName: string, startIn?: FileSystemHandle): Promise<FileSession | null> {
-  try {
-    const handle = await window.showSaveFilePicker({
-      suggestedName,
-      types: [{ description: 'Team Tracker Backup', accept: { 'application/vnd.teamtracker.bck': ['.bck'] } }],
-      startIn,
-    })
-    const { lastModified } = await readHandle(handle)
     return { handle, name: handle.name, lastModified }
   } catch (e) {
     if (isAbortError(e)) return null
@@ -203,8 +174,7 @@ export async function sameEntry(a: FileSession, b: FileSession): Promise<boolean
  * Chromium can surface it as an even less specific failure that
  * `save-controller.ts`'s `doSave()` can't tell apart from a generic write
  * error, so it lands on the "Save as…" toast instead of "Grant access…".
- * Querying first (never prompts, needs no activation — same pattern as
- * `backup-controller.ts`'s `getHandle`) collapses every such case into one
+ * Querying first (never prompts, needs no activation) collapses every such case into one
  * recognizable `NotAllowedError` that routes to the grant-recovery path.
  */
 async function assertWritable(handle: FileSystemFileHandle): Promise<void> {

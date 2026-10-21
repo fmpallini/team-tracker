@@ -72,7 +72,7 @@ export async function setNextOpenName(page: Page, name: string): Promise<void> {
 }
 
 /**
- * Reads an OPFS file's raw bytes directly — for asserting on what the app actually wrote to disk (e.g. the backup mirror), independent of app-level UI state.
+ * Reads an OPFS file's raw bytes directly — for asserting on what the app actually wrote to disk, independent of app-level UI state.
  *
  * While the app commits a save (`createWritable().close()`), the file is briefly
  * reported as missing (`NotFoundError`) or unreadable (`NotReadableError`). A

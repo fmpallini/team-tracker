@@ -243,7 +243,7 @@ async function overlayCycle(page: Page): Promise<void> {
   // build their own DOM (including the password strength meter).
   await page.locator('.tt-btn-settings').click()
   await expect(dialog).toBeVisible()
-  for (const tab of ['Saving & backup', 'Templates', 'Security', 'Data', 'About']) {
+  for (const tab of ['Saving', 'Templates', 'Security', 'Data', 'About']) {
     await dialog.locator('.tt-prefs-tab-btn', { hasText: tab }).first().click()
   }
   await dialog.getByRole('button', { name: 'OK' }).click()
@@ -327,7 +327,7 @@ async function overlayCycle(page: Page): Promise<void> {
 
 /**
  * The surfaces the two cycles above never touch: the pane history stack, the
- * due panel, the backlinks popover, and the save + backup controllers. Every
+ * due panel, the backlinks popover, and the save controller. Every
  * step is undone (or nets to the same doc state) by the end, so N iterations
  * must cost the same as one.
  *
@@ -363,8 +363,7 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.tt-backlinks-panel')).toHaveCount(0)
 
-  // Dirty the doc, then force a real save. With backup enabled in setup this
-  // is one full save-controller round plus one backup-controller mirror per
+  // Dirty the doc, then force a real save: one full save-controller round per
   // cycle. Appending (no clear) keeps the @Beacon chip intact; the few extra
   // chars per cycle are one text node, far below the heap bound.
   await switchModule(page, /Daily/i)
@@ -812,7 +811,7 @@ test.describe('resource growth over a long session', () => {
     expect(perCycleHeapMB, 'JS heap retained per undo-toast round trip (MB)').toBeLessThan(1.0)
   })
 
-  test('history stepping, the due panel, backlinks and the save/backup controllers do not accumulate', async ({ page }) => {
+  test('history stepping, the due panel, backlinks and the save controller do not accumulate', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
@@ -821,22 +820,6 @@ test.describe('resource growth over a long session', () => {
     const cdp = await page.context().newCDPSession(page)
     await cdp.send('HeapProfiler.enable')
     await cdp.send('Runtime.enable')
-
-    // Turn daily backup on: the shimmed save picker hands back a real OPFS
-    // handle, so every Ctrl+S in the cycle below also drives
-    // backup-controller's mirror write, not just save-controller.
-    await page.locator('.tt-btn-settings').click()
-    const prefs = page.getByRole('dialog')
-    await prefs.locator('.tt-prefs-tab-btn', { hasText: 'Backup' }).first().click()
-    const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
-    await expect(backupCheckbox).toBeEnabled()
-    await backupCheckbox.check()
-    // pickAndStoreBackupTarget()'s picker->idbSet->store.update chain is all
-    // local (OPFS + IndexedDB), no network — a bounded settle, not a flake
-    // source. The prefs tab doesn't re-render on it so there's no DOM signal.
-    await page.waitForTimeout(500)
-    await prefs.getByRole('button', { name: 'OK' }).click()
-    await expect(prefs).toHaveCount(0)
 
     await addTeam(page, 'Alpha')
 
@@ -882,9 +865,9 @@ test.describe('resource growth over a long session', () => {
 
     // Each cycle steps the pane history stack back and forward, opens and
     // closes the due panel and the backlinks popover, and forces a real
-    // save + backup mirror. An unbounded history stack, a re-armed nav
+    // save. An unbounded history stack, a re-armed nav
     // listener, a due-panel/backlinks singleton that isn't released, or a
-    // save/backup round that retains its previous payload all read as slope.
+    // save round that retains its previous payload all read as slope.
     expect(perCycleNodes, 'DOM nodes retained per controller cycle').toBeLessThan(25)
     expect(perCycleListeners, 'JS event listeners retained per controller cycle').toBeLessThan(5)
     expect(perCycleHeapMB, 'JS heap retained per controller cycle (MB)').toBeLessThan(1.0)

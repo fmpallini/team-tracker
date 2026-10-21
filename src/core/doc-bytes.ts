@@ -1,7 +1,7 @@
 // src/core/doc-bytes.ts — the one place that decides how a document becomes
 // file bytes. A password means AES-GCM (crypto.ts's `.tmv` binary format);
 // `null` means a password-less file (`TMV-PLAIN2` header + readable JSON).
-// Every writer — save, backup mirror, conflict overwrite/fork, password
+// Every writer — save, conflict overwrite/fork, password
 // change, file creation — used to repeat this ternary inline.
 //
 // Lives apart from crypto.ts on purpose: callers' tests mock crypto.ts's two
@@ -18,8 +18,7 @@ import { newStamp, type FileStamp } from './file-stamp'
 /**
  * Throws `CorruptFileError` (naming the field) rather than serializing a doc
  * that `validateDoc` rejects: the open path refuses such a file, so writing it
- * would leave the user's only copy unopenable — and the backup mirror would
- * copy it. Callers already treat a throw here as a failed save and keep the
+ * would leave the user's only copy unopenable. Callers already treat a throw here as a failed save and keep the
  * edits in memory.
  *
  * Only images some note still references are written (the sweep): `doc` and

@@ -16,9 +16,6 @@ export interface Prefs {
   palette: PaletteId
   dueSoonDays: number
   openRefsInSecondaryPane: boolean
-  dailyBackupEnabled: boolean
-  backupHandleId: string | null
-  backupFrequency: 'daily' | 'hourly'
   // When on, Ctrl+mouse-wheel steps `fontSize` through the five sizes instead
   // of triggering the browser's own page zoom (main.ts's wheel handler). Off
   // hands the gesture back to the browser.

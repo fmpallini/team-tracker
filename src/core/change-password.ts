@@ -12,14 +12,11 @@ import { writeFile, downloadFallback } from './fs'
 import { toast } from '../ui/modal'
 import { t } from './i18n'
 import type { Shell } from '../ui/shell'
-import type { BackupController } from './backup-controller'
-import { backupHealthPillState } from './backup-controller'
 
 export interface ChangePasswordDeps {
   store: Store
   session: FileSession
   shell: Shell
-  backupCtl: BackupController
   /** Waits out (and blocks) any concurrent save — see save-controller.ts's `runExclusive`. */
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
   /** The password the file is under right now (live read), needed to restore the image blobs' key if the write fails. */
@@ -63,9 +60,8 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       const images = deps.store.images
       const oldPw = deps.getPassword()
       await images.rekey(newPw === null ? null : await blobCodec(newPw))
-      let bytes: Uint8Array
       try {
-        bytes = await docToBytes(deps.store.doc, newPw, images)
+        const bytes = await docToBytes(deps.store.doc, newPw, images)
         if (deps.session.handle) {
           await writeFile(deps.session, bytes)
         } else {
@@ -77,25 +73,9 @@ export function createChangePassword(deps: ChangePasswordDeps) {
         await images.rekey(oldPw === null ? null : await blobCodec(oldPw))
         throw e
       }
-      // Belt-and-braces: `writeBackupNow` is contractually non-throwing, but
-      // this is the one call site where an escaped rejection would be
-      // actively harmful — the primary file is already written under the new
-      // password, so bailing here would leave the in-memory password holding
-      // the old one while the user is told the change failed.
-      const backupOk = await deps.backupCtl.writeBackupNow(bytes).catch((e: unknown) => {
-        console.error(e)
-        return false
-      })
-      // writeBackupNow() returns false for three different reasons — the
-      // backup pref being off, no handle configured yet, or a genuine write
-      // failure — and only the last one means the backup file itself might
-      // still be under the old password. Marking the mismatch for the first
-      // two would flag a backup that was never written in the first place.
-      const p = deps.store.doc.prefs
-      if (!backupOk && p.dailyBackupEnabled && p.backupHandleId) deps.backupCtl.markPasswordMismatch()
       deps.setPassword(newPw)
       deps.store.markSaved()
-      deps.shell.setSaveState(backupHealthPillState(await deps.backupCtl.currentHealth()))
+      deps.shell.setSaveState('saved')
       deps.shell.setTitle(deps.session.name, false)
     })
   }

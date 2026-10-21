@@ -6,7 +6,6 @@ import { blobCodec, decryptDocumentWithVersion, parsePlainWithVersion, resetSess
 import { docToBytes } from '../src/core/doc-bytes'
 import type { FileSession } from '../src/core/fs'
 import type { Shell } from '../src/ui/shell'
-import type { BackupController } from '../src/core/backup-controller'
 
 // Real crypto and real docToBytes: what matters here is which key the image
 // blobs end up sealed under, which a mocked crypto module cannot show.
@@ -17,14 +16,6 @@ vi.mock('../src/core/idb', () => ({ idbGet: vi.fn(async () => undefined), idbSet
 
 const A = 'a'.repeat(32)
 const PIXELS = new Uint8Array([9, 8, 7, 6, 5])
-
-function makeBackupCtl(): BackupController {
-  return {
-    writeBackupNow: vi.fn(async () => true), maybeWriteBackup: vi.fn(async () => {}), regrantPermission: vi.fn(async () => {}),
-    hasMissingGrant: vi.fn(async () => false), checkOrphaned: vi.fn(async () => false), getStatus: vi.fn(async () => null),
-    currentHealth: vi.fn(async () => 'ok' as const), markPasswordMismatch: vi.fn(),
-  } as unknown as BackupController
-}
 
 async function setup(password: string | null) {
   const doc = createEmptyDocument('en-US')
@@ -39,7 +30,7 @@ async function setup(password: string | null) {
   let current = password
   const exclusive = vi.fn((fn: () => Promise<unknown>): Promise<unknown> => fn())
   const changePassword = createChangePassword({
-    store, session, shell: { setSaveState: vi.fn(), setTitle: vi.fn() } as unknown as Shell, backupCtl: makeBackupCtl(),
+    store, session, shell: { setSaveState: vi.fn(), setTitle: vi.fn() } as unknown as Shell,
     runExclusive: <T,>(fn: () => Promise<T>) => exclusive(fn) as Promise<T>, getPassword: () => current, setPassword: (p) => { current = p },
   })
   return { store, changePassword, exclusive, written: () => fsMocks.writeFile.mock.calls.at(-1)![1] }

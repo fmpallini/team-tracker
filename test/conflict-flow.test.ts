@@ -218,32 +218,13 @@ describe('Fork', () => {
 
   test('a dismissed picker changes nothing: resolves false, writes nothing, keeps the modal guard up', async () => {
     mocks.pickCreate.mockResolvedValue(null)
-    const { flow, store, deps, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
-
+    const { flow, deps, open } = setup()
     const done = await open().onFork!()
 
     expect(done).toBe(false)
     expect(mocks.forceWrite).not.toHaveBeenCalled()
     expect(deps.reopen).not.toHaveBeenCalled()
-    expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-    expect(store.doc.prefs.backupHandleId).toBe('h')
     expect(flow.isOpen()).toBe(true)
-  })
-
-  test('detaches the backup mirror BEFORE serializing, so the fork file never points at the original\'s .bck', async () => {
-    mocks.pickCreate.mockResolvedValue(FORK)
-    const { store, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
-    let seenAtSerialize: unknown
-    mocks.docToBytes.mockImplementation(async (doc) => {
-      seenAtSerialize = { on: doc.prefs.dailyBackupEnabled, id: doc.prefs.backupHandleId }
-      return BYTES
-    })
-
-    await open().onFork!()
-
-    expect(seenAtSerialize).toEqual({ on: false, id: null })
   })
 
   test('writes the fork under the live password, marks the document saved, and re-opens it on the fork', async () => {
@@ -286,28 +267,16 @@ describe('Fork', () => {
     expect(flow.isOpen()).toBe(true)
   })
 
-  test('a failed fork write leaves the original backup settings alone', async () => {
+  test('a failed fork write leaves the original document dirty and open on the conflict', async () => {
     mocks.pickCreate.mockResolvedValue(FORK)
     mocks.forceWrite.mockRejectedValue(new Error('disk full'))
-    const { store, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
+    const { flow, store, deps, open } = setup()
+    store.update((d) => { d.prefs.fontSize = 'L' })
 
     await expect(open().onFork!()).rejects.toThrow('disk full')
 
-    expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-    expect(store.doc.prefs.backupHandleId).toBe('h')
-  })
-
-  test('after a successful fork the re-opened document has the backup mirror detached', async () => {
-    mocks.pickCreate.mockResolvedValue(FORK)
-    const { store, deps, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
-
-    await open().onFork!()
-
-    const reopened = (deps.reopen as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Doc
-    expect(reopened.prefs.dailyBackupEnabled).toBe(false)
-    expect(reopened.prefs.backupHandleId).toBeNull()
-    expect(store.dirty).toBe(false)
+    expect(store.dirty).toBe(true)
+    expect(deps.reopen).not.toHaveBeenCalled()
+    expect(flow.isOpen()).toBe(true)
   })
 })

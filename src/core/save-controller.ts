@@ -7,13 +7,10 @@ import { docToBytes } from './doc-bytes'
 import { writeFile, downloadFallback, pickCreate, supportsFsApi, ExternalChangeError, type FileSession } from './fs'
 import { t, type Locale } from './i18n'
 import type { Shell } from '../ui/shell'
-import type { BackupController, BackupHealth } from './backup-controller'
-import { backupHealthPillState } from './backup-controller'
 import { toast, dismissToast } from '../ui/modal'
 
-/** `toast()` keys for the two permission-lapse notices, shared between the toast() calls that raise them and the dismissToast() calls that clear them once the lapse is fixed through some other path than the toast's own action button (the save-state pill, or a prefs-modal regrant). */
+/** `toast()` key for the permission-lapse notice, shared between the toast() call that raises it and the dismissToast() calls that clear it once the lapse is fixed through some other path than the toast's own action button (the save-state pill). */
 export const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
-const BACKUP_PERMISSION_TOAST_KEY = 'backup-permission'
 
 /** Shared by every "save failed" toast so a retry that fails again replaces it instead of stacking another sticky copy. */
 export const SAVE_ERROR_TOAST_KEY = 'save-error'
@@ -45,11 +42,10 @@ export interface SaveController {
   /** Resolves once no save is in flight and no trailing round is queued. */
   flush(): Promise<void>
   /**
-   * Re-requests write permission on whichever of the primary file / backup
-   * file (if configured) currently need it, then retries the save. This is
-   * the save-state pill's click handler while it's in the 'permission'
+   * Re-requests write permission on the file handle, then retries the save.
+   * This is the save-state pill's click handler while it's in the 'permission'
    * state, and the "Grant access…" toast action — same recovery either way.
-   * A no-op, resolving cleanly, if neither actually needs re-granting.
+   * A no-op, resolving cleanly, if the grant is already fine and nothing is dirty.
    */
   resolveGrants(): Promise<void>
   dispose(): void
@@ -71,10 +67,6 @@ export interface SaveControllerDeps {
    * doesn't stack a second modal on top of the first.
    */
   isConflictOpen?(): boolean
-  /** Mirrors every successful save to the daily .bck file, if the user has enabled it. Optional — plumbed in only by main.ts, not required by every caller/test. */
-  backupCtl?: BackupController
-  /** Opens Prefs on the Backup tab (where backup settings live) — the orphaned-backup toast's action button. Optional like backupCtl — not required by every caller/test. */
-  onOpenBackupPrefs?: () => void
   /**
    * Commits any debounced editor change into the store. Called at the top of
    * `saveNow()` — the one choke point every trigger funnels through — so a
@@ -100,7 +92,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
   let queuedExplicit = false
   let timer: ReturnType<typeof setInterval> | null = null
   const now = deps.now ?? Date.now
-  /** Durations of the last few successful writes (encode + write, not the backup), and when the latest ended. */
+  /** Durations of the last few successful writes (encode + write), and when the latest ended. */
   const recentDurations: number[] = []
   let lastSavedAt = Number.NEGATIVE_INFINITY
   let gapTimer: ReturnType<typeof setTimeout> | null = null
@@ -152,16 +144,11 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     })
   }
 
-  // One-shot per "episode": while a grant stays missing, the auto-save
-  // interval keeps retrying (and, for the backup file, every successful
-  // primary save re-checks it) — without this, each retry would stack
-  // another identical sticky toast. Reset back to false once everything's
-  // fully granted again (see the success tail of doSave()), so a *later*,
-  // unrelated lapse still gets its own toast.
+  // One-shot per "episode": while the grant stays missing, the auto-save
+  // interval keeps retrying — without this, each retry would stack another
+  // identical sticky toast. Reset back to false once a write succeeds (see the
+  // success tail of doSave()), so a *later*, unrelated lapse still gets its own toast.
   let permissionEpisodeToasted = false
-  let backupPermissionEpisodeToasted = false
-  let backupErrorEpisodeToasted = false
-  let backupPasswordMismatchEpisodeToasted = false
 
   /**
    * Chromium can drop a file handle's write permission mid-session (tab
@@ -170,9 +157,6 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
    * throws `NotAllowedError` in that case. Recovery is re-requesting
    * permission on the *same* handle, not "Save as…": the file the user
    * already has open is still the right file, it just needs re-granting.
-   * A backup-only lapse gets its own state and toast (`reportBackupPermissionNeeded`,
-   * below) so the two are never conflated — `resolveGrants()` is the shared
-   * recovery for both.
    */
   function reportPermissionNeeded(): void {
     deps.shell.setSaveState('permission')
@@ -186,43 +170,10 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     })
   }
 
-  function reportBackupPermissionNeeded(): void {
-    deps.shell.setSaveState('backup-permission')
-    if (backupPermissionEpisodeToasted) return
-    backupPermissionEpisodeToasted = true
-    const lc = deps.locale()
-    toast(t(lc, 'backup_permission_toast'), {
-      sticky: true,
-      key: BACKUP_PERMISSION_TOAST_KEY,
-      action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void resolveGrants() },
-    })
-  }
-
-  function reportBackupError(): void {
-    deps.shell.setSaveState('backup-error')
-    if (backupErrorEpisodeToasted) return
-    backupErrorEpisodeToasted = true
-    // Same key as backup-controller.ts's writeBackupNow() toast — see its
-    // comment. Whichever fires second replaces the first in the stack rather
-    // than stacking a duplicate of the same message.
-    toast(t(deps.locale(), 'backup_write_failed_toast'), { sticky: false, key: 'backup-write-failed' })
-  }
-
-  function reportBackupPasswordMismatch(): void {
-    deps.shell.setSaveState('backup-password-mismatch')
-    if (backupPasswordMismatchEpisodeToasted) return
-    backupPasswordMismatchEpisodeToasted = true
-    toast(t(deps.locale(), 'backup_password_mismatch_toast'), { sticky: true })
-  }
-
   async function resolveGrants(): Promise<void> {
     const handle = deps.session.handle
     if (handle) {
       try {
-        // queryPermission first: requestPermission() is a no-op returning
-        // 'granted' immediately when the grant is already fine, but skipping
-        // straight to it would still be one more call than necessary on the
-        // (common) path where only the *backup* file's grant actually lapsed.
         let permission = await handle.queryPermission({ mode: 'readwrite' })
         if (permission !== 'granted') {
           // The button click that triggered this satisfies the user-activation
@@ -235,43 +186,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
         return
       }
     }
-    // Chained directly off the same click, no intervening `await` on anything
-    // else — stays inside the activation window `requestPermission()` above
-    // just spent, so the backup file's own native prompt (if it needs one;
-    // it's a separate file with its own grant) doesn't need a second gesture.
-    await deps.backupCtl?.regrantPermission()
-    if (deps.store.dirty) {
-      await saveNow({ explicit: true })
-      return
-    }
-    // The primary file is already clean — this "Grant access…" click was
-    // fired only because the *backup* grant had lapsed (doSave()'s success
-    // tail flips the pill amber off `currentHealth()` even when the primary
-    // write went through). `saveNow()` would no-op here on `!dirty`, leaving
-    // the just-regranted backup un-mirrored until the next interval-gated
-    // `maybeWriteBackup` — up to a day later. Push the current bytes straight
-    // to it now instead; `writeBackupNow()` self-no-ops if the grant is still
-    // missing (user dismissed the native prompt).
-    try {
-      const bytes = await docToBytes(deps.store.doc, deps.getPassword(), deps.store.images)
-      await deps.backupCtl?.writeBackupNow(bytes)
-    } catch (e) {
-      console.error(e)
-    }
-    let health: BackupHealth = 'ok'
-    try {
-      health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
-    } catch (e) {
-      console.error(e)
-    }
-    // The regrant above just fixed the lapse that got us here — reset the
-    // latch so a genuinely NEW backup-permission lapse before the next full
-    // save cycle still gets its own toast instead of a silent pill change.
-    if (health !== 'permission') {
-      backupPermissionEpisodeToasted = false
-      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-    }
-    deps.shell.setSaveState(backupHealthPillState(health))
+    if (deps.store.dirty) await saveNow({ explicit: true })
   }
 
   /**
@@ -293,19 +208,6 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     deps.session.handle = newSession.handle
     deps.session.name = newSession.name
     deps.session.lastModified = newSession.lastModified
-    // `backupHandleId` travels inside the document, so left alone the new file
-    // would mirror its saves into the ORIGINAL file's .bck and quietly
-    // overwrite the backup of a document it just diverged from — the same
-    // reasoning as conflict-flow.ts's fork. The user re-picks a target for
-    // the new file in prefs. (Unlike fork this keeps the tab lock on the old
-    // file's key: re-keying it needs a full reopen, which this dep set can't do.)
-    if (deps.store.doc.prefs.dailyBackupEnabled || deps.store.doc.prefs.backupHandleId) {
-      deps.store.update((d) => {
-        d.prefs.dailyBackupEnabled = false
-        d.prefs.backupHandleId = null
-      })
-      toast(t(deps.locale(), 'save_as_backup_detached_toast'), { sticky: true })
-    }
     await saveNow({ explicit: true })
   }
 
@@ -372,71 +274,17 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     lastSavedAt = now()
     recentDurations.push(lastSavedAt - startedAt)
     if (recentDurations.length > GAP_WINDOW) recentDurations.shift()
-    await deps.backupCtl?.maybeWriteBackup(bytes)
     // Clearing `dirty` for bytes that predate an edit would leave that edit
     // unmarked if the trailing round queued for it then fails: no pill, no
     // close prompt, no beforeunload warning, and a tab handover would let it go.
     // Same guard as conflict-flow.ts's overwrite().
     if (deps.store.rev === revAtSnapshot) deps.store.markSaved()
-    // Reaching this point at all means the primary write just succeeded —
-    // true regardless of what the BACKUP's health turns out to be below — so
-    // the primary latch resets unconditionally here rather than only in some
-    // of the branches beneath it.
     permissionEpisodeToasted = false
     dismissToast(SAVE_PERMISSION_TOAST_KEY)
     dismissToast(SAVE_ERROR_TOAST_KEY)
-    // The primary file is already written (and marked saved, unless an edit
-    // landed mid-round). A failing backup lookup (IndexedDB blocked, handle
-    // gone) must not leave the pill on "saving…" or reject out of the save
-    // cycle; the backup's own write path reports its failures, so an
-    // unreadable health just reads as "nothing to flag".
-    let health: BackupHealth = 'ok'
-    try {
-      health = (await deps.backupCtl?.currentHealth()) ?? 'ok'
-    } catch (e) {
-      console.error(e)
-    }
-    if (health === 'orphaned') {
-      // The moved-computer case: `backupHandleId` travelled inside the .tmv
-      // itself, but the handle it names only ever lived in the old machine's
-      // IndexedDB. Left alone this fails silently forever. Disabling the pref
-      // here (rather than just toasting) also self-heals: the pref flip is
-      // itself a mutation, so the dirty guard schedules a trailing save that
-      // persists `dailyBackupEnabled: false` to the primary file.
-      // Read before the self-heal below, which dirties the store itself: the pill
-      // must reflect only the user's own unsaved edits, not that queued heal.
-      const dirtyBeforeHeal = deps.store.dirty
-      deps.store.update((d) => {
-        d.prefs.dailyBackupEnabled = false
-      })
-      const openBackupPrefs = deps.onOpenBackupPrefs
-      toast(t(deps.locale(), 'backup_orphaned_toast'), {
-        sticky: true,
-        ...(openBackupPrefs ? { action: { label: t(deps.locale(), 'backup_orphaned_action'), onClick: () => openBackupPrefs() } } : {}),
-      })
-      // "Orphaned" means the backup situation is now resolved (the pref just
-      // got disabled) — clear its three latches too, so a *different* backup
-      // issue detected after the user re-enables it gets its own toast.
-      backupPermissionEpisodeToasted = false
-      backupErrorEpisodeToasted = false
-      backupPasswordMismatchEpisodeToasted = false
-      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-      deps.shell.setSaveState(dirtyBeforeHeal ? 'dirty' : 'saved')
-    } else if (health === 'permission') {
-      reportBackupPermissionNeeded()
-    } else if (health === 'error') {
-      reportBackupError()
-    } else if (health === 'password-mismatch') {
-      reportBackupPasswordMismatch()
-    } else {
-      backupPermissionEpisodeToasted = false
-      backupErrorEpisodeToasted = false
-      backupPasswordMismatchEpisodeToasted = false
-      dismissToast(BACKUP_PERMISSION_TOAST_KEY)
-      // Follows `dirty` rather than assuming 'saved': after a mid-save edit the
-      // trailing round may never run (fallback mode, read-only) and nothing else refreshes it.
-      deps.shell.setSaveState(deps.store.dirty ? 'dirty' : 'saved')
-    }
+    // Follows `dirty` rather than assuming 'saved': after a mid-save edit the
+    // trailing round may never run (fallback mode, read-only) and nothing else refreshes it.
+    deps.shell.setSaveState(deps.store.dirty ? 'dirty' : 'saved')
     deps.shell.setTitle(deps.session.name, deps.store.dirty)
   }
 
