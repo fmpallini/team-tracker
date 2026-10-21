@@ -136,7 +136,9 @@ async function snapshot(page: Page): Promise<Snapshot> {
     for (const c of Array.from(ed.children)) if (!BLOCK.has(c.tagName)) issues.push('top-level ' + c.tagName)
     for (const c of Array.from(ed.children)) if (c.tagName === 'DIV' && c.querySelector('div,h1,h2,h3,ul,ol,pre,blockquote')) issues.push('block nested in a div')
     for (const e of Array.from(ed.querySelectorAll('*'))) {
-      if (!ALLOWED.has(e.tagName)) issues.push('tag ' + e.tagName)
+      // A pasted data: picture becomes an image block, whose <img> is the one tag outside the list (a remote src never survives).
+      const isPicture = e.tagName === 'IMG' && e.closest('.tt-img') !== null && (e.getAttribute('src') ?? '').startsWith('data:image/')
+      if (!ALLOWED.has(e.tagName) && !isPicture) issues.push('tag ' + e.tagName)
       for (const a of Array.from(e.attributes)) if (a.name === 'style' || /^on/i.test(a.name)) issues.push(`attribute ${e.tagName}@${a.name}`)
       const href = e.getAttribute('href')
       if (href && !/^(https?:|mailto:)/.test(href)) issues.push('href ' + href.slice(0, 40))

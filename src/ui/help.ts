@@ -147,7 +147,9 @@ export function showEditorHelp(locale: Locale): void {
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_refs_heading')),
     el('p', { class: 'tt-help-text' }, t(locale, 'help_refs_text')),
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_templates_heading')),
-    el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text'))
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text')),
+    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_images_heading')),
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_images_text'))
   )
 
   const handle: { close: () => void } = showModal({

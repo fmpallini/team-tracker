@@ -125,6 +125,17 @@ test('editor help (pt-BR) keeps markdown examples and key names in Portuguese', 
   expect(text).toContain('Ctrl+clique / clique do meio')
 })
 
+test('editor help explains pictures: how to add them, the formats and the budget', () => {
+  showEditorHelp('en-US')
+  const text = document.body.textContent!
+  expect(text).toContain('Pictures')
+  expect(text).toContain('PNG, JPEG, WebP, GIF, AVIF and BMP')
+  expect(text).toContain('150 MB')
+  document.body.innerHTML = ''
+  showEditorHelp('pt-BR')
+  expect(document.body.textContent!).toContain('Imagens')
+})
+
 test('editor help no longer carries the app-window recipe', () => {
   showEditorHelp('en-US')
   expect(document.body.textContent!).not.toContain('--app=')

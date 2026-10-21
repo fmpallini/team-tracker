@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.2.0] - 2026-10-21
+
+### Added
+- Pictures in notes: paste a screenshot (also mixed with text), drag image files in, or use the new toolbar button. They are shrunk in your browser and stored encrypted inside the same `.tmv` file, up to 150 MB per file; Preferences → Data shows the usage.
+
+### Changed
+- Files saved by this version can't be opened by earlier releases.
+
 ## [3.1.1] - 2026-10-20
 
 ### Changed

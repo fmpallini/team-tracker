@@ -2146,6 +2146,9 @@ select option { background: var(--bg); color: var(--fg); }
 /* Data tab (team export/import) */
 .tt-data-hint { font-size: .8rem; color: var(--muted); margin: 0; }
 .tt-data-empty { color: var(--muted); padding: .5rem; }
+.tt-data-images-usage { margin: 0; }
+.tt-data-images-warn { color: var(--brass); font-weight: 600; }
+.tt-data-images-full { color: var(--danger); font-weight: 600; }
 .tt-data-team-list { display: flex; flex-direction: column; gap: .25rem; }
 .tt-data-team-row {
   display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: var(--r-sm);

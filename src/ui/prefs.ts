@@ -20,6 +20,10 @@ import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
 import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
 import { icon } from './icons'
+import { collectImageRefs, referencedBytes } from '../core/image-ref'
+import { IMAGE_LIMITS } from '../core/image-import'
+
+const MB = 1024 * 1024
 
 /**
  * Every write in this file that only moves a preference. No module renders
@@ -1225,8 +1229,21 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       cleanupBtn
     )
 
+    // --- Pictures: how much of the budget the notes use (read-only, so it needs no lock exemption) ---
+    function buildImagesSection(): HTMLElement {
+      const n = collectImageRefs(store.doc).size
+      const used = referencedBytes(store.doc)
+      const cls = used >= IMAGE_LIMITS.totalCapBytes ? ' tt-data-images-full' : used >= IMAGE_LIMITS.warnBytes ? ' tt-data-images-warn' : ''
+      const line = t(locale, n === 1 ? 'data_images_usage_one' : 'data_images_usage_other', {
+        n: String(n),
+        used: (used / MB).toFixed(1),
+        cap: String(IMAGE_LIMITS.totalCapBytes / MB),
+      })
+      return prefsSection(t(locale, 'data_images_heading'), el('p', { class: `tt-data-images-usage${cls}` }, line))
+    }
+
     // Destructive cleanup stays last.
-    container.append(exportSection, importSection, buildTagsSection(), cleanupSection)
+    container.append(exportSection, importSection, buildTagsSection(), buildImagesSection(), cleanupSection)
   }
 
   // --- Tab 6: Sobre ----------------------------------------------------

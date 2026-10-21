@@ -1690,6 +1690,63 @@ function team(id: string, name: string, actionTagNames: Team['actionTagNames'] =
   return { id, name, emoji: '🚀', stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {}, actionTagNames }
 }
 
+describe('Data tab: picture usage line', () => {
+  const MB = 1024 * 1024
+  const idN = (n: number) => String(n).repeat(32).slice(0, 32)
+
+  /** A doc whose daily note references one picture per entry, with the stated byte sizes. */
+  function withPictures(sizes: number[]) {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => {
+      const team = sampleTeam()
+      team.dailyNotes = { '2026-07-16': sizes.map((_, i) => `![p](img:${idN(i)})`).join('\n\n') }
+      d.teams.push(team)
+      sizes.forEach((bytes, i) => { d.images[idN(i)] = { mime: 'image/webp', w: 10, h: 10, bytes } })
+    })
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    return document.querySelector('.tt-data-images-usage') as HTMLElement
+  }
+
+  test('shows the picture count and the megabytes used out of the budget', () => {
+    const line = withPictures([MB, MB / 2])
+    expect(line.textContent).toBe('2 pictures · 1.5 MB of 150 MB')
+    expect(line.classList.contains('tt-data-images-warn')).toBe(false)
+    expect(line.classList.contains('tt-data-images-full')).toBe(false)
+  })
+
+  test('says "picture" for exactly one, and shows zero for a file with none', () => {
+    expect(withPictures([MB]).textContent).toBe('1 picture · 1.0 MB of 150 MB')
+    expect(withPictures([]).textContent).toBe('0 pictures · 0.0 MB of 150 MB')
+  })
+
+  test('counts only the pictures a note still references', () => {
+    const { store, shell, appCtl } = setup()
+    store.update((d) => { d.images[idN(1)] = { mime: 'image/webp', w: 1, h: 1, bytes: 5 * MB } })
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    expect(document.querySelector('.tt-data-images-usage')!.textContent).toBe('0 pictures · 0.0 MB of 150 MB')
+  })
+
+  test('warns from 100 MB up', () => {
+    const line = withPictures([100 * MB])
+    expect(line.classList.contains('tt-data-images-warn')).toBe(true)
+    expect(line.classList.contains('tt-data-images-full')).toBe(false)
+  })
+
+  test('turns to the error look at the 150 MB budget', () => {
+    const line = withPictures([150 * MB])
+    expect(line.classList.contains('tt-data-images-full')).toBe(true)
+  })
+
+  test('is translated', () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'pt-BR', appCtl)
+    clickTab(t('pt-BR', 'prefs_tab_data'))
+    expect(document.querySelector('.tt-data-images-usage')!.textContent).toBe(t('pt-BR', 'data_images_usage_other', { n: '0', used: '0.0', cap: '150' }))
+  })
+})
+
 describe('Data tab: cross-team tags section', () => {
   test('shows a hint instead of the form when there are fewer than 2 teams', () => {
     const { store, shell, appCtl } = setup()
@@ -1846,7 +1903,7 @@ describe('preferences layout', () => {
     expect(tabs).not.toContain('Tags')
     clickTab('Data')
     const titles = Array.from(document.querySelectorAll('.tt-prefs-section-title')).map((n) => n.textContent)
-    expect(titles).toEqual(['Export teams', 'Import teams', 'Apply tags across teams', 'Data cleanup'])
+    expect(titles).toEqual(['Export teams', 'Import teams', 'Apply tags across teams', 'Pictures', 'Data cleanup'])
   })
 })
 
