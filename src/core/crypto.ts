@@ -2,6 +2,7 @@ import type { Doc } from './types'
 import { migrate, validateDoc } from './document'
 import { createImageStore, type BlobCodec, type ImageStore } from './image-store'
 import { packBlobs, sliceBlob, type BlobRange } from './blob-area'
+import { parseStamp, type FileStamp } from './file-stamp'
 
 export class WrongPasswordError extends Error {}
 /**
@@ -109,14 +110,14 @@ export async function blobCodec(password: string): Promise<BlobCodec> {
   }
 }
 
-interface Envelope { doc: Doc; index: Record<string, BlobRange>; area: Uint8Array }
+interface Envelope { doc: Doc; index: Record<string, BlobRange>; area: Uint8Array; stamp?: FileStamp }
 
 /**
  * The doc envelope plus the blob area for `ids`. An id whose bytes the store
  * cannot produce (damaged blob) is left out of both the area and the written
  * `doc.images`, so a file never carries metadata for bytes it does not have.
  */
-async function buildEnvelope(doc: Doc, images: ImageStore, ids: string[]): Promise<Envelope> {
+async function buildEnvelope(doc: Doc, images: ImageStore, ids: string[], stamp?: FileStamp): Promise<Envelope> {
   const blobs: { id: string; stored: Uint8Array }[] = []
   const kept: Doc['images'] = {}
   for (const id of ids) {
@@ -127,12 +128,12 @@ async function buildEnvelope(doc: Doc, images: ImageStore, ids: string[]): Promi
     kept[id] = meta
   }
   const { area, index } = packBlobs(blobs)
-  return { doc: { ...doc, images: kept }, index, area }
+  return { doc: { ...doc, images: kept }, index, area, stamp }
 }
 
 /** `images`/`ids` default to "no images"; `docToBytes` is the one production caller and always passes both. */
-export async function encryptDocument(doc: Doc, password: string, images: ImageStore = createImageStore(null), ids: string[] = []): Promise<Uint8Array> {
-  const env = await buildEnvelope(doc, images, ids)
+export async function encryptDocument(doc: Doc, password: string, images: ImageStore = createImageStore(null), ids: string[] = [], stamp?: FileStamp): Promise<Uint8Array> {
+  const env = await buildEnvelope(doc, images, ids, stamp)
   const ivKcv = crypto.getRandomValues(new Uint8Array(12))
   const ivData = crypto.getRandomValues(new Uint8Array(12))
   // The header must carry the key the blobs were sealed under, which belongs to the store's codec, not
@@ -140,7 +141,7 @@ export async function encryptDocument(doc: Doc, password: string, images: ImageS
   const { salt, key } = images.codec()?.header ?? await getSessionKey(password)
   const kcv = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivKcv }, key, KCV_PLAIN))
   const data = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivData }, key,
-    new TextEncoder().encode(JSON.stringify({ doc: env.doc, index: env.index }))))
+    new TextEncoder().encode(JSON.stringify({ doc: env.doc, index: env.index, stamp: env.stamp }))))
   const out = new Uint8Array(HEADER_LEN + 4 + data.length + env.area.length)
   out.set(MAGIC, 0); out[4] = FORMAT_VERSION
   out.set(salt, 5); out.set(ivKcv, 21); out.set(kcv, 33); out.set(ivData, 65)
@@ -160,7 +161,7 @@ export function looksLikeTmv(bytes: Uint8Array): boolean {
   return bytes.length >= 78 && MAGIC.every((b, i) => bytes[i] === b) && (bytes[4] === FORMAT_V1 || bytes[4] === FORMAT_VERSION)
 }
 
-interface RawFile { parsed: Record<string, unknown>; index: Record<string, BlobRange>; area: Uint8Array | null }
+interface RawFile { parsed: Record<string, unknown>; index: Record<string, BlobRange>; area: Uint8Array | null; stamp: FileStamp | null }
 
 async function decryptRaw(bytes: Uint8Array, password: string): Promise<RawFile> {
   if (!looksLikeTmv(bytes)) throw new CorruptFileError()
@@ -188,15 +189,15 @@ async function decryptRaw(bytes: Uint8Array, password: string): Promise<RawFile>
   let json: unknown
   try { json = JSON.parse(new TextDecoder().decode(plain)) }
   catch { sessionKey = previousKey; throw new CorruptFileError() }
-  return v2 ? splitEnvelope(json, bytes.subarray(docEnd)) : { parsed: json as Record<string, unknown>, index: {}, area: null }
+  return v2 ? splitEnvelope(json, bytes.subarray(docEnd)) : { parsed: json as Record<string, unknown>, index: {}, area: null, stamp: null }
 }
 
 /** Unwraps a v2 `{doc, index}` envelope. The blob area is whatever follows it in the file. */
 function splitEnvelope(json: unknown, area: Uint8Array): RawFile {
-  const env = json as { doc?: unknown; index?: unknown } | null
+  const env = json as { doc?: unknown; index?: unknown; stamp?: unknown } | null
   if (!env || typeof env.doc !== 'object' || env.doc === null) throw new CorruptFileError()
   const index = env.index && typeof env.index === 'object' && !Array.isArray(env.index) ? env.index as Record<string, BlobRange> : {}
-  return { parsed: env.doc as Record<string, unknown>, index, area }
+  return { parsed: env.doc as Record<string, unknown>, index, area, stamp: parseStamp(env.stamp) }
 }
 
 /** Registers every readable blob of the file with `store`; a missing or out-of-range one is not adopted, so its image shows the placeholder. */
@@ -230,6 +231,8 @@ export interface OpenedDoc {
   preSchemaVersion: number | null
   /** The file's image bytes (sealed blobs are opened lazily), bound to the file's own password. */
   images: ImageStore
+  /** The file's write stamp; null for files written before schema 18. */
+  stamp: FileStamp | null
 }
 
 /** Read before migrate(), which upgrades the parsed object in place. */
@@ -251,13 +254,13 @@ export async function decryptDocumentWithVersion(bytes: Uint8Array, password: st
   const doc = checkShape(migrate(raw.parsed))
   const images = createImageStore(await blobCodec(password))
   adoptBlobs(images, raw)
-  return { doc, preSchemaVersion, images }
+  return { doc, preSchemaVersion, images, stamp: raw.stamp }
 }
 
 /** Password-less counterpart of `encryptDocument`; same `images`/`ids` contract. */
-export async function serializePlain(doc: Doc, images: ImageStore = createImageStore(null), ids: string[] = []): Promise<Uint8Array> {
-  const env = await buildEnvelope(doc, images, ids)
-  const head = new TextEncoder().encode(JSON.stringify({ doc: env.doc, index: env.index }))
+export async function serializePlain(doc: Doc, images: ImageStore = createImageStore(null), ids: string[] = [], stamp?: FileStamp): Promise<Uint8Array> {
+  const env = await buildEnvelope(doc, images, ids, stamp)
+  const head = new TextEncoder().encode(JSON.stringify({ doc: env.doc, index: env.index, stamp: env.stamp }))
   const out = new Uint8Array(PLAIN2_TAG_BYTES.length + head.length + 1 + env.area.length)
   out.set(PLAIN2_TAG_BYTES, 0)
   out.set(head, PLAIN2_TAG_BYTES.length)
@@ -282,6 +285,7 @@ export function parsePlainWithVersion(bytes: Uint8Array): OpenedDoc | null {
   if (!v2 && !startsWith(bytes, PLAIN_TAG_BYTES)) return null
   const images = createImageStore(null)
   let parsed: unknown
+  let stamp: FileStamp | null = null
   try {
     if (v2) {
       // The envelope is one JSON line (JSON.stringify never emits a raw newline); the blob area follows it.
@@ -291,6 +295,7 @@ export function parsePlainWithVersion(bytes: Uint8Array): OpenedDoc | null {
       const raw = splitEnvelope(JSON.parse(new TextDecoder().decode(bytes.subarray(start, nl))), bytes.subarray(nl + 1))
       adoptBlobs(images, raw)
       parsed = raw.parsed
+      stamp = raw.stamp
     } else {
       parsed = JSON.parse(new TextDecoder().decode(bytes.subarray(PLAIN_TAG_BYTES.length)))
     }
@@ -298,7 +303,7 @@ export function parsePlainWithVersion(bytes: Uint8Array): OpenedDoc | null {
     throw new CorruptFileError()
   }
   const preSchemaVersion = schemaVersionOf(parsed)
-  return { doc: checkShape(migrate(parsed)), preSchemaVersion, images }
+  return { doc: checkShape(migrate(parsed)), preSchemaVersion, images, stamp }
 }
 
 function startsWith(bytes: Uint8Array, prefix: Uint8Array): boolean {

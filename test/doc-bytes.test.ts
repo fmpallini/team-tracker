@@ -105,3 +105,21 @@ test('undo after save: deleting a note drops its image from the file, restoring 
   const restored = parsePlainWithVersion(await docToBytes(doc, null, store))!
   expect([...(await restored.images.getPlain(A))!]).toEqual([1, 2, 3])
 })
+
+describe('file stamp', () => {
+  it('stamps every write with a fresh writeId', async () => {
+    const doc = createEmptyDocument('en-US')
+    const a = parsePlainWithVersion(await docToBytes(doc, null, createImageStore(null)))!.stamp
+    const b = parsePlainWithVersion(await docToBytes(doc, null, createImageStore(null)))!.stamp
+    expect(a!.writeId).toMatch(/^[0-9a-f]{32}$/)
+    expect(a!.writeId).not.toBe(b!.writeId)
+  })
+
+  it('writes a passed stamp verbatim', async () => {
+    const stamp = { writeId: 'cd'.repeat(16), savedAt: 99 }
+    const doc = createEmptyDocument('en-US')
+    expect(parsePlainWithVersion(await docToBytes(doc, null, createImageStore(null), stamp))!.stamp).toEqual(stamp)
+    const enc = await docToBytes(doc, 'pw', createImageStore(await blobCodec('pw')), stamp)
+    expect((await decryptDocumentWithVersion(enc, 'pw')).stamp).toEqual(stamp)
+  }, 20000)
+})

@@ -88,6 +88,8 @@ export interface NavState {
 export interface Favorite { teamId: string; ref: ModuleRef }
 export interface ImageMeta { mime: string; w: number; h: number; bytes: number }
 export interface Doc {
+  /** Random 32-hex identity, created with the document and kept for its life (keys its browser copy). Schema 18. */
+  docId: string
   schemaVersion: number; prefs: Prefs; templates: Template[]
   nav: NavState; teams: Team[]
   /** Global across teams, in the order they were starred. Schema 15. */

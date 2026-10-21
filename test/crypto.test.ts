@@ -402,3 +402,32 @@ describe('looksLikeTmv', () => {
     expect(looksLikeTmv(bytes)).toBe(false)
   }, 20000)
 })
+
+describe('file stamp', () => {
+  const stamp = { writeId: 'ab'.repeat(16), savedAt: 1234 }
+
+  test('round-trips through an encrypted file', async () => {
+    const doc = createEmptyDocument('en-US')
+    const bytes = await encryptDocument(doc, 'pw', undefined, undefined, stamp)
+    expect((await decryptDocumentWithVersion(bytes, 'pw')).stamp).toEqual(stamp)
+  }, 20000)
+
+  test('round-trips through a plain file', async () => {
+    const bytes = await serializePlain(createEmptyDocument('en-US'), undefined, undefined, stamp)
+    expect(parsePlainWithVersion(bytes)!.stamp).toEqual(stamp)
+  })
+
+  test('a file written without a stamp opens with stamp null', async () => {
+    const doc = createEmptyDocument('en-US')
+    expect(parsePlainWithVersion(await serializePlain(doc))!.stamp).toBeNull()
+    expect((await decryptDocumentWithVersion(await encryptDocument(doc, 'pw'), 'pw')).stamp).toBeNull()
+  }, 20000)
+
+  test('a malformed stamp is treated as absent', async () => {
+    const doc = createEmptyDocument('en-US')
+    for (const bad of [{ writeId: 7, savedAt: 1 }, { writeId: 'short', savedAt: 1 }, { writeId: stamp.writeId, savedAt: 'x' }, { writeId: stamp.writeId, savedAt: Infinity }]) {
+      const plain = await serializePlain(doc, undefined, undefined, bad as never)
+      expect(parsePlainWithVersion(plain)!.stamp).toBeNull()
+    }
+  })
+})

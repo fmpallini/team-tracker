@@ -92,7 +92,7 @@ test('a null getPassword() (plain/password-less file) writes serializePlain byte
 
   await ctl.saveNow()
 
-  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc, store.images, [])
+  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc, store.images, [], expect.objectContaining({ writeId: expect.any(String) }))
   expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([7, 7, 7]))
   expect(store.dirty).toBe(false)
@@ -112,7 +112,7 @@ test('saveNow happy path: encrypts, writes, marks saved, and updates title', asy
 
   await ctl.saveNow()
 
-  expect(cryptoMocks.encryptDocument).toHaveBeenCalledWith(store.doc, 'pw', store.images, [])
+  expect(cryptoMocks.encryptDocument).toHaveBeenCalledWith(store.doc, 'pw', store.images, [], expect.objectContaining({ writeId: expect.any(String) }))
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, expect.any(Uint8Array))
   expect(store.dirty).toBe(false)
   expect(setSaveStateSpy.mock.calls.map((c) => c[0])).toEqual(['saving', 'saved'])

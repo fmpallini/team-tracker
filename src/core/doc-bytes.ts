@@ -13,6 +13,7 @@ import { encryptDocument, serializePlain, CorruptFileError } from './crypto'
 import { validateDoc } from './document'
 import { collectImageRefs } from './image-ref'
 import type { ImageStore } from './image-store'
+import { newStamp, type FileStamp } from './file-stamp'
 
 /**
  * Throws `CorruptFileError` (naming the field) rather than serializing a doc
@@ -26,10 +27,10 @@ import type { ImageStore } from './image-store'
  * memory for the rest of the session — that is what lets "delete a note,
  * save, undo, save" write the image again.
  */
-export async function docToBytes(doc: Doc, password: string | null, images: ImageStore): Promise<Uint8Array> {
+export async function docToBytes(doc: Doc, password: string | null, images: ImageStore, stamp: FileStamp = newStamp()): Promise<Uint8Array> {
   const bad = validateDoc(doc)
   if (bad) throw new CorruptFileError(bad)
   const referenced = collectImageRefs(doc)
   const ids = Object.keys(doc.images).filter((id) => referenced.has(id))
-  return password === null ? serializePlain(doc, images, ids) : await encryptDocument(doc, password, images, ids)
+  return password === null ? serializePlain(doc, images, ids, stamp) : await encryptDocument(doc, password, images, ids, stamp)
 }

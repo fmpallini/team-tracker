@@ -651,7 +651,7 @@ describe('v16 → v17 migration (embedded images)', () => {
 
   it('adds an empty image map', () => {
     const doc = migrate(v16())
-    expect(doc.schemaVersion).toBe(17)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.images).toEqual({})
   })
 
@@ -677,5 +677,37 @@ describe('v16 → v17 migration (embedded images)', () => {
     const d = createEmptyDocument('en-US') as any
     d.images = { [ID]: { mime: 'image/webp', w: 10, h: 20, bytes: 300 } }
     expect(validateDoc(d)).toBeNull()
+  })
+})
+
+describe('v17 → v18 migration (docId)', () => {
+  const v17 = () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 17
+    delete d.docId
+    return d
+  }
+
+  it('gives an older document a fresh 32-hex docId', () => {
+    const doc = migrate(v17())
+    expect(doc.schemaVersion).toBe(18)
+    expect(doc.docId).toMatch(/^[0-9a-f]{32}$/)
+    expect(migrate(v17()).docId).not.toBe(doc.docId)
+  })
+
+  it('a new empty document has its own docId', () => {
+    const a = createEmptyDocument('en-US'), b = createEmptyDocument('en-US')
+    expect(a.docId).toMatch(/^[0-9a-f]{32}$/)
+    expect(a.docId).not.toBe(b.docId)
+  })
+
+  it('validateDoc rejects a missing or malformed docId', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.docId = undefined
+    expect(validateDoc(d)).toBe('docId')
+    d.docId = 'xyz'
+    expect(validateDoc(d)).toBe('docId')
+    d.docId = 'A'.repeat(32)
+    expect(validateDoc(d)).toBe('docId')
   })
 })
