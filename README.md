@@ -105,18 +105,50 @@ exact command for your browser, ready to copy.
 
 ## Your data
 
-All state lives in a single `.tmv` file that you create, open, and save through
-the app's own file dialogs (or a download-fallback path in browsers without
-File System Access API support). Team Tracker never uploads or syncs it.
-**You own the file and are responsible for backing it up** — losing it, or
-forgetting its password, means the data is unrecoverable.
+Your work lives in two places: a single `.tmv` file that you create, open and
+keep, and a live copy of the open document that your **browser** holds for you.
+Team Tracker never uploads or syncs either. **You own the file and are
+responsible for backing it up** — losing it, or forgetting its password, means
+the data is unrecoverable.
+
+**How saving works.** Every edit goes to the browser's own storage (IndexedDB)
+within a fraction of a second — only the part that changed, never the whole file.
+The `.tmv` file is a snapshot, written at three moments: when you open a file
+whose browser copy is ahead of it, when you close the file with the lock button
+(`Ctrl+Alt+L`), and on a timer (every hour by default; 1 to 24 hours in Settings →
+Saving). There is no Save command, and `Ctrl+S` does nothing. **Close with the lock
+button:** it writes the file before the document is released, so it is the one way
+to be sure the file is current. The save indicator reports whether the app *can*
+write the file, not whether it is up to date: "Saved" means the browser copy is
+current; hover it to see when the file was last written and when the next write is
+due.
+
+**What a browser can lose.** The browser copy lives in your browser profile on this
+device. Clearing site data, or using a private window, removes it — and with it any
+work not yet written to the file. If the browser has not promised to keep its
+storage, the indicator's hover and Settings → Saving say so. This is also why the
+file matters: it is what you can copy, sync and restore.
 
 **Encryption.** By default the file is AES-256-GCM encrypted, decrypted only on
-your device. Alternatively choose "Create without password" at creation, or
-Settings → Security → "Migrate to password-less" later; you can set a password
-on a password-less file at any time from the same tab. The trade-off: anyone
-with access to a password-less file — including a cloud provider's automated
-scanning — can read it as plain text.
+your device, and the browser copy of a password-protected file is encrypted too,
+with the same key: nothing readable is left in the browser's storage. Alternatively
+choose "Create without password" at creation, or Settings → Security → "Migrate to
+password-less" later; you can set a password on a password-less file at any time
+from the same tab. The trade-off: anyone with access to a password-less file —
+including a cloud provider's automated scanning — can read it as plain text.
+
+**When the file can't be written** (permission lost, disk full, file locked) the
+indicator turns amber or red and says so. Your changes stay safe in the browser.
+Clicking the indicator, or closing the file, offers the way out: grant access again,
+download a copy right now, try again, or close anyway — the browser keeps your work
+and the next open reconciles the file with it.
+
+**Opening a file that has a browser copy.** The app compares them by identity, not by
+dates: the same write means nothing to do; a browser copy that is ahead is loaded and
+the file is rewritten; a file that is an older version of what this browser produced
+(say, restored from cloud history) asks which to keep; a file that changed elsewhere
+while the browser also has unwritten edits asks which to keep; a file that simply
+came from elsewhere wins.
 
 Pictures you add to notes live inside the same `.tmv` file (and are encrypted with
 the same key); there is no separate image folder to keep together. See the
@@ -124,10 +156,10 @@ the same key); there is no separate image folder to keep together. See the
 
 ### Backing up
 
-Team Tracker has no backup service and doesn't need one. Keep your `.tmv` in a
-folder synced by any cloud client ([Google Drive for
-desktop](https://workspace.google.com/products/drive/#download), OneDrive,
-Dropbox) and every save is backed up automatically, with either build:
+Team Tracker has no backup service and doesn't need one, and it does not write a
+second backup file. Keep your `.tmv` in a folder synced by any cloud client ([Google
+Drive for desktop](https://workspace.google.com/products/drive/#download), OneDrive,
+Dropbox): that folder is your backup, with either build.
 
 - **Privacy is preserved** — the file is encrypted before it touches disk, so
   the provider only ever sees ciphertext.
@@ -137,21 +169,8 @@ Dropbox) and every save is backed up automatically, with either build:
   synced file for a while (Google Drive: ~30 days). This is the only way to
   recover an earlier state. The app itself keeps no version history; its only
   undo is the ten-second notice after deleting an item.
-
-### Automatic backup file (`.bck`)
-
-A second, independent defense against the file on disk becoming unreadable
-(cloud version history covers *losing* the file; this covers *corruption*).
-Enable "Maintain automatic backup file (.bck)" in Settings → Saving & backup. The app
-then keeps a `.bck` copy wherever you chose to save it (the picker defaults to
-the original's folder), refreshed daily (default) or hourly, and always right
-after a password change. It holds the same bytes as the primary file. To
-recover, rename it from `.bck` to `.tmv` and open it normally.
-
-The save indicator shows a small marker naming your cadence ("Daily backup
-enabled", "Hourly backup enabled"). If backup needs attention — lost
-permission, a failed write, or a backup still under an old password — it names
-the problem instead, independently of whether the primary file is saving fine.
+- **The file is written hourly, not on every edit** — so the provider's history has
+  one version per write (open, close, timer), not one per keystroke.
 
 ## Privacy and updates
 
@@ -200,15 +219,48 @@ whatever's useful. Nothing about the app assumes multiple people.
 No hard limit. `Alt+1`…`Alt+9` quick-switches the first nine; beyond that, use
 the sidebar.
 
+**How does saving work? When is my `.tmv` file written?**
+The browser holds the live copy and the file is a snapshot of it. Your edits reach the
+browser within a fraction of a second. The file is written when you open a file whose
+browser copy is ahead of it, when you close it with the lock button (`Ctrl+Alt+L`),
+and every 1–24 hours (Settings → Saving, one hour by default). There is no Save
+command. Close with the lock button: it is the only thing that guarantees a file write
+before the document is released.
+
+**What do I lose if I clear my browser data?**
+Whatever was not yet written to the file: the work since the last file write, up to
+the timer interval. Clearing site data (or closing a private window) deletes the
+browser copy. Everything written to the file is safe. When the browser has not
+promised to keep its storage, the save indicator's hover and Settings → Saving say so.
+
+**What happens if the file can't be written?**
+The indicator says why ("Grant access" or "File not written") and your changes stay
+safe in the browser. Closing the file then shows a dialog: grant access again,
+download a copy of the document right now, try again, or close anyway — the browser
+keeps your work, and the next time you open the file the app reconciles the two. If you
+close the window without Lock/Close you get the browser's "leave site?" warning only
+when the file is overdue (older than the timer interval).
+
+**Why a Chromium-based browser?**
+Chrome, Edge, Brave and the like can write the `.tmv` file silently and ask again if
+the permission lapses, so the file stays current without downloads. Browsers without
+the File System Access API (Firefox, Safari) still work: the browser copy takes every
+edit, but the file can only be written by hand — the save indicator becomes an
+always-clickable "Export file · 3 h ago" button that downloads a `.tmv`, turning
+amber once the last export is older than the timer interval. No automatic file writes
+happen there.
+
 **Can multiple people edit the same file, or can I use it across devices?**
 Not simultaneously — it's one manager's tracking tool, not a shared workspace.
 In the same browser, a second tab (or the installed app next to a browser tab)
 is automatically read-only with a "take control" button. Across browsers or
-computers (say, a synced copy on Google Drive), the app checks at save time: if
-the file changed elsewhere since you opened it, you choose between reloading
-the newer version and saving yours over it. Across desktops, copy the `.tmv`
-yourself or use a cloud-synced folder — there's no live sync. Phones aren't
-supported (see [Why](#why)).
+computers (say, a synced copy on Google Drive), the app checks whenever it writes
+the file: if the file changed elsewhere since you opened it, you choose between
+reloading the newer version, saving yours as a new file, and writing yours over it.
+One browser on one device is the supported use: each browser keeps its own copy of
+the document, so there is no multi-device or multi-browser sync — a `.tmv` in a
+cloud-synced folder is a backup, not a sync channel. Phones aren't supported (see
+[Why](#why)).
 
 **What happens if I forget my password?**
 No recovery: the key is derived from the password, and nobody (including the
@@ -234,7 +286,7 @@ their own line, centered, at their natural pixel size (never scaled by the font
 size or zoom; wider than the pane, they shrink to fit), with a blank line above
 and below. Click one and press Backspace or Delete to remove it. They are stored
 inside the `.tmv` file, encrypted like everything else, and a picture no note
-uses any more is dropped from the file at the next save.
+uses any more is dropped from the file the next time it is written.
 
 - **Formats:** PNG, JPEG, WebP, GIF, AVIF and BMP. Recognized by their content,
   not their file extension. Not supported: SVG, HEIC/HEIF, TIFF, JPEG XL, ICO,
@@ -251,9 +303,9 @@ uses any more is dropped from the file at the next save.
 - **Total budget:** 150 MB of pictures per file, counted on the pictures your
   notes actually use. You get a warning at 100 MB and a message with a "Show
   usage" shortcut (Preferences → Data) when the limit is reached; there is no
-  limit on the number of pictures. Because the whole file is rewritten on every
-  save, a file full of pictures saves more slowly, which is why the budget
-  exists.
+  limit on the number of pictures. The browser copy stores each picture once, when it
+  is added, but every file write includes all of them, so a file full of pictures
+  takes longer to write, which is why the budget exists.
 - **Same picture twice** is stored once.
 - **Older versions:** a file saved by this version cannot be opened by Team
   Tracker releases before 3.2.0.

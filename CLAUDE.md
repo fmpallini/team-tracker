@@ -4,9 +4,9 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Project
 
-Team Tracker — zero-runtime-dependency single-file web app tracking teams (people/hierarchy, daily and per-person notes, action items, milestones, risks). No server, no backend: all state lives in one `.tmv` file — AES-GCM encrypted, or plain-text password-less — the user opens and saves themselves. Original design spec + implementation plan in `docs/superpowers/`.
+Team Tracker — zero-runtime-dependency single-file web app tracking teams (people/hierarchy, daily and per-person notes, action items, milestones, risks). No server, no backend: the browser's IndexedDB holds the live copy of the open document (sealed with the file's key when it has a password) and one `.tmv` file — AES-GCM encrypted, or plain-text password-less — is a snapshot the user opens and keeps, written at open, Lock/Close and on a 1–24 h timer. Original design spec + implementation plan in `docs/superpowers/`.
 
-Desktop-only by design: layout fixed desktop shell (sidebar + split panes), UX keyboard-driven (Ctrl+S/Ctrl+K/Alt+…), mobile browsers lack the File System Access API the save flow depends on. Mobile devices get blocking notice instead of start screen — don't invest in responsive/mobile layouts.
+Desktop-only by design: layout fixed desktop shell (sidebar + split panes), UX keyboard-driven (Ctrl+K/Alt+…; there is no Ctrl+S), mobile browsers lack the File System Access API the file-write flow depends on. Mobile devices get blocking notice instead of start screen — don't invest in responsive/mobile layouts.
 
 ## Commands
 
@@ -27,10 +27,10 @@ Tests define `__PWA__: false` in `vitest.config.ts`, so service-worker branch ne
 
 ## Architecture
 
-- **`src/core/`** — headless logic, no DOM construction. Per-module notes (schema/migrations, `.tmv` crypto format, store mutation channels, scope, switcher, pane layout, fs, save/backup controllers, change-password, tab lock, idb) live in `src/core/CLAUDE.md`, loaded when working there.
+- **`src/core/`** — headless logic, no DOM construction. Per-module notes (schema/migrations, `.tmv` crypto format, store mutation channels, scope, switcher, pane layout, fs, browser live store + file snapshot, change-password, tab lock, idb) live in `src/core/CLAUDE.md`, loaded when working there.
 - **`src/modules/`** — feature panes (daily notes, people trees, person notes, action items, milestones, risks). Each exports render function registered with pane manager in `main.ts` under module id. Every renderer wrapped in `lifecycle.ts`'s `withDisposal()`, tears down whatever instance previously mounted into container before mounting new one — including instance of *different* module, since `ui/panes.ts` reuses one body element across module switches. Renderer's returned teardown must release everything attached outside `container` (its `store.subscribe` unsubscribe above all); `test/lifecycle.test.ts` counts live subscriptions to catch dropped one.
 - **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane history), fast switch (`palette.ts`), search, modals, prefs. `dom.ts` `el()` DOM-building helper used everywhere.
-- **`src/main.ts`** — wires everything: start screen → `onDocumentOpened` builds shell/store/panes/save-controller, registers hotkeys (Ctrl+S save, Ctrl+K palette, Alt+Shift+arrows history, Alt+1..9 team switch), sets up cross-tab single-writer locking (Web Locks API + BroadcastChannel: one read-write tab per file, others read-only with "take control" handshake). In-memory password lives only in module-level `app` closure — never on window/globals.
+- **`src/main.ts`** — wires everything: start screen → `onDocumentOpened` builds shell/panes/file-snapshot around the store `ui/open-document.ts` reconciled with the browser copy, registers hotkeys (Ctrl+K palette, Alt+Shift+arrows history, Alt+1..9 team switch), sets up cross-tab single-writer locking (Web Locks API + BroadcastChannel: one read-write tab per file, others read-only with "take control" handshake). In-memory password lives only in module-level `app` closure — never on window/globals.
 
 ## Git workflow
 

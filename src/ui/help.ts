@@ -165,6 +165,8 @@ export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
     { class: 'tt-help-body' },
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_global_shortcuts_heading')),
     table(locale, globalRows(locale)),
+    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_saving_heading')),
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_saving_text')),
     // The --app= recipe is a workaround for opening the plain
     // dist/app.html without browser chrome — moot in the PWA build, which is
     // already installable/standalone, so it's only shown there.

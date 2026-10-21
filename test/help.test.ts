@@ -266,3 +266,16 @@ test('global help draws button references as the same stroke icons the buttons u
   expect(history?.querySelector('.tt-icon-mouse')).not.toBeNull()
   expect(document.body.textContent).not.toMatch(/[🔒⛶◀▶🖱]/u)
 })
+
+test('global help explains saving: the browser copy, when the file is written, and to close with the lock', () => {
+  showGlobalHelp('en-US', { pwa: true })
+  const text = document.querySelector('.tt-help-body')!.textContent!
+  expect(text).toContain('How saving works')
+  expect(text).toContain('working copy kept in the browser')
+  expect(text).toContain('Ctrl+Alt+L')
+  expect(text).toContain('There is no Save command')
+  expect(text).not.toMatch(/Ctrl\+S(?!hift)/)
+  document.body.innerHTML = ''
+  showGlobalHelp('pt-BR', { pwa: true })
+  expect(document.querySelector('.tt-help-body')!.textContent).toContain('Como o salvamento funciona')
+})

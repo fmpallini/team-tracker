@@ -561,7 +561,8 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
   showStartScreen('en-US', () => {})
   const tip = document.querySelector('.tt-start-backup-tip')
   expect(tip).not.toBeNull()
-  expect(tip!.textContent).toContain('synced folder')
+  expect(tip!.textContent).toContain('cloud-synced folder')
+  expect(tip!.textContent).toContain('that is your backup')
   const links = Array.from(tip!.querySelectorAll('a'))
   expect(links.map((a) => a.getAttribute('href'))).toEqual([
     'https://workspace.google.com/products/drive/#download',
