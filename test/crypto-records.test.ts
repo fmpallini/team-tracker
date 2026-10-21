@@ -73,3 +73,16 @@ test('a codec for a different salt does not evict the session key', async () => 
   expect(other.salt).toEqual(foreign)
   expect((await blobCodec('pw')).header!.salt).toEqual(original)
 }, 60000)
+
+test('blobCodec with a foreign salt seals under that key without touching the session key', async () => {
+  const session = await blobCodec('pw')
+  const foreign = crypto.getRandomValues(new Uint8Array(16))
+  const other = await blobCodec('pw', foreign)
+  expect(other.header!.salt).toEqual(foreign)
+  expect((await blobCodec('pw')).header!.salt).toEqual(session.header!.salt)
+  // the foreign codec and a record codec for the same password and salt share one key
+  const rec = await recordCodec('pw', foreign)
+  const sealed = await other.seal('x', enc('data'))
+  await expect(other.open('x', sealed).then(dec)).resolves.toBe('data')
+  expect(await rec.verifyCheck(await rec.makeCheck())).toBe(true)
+}, 60000)

@@ -100,15 +100,25 @@ async function openWith(key: CryptoKey, aad: string, sealed: Uint8Array): Promis
 }
 
 /**
+ * The session key for `password`, or — for a different `salt` — a key derived
+ * on the side WITHOUT touching the session-key cache, so reading something
+ * sealed under another password or file cannot evict the open document's key.
+ */
+async function keyFor(password: string, salt?: Uint8Array): Promise<{ salt: Uint8Array; key: CryptoKey }> {
+  if (!salt || (sessionKey && sessionKey.password === password && sameBytes(sessionKey.salt, salt))) return getSessionKey(password)
+  return { salt, key: await deriveKey(password, salt) }
+}
+
+/**
  * Seals/opens one image blob under the session key: a fresh 12-byte IV ahead
  * of the AES-GCM ciphertext, with the image id as additional data so a blob
  * swapped into another id's slot fails to open. The key is captured here, so
  * a codec keeps opening what it sealed even after the session key moves on.
  */
-export async function blobCodec(password: string): Promise<BlobCodec> {
-  const { salt, key } = await getSessionKey(password)
+export async function blobCodec(password: string, salt?: Uint8Array): Promise<BlobCodec> {
+  const { salt: useSalt, key } = await keyFor(password, salt)
   return {
-    header: { salt, key },
+    header: { salt: useSalt, key },
     seal: (id, plain) => sealWith(key, id, plain),
     open: (id, sealed) => openWith(key, id, sealed),
   }
@@ -119,9 +129,8 @@ export async function blobCodec(password: string): Promise<BlobCodec> {
  * Same key as the file header and the image blobs, but every AAD carries a
  * `live:` prefix, so a record can never be opened as an image blob or the
  * reverse, and a record is bound to its slot. Without `salt` it is the session
- * key (the open document's); with another salt it derives a fresh key WITHOUT
- * touching the session-key cache, so probing a browser copy that was sealed
- * under a different password cannot evict the open document's key.
+ * key (the open document's); with another salt it derives a fresh key without
+ * touching the session-key cache (see `keyFor`).
  */
 export interface RecordCodec {
   readonly salt: Uint8Array
@@ -136,13 +145,7 @@ export interface RecordCodec {
 const LIVE_CHECK_AAD = 'check'
 
 export async function recordCodec(password: string, salt?: Uint8Array): Promise<RecordCodec> {
-  let useSalt: Uint8Array, key: CryptoKey
-  if (!salt || (sessionKey && sessionKey.password === password && sameBytes(sessionKey.salt, salt))) {
-    ({ salt: useSalt, key } = await getSessionKey(password))
-  } else {
-    useSalt = salt
-    key = await deriveKey(password, salt)
-  }
+  const { salt: useSalt, key } = await keyFor(password, salt)
   const seal = (aad: string, plain: Uint8Array) => sealWith(key, 'live:' + aad, plain)
   const open = (aad: string, sealed: Uint8Array) => openWith(key, 'live:' + aad, sealed)
   return {

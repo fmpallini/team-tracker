@@ -92,12 +92,47 @@ test('the initial sync into an empty browser store writes every record once', as
   expect(await loadDoc(store.doc.docId)).toEqual(store.doc)
 })
 
+test('importing a file writes the records and its lineage in one commit, never leaving the copy marked unwritten', async () => {
+  const doc = sampleDoc()
+  const stamp = newStamp()
+  const store = createStore(doc, createImageStore(null))
+  const live = createLiveStore(db, doc.docId, null)
+  await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: stamp })
+  expect(commits).toHaveLength(1)
+  expect(commits[0]!.meta).toMatchObject({ lastWriteId: stamp.writeId, knownWriteIds: [stamp.writeId], unwrittenChanges: false, lastFileWriteAt: stamp.savedAt })
+  expect(await loadDoc(doc.docId)).toEqual(doc)
+})
+
+test('importing a file that carries no stamp records no lineage', async () => {
+  const doc = sampleDoc()
+  const live = createLiveStore(db, doc.docId, null)
+  await createLivePersister({ store: createStore(doc, createImageStore(null)), live, fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: null })
+  expect(await live.meta()).toMatchObject({ lastWriteId: null, knownWriteIds: [], unwrittenChanges: false })
+})
+
 test('opening over an existing browser copy writes nothing', async () => {
   const doc = sampleDoc()
   await rig(doc)
   commits.length = 0
   await rig(doc)
   expect(commits).toHaveLength(0)
+})
+
+test('seeded from what the store actually holds, the first flush writes only what differs (a migration, say) without calling it unwritten', async () => {
+  const doc = sampleDoc()
+  const liveA = createLiveStore(db, doc.docId, null)
+  await createLivePersister({ store: createStore(doc, createImageStore(null)), live: liveA, fileName: 'a.tmv', schedule: manualTimers().schedule, fromFile: newStamp() })
+  const stored = await liveA.load()
+  // the document the app now holds differs from the stored one in exactly one record
+  doc.teams[0]!.name = 'migrated'
+  commits.length = 0
+  const store = createStore(doc, createImageStore(null))
+  const live = createLiveStore(db, doc.docId, null)
+  await live.load()
+  await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule, stored: { records: stored.records, blobIds: [] } })
+  expect(commits).toHaveLength(1)
+  expect(commits[0]!.putRecords).toHaveLength(1)
+  expect((await live.meta())!.unwrittenChanges).toBe(false)
 })
 
 test('editing one daily note commits exactly that record', async () => {

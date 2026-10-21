@@ -23,7 +23,7 @@ import type { Store } from './store'
 import type { LiveStore } from './live-store'
 import type { LiveMeta } from './live-db'
 import type { FileStamp } from './file-stamp'
-import { splitDoc } from './doc-records'
+import { splitDoc, type DocRecords } from './doc-records'
 import { collectImageRefs } from './image-ref'
 
 export interface LivePersister {
@@ -48,6 +48,17 @@ export interface LivePersisterDeps {
   fileName: string
   onError?(e: unknown): void
   onRecovered?(): void
+  /**
+   * Set when the document was just read from this file (null: a file without a stamp). If the browser store holds
+   * nothing yet, the initial write then records the file's lineage in the same commit, so a crash between "records
+   * written" and "lineage written" can never leave a copy that looks unwritten and misfires the both-changed prompt.
+   */
+  fromFile?: FileStamp | null
+  /**
+   * What the browser store holds for this document, when the caller just loaded it. The diff then starts from that
+   * rather than from the document in memory, so records the open changed (a schema migration) are written, not assumed.
+   */
+  stored?: { records: DocRecords; blobIds: Iterable<string> }
   debounceMs?: number
   schedule?: (fn: () => void, ms: number) => () => void
 }
@@ -63,6 +74,8 @@ interface RunOptions {
   file?: FileWrite
   /** The file is the truth: record the lineage and clear `unwrittenChanges`, whatever the diff finds. */
   adopt?: { stamp: FileStamp | null }
+  /** The first reconcile of a loaded copy: what the diff finds is derived data (a migration), not a user edit, so it does not raise `unwrittenChanges`. */
+  quiet?: boolean
 }
 
 export async function createLivePersister(deps: LivePersisterDeps): Promise<LivePersister> {
@@ -127,7 +140,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     const file = opts.file ?? pendingStamp
     const nextLineage: LineageFields = { ...lineage }
     let nextUnwritten = unwritten
-    if (store.dirty || puts.size > 0 || deletes.length > 0) nextUnwritten = true
+    if (store.dirty || (!opts.quiet && (puts.size > 0 || deletes.length > 0))) nextUnwritten = true
     let deleteBlobs: string[] = []
     if (file || opts.adopt) {
       const s = opts.adopt ? opts.adopt.stamp : file!.stamp
@@ -177,8 +190,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   if (existing) {
     // The caller loaded this document from the browser store (or verified the file equals it), so what the
     // store holds is what the document holds: seed the cache from it rather than rewriting everything.
-    for (const [path, json] of serialize(splitDoc(store.doc))) cache.set(path, json)
-    for (const id of Object.keys(store.doc.images)) persistedBlobs.add(id)
+    for (const [path, json] of deps.stored ? serialize(deps.stored.records) : serialize(splitDoc(store.doc))) cache.set(path, json)
+    for (const id of deps.stored ? deps.stored.blobIds : Object.keys(store.doc.images)) persistedBlobs.add(id)
     lineage = { lastWriteId: existing.lastWriteId, knownWriteIds: existing.knownWriteIds, lastFileWriteAt: existing.lastFileWriteAt }
     unwritten = existing.unwrittenChanges
     lastMeta = JSON.stringify({ unwrittenChanges: unwritten, fileName: existing.fileName, ...lineage })
@@ -187,8 +200,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     store.onMutate(() => arm(debounceMs, false)),
     store.onDirty(() => arm(debounceMs, false)),
   ]
-  if (!existing) await enqueue({})
-  else if (existing.fileName !== deps.fileName) await enqueue({})
+  if (!existing) await enqueue(deps.fromFile !== undefined ? { adopt: { stamp: deps.fromFile } } : {})
+  else if (deps.stored || existing.fileName !== deps.fileName) await enqueue({ quiet: true })
 
   return {
     flush: () => enqueue({}),
