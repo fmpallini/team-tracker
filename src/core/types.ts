@@ -12,6 +12,7 @@ export interface Prefs {
   // trio pinned. Accepted deliberately: everyone stays within one step of
   // where they were, and re-picking is one click in prefs.
   fontSize: 'XS' | 'S' | 'M' | 'L' | 'XL'
+  /** How often the `.tmv` file is rewritten, in minutes: 60..1440 (the Preferences field shows hours). The browser copy is saved continuously regardless. */
   autoSaveMin: number
   palette: PaletteId
   dueSoonDays: number

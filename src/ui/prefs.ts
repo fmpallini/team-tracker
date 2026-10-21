@@ -11,6 +11,7 @@ import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam } from '../core/document'
+import { getPersistStatus } from '../core/storage-persist'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
@@ -288,21 +289,32 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     container.innerHTML = ''
     const prefs = store.doc.prefs
 
+    // Hours in the field, minutes in the document (the snapshot controller measures in minutes): 60..1440 <-> 1..24.
     const autoSaveField = prefsNumberField({
       inputClass: 'tt-prefs-autosave-input',
       label: t(locale, 'prefs_autosave_label'),
       hint: t(locale, 'prefs_autosave_hint'),
       min: 1,
-      max: 60,
-      value: prefs.autoSaveMin,
-      onCommit: (minutes) => {
+      max: 24,
+      value: Math.min(24, Math.max(1, Math.round(prefs.autoSaveMin / 60))),
+      onCommit: (hours) => {
         store.update((d) => {
-          d.prefs.autoSaveMin = minutes
+          d.prefs.autoSaveMin = hours * 60
         }, PREFS_ONLY)
       },
     })
 
-    container.append(prefsSection(t(locale, 'prefs_group_autosave'), autoSaveField))
+    // Read-only: whether the browser promised to keep this origin's storage (where the live copy lives).
+    const storageStatus = el('p', { class: 'tt-prefs-hint tt-prefs-storage-status' }, t(locale, 'prefs_storage_unknown'))
+    void getPersistStatus().then((persisted) => {
+      if (!storageStatus.isConnected) return
+      storageStatus.textContent = t(locale, persisted === true ? 'prefs_storage_protected' : persisted === false ? 'prefs_storage_not_guaranteed' : 'prefs_storage_unknown')
+    })
+
+    container.append(
+      prefsSection(t(locale, 'prefs_group_autosave'), autoSaveField),
+      prefsSection(t(locale, 'prefs_group_storage'), storageStatus)
+    )
   }
 
   // --- Tab 2: Templates ---------------------------------------------------

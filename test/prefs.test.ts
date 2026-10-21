@@ -23,6 +23,9 @@ vi.mock('../src/core/fs', async (importOriginal) => {
   }
 })
 
+const persistMocks = vi.hoisted(() => ({ getPersistStatus: vi.fn(async () => null as boolean | null) }))
+vi.mock('../src/core/storage-persist', () => persistMocks)
+
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -234,24 +237,77 @@ test('palette field defaults to ledger, offers 12 swatched options, and updates 
   expect(document.documentElement.dataset.palette).toBe('cosmic')
 })
 
-test('auto-save number input clamps to 1..60 and updates store.prefs', () => {
+test('the file-write interval is edited in hours (1..24) and stored as minutes', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Saving')
 
   const input = document.querySelector('.tt-prefs-autosave-input') as HTMLInputElement
-  input.value = '15'
+  expect(input.value).toBe('1') // the default, 60 minutes, shown as hours
+  input.value = '3'
   input.dispatchEvent(new Event('change'))
-  expect(store.doc.prefs.autoSaveMin).toBe(15)
+  expect(store.doc.prefs.autoSaveMin).toBe(180)
 
-  input.value = '999'
+  input.value = '99'
   input.dispatchEvent(new Event('change'))
-  expect(store.doc.prefs.autoSaveMin).toBe(60)
-  expect(input.value).toBe('60')
+  expect(store.doc.prefs.autoSaveMin).toBe(1440)
+  expect(input.value).toBe('24')
 
   input.value = '0'
   input.dispatchEvent(new Event('change'))
-  expect(store.doc.prefs.autoSaveMin).toBe(1)
+  expect(store.doc.prefs.autoSaveMin).toBe(60)
+  expect(input.value).toBe('1')
+})
+
+test('an interval that is not a whole number of hours is shown rounded, and the field says what it controls', () => {
+  const { store, shell, appCtl } = setup()
+  store.doc.prefs.autoSaveMin = 150
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Saving')
+  expect((document.querySelector('.tt-prefs-autosave-input') as HTMLInputElement).value).toBe('3')
+  expect(document.body.textContent).toContain('Write the file every (hours)')
+  expect(document.body.textContent).toContain('The browser copy is saved continuously')
+})
+
+describe('browser storage status line', () => {
+  async function statusText(status: boolean | null, locale: 'en-US' | 'pt-BR' = 'en-US'): Promise<string> {
+    persistMocks.getPersistStatus.mockResolvedValue(status)
+    const { store, shell, appCtl } = setup()
+    store.doc.prefs.locale = locale
+    openPrefs(store, shell, locale, appCtl)
+    clickTab(locale === 'en-US' ? 'Saving' : 'Salvamento')
+    await new Promise((r) => setTimeout(r, 0))
+    return document.querySelector('.tt-prefs-storage-status')!.textContent!
+  }
+
+  test('protected, in both locales', async () => {
+    expect(await statusText(true)).toBe(t('en-US', 'prefs_storage_protected'))
+    expect(await statusText(true, 'pt-BR')).toBe(t('pt-BR', 'prefs_storage_protected'))
+  })
+
+  test('not guaranteed warns that clearing site data loses what the file does not have yet', async () => {
+    const text = await statusText(false)
+    expect(text).toBe(t('en-US', 'prefs_storage_not_guaranteed'))
+    expect(text).toContain('clearing site data')
+    expect(await statusText(false, 'pt-BR')).toBe(t('pt-BR', 'prefs_storage_not_guaranteed'))
+  })
+
+  test('unknown when the browser does not say', async () => {
+    expect(await statusText(null)).toBe(t('en-US', 'prefs_storage_unknown'))
+    expect(await statusText(null, 'pt-BR')).toBe(t('pt-BR', 'prefs_storage_unknown'))
+  })
+
+  test('a tab closed before the answer arrives is not written to', async () => {
+    let resolve!: (v: boolean) => void
+    persistMocks.getPersistStatus.mockReturnValue(new Promise<boolean>((r) => { resolve = r }))
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Saving')
+    clickTab('Templates')
+    expect(() => resolve(true)).not.toThrow()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('.tt-prefs-storage-status')).toBeNull()
+  })
 })
 
 test('due-soon-days number input clamps to 1..30 and updates store.prefs', () => {
@@ -1282,7 +1338,7 @@ describe('preferences layout', () => {
     clickTab('Saving')
     expect(document.querySelector('.tt-prefs-autosave-input')).not.toBeNull()
     const titles = Array.from(document.querySelectorAll('.tt-prefs-section-title')).map((n) => n.textContent)
-    expect(titles).toEqual(['Auto-save'])
+    expect(titles).toEqual(['File writes', 'Browser storage'])
   })
 
   test('cross-team tags live in the Data tab, before the destructive cleanup section', () => {

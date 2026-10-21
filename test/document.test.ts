@@ -5,7 +5,7 @@ test('createEmptyDocument shape', () => {
   expect(d.schemaVersion).toBe(SCHEMA_VERSION)
   expect(d.prefs).toEqual({
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
-    autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
+    autoSaveMin: 60, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
     ctrlWheelFontSize: true, dailyEdgeScroll: true,
   })
   expect(d.teams).toEqual([])
@@ -682,5 +682,34 @@ describe('v17 → v18 migration (docId)', () => {
     expect(validateDoc(d)).toBe('docId')
     d.docId = 'A'.repeat(32)
     expect(validateDoc(d)).toBe('docId')
+  })
+})
+
+describe('autoSaveMin (the file-write interval, 60..1440 minutes since schema 18)', () => {
+  const at17 = (autoSaveMin: unknown) => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 17
+    delete d.docId
+    d.prefs.autoSaveMin = autoSaveMin
+    return d
+  }
+
+  it('a new document writes the file every hour', () => {
+    expect(createEmptyDocument('en-US').prefs.autoSaveMin).toBe(60)
+  })
+
+  it('raises an old, shorter interval to one hour and caps a longer one at a day, keeping the ones in range', () => {
+    expect(migrate(at17(5)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(59)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(5000)).prefs.autoSaveMin).toBe(1440)
+    expect(migrate(at17(120)).prefs.autoSaveMin).toBe(120)
+    expect(migrate(at17(60)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(1440)).prefs.autoSaveMin).toBe(1440)
+  })
+
+  it('a value that is not a number becomes the default', () => {
+    expect(migrate(at17('soon')).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(undefined)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(NaN)).prefs.autoSaveMin).toBe(60)
   })
 })

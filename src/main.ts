@@ -35,7 +35,7 @@ import { installCtrlWheelFontSize } from './ui/ctrl-wheel-font'
 import { toast, showErrorModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
-import { requestPersistentStorage } from './core/storage-persist'
+import { requestPersistentStorage, ensurePersistentStorage } from './core/storage-persist'
 import { createFileSnapshot, type FileSnapshot } from './core/file-snapshot'
 import { closeDocument, createBeforeUnloadHandler, downloadCopy } from './core/close-document'
 import { showWriteFailedDialog } from './ui/write-failed'
@@ -325,7 +325,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
 
   // The save pill shows whether the file can be written when it needs to be (the browser copy is what keeps the work
   // safe), and nothing about "unsaved": every time it mentions is in its hover.
-  const persistentStorage: boolean | null = null // whether the browser promised to keep this origin's storage: not asked yet
+  let persistentStorage: boolean | null = null // whether the browser promised to keep this origin's storage
   const paintPill = (): void => shell.setFileHealth(snapshot.health(), {
     nextWriteAt: snapshot.nextWriteAt(),
     persistent: persistentStorage,
@@ -335,6 +335,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   disposers.push(snapshot.subscribe(paintPill))
   if (persister) disposers.push(persister.onErrorChange(paintPill))
   disposers.push(store.onReadOnlyChange(paintPill))
+  // Asked once per opened document, in every build: the live copy lives in this origin's storage.
+  void ensurePersistentStorage().then((persisted) => { persistentStorage = persisted; paintPill() })
   disposers.push(watchFileHealth(snapshot, () => store.doc.prefs.locale))
   // A document opened from the browser's copy starts ahead of its file: write it as soon as this tab may write
   // (the tab lock decides that a moment after opening; a read-only tab never writes the file).
