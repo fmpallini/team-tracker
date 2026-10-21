@@ -39,12 +39,12 @@ const bmp = () => new Uint8Array([0x42, 0x4d, 0, 0, 0, 0, 0, 0])
 
 // --- fake codec ---
 interface Fake extends ImageCodec { encodeCalls: { maxEdge: number; quality: number }[] }
-function fakeCodec(opts: { w?: number; h?: number; hasAlpha?: boolean; decodeFails?: boolean; sizeFor?: (maxEdge: number, quality: number) => number } = {}): Fake {
+function fakeCodec(opts: { w?: number; h?: number; decodeFails?: boolean; sizeFor?: (maxEdge: number, quality: number) => number } = {}): Fake {
   const w = opts.w ?? 3000, h = opts.h ?? 2000
   const calls: { maxEdge: number; quality: number }[] = []
   return {
     encodeCalls: calls,
-    async decode() { if (opts.decodeFails) throw new Error('bad image'); return { w, h, hasAlpha: opts.hasAlpha ?? false } },
+    async decode() { if (opts.decodeFails) throw new Error('bad image'); return { w, h } },
     async encode(input, o) {
       calls.push(o)
       const size = opts.sizeFor ? opts.sizeFor(o.maxEdge, o.quality) : 1000

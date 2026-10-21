@@ -124,7 +124,7 @@ export async function imageId(bytes: Uint8Array): Promise<string> {
 /** The browser half, injected (ui/image-codec.ts). */
 export interface ImageCodec {
   /** Rejects when the browser cannot decode the bytes. */
-  decode(bytes: Uint8Array): Promise<{ w: number; h: number; hasAlpha: boolean }>
+  decode(bytes: Uint8Array): Promise<{ w: number; h: number }>
   /** Re-encodes (WebP, with the browser's own fallback) scaled so the long edge is at most `maxEdge`; never upscales. */
   encode(bytes: Uint8Array, opts: { maxEdge: number; quality: number }): Promise<{ bytes: Uint8Array; mime: string; w: number; h: number }>
 }
@@ -159,7 +159,7 @@ function edgeLadder(longEdge: number): number[] {
 async function prepare(input: { bytes: Uint8Array; name: string }, ctx: ImportContext): Promise<Prepared | { refusal: ImportRefusal }> {
   const sniffed = sniffImage(input.bytes)
   if (!sniffed) return { refusal: 'unsupported' }
-  let decoded: { w: number; h: number; hasAlpha: boolean }
+  let decoded: { w: number; h: number }
   try {
     decoded = await ctx.codec.decode(input.bytes)
   } catch {
