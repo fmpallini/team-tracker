@@ -371,7 +371,7 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
   await editor.click()
   await editor.type(`s${i} `, { delay: 0 })
   await page.keyboard.press('Control+s')
-  await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+  await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
   await expect(page.locator('.tt-pane-menu')).toHaveCount(0)
   await settle(page)

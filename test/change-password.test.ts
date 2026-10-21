@@ -29,7 +29,7 @@ function makeSession(withHandle = true): FileSession {
 }
 
 function makeShell(): Shell {
-  return { setSaveState: vi.fn(), setTitle: vi.fn() } as unknown as Shell
+  return { setTitle: vi.fn() } as unknown as Shell
 }
 
 beforeEach(() => {
@@ -45,8 +45,9 @@ test('changing to a new password encrypts and writes, never touches serializePla
   const session = makeSession()
   const shell = makeShell()
   const setPassword = vi.fn()
+  const snapshot = { fileWritten: vi.fn() }
   const changePassword = createChangePassword({
-    store, session, shell, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
+    store, session, shell, snapshot, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await changePassword('newpw')
@@ -56,7 +57,7 @@ test('changing to a new password encrypts and writes, never touches serializePla
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([1, 2, 3]))
   expect(setPassword).toHaveBeenCalledWith('newpw')
   expect(store.dirty).toBe(false)
-  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
+  expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
   expect(shell.setTitle).toHaveBeenCalledWith(session.name)
 })
 

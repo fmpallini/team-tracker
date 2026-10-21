@@ -112,7 +112,7 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(editor.getByText('tail')).toBeVisible()
 
     await page.keyboard.press('Control+s')
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
     await page.click('.tt-btn-close-file')
     await expect(page.locator('.tt-start-screen')).toBeVisible()
 

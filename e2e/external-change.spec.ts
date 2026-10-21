@@ -41,7 +41,7 @@ test.describe('external file change conflict', () => {
     await dialog.getByRole('button', { name: 'Overwrite' }).click()
     await expect(dialog).toBeHidden()
 
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // Disk now holds the real in-memory doc (valid ciphertext), not the garbage bytes.
     const bytes = await readOpfsFile(page, 'team-tracker.tmv')
@@ -55,7 +55,7 @@ test.describe('external file change conflict', () => {
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // Another program clobbers the file behind the app's back.
     const EXTERNAL_BYTES = Array(16).fill(7) as number[]
@@ -71,7 +71,7 @@ test.describe('external file change conflict', () => {
 
     // The session now belongs to the fork — the shell was rebuilt around it.
     await expect(page).toHaveTitle(/team-tracker \(copy\)\.tmv/)
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // The fork holds a real encrypted document...
     const fork = await readOpfsFile(page, 'team-tracker (copy).tmv')
@@ -155,7 +155,7 @@ test.describe('external file change conflict', () => {
     await confirmDialog.getByRole('button', { name: 'Reload' }).click()
 
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // The team added before the clobber is gone with the clobbered file — the empty-state CTA proves the
     // reload really re-read the on-disk document.

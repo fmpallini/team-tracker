@@ -66,3 +66,13 @@ export function isWithinTwoMonthWindow(anchorIso: string, candidateIso: string):
   const diffMonths = (c.year - a.year) * 12 + (c.month - a.month)
   return diffMonths === 0 || diffMonths === -1
 }
+
+/** A duration as the pill shows it: whole minutes under an hour, hours under a day, then days ("5 min", "3 h", "2 d"). Under a minute, null. */
+export function formatAge(ms: number): string | null {
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return null
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h`
+  return `${Math.floor(hours / 24)} d`
+}

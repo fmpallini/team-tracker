@@ -1,5 +1,5 @@
-import { createShell, type Shell } from '../src/ui/shell'
-import { t } from '../src/core/i18n'
+import { createShell, type Shell, type PillContext, type SaveStatusInfo } from '../src/ui/shell'
+import type { FileHealth } from '../src/core/file-snapshot'
 
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -84,258 +84,9 @@ describe('header compact mode', () => {
   })
 })
 
-describe('save indicator pill', () => {
-  function pillText(shell: Shell): string {
-    return shell.root.querySelector('.tt-save-pill-text')!.textContent!
-  }
-
-  test('setSaveState("saved") shows the label plus the locale-formatted time, always visible', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup() // 'en-US' — 12h clock
-    shell.setSaveState('saved')
-    expect(pillText(shell)).toBe('Saved · 2:32 PM')
-    expect(shell.root.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('saved')
-  })
-
-  test('dirty/error states keep showing the last-saved time, and dirty names what the time means', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup()
-    shell.setSaveState('saved')
-    // Not "Unsaved · 2:32 PM": the middot reads as "unsaved *since* 2:32",
-    // when 2:32 is in fact the last successful save.
-    shell.setSaveState('dirty')
-    expect(pillText(shell)).toBe('Unsaved — last saved 2:32 PM')
-    shell.setSaveState('error')
-    expect(pillText(shell)).toBe('Save error · 2:32 PM')
-  })
-
-  test('saving state shows its label without a stale timestamp, and spins the icon', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup()
-    shell.setSaveState('saved')
-    shell.setSaveState('saving')
-    expect(pillText(shell)).toBe('Saving…')
-    expect(shell.root.querySelector('.tt-save-pill-icon')!.classList.contains('tt-save-pill-spin')).toBe(true)
-    shell.setSaveState('saved')
-    expect(shell.root.querySelector('.tt-save-pill-icon')!.classList.contains('tt-save-pill-spin')).toBe(false)
-  })
-
-  test('clicking the pill fires onSaveRequest only in dirty/error states, not saved/saving', () => {
-    const shell = setup()
-    const cb = vi.fn()
-    shell.onSaveRequest(cb)
-    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
-
-    shell.setSaveState('saved')
-    pill.click()
-    shell.setSaveState('saving')
-    pill.click()
-    expect(cb).not.toHaveBeenCalled()
-
-    shell.setSaveState('dirty')
-    pill.click()
-    expect(cb).toHaveBeenCalledOnce()
-
-    shell.setSaveState('error')
-    pill.click()
-    expect(cb).toHaveBeenCalledTimes(2)
-  })
-
-  test('the pill is only styled clickable (cursor) in dirty/error states', () => {
-    const shell = setup()
-    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
-
-    shell.setSaveState('saved')
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
-    shell.setSaveState('dirty')
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
-    shell.setSaveState('saving')
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
-    shell.setSaveState('error')
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
-  })
-
-  // A lapsed write permission is amber ("the user can fix this themselves"),
-  // deliberately distinct from 'error' (red, "something actually went
-  // wrong") — see styles.css's data-state="permission" rule.
-  test('permission state: amber-distinct data-state, its own label, clickable', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup()
-    shell.setSaveState('saved')
-    shell.setSaveState('permission')
-    expect(pillText(shell)).toBe('Grant needed · 2:32 PM')
-    expect(shell.root.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('permission')
-    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
-  })
-
-  test('clicking the pill in the permission state fires onGrantRequest, not onSaveRequest', () => {
-    const shell = setup()
-    const saveCb = vi.fn()
-    const grantCb = vi.fn()
-    shell.onSaveRequest(saveCb)
-    shell.onGrantRequest(grantCb)
-    const pill = shell.root.querySelector('.tt-save-pill') as HTMLElement
-
-    shell.setSaveState('permission')
-    pill.click()
-
-    expect(grantCb).toHaveBeenCalledOnce()
-    expect(saveCb).not.toHaveBeenCalled()
-  })
-
-  test('createShell stamps an initial timestamp, so dirty shows it immediately', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 9, 5))
-    const shell = setup()
-    shell.setSaveState('dirty')
-    expect(pillText(shell)).toBe('Unsaved — last saved 9:05 AM')
-  })
-
-  test('applyPrefs/setFallbackHint re-renders do not re-stamp the timestamp, but do reformat it for the new locale', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup() // 'en-US'
-    shell.setSaveState('saved')
-    vi.setSystemTime(new Date(2026, 6, 20, 15, 0))
-    shell.setFallbackHint(true)
-    // still the original 14:32 save, not re-stamped to 15:00, still 12h (locale unchanged)
-    expect(pillText(shell)).toBe('Saved · 2:32 PM')
-    shell.applyPrefs({
-      locale: 'pt-BR', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7, openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true,
-    })
-    // same underlying 14:32 save, now shown in pt-BR's 24h convention
-    expect(pillText(shell)).toBe('Salvo · 14:32')
-  })
-
-  // Design note (src/ui/shell.ts): createShell(locale) has no companion
-  // setLocale() — the constructor param is the only way to seed locale before
-  // any Prefs/Doc exists, so the very first render must already reflect it.
-  test('createShell(locale) drives the very first render — no applyPrefs call needed to get the right locale', () => {
-    stubMatchMedia()
-    const shell = createShell('pt-BR')
-    document.body.appendChild(shell.root)
-    shell.setSaveState('saved')
-    expect(pillText(shell)).toContain(t('pt-BR', 'save_saved'))
-    expect(shell.root.querySelector('.tt-app-name')!.textContent).toBe(t('pt-BR', 'app_name'))
-  })
-})
-
-// Task: action-items.ts's expanded-modal header mirrors the real pill via
-// this narrow subscribe/trigger surface (src/ui/panes.ts's SaveStatusApi) —
-// these tests cover the shell-side half of that contract in isolation.
-describe('subscribeSaveState / requestSaveNow', () => {
-  test.each([
-    ['saved', false], ['dirty', true], ['saving', false], ['error', true], ['permission', true],
-  ] as const)('state %s: pill clickable=%s, and subscribers are told the same', (state, clickable) => {
-    const shell = setup()
-    const seen: boolean[] = []
-    shell.subscribeSaveState((info) => seen.push(info.clickable))
-    shell.setSaveState(state)
-    expect(shell.root.querySelector('.tt-save-pill')!.classList.contains('tt-save-pill-clickable')).toBe(clickable)
-    expect(seen.at(-1)).toBe(clickable)
-  })
-
-  test('fires immediately on subscribe with the current, already-formatted snapshot', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup()
-    shell.setSaveState('saved')
-
-    const seen: { state: string; label: string }[] = []
-    shell.subscribeSaveState((info) => seen.push({ state: info.state, label: info.label }))
-
-    expect(seen).toEqual([{ state: 'saved', label: 'Saved · 2:32 PM' }])
-  })
-
-  test('fires again on every subsequent setSaveState, with the same label the real pill shows', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
-    const shell = setup()
-    const pillText = (): string => shell.root.querySelector('.tt-save-pill-text')!.textContent!
-
-    const seen: string[] = []
-    shell.subscribeSaveState((info) => seen.push(info.label))
-
-    shell.setSaveState('dirty')
-    expect(seen.at(-1)).toBe(pillText())
-    shell.setSaveState('saving')
-    expect(seen.at(-1)).toBe(pillText())
-    shell.setSaveState('saved')
-    expect(seen.at(-1)).toBe(pillText())
-  })
-
-  test('every subscriber is notified, independently', () => {
-    const shell = setup()
-    const a = vi.fn()
-    const b = vi.fn()
-    shell.subscribeSaveState(a)
-    shell.subscribeSaveState(b)
-    a.mockClear()
-    b.mockClear() // drop the immediate on-subscribe call each got
-
-    shell.setSaveState('dirty')
-    expect(a).toHaveBeenCalledOnce()
-    expect(b).toHaveBeenCalledOnce()
-  })
-
-  test('the unsubscribe function stops further notifications without affecting other subscribers', () => {
-    const shell = setup()
-    const a = vi.fn()
-    const b = vi.fn()
-    const unsubscribeA = shell.subscribeSaveState(a)
-    shell.subscribeSaveState(b)
-    a.mockClear()
-    b.mockClear()
-
-    unsubscribeA()
-    shell.setSaveState('dirty')
-    expect(a).not.toHaveBeenCalled()
-    expect(b).toHaveBeenCalledOnce()
-  })
-
-  test('requestSaveNow() has the same dirty/error-only gating as clicking the real pill', () => {
-    const shell = setup()
-    const cb = vi.fn()
-    shell.onSaveRequest(cb)
-
-    shell.setSaveState('saved')
-    shell.requestSaveNow()
-    shell.setSaveState('saving')
-    shell.requestSaveNow()
-    expect(cb).not.toHaveBeenCalled()
-
-    shell.setSaveState('dirty')
-    shell.requestSaveNow()
-    expect(cb).toHaveBeenCalledOnce()
-
-    shell.setSaveState('error')
-    shell.requestSaveNow()
-    expect(cb).toHaveBeenCalledTimes(2)
-  })
-
-  test('requestSaveNow() in the permission state calls onGrantRequest instead of onSaveRequest', () => {
-    const shell = setup()
-    const saveCb = vi.fn()
-    const grantCb = vi.fn()
-    shell.onSaveRequest(saveCb)
-    shell.onGrantRequest(grantCb)
-
-    shell.setSaveState('permission')
-    shell.requestSaveNow()
-
-    expect(grantCb).toHaveBeenCalledOnce()
-    expect(saveCb).not.toHaveBeenCalled()
-  })
-})
-
-function prefsWith(): Parameters<Shell['applyPrefs']>[0] {
+function prefsWith(locale: 'en-US' | 'pt-BR' = 'en-US'): Parameters<Shell['applyPrefs']>[0] {
   return {
-    locale: 'en-US', theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
+    locale, theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
     openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true,
   }
 }
@@ -360,19 +111,209 @@ describe('PWA theme-color meta', () => {
   })
 })
 
-describe('pill shape', () => {
-  test('is the pill alone: no backup tab sits behind it', () => {
-    const shell = setup()
-    expect(shell.root.querySelector('.tt-save-pill-backup-tab')).toBeNull()
-    expect(shell.root.querySelector('.tt-save-pill-wrap')!.children).toHaveLength(1)
+describe('save pill', () => {
+  const ctx = (over: Partial<PillContext> = {}): PillContext => ({ nextWriteAt: null, persistent: null, storeError: false, readOnly: false, ...over })
+  const at = (h: number, m: number): number => new Date(2026, 6, 20, h, m).getTime()
+  const pillEl = (shell: Shell): HTMLElement => shell.root.querySelector('.tt-save-pill') as HTMLElement
+  const text = (shell: Shell): string => shell.root.querySelector('.tt-save-pill-text')!.textContent!
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 20, 14, 32))
   })
 
-  test('the SaveStatusInfo snapshot carries no backup key', () => {
+  const cases: { name: string; health: FileHealth; ctx?: Partial<PillContext>; state: string; clickable: boolean; en: string; pt: string }[] = [
+    { name: 'ok', health: { kind: 'ok', lastWrittenAt: null }, state: 'ok', clickable: false, en: 'Saved', pt: 'Salvo' },
+    { name: 'writing', health: { kind: 'writing' }, state: 'writing', clickable: false, en: 'Writing file…', pt: 'Gravando arquivo…' },
+    { name: 'permission', health: { kind: 'permission' }, state: 'permission', clickable: true, en: 'Grant access', pt: 'Conceder acesso' },
+    { name: 'error', health: { kind: 'error' }, state: 'error', clickable: true, en: 'File not written', pt: 'Arquivo não gravado' },
+    { name: 'store-error', health: { kind: 'ok', lastWrittenAt: null }, ctx: { storeError: true }, state: 'store-error', clickable: false, en: 'Browser storage failed', pt: 'Navegador sem armazenamento' },
+    { name: 'readonly', health: { kind: 'ok', lastWrittenAt: null }, ctx: { readOnly: true }, state: 'readonly', clickable: false, en: 'Read-only', pt: 'Somente leitura' },
+    { name: 'export', health: { kind: 'export', lastExportedAt: at(11, 32) }, state: 'export', clickable: true, en: 'Export file · 3 h ago', pt: 'Exportar arquivo · há 3 h' },
+  ]
+
+  test.each(cases)('$name: static label, state, and whether it responds to a click — in both locales', ({ health, ctx: over, state, clickable, en, pt }) => {
     const shell = setup()
-    let info: Record<string, unknown> | null = null
-    shell.subscribeSaveState((i) => { info = i as unknown as Record<string, unknown> })
-    expect(info).not.toBeNull()
-    expect(Object.keys(info!)).not.toContain('backup')
+    shell.setFileHealth(health, ctx(over))
+    expect(text(shell)).toBe(en)
+    expect(pillEl(shell).dataset.state).toBe(state)
+    expect(pillEl(shell).classList.contains('tt-save-pill-clickable')).toBe(clickable)
+    shell.applyPrefs(prefsWith('pt-BR'))
+    expect(text(shell)).toBe(pt)
+  })
+
+  test('a read-only tab outranks everything, and a failed browser store outranks a file problem', () => {
+    const shell = setup()
+    shell.setFileHealth({ kind: 'permission' }, ctx({ storeError: true, readOnly: true }))
+    expect(pillEl(shell).dataset.state).toBe('readonly')
+    shell.setFileHealth({ kind: 'permission' }, ctx({ storeError: true }))
+    expect(pillEl(shell).dataset.state).toBe('store-error')
+  })
+
+  test('the label is static: a time never appears in it, only in the hover', () => {
+    const shell = setup()
+    shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0) }))
+    expect(text(shell)).toBe('Saved')
+  })
+
+  describe('hover', () => {
+    test('ok: the browser copy is current; when the file was written and when the next write is due', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0) }))
+      expect(pillEl(shell).title).toBe('Browser copy is up to date. File written 2:00 PM · next write by 3:00 PM.')
+      shell.applyPrefs(prefsWith('pt-BR'))
+      expect(pillEl(shell).title).toBe('A cópia do navegador está em dia. Arquivo gravado às 14:00 · próxima gravação até 15:00.')
+    })
+
+    test('ok before the first write of the session says only when the next one is due', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx({ nextWriteAt: at(15, 32) }))
+      expect(pillEl(shell).title).toBe('Browser copy is up to date. Next file write by 3:32 PM.')
+    })
+
+    test('storage that may be cleared adds a warning line but keeps the pill green', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0), persistent: false }))
+      expect(pillEl(shell).title).toContain('Clearing site data would lose work not yet written to the file.')
+      expect(pillEl(shell).dataset.state).toBe('ok')
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0), persistent: true }))
+      expect(pillEl(shell).title).not.toContain('Clearing site data')
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0), persistent: null }))
+      expect(pillEl(shell).title).not.toContain('Clearing site data')
+    })
+
+    test('each other state explains itself and says the work is safe', () => {
+      const shell = setup()
+      const title = (h: FileHealth, over?: Partial<PillContext>): string => { shell.setFileHealth(h, ctx(over)); return pillEl(shell).title }
+      expect(title({ kind: 'writing' })).toBe('Writing the file…')
+      expect(title({ kind: 'permission' })).toBe('The browser lost permission to write the file. Click to grant it. Your changes are still safe in the browser.')
+      expect(title({ kind: 'error' })).toBe('The file could not be written. Your changes are still safe in the browser.')
+      expect(title({ kind: 'ok', lastWrittenAt: null }, { storeError: true })).toBe('Edits are only in memory. Free up space or close the file to write it now.')
+      expect(title({ kind: 'ok', lastWrittenAt: null }, { readOnly: true })).toBe('Another tab is editing this file.')
+      expect(title({ kind: 'export', lastExportedAt: at(14, 0) })).toBe('This browser can\'t write the file by itself. Click to export a copy.')
+    })
+  })
+
+  describe('export (a browser that cannot write the file silently)', () => {
+    test('shows how long ago the last export was, and keeps it current as time passes', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'export', lastExportedAt: at(14, 32) }, ctx())
+      expect(text(shell)).toBe('Export file · just now')
+      vi.advanceTimersByTime(5 * 60_000)
+      expect(text(shell)).toBe('Export file · 5 min ago')
+      vi.advanceTimersByTime(60 * 60_000)
+      expect(text(shell)).toBe('Export file · 1 h ago')
+    })
+
+    test('turns amber (stale) once the export is older than the write interval, not before', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'export', lastExportedAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0) }))
+      expect(pillEl(shell).classList.contains('tt-save-pill-stale')).toBe(false)
+      vi.advanceTimersByTime(28 * 60_000) // 3:00 PM exactly: due, not yet overdue
+      expect(pillEl(shell).classList.contains('tt-save-pill-stale')).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(pillEl(shell).classList.contains('tt-save-pill-stale')).toBe(true)
+    })
+
+    test('stops refreshing once the pill leaves export mode, and on dispose', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'export', lastExportedAt: at(14, 32) }, ctx())
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx())
+      expect(vi.getTimerCount()).toBe(0)
+      shell.setFileHealth({ kind: 'export', lastExportedAt: at(14, 32) }, ctx())
+      expect(vi.getTimerCount()).toBe(1)
+      shell.dispose()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+  })
+
+  describe('clicks', () => {
+    function clickWith(shell: Shell): ReturnType<typeof vi.fn> {
+      const cb = vi.fn()
+      shell.onPillAction(cb)
+      pillEl(shell).click()
+      return cb
+    }
+
+    test.each([
+      ['permission', { kind: 'permission' } as FileHealth, 'regrant'],
+      ['error', { kind: 'error' } as FileHealth, 'failure'],
+      ['export', { kind: 'export', lastExportedAt: null } as FileHealth, 'export'],
+    ])('%s: one click, one action', (_name, health, action) => {
+      const shell = setup()
+      shell.setFileHealth(health, ctx())
+      const cb = clickWith(shell)
+      expect(cb).toHaveBeenCalledTimes(1)
+      expect(cb).toHaveBeenCalledWith(action)
+    })
+
+    test('ok, writing, store-error and read-only respond to nothing', () => {
+      const shell = setup()
+      for (const [h, over] of [
+        [{ kind: 'ok', lastWrittenAt: at(14, 0) }, {}],
+        [{ kind: 'writing' }, {}],
+        [{ kind: 'ok', lastWrittenAt: null }, { storeError: true }],
+        [{ kind: 'ok', lastWrittenAt: null }, { readOnly: true }],
+      ] as [FileHealth, Partial<PillContext>][]) {
+        shell.setFileHealth(h, ctx(over))
+        expect(clickWith(shell)).not.toHaveBeenCalled()
+      }
+    })
+
+    test('requestPillAction() is the same as clicking, for a control that mirrors the pill', () => {
+      const shell = setup()
+      const cb = vi.fn()
+      shell.onPillAction(cb)
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx())
+      shell.requestPillAction()
+      expect(cb).not.toHaveBeenCalled()
+      shell.setFileHealth({ kind: 'permission' }, ctx())
+      shell.requestPillAction()
+      expect(cb).toHaveBeenCalledWith('regrant')
+    })
+  })
+
+  describe('subscribeSaveState', () => {
+    test('fires at once with the formatted snapshot, then on every change, until unsubscribed', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx())
+      const seen: SaveStatusInfo[] = []
+      const off = shell.subscribeSaveState((i) => seen.push(i))
+      expect(seen).toEqual([{ health: 'ok', label: 'Saved', title: expect.any(String), clickable: false, stale: false }])
+      shell.setFileHealth({ kind: 'permission' }, ctx())
+      expect(seen.at(-1)).toMatchObject({ health: 'permission', label: 'Grant access', clickable: true })
+      off()
+      shell.setFileHealth({ kind: 'error' }, ctx())
+      expect(seen).toHaveLength(2)
+    })
+
+    test('read-only and storage-error snapshots carry their own health', () => {
+      const shell = setup()
+      const seen: SaveStatusInfo[] = []
+      shell.subscribeSaveState((i) => seen.push(i))
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx({ readOnly: true }))
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx({ storeError: true }))
+      expect(seen.map((i) => i.health)).toEqual(['ok', 'readonly', 'store-error'])
+    })
+
+    test('a locale change re-sends the snapshot in the new language', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'permission' }, ctx())
+      const seen: SaveStatusInfo[] = []
+      shell.subscribeSaveState((i) => seen.push(i))
+      shell.applyPrefs(prefsWith('pt-BR'))
+      expect(seen.at(-1)!.label).toBe('Conceder acesso')
+    })
+  })
+
+  test('the pill is the pill alone: no dirty marker, no fallback mark, no backup tab', () => {
+    const shell = setup()
+    expect(shell.root.querySelector('.tt-save-pill-fallback-mark')).toBeNull()
+    expect(shell.root.querySelector('.tt-save-pill-backup-tab')).toBeNull()
+    expect(shell.root.querySelector('.tt-save-pill-wrap')!.children).toHaveLength(1)
+    expect(Object.keys(shell)).not.toContain('setSaveState')
+    expect(Object.keys(shell)).not.toContain('setFallbackHint')
+    expect(Object.keys(shell)).not.toContain('requestSaveNow')
   })
 })
 

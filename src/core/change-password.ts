@@ -8,6 +8,7 @@ import type { Store } from './store'
 import type { FileSession } from './fs'
 import { buildSnapshot, commitSnapshot, type Snapshot } from './snapshot'
 import type { LivePersister } from './live-persist'
+import type { FileSnapshot } from './file-snapshot'
 import { blobCodec } from './crypto'
 import { writeFile, downloadFallback } from './fs'
 import { toast } from '../ui/modal'
@@ -20,6 +21,8 @@ export interface ChangePasswordDeps {
   shell: Shell
   /** Told which file write landed (null: browser storage unavailable). */
   persister?: LivePersister | null
+  /** The file writer, told the write landed so the pill shows it. */
+  snapshot?: Pick<FileSnapshot, 'fileWritten'>
   /** Waits out (and blocks) any concurrent file write — see file-snapshot.ts's `runExclusive`. */
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
   /** The password the file is under right now (live read), needed to restore the image blobs' key if the write fails. */
@@ -80,7 +83,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
       deps.setPassword(newPw)
       if (deps.store.rev === snapshot.revAtSnapshot) deps.store.markSaved()
-      deps.shell.setSaveState('saved')
+      deps.snapshot?.fileWritten()
       deps.shell.setTitle(deps.session.name)
     })
   }

@@ -31,7 +31,7 @@ function mount(team: Team, extra: Extra = {}): { store: Store; del: ReturnType<t
   const ctx: ModuleCtx = {
     store, pm: {} as PaneManager, paneIdx: 0, locale: 'en-US',
     searchIndex: createSearchIndex(() => store.doc, () => store.rev),
-    saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} },
+    saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} },
   }
   const del = createEntityDelete<'risks'>({
     ctx, teamId: team.id, collection: 'risks', refKind: 'risk', labelOf: (r) => r.title, labelParam: 'title',

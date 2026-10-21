@@ -216,117 +216,82 @@ describe('failures', () => {
   })
 })
 
-describe('conflictResolved', () => {
-  test('after the conflict overwrite wrote the file, the health is ok again and the write counts as the last one', async () => {
+describe('writes made outside writeNow (the conflict overwrite, a password change)', () => {
+  test('fileWritten: the health is ok again, the write counts as the last one, and a conflict failure is over', async () => {
     const { snap } = rig()
     fsMocks.writeFile.mockRejectedValueOnce(new fsMocks.ExternalChangeError())
     await snap.writeNow('close')
     expect(snap.health()).toMatchObject({ kind: 'error', message: 'conflict' })
     clock += 5000
-    snap.conflictResolved('wrote')
+    snap.fileWritten()
     expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: clock })
     expect(snap.isOverdue()).toBe(false)
   })
 
-  test('after a reload the health is ok again but no write is claimed', async () => {
-    const { snap } = rig()
-    fsMocks.writeFile.mockRejectedValueOnce(new fsMocks.ExternalChangeError())
-    await snap.writeNow('close')
-    clock += 5000
-    snap.conflictResolved('reloaded')
-    expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: null })
-  })
-
-  test('it never hides some other kind of failure', async () => {
+  test('fileWritten also clears a failure that was not about a conflict: a successful write supersedes it', async () => {
     const { snap } = rig()
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
     await snap.writeNow('close')
-    snap.conflictResolved('reloaded')
+    snap.fileWritten()
+    expect(snap.health().kind).toBe('ok')
+    spy.mockRestore()
+  })
+
+  test('fileReloaded: the conflict is over but no write is claimed', async () => {
+    const { snap } = rig()
+    fsMocks.writeFile.mockRejectedValueOnce(new fsMocks.ExternalChangeError())
+    await snap.writeNow('close')
+    clock += 5000
+    snap.fileReloaded()
+    expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: null })
+  })
+
+  test('fileReloaded never hides some other kind of failure', async () => {
+    const { snap } = rig()
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
+    await snap.writeNow('close')
+    snap.fileReloaded()
     expect(snap.health().kind).toBe('error')
     spy.mockRestore()
   })
-})
 
-describe('without a file handle (browsers that cannot write silently)', () => {
-  test('only an export downloads; nothing else writes', async () => {
-    const { store, snap } = rig({ handle: false })
-    expect(await snap.writeNow('timer')).toEqual({ ok: false, reason: 'nohandle' })
-    expect(await snap.writeNow('close')).toEqual({ ok: false, reason: 'nohandle' })
-    expect(fsMocks.downloadFallback).not.toHaveBeenCalled()
-    expect(await snap.writeNow('export')).toEqual({ ok: true })
-    expect(fsMocks.downloadFallback).toHaveBeenCalledWith('f.tmv', expect.any(Uint8Array))
-    expect(fsMocks.writeFile).not.toHaveBeenCalled()
-    expect(store.dirty).toBe(false)
-  })
-
-  test('the health is export, with the time of the last export — opening counts as one', async () => {
-    const { snap } = rig({ handle: false })
-    expect(snap.health()).toEqual({ kind: 'export', lastExportedAt: clock })
-    clock += 5000
-    await snap.writeNow('export')
-    expect(snap.health()).toEqual({ kind: 'export', lastExportedAt: clock })
-  })
-
-  test('no timer is ever armed', () => {
-    const { snap, timers } = rig({ handle: false })
-    snap.scheduleFrom({ ...createEmptyDocument('en-US').prefs, autoSaveMin: 60 })
-    expect(timers.count()).toBe(0)
+  test('fileWriteFailed puts the health on the failure that happened', () => {
+    const { snap } = rig()
+    snap.fileWriteFailed('permission')
+    expect(snap.health()).toEqual({ kind: 'permission' })
+    snap.fileWriteFailed('error')
+    expect(snap.health()).toMatchObject({ kind: 'error' })
   })
 })
 
-describe('the timer', () => {
+describe('nextWriteAt', () => {
   const prefs = (autoSaveMin: number) => ({ ...createEmptyDocument('en-US').prefs, autoSaveMin })
 
-  test('waits the interval from open, writes when it fires, and re-arms', async () => {
-    const { store, snap, timers } = rig()
+  test('is one interval after open, then after the last successful write', async () => {
+    const { snap } = rig()
     snap.scheduleFrom(prefs(60))
-    expect(timers.delays()).toEqual([HOUR])
-    clock += HOUR
-    timers.fire()
-    await snap.flush()
-    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
-    expect(store.dirty).toBe(false)
-    expect(timers.delays()).toEqual([HOUR])
-  })
-
-  test('is measured from the last successful write, not from open', async () => {
-    const { snap, timers } = rig()
+    expect(snap.nextWriteAt()).toBe(clock + HOUR)
     clock += 20 * 60_000
-    await snap.writeNow('close') // a write 20 minutes in
-    snap.scheduleFrom(prefs(60))
-    expect(timers.delays()).toEqual([HOUR])
+    await snap.writeNow('close')
+    expect(snap.nextWriteAt()).toBe(clock + HOUR)
   })
 
-  test('a changed preference re-arms with the new interval, clamped to 1..24 hours', () => {
-    const { snap, timers } = rig()
-    snap.scheduleFrom(prefs(60))
-    snap.scheduleFrom(prefs(120))
-    expect(timers.count()).toBe(1)
-    expect(timers.delays()).toEqual([2 * HOUR])
-    snap.scheduleFrom(prefs(5))
-    expect(timers.delays()).toEqual([HOUR])
-    snap.scheduleFrom(prefs(99999))
-    expect(timers.delays()).toEqual([24 * HOUR])
+  test('follows the configured interval, clamped to 1..24 hours', () => {
+    const { snap } = rig()
+    snap.scheduleFrom(prefs(180))
+    expect(snap.nextWriteAt()).toBe(clock + 3 * HOUR)
+    snap.scheduleFrom(prefs(1))
+    expect(snap.nextWriteAt()).toBe(clock + HOUR)
   })
 
-  test('a failing attempt retries a full interval later, not in a tight loop', async () => {
-    const { snap, timers } = rig()
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    fsMocks.writeFile.mockRejectedValue(new Error('x'))
-    snap.scheduleFrom(prefs(60))
-    clock += HOUR
-    timers.fire()
-    await snap.flush()
-    expect(timers.delays()).toEqual([HOUR])
-    spy.mockRestore()
-  })
-
-  test('dispose cancels it', () => {
-    const { snap, timers } = rig()
-    snap.scheduleFrom(prefs(60))
-    snap.dispose()
-    expect(timers.count()).toBe(0)
+  test('without a file handle it is the moment the last export turns stale', async () => {
+    const { snap } = rig({ handle: false })
+    expect(snap.nextWriteAt()).toBe(clock + HOUR)
+    clock += 10 * 60_000
+    await snap.writeNow('export')
+    expect(snap.nextWriteAt()).toBe(clock + HOUR)
   })
 })
 

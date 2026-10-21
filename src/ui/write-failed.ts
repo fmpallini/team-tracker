@@ -18,6 +18,8 @@ export interface WriteFailedOptions {
   onDownload(): void
   /** Tries the write again; true when it worked. */
   onRetry(): Promise<boolean>
+  /** Offer "close anyway" (default). Off when the dialog was opened from the pill: there is no closing to push through. */
+  allowCloseAnyway?: boolean
 }
 
 /**
@@ -50,12 +52,15 @@ export function showWriteFailedDialog(opts: WriteFailedOptions): Promise<'closed
         .finally(() => { busy = false })
     }
 
-    const buttons: ModalButton[] = [
-      { label: t(locale, 'write_failed_close_anyway'), danger: true, left: true, onClick: () => { finish('closed-anyway'); handle.close() } },
+    const buttons: ModalButton[] = []
+    if (opts.allowCloseAnyway !== false) {
+      buttons.push({ label: t(locale, 'write_failed_close_anyway'), danger: true, left: true, onClick: () => { finish('closed-anyway'); handle.close() } })
+    }
+    buttons.push(
       { label: t(locale, 'cancel'), icon: 'close', onClick: () => { finish('cancelled'); handle.close() } },
       { label: t(locale, 'write_failed_download'), onClick: () => opts.onDownload() },
       { label: t(locale, 'write_failed_retry'), primary: !(opts.reason === 'permission' && opts.canRegrant), onClick: () => attempt(() => opts.onRetry()) },
-    ]
+    )
     if (opts.reason === 'permission' && opts.canRegrant) {
       buttons.push({ label: t(locale, 'write_failed_regrant'), primary: true, onClick: () => attempt(() => opts.onRegrant()) })
     }

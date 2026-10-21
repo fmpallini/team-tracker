@@ -24,12 +24,12 @@ test.describe('save flow', () => {
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
     const fileAtOpen = await diskBytes(page)
 
     await addTeam(page, 'Save Flow Team', true)
     // The file is not what holds an edit any more, so nothing is "unsaved" and nothing was written.
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
     await page.waitForTimeout(700) // the persister's debounce, plus slack
     expect(await diskBytes(page)).toEqual(fileAtOpen)
 

@@ -130,7 +130,7 @@ describe('createModuleEditor', () => {
     const ctx: ModuleCtx = {
       store, pm: fakePm(), paneIdx: 0, locale: 'en-US',
       searchIndex: createSearchIndex(() => store.doc, () => store.rev),
-      saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} },
+      saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} },
     }
     const onChange = vi.fn()
     const bundle = createModuleEditor(ctx, 't1', { initialMd: '', onChange, templateScopes: ['any'], ...opts })

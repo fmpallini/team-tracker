@@ -448,7 +448,7 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
   showStartScreen('en-US', () => {})
   await flush()
   expect(document.querySelector('.tt-start-fallback-notice')?.textContent).toBe(
-    'This browser does not support direct file access: saving will download the file.'
+    'This browser cannot write the file by itself. Your work is kept in the browser; use Export file in the header to download a copy.'
   )
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
   expect(fileInput).not.toBeNull()

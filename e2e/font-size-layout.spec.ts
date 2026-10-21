@@ -45,11 +45,13 @@ for (const size of ['XS', 'XL'] as const) {
   })
 }
 
-// pt-BR: the save pill's label is the widest header text, which is what squeezed the search box to an icon.
+// pt-BR: the save pill's longest label is the widest header text, which is what squeezed the search box to an icon.
 test('header search keeps a usable width with the sidebar collapsed and a long team name (XL)', async ({ page }) => {
   await openDoc(page, buildDoc('XL', { kind: 'general' }, { sidebarCollapsed: true, locale: 'pt-BR' }))
   await expect(page.locator('.tt-header-team-indicator.visible')).toBeVisible()
-  await expect(page.locator('.tt-save-pill-text')).toContainText('Salvo')
+  // The widest label the pill can show (a failing browser store). It is only reachable in a failure, so the text is put
+  // there directly: what is under test is the header's layout with it, not how it got there.
+  await page.locator('.tt-save-pill-text').evaluate((e) => { e.textContent = 'Navegador sem armazenamento' })
   // At rest the search is just its icon; the field it expands to on focus is what has to stay usable.
   await page.locator('.tt-search-input').click()
   await expect.poll(() => page.locator('.tt-search-input').evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThanOrEqual(150)

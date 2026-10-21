@@ -528,3 +528,21 @@ test('dispose releases every store subscription it took (a document that is clos
   persister.dispose()
   expect(active).toBe(0)
 })
+
+test('onErrorChange reports when a storage failure starts and when it ends, not every retry in between', async () => {
+  const { store, persister } = await rig()
+  const seen: boolean[] = []
+  const off = persister.onErrorChange((failed) => seen.push(failed))
+  failNext.push(new Error('quota'), new Error('quota again'))
+  store.update((d) => { d.nav.split = true })
+  await persister.flush()
+  await persister.flush()
+  expect(seen).toEqual([true])
+  await persister.flush()
+  expect(seen).toEqual([true, false])
+  off()
+  failNext.push(new Error('later'))
+  store.update((d) => { d.nav.split = false })
+  await persister.flush()
+  expect(seen).toEqual([true, false])
+})

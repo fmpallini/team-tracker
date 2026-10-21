@@ -30,7 +30,7 @@ async function setup(password: string | null) {
   let current = password
   const exclusive = vi.fn((fn: () => Promise<unknown>): Promise<unknown> => fn())
   const changePassword = createChangePassword({
-    store, session, shell: { setSaveState: vi.fn(), setTitle: vi.fn() } as unknown as Shell,
+    store, session, shell: { setTitle: vi.fn() } as unknown as Shell,
     runExclusive: <T,>(fn: () => Promise<T>) => exclusive(fn) as Promise<T>, getPassword: () => current, setPassword: (p) => { current = p },
   })
   return { store, changePassword, exclusive, written: () => fsMocks.writeFile.mock.calls.at(-1)![1] }

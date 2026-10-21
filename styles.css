@@ -445,7 +445,8 @@ body { background: var(--bg); color: var(--fg); }
   padding: 0 .4rem; display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* Save-state pill (header): always visible, states differentiated by both
+/* Save pill (header): always visible, states (data-state = the pill's health:
+   ok, writing, permission, error, store-error, readonly, export) differentiated by both
    the text label and a tinted background/border (color-mix keeps this to
    one rule per state instead of needing an --ok-rgb/--danger-rgb variable
    in all 20 theme/palette blocks — safe here since :has() elsewhere in this
@@ -461,27 +462,31 @@ body { background: var(--bg); color: var(--fg); }
 .tt-save-pill-icon svg { display: block; }
 .tt-save-pill-text { font-family: var(--font-data); letter-spacing: .01em; }
 
-.tt-save-pill[data-state="saved"] {
+.tt-save-pill[data-state="ok"] {
   color: var(--ok);
   background: color-mix(in srgb, var(--ok) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
 }
-.tt-save-pill[data-state="saving"] {
+.tt-save-pill[data-state="writing"],
+.tt-save-pill[data-state="export"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
-.tt-save-pill[data-state="error"] {
+.tt-save-pill[data-state="error"],
+.tt-save-pill[data-state="store-error"] {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
 /* A lapsed write permission — amber, distinct
    from "error": the user can fix this themselves with one click, it isn't a
-   failure needing investigation. Reuses --brass, the same amber token
+   failure needing investigation — and an export gone stale (older than the write interval).
+   Reuses --brass, the same amber token
    already used for "medium" risk exposure and the password meter's "fair"
    step, rather than introducing a new color variable across every palette. */
-.tt-save-pill[data-state="permission"] {
+.tt-save-pill[data-state="permission"],
+.tt-save-pill[data-state="export"].tt-save-pill-stale {
   color: var(--brass);
   background: color-mix(in srgb, var(--brass) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
@@ -492,10 +497,7 @@ body { background: var(--bg); color: var(--fg); }
    size options (html[data-size]) resize *through* — every dimension below
    is in rem specifically so XS through XL keep the same proportions. */
 .tt-save-pill-wrap { display: inline-flex; align-items: center; }
-/* Fallback mode (no File System Access API — every save is a download). The
-   mark replaces a sticky toast that used to sit over the app for the whole
-   session; the pill's tooltip carries the full sentence. */
-.tt-save-pill-fallback-mark { font-family: var(--font-data); opacity: .7; margin-left: .1rem; }
+/* Read-only (this tab lost the write lock) keeps the pill's default muted look: it is information, not a problem. */
 .tt-save-pill-clickable { cursor: pointer; }
 .tt-save-pill-clickable:hover { filter: brightness(0.95); }
 [data-theme="dark"] .tt-save-pill-clickable:hover { filter: brightness(1.15); }

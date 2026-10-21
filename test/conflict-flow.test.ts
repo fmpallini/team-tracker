@@ -27,9 +27,10 @@ function makeSession(over: Partial<FileSession> = {}): FileSession {
 
 function setup(over: Partial<ConflictFlowDeps> = {}, session = makeSession()) {
   const store: Store = createStore(createEmptyDocument('en-US'))
-  const shell = { setSaveState: vi.fn(), setTitle: vi.fn() }
+  const shell = { setTitle: vi.fn() }
+  const snapshot = { fileWritten: vi.fn(), fileReloaded: vi.fn(), fileWriteFailed: vi.fn() }
   const deps = {
-    store, session, shell,
+    store, session, shell, snapshot,
     getPassword: vi.fn<() => string | null>(() => 'pw'),
     readFromDisk: vi.fn(async () => ({ doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: store.images, password: 'pw' as string | null, stamp: null as FileStamp | null })),
     applyReloaded: vi.fn(),
@@ -43,7 +44,7 @@ function setup(over: Partial<ConflictFlowDeps> = {}, session = makeSession()) {
     flow.onExternalChange()
     return mocks.showConflictModal.mock.calls.at(-1)![0]
   }
-  return { store, shell, deps, flow, open }
+  return { store, shell, snapshot, deps, flow, open }
 }
 
 beforeEach(() => {
@@ -131,15 +132,14 @@ describe('Reload', () => {
   })
 
   test('a reload that went through tells the file writer the conflict is over; a refused one does not', async () => {
-    const onConflictResolved = vi.fn()
-    const { open } = setup({ onConflictResolved })
+    const { snapshot, open } = setup()
     await open().onReload()
-    expect(onConflictResolved).toHaveBeenCalledWith('reloaded')
+    expect(snapshot.fileReloaded).toHaveBeenCalledTimes(1)
 
-    onConflictResolved.mockClear()
-    const refused = setup({ onConflictResolved, readFromDisk: vi.fn(async () => ({ doc: createEmptyDocument('en-US'), images: undefined as never, password: null, stamp: null })) })
+    snapshot.fileReloaded.mockClear()
+    const refused = setup({ readFromDisk: vi.fn(async () => ({ doc: createEmptyDocument('en-US'), images: undefined as never, password: null, stamp: null })) })
     await refused.open().onReload()
-    expect(onConflictResolved).not.toHaveBeenCalled()
+    expect(refused.snapshot.fileReloaded).not.toHaveBeenCalled()
   })
 
   test('a file with another docId is refused: the open document is untouched and the user is told', async () => {
@@ -168,7 +168,7 @@ describe('Reload', () => {
 
 describe('Overwrite', () => {
   test('force-writes the current document under the live password, then marks it saved', async () => {
-    const { flow, store, shell, deps, open } = setup()
+    const { flow, store, shell, snapshot, deps, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
     expect(store.dirty).toBe(true)
 
@@ -178,20 +178,19 @@ describe('Overwrite', () => {
     expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw', store.images, expect.objectContaining({ writeId: expect.any(String) }))
     expect(mocks.forceWrite).toHaveBeenCalledWith(deps.session, BYTES)
     expect(store.dirty).toBe(false)
-    expect(shell.setSaveState).toHaveBeenCalledWith('saved')
+    expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
     expect(shell.setTitle).toHaveBeenCalledWith('team.tmv')
     expect(flow.isOpen()).toBe(false)
   })
 
   test('an edit that lands while the overwrite is in flight stays dirty instead of being marked saved', async () => {
-    const { store, shell, open } = setup()
+    const { store, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
     mocks.forceWrite.mockImplementation(async () => { store.update((d) => { d.prefs.fontSize = 'XL' }) })
 
     await open().onOverwrite()
 
     expect(store.dirty).toBe(true)
-    expect(shell.setSaveState).not.toHaveBeenCalledWith('saved')
   })
 
   test('commits the written stamp (and the revision it holds) to the persister', async () => {
@@ -207,16 +206,14 @@ describe('Overwrite', () => {
   })
 
   test('tells the file writer the forced write landed, and only then', async () => {
-    const onConflictResolved = vi.fn()
-    const { store, open } = setup({ onConflictResolved })
+    const { store, snapshot, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
     await open().onOverwrite()
-    expect(onConflictResolved).toHaveBeenCalledTimes(1)
-    expect(onConflictResolved).toHaveBeenCalledWith('wrote')
+    expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
 
     mocks.forceWrite.mockRejectedValueOnce(new Error('disk full'))
     await open().onOverwrite()
-    expect(onConflictResolved).toHaveBeenCalledTimes(1)
+    expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
   })
 
   test('a failed overwrite does not touch the persister', async () => {
@@ -236,13 +233,13 @@ describe('Overwrite', () => {
 
   test('a lapsed permission shows the permission state and a toast whose action re-requests access', async () => {
     mocks.forceWrite.mockRejectedValue(new DOMException('no', 'NotAllowedError'))
-    const { flow, store, shell, deps, open } = setup()
+    const { flow, store, snapshot, deps, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
 
     await open().onOverwrite()
 
-    expect(shell.setSaveState).toHaveBeenCalledWith('permission')
-    expect(shell.setSaveState).not.toHaveBeenCalledWith('saved')
+    expect(snapshot.fileWriteFailed).toHaveBeenCalledWith('permission')
+    expect(snapshot.fileWritten).not.toHaveBeenCalled()
     expect(store.dirty).toBe(true)
     const [, opts] = mocks.toast.mock.calls[0]!
     expect(opts.sticky).toBe(true)
@@ -255,13 +252,13 @@ describe('Overwrite', () => {
 
   test('any other write failure shows the error state and a sticky toast, and stays dirty', async () => {
     mocks.forceWrite.mockRejectedValue(new Error('disk full'))
-    const { flow, store, shell, open } = setup()
+    const { flow, store, snapshot, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
 
     await open().onOverwrite()
 
-    expect(shell.setSaveState).toHaveBeenCalledWith('error')
-    expect(shell.setSaveState).not.toHaveBeenCalledWith('permission')
+    expect(snapshot.fileWriteFailed).toHaveBeenCalledWith('error')
+    expect(snapshot.fileWriteFailed).not.toHaveBeenCalledWith('permission')
     const [, errOpts] = mocks.toast.mock.calls[0]!
     expect(errOpts.key).toBe('save-error')
     expect(mocks.toast).toHaveBeenCalledWith(expect.any(String), { sticky: true, key: 'save-error' })
@@ -271,12 +268,12 @@ describe('Overwrite', () => {
 
   test('a failure while serializing is handled like a failed write', async () => {
     mocks.docToBytes.mockRejectedValue(new Error('encrypt failed'))
-    const { flow, shell, open } = setup()
+    const { flow, snapshot, open } = setup()
 
     await open().onOverwrite()
 
     expect(mocks.forceWrite).not.toHaveBeenCalled()
-    expect(shell.setSaveState).toHaveBeenCalledWith('error')
+    expect(snapshot.fileWriteFailed).toHaveBeenCalledWith('error')
     expect(flow.isOpen()).toBe(false)
   })
 })

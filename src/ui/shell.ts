@@ -3,18 +3,37 @@ import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { icon } from './icons'
-import { formatHHMM } from '../core/date'
+import { formatHHMM, formatAge } from '../core/date'
+import type { FileHealth } from '../core/file-snapshot'
 import { syncThemeColor } from '../core/theme-color'
 
-export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission'
+/** What the save pill reports. The file's own health, plus two conditions that outrank it. */
+export type PillHealth = FileHealth['kind'] | 'store-error' | 'readonly'
 
-/** Already-formatted (current-locale) snapshot of the save-state pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of SAVE_STATE_KEY/renderSaveIndicator's formatting rules. */
+/** The pill's click, by what it does: re-grant a lapsed permission, export a copy (browsers that cannot write the file), or open the dialog for a failed write. */
+export type PillAction = 'regrant' | 'export' | 'failure'
+
+/** What the pill needs to know besides the file's health. */
+export interface PillContext {
+  /** When the file is next due (or, in export mode, when the last export turns stale); null if unknown. */
+  nextWriteAt: number | null
+  /** `navigator.storage.persisted()`: false means clearing site data could lose work not yet written to the file; null unknown. */
+  persistent: boolean | null
+  /** The browser store is failing: edits exist only in memory. */
+  storeError: boolean
+  /** This tab lost the write lock. */
+  readOnly: boolean
+}
+
+/** Already-formatted (current-locale) snapshot of the save pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of the label/tooltip rules. */
 export interface SaveStatusInfo {
-  state: SaveState
+  health: PillHealth
   label: string
   title: string
-  /** Whether clicking the pill does anything in this state (save or re-grant). */
+  /** Whether clicking the pill does anything in this state. */
   clickable: boolean
+  /** Export mode only: the last export is older than the write interval. */
+  stale: boolean
 }
 
 export interface Shell {
@@ -25,16 +44,11 @@ export interface Shell {
   headerRight: HTMLElement
   sidebar: HTMLElement
   panesRoot: HTMLElement
-  setSaveState(state: SaveState): void
   /**
-   * Task 25 re-review item #4b: fallback mode (no FS handle — the browser
-   * doesn't support the File System Access API) has no silent auto-save;
-   * every save is a download the user must explicitly trigger with Ctrl+S.
-   * When `active` is true, the save indicator's tooltip in the `dirty` state
-   * spells that out instead of just saying "Unsaved" with no next step.
-   * main.ts sets this once, at document-open time, from `!session.handle`.
+   * Repaints the save pill. The pill reports whether the app can write the file when it needs to — not whether the
+   * document is "dirty", which the browser copy makes mostly moot. The label is static; every time is in the hover.
    */
-  setFallbackHint(active: boolean): void
+  setFileHealth(health: FileHealth, ctx: PillContext): void
   applyPrefs(prefs: Prefs): void
   setTitle(fileName: string | null): void
   /** Registers the click handler for the header ⚙ button (Task 24: opens the preferences modal). */
@@ -51,30 +65,19 @@ export interface Shell {
   setAppNameEnabled(enabled: boolean): void
   /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Alt+L). */
   onCloseFile(cb: () => void): void
-  /** Registers the click handler for the save-state pill — clicking it while a save is pending ('dirty'/'error') triggers an explicit save, same as Ctrl+S. */
-  onSaveRequest(cb: () => void): void
+  /** Registers the handler for clicks on the save pill, called with what the click is for. Only permission, a failed write and export respond; every other state is inert. */
+  onPillAction(cb: (action: PillAction) => void): void
   /**
-   * Registers the click handler for the save-state pill while it's in the
-   * 'permission' state — a lapsed write grant on the file. Separate from `onSaveRequest` because the recovery
-   * action is different: re-requesting permission, not just retrying a
-   * write that would fail the same way again.
+   * Same effect as clicking the real pill, for a caller that mirrors it in its own UI (action-items.ts's
+   * expanded-modal header pill) instead of the header pill itself.
    */
-  onGrantRequest(cb: () => void): void
-  /**
-   * Same effect as clicking the real save-state pill — an explicit save while
-   * a save is pending ('dirty'/'error'), the grant-recovery action while
-   * 'permission', a no-op otherwise — for a caller that mirrors the pill in
-   * its own UI (action-items.ts's expanded-modal header "force save") instead
-   * of the header pill itself.
-   */
-  requestSaveNow(): void
+  requestPillAction(): void
   /**
    * Subscribes to every save-state pill update — state plus its
    * already-formatted (current-locale) label/tooltip, the same strings the
    * real pill renders. Fires once immediately with the current snapshot (a
    * fresh subscriber doesn't wait for the next change), then again on every
-   * subsequent `setSaveState`/`setFallbackHint`/locale-changing `applyPrefs`
-   * call. Returns an unsubscribe function.
+   * subsequent `setFileHealth`/locale-changing `applyPrefs` call (and, in export mode, as the age ticks over). Returns an unsubscribe function.
    */
   subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void
   /**
@@ -98,7 +101,7 @@ export interface Shell {
    * Load-bearing, not hygiene: `matchMedia`'s MediaQueryList outlives any one
    * document, so a shell that never unregisters stays reachable from it
    * forever — and because that handler shares `createShell`'s closure scope
-   * with `setSaveState`/`applyPrefs`/etc., which capture `root`, keeping it
+   * with `setFileHealth`/`applyPrefs`/etc., which capture `root`, keeping it
    * alive pins the shell's *entire DOM tree*. Every close-file → open-file
    * cycle then retained a whole previous UI (~340 nodes, ~140 listeners
    * measured in e2e/leak.spec.ts). main.ts calls this from its per-document
@@ -107,16 +110,28 @@ export interface Shell {
   dispose(): void
 }
 
-/** States where clicking the save pill does something (save or re-grant permission). Single source for the pill's click look and for `SaveStatusInfo.clickable`. */
-const CLICKABLE_STATES: ReadonlySet<SaveState> = new Set<SaveState>(['dirty', 'error', 'permission'])
+/** Which clicks do something, and what. Single source for the pill's click look and for `SaveStatusInfo.clickable`. */
+const CLICK_ACTION: Partial<Record<PillHealth, PillAction>> = { permission: 'regrant', error: 'failure', export: 'export' }
 
-const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
-  saved: 'save_saved',
-  dirty: 'save_dirty',
-  saving: 'save_saving',
-  error: 'save_error',
-  permission: 'save_permission',
+const LABEL_KEY: Record<Exclude<PillHealth, 'export'>, MsgKey> = {
+  ok: 'pill_ok',
+  writing: 'pill_writing',
+  permission: 'pill_permission',
+  error: 'pill_error',
+  'store-error': 'pill_store_error',
+  readonly: 'pill_readonly',
 }
+
+const TITLE_KEY: Record<Exclude<PillHealth, 'ok' | 'export'>, MsgKey> = {
+  writing: 'pill_writing_title',
+  permission: 'pill_permission_title',
+  error: 'pill_error_title',
+  'store-error': 'pill_store_error_title',
+  readonly: 'pill_readonly_title',
+}
+
+/** How often the export age ("Export file · 3 h ago") is refreshed. */
+const AGE_TICK_MS = 60_000
 
 function toggleFullscreen(): void {
   if (document.fullscreenElement) {
@@ -133,7 +148,7 @@ function toggleFullscreen(): void {
  * re-syncs the shell's closed-over locale on every call — so when Task 24's
  * settings panel changes the locale and calls `applyPrefs()` again, the
  * save-indicator tooltip (the shell's only i18n string) picks up the new
- * locale the next time `setSaveState()` runs. This avoids a redundant API
+ * locale the next time `setFileHealth()` runs. This avoids a redundant API
  * while keeping locale-consuming logic in one place (`applyPrefs`).
  */
 export function createShell(locale: Locale): Shell {
@@ -172,25 +187,18 @@ export function createShell(locale: Locale): Shell {
   savePillIcon.innerHTML =
     '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75V8.25L10.25 9.75"/></svg>'
   const savePillText = el('span', { class: 'tt-save-pill-text' })
-  // Shown only in fallback mode (no File System Access API), where every save
-  // is a download the user must trigger. Hidden by default; renderSaveIndicator
-  // flips it from `fallbackHint`.
-  const savePillFallbackMark = el('span', { class: 'tt-save-pill-fallback-mark', 'aria-hidden': 'true' }, '⤓')
-  savePillFallbackMark.hidden = true
-  let saveRequestHandler: (() => void) | null = null
-  let grantRequestHandler: (() => void) | null = null
+  let pillActionHandler: ((action: PillAction) => void) | null = null
   const saveIndicator = el(
     'span',
     { class: 'tt-save-pill' },
     savePillIcon,
-    savePillText,
-    savePillFallbackMark
+    savePillText
   )
   // The click target: the pill is its only child; kept as a wrapper so the mirrored
   // pill in the expanded action-item modal can clone the same shape.
   const savePillWrap = el(
     'span',
-    { class: 'tt-save-pill-wrap', onclick: () => requestSaveNow() },
+    { class: 'tt-save-pill-wrap', onclick: () => requestPillAction() },
     saveIndicator
   )
 
@@ -248,66 +256,74 @@ export function createShell(locale: Locale): Shell {
   }
   mq.addEventListener('change', onSystemThemeChange)
 
-  let currentState: SaveState = 'saved'
-  let fallbackHint = false
-  // Raw hours/minutes, not a pre-formatted string — formatting happens in
-  // computeSaveInfo() so a locale switch reformats the last-saved time
-  // immediately (12h/24h), instead of leaving it stuck in whatever format
-  // was current when the save actually happened.
-  let lastSavedAt: { h: number; m: number } | null = null
+  // What the pill last painted from. Kept raw (never pre-formatted text) so a locale switch, or the minute tick in
+  // export mode, reformats instead of showing what was true when it was last painted.
+  let fileHealth: FileHealth = { kind: 'ok', lastWrittenAt: null }
+  let pillCtx: PillContext = { nextWriteAt: null, persistent: null, storeError: false, readOnly: false }
+  let ageTimer: ReturnType<typeof setInterval> | null = null
   const saveStateSubscribers = new Set<(info: SaveStatusInfo) => void>()
 
-  /** `label`/`title` computation shared by the real pill (renderSaveIndicator) and every subscribeSaveState() listener — one place text/tooltip rules live, so a mirroring control never drifts from the real pill's wording. */
-  function computeSaveInfo(): SaveStatusInfo {
-    const label = t(currentLocale, SAVE_STATE_KEY[currentState])
-    const time = lastSavedAt ? formatHHMM(lastSavedAt.h, lastSavedAt.m, currentLocale) : null
-    // `label · time` is right for 'saved' ("Saved · 5:11 PM") and 'error', but
-    // reads wrong for 'dirty': the timestamp is the last *successful* save,
-    // and joining it to "Unsaved" with a middot makes it look like the moment
-    // things went wrong. The dirty state names what the time refers to.
-    const text =
-      currentState === 'saving' || !time ? label
-      : currentState === 'dirty' ? t(currentLocale, 'save_dirty_since', { time })
-      : `${label} · ${time}`
-    let title = label
-    if (currentState === 'dirty' && fallbackHint) {
-      title += ` — ${t(currentLocale, 'save_fallback_hint')}`
-    }
-    return { state: currentState, label: text, title, clickable: CLICKABLE_STATES.has(currentState) }
+  const clock = (ms: number): string => {
+    const d = new Date(ms)
+    return formatHHMM(d.getHours(), d.getMinutes(), currentLocale)
   }
 
-  // Redraws the pill from `currentState`/`lastSavedAt`/`fallbackHint`/
-  // `currentLocale` without touching `lastSavedAt` — callers that only need
-  // to refresh the displayed text (locale switch, fallback-hint toggle) use
-  // this instead of setSaveState() so a re-render never re-stamps the
-  // timestamp as if a fresh save had just happened.
+  /** The health the pill shows: a read-only tab outranks a failed browser store, which outranks any problem with the file. */
+  function pillHealth(): PillHealth {
+    if (pillCtx.readOnly) return 'readonly'
+    if (pillCtx.storeError) return 'store-error'
+    return fileHealth.kind
+  }
+
+  /** `label`/`title` computation shared by the real pill (renderSaveIndicator) and every subscribeSaveState() listener — one place the text and tooltip rules live, so a mirroring control never drifts from the real pill's wording. */
+  function computeSaveInfo(): SaveStatusInfo {
+    const health = pillHealth()
+    let label: string
+    let title: string
+    let stale = false
+    if (health === 'export') {
+      const at = fileHealth.kind === 'export' ? fileHealth.lastExportedAt : null
+      const age = at === null ? null : formatAge(Date.now() - at)
+      label = at === null ? t(currentLocale, 'pill_export') : age === null ? t(currentLocale, 'pill_export_now') : t(currentLocale, 'pill_export_ago', { age })
+      title = t(currentLocale, 'pill_export_title')
+      stale = pillCtx.nextWriteAt !== null && Date.now() > pillCtx.nextWriteAt
+    } else {
+      label = t(currentLocale, LABEL_KEY[health])
+      if (health === 'ok') {
+        const written = fileHealth.kind === 'ok' ? fileHealth.lastWrittenAt : null
+        const next = pillCtx.nextWriteAt
+        title = written !== null && next !== null
+          ? t(currentLocale, 'pill_ok_title', { written: clock(written), next: clock(next) })
+          : next !== null
+            ? t(currentLocale, 'pill_ok_title_nofile', { next: clock(next) })
+            : t(currentLocale, 'pill_ok_title_plain')
+        if (pillCtx.persistent === false) title += '\n' + t(currentLocale, 'pill_persist_warning')
+      } else {
+        title = t(currentLocale, TITLE_KEY[health])
+      }
+    }
+    return { health, label, title, clickable: CLICK_ACTION[health] !== undefined, stale }
+  }
+
   function renderSaveIndicator(): void {
     const info = computeSaveInfo()
     savePillText.textContent = info.label
-    savePillIcon.classList.toggle('tt-save-pill-spin', currentState === 'saving')
+    savePillIcon.classList.toggle('tt-save-pill-spin', info.health === 'writing')
     saveIndicator.title = info.title
-    // Fallback mode is permanent for the life of the file, so it belongs on
-    // the pill rather than in a sticky toast — and it needs to be legible
-    // without a hover, hence the mark rather than tooltip-only.
-    savePillFallbackMark.hidden = !fallbackHint
-    saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
-    saveIndicator.dataset.state = currentState
+    saveIndicator.dataset.state = info.health
     saveIndicator.classList.toggle('tt-save-pill-clickable', info.clickable)
+    saveIndicator.classList.toggle('tt-save-pill-stale', info.stale)
     for (const sub of saveStateSubscribers) sub(info)
   }
 
-  function setSaveState(state: SaveState): void {
-    currentState = state
-    if (state === 'saved') {
-      const now = new Date()
-      lastSavedAt = { h: now.getHours(), m: now.getMinutes() }
-    }
+  function setFileHealth(health: FileHealth, ctx: PillContext): void {
+    fileHealth = health
+    pillCtx = ctx
     renderSaveIndicator()
-  }
-
-  function setFallbackHint(active: boolean): void {
-    fallbackHint = active
-    renderSaveIndicator()
+    // The age is the one thing on the pill that changes with time alone.
+    const needsTick = pillHealth() === 'export'
+    if (needsTick && ageTimer === null) ageTimer = setInterval(renderSaveIndicator, AGE_TICK_MS)
+    else if (!needsTick && ageTimer !== null) { clearInterval(ageTimer); ageTimer = null }
   }
 
   function applyPrefs(prefs: Prefs): void {
@@ -354,20 +370,13 @@ export function createShell(locale: Locale): Shell {
     closeFileHandler = cb
   }
 
-  function onSaveRequest(cb: () => void): void {
-    saveRequestHandler = cb
+  function onPillAction(cb: (action: PillAction) => void): void {
+    pillActionHandler = cb
   }
 
-  function onGrantRequest(cb: () => void): void {
-    grantRequestHandler = cb
-  }
-
-  function requestSaveNow(): void {
-    if (currentState === 'permission') {
-      grantRequestHandler?.()
-      return
-    }
-    if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
+  function requestPillAction(): void {
+    const action = CLICK_ACTION[pillHealth()]
+    if (action) pillActionHandler?.(action)
   }
 
   function subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void {
@@ -384,11 +393,13 @@ export function createShell(locale: Locale): Shell {
     header.classList.toggle('tt-header-team-hidden', hidden)
   }
 
-  setSaveState('saved')
+  renderSaveIndicator()
 
   function dispose(): void {
     mq.removeEventListener('change', onSystemThemeChange)
+    if (ageTimer !== null) clearInterval(ageTimer)
+    ageTimer = null
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setFileHealth, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onPillAction, requestPillAction, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, dispose }
 }

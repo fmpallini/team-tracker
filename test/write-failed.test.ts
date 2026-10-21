@@ -31,6 +31,12 @@ test('a lost permission offers re-grant, download, retry, close anyway and cance
   ])
 })
 
+test('without a document to leave (opened from the pill), there is no close-anyway choice', () => {
+  void showWriteFailedDialog(opts({ allowCloseAnyway: false }))
+  expect(labels()).not.toContain(t('en-US', 'write_failed_close_anyway'))
+  expect(labels()).toContain(t('en-US', 'cancel'))
+})
+
 test('any other failure has no re-grant button, nor does a session that has no handle to re-grant', () => {
   void showWriteFailedDialog(opts({ reason: 'error' }))
   expect(labels()).not.toContain(t('en-US', 'write_failed_regrant'))

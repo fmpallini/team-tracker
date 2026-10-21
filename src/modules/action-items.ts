@@ -567,14 +567,15 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // Same wrap as the header pill: it hosts the click, and `display` goes on it.
     const savePillMini = el('span', {
       class: 'tt-save-pill-wrap',
-      onclick: () => ctx.saveStatus.requestSaveNow(),
+      onclick: () => ctx.saveStatus.requestPillAction(),
     }, savePillMiniPill)
     savePillMini.style.display = 'none'
     const unsubscribeSaveStatus = ctx.saveStatus.subscribeSaveState((info) => {
       savePillMiniText.textContent = info.label
       savePillMiniPill.title = info.title
-      savePillMiniPill.dataset.state = info.state
+      savePillMiniPill.dataset.state = info.health
       savePillMiniPill.classList.toggle('tt-save-pill-clickable', info.clickable)
+      savePillMiniPill.classList.toggle('tt-save-pill-stale', info.stale)
     })
     const expandBtn = el(
       'button',

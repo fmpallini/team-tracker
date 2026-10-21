@@ -44,6 +44,8 @@ export interface LivePersister {
    * against it and rewrite identical records.
    */
   reseed(stored: { records: DocRecords; blobIds: Iterable<string> }): Promise<void>
+  /** Calls `fn(true)` when the browser store starts failing and `fn(false)` when it recovers; not for every retry in between. Returns the unsubscribe. */
+  onErrorChange(fn: (failed: boolean) => void): () => void
   /** The error of the last failed commit, or null once a later one succeeded. */
   readonly lastError: unknown
   dispose(): void
@@ -109,6 +111,10 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   // Blobs the sweep deleted. They return only once a note references them again (an undo), never by themselves.
   const swept = new Set<string>()
   let lastError: unknown = null
+  const errorListeners = new Set<(failed: boolean) => void>()
+  const announceError = (failed: boolean): void => {
+    for (const fn of [...errorListeners]) { try { fn(failed) } catch (e) { console.error(e) } }
+  }
   let disposed = false
   let timer: { cancel: () => void; retry: boolean } | null = null
   let chain: Promise<void> = Promise.resolve()
@@ -203,7 +209,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     } catch (e) {
       const first = lastError === null
       lastError = e
-      if (first) deps.onError?.(e)
+      if (first) { deps.onError?.(e); announceError(true) }
       arm(RETRY_MS, true)
       return
     }
@@ -219,6 +225,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     if (lastError !== null) {
       lastError = null
       deps.onRecovered?.()
+      announceError(false)
     }
   }
 
@@ -277,11 +284,16 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       chain = reseeding.catch(() => {})
       return reseeding
     },
+    onErrorChange(fn) {
+      errorListeners.add(fn)
+      return () => { errorListeners.delete(fn) }
+    },
     get lastError() { return lastError },
     dispose() {
       disposed = true
       timer?.cancel()
       timer = null
+      errorListeners.clear()
       for (const off of unsubscribers) off()
     },
   }

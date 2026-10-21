@@ -62,7 +62,7 @@ export async function closeDocument(deps: CloseDocumentDeps): Promise<'closed' |
       reason: result.reason,
       canRegrant: result.reason === 'permission' && deps.session.handle !== null,
       onRegrant: () => snapshot.resolveGrants(),
-      onDownload: () => { void downloadCopy(deps) },
+      onDownload: () => { void downloadCopy(deps.store, deps.session, () => deps.getPassword()) },
       onRetry: async () => (await snapshot.writeNow('close')).ok,
     })
     if (choice === 'cancelled') return 'kept-open'
@@ -72,13 +72,13 @@ export async function closeDocument(deps: CloseDocumentDeps): Promise<'closed' |
 }
 
 /** A `.tmv` of the document as it is now, handed to the user as a download. */
-async function downloadCopy(deps: CloseDocumentDeps): Promise<void> {
+export async function downloadCopy(store: Store, session: FileSession, getPassword: () => string | null): Promise<void> {
   try {
-    const snap = await buildSnapshot(deps.store, deps.getPassword())
-    downloadFallback(deps.session.name, snap.bytes)
+    const snap = await buildSnapshot(store, getPassword())
+    downloadFallback(session.name, snap.bytes)
   } catch (e) {
     console.error(e)
-    toast(t(deps.store.doc.prefs.locale, 'save_error_toast'), { sticky: true })
+    toast(t(store.doc.prefs.locale, 'save_error_toast'), { sticky: true })
   }
 }
 

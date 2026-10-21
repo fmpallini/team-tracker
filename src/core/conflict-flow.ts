@@ -18,6 +18,7 @@ import { buildSnapshot, commitSnapshot } from './snapshot'
 import { newStamp, randomHex, type FileStamp } from './file-stamp'
 import type { LivePersister } from './live-persist'
 import type { ReloadedDocument } from './reload-document'
+import type { FileSnapshot } from './file-snapshot'
 import { showConflictModal } from '../ui/conflict'
 import { toast } from '../ui/modal'
 import { SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from '../ui/file-health-toasts'
@@ -25,7 +26,7 @@ import { SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from '../ui/file-heal
 export interface ConflictFlowDeps {
   store: Store
   session: FileSession
-  shell: Pick<Shell, 'setSaveState' | 'setTitle'>
+  shell: Pick<Shell, 'setTitle'>
   /** Read live on every use — a password change updates it after this flow is built. */
   getPassword: () => string | null
   /** Reads and decodes the file as it is now (asking for its password if that changed) without touching the open document. */
@@ -36,8 +37,8 @@ export interface ConflictFlowDeps {
   resolveGrants: () => Promise<void>
   /** Told which file write landed (null: browser storage unavailable). */
   persister?: LivePersister | null
-  /** The conflict is over, by writing the file over it or by taking its content: the file writer should show healthy again. */
-  onConflictResolved?: (how: 'wrote' | 'reloaded') => void
+  /** The file writer, told how the conflict ended (or that the overwrite failed) so the pill follows. */
+  snapshot?: Pick<FileSnapshot, 'fileWritten' | 'fileReloaded' | 'fileWriteFailed'>
   /** Re-opens the document on the fork's new file — see the note in `fork` for why not in place. */
   reopen: (forkSession: FileSession, doc: Doc, password: string | null, images: ImageStore, stamp: FileStamp) => void
 }
@@ -70,7 +71,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       deps.applyReloaded(reloaded)
       // The file is now the truth: the browser copy takes its content and its write as the lineage.
       await deps.persister?.adoptFileStamp(reloaded.stamp)
-      deps.onConflictResolved?.('reloaded')
+      deps.snapshot?.fileReloaded()
     } catch (e) {
       console.error(e)
       toast(t(locale(), 'conflict_reload_failed'), { sticky: true })
@@ -126,10 +127,9 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       const snapshot = await buildSnapshot(store, deps.getPassword())
       await forceWrite(session, snapshot.bytes)
       await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
-      deps.onConflictResolved?.('wrote')
+      deps.snapshot?.fileWritten()
       if (store.rev === snapshot.revAtSnapshot) {
         store.markSaved()
-        shell.setSaveState('saved')
         shell.setTitle(session.name)
       }
     } catch (e) {
@@ -144,7 +144,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
         // forcing this "Overwrite" choice through a permission
         // side-channel — the user re-confirms instead of it happening
         // unattended.
-        shell.setSaveState('permission')
+        deps.snapshot?.fileWriteFailed('permission')
         // Keyed like file-health-toasts.ts's own toast, so the next successful write dismisses it.
         toast(t(locale(), 'save_permission_toast'), {
           sticky: true,
@@ -152,7 +152,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
           action: { label: t(locale(), 'grant_access_ellipsis'), onClick: () => void deps.resolveGrants() },
         })
       } else {
-        shell.setSaveState('error')
+        deps.snapshot?.fileWriteFailed('error')
         toast(t(locale(), 'save_error_toast'), { sticky: true, key: SAVE_ERROR_TOAST_KEY })
       }
     } finally {

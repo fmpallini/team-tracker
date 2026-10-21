@@ -36,8 +36,8 @@ import { toast, showErrorModal, dismissModelessModals, dismissToast, promptPassw
 import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage } from './core/storage-persist'
-import { createFileSnapshot, type FileSnapshot, type FileHealth } from './core/file-snapshot'
-import { closeDocument, createBeforeUnloadHandler } from './core/close-document'
+import { createFileSnapshot, type FileSnapshot } from './core/file-snapshot'
+import { closeDocument, createBeforeUnloadHandler, downloadCopy } from './core/close-document'
 import { showWriteFailedDialog } from './ui/write-failed'
 import { watchFileHealth } from './ui/file-health-toasts'
 import { createImageStore } from './core/image-store'
@@ -174,12 +174,6 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   const promoBtn = promoHeaderButton(doc.prefs.locale)
   if (promoBtn) shell.headerRight.prepend(promoBtn)
   shell.setTitle(session.name)
-  // Task 25 re-review item #4b: fallback mode (no FS handle) never
-  // auto-saves — the user has to notice "Unsaved" and press Ctrl+S. Set once
-  // here from whether this session ever got a handle; real fallback mode
-  // (browser lacks the File System Access API) can't gain one later, so a
-  // one-time flag at open time is accurate for the document's whole lifetime.
-  shell.setFallbackHint(!session.handle)
 
   // Task 25 re-review item #4c: every document/window listener this function
   // registers gets its remover collected here so `dispose()` (assigned to
@@ -292,7 +286,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     applyReloaded,
     resolveGrants: async () => { await snapshot.resolveGrants() },
     persister,
-    onConflictResolved: (how) => snapshot.conflictResolved(how),
+    snapshot: { fileWritten: () => snapshot.fileWritten(), fileReloaded: () => snapshot.fileReloaded(), fileWriteFailed: (r) => snapshot.fileWriteFailed(r) },
     // The fork is a new document with a browser copy of its own; the original's copy (docId unchanged) goes once
     // the fork is up, because its edits now live in the fork and the original file belongs to the other writer.
     reopen: (forkSession, forkDoc, forkPassword, forkImages, stamp) => {
@@ -329,11 +323,18 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   snapshot.scheduleFrom(store.doc.prefs)
   if (persister) disposers.push(() => persister.dispose())
 
-  // The save pill shows whether the file can be written (the browser copy is what keeps the work safe), mapped
-  // onto the pill's existing states until the pill itself is reworked.
-  const pillState = (h: FileHealth): 'saved' | 'saving' | 'permission' | 'error' | 'dirty' =>
-    h.kind === 'ok' ? 'saved' : h.kind === 'writing' ? 'saving' : h.kind === 'export' ? 'dirty' : h.kind
-  disposers.push(snapshot.subscribe((h) => shell.setSaveState(pillState(h))))
+  // The save pill shows whether the file can be written when it needs to be (the browser copy is what keeps the work
+  // safe), and nothing about "unsaved": every time it mentions is in its hover.
+  const persistentStorage: boolean | null = null // whether the browser promised to keep this origin's storage: not asked yet
+  const paintPill = (): void => shell.setFileHealth(snapshot.health(), {
+    nextWriteAt: snapshot.nextWriteAt(),
+    persistent: persistentStorage,
+    storeError: persister?.lastError != null,
+    readOnly: store.readOnly,
+  })
+  disposers.push(snapshot.subscribe(paintPill))
+  if (persister) disposers.push(persister.onErrorChange(paintPill))
+  disposers.push(store.onReadOnlyChange(paintPill))
   disposers.push(watchFileHealth(snapshot, () => store.doc.prefs.locale))
   // A document opened from the browser's copy starts ahead of its file: write it as soon as this tab may write
   // (the tab lock decides that a moment after opening; a read-only tab never writes the file).
@@ -370,6 +371,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
       if (store.doc.prefs.autoSaveMin !== lastAutoSaveMin) {
         lastAutoSaveMin = store.doc.prefs.autoSaveMin
         snapshot.scheduleFrom(store.doc.prefs)
+        paintPill() // the next-write time in its hover
       }
     })
   )
@@ -483,9 +485,20 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     })
   }
   shell.onCloseFile(closeFile)
-  // The pill's click: re-grant a lapsed permission; retry after an error; export where no file can be written silently.
-  shell.onSaveRequest(() => void snapshot.writeNow(session.handle ? 'close' : 'export'))
-  shell.onGrantRequest(() => void snapshot.resolveGrants())
+  // The pill's click: re-grant a lapsed permission; export where no file can be written silently; the failure dialog
+  // after a failed write (the same one Lock/Close shows, without the way to close).
+  shell.onPillAction((action) => {
+    if (action === 'regrant') void snapshot.resolveGrants()
+    else if (action === 'export') void snapshot.writeNow('export')
+    else {
+      void showWriteFailedDialog({
+        locale: store.doc.prefs.locale, reason: 'error', canRegrant: false, allowCloseAnyway: false,
+        onRegrant: () => snapshot.resolveGrants(),
+        onDownload: () => { void downloadCopy(store, session, currentPassword) },
+        onRetry: async () => (await snapshot.writeNow('close')).ok,
+      })
+    }
+  })
 
   // Switching teams restores that team's own last session: whether it was
   // last viewed split or single, and — per pane — whichever module it was

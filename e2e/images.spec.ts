@@ -70,7 +70,7 @@ async function dropOnto(page: Page, files: { name: string; bytes: number[] }[]):
 const blocks = (page: Page) => page.locator('.editor .tt-img img')
 
 async function waitForSaved(page: Page): Promise<void> {
-  await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+  await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 }
 
 async function newTeamWithEditor(page: Page): Promise<void> {
