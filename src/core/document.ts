@@ -1,8 +1,9 @@
 import type { ActionItemColor, Doc, Team } from './types'
 import { builtinTemplates } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
+import { IMAGE_ID_RE } from './image-ref'
 
-export const SCHEMA_VERSION = 16
+export const SCHEMA_VERSION = 17
 
 export class SchemaTooNewError extends Error {}
 
@@ -15,6 +16,7 @@ export function createEmptyDocument(locale: Locale): Doc {
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false },
     teams: [],
     favorites: [],
+    images: {},
   }
 }
 
@@ -184,6 +186,9 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
       if (typeof tpl?.body === 'string') tpl.body = tpl.body.replace(/{(?:data|hora|pessoa|time)}/g, (m) => RENAMES[m]!)
     }
   },
+  16: (d) => {
+    d.images = isPlainObject(d.images) ? d.images : {}
+  },
 }
 
 export function migrate(raw: unknown): Doc {
@@ -335,6 +340,18 @@ export function validateDoc(raw: unknown): string | null {
     if (ref.kind === 'person') {
       if (!fieldOk(ref.personId, 'id')) return `${at}.ref.personId`
       if (ref.group !== 'stakeholders' && ref.group !== 'members') return `${at}.ref.group`
+    }
+  }
+
+  // Required since schema 17. Dangling references (a note naming an id that is
+  // not here) are legal: a damaged file must still open.
+  if (!isPlainObject(raw.images)) return 'images'
+  for (const [id, meta] of Object.entries(raw.images)) {
+    const at = `images["${id}"]`
+    if (!IMAGE_ID_RE.test(id) || !isPlainObject(meta)) return at
+    if (typeof meta.mime !== 'string') return at
+    for (const n of [meta.w, meta.h, meta.bytes]) {
+      if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) return at
     }
   }
 

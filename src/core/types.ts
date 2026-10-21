@@ -86,9 +86,12 @@ export interface NavState {
 }
 /** A starred pane location (see core/favorites.ts). `ref` never carries an `itemId`: a favorite opens the module, not one card. */
 export interface Favorite { teamId: string; ref: ModuleRef }
+export interface ImageMeta { mime: string; w: number; h: number; bytes: number }
 export interface Doc {
   schemaVersion: number; prefs: Prefs; templates: Template[]
   nav: NavState; teams: Team[]
   /** Global across teams, in the order they were starred. Schema 15. */
   favorites: Favorite[]
+  /** Metadata for the images embedded in notes, keyed by content id. Bytes live in the ImageStore, never here. Schema 17. */
+  images: Record<string, ImageMeta>
 }

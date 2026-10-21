@@ -639,3 +639,43 @@ describe('validateDoc', () => {
     expect(validateDoc(d)).toBeNull()
   })
 })
+
+describe('v16 → v17 migration (embedded images)', () => {
+  const v16 = () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 16
+    delete d.images
+    return d
+  }
+  const ID = 'a'.repeat(32)
+
+  it('adds an empty image map', () => {
+    const doc = migrate(v16())
+    expect(doc.schemaVersion).toBe(17)
+    expect(doc.images).toEqual({})
+  })
+
+  it('a new empty document has an empty image map', () => {
+    expect(createEmptyDocument('en-US').images).toEqual({})
+  })
+
+  it('validateDoc rejects a non-object image map', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.images = []
+    expect(validateDoc(d)).toBe('images')
+  })
+
+  it('validateDoc rejects a non-numeric size and a malformed id', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.images = { [ID]: { mime: 'image/webp', w: 'x', h: 1, bytes: 1 } }
+    expect(validateDoc(d)).toBe(`images["${ID}"]`)
+    d.images = { NOTANID: { mime: 'image/webp', w: 1, h: 1, bytes: 1 } }
+    expect(validateDoc(d)).toBe('images["NOTANID"]')
+  })
+
+  it('validateDoc accepts a good entry', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.images = { [ID]: { mime: 'image/webp', w: 10, h: 20, bytes: 300 } }
+    expect(validateDoc(d)).toBeNull()
+  })
+})
