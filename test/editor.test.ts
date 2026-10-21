@@ -3936,7 +3936,7 @@ describe('image blocks', () => {
   })
 
   test.each(['Backspace', 'Delete'])('%s removes the selected block and its reference', async (key) => {
-    const { editor, hooks } = mount(host())
+    const { editor } = mount(host())
     editor.setMd(`a\n\n${ref()}\n\nb`)
     await flushAsync()
     const block = editor.root.querySelector<HTMLElement>('.tt-img')!
