@@ -31,8 +31,10 @@ const cryptoMocks = vi.hoisted(() => {
   const m = {
     WrongPasswordError,
     CorruptFileError,
+    images: { has: () => false } as unknown,
     decryptDocument: vi.fn(),
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
+    blobCodec: vi.fn(async () => ({ seal: async () => new Uint8Array(), open: async () => new Uint8Array() })),
     serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
     parsePlain: vi.fn((_bytes: Uint8Array) => null as unknown),
     looksLikeTmv: vi.fn((_bytes: Uint8Array) => true),
@@ -40,11 +42,11 @@ const cryptoMocks = vi.hoisted(() => {
     encryptedPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
     parsePlainWithVersion: vi.fn((bytes: Uint8Array) => {
       const doc = m.parsePlain(bytes)
-      return doc ? { doc, preSchemaVersion: m.plainPreSchemaVersion(bytes) } : null
+      return doc ? { doc, preSchemaVersion: m.plainPreSchemaVersion(bytes), images: m.images } : null
     }),
     decryptDocumentWithVersion: vi.fn(async (bytes: Uint8Array, password: string) => {
       const doc: unknown = await m.decryptDocument(bytes, password)
-      return { doc, preSchemaVersion: m.encryptedPreSchemaVersion(bytes) }
+      return { doc, preSchemaVersion: m.encryptedPreSchemaVersion(bytes), images: m.images }
     }),
   }
   return m
@@ -499,7 +501,7 @@ describe('fallback mode (no FS API): opening the picked file', () => {
     await flush()
 
     expect(document.querySelector('input[name="tt-password"]')).toBeNull()
-    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, plainDoc, null, null)
+    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, plainDoc, null, null, cryptoMocks.images)
   })
 
   test('an encrypted file goes through the password prompt, then opens', async () => {
@@ -519,7 +521,7 @@ describe('fallback mode (no FS API): opening the picked file', () => {
     await flush()
     await flush()
 
-    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, doc, 'right', null)
+    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, doc, 'right', null, cryptoMocks.images)
   })
 
   test('a corrupt plain file shows the corrupt-file error and opens nothing', async () => {

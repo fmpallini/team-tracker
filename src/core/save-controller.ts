@@ -235,7 +235,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // to it now instead; `writeBackupNow()` self-no-ops if the grant is still
     // missing (user dismissed the native prompt).
     try {
-      const bytes = await docToBytes(deps.store.doc, deps.getPassword())
+      const bytes = await docToBytes(deps.store.doc, deps.getPassword(), deps.store.images)
       await deps.backupCtl?.writeBackupNow(bytes)
     } catch (e) {
       console.error(e)
@@ -316,7 +316,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     const revAtSnapshot = deps.store.rev
     let bytes: Uint8Array
     try {
-      bytes = await docToBytes(deps.store.doc, deps.getPassword())
+      bytes = await docToBytes(deps.store.doc, deps.getPassword(), deps.store.images)
     } catch (e) {
       console.error(e)
       reportWriteError()

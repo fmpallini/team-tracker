@@ -1,11 +1,14 @@
 import type { Doc } from './types'
 import type { ChangeScope } from './scope'
+import { createImageStore, type ImageStore } from './image-store'
 
 /** Which mutation channel fired — `update()` is 'content', `updateNav()` is 'nav'. */
 export type MutationKind = 'content' | 'nav'
 
 export interface Store {
   readonly doc: Doc
+  /** The document's image bytes. `Doc.images` is only their metadata; this is never serialized as JSON. */
+  readonly images: ImageStore
   readonly dirty: boolean
   /**
    * True after `setReadOnly(true)` — set by main.ts (Task 25) while this tab
@@ -68,7 +71,7 @@ export interface Store {
    * notifies `subscribe()` listeners so the whole UI re-renders against the
    * new object.
    */
-  replaceDoc(doc: Doc): void
+  replaceDoc(doc: Doc, images?: ImageStore): void
   /**
    * Toggles read-only mode (Task 25: cross-tab lock lost). Turning it off
    * re-arms the one-shot `onBlockedUpdate` warning for the next time it's
@@ -91,8 +94,9 @@ type ReadOnlyState =
   | { kind: 'writable' }
   | { kind: 'blocked'; silent: boolean; warned: boolean }
 
-export function createStore(initialDoc: Doc): Store {
+export function createStore(initialDoc: Doc, initialImages: ImageStore = createImageStore(null)): Store {
   let doc = initialDoc
+  let images = initialImages
   let dirty = false
   let rev = 0
   let roState: ReadOnlyState = { kind: 'writable' }
@@ -121,6 +125,9 @@ export function createStore(initialDoc: Doc): Store {
   return {
     get doc() {
       return doc
+    },
+    get images() {
+      return images
     },
     get dirty() {
       return dirty
@@ -172,9 +179,10 @@ export function createStore(initialDoc: Doc): Store {
     markSaved(): void {
       setDirty(false)
     },
-    replaceDoc(newDoc: Doc): void {
+    replaceDoc(newDoc: Doc, newImages?: ImageStore): void {
       rev++
       doc = newDoc
+      if (newImages) images = newImages
       setDirty(false)
       for (const fn of Array.from(subscribers)) { try { fn(null) } catch (e) { console.error(e) } }
       notifyMutate('content')

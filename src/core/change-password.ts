@@ -51,7 +51,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // `fn` is exactly the window that needs to stay guarded once it
       // actually starts writing.
       if (deps.store.readOnly) throw new Error('read-only')
-      const bytes = await docToBytes(deps.store.doc, newPw)
+      const bytes = await docToBytes(deps.store.doc, newPw, deps.store.images)
       if (deps.session.handle) {
         await writeFile(deps.session, bytes)
       } else {

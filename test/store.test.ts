@@ -1,3 +1,4 @@
+import { createImageStore } from '../src/core/image-store'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { ChangeScope } from '../src/core/scope'
@@ -322,4 +323,21 @@ test('replaceDoc fires onMutate with "content", after subscribers', () => {
   s.onMutate((kind) => order.push(`mutate:${kind}`))
   s.replaceDoc(createEmptyDocument('en-US'))
   expect(order).toEqual(['subscribe', 'mutate:content'])
+})
+
+describe('store.images', () => {
+  test('a store starts with an empty image store of its own', async () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    expect(s.images.has('a'.repeat(32))).toBe(false)
+  })
+
+  test('replaceDoc with an image store swaps it; without one it keeps the current store', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const first = s.images
+    s.replaceDoc(createEmptyDocument('en-US'))
+    expect(s.images).toBe(first)
+    const other = createImageStore(null)
+    s.replaceDoc(createEmptyDocument('en-US'), other)
+    expect(s.images).toBe(other)
+  })
 })

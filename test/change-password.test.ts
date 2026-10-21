@@ -66,7 +66,7 @@ test('changing to a new password encrypts and writes, never touches serializePla
 
   await changePassword('newpw')
 
-  expect(cryptoMocks.encryptDocument).toHaveBeenCalledWith(store.doc, 'newpw')
+  expect(cryptoMocks.encryptDocument).toHaveBeenCalledWith(store.doc, 'newpw', store.images, [])
   expect(cryptoMocks.serializePlain).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([1, 2, 3]))
   expect(setPassword).toHaveBeenCalledWith('newpw')
@@ -84,7 +84,7 @@ test('migrating to password-less (newPw null) uses serializePlain, never encrypt
 
   await changePassword(null)
 
-  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc)
+  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc, store.images, [])
   expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([7, 7, 7]))
 })

@@ -16,7 +16,8 @@ import {
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
-import { decryptDocumentWithVersion, parsePlainWithVersion, looksLikeTmv, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
+import { decryptDocumentWithVersion, parsePlainWithVersion, looksLikeTmv, blobCodec, WrongPasswordError, CorruptFileError, type OpenedDoc } from '../core/crypto'
+import { createImageStore, type ImageStore } from '../core/image-store'
 import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/document'
 import { docToBytes } from '../core/doc-bytes'
 import { promptPassword, showErrorModal, toast } from './modal'
@@ -93,7 +94,7 @@ function migratedFromFor(opened: OpenedDoc, bytes: Uint8Array): Uint8Array | nul
 
 export function showStartScreen(
   locale: Locale,
-  onOpen: (session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null) => void,
+  onOpen: (session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null, images: ImageStore) => void,
   opts?: { skipAutoLoad?: boolean }
 ): void {
   const container = document.getElementById('app') ?? document.body
@@ -109,7 +110,7 @@ export function showStartScreen(
     showErrorModal(locale, t(locale, 'err_unexpected'))
   }
 
-  async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string; migratedFrom: Uint8Array | null } | null> {
+  async function decryptLoop(bytes: Uint8Array): Promise<{ doc: Doc; password: string; migratedFrom: Uint8Array | null; images: ImageStore } | null> {
     // An empty file (a create flow that was cancelled before its first write)
     // or any non-.tmv file can never be opened by any password: say so now
     // instead of after the user has typed one.
@@ -124,7 +125,7 @@ export function showStartScreen(
       const password = (result as { password: string }).password
       try {
         const opened = await decryptDocumentWithVersion(bytes, password)
-        return { doc: opened.doc, password, migratedFrom: migratedFromFor(opened, bytes) }
+        return { doc: opened.doc, password, migratedFrom: migratedFromFor(opened, bytes), images: opened.images }
       } catch (e) {
         if (e instanceof WrongPasswordError) {
           toast(t(locale, 'err_wrong_password'))
@@ -186,11 +187,11 @@ export function showStartScreen(
       throw e
     }
     if (plain) {
-      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes))
+      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes), plain.images)
       return
     }
     const outcome = await decryptLoop(result.bytes)
-    if (outcome) onOpen(result.session, outcome.doc, outcome.password, outcome.migratedFrom)
+    if (outcome) onOpen(result.session, outcome.doc, outcome.password, outcome.migratedFrom, outcome.images)
   }
 
   const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
@@ -211,21 +212,23 @@ export function showStartScreen(
       if (result === null) return
       const doc = createEmptyDocument(locale)
       const password = 'plain' in result ? null : result.password
-      await writeFile(session, await docToBytes(doc, password))
-      onOpen(session, doc, password, null)
+      const images = createImageStore(password === null ? null : await blobCodec(password))
+      await writeFile(session, await docToBytes(doc, password, images))
+      onOpen(session, doc, password, null, images)
     } else {
       const result = await promptPassword(locale, { confirm: true, allowPlain: true, title: t(locale, 'create_file') })
       if (result === null) return
       const doc = createEmptyDocument(locale)
       const password = 'plain' in result ? null : result.password
-      downloadFallback(SUGGESTED_NAME, await docToBytes(doc, password))
+      const images = createImageStore(password === null ? null : await blobCodec(password))
+      downloadFallback(SUGGESTED_NAME, await docToBytes(doc, password, images))
       // Not sticky: this announces the download that just happened. The
       // *ongoing* fact that this browser has no direct file access is a mode,
       // not an event, and lives on the save pill (shell.setFallbackHint) —
       // a sticky toast here outlived the start screen and sat over the app.
       toast(t(locale, 'fallback_notice'))
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
-      onOpen(session, doc, password, null)
+      onOpen(session, doc, password, null, images)
     }
   }
 
@@ -384,7 +387,7 @@ export function showStartScreen(
     // reflects/edits the pref; only the immediate re-open is suppressed.
     // ...and an open the user (or the OS launch) already started wins outright.
     if (autoLoad && !opts?.skipAutoLoad && !openStarted) {
-      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes))
+      onOpen(result.session, plain.doc, null, migratedFromFor(plain, result.bytes), plain.images)
     }
   }
   checkAutoLoad().catch((e: unknown) => console.error(e))

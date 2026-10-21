@@ -4,6 +4,7 @@ import type { Locale } from './core/i18n'
 import type { Doc } from './core/types'
 import type { FileSession } from './core/fs'
 import { createStore, type Store } from './core/store'
+import type { ImageStore } from './core/image-store'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { mountSidebar } from './ui/sidebar'
@@ -86,8 +87,8 @@ let app: AppController | null = null
 // showStartScreen's onOpen callback is typed `=> void` — this adapts
 // onDocumentOpened's Promise<void> to that shape without leaving its
 // rejection unhandled.
-function openDocument(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null): void {
-  onDocumentOpened(session, doc, password, migratedFrom).catch((e: unknown) => {
+function openDocument(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null, images: ImageStore): void {
+  onDocumentOpened(session, doc, password, migratedFrom, images).catch((e: unknown) => {
     console.error(e)
     // Previously silent (console.error only) — a throw here left the user
     // staring at whatever partially rendered before it, with no feedback at
@@ -180,7 +181,7 @@ function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
 }
 
-async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null): Promise<void> {
+async function onDocumentOpened(session: FileSession, doc: Doc, password: string | null, migratedFrom: Uint8Array | null, images: ImageStore): Promise<void> {
   // A second file can be opened while one is already open — e.g. the File
   // Handling API launch consumer (src/ui/start.ts) fires again on a fresh
   // `.tmv` double-click while `focus-existing` (pwa/manifest.json) reuses this
@@ -244,7 +245,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
   // shell (and its DOM) reachable for the life of the tab — see Shell.dispose.
   disposers.push(() => shell.dispose())
 
-  const store = createStore(doc)
+  const store = createStore(doc, images)
   // Live read — never the closed-over `password` parameter alone: a password
   // change updates `app.password`, and the parameter goes stale after it.
   const currentPassword = (): string | null => (app ? app.password : password)
@@ -283,14 +284,14 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     const bytes = await readCurrent(session)
     // The file may no longer be under the password this tab opened it with
     // (changed, added or removed in another tab) — see core/reload-document.ts.
-    const { doc: reloaded, password: filePassword } = await decodeForReload(bytes, currentPassword(), async (wasWrong) => {
+    const { doc: reloaded, images: reloadedImages, password: filePassword } = await decodeForReload(bytes, currentPassword(), async (wasWrong) => {
       const lc = store.doc.prefs.locale
       if (wasWrong) toast(t(lc, 'err_wrong_password'))
       const result = await promptPassword(lc, { title: t(lc, 'reload_password_title') })
       return result === null ? null : (result as { password: string }).password
     })
     if (app && app.store === store) app.password = filePassword
-    store.replaceDoc(reloaded)
+    store.replaceDoc(reloaded, reloadedImages)
     // The reloaded document may carry different look-and-feel prefs (theme,
     // palette, font, locale) than the one it replaces.
     shell.applyPrefs(reloaded.prefs)
@@ -318,7 +319,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     getPassword: currentPassword,
     reloadFromDisk,
     resolveGrants: () => saveCtl.resolveGrants(),
-    reopen: (forkSession, forkDoc, forkPassword) => openDocument(forkSession, forkDoc, forkPassword, null),
+    reopen: (forkSession, forkDoc, forkPassword, forkImages) => openDocument(forkSession, forkDoc, forkPassword, null, forkImages),
   })
 
   // Task 25: save orchestration. `getPassword`/`onExternalChange` read live
@@ -462,7 +463,7 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
 
   async function retryBackupWrite(): Promise<void> {
     try {
-      await backupCtl.writeBackupNow(await docToBytes(store.doc, currentPassword()))
+      await backupCtl.writeBackupNow(await docToBytes(store.doc, currentPassword(), store.images))
     } catch (e) {
       console.error(e)
     }

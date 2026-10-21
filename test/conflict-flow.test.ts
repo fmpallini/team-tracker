@@ -131,7 +131,7 @@ describe('Overwrite', () => {
     await open().onOverwrite()
 
     expect(deps.getPassword).toHaveBeenCalled()
-    expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw')
+    expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw', store.images)
     expect(mocks.forceWrite).toHaveBeenCalledWith(deps.session, BYTES)
     expect(store.dirty).toBe(false)
     expect(shell.setSaveState).toHaveBeenCalledWith('saved')
@@ -153,7 +153,7 @@ describe('Overwrite', () => {
   test('a password-less file is written under a null password', async () => {
     const { open } = setup({ getPassword: () => null })
     await open().onOverwrite()
-    expect(mocks.docToBytes).toHaveBeenCalledWith(expect.anything(), null)
+    expect(mocks.docToBytes).toHaveBeenCalledWith(expect.anything(), null, expect.anything())
   })
 
   test('a lapsed permission shows the permission state and a toast whose action re-requests access', async () => {
@@ -257,7 +257,7 @@ describe('Fork', () => {
     expect(mocks.forceWrite).toHaveBeenCalledWith(FORK, BYTES)
     expect(mocks.forceWrite).not.toHaveBeenCalledWith(deps.session, expect.anything())
     expect(store.dirty).toBe(false)
-    expect(deps.reopen).toHaveBeenCalledWith(FORK, store.doc, 'pw')
+    expect(deps.reopen).toHaveBeenCalledWith(FORK, store.doc, 'pw', store.images)
     expect(flow.isOpen()).toBe(false)
   })
 

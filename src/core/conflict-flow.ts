@@ -8,6 +8,7 @@
 // change-password.ts / tab-lock.ts: everything stateful comes in through deps.
 import type { Doc } from './types'
 import type { Store } from './store'
+import type { ImageStore } from './image-store'
 import type { FileSession } from './fs'
 import type { Shell } from '../ui/shell'
 import { t } from './i18n'
@@ -28,7 +29,7 @@ export interface ConflictFlowDeps {
   /** Re-requests the lapsed file permission; the "Grant access…" action of the permission toast. */
   resolveGrants: () => Promise<void>
   /** Re-opens the document on the fork's new file — see the note in `fork` for why not in place. */
-  reopen: (forkSession: FileSession, doc: Doc, password: string | null) => void
+  reopen: (forkSession: FileSession, doc: Doc, password: string | null, images: ImageStore) => void
 }
 
 export interface ConflictFlow {
@@ -82,7 +83,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     // document's backups off.
     const currentPw = deps.getPassword()
     const detached: Doc = { ...store.doc, prefs: { ...store.doc.prefs, dailyBackupEnabled: false, backupHandleId: null } }
-    await forceWrite(forkSession, await docToBytes(detached, currentPw))
+    await forceWrite(forkSession, await docToBytes(detached, currentPw, store.images))
     store.update((d) => {
       d.prefs.dailyBackupEnabled = false
       d.prefs.backupHandleId = null
@@ -107,7 +108,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     // (forceWrite above has also repointed the 'lastHandle' IndexedDB
     // key at the fork, so "reopen last" follows it.)
     open = false
-    deps.reopen(forkSession, store.doc, currentPw)
+    deps.reopen(forkSession, store.doc, currentPw, store.images)
     return true
   }
 
@@ -116,7 +117,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       // An edit landing while the write is in flight is not in the bytes just
       // written; clearing `dirty` for it would drop it from every later save.
       const revBefore = store.rev
-      await forceWrite(session, await docToBytes(store.doc, deps.getPassword()))
+      await forceWrite(session, await docToBytes(store.doc, deps.getPassword(), store.images))
       if (store.rev === revBefore) {
         store.markSaved()
         shell.setSaveState('saved')
