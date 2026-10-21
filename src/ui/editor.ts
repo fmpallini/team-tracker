@@ -12,6 +12,7 @@ import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, type BlockCtx } from './editor-dom'
 import { icon } from './icons'
+import type { ImageHost } from './image-host'
 
 export interface Editor {
   root: HTMLElement
@@ -43,6 +44,8 @@ export interface EditorHooks {
   onSlashTrigger(anchor: Range): void
   /** Optional: resolves a ref chip's *current* label from live team data instead of trusting the frozen text baked into stored markdown. Omitted by callers (e.g. template-picker.ts's preview) that have no team-scoped data to resolve against. */
   resolveRefLabel?: LabelResolver
+  /** Optional: supplies the pixels for image blocks. Without it every image shows the "unavailable" placeholder. */
+  images?: ImageHost
 }
 
 /**
@@ -1611,6 +1614,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && SHORTCUTS.some((sc) => sc.match(e))) e.preventDefault()
       return
     }
+    if ((e.key === 'Backspace' || e.key === 'Delete') && removeSelectedImage()) {
+      e.preventDefault()
+      return
+    }
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the
@@ -1988,6 +1995,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       expandPre(collapsed)
       if (cbActivePre === collapsed) { syncCbGlyphs(); positionCbControls() }
     }
+    selectImageBlock((e.target as HTMLElement).closest?.('.tt-img') as HTMLElement | null)
     handleRefActivate(e)
     handleExternalLinkActivate(e)
   }
@@ -2302,6 +2310,59 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   })
   cbControls.addEventListener('mouseleave', hideCbControlsSoon)
 
+  // --- image blocks ----------------------------------------------------
+  // mdToHtml renders an image line as an empty `.tt-img` block carrying its
+  // id and alt (core/markdown.ts); the pixels are filled in here, from the
+  // host, so a markdown load never waits on decoding. The `<img>` is display
+  // only: htmlToMd reads the block's attributes, never its children.
+  let destroyed = false
+
+  function markImageMissing(block: HTMLElement): void {
+    block.classList.add('tt-img-missing')
+    block.textContent = t(locale, 'img_missing')
+  }
+
+  /** Fills every empty image block with its picture. Blocks already filled or marked missing are skipped. */
+  function hydrateImages(): void {
+    editorEl.querySelectorAll<HTMLElement>('.tt-img').forEach((block) => {
+      if (block.firstChild || block.dataset.imgLoading) return
+      const id = block.dataset.imgId ?? ''
+      const host = hooks.images
+      if (!host) { markImageMissing(block); return }
+      const meta = host.getMeta(id)
+      // Claim the block now so a second pass (another setMd, a paste) does not start a second load for it.
+      block.dataset.imgLoading = '1'
+      void host.getDataUri(id).then((uri) => {
+        delete block.dataset.imgLoading
+        // The block was replaced (a later setMd), or the editor torn down, while the bytes were loading.
+        if (destroyed || !editorEl.contains(block) || block.firstChild) return
+        if (!uri) { markImageMissing(block); return }
+        const img = document.createElement('img')
+        img.src = uri
+        img.alt = block.dataset.alt ?? ''
+        img.draggable = false
+        if (meta) { img.width = meta.w; img.height = meta.h }
+        block.appendChild(img)
+      })
+    })
+  }
+
+  function selectImageBlock(block: HTMLElement | null): void {
+    editorEl.querySelectorAll('.tt-img.is-selected').forEach((b) => { if (b !== block) b.classList.remove('is-selected') })
+    if (block && editorEl.contains(block)) block.classList.add('is-selected')
+  }
+
+  /** Deletes the selected image block, if any. Returns whether it did (the caller then swallows the key). */
+  function removeSelectedImage(): boolean {
+    const block = editorEl.querySelector<HTMLElement>('.tt-img.is-selected')
+    if (!block) return false
+    block.remove()
+    // An editor with no block left has nowhere to put the caret.
+    if (!editorEl.firstChild) editorEl.innerHTML = '<div><br></div>'
+    scheduleChange()
+    return true
+  }
+
   function getMd(): string {
     return htmlToMd(editorEl)
   }
@@ -2325,6 +2386,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // editor *does* hold the caret — it leaves the caret's own block as plain
     // text, which is what keeps the caret placeable inside it.
     syncPreHighlight()
+    hydrateImages()
   }
 
   function refreshRefLabels(): void {
@@ -2380,6 +2442,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function destroy(): void {
+    destroyed = true
     unregisterEditor(registryEntry)
     // Flush, don't drop — see flushChange(). Runs before the listeners come
     // off so ordering matches a normal debounce firing.

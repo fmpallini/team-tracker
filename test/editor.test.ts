@@ -3862,3 +3862,107 @@ describe('setEditorsReadOnly', () => {
     }
   })
 })
+
+describe('image blocks', () => {
+  const ID = 'a'.repeat(32)
+  const flushAsync = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
+
+  function host(known: Record<string, { mime: string; w: number; h: number }> = { [ID]: { mime: 'image/png', w: 40, h: 30 } }) {
+    return {
+      getDataUri: vi.fn(async (id: string) => (known[id] ? `data:${known[id]!.mime};base64,AAAA` : null)),
+      getMeta: vi.fn((id: string) => (known[id] ? { ...known[id]!, bytes: 1 } : undefined)),
+      dispose: vi.fn(),
+    }
+  }
+  function mount(images?: ReturnType<typeof host>) {
+    const hooks = { ...makeHooks(), ...(images ? { images } : {}) }
+    const editor = createEditor(hooks, 'en-US')
+    document.body.appendChild(editor.root)
+    return { editor, hooks }
+  }
+  const ref = (id = ID) => `![shot](img:${id})`
+
+  test('an image line becomes a block whose <img> gets its data URI and recorded size', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a\n\n${ref()}\n\nb`)
+    await flushAsync()
+    const img = editor.root.querySelector('.tt-img img') as HTMLImageElement
+    expect(img.getAttribute('src')!.startsWith('data:image/')).toBe(true)
+    expect(img.getAttribute('width')).toBe('40')
+    expect(img.getAttribute('height')).toBe('30')
+    expect(img.getAttribute('alt')).toBe('shot')
+    expect(img.draggable).toBe(false)
+  })
+
+  test('the markdown survives hydration and a reload unchanged', async () => {
+    const { editor } = mount(host())
+    const md = `a\n\n${ref()}\n\nb`
+    editor.setMd(md)
+    await flushAsync()
+    expect(editor.getMd()).toBe(md)
+    editor.setMd(editor.getMd())
+    await flushAsync()
+    expect(editor.getMd()).toBe(md)
+  })
+
+  test('an image the host cannot supply shows the placeholder and still keeps its reference', async () => {
+    const { editor } = mount(host({}))
+    editor.setMd(ref())
+    await flushAsync()
+    const block = editor.root.querySelector('.tt-img') as HTMLElement
+    expect(block.classList.contains('tt-img-missing')).toBe(true)
+    expect(block.textContent).toBe(t('en-US', 'img_missing'))
+    expect(editor.getMd()).toBe(ref())
+  })
+
+  test('an editor without an image host renders the placeholder and does not throw', async () => {
+    const { editor } = mount()
+    expect(() => editor.setMd(ref())).not.toThrow()
+    await flushAsync()
+    expect(editor.root.querySelector('.tt-img')!.classList.contains('tt-img-missing')).toBe(true)
+  })
+
+  test('clicking a block selects it, and clicking another selects only that one', async () => {
+    const other = 'b'.repeat(32)
+    const { editor } = mount(host({ [ID]: { mime: 'image/png', w: 1, h: 1 }, [other]: { mime: 'image/png', w: 1, h: 1 } }))
+    editor.setMd(`${ref()}\n\n${ref(other)}`)
+    await flushAsync()
+    const [first, second] = Array.from(editor.root.querySelectorAll<HTMLElement>('.tt-img'))
+    first!.click()
+    expect(first!.classList.contains('is-selected')).toBe(true)
+    second!.click()
+    expect(first!.classList.contains('is-selected')).toBe(false)
+    expect(second!.classList.contains('is-selected')).toBe(true)
+  })
+
+  test.each(['Backspace', 'Delete'])('%s removes the selected block and its reference', async (key) => {
+    const { editor, hooks } = mount(host())
+    editor.setMd(`a\n\n${ref()}\n\nb`)
+    await flushAsync()
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    const e = dispatchKey(editor.root.querySelector('.editor') as HTMLElement, { key })
+    expect(e.defaultPrevented).toBe(true)
+    expect(editor.root.querySelector('.tt-img')).toBeNull()
+    expect(editor.getMd()).not.toContain('img:')
+    expect(editor.getMd()).toContain('a')
+    expect(editor.getMd()).toContain('b')
+  })
+
+  test('typing keys without a selected block are left alone', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a\n\n${ref()}\n\nb`)
+    await flushAsync()
+    const e = dispatchKey(editor.root.querySelector('.editor') as HTMLElement, { key: 'Backspace' })
+    expect(e.defaultPrevented).toBe(false)
+    expect(editor.root.querySelector('.tt-img')).not.toBeNull()
+  })
+
+  test('a block replaced by a second setMd before the host answers is not hydrated twice', async () => {
+    const { editor } = mount(host())
+    editor.setMd(ref())
+    editor.setMd(ref())
+    await flushAsync()
+    expect(editor.root.querySelectorAll('.tt-img img')).toHaveLength(1)
+  })
+})
