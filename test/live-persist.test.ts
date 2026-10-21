@@ -7,6 +7,7 @@ import { createImageStore } from '../src/core/image-store'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import { joinDoc } from '../src/core/doc-records'
 import { newStamp } from '../src/core/file-stamp'
+import { recordCodec, blobCodec, resetSessionKey } from '../src/core/crypto'
 import type { Doc } from '../src/core/types'
 
 const IMG = 'a'.repeat(32)
@@ -80,6 +81,12 @@ async function rig(doc: Doc = sampleDoc(), opts: { liveDb?: LiveDb; docId?: stri
     onError: (e) => errors.push(e), onRecovered: () => recovered.push(1),
   })
   return { store, live, persister, timers, errors, recovered }
+}
+
+async function rawContains(docId: string, text: string): Promise<boolean> {
+  const all = await rawDb.readAll(docId)
+  const walk = (v: unknown): string => ArrayBuffer.isView(v) ? String.fromCharCode(...new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) : Array.isArray(v) ? v.map(walk).join(' ') : v && typeof v === 'object' ? Object.entries(v).map(([k, x]) => k + walk(x)).join(' ') : String(v)
+  return walk(all.records).includes(text)
 }
 
 const loadDoc = async (docId: string): Promise<Doc> => joinDoc((await createLiveStore(rawDb, docId, null).load()).records)
@@ -545,4 +552,66 @@ test('onErrorChange reports when a storage failure starts and when it ends, not 
   store.update((d) => { d.nav.split = false })
   await persister.flush()
   expect(seen).toEqual([true, false])
+})
+
+describe('rekey', () => {
+  test('re-seals the browser copy and every stored image under the new codec, and writes consistently afterwards', async () => {
+    const doc = sampleDoc()
+    const images = createImageStore(null)
+    images.putPlain(IMG, new Uint8Array([1, 2, 3]))
+    doc.images[IMG] = { ...meta }
+    doc.teams[0]!.dailyNotes['2026-07-01'] = `![x](img:${IMG})`
+    const store = createStore(doc, images)
+    const oldCodec = await recordCodec('old')
+    const live = createLiveStore(db, doc.docId, oldCodec)
+    const persister = await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule })
+    expect(await rawContains(doc.docId, 'note T1')).toBe(false)
+
+    resetSessionKey()
+    const newBlob = await blobCodec('new')
+    await images.rekey(newBlob)
+    const newCodec = await recordCodec('new', newBlob.header!.salt)
+    await persister.rekey(newCodec)
+
+    const m = (await live.meta())!
+    expect(await newCodec.verifyCheck(m.check!)).toBe(true)
+    expect(await oldCodec.verifyCheck(m.check!)).toBe(false)
+    const loaded = await createLiveStore(rawDb, doc.docId, newCodec).load()
+    expect(joinDoc(loaded.records)).toEqual(doc)
+    // the stored image is now in the form the NEW key seals (it opens with the new image codec)
+    expect(Array.from(await newBlob.open(IMG, loaded.blobs.get(IMG)!))).toEqual([1, 2, 3])
+
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-09'] = 'after' })
+    await persister.flush()
+    expect(joinDoc((await createLiveStore(rawDb, doc.docId, newCodec).load()).records).teams[0]!.dailyNotes['2026-07-09']).toBe('after')
+  }, 120000)
+
+  test('does not interleave with a flush: an edit pending during the rekey is written after it, under the new key', async () => {
+    const doc = sampleDoc()
+    const store = createStore(doc, createImageStore(null))
+    const oldCodec = await recordCodec('old')
+    const live = createLiveStore(db, doc.docId, oldCodec)
+    const persister = await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule })
+    resetSessionKey()
+    const newCodec = await recordCodec('new')
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'racing edit' })
+    await Promise.all([persister.rekey(newCodec), persister.flush()])
+    const loaded = await createLiveStore(rawDb, doc.docId, newCodec).load()
+    expect(joinDoc(loaded.records).teams[0]!.dailyNotes['2026-07-01']).toBe('racing edit')
+  }, 120000)
+
+  test('a failed rekey rejects and leaves the old codec writing', async () => {
+    const doc = sampleDoc()
+    const store = createStore(doc, createImageStore(null))
+    const oldCodec = await recordCodec('old')
+    const live = createLiveStore(db, doc.docId, oldCodec)
+    const persister = await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule })
+    resetSessionKey()
+    const newCodec = await recordCodec('new')
+    failNext.push(new Error('quota'))
+    await expect(persister.rekey(newCodec)).rejects.toThrow('quota')
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'still old key' })
+    await persister.flush()
+    expect(joinDoc((await createLiveStore(rawDb, doc.docId, oldCodec).load()).records).teams[0]!.dailyNotes['2026-07-01']).toBe('still old key')
+  }, 120000)
 })

@@ -9,7 +9,7 @@ import type { FileSession } from './fs'
 import { buildSnapshot, commitSnapshot, type Snapshot } from './snapshot'
 import type { LivePersister } from './live-persist'
 import type { FileSnapshot } from './file-snapshot'
-import { blobCodec } from './crypto'
+import { blobCodec, recordCodec } from './crypto'
 import { writeFile, downloadFallback } from './fs'
 import { toast } from '../ui/modal'
 import { t } from './i18n'
@@ -21,6 +21,8 @@ export interface ChangePasswordDeps {
   shell: Shell
   /** Told which file write landed (null: browser storage unavailable). */
   persister?: LivePersister | null
+  /** The browser copy could not be re-sealed under the new password (it stays consistently under the old one). */
+  onBrowserCopyRekeyFailed?: () => void
   /** The file writer, told the write landed so the pill shows it. */
   snapshot?: Pick<FileSnapshot, 'fileWritten'>
   /** Waits out (and blocks) any concurrent file write — see file-snapshot.ts's `runExclusive`. */
@@ -65,6 +67,8 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // one, and the next save's header must match the key the blobs use).
       const images = deps.store.images
       const oldPw = deps.getPassword()
+      // The browser copy first: every pending edit is in it under the old key before the key changes.
+      await deps.persister?.flush()
       await images.rekey(newPw === null ? null : await blobCodec(newPw))
       let snapshot: Snapshot
       try {
@@ -81,6 +85,19 @@ export function createChangePassword(deps: ChangePasswordDeps) {
         throw e
       }
       await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
+      // The browser copy follows the file to the new key, in one commit. Same key as the file header and the image
+      // blobs (the salt comes from the image store's own codec, not a second lookup of the session-key cache).
+      // If this fails the file write stands (rolling it back would put the file's key back for nothing) and the copy
+      // stays under the old key, consistently: the next open finds the lineage, cannot unlock it with the new password,
+      // and asks for the old one (core/live-open.ts).
+      if (deps.persister) {
+        try {
+          await deps.persister.rekey(newPw === null ? null : await recordCodec(newPw, images.codec()?.header?.salt))
+        } catch (e) {
+          console.error(e)
+          deps.onBrowserCopyRekeyFailed?.()
+        }
+      }
       deps.setPassword(newPw)
       if (deps.store.rev === snapshot.revAtSnapshot) deps.store.markSaved()
       deps.snapshot?.fileWritten()

@@ -15,6 +15,7 @@ const cryptoMocks = vi.hoisted(() => ({
   encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
   serializePlain: vi.fn(() => new Uint8Array([7, 7, 7])),
   blobCodec: vi.fn(async () => ({ seal: async () => new Uint8Array(), open: async () => new Uint8Array() })),
+  recordCodec: vi.fn(async () => ({ salt: new Uint8Array(16), tag: 'new-record-codec' })),
 }))
 vi.mock('../src/core/crypto', () => cryptoMocks)
 
@@ -61,31 +62,70 @@ test('changing to a new password encrypts and writes, never touches serializePla
   expect(shell.setTitle).toHaveBeenCalledWith(session.name)
 })
 
-test('the new file write is committed to the persister with its stamp', async () => {
+test('the new file write is committed to the persister with its stamp, then the browser copy follows to the new key', async () => {
   const store = createStore(createEmptyDocument('en-US'))
-  const markFileWritten = vi.fn(async () => {})
+  const order: string[] = []
+  const persister = {
+    flush: vi.fn(async () => { order.push('flush') }),
+    markFileWritten: vi.fn(async () => { order.push('stamp') }),
+    rekey: vi.fn(async () => { order.push('rekey') }),
+  }
+  fsMocks.writeFile.mockImplementation(async () => { order.push('write') })
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), persister: { markFileWritten } as never,
+    store, session: makeSession(), shell: makeShell(), persister: persister as never,
     runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
 
   const stampWritten = (cryptoMocks.encryptDocument.mock.calls[0] as unknown[])[4]
-  expect(markFileWritten).toHaveBeenCalledWith(stampWritten, store.rev)
+  expect(persister.markFileWritten).toHaveBeenCalledWith(stampWritten, store.rev)
+  expect(persister.rekey).toHaveBeenCalledWith(expect.objectContaining({ tag: 'new-record-codec' }))
+  // the browser copy is current under the old key first; the file is written; only then does the copy move
+  expect(order).toEqual(['flush', 'write', 'stamp', 'rekey'])
 })
 
-test('a failed file write is not committed to the persister', async () => {
+test('a password-less result re-seals the browser copy as plain', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => {}) }
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: persister as never,
+    runExclusive: (fn) => fn(), getPassword: () => 'old', setPassword: vi.fn(),
+  })
+  await changePassword(null)
+  expect(persister.rekey).toHaveBeenCalledWith(null)
+})
+
+test('a failed file write leaves the browser copy where it was', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
-  const markFileWritten = vi.fn(async () => {})
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => {}) }
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), persister: { markFileWritten } as never,
+    store, session: makeSession(), shell: makeShell(), persister: persister as never,
     runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await expect(changePassword('newpw')).rejects.toThrow('disk full')
-  expect(markFileWritten).not.toHaveBeenCalled()
+  expect(persister.markFileWritten).not.toHaveBeenCalled()
+  expect(persister.rekey).not.toHaveBeenCalled()
+})
+
+test('a browser copy that cannot be re-keyed is reported, and the password change still stands', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => { throw new Error('quota') }) }
+  const onBrowserCopyRekeyFailed = vi.fn()
+  const setPassword = vi.fn()
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: persister as never, onBrowserCopyRekeyFailed,
+    runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
+  })
+
+  await expect(changePassword('newpw')).resolves.toBeUndefined()
+  expect(onBrowserCopyRekeyFailed).toHaveBeenCalledTimes(1)
+  expect(setPassword).toHaveBeenCalledWith('newpw')
+  expect(store.dirty).toBe(false)
+  spy.mockRestore()
 })
 
 test('migrating to password-less (newPw null) uses serializePlain, never encryptDocument', async () => {

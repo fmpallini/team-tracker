@@ -25,6 +25,7 @@ import type { LiveMeta } from './live-db'
 import type { FileStamp } from './file-stamp'
 import { splitDoc, type DocRecords } from './doc-records'
 import { collectImageRefs } from './image-ref'
+import type { RecordCodec } from './crypto'
 
 export interface LivePersister {
   /** Writes whatever differs now and resolves once that commit (and any in flight before it) has settled. Never rejects; a failure shows in `lastError`. */
@@ -44,6 +45,12 @@ export interface LivePersister {
    * against it and rewrite identical records.
    */
   reseed(stored: { records: DocRecords; blobIds: Iterable<string> }): Promise<void>
+  /**
+   * A password change (or adding/removing one): re-seals every stored record and image under `codec` (null: plain) in one commit,
+   * ordered with the flushes so none interleaves. Call after the image store itself was re-keyed, since the blobs written are its
+   * stored forms. Rejects if the commit fails; the old codec then stays in force, consistently.
+   */
+  rekey(codec: RecordCodec | null): Promise<void>
   /** Calls `fn(true)` when the browser store starts failing and `fn(false)` when it recovers; not for every retry in between. Returns the unsubscribe. */
   onErrorChange(fn: (failed: boolean) => void): () => void
   /** The error of the last failed commit, or null once a later one succeeded. */
@@ -264,6 +271,21 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       return run({ file })
     },
     adoptFileStamp: (stamp) => run({ adopt: { stamp } }),
+    rekey: (codec) => {
+      const rekeying = chain.then(async () => {
+        const blobs = new Map<string, Uint8Array>()
+        const lost: string[] = []
+        for (const id of persistedBlobs) {
+          const bytes = store.images.has(id) ? await store.images.getStored(id) : null
+          if (bytes) blobs.set(id, bytes)
+          else lost.push(id) // damaged or gone: it is not carried over (the store drops blobs absent from the new set)
+        }
+        await live.rekey(codec, blobs)
+        for (const id of lost) persistedBlobs.delete(id)
+      })
+      chain = rekeying.catch(() => {})
+      return rekeying
+    },
     reseed: (stored) => {
       // What the store holds now supersedes anything this tab still owed it.
       initialOwed = null
