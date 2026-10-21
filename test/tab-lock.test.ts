@@ -512,7 +512,7 @@ describe('handover when the holder cannot save (#4)', () => {
     const { storeB, shellB } = await twoTabs(makeSaveCtl({ saveNow }))
     bannerButton(shellB).click()
     await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
-    expect(saveNow).toHaveBeenCalled()
+    expect(saveNow).toHaveBeenCalledWith({ urgent: true }) // a handover never waits out the background-save gap
   })
 
   test('a successful save hands over immediately, with no warning', async () => {

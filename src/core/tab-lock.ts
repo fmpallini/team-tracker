@@ -238,7 +238,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
       // Always asked, even on a clean store: saveNow() first commits any
       // editor change still inside its debounce window, which is what makes
       // the store dirty in the first place.
-      await saveCtl.saveNow()
+      await saveCtl.saveNow({ urgent: true })
       await saveCtl.flush()
       // `saveNow()` resolves normally when the write failed (permission, disk,
       // an open conflict modal). Letting go now would strand those edits in a

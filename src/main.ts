@@ -386,39 +386,27 @@ async function onDocumentOpened(session: FileSession, doc: Doc, password: string
     })
   )
 
-  const onVisibilityChange = (): void => {
-    if (document.visibilityState !== 'hidden') return
-    // Commit an in-flight debounced editor change before testing `dirty` —
-    // hiding the tab within CHANGE_DEBOUNCE_MS of a keystroke would otherwise
-    // save a document that doesn't have it yet. Unlike teardownApp's flush,
-    // this one must not tear the panes down (the tab is still alive and the
-    // user is coming back to it), so it goes through the editors directly.
-    flushAllEditors()
-    if (store.dirty) void saveCtl.saveNow()
-  }
-  document.addEventListener('visibilitychange', onVisibilityChange)
-  disposers.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
-
-  // The handler above only sees tab switches — minimize and OS-level app
-  // switches keep the page 'visible'. See src/core/blur-save.ts.
+  // Tab hidden, window blurred or minimized: one delayed away-save (15 s, cancelled on return),
+  // not an immediate write per tab flip. The editors' debounced change is committed by
+  // saveNow()'s flushPending. See src/core/blur-save.ts.
   disposers.push(installBlurSave({ save: () => void saveCtl.saveNow(), hasFocus: () => document.hasFocus() }))
 
   // A confirmed-reliable save can't be awaited here — browsers don't allow
   // async work to block unload — so this leans on Chrome's native "leave
   // site?" prompt as the safety net for dirty state. But `saveNow()` is
-  // still started here (fire-and-forget), not left to `visibilitychange`
-  // alone: `visibilitychange` → 'hidden' only fires *after* the user
+  // still started here (fire-and-forget), not left to the away-save timer
+  // alone: that fires 15 s after the page is hidden, which is only *after* the user
   // answers this dialog, whereas kicking the save off right here overlaps
   // it with however long the dialog stays open — real time the encrypt
   // (600k-iteration PBKDF2 on every save, see crypto.ts) needs to finish
   // before the page can be torn down.
   const onBeforeUnload = (e: BeforeUnloadEvent): void => {
-    // Same reason as onVisibilityChange above: without this, closing the tab
+    // Without this, closing the tab
     // within CHANGE_DEBOUNCE_MS of a keystroke both skips the "leave site?"
     // prompt (store.dirty is still false) and saves a document missing it.
     flushAllEditors()
     if (store.dirty) {
-      void saveCtl.saveNow()
+      void saveCtl.saveNow({ urgent: true })
       e.preventDefault()
       e.returnValue = ''
     }

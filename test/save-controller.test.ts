@@ -1427,3 +1427,167 @@ test('a reload (replaceDoc) during an in-flight save queues one trailing save an
   expect(onExternalChange).not.toHaveBeenCalled()
   expect(store.dirty).toBe(false)
 })
+
+describe('minimum gap between background saves', () => {
+  let clock = 0
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    clock = 0
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function setup(withHandle = true) {
+    const store = createStore(createEmptyDocument('en-US'))
+    const ctl = createSaveController({
+      store, session: makeSession(withHandle), getPassword: () => 'pw', shell: makeShell(), locale: () => 'en-US',
+      onExternalChange: vi.fn(), now: () => clock,
+    })
+    return { store, ctl }
+  }
+  let edits = 0
+  const edit = (store: ReturnType<typeof createStore>): void => { store.update((d) => { d.prefs.autoSaveMin = 1 + (++edits % 50) }) }
+  /** The next writes each take `ms` of the fake clock. */
+  const writesTake = (...ms: number[]): void => {
+    for (const m of ms) fsMocks.writeFile.mockImplementationOnce(async () => { clock += m })
+  }
+  const tick = async (ms: number): Promise<void> => { clock += ms; await vi.advanceTimersByTimeAsync(ms) }
+
+  test('a background save right after a slow one waits out 20x its duration, then writes once if still dirty', async () => {
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow() // first save of the session: nothing to wait for
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+
+    await tick(5000)
+    edit(store)
+    await ctl.saveNow()
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1) // 5 s after the save: inside the 20 s gap
+
+    await tick(14_999)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+    await tick(1)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2) // the trailing save, at the end of the gap
+    expect(store.dirty).toBe(false)
+  })
+
+  test('several background calls inside the gap arm a single trailing save', async () => {
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow()
+    await tick(1000)
+    edit(store)
+    await ctl.saveNow()
+    await ctl.saveNow()
+    expect(vi.getTimerCount()).toBe(1)
+    await tick(30_000)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+  })
+
+  test('the trailing save does nothing when an explicit save already took care of the edits', async () => {
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow()
+    await tick(1000)
+    edit(store)
+    await ctl.saveNow() // deferred
+    await ctl.saveNow({ explicit: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+    await tick(30_000)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+  })
+
+  test('explicit and urgent saves ignore the gap', async () => {
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow()
+    edit(store)
+    await ctl.saveNow({ explicit: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+    edit(store)
+    await ctl.saveNow({ urgent: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(3)
+  })
+
+  test('the gap follows the slowest of the last three successful saves', async () => {
+    const { store, ctl } = setup()
+    writesTake(500, 3000, 500) // gap = 20 x 3000 = 60 s
+    for (let i = 0; i < 3; i++) {
+      edit(store)
+      await ctl.saveNow({ explicit: true })
+    }
+    edit(store)
+    await ctl.saveNow()
+    await tick(59_999)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(3)
+    await tick(1)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(4)
+  })
+
+  test('a slow save more than three saves ago no longer counts', async () => {
+    const { store, ctl } = setup()
+    writesTake(9000, 1000, 1000, 1000) // the 9 s save falls out of the window: gap = 20 s
+    for (let i = 0; i < 4; i++) {
+      edit(store)
+      await ctl.saveNow({ explicit: true })
+    }
+    await tick(20_000)
+    edit(store)
+    await ctl.saveNow()
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(5)
+  })
+
+  test('a failed write does not feed the gap', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow() // ok: gap 20 s
+    await tick(25_000)
+    edit(store)
+    fsMocks.writeFile.mockImplementationOnce(async () => { clock += 9000; throw new Error('disk full') })
+    await ctl.saveNow() // fails after 9 s
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+    edit(store)
+    await ctl.saveNow() // still measured from the last good save, 34 s ago, against a 20 s gap
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(3)
+  })
+
+  test('a clean document neither writes nor arms a timer', async () => {
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow()
+    await ctl.saveNow()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('without a file handle only an explicit save downloads; urgent does not', async () => {
+    const { store, ctl } = setup(false)
+    edit(store)
+    await ctl.saveNow({ urgent: true })
+    expect(fsMocks.downloadFallback).not.toHaveBeenCalled()
+    await ctl.saveNow({ explicit: true })
+    expect(fsMocks.downloadFallback).toHaveBeenCalledTimes(1)
+  })
+
+  test('dispose cancels a pending trailing save', async () => {
+    const { store, ctl } = setup()
+    writesTake(1000)
+    edit(store)
+    await ctl.saveNow()
+    await tick(1000)
+    edit(store)
+    await ctl.saveNow()
+    ctl.dispose()
+    await tick(60_000)
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+})

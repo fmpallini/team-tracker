@@ -86,3 +86,45 @@ test('dispose clears a pending timer and unregisters both listeners', () => {
 
   expect(save).not.toHaveBeenCalled()
 })
+
+describe('tab hidden (merged into the same away-save timer)', () => {
+  const setVisibility = (state: 'hidden' | 'visible'): void => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }
+  afterEach(() => setVisibility('visible'))
+
+  test('hiding the tab arms the timer and saves after the delay if still away', () => {
+    const { save } = install(() => false)
+    setVisibility('hidden')
+    expect(save).not.toHaveBeenCalled() // never immediately
+    vi.advanceTimersByTime(BLUR_SAVE_DELAY_MS)
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  test('coming back before the delay cancels it', () => {
+    const { save } = install(() => false)
+    setVisibility('hidden')
+    vi.advanceTimersByTime(BLUR_SAVE_DELAY_MS - 1)
+    setVisibility('visible')
+    vi.advanceTimersByTime(BLUR_SAVE_DELAY_MS * 2)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  test('blur and hidden together arm only one timer', () => {
+    const { save } = install(() => false)
+    window.dispatchEvent(new Event('blur'))
+    setVisibility('hidden')
+    vi.advanceTimersByTime(BLUR_SAVE_DELAY_MS)
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  test('dispose stops listening for visibility changes', () => {
+    const { save } = install(() => false)
+    dispose!()
+    dispose = null
+    setVisibility('hidden')
+    vi.advanceTimersByTime(BLUR_SAVE_DELAY_MS * 2)
+    expect(save).not.toHaveBeenCalled()
+  })
+})

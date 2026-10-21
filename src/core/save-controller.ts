@@ -24,8 +24,14 @@ export interface SaveController {
    * as opposed to a best-effort automatic trigger (tab hidden, window blurred,
    * auto-save interval). In fallback mode (no FS handle) only explicit saves
    * are allowed to trigger a `downloadFallback()` — see Task 25 fix #7.
+   *
+   * Background saves (neither flag) keep a minimum gap after the last good write
+   * — `BACKGROUND_GAP_FACTOR` times the slowest of the last three — so a file full
+   * of pictures is not rewritten at every tab flip or blur. One inside the gap is
+   * deferred to a single trailing save at its end. `urgent` (page unload, a tab-lock
+   * handover) skips the wait but, unlike `explicit`, still never downloads.
    */
-  saveNow(opts?: { explicit?: boolean }): Promise<void>
+  saveNow(opts?: { explicit?: boolean; urgent?: boolean }): Promise<void>
   /** (Re)arms the auto-save interval timer from `prefs.autoSaveMin`. */
   scheduleFrom(prefs: Prefs): void
   /**
@@ -79,13 +85,25 @@ export interface SaveControllerDeps {
    * callers and tests don't need it.
    */
   flushPending?: () => void
+  /** Clock for the background-save gap; tests inject a fake one. Defaults to `Date.now`. */
+  now?: () => number
 }
+
+/** A background save waits this many times the slowest recent save: 20x keeps writes under ~5% of wall time. */
+export const BACKGROUND_GAP_FACTOR = 20
+/** How many recent successful saves the gap looks at. */
+const GAP_WINDOW = 3
 
 export function createSaveController(deps: SaveControllerDeps): SaveController {
   let saving = false
   let queued = false
   let queuedExplicit = false
   let timer: ReturnType<typeof setInterval> | null = null
+  const now = deps.now ?? Date.now
+  /** Durations of the last few successful writes (encode + write, not the backup), and when the latest ended. */
+  const recentDurations: number[] = []
+  let lastSavedAt = Number.NEGATIVE_INFINITY
+  let gapTimer: ReturnType<typeof setTimeout> | null = null
   let idleWaiters: Array<() => void> = []
 
   // Task 25 fix #1: any edit that lands while a save is in flight must not
@@ -310,6 +328,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     // never fire one; only an explicit user action (Ctrl+S, "Save as…" retry) may.
     if (!deps.session.handle && !explicit) return
     deps.shell.setSaveState('saving')
+    const startedAt = now()
     // What this round's bytes contain. An edit landing after this point is not
     // in them: the onMutate guard queues a trailing round for it, and only that
     // round may clear `dirty` (see the markSaved() below).
@@ -350,6 +369,9 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       reportWriteError()
       return
     }
+    lastSavedAt = now()
+    recentDurations.push(lastSavedAt - startedAt)
+    if (recentDurations.length > GAP_WINDOW) recentDurations.shift()
     await deps.backupCtl?.maybeWriteBackup(bytes)
     // Clearing `dirty` for bytes that predate an edit would leave that edit
     // unmarked if the trailing round queued for it then fails: no pill, no
@@ -446,7 +468,7 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     }
   }
 
-  function saveNow(opts?: { explicit?: boolean }): Promise<void> {
+  function saveNow(opts?: { explicit?: boolean; urgent?: boolean }): Promise<void> {
     // Fix #2: read-only tabs (lost the cross-tab write lock) never write,
     // full stop — this is the single choke point every trigger (visibility,
     // window blur, Ctrl+S, the auto-save interval) funnels through.
@@ -461,6 +483,19 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
       console.error(e)
     }
     const explicit = opts?.explicit ?? false
+    // A background save inside the gap is not dropped but deferred: one timer, which asks again
+    // when the gap ends (and writes then only if the document is still dirty). Not armed without a
+    // file handle, where a background save never writes anyway.
+    if (!explicit && !opts?.urgent && !saving && deps.session.handle && deps.store.dirty) {
+      const wait = lastSavedAt + BACKGROUND_GAP_FACTOR * Math.max(0, ...recentDurations) - now()
+      if (wait > 0) {
+        gapTimer ??= setTimeout(() => {
+          gapTimer = null
+          saveNow().catch((e) => console.error(e))
+        }, wait)
+        return Promise.resolve()
+      }
+    }
     if (saving) {
       // Reentrancy guard: never run two writes in parallel. One trailing
       // save is guaranteed once the in-flight one finishes — and that
@@ -535,6 +570,10 @@ export function createSaveController(deps: SaveControllerDeps): SaveController {
     if (timer !== null) {
       clearInterval(timer)
       timer = null
+    }
+    if (gapTimer !== null) {
+      clearTimeout(gapTimer)
+      gapTimer = null
     }
     unsubscribeDirtyGuard()
   }

@@ -1,15 +1,14 @@
 // src/core/blur-save.ts — "the user left the window" save trigger.
 //
-// main.ts's `visibilitychange` handler only covers tab switches: Chrome
-// reports `visibilityState === 'hidden'` when another tab of the same window
-// takes over, but a *minimized* window — or one backgrounded by an OS-level
-// app switch — stays `'visible'`, so neither case reaches that handler and
-// both fall through to the auto-save interval alone (up to `autoSaveMin`
-// minutes of unsaved edits).
+// Chrome reports `visibilityState === 'hidden'` when another tab of the same
+// window takes over, but a *minimized* window — or one backgrounded by an
+// OS-level app switch — stays `'visible'`, so the tab-hidden signal alone
+// would leave both to the auto-save interval (up to `autoSaveMin` minutes of
+// unsaved edits). Window `blur` is the only signal that fires for both, so
+// the two feed one timer below.
 //
-// Window `blur` is the only signal that fires for both. It also fires for
-// things that aren't "leaving": opening devtools, clicking the address bar,
-// focusing another window for a second. Every save is a 600k-iteration PBKDF2
+// Both signals also fire for things that aren't "leaving": opening devtools,
+// clicking the address bar, focusing another window for a second. Every save is a 600k-iteration PBKDF2
 // encrypt (see crypto.ts) plus a disk write, so a raw blur→save would pay
 // that price for each of those. Hence the delay: arm a timer on blur, cancel
 // it the moment focus comes back, and only save if focus is *still* elsewhere
@@ -55,11 +54,21 @@ export function installBlurSave(deps: BlurSaveDeps): () => void {
     }, delayMs)
   }
 
+  // A hidden tab is the same "user is away" signal as a blurred window, so it
+  // shares the timer (and its delay) instead of saving at once: flipping
+  // between tabs would otherwise pay a full-file write every time.
+  function onVisibilityChange(): void {
+    if (document.visibilityState === 'hidden') onBlur()
+    else cancel()
+  }
+
   window.addEventListener('blur', onBlur)
   window.addEventListener('focus', cancel)
+  document.addEventListener('visibilitychange', onVisibilityChange)
   return () => {
     cancel()
     window.removeEventListener('blur', onBlur)
     window.removeEventListener('focus', cancel)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   }
 }
