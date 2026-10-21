@@ -1,4 +1,5 @@
 import { unlinkRefsInText } from '../src/core/refs'
+import { parseImageLine } from '../src/core/image-ref'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
@@ -1629,5 +1630,72 @@ describe('convertWordLists (Word list paragraphs are <p style="mso-list:…"> wi
     const root = parse(html)
     convertWordLists(root)
     expect(root.innerHTML).toBe(html)
+  })
+})
+
+describe('image blocks', () => {
+  const ID = 'c'.repeat(32)
+  const ref = (alt = 'x') => `![${alt}](img:${ID})`
+  const dom = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return d }
+
+  test('an image line renders as an atomic block carrying its id and alt', () => {
+    const d = dom(mdToHtml(`a\n\n${ref('my "shot"')}\n\nb`, () => 'L'))
+    const block = d.querySelector('.tt-img') as HTMLElement
+    expect(block.tagName).toBe('DIV')
+    expect(block.getAttribute('contenteditable')).toBe('false')
+    expect(block.getAttribute('data-img-id')).toBe(ID)
+    expect(block.getAttribute('data-alt')).toBe('my "shot"')
+    expect(block.querySelector('img')).toBeNull()
+  })
+
+  test('md -> html -> md is the identity for a spaced image', () => {
+    const md = `a\n\n${ref()}\n\nb`
+    expect(htmlToMd(dom(mdToHtml(md, () => 'L')))).toBe(md)
+  })
+
+  test('an image block between text blocks gets a blank line above and below', () => {
+    const root = dom(`<div>a</div><div class="tt-img" data-img-id="${ID}" data-alt="x"></div><div>b</div>`)
+    expect(htmlToMd(root)).toBe(`a\n\n${ref()}\n\nb`)
+  })
+
+  test('blank lines already there are not doubled', () => {
+    const root = dom(`<div>a</div><div><br></div><div class="tt-img" data-img-id="${ID}" data-alt="x"></div><div><br></div><div>b</div>`)
+    expect(htmlToMd(root)).toBe(`a\n\n${ref()}\n\nb`)
+  })
+
+  test('an image as the first or last block leaves no stray blank line at the ends', () => {
+    expect(htmlToMd(dom(`<div class="tt-img" data-img-id="${ID}" data-alt="x"></div><div>b</div>`))).toBe(`${ref()}\n\nb`)
+    expect(htmlToMd(dom(`<div>a</div><div class="tt-img" data-img-id="${ID}" data-alt="x"></div>`))).toBe(`a\n\n${ref()}`)
+    expect(htmlToMd(dom(`<div class="tt-img" data-img-id="${ID}" data-alt="x"></div>`))).toBe(ref())
+  })
+
+  test('two adjacent images are separated by exactly one blank line', () => {
+    const block = `<div class="tt-img" data-img-id="${ID}" data-alt="x"></div>`
+    expect(htmlToMd(dom(block + block))).toBe(`${ref()}\n\n${ref()}`)
+  })
+
+  test('a hydrated block (with its <img> child) serializes the same as an empty one', () => {
+    const root = dom(`<div class="tt-img" data-img-id="${ID}" data-alt="x"><img src="data:image/png;base64,AAAA" alt="x"></div>`)
+    expect(htmlToMd(root)).toBe(ref())
+  })
+
+  test('a reference inside a sentence stays literal text, never a link or a block', () => {
+    const html = mdToHtml(`see ${ref()} here`, () => 'L')
+    expect(html).not.toContain('tt-img')
+    expect(html).not.toContain('<a ')
+    const md = htmlToMd(dom(html))
+    expect(parseImageLine(md)).toBeNull()
+    expect(htmlToMd(dom(mdToHtml(md, () => 'L')))).toBe(md)
+  })
+
+  test('safeHref refuses the img: scheme', () => {
+    expect(safeHref(`img:${ID}`)).toBeNull()
+  })
+
+  test('an image-looking line inside a code fence stays code and gets no spacing', () => {
+    const md = '```\n' + ref() + '\n```'
+    const html = mdToHtml(md, () => 'L')
+    expect(html).not.toContain('tt-img')
+    expect(htmlToMd(dom(html))).toBe(md)
   })
 })

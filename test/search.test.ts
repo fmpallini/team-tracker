@@ -555,3 +555,35 @@ describe('a match after text that normalize() reshapes still lands in its snippe
     expect(r[0]!.snippet).toContain('TARGETWORD')
   })
 })
+
+describe('image references in search', () => {
+  const ID = 'd'.repeat(32)
+
+  test('a note with an image line is found by its alt text and the snippet shows no reference syntax', () => {
+    const d = createEmptyDocument('en-US')
+    const t1 = team('t1', 'Alpha')
+    t1.dailyNotes['2026-07-02'] = `before\n\n![standup screenshot](img:${ID})\n\nafter`
+    d.teams.push(t1)
+    const hits = searchDocument(d, 'standup', 't1')
+    expect(hits).toHaveLength(1)
+    expect(hits[0]!.snippet).toContain('standup screenshot')
+    expect(hits[0]!.snippet).not.toContain('img:')
+    expect(hits[0]!.snippet).not.toContain(ID)
+    expect(searchDocument(d, ID.slice(0, 8), 't1')).toHaveLength(0)
+  })
+
+  test('a backlink snippet whose window edge lands inside an image line never shows id fragments', () => {
+    const d = createEmptyDocument('en-US')
+    const t1 = team('t1', 'Alpha')
+    t1.milestones.push({ id: 'm1', date: '2026-08-01', title: 'Launch', done: false, followup: '' })
+    ;[0, 1, 20, 50, 60, 70, 75, 80, 85, 90, 100].forEach((gap, i) => {
+      t1.dailyNotes[`2026-07-${String(i + 1).padStart(2, '0')}`] =
+        `@[Launch](milestone:m1)\n${'x'.repeat(gap)}\n![shot](img:${ID})\nmore`
+    })
+    d.teams.push(t1)
+    const index = createSearchIndex(() => d, () => 0)
+    for (const b of index.backlinks('t1', 'milestone', 'm1')) {
+      expect(b.snippet).not.toMatch(/img:|[0-9a-f]{8}/)
+    }
+  })
+})

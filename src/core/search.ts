@@ -3,6 +3,7 @@ import { findTeam as docFindTeam } from './document'
 import type { ChangeScope, Section } from './scope'
 import { formatDate, t } from './i18n'
 import { refPattern, type RefKind } from './refs'
+import { parseImageLine } from './image-ref'
 
 export interface SearchResult {
   loc: { teamId: string; ref: ModuleRef }
@@ -129,6 +130,9 @@ function stripMdSyntax(s: string): string {
   return s
     .split('\n')
     .map(line => {
+      // An image line is searchable by its alt text only; the id is not text.
+      const img = parseImageLine(line.trimEnd())
+      if (img) return img.alt
       let l = line
       l = l.replace(/^#{1,6}\s+/, '')
       l = l.replace(/^-\s+/, '')
@@ -259,10 +263,20 @@ function snapOutOfMention(raw: string, pos: number, dir: -1 | 1): number {
   return dir < 0 ? open : open + m[0].length
 }
 
+/** Like snapOutOfMention, for an image reference line: a cut inside one would leave "…](img:<id>" fragments that stripMd cannot recognise. */
+function snapOutOfImageLine(raw: string, pos: number, dir: -1 | 1): number {
+  const lineStart = raw.lastIndexOf('\n', pos - 1) + 1
+  const nl = raw.indexOf('\n', pos)
+  const lineEnd = nl < 0 ? raw.length : nl
+  if (pos <= lineStart || pos >= lineEnd) return pos
+  if (!parseImageLine(raw.slice(lineStart, lineEnd).trimEnd())) return pos
+  return dir < 0 ? lineStart : lineEnd
+}
+
 /** Same trim shape as makeSnippet above, but anchored at a known raw-text match span instead of a search term. */
 function backlinkSnippet(raw: string, matchIndex: number, matchLen: number): string {
-  const start = snapOutOfMention(raw, Math.max(0, matchIndex - SNIPPET_RADIUS), -1)
-  const end = snapOutOfMention(raw, Math.min(raw.length, matchIndex + matchLen + SNIPPET_RADIUS), 1)
+  const start = snapOutOfImageLine(raw, snapOutOfMention(raw, Math.max(0, matchIndex - SNIPPET_RADIUS), -1), -1)
+  const end = snapOutOfImageLine(raw, snapOutOfMention(raw, Math.min(raw.length, matchIndex + matchLen + SNIPPET_RADIUS), 1), 1)
   let out = stripMd(raw.slice(start, end)).trim()
   if (start > 0) out = `…${out}`
   if (end < raw.length) out = `${out}…`
