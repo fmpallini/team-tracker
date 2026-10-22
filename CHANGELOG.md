@@ -4,10 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
-## [3.2.0] - 2026-10-21
+## [3.2.0] - 2026-10-22
 
 ### Added
 - Pictures in notes: paste a screenshot (also mixed with text), drag image files in, or use the new toolbar button. They are shrunk in your browser and stored encrypted inside the same `.tmv` file, up to 150 MB per file; Preferences → Data shows the usage.
+- Preferences → Data lists the copies your browser keeps of your other files and lets you delete them; copies with no unsaved changes unused for 90 days go on their own.
+- Data cleanup also removes pictures no note uses any more.
 
 ### Changed
 - Why saving changed: browsers can only rewrite a file whole, so with pictures inside a `.tmv` every save meant rewriting all of it to disk. Your work now lives in the browser's own database, which stores only the note or item you edited, as you type.

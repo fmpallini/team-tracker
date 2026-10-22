@@ -7,7 +7,7 @@ import {
   installOpfsPickerShim, installFileWriteCounter, fileWrites, installPermissionControl, setFilePermission, regrantRequests,
   readOpfsFile, writeOpfsFile, setNextOpenName,
 } from './opfs-shim'
-import { blockUpdateCheck, createEncryptedDoc, createPlainDoc, lockClose, reopenLast, reopenLastPlain, clearBrowserCopy, liveDatabaseDump, liveRowCounts } from './helpers'
+import { blockUpdateCheck, createEncryptedDoc, createPlainDoc, lockClose, reopenLast, reopenLastPlain, clearBrowserCopy, flushLiveCopy, liveDatabaseDump, liveRowCounts } from './helpers'
 import { openLargeDoc } from './large-doc'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 
@@ -40,7 +40,7 @@ async function addTeam(page: Page, name: string): Promise<void> {
 async function typeNote(page: Page, note: string): Promise<void> {
   await editor(page).click()
   await page.keyboard.type(note)
-  await page.waitForTimeout(700) // the editor's debounce, then the persister's
+  await flushLiveCopy(page) // the persister waits for quiet; this is what a closing page does
 }
 
 test.describe('the browser holds the live copy', () => {
@@ -263,7 +263,7 @@ test.describe('pictures', () => {
       await pasteImage(page, await noisePng(page, i + 1))
       await expect(blocks).toHaveCount(i + 1)
     }
-    await page.waitForTimeout(1200)
+    await flushLiveCopy(page)
     expect((await puts()).blobs ?? 0).toBe(30)
     expect((await liveRowCounts(page)).blobs).toBe(30)
 
@@ -271,7 +271,7 @@ test.describe('pictures', () => {
     await editor(page).click()
     await page.keyboard.press('Control+End')
     await page.keyboard.type(' one more word')
-    await page.waitForTimeout(900)
+    await flushLiveCopy(page)
     expect((await puts()).blobs ?? 0).toBe(30) // no picture was written again
     expect(((await puts()).records ?? 0) - recordPutsBefore).toBeLessThan(6) // and only the changed records were
 
@@ -310,7 +310,7 @@ test.describe('two tabs', () => {
 
     await editor(a).click()
     await a.keyboard.type('FROM-TAB-A')
-    await a.waitForTimeout(700)
+    await flushLiveCopy(a)
     await b.locator('.tt-readonly-takeover-btn').click()
 
     await expect(editor(b)).toContainText('FROM-TAB-A')
@@ -342,7 +342,7 @@ test.describe('a very large document', () => {
 
     for (let burst = 0; burst < 6; burst++) {
       await page.keyboard.type('some typing in a very large document ', { delay: 8 })
-      await page.waitForTimeout(600) // let each debounced browser-copy flush run
+      await flushLiveCopy(page) // the browser-copy flush that follows each burst
     }
     const longest = Math.max(0, ...(await page.evaluate(() => (window as unknown as { __e2eLongTasks: number[] }).__e2eLongTasks)))
     console.log(`[live-store/large-doc] longest main-thread task while typing: ${Math.round(longest)}ms`)

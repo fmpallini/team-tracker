@@ -30,6 +30,16 @@ describe('image store', () => {
     expect(store.has('a')).toBe(true)
   })
 
+  it('discard forgets an image in both forms', async () => {
+    const store = createImageStore(fakeCodec('k'))
+    store.putPlain('a', enc.encode('hello'))
+    await store.getStored('a')
+    store.discard('a')
+    expect(store.has('a')).toBe(false)
+    expect(await store.getPlain('a')).toBeNull()
+    expect(await store.getStored('a')).toBeNull()
+  })
+
   it('opens an adopted blob for each reader and does not keep a second, plain copy of it', async () => {
     const codec = fakeCodec('k')
     const store = createImageStore(codec)

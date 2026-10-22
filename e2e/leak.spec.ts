@@ -24,7 +24,7 @@
 import { test, expect, type Page, type CDPSession } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, flushLiveCopy } from './helpers'
 
 interface Counters { nodes: number; listeners: number; heapMB: number }
 
@@ -370,7 +370,7 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
   const editor = pane0.locator('.editor').first()
   await editor.click()
   await editor.type(`s${i} `, { delay: 0 })
-  await page.waitForTimeout(450) // the editors' debounce, then the persister's
+  await flushLiveCopy(page) // the editors' debounce, then the persister's
   await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
   await expect(page.locator('.tt-pane-menu')).toHaveCount(0)

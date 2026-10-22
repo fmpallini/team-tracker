@@ -40,6 +40,15 @@ export async function createPlainDoc(page: Page): Promise<void> {
 }
 
 /**
+ * Runs the flush a hiding or closing page triggers (`pagehide`: editors into the store, then the store into the browser
+ * copy) and lets its commit land. The persister otherwise waits for a couple of seconds of quiet before it writes.
+ */
+export async function flushLiveCopy(page: Page): Promise<void> {
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+  await page.waitForTimeout(400)
+}
+
+/**
  * Everything the browser's live database holds, flattened to one string of readable characters (keys, strings, and every
  * byte as a latin-1 character): what someone reading the browser profile off the disk could see. For asserting that an
  * encrypted document leaves no plaintext behind.

@@ -35,7 +35,7 @@ test('counts and removes done/cancelled action items, keeps active ones', () => 
       item({ id: 'cancelled', status: 'cancelled' }),
     ],
   })])
-  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 2, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 })
+  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 2, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0, images: 0 })
   applyCleanup(d, 30, TODAY)
   expect(d.teams[0]!.actionItems.map((a) => a.id)).toEqual(['todo', 'wip'])
 })
@@ -88,7 +88,7 @@ test('daily note exactly `days` old survives; one day older is removed', () => {
 
 test('zero matches across an empty document', () => {
   const d = doc([team()])
-  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 })
+  expect(countCleanupTargets(d, 30, TODAY)).toEqual({ actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0, images: 0 })
 })
 
 test('purging a done action item unlinks its @mentions elsewhere in the team', () => {
@@ -177,5 +177,35 @@ describe('dead favorites', () => {
     d.favorites = [fav('T1', { kind: 'milestones' }), fav('T1', { kind: 'general' })]
     applyCleanup(d, 1, TODAY)
     expect(d.favorites).toHaveLength(2)
+  })
+})
+
+describe('pictures', () => {
+  const OLD = 'a'.repeat(32), KEPT = 'b'.repeat(32), NEVER_USED = 'c'.repeat(32)
+  const meta = { mime: 'image/webp', w: 1, h: 1, bytes: 3 }
+  const ref = (id: string) => `![x](img:${id})`
+  function picDoc(): Doc {
+    const d = doc([team({ dailyNotes: { '2026-01-01': ref(OLD), '2026-07-20': ref(KEPT) } })])
+    d.images = { [OLD]: { ...meta }, [KEPT]: { ...meta }, [NEVER_USED]: { ...meta } }
+    return d
+  }
+
+  test('drops the pictures only a purged note used, and those no note ever used; keeps the rest', () => {
+    const d = picDoc()
+    expect(applyCleanup(d, 30, TODAY).sort()).toEqual([OLD, NEVER_USED])
+    expect(Object.keys(d.images)).toEqual([KEPT])
+  })
+
+  test('counts them without touching the document', () => {
+    const d = picDoc()
+    const before = JSON.stringify(d)
+    expect(countCleanupTargets(d, 30, TODAY).images).toBe(2)
+    expect(JSON.stringify(d)).toBe(before)
+  })
+
+  test('a document with no pictures reports none and returns no ids', () => {
+    const d = doc([team({ dailyNotes: { '2026-01-01': 'plain' } })])
+    expect(countCleanupTargets(d, 30, TODAY).images).toBe(0)
+    expect(applyCleanup(d, 30, TODAY)).toEqual([])
   })
 })

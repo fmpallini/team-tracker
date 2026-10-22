@@ -33,6 +33,8 @@ export interface ImageStore {
   getStored(id: string): Promise<Uint8Array | null>
   /** The codec blobs are sealed under now; null for a password-less file. */
   codec(): BlobCodec | null
+  /** Forgets an image for good (its bytes and its sealed form). Only for a picture no note references and nothing can bring back. */
+  discard(id: string): void
   /** Switches the codec (password change). Loads every plain form with the OLD codec first, then forgets sealed forms. */
   rekey(codec: BlobCodec | null): Promise<void>
 }
@@ -86,6 +88,8 @@ export function createImageStore(initial: BlobCodec | null): ImageStore {
       e.plain = null // sealed: the sealed form is the one kept (see plainOf)
       return e.stored
     },
+
+    discard: (id) => { entries.delete(id) },
 
     async rekey(next) {
       // Every image is opened with the OLD codec and held plain until the new codec seals it again.

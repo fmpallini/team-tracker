@@ -153,12 +153,33 @@ test('editing one daily note commits exactly that record', async () => {
   expect(await loadDoc(store.doc.docId)).toEqual(store.doc)
 })
 
+test('continuous edits postpone the write by the idle time, but never past the ceiling', async () => {
+  const { store, timers } = await rig()
+  const now = vi.spyOn(Date, 'now')
+  try {
+    now.mockReturnValue(1_000_000)
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'a' })
+    expect(timers.delays()).toEqual([2_000])
+    now.mockReturnValue(1_000_000 + 10_000)
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'b' })
+    expect(timers.delays()).toEqual([2_000]) // the pending timer was replaced, not added to
+    now.mockReturnValue(1_000_000 + 14_000)
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'c' })
+    expect(timers.delays()).toEqual([1_000]) // 15 s after the first edit, whatever the pauses
+    timers.fire()
+    await new Promise((r) => setTimeout(r, 20))
+    now.mockReturnValue(1_000_000 + 40_000)
+    store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'd' })
+    expect(timers.delays()).toEqual([2_000]) // a write starts a new window
+  } finally { now.mockRestore() }
+})
+
 test('50 edits inside one window arm one timer and commit once', async () => {
   const { store, timers } = await rig()
   commits.length = 0
   for (let i = 0; i < 50; i++) store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = `v${i}` })
   expect(timers.count()).toBe(1)
-  expect(timers.delays()).toEqual([400])
+  expect(timers.delays()).toEqual([2_000])
   timers.fire()
   await new Promise((r) => setTimeout(r, 20))
   expect(commits).toHaveLength(1)
@@ -258,6 +279,37 @@ test('a swept blob stays out of the store until a note references it again', asy
   store.update((d) => { d.teams[0]!.dailyNotes['2026-07-02'] = `![x](img:${IMG})` })
   await persister.flush()
   expect(await blobIds()).toEqual([IMG])
+})
+
+test('a swept image leaves no metadata row behind, so the copy holds exactly the records the file does', async () => {
+  const { store, persister } = await rig()
+  store.images.putPlain(IMG, new Uint8Array([1]))
+  store.update((d) => { d.images[IMG] = { ...meta }; d.teams[0]!.dailyNotes['2026-07-02'] = `![x](img:${IMG})` })
+  await persister.flush()
+  store.update((d) => { delete d.teams[0]!.dailyNotes['2026-07-02'] })
+  await persister.markFileWritten(newStamp())
+  const imgRows = async () => [...(await createLiveStore(rawDb, store.doc.docId, null).load()).records.keys()].filter((p) => p.startsWith('img/'))
+  expect(await imgRows()).toEqual([])
+  await persister.flush()
+  expect(await imgRows()).toEqual([]) // the sweep is not undone by the next flush
+  // undo: the note returns, and the live document still has the metadata, so the row returns with the blob
+  store.update((d) => { d.teams[0]!.dailyNotes['2026-07-02'] = `![x](img:${IMG})` })
+  await persister.flush()
+  expect(await imgRows()).toEqual([`img/${IMG}`])
+})
+
+test('bytes whose metadata left the document are deleted at the next flush, without waiting for a file write', async () => {
+  const { store, persister } = await rig()
+  store.images.putPlain(IMG, new Uint8Array([1]))
+  store.update((d) => { d.images[IMG] = { ...meta }; d.teams[0]!.dailyNotes['2026-07-02'] = `![x](img:${IMG})` })
+  await persister.flush()
+  const stored = async () => (await createLiveStore(rawDb, store.doc.docId, null).load())
+  expect([...(await stored()).blobs.keys()]).toEqual([IMG])
+  store.update((d) => { delete d.teams[0]!.dailyNotes['2026-07-02']; delete d.images[IMG] }) // what the Prefs cleanup does
+  await persister.flush()
+  const after = await stored()
+  expect([...after.blobs.keys()]).toEqual([])
+  expect([...after.records.keys()].filter((p) => p.startsWith('img/'))).toEqual([])
 })
 
 test('markFileWritten leaves unwrittenChanges true when an edit landed after the snapshot', async () => {

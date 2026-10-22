@@ -36,6 +36,9 @@ type Collection = typeof COLLECTIONS[number]
 const seg = encodeURIComponent
 const unseg = decodeURIComponent
 
+/** The record path of one image's metadata. */
+export const imageRecordPath = (id: string): string => `img/${seg(id)}`
+
 /** One distinct path segment per id, in input order. */
 function uniqueKeys(ids: string[]): string[] {
   const seen = new Set<string>()
@@ -57,7 +60,7 @@ export function splitDoc(doc: Doc): DocRecords {
   out.set('doc', { ...docRest, _order: { teams: teamKeys, templates: tplKeys } })
   teams.forEach((team, i) => splitTeam(out, teamKeys[i]!, team))
   templates.forEach((tpl, i) => out.set(`tpl/${tplKeys[i]}`, tpl))
-  for (const [id, meta] of Object.entries(images)) out.set(`img/${seg(id)}`, meta)
+  for (const [id, meta] of Object.entries(images)) out.set(imageRecordPath(id), meta)
   return out
 }
 

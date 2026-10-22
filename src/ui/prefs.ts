@@ -21,6 +21,7 @@ import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumb
 import { icon } from './icons'
 import { collectImageRefs, referencedBytes } from '../core/image-ref'
 import { IMAGE_LIMITS } from '../core/image-import'
+import type { BrowserCopies, CopyInfo } from '../core/browser-copies'
 
 const MB = 1024 * 1024
 
@@ -58,6 +59,8 @@ export interface PrefsAppCtl {
   isReadOnly(): boolean
   fileName: string
   fileSchemaVersion: number
+  /** The browser's copies of the other documents; absent when the browser could not open its storage. */
+  browserCopies?: BrowserCopies
 }
 
 /**
@@ -891,7 +894,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       const days = clampInt(Number(cleanupDaysInput.value), 1, 3650, 1)
       const today = todayIso()
       const counts = countCleanupTargets(store.doc, days, today)
-      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0) {
+      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0 && counts.images === 0) {
         const nothingHandle: ModalHandle = showModal({
           title: t(locale, 'data_cleanup_nothing_title'),
           body: el('p', { class: 'tt-modal-message' }, t(locale, 'data_cleanup_nothing_body')),
@@ -907,12 +910,15 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           risks: String(counts.risks),
           dailyNotes: String(counts.dailyNotes),
           favorites: String(counts.favorites),
+          images: String(counts.images),
         }),
         warning: t(locale, 'data_cleanup_no_undo_warning'),
         confirmLabel: t(locale, 'data_cleanup_btn'),
         variant: 'danger',
         onConfirm: () => {
-          store.update((d) => applyCleanup(d, days, today))
+          let dropped: string[] = []
+          store.update((d) => { dropped = applyCleanup(d, days, today) })
+          for (const id of dropped) store.images.discard(id)
           if (!store.readOnly) toast(t(locale, 'data_cleanup_success_toast'))
         },
       })
@@ -944,8 +950,67 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       return prefsSection(t(locale, 'data_images_heading'), el('p', { class: `tt-data-images-usage${cls}` }, line))
     }
 
+    // The browser keeps a copy of every document it has opened (core/browser-copies.ts); this is where the user lets go of one.
+    function buildCopiesSection(): HTMLElement | null {
+      const copies = appCtl.browserCopies
+      if (!copies) return null
+      const listEl = el('div', { class: 'tt-data-team-list' })
+      const row = (c: CopyInfo): HTMLElement => {
+        const name = c.fileName || t(locale, 'data_copies_unnamed')
+        const when = new Date(c.modifiedAt).toLocaleString(locale)
+        return el(
+          'div',
+          { class: 'tt-data-copy-row' },
+          el(
+            'div',
+            { class: 'tt-data-team-info' },
+            el('span', { class: 'tt-data-team-name' }, name),
+            el('span', { class: 'tt-data-team-summary' }, c.unwritten ? `${when} · ${t(locale, 'data_copies_unsaved')}` : when)
+          ),
+          el(
+            'button',
+            {
+              class: 'tt-btn tt-btn-danger',
+              type: 'button',
+              onclick: () =>
+                confirmDelete(locale, {
+                  title: t(locale, 'data_copies_confirm_title'),
+                  message: t(locale, 'data_copies_confirm_body', { name }),
+                  warning: c.unwritten ? t(locale, 'data_copies_confirm_unsaved') : undefined,
+                  confirmLabel: t(locale, 'data_copies_delete_btn'),
+                  variant: 'danger',
+                  onConfirm: () => void removeCopy(c.docId),
+                }),
+            },
+            t(locale, 'data_copies_delete_btn')
+          )
+        )
+      }
+      async function render(): Promise<void> {
+        let items: CopyInfo[]
+        try {
+          items = await copies!.list()
+        } catch (e) {
+          console.error(e)
+          return
+        }
+        listEl.replaceChildren(...(items.length === 0 ? [el('div', { class: 'tt-data-empty' }, t(locale, 'data_copies_empty'))] : items.map(row)))
+      }
+      async function removeCopy(docId: string): Promise<void> {
+        try {
+          toast(t(locale, (await copies!.remove(docId)) ? 'data_copies_deleted_toast' : 'data_copies_in_use_toast'))
+          await render()
+        } catch (e) {
+          console.error(e)
+          showErrorModal(locale, t(locale, 'err_unexpected'))
+        }
+      }
+      void render()
+      return prefsSection(t(locale, 'data_copies_heading'), prefsHint(t(locale, 'data_copies_hint')), listEl)
+    }
+
     // Destructive cleanup stays last.
-    container.append(exportSection, importSection, buildTagsSection(), buildImagesSection(), cleanupSection)
+    container.append(exportSection, importSection, buildTagsSection(), buildImagesSection(), ...[buildCopiesSection()].filter((s) => s !== null), cleanupSection)
   }
 
   // --- Tab 6: Sobre ----------------------------------------------------

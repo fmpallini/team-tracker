@@ -914,7 +914,7 @@ describe('Data tab (export/import)', () => {
       'Includes only the team/member/stakeholder structure (names, roles, and hierarchy) — no content is exported (no notes, tasks, milestones, or risks). The generated file is NOT encrypted. Meant for teammates on the same team to import and skip initial setup.',
       'A team/member/stakeholder structure file (no content) exported by another user — only import from sources you trust.',
       'Create at least two teams to use this.',
-      'Removes done/cancelled tasks and closed risks, plus completed milestones and daily notes dated older than the chosen number of days, and favorites that point to a deleted team or person or to a day older than that — across every team in this file. This cannot be undone.',
+      'Removes done/cancelled tasks and closed risks, plus completed milestones and daily notes dated older than the chosen number of days, favorites that point to a deleted team or person or to a day older than that, and pictures no note uses any more — across every team in this file. This cannot be undone.',
     ])
   })
 
@@ -1099,7 +1099,7 @@ describe('Data tab (export/import)', () => {
       const messages = document.querySelectorAll('.tt-modal-message')
       expect(titles[titles.length - 1]?.textContent).toBe('Confirm cleanup')
       expect(messages[messages.length - 1]?.textContent).toBe(
-        '2 tasks, 1 milestones, 1 risks, 1 daily notes, and 0 broken favorites across all teams will be permanently deleted.'
+        '2 tasks, 1 milestones, 1 risks, 1 daily notes, 0 broken favorites and 0 unused pictures across all teams will be permanently deleted.'
       )
       // Every other delete in the app offers an undo toast; this one does not,
       // so the dialog has to say so rather than let the user infer it.
@@ -1415,5 +1415,55 @@ describe('preferences scroll behaviour', () => {
     clickByText('Set password')
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(scroll.value).toBe(180)
+  })
+})
+
+describe('Data tab: browser copies', () => {
+  const flush = async (): Promise<void> => { await new Promise((r) => setTimeout(r, 0)) }
+  const copy = (docId: string, over: Partial<{ fileName: string; unwritten: boolean }> = {}) => ({ docId, fileName: `${docId}.tmv`, modifiedAt: Date.UTC(2026, 0, 2), unwritten: false, ...over })
+
+  test('has no section when the browser has no storage to list', async () => {
+    const { store, shell, appCtl } = setup()
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    await flush()
+    expect(Array.from(document.querySelectorAll('.tt-prefs-section-title')).map((n) => n.textContent)).not.toContain('Copies in this browser')
+  })
+
+  test('lists the other files, marks one with unsaved changes, and deletes one after the confirmation', async () => {
+    const { store, shell, appCtl } = setup()
+    let copies = [copy('a'), copy('b', { unwritten: true })]
+    const remove = vi.fn(async (docId: string) => { copies = copies.filter((c) => c.docId !== docId); return true })
+    appCtl.browserCopies = { list: async () => copies, remove, pruneStale: async () => 0 }
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    await flush()
+
+    const names = () => Array.from(document.querySelectorAll('.tt-data-copy-row .tt-data-team-name')).map((n) => n.textContent)
+    expect(names()).toEqual(['a.tmv', 'b.tmv'])
+    expect(document.querySelectorAll('.tt-data-copy-row')[1]!.textContent).toContain('has changes the file does not')
+    expect(document.querySelectorAll('.tt-data-copy-row')[0]!.textContent).not.toContain('has changes the file does not')
+
+    ;(document.querySelectorAll('.tt-data-copy-row button')[1] as HTMLButtonElement).click()
+    const warnings = document.querySelectorAll('.tt-modal-warning')
+    expect(warnings[warnings.length - 1]?.textContent).toContain('Unless the file is the newer one')
+    expect(remove).not.toHaveBeenCalled()
+    clickByText('Delete copy')
+    await flush(); await flush()
+    expect(remove).toHaveBeenCalledWith('b')
+    expect(names()).toEqual(['a.tmv'])
+  })
+
+  test('says so when the copy turns out to be open in another tab, and keeps it listed', async () => {
+    const { store, shell, appCtl } = setup()
+    appCtl.browserCopies = { list: async () => [copy('a')], remove: async () => false, pruneStale: async () => 0 }
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('Data')
+    await flush()
+    ;(document.querySelector('.tt-data-copy-row button') as HTMLButtonElement).click()
+    clickByText('Delete copy')
+    await flush(); await flush()
+    expect(document.body.textContent).toContain('open in another tab')
+    expect(document.querySelectorAll('.tt-data-copy-row')).toHaveLength(1)
   })
 })

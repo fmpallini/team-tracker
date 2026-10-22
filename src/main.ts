@@ -6,6 +6,7 @@ import type { FileSession } from './core/fs'
 import type { Store } from './core/store'
 import type { LivePersister } from './core/live-persist'
 import { sharedLiveDb } from './core/live-db'
+import { createBrowserCopies, holdDocument, type BrowserCopies } from './core/browser-copies'
 import { reconcileOpen, type OpenedDocument } from './ui/open-document'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
@@ -434,7 +435,22 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     },
   })
 
+  // Other tabs must not delete this document's browser copy (core/browser-copies.ts); the prune of long-unused clean
+  // copies of other documents runs once the storage is known to work.
+  disposers.push(holdDocument(store.doc.docId, navigator.locks))
+  let browserCopies: BrowserCopies | undefined
+  void sharedLiveDb()
+    .then(async (liveDb) => {
+      if (!liveDb) return
+      browserCopies = createBrowserCopies(liveDb, store.doc.docId, navigator.locks)
+      await browserCopies.pruneStale(Date.now())
+    })
+    .catch((e: unknown) => console.error(e))
+
   const prefsAppCtl: PrefsAppCtl = {
+    get browserCopies() {
+      return browserCopies
+    },
     changePassword,
     currentPassword,
     // Task 25 re-review item #2 (UX bonus): lets the Security tab disable its

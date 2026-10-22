@@ -23,7 +23,7 @@ import type { Store } from './store'
 import type { LiveStore } from './live-store'
 import type { LiveMeta } from './live-db'
 import type { FileStamp } from './file-stamp'
-import { splitDoc, serializeRecords, type DocRecords } from './doc-records'
+import { splitDoc, serializeRecords, imageRecordPath, type DocRecords } from './doc-records'
 import { collectImageRefs } from './image-ref'
 import type { RecordCodec } from './crypto'
 
@@ -62,8 +62,8 @@ export interface LivePersisterDeps {
   store: Store
   live: LiveStore
   fileName: string
-  onError?(e: unknown): void
-  onRecovered?(): void
+  onError?: (e: unknown) => void
+  onRecovered?: () => void
   /**
    * Set when the document was just read from this file (null: a file without a stamp). If the browser store holds
    * nothing yet, the initial write then records the file's lineage in the same commit, so a crash between "records
@@ -92,6 +92,12 @@ export interface LivePersisterDeps {
 
 const KNOWN_WRITE_IDS = 20
 const RETRY_MS = 30_000
+// An edit is written once the document has been quiet for IDLE_MS, and never later than MAX_WAIT_MS after the first edit
+// since the last write, so continuous typing rewrites a record once per MAX_WAIT_MS, not once per pause. The idle part is
+// what keeps a tab closed a moment after the last keystroke safe: the flush on pagehide is asynchronous (sealing happens
+// before the transaction opens) and the page may be gone before it gets there.
+const IDLE_MS = 2_000
+const MAX_WAIT_MS = 15_000
 
 type LineageFields = Pick<LiveMeta, 'lastWriteId' | 'knownWriteIds' | 'lastFileWriteAt'>
 
@@ -112,8 +118,10 @@ interface RunOptions {
 }
 
 export async function createLivePersister(deps: LivePersisterDeps): Promise<LivePersister> {
-  const { store, live } = deps
-  const debounceMs = deps.debounceMs ?? 400
+  // Picked out of `deps` so the closures below do not keep the whole object alive: `deps.stored` holds every record of the
+  // document as it was at open, which would otherwise pin the first version of each edited note for the whole session.
+  const { store, live, fileName, onError, onRecovered } = deps
+  const idleMs = deps.debounceMs ?? IDLE_MS
   const schedule = deps.schedule ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t) })
 
   const cache = new Map<string, string>()
@@ -125,6 +133,13 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   let pendingStamp: FileWrite | null = null
   // Blobs the sweep deleted. They return only once a note references them again (an undo), never by themselves.
   const swept = new Set<string>()
+  // The ids some note references, by the revision it was read at: a flush that follows no edit (a retry, a hide) does not rescan.
+  let refsRev = -1
+  let refsMemo = new Set<string>()
+  const imageRefs = (): Set<string> => {
+    if (refsRev !== store.rev) { refsMemo = collectImageRefs(store.doc); refsRev = store.rev }
+    return refsMemo
+  }
   let lastError: unknown = null
   const errorListeners = new Set<(failed: boolean) => void>()
   const announceError = (failed: boolean): void => {
@@ -138,15 +153,24 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   let initialOwed: RunOptions | null = null
   let initialDone = false
 
-  function arm(ms: number, retry: boolean): void {
+  // When the first edit since the last write happened (null: none waiting), the anchor of MAX_WAIT_MS.
+  let editsSince: number | null = null
+
+  function armTimer(ms: number, retry: boolean): void {
+    timer = { cancel: schedule(() => { timer = null; void run({}) }, ms), retry }
+  }
+
+  /** An edit: write after IDLE_MS of quiet, but no later than MAX_WAIT_MS after the first edit still waiting. Replaces a pending retry too, which is slower. */
+  function armForEdit(): void {
     if (disposed) return
-    if (timer) {
-      // A mutation shortens a pending retry; anything else already pending is soon enough.
-      if (!(timer.retry && !retry)) return
-      timer.cancel()
-    }
-    const cancel = schedule(() => { timer = null; void run({}) }, ms)
-    timer = { cancel, retry }
+    const now = Date.now()
+    editsSince ??= now
+    timer?.cancel()
+    armTimer(Math.max(0, Math.min(idleMs, editsSince + MAX_WAIT_MS - now)), false)
+  }
+
+  function armRetry(): void {
+    if (!disposed && !timer) armTimer(RETRY_MS, true)
   }
 
   /** Runs the owed initial sync first when it can run, then `opts`. */
@@ -168,6 +192,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   function enqueue(opts: RunOptions): Promise<void> {
     timer?.cancel()
     timer = null
+    editsSince = null
     const run = chain.then(() => commitOnce(opts))
     chain = run.catch(() => {})
     return run
@@ -176,8 +201,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   function noteFailure(e: unknown): void {
     const first = lastError === null
     lastError = e
-    if (first) { deps.onError?.(e); announceError(true) }
-    arm(RETRY_MS, true)
+    if (first) { onError?.(e); announceError(true) }
+    armRetry()
   }
 
   /** Re-seals every stored record and the persisted blobs under `codec`; the image store must already hold the matching blob key. */
@@ -204,7 +229,16 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       }
       opts = { ...opts, rekey: undefined }
     }
+    const file = opts.file ?? pendingStamp
+    const sweeping = !!file && !opts.adopt
+    const referenced = swept.size > 0 || sweeping ? imageRefs() : null
+    // A file write drops the images no note references from the browser copy too, metadata row and bytes alike, so the
+    // copy holds exactly the records the file does (live-open.ts counts them to tell an identical copy). Bytes whose
+    // metadata left the document (the cleanup in Prefs drops it for good) go at once: nothing can reference them again.
+    const deleteBlobs = [...persistedBlobs].filter((id) => !(id in store.doc.images) || (sweeping && !referenced!.has(id)))
+
     const next = serializeRecords(splitDoc(store.doc))
+    if (referenced) for (const id of [...swept, ...deleteBlobs]) if (!referenced.has(id)) next.delete(imageRecordPath(id))
     const puts = new Map<string, string>()
     // The compared JSON text itself goes to the store, not the aliased live object: an edit landing while the commit is
     // prepared would otherwise be stored although the cache records the older text — revert it before the trailing
@@ -214,7 +248,6 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
 
     const images = store.doc.images
     const putBlobs = new Map<string, Uint8Array>()
-    const referenced = swept.size > 0 ? collectImageRefs(store.doc) : null
     for (const id of Object.keys(images)) {
       if (persistedBlobs.has(id) || !store.images.has(id)) continue
       if (swept.has(id) && !referenced!.has(id)) continue
@@ -222,11 +255,9 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       if (bytes) putBlobs.set(id, bytes)
     }
 
-    const file = opts.file ?? pendingStamp
     const nextLineage: LineageFields = { ...lineage }
     let nextUnwritten = unwritten
     if (store.dirty || (!opts.quiet && (puts.size > 0 || deletes.length > 0))) nextUnwritten = true
-    let deleteBlobs: string[] = []
     if (file || opts.adopt) {
       const s = opts.adopt ? opts.adopt.stamp : file!.stamp
       if (s) {
@@ -237,13 +268,9 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
         nextLineage.lastWriteId = null
       }
       nextUnwritten = !opts.adopt && file!.revAtSnapshot !== undefined && store.rev !== file!.revAtSnapshot
-      if (!opts.adopt) {
-        const refs = referenced ?? collectImageRefs(store.doc)
-        deleteBlobs = [...persistedBlobs].filter((id) => !refs.has(id) && !putBlobs.has(id))
-      }
     }
 
-    const meta = { unwrittenChanges: nextUnwritten, fileName: deps.fileName, ...nextLineage }
+    const meta = { unwrittenChanges: nextUnwritten, fileName, ...nextLineage }
     const metaJson = JSON.stringify(meta)
     if (puts.size === 0 && deletes.length === 0 && putBlobs.size === 0 && deleteBlobs.length === 0 && metaJson === lastMeta) return
 
@@ -253,10 +280,10 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       noteFailure(e)
       return
     }
-    for (const [path, json] of next) cache.set(path, json)
+    for (const [path, json] of puts) cache.set(path, json) // the unchanged ones already hold equal text
     for (const p of deletes) cache.delete(p)
     for (const id of putBlobs.keys()) { persistedBlobs.add(id); swept.delete(id) }
-    for (const id of deleteBlobs) { persistedBlobs.delete(id); swept.add(id) }
+    for (const id of deleteBlobs) { persistedBlobs.delete(id); if (id in store.doc.images) swept.add(id) }
     lineage = nextLineage
     unwritten = nextUnwritten
     lastMeta = metaJson
@@ -264,7 +291,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     if (file && pendingStamp === file) pendingStamp = null
     if (lastError !== null) {
       lastError = null
-      deps.onRecovered?.()
+      onRecovered?.()
       announceError(false)
     }
   }
@@ -282,8 +309,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     lastMeta = JSON.stringify({ unwrittenChanges: unwritten, fileName: existing.fileName, ...lineage })
   }
   const unsubscribers = [
-    store.onMutate(() => arm(debounceMs, false)),
-    store.onDirty(() => arm(debounceMs, false)),
+    store.onMutate(armForEdit),
+    store.onDirty(armForEdit),
     // Gaining the write lock is the moment an owed initial sync can run.
     store.onReadOnlyChange((readOnly) => { if (!readOnly) void runInitial() }),
   ]
