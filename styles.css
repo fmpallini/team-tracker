@@ -2093,7 +2093,6 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-data-team-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-data-team-summary { font-family: var(--font-data); font-size: .75rem; color: var(--muted); }
 .tt-data-import-actions { display: flex; justify-content: flex-end; }
-.tt-data-copy-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: var(--r-sm); border: 1px solid var(--border); }
 
 /* Editor help modal */
 .tt-help-body { display: flex; flex-direction: column; gap: .4rem; max-height: 60vh; overflow-y: auto; }

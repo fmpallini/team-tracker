@@ -8,12 +8,11 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Added
 - Pictures in notes: paste a screenshot (also mixed with text), drag image files in, or use the new toolbar button. They are shrunk in your browser and stored encrypted inside the same `.tmv` file, up to 150 MB per file; Preferences → Data shows the usage.
-- Preferences → Data lists the copies your browser keeps of your other files and lets you delete them; copies with no unsaved changes unused for 90 days go on their own.
 - Data cleanup also removes pictures no note uses any more.
 
 ### Changed
 - Why saving changed: browsers can only rewrite a file whole, so with pictures inside a `.tmv` every save meant rewriting all of it to disk. Your work now lives in the browser's own database, which stores only the note or item you edited, as you type.
-- The `.tmv` file is written when you open it, when you close it with the lock button, and every hour (1–24 h in Settings). There is no manual save any more, and the save indicator now says whether the file can be written.
+- The `.tmv` file is written when you open it, when you close it with the lock button, and every hour (1–24 h in Settings). There is no manual save any more, and the save indicator's hover shows the last file write, the next one, and that closing the file writes it now.
 - The `.bck` backup file is gone: keep the `.tmv` in a cloud-synced folder instead.
 - Files saved by this version can't be opened by earlier releases.
 

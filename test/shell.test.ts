@@ -157,18 +157,18 @@ describe('save pill', () => {
   })
 
   describe('hover', () => {
-    test('ok: the browser copy is current; when the file was written and when the next write is due', () => {
+    test('ok: everything is in browser storage; last file write, next write, and how to force one', () => {
       const shell = setup()
       shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0) }))
-      expect(pillEl(shell).title).toBe('Browser copy is up to date. File written 2:00 PM · next write by 3:00 PM.')
+      expect(pillEl(shell).title).toBe('Everything is saved in the browser\'s storage.\nLast file write: 2:00 PM\nNext: 3:00 PM\nTo write the file now, close the file.')
       shell.applyPrefs(prefsWith('pt-BR'))
-      expect(pillEl(shell).title).toBe('A cópia do navegador está em dia. Arquivo gravado às 14:00 · próxima gravação até 15:00.')
+      expect(pillEl(shell).title).toBe('Tudo está salvo no armazenamento do navegador.\nÚltima gravação no arquivo: 14:00\nPróxima: 15:00\nPara gravar no arquivo agora, feche o arquivo.')
     })
 
-    test('ok before the first write of the session says only when the next one is due', () => {
+    test('ok before the first write of the session says none yet and when the next one is due', () => {
       const shell = setup()
       shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx({ nextWriteAt: at(15, 32) }))
-      expect(pillEl(shell).title).toBe('Browser copy is up to date. Next file write by 3:32 PM.')
+      expect(pillEl(shell).title).toBe('Everything is saved in the browser\'s storage.\nLast file write: not yet\nNext: 3:32 PM\nTo write the file now, close the file.')
     })
 
     test('storage that may be cleared adds a warning line but keeps the pill green', () => {
