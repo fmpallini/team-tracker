@@ -14,7 +14,7 @@ import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, no
 import { icon } from './icons'
 import type { ImageHost } from './image-host'
 import { imageRefLine } from '../core/image-ref'
-import { IMAGE_LIMITS } from '../core/image-import'
+import { IMAGE_ACCEPT, IMAGE_LIMITS } from '../core/image-import'
 
 export interface Editor {
   root: HTMLElement
@@ -2278,7 +2278,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   // The picker behind the image button. Kept in the DOM (hidden) so one input serves every click; its caret is remembered at click time because the dialog takes focus.
-  const imageInput = el('input', { type: 'file', accept: 'image/*', tabindex: '-1', 'aria-hidden': 'true' }) as HTMLInputElement
+  const imageInput = el('input', { type: 'file', accept: IMAGE_ACCEPT, tabindex: '-1', 'aria-hidden': 'true' }) as HTMLInputElement
   imageInput.multiple = true
   imageInput.hidden = true
   let imageCaret: Range | null = null

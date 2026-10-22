@@ -2,6 +2,7 @@ import { normalizeImageSpacing } from '../src/ui/editor-dom'
 import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
+import { IMAGE_ACCEPT } from '../src/core/image-import'
 
 function makeHooks(): EditorHooks & { changes: number; refs: RefInfo['target'][]; atRanges: Range[]; slashRanges: Range[] } {
   return {
@@ -4226,7 +4227,7 @@ describe('adding images: button, paste, drop', () => {
     test('clicking it opens the file picker, which takes several images', () => {
       const { editor } = mount(host())
       const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
-      expect(input.accept).toBe('image/*')
+      expect(input.accept).toBe(IMAGE_ACCEPT)
       expect(input.multiple).toBe(true)
       const click = vi.spyOn(input, 'click').mockImplementation(() => {})
       editor.root.querySelector<HTMLElement>(`button[title="${t('en-US', 'editor_image_title')}"]`)!.click()

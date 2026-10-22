@@ -34,6 +34,9 @@ const MIME: Record<ImageKind, string> = {
   png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp',
 }
 
+/** The file picker's `accept` value: exactly the formats `sniffImage` takes, so the dialog never offers what an import refuses. */
+export const IMAGE_ACCEPT = Object.values(MIME).join(',')
+
 const ascii = (bytes: Uint8Array, at: number, len: number): string => String.fromCharCode(...bytes.subarray(at, at + len))
 const u32be = (b: Uint8Array, at: number) => ((b[at]! << 24) | (b[at + 1]! << 16) | (b[at + 2]! << 8) | b[at + 3]!) >>> 0
 const u32le = (b: Uint8Array, at: number) => (b[at]! | (b[at + 1]! << 8) | (b[at + 2]! << 16) | (b[at + 3]! << 24)) >>> 0

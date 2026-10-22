@@ -1,4 +1,4 @@
-import { IMAGE_LIMITS, sniffImage, imageId, importImage, importImages, type ImageCodec } from '../src/core/image-import'
+import { IMAGE_ACCEPT, IMAGE_LIMITS, sniffImage, imageId, importImage, importImages, type ImageCodec } from '../src/core/image-import'
 import { createImageStore } from '../src/core/image-store'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import { imageRefLine } from '../src/core/image-ref'
@@ -85,6 +85,10 @@ describe('sniffImage', () => {
     expect(sniffImage(webp({ animated: true }))?.animated).toBe(true)
     expect(sniffImage(webp())?.animated).toBe(false)
   })
+})
+
+test('IMAGE_ACCEPT lists exactly the formats sniffImage takes', () => {
+  expect(IMAGE_ACCEPT.split(',').sort()).toEqual(['image/avif', 'image/bmp', 'image/gif', 'image/jpeg', 'image/png', 'image/webp'])
 })
 
 describe('imageId', () => {
