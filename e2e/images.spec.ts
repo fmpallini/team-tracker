@@ -148,7 +148,7 @@ test.describe('pictures in notes', () => {
   test('the toolbar button takes files through the picker', async ({ page }) => {
     await startEncrypted(page)
     const bytes = await makePng(page, 280, 180)
-    await page.locator('.tt-editor input[type="file"], input[type="file"][accept="image/*"]').first().setInputFiles({
+    await page.locator('.tt-editor input[type="file"]').first().setInputFiles({
       name: 'picked.png',
       mimeType: 'image/png',
       buffer: Buffer.from(bytes),
@@ -158,7 +158,7 @@ test.describe('pictures in notes', () => {
 
   test('a file that is not an image is refused with a message and nothing is added', async ({ page }) => {
     await startEncrypted(page)
-    await page.locator('input[type="file"][accept="image/*"]').first().setInputFiles({
+    await page.locator('.tt-editor input[type="file"]').first().setInputFiles({
       name: 'notes.txt',
       mimeType: 'text/plain',
       buffer: Buffer.from('hello'),
