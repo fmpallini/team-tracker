@@ -1,6 +1,8 @@
+import { normalizeImageSpacing } from '../src/ui/editor-dom'
 import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
+import { IMAGE_ACCEPT } from '../src/core/image-import'
 
 function makeHooks(): EditorHooks & { changes: number; refs: RefInfo['target'][]; atRanges: Range[]; slashRanges: Range[] } {
   return {
@@ -1552,6 +1554,143 @@ describe('toolbar', () => {
     Reflect.deleteProperty(navigator, 'clipboard')
   })
 
+  describe('copy menu with pictures', () => {
+    const ID = 'a'.repeat(32)
+    const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+
+    function pictureEditor(uris: Record<string, string | null> = { [ID]: 'data:image/webp;base64,AAAA' }, lateFor?: Promise<void>) {
+      const images = {
+        getDataUri: vi.fn(async (id: string) => { if (lateFor) await lateFor; return uris[id] ?? null }),
+        getMeta: vi.fn(() => ({ mime: 'image/webp', w: 40, h: 30, bytes: 4 })),
+        importFiles: vi.fn(async () => []),
+        dispose: vi.fn(),
+      }
+      const editor = createEditor({ ...makeHooks(), images }, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd(`before\n\n![shot](img:${ID})\n\nafter`)
+      return { editor, images }
+    }
+
+    /** Captures what the async Clipboard API receives, flavor by flavor. */
+    function captureClipboard() {
+      const write = vi.fn().mockResolvedValue(undefined)
+      Object.assign(navigator, { clipboard: { write, writeText: vi.fn().mockResolvedValue(undefined) } })
+      class FakeClipboardItem { constructor(public items: Record<string, Blob>) {} }
+      ;(globalThis as { ClipboardItem?: unknown }).ClipboardItem = FakeClipboardItem
+      const parts: string[] = []
+      const RealBlob = Blob
+      class SpyBlob extends RealBlob {
+        constructor(p: BlobPart[], o?: BlobPropertyBag) { super(p, o); parts.push(`${o?.type}|${String(p[0])}`) }
+      }
+      vi.stubGlobal('Blob', SpyBlob)
+      return { write, flavor: (type: string) => parts.find((x) => x.startsWith(`${type}|`))?.slice(type.length + 1) }
+    }
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, 'clipboard')
+      Reflect.deleteProperty(globalThis as object, 'ClipboardItem')
+      vi.unstubAllGlobals()
+      document.querySelectorAll('.tt-toast').forEach((n) => n.remove())
+    })
+
+    test('copy formatted carries real, centered picture markup and none of the editor internals', async () => {
+      const { editor } = pictureEditor()
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      const html = cb.flavor('text/html')!
+      expect(html).toContain('<img src="data:image/webp')
+      expect(html).toContain('text-align:center')
+      expect(html).not.toContain('data-img-id')
+      expect(html).not.toContain('contenteditable')
+      expect(html).not.toContain('tt-img')
+      expect(cb.flavor('text/plain')).toBe('before\n\n[image: shot]\n\nafter')
+      editor.destroy()
+    })
+
+    test('waits for a picture that is slow to load instead of leaving it out', async () => {
+      let release!: () => void
+      const gate = new Promise<void>((r) => { release = r })
+      const { editor } = pictureEditor(undefined, gate)
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      expect(cb.write).not.toHaveBeenCalled()
+      release()
+      await flush()
+      expect(cb.write).toHaveBeenCalledOnce()
+      expect(cb.flavor('text/html')).toContain('data:image/webp')
+      editor.destroy()
+    })
+
+    test('a picture whose bytes are gone is left out of the formatted copy', async () => {
+      const { editor } = pictureEditor({ [ID]: null })
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      const html = cb.flavor('text/html')!
+      expect(html).not.toContain('<img')
+      expect(html).toContain('before')
+      expect(html).toContain('after')
+      editor.destroy()
+    })
+
+    test('the selection fallback also receives the cleaned, centered clone', async () => {
+      const { editor } = pictureEditor()
+      let wrapperHtml = ''
+      vi.spyOn(document, 'execCommand').mockImplementation((cmd: string) => {
+        if (cmd === 'copy') wrapperHtml = (document.querySelector('div[style*="-9999px"]') as HTMLElement).innerHTML
+        return true
+      })
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_formatted'))
+      await flush()
+      expect(wrapperHtml).toContain('data:image/webp')
+      expect(wrapperHtml).toContain('text-align:center')
+      expect(wrapperHtml).not.toContain('contenteditable')
+      expect(wrapperHtml).not.toContain('data-img-id')
+      editor.destroy()
+    })
+
+    test('copy plain text shows [image: ALT] markers', () => {
+      const { editor } = pictureEditor()
+      const cb = captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_plain'))
+      expect((navigator.clipboard.writeText as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('before\n\n[image: shot]\n\nafter')
+      expect(cb.write).not.toHaveBeenCalled()
+      editor.destroy()
+    })
+
+    test('copy markdown keeps the references and says so exactly once', async () => {
+      const { editor } = pictureEditor()
+      captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+      expect((navigator.clipboard.writeText as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(expect.stringContaining(`![shot](img:${ID})`))
+      const toasts = Array.from(document.querySelectorAll('.tt-toast[data-toast-key="image-copy-md"]'))
+      expect(toasts).toHaveLength(1)
+      expect(toasts[0]!.textContent).toBe(t('en-US', 'img_copy_md_toast'))
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+      expect(document.querySelectorAll('.tt-toast[data-toast-key="image-copy-md"]')).toHaveLength(1) // replaced, not stacked
+      editor.destroy()
+    })
+
+    test('copy markdown of a note without pictures shows no toast', () => {
+      const editor = createEditor(makeHooks(), 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('just text')
+      captureClipboard()
+      openCopyMenu(editor)
+      pickCopyOption(t('en-US', 'editor_copy_option_markdown'))
+      expect(document.querySelectorAll('.tt-toast')).toHaveLength(0)
+      editor.destroy()
+    })
+  })
+
   test('@ button inserts "@" at the caret via execCommand, same path real typing takes', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -2005,6 +2144,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_codeblock_title'),
       t('en-US', 'editor_hr_title'),
       t('en-US', 'editor_link_title'),
+      t('en-US', 'editor_image_title'),
       t('en-US', 'editor_clear_format_title'),
       t('en-US', 'editor_templates_title'),
       t('en-US', 'editor_insert_ref_title'),
@@ -3860,5 +4000,424 @@ describe('setEditorsReadOnly', () => {
       setEditorsReadOnly(false)
       editor.destroy()
     }
+  })
+})
+
+describe('image blocks', () => {
+  const ID = 'a'.repeat(32)
+  const created: Editor[] = []
+  afterEach(() => { created.forEach((e) => e.destroy()); created.length = 0; document.body.innerHTML = '' })
+  const flushAsync = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
+
+  function host(known: Record<string, { mime: string; w: number; h: number }> = { [ID]: { mime: 'image/png', w: 40, h: 30 } }) {
+    return {
+      getDataUri: vi.fn(async (id: string) => (known[id] ? `data:${known[id]!.mime};base64,AAAA` : null)),
+      getMeta: vi.fn((id: string) => (known[id] ? { ...known[id]!, bytes: 1 } : undefined)),
+      importFiles: vi.fn(async (files: File[]) => files.map(() => null as { id: string; alt: string } | null)),
+      dispose: vi.fn(),
+    }
+  }
+  function mount(images?: ReturnType<typeof host>) {
+    const hooks = { ...makeHooks(), ...(images ? { images } : {}) }
+    const editor = createEditor(hooks, 'en-US')
+    created.push(editor)
+    document.body.appendChild(editor.root)
+    return { editor, hooks }
+  }
+  const ref = (id = ID) => `![shot](img:${id})`
+
+  test('an image line becomes a block whose <img> gets its data URI and recorded size', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a\n\n${ref()}\n\nb`)
+    await flushAsync()
+    const img = editor.root.querySelector('.tt-img img') as HTMLImageElement
+    expect(img.getAttribute('src')!.startsWith('data:image/')).toBe(true)
+    expect(img.getAttribute('width')).toBe('40')
+    expect(img.getAttribute('height')).toBe('30')
+    expect(img.getAttribute('alt')).toBe('shot')
+    expect(img.draggable).toBe(false)
+  })
+
+  test('the markdown survives hydration and a reload unchanged', async () => {
+    const { editor } = mount(host())
+    const md = `a\n\n${ref()}\n\nb`
+    editor.setMd(md)
+    await flushAsync()
+    expect(editor.getMd()).toBe(md)
+    editor.setMd(editor.getMd())
+    await flushAsync()
+    expect(editor.getMd()).toBe(md)
+  })
+
+  test('an image the host cannot supply shows the placeholder and still keeps its reference', async () => {
+    const { editor } = mount(host({}))
+    editor.setMd(ref())
+    await flushAsync()
+    const block = editor.root.querySelector('.tt-img') as HTMLElement
+    expect(block.classList.contains('tt-img-missing')).toBe(true)
+    expect(block.textContent).toBe(t('en-US', 'img_missing'))
+    expect(editor.getMd()).toBe(ref())
+  })
+
+  test('an editor without an image host renders the placeholder and does not throw', async () => {
+    const { editor } = mount()
+    expect(() => editor.setMd(ref())).not.toThrow()
+    await flushAsync()
+    expect(editor.root.querySelector('.tt-img')!.classList.contains('tt-img-missing')).toBe(true)
+  })
+
+  test('clicking a block selects it, and clicking another selects only that one', async () => {
+    const other = 'b'.repeat(32)
+    const { editor } = mount(host({ [ID]: { mime: 'image/png', w: 1, h: 1 }, [other]: { mime: 'image/png', w: 1, h: 1 } }))
+    editor.setMd(`${ref()}\n\n${ref(other)}`)
+    await flushAsync()
+    const [first, second] = Array.from(editor.root.querySelectorAll<HTMLElement>('.tt-img'))
+    first!.click()
+    expect(first!.classList.contains('is-selected')).toBe(true)
+    second!.click()
+    expect(first!.classList.contains('is-selected')).toBe(false)
+    expect(second!.classList.contains('is-selected')).toBe(true)
+  })
+
+  test.each(['Backspace', 'Delete'])('%s removes the selected block and its reference', async (key) => {
+    const { editor } = mount(host())
+    editor.setMd(`a\n\n${ref()}\n\nb`)
+    await flushAsync()
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    const e = dispatchKey(editor.root.querySelector('.editor') as HTMLElement, { key })
+    expect(e.defaultPrevented).toBe(true)
+    expect(editor.root.querySelector('.tt-img')).toBeNull()
+    expect(editor.getMd()).not.toContain('img:')
+    expect(editor.getMd()).toContain('a')
+    expect(editor.getMd()).toContain('b')
+  })
+
+  test('the selection does not outlive the click: any other key clears it, so Backspace then edits text', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a
+
+${ref()}
+
+b`)
+    await flushAsync()
+    const surface = editor.root.querySelector('.editor') as HTMLElement
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    dispatchKey(surface, { key: 'ArrowUp' })
+    expect(block.classList.contains('is-selected')).toBe(false)
+    const e = dispatchKey(surface, { key: 'Backspace' })
+    expect(e.defaultPrevented).toBe(false)
+    expect(editor.root.querySelector('.tt-img')).not.toBeNull()
+  })
+
+  test('leaving the editor clears the selected block', async () => {
+    const { editor } = mount(host())
+    editor.setMd(ref())
+    await flushAsync()
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    ;(editor.root.querySelector('.editor') as HTMLElement).dispatchEvent(new Event('blur'))
+    expect(block.classList.contains('is-selected')).toBe(false)
+  })
+
+  test('removal goes through the browser delete command on the selected block, so Ctrl+Z can bring it back', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a
+
+${ref()}
+
+b`)
+    await flushAsync()
+    document.body.appendChild(editor.root)
+    const block = editor.root.querySelector<HTMLElement>('.tt-img')!
+    block.click()
+    let selected: Node | null = null
+    const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd: string) => {
+      if (cmd !== 'delete') return false
+      const r = window.getSelection()!.getRangeAt(0)
+      selected = r.startContainer === r.endContainer && r.endOffset - r.startOffset === 1 ? r.startContainer.childNodes[r.startOffset]! : null
+      block.remove() // what the browser's command does to the selected node
+      return true
+    })
+    dispatchKey(editor.root.querySelector('.editor') as HTMLElement, { key: 'Backspace' })
+    expect(exec).toHaveBeenCalledWith('delete')
+    expect(selected).toBe(block)
+    expect(editor.root.querySelector('.tt-img')).toBeNull()
+    editor.destroy()
+  })
+
+  test('typing keys without a selected block are left alone', async () => {
+    const { editor } = mount(host())
+    editor.setMd(`a\n\n${ref()}\n\nb`)
+    await flushAsync()
+    const e = dispatchKey(editor.root.querySelector('.editor') as HTMLElement, { key: 'Backspace' })
+    expect(e.defaultPrevented).toBe(false)
+    expect(editor.root.querySelector('.tt-img')).not.toBeNull()
+  })
+
+  test('a block replaced by a second setMd before the host answers is not hydrated twice', async () => {
+    const { editor } = mount(host())
+    editor.setMd(ref())
+    editor.setMd(ref())
+    await flushAsync()
+    expect(editor.root.querySelectorAll('.tt-img img')).toHaveLength(1)
+  })
+})
+
+describe('adding images: button, paste, drop', () => {
+  const ID = 'a'.repeat(32)
+  const created: Editor[] = []
+  afterEach(() => { created.forEach((e) => e.destroy()); created.length = 0; document.body.innerHTML = '' })
+  const ID2 = 'b'.repeat(32)
+  const flushAsync = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
+  const pngFile = (name = 'shot.png') => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])], name, { type: 'image/png' })
+  const PNG_B64 = 'iVBORw0KGgo='
+
+  function host(answer: ({ id: string; alt: string } | null)[] = [{ id: ID, alt: 'shot' }]) {
+    return {
+      getDataUri: vi.fn(async () => 'data:image/png;base64,AAAA'),
+      getMeta: vi.fn(() => ({ mime: 'image/png', w: 10, h: 10, bytes: 1 })),
+      importFiles: vi.fn(async (_files: File[]) => answer),
+      dispose: vi.fn(),
+    }
+  }
+  function mount(images?: ReturnType<typeof host>) {
+    const hooks = { ...makeHooks(), ...(images ? { images } : {}) }
+    const editor = createEditor(hooks, 'en-US')
+    created.push(editor)
+    document.body.appendChild(editor.root)
+    const surface = editor.root.querySelector('.editor') as HTMLElement
+    // jsdom has no execCommand editing: land the HTML where insertHTML would.
+    const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd: string, _ui?: boolean, value?: string) => {
+      if (cmd === 'insertHTML') surface.insertAdjacentHTML('beforeend', value ?? '')
+      return true
+    })
+    return { editor, surface, exec }
+  }
+  function paste(surface: HTMLElement, data: { html?: string; text?: string; files?: File[] }) {
+    const clipboardData = {
+      getData: (fmt: string) => (fmt === 'text/html' ? data.html ?? '' : fmt === 'text/plain' ? data.text ?? '' : ''),
+      files: data.files ?? [],
+      items: (data.files ?? []).map((f) => ({ kind: 'file', type: f.type, getAsFile: () => f })),
+      types: [...(data.html ? ['text/html'] : []), ...(data.files?.length ? ['Files'] : [])],
+    } as unknown as DataTransfer
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+    surface.dispatchEvent(event)
+    return event
+  }
+  function dropEvent(type: 'dragover' | 'drop', files: File[]) {
+    const dataTransfer = { files, types: files.length ? ['Files'] : [], dropEffect: 'none' } as unknown as DataTransfer
+    const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+    return event
+  }
+  const insertedHtml = (exec: ReturnType<typeof mount>['exec']) => exec.mock.calls.filter((c) => c[0] === 'insertHTML').map((c) => String(c[2])).join('')
+
+  describe('toolbar button', () => {
+    test('sits between the link and clear-formatting buttons and carries the translated title', () => {
+      const { editor } = mount(host())
+      const titles = Array.from(editor.root.querySelectorAll<HTMLElement>('.tt-editor-toolbar > button')).map((b) => b.title)
+      const link = titles.indexOf(t('en-US', 'editor_link_title'))
+      expect(titles[link + 1]).toBe(t('en-US', 'editor_image_title'))
+      expect(titles[link + 2]).toBe(t('en-US', 'editor_clear_format_title'))
+    })
+
+    test('clicking it opens the file picker, which takes several images', () => {
+      const { editor } = mount(host())
+      const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
+      expect(input.accept).toBe(IMAGE_ACCEPT)
+      expect(input.multiple).toBe(true)
+      const click = vi.spyOn(input, 'click').mockImplementation(() => {})
+      editor.root.querySelector<HTMLElement>(`button[title="${t('en-US', 'editor_image_title')}"]`)!.click()
+      expect(click).toHaveBeenCalledTimes(1)
+    })
+
+    test('picked files are imported and land as an image block with a blank line on each side', async () => {
+      const images = host()
+      const { editor, surface, exec } = mount(images)
+      const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
+      const file = pngFile()
+      Object.defineProperty(input, 'files', { value: [file], configurable: true })
+      input.dispatchEvent(new Event('change'))
+      await flushAsync()
+      expect(images.importFiles).toHaveBeenCalledWith([file])
+      expect(insertedHtml(exec)).toBe(`<div><br></div><div class="tt-img" contenteditable="false" data-img-id="${ID}" data-alt="shot"></div><div><br></div>`)
+      expect(surface.querySelector('.tt-img img')).not.toBeNull()
+    })
+
+    test('does nothing in a read-only editor', async () => {
+      const images = host()
+      const { editor } = mount(images)
+      setEditorsReadOnly(true)
+      try {
+        const input = editor.root.querySelector<HTMLInputElement>('input[type="file"]')!
+        Object.defineProperty(input, 'files', { value: [pngFile()], configurable: true })
+        input.dispatchEvent(new Event('change'))
+        await flushAsync()
+        expect(images.importFiles).not.toHaveBeenCalled()
+      } finally { setEditorsReadOnly(false) }
+    })
+  })
+
+  describe('paste', () => {
+    test('an image file on the clipboard becomes one image block', async () => {
+      const images = host()
+      const { surface, exec } = mount(images)
+      const e = paste(surface, { files: [pngFile()] })
+      await flushAsync()
+      expect(e.defaultPrevented).toBe(true)
+      expect(images.importFiles).toHaveBeenCalledTimes(1)
+      expect(insertedHtml(exec)).toContain(`data-img-id="${ID}"`)
+    })
+
+    test('pasted HTML with text around a data-URI image keeps the order: text, image, text', async () => {
+      const images = host()
+      const { surface, exec } = mount(images)
+      paste(surface, { html: `<p>alpha</p><img src="data:image/png;base64,${PNG_B64}" alt="pic"><p>omega</p>` })
+      await flushAsync()
+      const html = insertedHtml(exec)
+      expect(html.indexOf('alpha')).toBeGreaterThanOrEqual(0)
+      expect(html.indexOf('alpha')).toBeLessThan(html.indexOf('tt-img'))
+      expect(html.indexOf('tt-img')).toBeLessThan(html.indexOf('omega'))
+      const [files] = images.importFiles.mock.calls[0]!
+      expect(files).toHaveLength(1)
+      expect(files![0]!.name).toBe('pic')
+      expect(files![0]!.type).toBe('image/png')
+    })
+
+    test('when one image is refused the text and the surviving images still land, with no token text left', async () => {
+      const images = host([{ id: ID, alt: 'one' }, null, { id: ID2, alt: 'three' }])
+      const { surface, exec } = mount(images)
+      const img = (n: number) => `<img src="data:image/png;base64,${PNG_B64}" alt="i${n}">`
+      paste(surface, { html: `<p>head</p>${img(1)}<p>mid ${img(2)} tail</p>${img(3)}` })
+      await flushAsync()
+      const html = insertedHtml(exec)
+      expect(html).not.toContain('⟦')
+      expect(html).not.toContain('tt-img:')
+      expect(html).toContain('head')
+      expect(html).toContain('mid')
+      expect(html).toContain('tail')
+      expect(html).toContain(`data-img-id="${ID}"`)
+      expect(html).toContain(`data-img-id="${ID2}"`)
+      expect(html.indexOf('head')).toBeLessThan(html.indexOf(ID))
+      expect(html.indexOf(ID)).toBeLessThan(html.indexOf('mid'))
+      expect(html.indexOf('tail')).toBeLessThan(html.indexOf(ID2))
+    })
+
+    test('remote images in pasted HTML are dropped and never fetched', async () => {
+      const images = host()
+      const fetchSpy = vi.fn()
+      vi.stubGlobal('fetch', fetchSpy)
+      try {
+        const { surface, exec } = mount(images)
+        paste(surface, { html: '<p>just text</p><img src="https://example.com/a.png">' })
+        await flushAsync()
+        expect(fetchSpy).not.toHaveBeenCalled()
+        expect(images.importFiles).not.toHaveBeenCalled()
+        const html = insertedHtml(exec)
+        expect(html).toContain('just text')
+        expect(html).not.toContain('example.com')
+        expect(html).not.toContain('<img')
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    test('HTML with real text wins over a preview image file that came with it', async () => {
+      const images = host()
+      const { surface, exec } = mount(images)
+      paste(surface, { html: '<p>from word</p>', files: [pngFile('preview.png')] })
+      await flushAsync()
+      expect(images.importFiles).not.toHaveBeenCalled()
+      expect(insertedHtml(exec)).toContain('from word')
+    })
+
+    test('without an image host, pasting an image file does nothing and does not throw', async () => {
+      const { surface, exec } = mount()
+      expect(() => paste(surface, { files: [pngFile()] })).not.toThrow()
+      await flushAsync()
+      expect(insertedHtml(exec)).toBe('')
+    })
+
+    test('a read-only editor ignores a pasted image', async () => {
+      const images = host()
+      const { surface } = mount(images)
+      setEditorsReadOnly(true)
+      try {
+        paste(surface, { files: [pngFile()] })
+        await flushAsync()
+        expect(images.importFiles).not.toHaveBeenCalled()
+      } finally { setEditorsReadOnly(false) }
+    })
+  })
+
+  describe('drop', () => {
+    test('dragging files over the editor allows the drop', () => {
+      const { surface } = mount(host())
+      const over = dropEvent('dragover', [pngFile()])
+      surface.dispatchEvent(over)
+      expect(over.defaultPrevented).toBe(true)
+    })
+
+    test('dragging plain text over the editor is left to the browser', () => {
+      const { surface } = mount(host())
+      const over = dropEvent('dragover', [])
+      surface.dispatchEvent(over)
+      expect(over.defaultPrevented).toBe(false)
+    })
+
+    test('two images and a text file: all three go to the host, the two it accepted are inserted', async () => {
+      const images = host([{ id: ID, alt: 'a' }, { id: ID2, alt: 'b' }, null])
+      const { surface, exec } = mount(images)
+      const files = [pngFile('a.png'), pngFile('b.png'), new File(['hi'], 'c.txt', { type: 'text/plain' })]
+      const drop = dropEvent('drop', files)
+      surface.dispatchEvent(drop)
+      await flushAsync()
+      expect(drop.defaultPrevented).toBe(true)
+      expect(images.importFiles).toHaveBeenCalledWith(files)
+      const html = insertedHtml(exec)
+      expect(html).toContain(ID)
+      expect(html).toContain(ID2)
+    })
+
+    test('a read-only editor refuses a drop', async () => {
+      const images = host()
+      const { surface } = mount(images)
+      setEditorsReadOnly(true)
+      try {
+        const drop = dropEvent('drop', [pngFile()])
+        surface.dispatchEvent(drop)
+        await flushAsync()
+        expect(images.importFiles).not.toHaveBeenCalled()
+      } finally { setEditorsReadOnly(false) }
+    })
+  })
+})
+
+describe('normalizeImageSpacing', () => {
+  const block = (id = 'a'.repeat(32)) => `<div class="tt-img" data-img-id="${id}" data-alt=""></div>`
+  const blank = '<div><br></div>'
+  const run = (html: string): string => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    normalizeImageSpacing(root)
+    return root.innerHTML
+  }
+
+  test('adds the missing blank line above and below', () => {
+    expect(run(`<div>a</div>${block()}<div>b</div>`)).toBe(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)
+  })
+
+  test('leaves a blank line that is already there, and collapses extra ones to one', () => {
+    expect(run(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)).toBe(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)
+    expect(run(`<div>a</div>${blank}${blank}${blank}${block()}${blank}${blank}<div>b</div>`)).toBe(`<div>a</div>${blank}${block()}${blank}<div>b</div>`)
+  })
+
+  test('adds nothing before a first image or after a last one', () => {
+    expect(run(block())).toBe(block())
+  })
+
+  test('puts exactly one blank line between two adjacent images', () => {
+    expect(run(block('a'.repeat(32)) + block('b'.repeat(32)))).toBe(block('a'.repeat(32)) + blank + block('b'.repeat(32)))
   })
 })

@@ -12,13 +12,11 @@ export interface Prefs {
   // trio pinned. Accepted deliberately: everyone stays within one step of
   // where they were, and re-picking is one click in prefs.
   fontSize: 'XS' | 'S' | 'M' | 'L' | 'XL'
+  /** How often the `.tmv` file is rewritten, in minutes: 60..1440 (the Preferences field shows hours). The browser copy is saved continuously regardless. */
   autoSaveMin: number
   palette: PaletteId
   dueSoonDays: number
   openRefsInSecondaryPane: boolean
-  dailyBackupEnabled: boolean
-  backupHandleId: string | null
-  backupFrequency: 'daily' | 'hourly'
   // When on, Ctrl+mouse-wheel steps `fontSize` through the five sizes instead
   // of triggering the browser's own page zoom (main.ts's wheel handler). Off
   // hands the gesture back to the browser.
@@ -86,9 +84,14 @@ export interface NavState {
 }
 /** A starred pane location (see core/favorites.ts). `ref` never carries an `itemId`: a favorite opens the module, not one card. */
 export interface Favorite { teamId: string; ref: ModuleRef }
+export interface ImageMeta { mime: string; w: number; h: number; bytes: number }
 export interface Doc {
+  /** Random 32-hex identity, created with the document and kept for its life (keys its browser copy). Schema 18. */
+  docId: string
   schemaVersion: number; prefs: Prefs; templates: Template[]
   nav: NavState; teams: Team[]
   /** Global across teams, in the order they were starred. Schema 15. */
   favorites: Favorite[]
+  /** Metadata for the images embedded in notes, keyed by content id. Bytes live in the ImageStore, never here. Schema 17. */
+  images: Record<string, ImageMeta>
 }

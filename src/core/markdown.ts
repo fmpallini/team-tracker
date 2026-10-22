@@ -1,5 +1,7 @@
 import { REF_KINDS, refPattern, type IdRefKind } from './refs'
 import { highlightCode } from './highlight'
+import { IMAGE_ID_RE, imageRefLine, parseImageLine } from './image-ref'
+import { t, type Locale } from './i18n'
 
 // Strip the Private-Use-Area code points inline() uses for its own
 // LINK/REF/ESC placeholder tokens (U+E000–U+E007) BEFORE anything else, so
@@ -353,7 +355,10 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     const ul = /^( *)- (.*)$/.exec(line)
     const ol = /^( *)(\d+)\. (.*)$/.exec(line)
     const hr = /^-{3,}$/.test(line)
-    if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
+    const img = parseImageLine(line.trimEnd())
+    // An image is an atomic block with no children: the editor fills in the <img> from the image store (ui/image-host.ts).
+    if (img) { closeList(); out.push(`<div class="tt-img" contenteditable="false" data-img-id="${img.id}" data-alt="${esc(img.alt)}"></div>`) }
+    else if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
     else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), null)
     else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), Number(ol[2]))
     else if (hr) { closeList(); out.push('<hr>') }
@@ -974,8 +979,10 @@ function renderListText(list: HTMLElement, out: string[], depth = 0): void {
 }
 
 /** Renders the editor's rendered text with block/list-item/<br> boundaries preserved as '\n' — unlike Element.textContent, which flattens all block structure. Used for "copy without formatting" so paragraphs and list items don't run together on one line. */
-export function htmlToPlainText(root: HTMLElement): string {
+export function htmlToPlainText(root: HTMLElement, locale: Locale = 'en-US'): string {
   const out: string[] = []
+  // A picture is one marker line (`[image: ALT]`), always set off by a blank line each side, as in the note.
+  const markerAt = new Set<number>()
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent; if (t) out.push(t); return
@@ -987,14 +994,19 @@ export function htmlToPlainText(root: HTMLElement): string {
     // guard "StartFragment" would leak into the output as if it were text.
     if (!(node instanceof HTMLElement)) return
     const tag = node.tagName.toLowerCase()
-    if (tag === 'ul' || tag === 'ol') renderListText(node, out)
+    if (node.classList.contains('tt-img')) {
+      const alt = node.dataset.alt ?? ''
+      markerAt.add(out.length)
+      out.push(alt ? t(locale, 'img_plain_marker_alt', { alt }) : t(locale, 'img_plain_marker'))
+    }
+    else if (tag === 'ul' || tag === 'ol') renderListText(node, out)
     else if (tag === 'hr') out.push('---')
     else if (tag === 'blockquote') {
       // A quote pasted off a web page / email arrives with block children
       // (<blockquote><p>a</p><p>b</p></blockquote>), which blockToText would
       // merge onto one line. Recurse through htmlToPlainText for that shape;
       // the mdToHtml <br>-joined shape (no block child) keeps the flat path.
-      const inner = Array.from(node.children).some(isBlockTag) ? htmlToPlainText(node) : blockToText(node)
+      const inner = Array.from(node.children).some(isBlockTag) ? htmlToPlainText(node, locale) : blockToText(node)
       for (const l of inner.split('\n')) out.push(l ? `> ${l}` : '>')
     }
     else if (tag === 'pre') for (const l of preLines(node)) out.push(l)
@@ -1002,7 +1014,14 @@ export function htmlToPlainText(root: HTMLElement): string {
     else out.push(inlineText(node))
   }
   root.childNodes.forEach(walk)
-  return out.join('\n')
+  if (markerAt.size === 0) return out.join('\n')
+  const lines: string[] = []
+  out.forEach((line, i) => {
+    const near = markerAt.has(i) || markerAt.has(i - 1)
+    if (near && lines.length > 0 && lines[lines.length - 1] !== '' && line !== '') lines.push('')
+    lines.push(line)
+  })
+  return lines.join('\n')
 }
 
 // Elements whose content is never note text, wherever they sit in a paste.
@@ -1058,7 +1077,15 @@ function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): v
     out.push(plain(lineOf(nodes).trim()))
   }
   const block = (node: HTMLElement, tag: string): void => {
-    if (/^h[1-6]$/.test(tag)) {
+    const imgId = node.getAttribute('data-img-id')
+    if (imgId !== null) {
+      // An image block: its id and alt are the whole content (a hydrated <img> child is only display).
+      // List items and quotes have no image syntax, so the block is dropped there.
+      if (!flat && !text && IMAGE_ID_RE.test(imgId)) {
+        imageLineIndexes(out).add(out.length)
+        out.push(imageRefLine(imgId, node.getAttribute('data-alt') ?? ''))
+      }
+    } else if (/^h[1-6]$/.test(tag)) {
       // A <br> inside a heading puts the rest on a plain line below it.
       const [first = '', ...rest] = lineOf(Array.from(node.childNodes)).split('\n')
       out.push(flat ? first : '#'.repeat(Math.min(Number(tag[1]), 3)) + ' ' + first)
@@ -1107,8 +1134,37 @@ function walkBlocks(parent: Node, out: string[], flat: boolean, text = false): v
   flushRun()
 }
 
+// Which entries of a walkBlocks output array are image reference lines, so the spacing pass below
+// never mistakes a code-block line that merely looks like one for an image.
+const IMAGE_LINES = new WeakMap<string[], Set<number>>()
+function imageLineIndexes(out: string[]): Set<number> {
+  let set = IMAGE_LINES.get(out)
+  if (!set) { set = new Set(); IMAGE_LINES.set(out, set) }
+  return set
+}
+
+/** An image always has one blank line above and below it, and none dangling at the ends of the note. */
+function spaceImageLines(out: string[]): string[] {
+  const images = IMAGE_LINES.get(out)
+  if (!images) return out
+  const result: string[] = []
+  let blankDue = false
+  out.forEach((line, i) => {
+    if (images.has(i)) {
+      if (result.length > 0 && result[result.length - 1] !== '') result.push('')
+      result.push(line)
+      blankDue = true
+      return
+    }
+    if (blankDue && line !== '') result.push('')
+    blankDue = false
+    result.push(line)
+  })
+  return result
+}
+
 export function htmlToMd(root: HTMLElement): string {
   const out: string[] = []
   walkBlocks(root, out, false)
-  return out.join('\n')
+  return spaceImageLines(out).join('\n')
 }

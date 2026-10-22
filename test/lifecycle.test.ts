@@ -14,6 +14,22 @@ import { renderRisks } from '../src/modules/risks'
 import type { Loc, Team } from '../src/core/types'
 import type { ModuleCtx, ModuleRenderer, PaneManager } from '../src/ui/panes'
 
+// Wraps the real image host to count creations and disposals (see the image-host test at the bottom).
+const imageHostCounts = vi.hoisted(() => ({ created: 0, disposed: 0 }))
+vi.mock('../src/ui/image-host', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/ui/image-host')>()
+  return {
+    ...real,
+    createImageHost: (...args: Parameters<typeof real.createImageHost>) => {
+      imageHostCounts.created++
+      const host = real.createImageHost(...args)
+      const dispose = host.dispose
+      host.dispose = () => { imageHostCounts.disposed++; dispose() }
+      return host
+    },
+  }
+})
+
 const LOC: Loc = { teamId: 't1', ref: { kind: 'general' } }
 const CTX = {} as ModuleCtx
 
@@ -184,7 +200,7 @@ for (const { name, render, ref, subscribes } of RENDERERS) {
     document.body.appendChild(container)
     const loc: Loc = { teamId: 'T1', ref }
     const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
+    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} } }
 
     // Three mounts, mirroring panes.ts's renderBody (which clears the
     // container's children before re-invoking the renderer).
@@ -215,7 +231,7 @@ test('stress: 200 mount/unmount cycles across every module leave a constant subs
     document.body.appendChild(container)
     const loc: Loc = { teamId: 'T1', ref }
     const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
+    const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} } }
     const expected = subscribes ? 1 : 0
 
     for (let i = 0; i < STRESS_CYCLES; i++) {
@@ -331,7 +347,7 @@ test('switching modules within one container disposes the outgoing module, not j
   const container = document.createElement('div')
   document.body.appendChild(container)
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
+  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} } }
 
   container.innerHTML = ''
   renderDailyNotes(container, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-10' } }, ctx)
@@ -368,4 +384,28 @@ describe('a pane that stops showing a module disposes the one it held', () => {
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } }) // not registered here
     expect(liveSubscriptions()).toBe(1)
   })
+})
+
+// ---------------------------------------------------------------------------
+// Image hosts: each note editor owns a data-URI cache that must be released on
+// teardown, or a long session over many notes keeps every picture's base64
+// alive. Counted through a wrapper around the real host.
+// ---------------------------------------------------------------------------
+
+test('general-notes: re-rendering leaves exactly one live image host (the others were disposed)', () => {
+  const { store } = countingStore()
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+  const ctx: ModuleCtx = { store, pm: fakePM(), paneIdx: 0, locale: 'en-US', searchIndex, saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} } }
+  const before = { created: imageHostCounts.created, disposed: imageHostCounts.disposed }
+
+  for (let i = 0; i < 3; i++) {
+    container.innerHTML = ''
+    renderGeneralNotes(container, { teamId: 'T1', ref: { kind: 'general' } }, ctx)
+  }
+
+  expect(imageHostCounts.created - before.created).toBe(3)
+  expect(imageHostCounts.disposed - before.disposed).toBe(2)
+  container.remove()
 })

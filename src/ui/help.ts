@@ -45,7 +45,6 @@ const mdRows = (lc: Locale): Rows => {
 const globalRows = (lc: Locale): Rows => [
   ['Alt+1 … Alt+9', 'help_global_teams'],
   ['Ctrl+Shift+K', 'help_global_palette'],
-  ['Ctrl+S', 'help_global_save'],
   ['Ctrl+Alt+L / {lock}', 'help_global_close_file'],
   [`Ctrl+F ${t(lc, 'help_key_or')} /`, 'help_global_search'],
   ['Ctrl+Shift+F', 'help_global_search_all_teams'],
@@ -147,7 +146,9 @@ export function showEditorHelp(locale: Locale): void {
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_refs_heading')),
     el('p', { class: 'tt-help-text' }, t(locale, 'help_refs_text')),
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_templates_heading')),
-    el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text'))
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_templates_text')),
+    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_images_heading')),
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_images_text'))
   )
 
   const handle: { close: () => void } = showModal({
@@ -164,6 +165,8 @@ export function showGlobalHelp(locale: Locale, opts?: { pwa?: boolean }): void {
     { class: 'tt-help-body' },
     el('h3', { class: 'tt-help-heading' }, t(locale, 'help_global_shortcuts_heading')),
     table(locale, globalRows(locale)),
+    el('h3', { class: 'tt-help-heading' }, t(locale, 'help_saving_heading')),
+    el('p', { class: 'tt-help-text' }, t(locale, 'help_saving_text')),
     // The --app= recipe is a workaround for opening the plain
     // dist/app.html without browser chrome — moot in the PWA build, which is
     // already installable/standalone, so it's only shown there.

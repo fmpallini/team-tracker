@@ -144,7 +144,7 @@ test('decryptDocument rejects a password-less (TMV-PLAIN) file as corrupt — th
   // The reverse of "parsePlain returns null for encrypted-file bytes": a
   // plain file starts "TMV-PLAIN\n", so bytes[3] is '-' (0x2d) not '1'
   // (0x31) — magic check fails before any password work.
-  const plain = serializePlain(createEmptyDocument('pt-BR'))
+  const plain = await serializePlain(createEmptyDocument('pt-BR'))
   await expect(decryptDocument(plain, 'pw')).rejects.toBeInstanceOf(CorruptFileError)
 })
 
@@ -235,18 +235,19 @@ test('a wrong-password attempt racing a correct one does not poison the cache fo
 
 // --- Plain (password-less) file format ---
 
-test('serializePlain/parsePlain round-trip', () => {
+test('serializePlain/parsePlain round-trip', async () => {
   const doc = createEmptyDocument('pt-BR')
-  const bytes = serializePlain(doc)
+  const bytes = await serializePlain(doc)
   expect(parsePlain(bytes)).toEqual(doc)
 })
 
-test('serializePlain output starts with the ASCII TMV-PLAIN tag, human-readable', () => {
+test('serializePlain output starts with the ASCII TMV-PLAIN2 tag and a readable one-line envelope', async () => {
   const doc = createEmptyDocument('en-US')
-  const bytes = serializePlain(doc)
+  const bytes = await serializePlain(doc)
   const text = new TextDecoder().decode(bytes)
-  expect(text.startsWith('TMV-PLAIN\n')).toBe(true)
-  expect(JSON.parse(text.slice('TMV-PLAIN\n'.length))).toEqual(doc)
+  expect(text.startsWith('TMV-PLAIN2\n')).toBe(true)
+  const line = text.slice('TMV-PLAIN2\n'.length).split('\n')[0]!
+  expect(JSON.parse(line)).toEqual({ doc, index: {} })
 })
 
 test('parsePlain returns null for encrypted-file bytes (no tag match)', async () => {
@@ -280,8 +281,7 @@ test('parsePlain rejects a plain file claiming a newer schema than this build su
 })
 
 // Open-time variants that also report the file's pre-migration schema
-// version (main.ts snapshots the unmigrated bytes to the backup when a
-// migration ran). They decrypt/parse exactly once — the separate "peek"
+// version. They decrypt/parse exactly once — the separate "peek"
 // helpers they replaced repeated the whole AES decrypt and JSON.parse of the
 // document on every open.
 test('decryptDocumentWithVersion returns the migrated doc and the pre-migration schema version', async () => {
@@ -310,9 +310,9 @@ test('decryptDocumentWithVersion rejects with WrongPasswordError, same as decryp
   await expect(decryptDocumentWithVersion(bytes, 'wrong')).rejects.toBeInstanceOf(WrongPasswordError)
 }, 20000)
 
-test('parsePlainWithVersion returns the migrated doc and the pre-migration schema version', () => {
+test('parsePlainWithVersion returns the migrated doc and the pre-migration schema version', async () => {
   const oldDoc = { ...createEmptyDocument('en-US'), schemaVersion: SCHEMA_VERSION - 1 }
-  const result = parsePlainWithVersion(serializePlain(oldDoc))
+  const result = parsePlainWithVersion(await serializePlain(oldDoc))
   expect(result?.preSchemaVersion).toBe(SCHEMA_VERSION - 1)
   expect(result?.doc.schemaVersion).toBe(SCHEMA_VERSION)
 })
@@ -400,4 +400,33 @@ describe('looksLikeTmv', () => {
     bytes[4] = 99
     expect(looksLikeTmv(bytes)).toBe(false)
   }, 20000)
+})
+
+describe('file stamp', () => {
+  const stamp = { writeId: 'ab'.repeat(16), savedAt: 1234 }
+
+  test('round-trips through an encrypted file', async () => {
+    const doc = createEmptyDocument('en-US')
+    const bytes = await encryptDocument(doc, 'pw', undefined, undefined, stamp)
+    expect((await decryptDocumentWithVersion(bytes, 'pw')).stamp).toEqual(stamp)
+  }, 20000)
+
+  test('round-trips through a plain file', async () => {
+    const bytes = await serializePlain(createEmptyDocument('en-US'), undefined, undefined, stamp)
+    expect(parsePlainWithVersion(bytes)!.stamp).toEqual(stamp)
+  })
+
+  test('a file written without a stamp opens with stamp null', async () => {
+    const doc = createEmptyDocument('en-US')
+    expect(parsePlainWithVersion(await serializePlain(doc))!.stamp).toBeNull()
+    expect((await decryptDocumentWithVersion(await encryptDocument(doc, 'pw'), 'pw')).stamp).toBeNull()
+  }, 20000)
+
+  test('a malformed stamp is treated as absent', async () => {
+    const doc = createEmptyDocument('en-US')
+    for (const bad of [{ writeId: 7, savedAt: 1 }, { writeId: 'short', savedAt: 1 }, { writeId: stamp.writeId, savedAt: 'x' }, { writeId: stamp.writeId, savedAt: Infinity }]) {
+      const plain = await serializePlain(doc, undefined, undefined, bad as never)
+      expect(parsePlainWithVersion(plain)!.stamp).toBeNull()
+    }
+  })
 })

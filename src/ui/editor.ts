@@ -7,11 +7,14 @@ import { el, clampToViewport, copyText } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showEditorHelp } from './help'
-import { showModal } from './modal'
+import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, type BlockCtx } from './editor-dom'
+import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
 import { icon } from './icons'
+import type { ImageHost } from './image-host'
+import { imageRefLine } from '../core/image-ref'
+import { IMAGE_ACCEPT, IMAGE_LIMITS } from '../core/image-import'
 
 export interface Editor {
   root: HTMLElement
@@ -36,6 +39,50 @@ export interface Editor {
   destroy(): void
 }
 
+/** An image found in pasted HTML as a `data:` URI, decoded and waiting to be imported. */
+interface PastedImage { bytes: Uint8Array; mime: string; name: string }
+
+// Stands in for a pasted image while the HTML is turned into markdown; the real reference replaces it once the import answers.
+const IMAGE_TOKEN = /\u27e6tt-img:(\d+)\u27e7/
+const IMAGE_TOKEN_G = /\u27e6tt-img:\d+\u27e7/g
+
+/** The bytes of a base64 `data:image/…` <img>, or null for anything else (remote, blob:, file:, malformed, or too big to bother with). */
+function dataUriImage(img: Element): PastedImage | null {
+  const m = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(img.getAttribute('src') ?? '')
+  if (!m || m[2]!.length > IMAGE_LIMITS.maxSourceBytes * 1.4) return null
+  try {
+    const binary = atob(m[2]!.replace(/\s/g, ''))
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return { bytes, mime: m[1]!.toLowerCase(), name: (img.getAttribute('alt') ?? '').trim() }
+  } catch {
+    return null
+  }
+}
+
+/** Puts every image token on a line of its own, with a blank line each side, so it can become an image block. */
+function isolateImageTokens(md: string): string {
+  return md.split('\n').flatMap((line) => {
+    if (!IMAGE_TOKEN.test(line)) return [line]
+    const parts = line.split(new RegExp(`(${IMAGE_TOKEN.source})`)).filter((p) => p.trim() !== '' && !/^\d+$/.test(p))
+    return parts.flatMap((p, i) => (i === 0 ? [p] : ['', p]))
+  }).join('\n')
+}
+
+/** Swaps each token line for the reference of the image the host stored (null = refused: the token and one blank line go). */
+function fillImageTokens(md: string, items: ({ id: string; alt: string } | null)[]): string {
+  const lines = md.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = new RegExp(`^${IMAGE_TOKEN.source}$`).exec(lines[i]!)
+    if (!m) { out.push(lines[i]!); continue }
+    const item = items[Number(m[1])]
+    if (item) out.push(imageRefLine(item.id, item.alt))
+    else if (lines[i + 1] === '') i++
+  }
+  return out.join('\n').replace(IMAGE_TOKEN_G, '')
+}
+
 export interface EditorHooks {
   onChange(): void
   onRefClick(target: RefInfo['target'], opts: { secondary: boolean }): void
@@ -43,6 +90,8 @@ export interface EditorHooks {
   onSlashTrigger(anchor: Range): void
   /** Optional: resolves a ref chip's *current* label from live team data instead of trusting the frozen text baked into stored markdown. Omitted by callers (e.g. template-picker.ts's preview) that have no team-scoped data to resolve against. */
   resolveRefLabel?: LabelResolver
+  /** Optional: supplies the pixels for image blocks. Without it every image shows the "unavailable" placeholder. */
+  images?: ImageHost
 }
 
 /**
@@ -1369,8 +1418,41 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * entirely — nothing here ever specifies a background.
    */
   function copyFormatted(): void {
-    const html = editorEl.innerHTML
-    const text = htmlToPlainText(editorEl)
+    const ids = Array.from(editorEl.querySelectorAll<HTMLElement>('.tt-img')).map((b) => b.dataset.imgId ?? '')
+    if (ids.length === 0) {
+      writeFormatted(formattedClone(new Map()))
+      return
+    }
+    // The pixels are fetched before anything is written: a slow one must not be missing from what lands.
+    const host = hooks.images
+    void Promise.all(ids.map(async (id) => [id, host ? await host.getDataUri(id) : null] as const))
+      .then((entries) => writeFormatted(formattedClone(new Map(entries))))
+      .catch((e) => console.error(e))
+  }
+
+  /**
+   * A detached copy of the note for the clipboard: every picture block becomes a centered
+   * `<p><img src=data:…></p>` (what Word, Docs or a mail client understand, none of the editor's
+   * `data-*` or `contenteditable`); a block whose bytes are unavailable is dropped.
+   */
+  function formattedClone(uris: Map<string, string | null>): HTMLElement {
+    const holder = document.createElement('div')
+    editorEl.childNodes.forEach((child) => holder.appendChild(child.cloneNode(true)))
+    for (const block of Array.from(holder.querySelectorAll<HTMLElement>('.tt-img'))) {
+      const id = block.dataset.imgId ?? ''
+      const uri = uris.get(id)
+      if (!uri) { block.remove(); continue }
+      const meta = hooks.images?.getMeta(id)
+      const img = el('img', { src: uri, alt: block.dataset.alt ?? '', ...(meta ? { width: String(meta.w), height: String(meta.h) } : {}) })
+      const p = el('p', { style: 'text-align:center' }, img)
+      block.replaceWith(p)
+    }
+    return holder
+  }
+
+  function writeFormatted(holder: HTMLElement): void {
+    const html = holder.innerHTML
+    const text = htmlToPlainText(editorEl, locale)
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
       navigator.clipboard
         .write([
@@ -1379,20 +1461,20 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
             'text/plain': new Blob([text], { type: 'text/plain' }),
           }),
         ])
-        .catch(() => copyFormattedViaSelection())
+        .catch(() => copyFormattedViaSelection(holder))
       return
     }
-    copyFormattedViaSelection()
+    copyFormattedViaSelection(holder)
   }
 
-  /** Fallback for browsers/contexts without the async Clipboard API's write() (or where it's denied at runtime) — selects a detached, background-free clone of the editor's *children* (not editorEl itself, whose `.editor` class carries the ruled-paper background texture) and uses the classic execCommand('copy'). */
-  function copyFormattedViaSelection(): void {
+  /** Fallback for browsers/contexts without the async Clipboard API's write() (or where it's denied at runtime) — selects the background-free clone of the editor's *children* (not editorEl itself, whose `.editor` class carries the ruled-paper background texture) and uses the classic execCommand('copy'). */
+  function copyFormattedViaSelection(holder: HTMLElement): void {
     const wrapper = document.createElement('div')
     wrapper.style.position = 'fixed'
     wrapper.style.left = '-9999px'
     wrapper.style.top = '0'
     wrapper.style.background = '#fff'
-    editorEl.childNodes.forEach((child) => wrapper.appendChild(child.cloneNode(true)))
+    wrapper.append(...Array.from(holder.childNodes))
     document.body.appendChild(wrapper)
     const range = document.createRange()
     range.selectNodeContents(wrapper)
@@ -1404,14 +1486,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     document.body.removeChild(wrapper)
   }
 
-  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved). */
+  /** Copies the editor's current content to the clipboard as plain text (no markdown syntax, no HTML — just the readable text a screen would show, with line breaks preserved; a picture shows as `[image: ALT]`). */
   function copyPlain(): void {
-    copyText(htmlToPlainText(editorEl))
+    copyText(htmlToPlainText(editorEl, locale))
   }
 
   /** Copies the editor's current content to the clipboard as its raw markdown source (the same text the field is stored as). */
   function copyMarkdown(): void {
     copyText(htmlToMd(editorEl))
+    // The references mean nothing outside this file, so say where the pictures went.
+    if (editorEl.querySelector('.tt-img')) toast(t(locale, 'img_copy_md_toast'), { key: 'image-copy-md' })
   }
 
   // --- copy-options menu (🗐 toolbar button) --------------------------------
@@ -1543,7 +1627,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (overflow > 0) editorEl.scrollTop += overflow
   }
 
-  function onInput(): void {
+  function onInput(e?: Event): void {
+    // An undo can bring back a picture block the way the browser had it; make sure it shows its pixels.
+    if (e instanceof InputEvent && e.inputType.startsWith('history')) hydrateImages()
     ensureBlock()
     handleAutoFormat()
     checkTriggers()
@@ -1611,6 +1697,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && SHORTCUTS.some((sc) => sc.match(e))) e.preventDefault()
       return
     }
+    if ((e.key === 'Backspace' || e.key === 'Delete') && removeSelectedImage()) {
+      e.preventDefault()
+      return
+    }
+    // A clicked picture stays "selected" only until the next key: moving the caret on or typing must not leave
+    // a later Backspace aimed at a picture that is no longer the thing being edited.
+    if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) selectImageBlock(null)
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the
@@ -1748,7 +1841,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     })
   }
 
-  function htmlClipboardToMd(html: string): string {
+  function htmlClipboardToMd(html: string, pastedImages?: PastedImage[]): string {
     // Untrusted clipboard HTML parsed here only ever reaches execCommand('insertHTML', ...)
     // in onPaste after inline() (markdown.ts) escapes all text and reinserts it via
     // Private-Use-Area placeholders, so attribute/tag breakout isn't possible — see the
@@ -1758,6 +1851,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // comments under our workflow, and query-filters can't be scoped to one file.
     const wrapper = new DOMParser().parseFromString(html, 'text/html').body
     sanitizeRefAttrs(wrapper)
+    // Pictures never travel as markup: a data: image is set aside to be imported (its place kept by a token); any other
+    // <img> (remote, blob:, file:) is dropped and never fetched.
+    wrapper.querySelectorAll('img').forEach((img) => {
+      const pic = pastedImages ? dataUriImage(img) : null
+      if (pic && pastedImages) {
+        pastedImages.push(pic)
+        img.replaceWith(wrapper.ownerDocument.createTextNode(`\u27e6tt-img:${pastedImages.length - 1}\u27e7`))
+      } else {
+        img.remove()
+      }
+    })
     // Word sends list items as <p style="mso-list:…"> paragraphs; make them real lists first.
     convertWordLists(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
@@ -1770,7 +1874,114 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       while (wrapper.firstChild) line.appendChild(wrapper.firstChild)
       wrapper.appendChild(line)
     }
-    return htmlToMd(wrapper)
+    const md = htmlToMd(wrapper)
+    return pastedImages && pastedImages.length > 0 ? isolateImageTokens(md) : md
+  }
+
+  // --- adding images: shared by the toolbar button, paste and drop ------------
+
+  /** The caret as a Range, when it is inside this editor. */
+  function rememberCaret(): Range | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    const range = sel.getRangeAt(0)
+    return editorEl.contains(range.commonAncestorContainer) ? range.cloneRange() : null
+  }
+
+  /**
+   * Puts the caret back where the user had it (or at the end of the note) before inserting after an async import.
+   * Images are top-level blocks, so a caret inside a list, quote, code block, table or heading continues after that block.
+   */
+  function restoreInsertCaret(saved: Range | null): void {
+    editorEl.focus()
+    const sel = window.getSelection()
+    if (!sel) return
+    let range = saved && editorEl.contains(saved.commonAncestorContainer) ? saved : null
+    if (!range) {
+      range = document.createRange()
+      range.selectNodeContents(editorEl)
+      range.collapse(false)
+    }
+    let top: Node | null = range.startContainer
+    while (top && top.parentNode !== editorEl) top = top.parentNode
+    if (top instanceof HTMLElement && /^(UL|OL|PRE|BLOCKQUOTE|TABLE|H[1-6])$/.test(top.tagName)) {
+      range = document.createRange()
+      range.setStartAfter(top)
+      range.collapse(true)
+    }
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  /** Inserts markdown at the caret the way a paste does, then settles the DOM (flat blocks, image spacing, highlighting, pictures). */
+  function insertMarkdown(md: string): void {
+    const styledBefore = styledElements()
+    document.execCommand('insertHTML', false, renderMd(md))
+    // insertHTML nests a multi-block fragment inside the caret's block when
+    // that block was empty — restore the editor's flat-block-children shape
+    // before anything reads it back as markdown (see the fn's own comment).
+    flattenTopLevelBlockWrappers(editorEl)
+    stripPastedStyles(styledBefore)
+    normalizeImageSpacing(editorEl)
+    decorateCodeBlocks()
+    syncPreHighlight()
+    hydrateImages()
+    scheduleChange()
+  }
+
+  /** Imports the files and inserts the ones the host accepted as image blocks at `caret`. */
+  async function addImages(files: File[], caret: Range | null): Promise<void> {
+    const host = hooks.images
+    if (!host || editorsReadOnly || files.length === 0) return
+    const items = (await host.importFiles(files)).filter((i): i is { id: string; alt: string } => i !== null)
+    if (destroyed || editorsReadOnly || items.length === 0) return
+    restoreInsertCaret(caret)
+    // A blank line before and after the run; normalizeImageSpacing settles the edges against the neighbours.
+    insertMarkdown('\n' + items.map((i) => imageRefLine(i.id, i.alt)).join('\n\n') + '\n')
+  }
+
+  /** Pasted HTML that carried pictures: import them, then insert the whole paste at once (text and pictures in their original order). */
+  async function pasteWithImages(md: string, pics: PastedImage[]): Promise<void> {
+    const caret = rememberCaret()
+    const files = pics.map((p) => new File([p.bytes as BlobPart], p.name, { type: p.mime }))
+    const items = hooks.images ? await hooks.images.importFiles(files) : files.map(() => null)
+    if (destroyed || editorsReadOnly) return
+    const filled = fillImageTokens(md, items)
+    if (!filled.trim()) return
+    restoreInsertCaret(caret)
+    insertMarkdown(filled)
+  }
+
+  /** The image files on a clipboard or drag (from `files`, else from file `items`). */
+  function imageFilesOf(dt: DataTransfer | null | undefined): File[] {
+    if (!dt) return []
+    const out = Array.from(dt.files ?? []).filter((f) => f.type.startsWith('image/'))
+    if (out.length === 0) {
+      for (const item of Array.from(dt.items ?? [])) {
+        const file = item.kind === 'file' && item.type.startsWith('image/') ? item.getAsFile() : null
+        if (file) out.push(file)
+      }
+    }
+    return out
+  }
+
+  const dragHasFiles = (dt: DataTransfer | null): boolean => !!dt && Array.from(dt.types ?? []).includes('Files')
+
+  // Without this a dropped file would be opened by the browser, replacing the whole app with the picture.
+  function onDragOver(e: DragEvent): void {
+    if (!dragHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = editorsReadOnly ? 'none' : 'copy'
+  }
+
+  function onDrop(e: DragEvent): void {
+    if (!dragHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    if (editorsReadOnly) return
+    // Drop where the pointer is (caretRangeFromPoint is Chromium's; elsewhere the last caret does).
+    const at = document.caretRangeFromPoint?.(e.clientX, e.clientY) ?? null
+    const caret = at && editorEl.contains(at.commonAncestorContainer) ? at : rememberCaret()
+    void addImages(Array.from(e.dataTransfer!.files), caret)
   }
 
   function onPaste(e: ClipboardEvent): void {
@@ -1785,7 +1996,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     const html = e.clipboardData?.getData('text/html')
-    const md = html ? htmlClipboardToMd(html) : ''
+    const pastedImages: PastedImage[] = []
+    const md = html ? htmlClipboardToMd(html, pastedImages) : ''
+    if (pastedImages.length > 0) { void pasteWithImages(md, pastedImages); return }
+    // A screenshot: an image file and no text worth keeping. (HTML that has text wins over a preview image sent with it.)
+    if (!md.trim()) {
+      const files = imageFilesOf(e.clipboardData)
+      if (files.length > 0) { void addImages(files, rememberCaret()); return }
+    }
     if (md.trim()) {
       const styledBefore = styledElements()
       document.execCommand('insertHTML', false, renderMd(md))
@@ -1876,7 +2094,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const holder = document.createElement('div')
     holder.appendChild(range.cloneContents())
     e.clipboardData.setData('text/html', holder.innerHTML)
-    e.clipboardData.setData('text/plain', htmlToPlainText(holder))
+    e.clipboardData.setData('text/plain', htmlToPlainText(holder, locale))
     e.preventDefault()
     return true
   }
@@ -1988,6 +2206,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       expandPre(collapsed)
       if (cbActivePre === collapsed) { syncCbGlyphs(); positionCbControls() }
     }
+    selectImageBlock((e.target as HTMLElement).closest?.('.tt-img') as HTMLElement | null)
     handleRefActivate(e)
     handleExternalLinkActivate(e)
   }
@@ -2010,6 +2229,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
+  editorEl.addEventListener('dragover', onDragOver)
+  editorEl.addEventListener('drop', onDrop)
   editorEl.addEventListener('copy', onCopy)
   editorEl.addEventListener('cut', onCut)
   // `selectionchange` only fires on `document`, never on an element — it is
@@ -2056,6 +2277,22 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return btn
   }
 
+  // The picker behind the image button. Kept in the DOM (hidden) so one input serves every click; its caret is remembered at click time because the dialog takes focus.
+  const imageInput = el('input', { type: 'file', accept: IMAGE_ACCEPT, tabindex: '-1', 'aria-hidden': 'true' }) as HTMLInputElement
+  imageInput.multiple = true
+  imageInput.hidden = true
+  let imageCaret: Range | null = null
+  imageInput.addEventListener('change', () => {
+    const files = Array.from(imageInput.files ?? [])
+    imageInput.value = ''
+    void addImages(files, imageCaret)
+  })
+  function openImagePicker(): void {
+    if (editorsReadOnly) return
+    imageCaret = rememberCaret()
+    imageInput.click()
+  }
+
   const toolbar = el(
     'div',
     { class: 'tt-editor-toolbar' },
@@ -2073,6 +2310,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton(icon('codeBlock'), t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton(icon('hr'), t(locale, 'editor_hr_title'), () => insertHr()),
     toolbarButton(icon('link'), t(locale, 'editor_link_title'), () => { void insertLink() }),
+    toolbarButton(icon('image'), t(locale, 'editor_image_title'), () => openImagePicker()),
     toolbarButton(icon('clearFmt'), t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     toolbarButton(icon('template'), t(locale, 'editor_templates_title'), () => openTemplatePicker()),
@@ -2082,7 +2320,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale), 'tt-editor-btn-readonly-safe')
   )
 
-  const root = el('div', { class: 'tt-editor' }, toolbar, editorEl)
+  const root = el('div', { class: 'tt-editor' }, toolbar, editorEl, imageInput)
 
   // --- code-block collapse + copy chrome --------------------------------
   // A bare <pre> stays a direct editor child (keeps htmlToMd and every
@@ -2226,6 +2464,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * blurred), so re-highlight every block unconditionally — none holds the
    * caret now. */
   function onEditorBlur(): void {
+    selectImageBlock(null)
     editorEl.querySelectorAll<HTMLElement>('pre').forEach(highlightPre)
   }
 
@@ -2302,6 +2541,69 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   })
   cbControls.addEventListener('mouseleave', hideCbControlsSoon)
 
+  // --- image blocks ----------------------------------------------------
+  // mdToHtml renders an image line as an empty `.tt-img` block carrying its
+  // id and alt (core/markdown.ts); the pixels are filled in here, from the
+  // host, so a markdown load never waits on decoding. The `<img>` is display
+  // only: htmlToMd reads the block's attributes, never its children.
+  let destroyed = false
+
+  function markImageMissing(block: HTMLElement): void {
+    block.classList.add('tt-img-missing')
+    block.textContent = t(locale, 'img_missing')
+  }
+
+  /** Fills every empty image block with its picture. Blocks already filled or marked missing are skipped. */
+  function hydrateImages(): void {
+    editorEl.querySelectorAll<HTMLElement>('.tt-img').forEach((block) => {
+      if (block.firstChild || block.dataset.imgLoading) return
+      const id = block.dataset.imgId ?? ''
+      const host = hooks.images
+      if (!host) { markImageMissing(block); return }
+      const meta = host.getMeta(id)
+      // Claim the block now so a second pass (another setMd, a paste) does not start a second load for it.
+      block.dataset.imgLoading = '1'
+      void host.getDataUri(id).then((uri) => {
+        delete block.dataset.imgLoading
+        // The block was replaced (a later setMd), or the editor torn down, while the bytes were loading.
+        if (destroyed || !editorEl.contains(block) || block.firstChild) return
+        if (!uri) { markImageMissing(block); return }
+        const img = document.createElement('img')
+        img.src = uri
+        img.alt = block.dataset.alt ?? ''
+        img.draggable = false
+        if (meta) { img.width = meta.w; img.height = meta.h }
+        block.appendChild(img)
+      })
+    })
+  }
+
+  function selectImageBlock(block: HTMLElement | null): void {
+    editorEl.querySelectorAll('.tt-img.is-selected').forEach((b) => { if (b !== block) b.classList.remove('is-selected') })
+    if (block && editorEl.contains(block)) block.classList.add('is-selected')
+  }
+
+  /** Deletes the selected image block, if any. Returns whether it did (the caller then swallows the key). */
+  function removeSelectedImage(): boolean {
+    const block = editorEl.querySelector<HTMLElement>('.tt-img.is-selected')
+    if (!block) return false
+    // Through the browser's own delete command, so the removal sits on the native undo stack (Ctrl+Z brings the
+    // picture back). Without that command (or if it leaves the block), drop the node directly.
+    const sel = window.getSelection()
+    if (sel) {
+      const range = document.createRange()
+      range.selectNode(block)
+      sel.removeAllRanges()
+      sel.addRange(range)
+      document.execCommand('delete')
+    }
+    if (editorEl.contains(block)) block.remove()
+    // An editor with no block left has nowhere to put the caret.
+    if (!editorEl.firstChild) editorEl.innerHTML = '<div><br></div>'
+    scheduleChange()
+    return true
+  }
+
   function getMd(): string {
     return htmlToMd(editorEl)
   }
@@ -2325,6 +2627,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // editor *does* hold the caret — it leaves the caret's own block as plain
     // text, which is what keeps the caret placeable inside it.
     syncPreHighlight()
+    hydrateImages()
   }
 
   function refreshRefLabels(): void {
@@ -2380,6 +2683,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function destroy(): void {
+    destroyed = true
     unregisterEditor(registryEntry)
     // Flush, don't drop — see flushChange(). Runs before the listeners come
     // off so ordering matches a normal debounce firing.
@@ -2389,6 +2693,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
+    editorEl.removeEventListener('dragover', onDragOver)
+    editorEl.removeEventListener('drop', onDrop)
     editorEl.removeEventListener('copy', onCopy)
     editorEl.removeEventListener('cut', onCut)
     editorEl.removeEventListener('blur', onEditorBlur)

@@ -1,4 +1,4 @@
-import { resolveAppHotkey, type AppHotkeyAction, type AppHotkeyContext } from '../src/ui/app-hotkeys'
+import { resolveAppHotkey, isBrowserSaveChord, type AppHotkeyAction, type AppHotkeyContext } from '../src/ui/app-hotkeys'
 
 const CTX: AppHotkeyContext = { teamCount: 3, focusedPaneShowsDailyNote: false }
 const ctx = (over: Partial<AppHotkeyContext> = {}): AppHotkeyContext => ({ ...CTX, ...over })
@@ -14,14 +14,23 @@ afterEach(() => {
 })
 
 describe('global Ctrl chords', () => {
-  test('Ctrl+S → save, always, even with a blocking modal open and focus in a field', () => {
-    document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
-    expect(resolve({ key: 's', code: 'KeyS', ctrlKey: true })).toEqual({ type: 'save' })
-    expect(resolve({ key: 's', code: 'KeyS', metaKey: true })).toEqual({ type: 'save' })
+  test('Ctrl+S is no app action any more (there is no manual save)', () => {
+    expect(resolve({ key: 's', code: 'KeyS', ctrlKey: true })).toBeNull()
+    expect(resolve({ key: 's', code: 'KeyS', metaKey: true })).toBeNull()
   })
 
-  test('Ctrl+S matches by physical key on a layout where e.key is not "s"', () => {
-    expect(resolve({ key: 'ß', code: 'KeyS', ctrlKey: true })).toEqual({ type: 'save' })
+  test('but it is still recognised as the browser save-page chord, so the caller can swallow it, even with a modal open', () => {
+    document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
+    expect(isBrowserSaveChord(key({ key: 's', code: 'KeyS', ctrlKey: true }))).toBe(true)
+    expect(isBrowserSaveChord(key({ key: 's', code: 'KeyS', metaKey: true }))).toBe(true)
+    // by physical key on a layout where e.key is not "s"
+    expect(isBrowserSaveChord(key({ key: 'ß', code: 'KeyS', ctrlKey: true }))).toBe(true)
+  })
+
+  test('plain S, Ctrl+Shift+S and Ctrl+Alt+S are not the save chord', () => {
+    expect(isBrowserSaveChord(key({ key: 's', code: 'KeyS' }))).toBe(false)
+    expect(isBrowserSaveChord(key({ key: 'S', code: 'KeyS', ctrlKey: true, shiftKey: true }))).toBe(false)
+    expect(isBrowserSaveChord(key({ key: 's', code: 'KeyS', ctrlKey: true, altKey: true }))).toBe(false)
   })
 
   test('Ctrl+Shift+K → palette, unless a blocking modal is open', () => {

@@ -85,7 +85,7 @@ test.describe('PWA update banner (src/main.ts reloadForUpdate / ensureServiceWor
     await Promise.all([page.waitForEvent('load'), reloadBtn.click()])
   })
 
-  test('Reload now aborts (no navigation) when the pre-reload save fails and the document is still dirty', async ({ page }) => {
+  test('Reload now aborts (no navigation) when the pre-reload file write fails', async ({ page }) => {
     await installOpfsPickerShim(page)
     await page.addInitScript(installWritePoisonInPage)
     await mockNewerVersionAvailable(page)
@@ -105,7 +105,6 @@ test.describe('PWA update banner (src/main.ts reloadForUpdate / ensureServiceWor
     const teamDialog = page.getByRole('dialog')
     await teamDialog.locator('input[name="tt-team-name"]').fill('Alpha')
     await teamDialog.getByRole('button', { name: 'OK' }).click()
-    await expect(page.locator('.tt-save-pill[data-state="dirty"]')).toBeVisible()
 
     await page.evaluate(() => {
       window.__poisonNextWrite = true
@@ -113,12 +112,12 @@ test.describe('PWA update banner (src/main.ts reloadForUpdate / ensureServiceWor
     const reloadBtn = banner.getByRole('button', { name: 'Reload now' })
     await reloadBtn.click()
 
-    // reloadForUpdate's saveNow()+flush() ran, the write failed, dirty never
-    // cleared — the reload it guards must not have happened. Same page, same
-    // document, still dirty; the button re-enables once reloadForUpdate's
+    // reloadForUpdate's Lock/Close-style write ran and failed — the reload it
+    // guards must not have happened. Same page, same document, the pill on
+    // its error state; the button re-enables once reloadForUpdate's
     // promise settles (see update-notice.ts's onclick .finally()).
     await expect(page.locator('.tt-shell')).toBeVisible()
-    await expect(page.locator('.tt-save-pill[data-state="dirty"], .tt-save-pill[data-state="error"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="error"]')).toBeVisible()
     await expect(reloadBtn).toBeEnabled()
     expect(page.url()).toContain('/pwa/index.html')
   })

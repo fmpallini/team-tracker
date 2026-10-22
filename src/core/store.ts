@@ -1,11 +1,14 @@
 import type { Doc } from './types'
 import type { ChangeScope } from './scope'
+import { createImageStore, type ImageStore } from './image-store'
 
 /** Which mutation channel fired — `update()` is 'content', `updateNav()` is 'nav'. */
 export type MutationKind = 'content' | 'nav'
 
 export interface Store {
   readonly doc: Doc
+  /** The document's image bytes. `Doc.images` is only their metadata; this is never serialized as JSON. */
+  readonly images: ImageStore
   readonly dirty: boolean
   /**
    * True after `setReadOnly(true)` — set by main.ts (Task 25) while this tab
@@ -41,7 +44,7 @@ export interface Store {
    * 'content', `updateNav()` as 'nav' — unlike `subscribe()`, which
    * `updateNav()` intentionally bypasses (nav changes shouldn't trigger a full
    * content re-render). Follow-up hardening
-   * for save-controller.ts's in-flight-save guard (Task 25 re-review item
+   * for the file writer's in-flight-write guard (Task 25 re-review item
    * #1): that guard used to ride on `subscribe()`, which only covered it by
    * call-site convention (every `updateNav()` site happens to also trigger a
    * save through some other path). `onMutate()` makes the guard correct by
@@ -62,13 +65,18 @@ export interface Store {
   onDirty(fn: (dirty: boolean) => void): () => void
   markSaved(): void
   /**
+   * Flags the document as ahead of its file without changing it — what a document opened from the browser's
+   * copy is (the file is behind), so the first file write is not skipped as "nothing changed". No mutation event, no rev bump.
+   */
+  markDirty(): void
+  /**
    * Wholesale-replaces the in-memory document (Task 25: used by the conflict
    * modal's "Reload" action after `readCurrent` + `decryptDocument`). Clears
    * `dirty` (the reloaded doc is, by definition, in sync with disk) and
    * notifies `subscribe()` listeners so the whole UI re-renders against the
    * new object.
    */
-  replaceDoc(doc: Doc): void
+  replaceDoc(doc: Doc, images?: ImageStore): void
   /**
    * Toggles read-only mode (Task 25: cross-tab lock lost). Turning it off
    * re-arms the one-shot `onBlockedUpdate` warning for the next time it's
@@ -83,6 +91,8 @@ export interface Store {
    * is blocked.
    */
   setReadOnly(readOnly: boolean, opts?: { silent?: boolean }): void
+  /** Fires when the store goes read-only or writable again (a silent provisional read-only counts), with the new state. Returns an unsubscribe function. */
+  onReadOnlyChange(fn: (readOnly: boolean) => void): () => void
   /** Fires at most once per read-only "session" — see `setReadOnly`. Returns an unsubscribe function, for the reason given on `onDirty`. */
   onBlockedUpdate(fn: () => void): () => void
 }
@@ -91,8 +101,9 @@ type ReadOnlyState =
   | { kind: 'writable' }
   | { kind: 'blocked'; silent: boolean; warned: boolean }
 
-export function createStore(initialDoc: Doc): Store {
+export function createStore(initialDoc: Doc, initialImages: ImageStore = createImageStore(null)): Store {
   let doc = initialDoc
+  let images = initialImages
   let dirty = false
   let rev = 0
   let roState: ReadOnlyState = { kind: 'writable' }
@@ -100,6 +111,7 @@ export function createStore(initialDoc: Doc): Store {
   const mutationListeners = new Set<(kind: MutationKind) => void>()
   const dirtyCallbacks = new Set<(dirty: boolean) => void>()
   const blockedCallbacks = new Set<() => void>()
+  const readOnlyListeners = new Set<(readOnly: boolean) => void>()
 
   const setDirty = (newDirty: boolean) => {
     if (newDirty !== dirty) {
@@ -121,6 +133,9 @@ export function createStore(initialDoc: Doc): Store {
   return {
     get doc() {
       return doc
+    },
+    get images() {
+      return images
     },
     get dirty() {
       return dirty
@@ -172,22 +187,34 @@ export function createStore(initialDoc: Doc): Store {
     markSaved(): void {
       setDirty(false)
     },
-    replaceDoc(newDoc: Doc): void {
+    markDirty(): void {
+      setDirty(true)
+    },
+    replaceDoc(newDoc: Doc, newImages?: ImageStore): void {
       rev++
       doc = newDoc
+      if (newImages) images = newImages
       setDirty(false)
       for (const fn of Array.from(subscribers)) { try { fn(null) } catch (e) { console.error(e) } }
       notifyMutate('content')
     },
     setReadOnly(ro: boolean, opts?: { silent?: boolean }): void {
+      const was = roState.kind !== 'writable'
       if (!ro) {
         roState = { kind: 'writable' }
-        return
+      } else {
+        roState = {
+          kind: 'blocked',
+          silent: !!opts?.silent,
+          warned: roState.kind === 'blocked' ? roState.warned : false,
+        }
       }
-      roState = {
-        kind: 'blocked',
-        silent: !!opts?.silent,
-        warned: roState.kind === 'blocked' ? roState.warned : false,
+      if (ro !== was) for (const fn of Array.from(readOnlyListeners)) { try { fn(ro) } catch (e) { console.error(e) } }
+    },
+    onReadOnlyChange(fn: (readOnly: boolean) => void): () => void {
+      readOnlyListeners.add(fn)
+      return () => {
+        readOnlyListeners.delete(fn)
       }
     },
     onBlockedUpdate(fn: () => void): () => void {

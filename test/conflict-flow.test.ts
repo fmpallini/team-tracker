@@ -3,13 +3,16 @@ import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import type { FileStamp } from '../src/core/file-stamp'
+import { createImageStore } from '../src/core/image-store'
+import { blobCodec, resetSessionKey } from '../src/core/crypto'
 
 const mocks = vi.hoisted(() => ({
   showConflictModal: vi.fn<(opts: ConflictModalOptions) => void>(),
   toast: vi.fn(),
   pickCreate: vi.fn<(name: string) => Promise<FileSession | null>>(),
   forceWrite: vi.fn<(s: FileSession, b: Uint8Array) => Promise<void>>(),
-  docToBytes: vi.fn<(doc: Doc, pw: string | null) => Promise<Uint8Array>>(),
+  docToBytes: vi.fn<(doc: Doc, pw: string | null, images: unknown, stamp: { writeId: string }) => Promise<Uint8Array>>(),
 }))
 vi.mock('../src/ui/conflict', () => ({ showConflictModal: mocks.showConflictModal }))
 vi.mock('../src/ui/modal', () => ({ toast: mocks.toast }))
@@ -26,11 +29,13 @@ function makeSession(over: Partial<FileSession> = {}): FileSession {
 
 function setup(over: Partial<ConflictFlowDeps> = {}, session = makeSession()) {
   const store: Store = createStore(createEmptyDocument('en-US'))
-  const shell = { setSaveState: vi.fn(), setTitle: vi.fn() }
+  const shell = { setTitle: vi.fn() }
+  const snapshot = { fileWritten: vi.fn(), fileReloaded: vi.fn(), fileWriteFailed: vi.fn() }
   const deps = {
-    store, session, shell,
+    store, session, shell, snapshot,
     getPassword: vi.fn<() => string | null>(() => 'pw'),
-    reloadFromDisk: vi.fn(async () => {}),
+    readFromDisk: vi.fn(async () => ({ doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: store.images, password: 'pw' as string | null, stamp: null as FileStamp | null })),
+    applyReloaded: vi.fn(),
     resolveGrants: vi.fn(async () => {}),
     reopen: vi.fn(),
     ...over,
@@ -41,7 +46,7 @@ function setup(over: Partial<ConflictFlowDeps> = {}, session = makeSession()) {
     flow.onExternalChange()
     return mocks.showConflictModal.mock.calls.at(-1)![0]
   }
-  return { store, shell, deps, flow, open }
+  return { store, shell, snapshot, deps, flow, open }
 }
 
 beforeEach(() => {
@@ -100,20 +105,116 @@ describe('dismissing the modal without a choice (Escape)', () => {
 })
 
 describe('Reload', () => {
-  test('re-reads the file, then lets the next conflict open the modal again', async () => {
+  test('re-reads the file, applies it to the open document, then lets the next conflict open the modal again', async () => {
     const { flow, deps, open } = setup()
 
     await open().onReload()
 
-    expect(deps.reloadFromDisk).toHaveBeenCalledTimes(1)
+    expect(deps.readFromDisk).toHaveBeenCalledTimes(1)
+    expect(deps.applyReloaded).toHaveBeenCalledTimes(1)
     expect(flow.isOpen()).toBe(false)
     expect(mocks.toast).not.toHaveBeenCalled()
     flow.onExternalChange()
     expect(mocks.showConflictModal).toHaveBeenCalledTimes(2)
   })
 
-  test('a failed reload surfaces a sticky error toast and still releases the guard', async () => {
-    const { flow, open } = setup({ reloadFromDisk: vi.fn(async () => { throw new Error('read failed') }) })
+  test('the browser copy adopts the stamp of the file that was loaded, after the document was replaced', async () => {
+    const order: string[] = []
+    const stamp = { writeId: 'c'.repeat(32), savedAt: 3 }
+    const adoptFileStamp = vi.fn(async () => { order.push('adopt') })
+    const { store, deps, open } = setup({ persister: { adoptFileStamp } as never, applyReloaded: vi.fn(() => { order.push('apply') }) })
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: store.images, password: 'pw', stamp,
+    })
+
+    await open().onReload()
+
+    expect(order).toEqual(['apply', 'adopt'])
+    expect(adoptFileStamp).toHaveBeenCalledWith(stamp)
+  })
+
+  test('a file whose password was changed elsewhere re-keys the browser copy to it, before adopting the stamp', async () => {
+    resetSessionKey()
+    const order: string[] = []
+    const rekey = vi.fn(async (_codec: { salt: Uint8Array } | null) => { order.push('rekey') })
+    const adoptFileStamp = vi.fn(async () => { order.push('adopt') })
+    const { store, deps, open } = setup({ persister: { rekey, adoptFileStamp } as never, getPassword: () => 'old' })
+    store.images.rekey(await blobCodec('old'))
+    resetSessionKey()
+    const reloadedImages = createImageStore(await blobCodec('new'))
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: reloadedImages, password: 'new', stamp: null,
+    })
+
+    await open().onReload()
+
+    expect(order).toEqual(['rekey', 'adopt'])
+    const codec = rekey.mock.calls[0]![0]
+    expect(codec).not.toBeNull()
+    expect(Array.from(codec!.salt)).toEqual(Array.from(reloadedImages.codec()!.header!.salt))
+  }, 240000)
+
+  test('a file whose password was removed elsewhere re-keys the browser copy to plain; an unchanged key does not touch it', async () => {
+    const rekey = vi.fn(async () => {})
+    const { store, deps, open } = setup({ persister: { rekey, adoptFileStamp: vi.fn(async () => {}) } as never })
+    await store.images.rekey(await blobCodec('was'))
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: createImageStore(null), password: null, stamp: null,
+    })
+    await open().onReload()
+    expect(rekey).toHaveBeenCalledWith(null)
+
+    rekey.mockClear()
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: createImageStore(null), password: null, stamp: null,
+    })
+    // `applyReloaded` is mocked, so the store still holds the old codec: make "before" plain too
+    await store.images.rekey(null)
+    await open().onReload()
+    expect(rekey).not.toHaveBeenCalled()
+  }, 120000)
+
+  test('a re-key that fails after a good reload is reported, and the reload still stands', async () => {
+    const rekey = vi.fn(async () => { throw new Error('quota') })
+    const adoptFileStamp = vi.fn(async () => {})
+    const { store, deps, snapshot, open } = setup({ persister: { rekey, adoptFileStamp } as never })
+    await store.images.rekey(await blobCodec('was'))
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: createImageStore(null), password: null, stamp: null,
+    })
+    await open().onReload()
+    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('browser'), expect.objectContaining({ sticky: true }))
+    expect(adoptFileStamp).toHaveBeenCalled()
+    expect(snapshot.fileReloaded).toHaveBeenCalled()
+  }, 120000)
+
+  test('a reload that went through tells the file writer the conflict is over; a refused one does not', async () => {
+    const { snapshot, open } = setup()
+    await open().onReload()
+    expect(snapshot.fileReloaded).toHaveBeenCalledTimes(1)
+
+    snapshot.fileReloaded.mockClear()
+    const refused = setup({ readFromDisk: vi.fn(async () => ({ doc: createEmptyDocument('en-US'), images: undefined as never, password: null, stamp: null })) })
+    await refused.open().onReload()
+    expect(refused.snapshot.fileReloaded).not.toHaveBeenCalled()
+  })
+
+  test('a file with another docId is refused: the open document is untouched and the user is told', async () => {
+    const { flow, deps, store, open } = setup({
+      readFromDisk: vi.fn(async () => ({ doc: createEmptyDocument('en-US'), images: undefined as never, password: null, stamp: null })),
+    })
+    const before = JSON.stringify(store.doc)
+
+    await open().onReload()
+
+    expect(deps.applyReloaded).not.toHaveBeenCalled()
+    expect(JSON.stringify(store.doc)).toBe(before)
+    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('reload'), { sticky: true })
+    expect(flow.isOpen()).toBe(false)
+  })
+
+  test('a failed read surfaces a sticky error toast and still releases the guard', async () => {
+    const { flow, open } = setup({ readFromDisk: vi.fn(async () => { throw new Error('read failed') }) })
 
     await open().onReload()
 
@@ -124,47 +225,78 @@ describe('Reload', () => {
 
 describe('Overwrite', () => {
   test('force-writes the current document under the live password, then marks it saved', async () => {
-    const { flow, store, shell, deps, open } = setup()
+    const { flow, store, shell, snapshot, deps, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
     expect(store.dirty).toBe(true)
 
     await open().onOverwrite()
 
     expect(deps.getPassword).toHaveBeenCalled()
-    expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw')
+    expect(mocks.docToBytes).toHaveBeenCalledWith(store.doc, 'pw', store.images, expect.objectContaining({ writeId: expect.any(String) }))
     expect(mocks.forceWrite).toHaveBeenCalledWith(deps.session, BYTES)
     expect(store.dirty).toBe(false)
-    expect(shell.setSaveState).toHaveBeenCalledWith('saved')
-    expect(shell.setTitle).toHaveBeenCalledWith('team.tmv', false)
+    expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
+    expect(shell.setTitle).toHaveBeenCalledWith('team.tmv')
     expect(flow.isOpen()).toBe(false)
   })
 
   test('an edit that lands while the overwrite is in flight stays dirty instead of being marked saved', async () => {
-    const { store, shell, open } = setup()
+    const { store, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
     mocks.forceWrite.mockImplementation(async () => { store.update((d) => { d.prefs.fontSize = 'XL' }) })
 
     await open().onOverwrite()
 
     expect(store.dirty).toBe(true)
-    expect(shell.setSaveState).not.toHaveBeenCalledWith('saved')
+  })
+
+  test('commits the written stamp (and the revision it holds) to the persister', async () => {
+    const markFileWritten = vi.fn(async () => {})
+    const { store, open } = setup({ persister: { markFileWritten } as never })
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    const rev = store.rev
+
+    await open().onOverwrite()
+
+    const stampWritten = mocks.docToBytes.mock.calls.at(-1)![3]
+    expect(markFileWritten).toHaveBeenCalledWith(stampWritten, rev)
+  })
+
+  test('tells the file writer the forced write landed, and only then', async () => {
+    const { store, snapshot, open } = setup()
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    await open().onOverwrite()
+    expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
+
+    mocks.forceWrite.mockRejectedValueOnce(new Error('disk full'))
+    await open().onOverwrite()
+    expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
+  })
+
+  test('a failed overwrite does not touch the persister', async () => {
+    mocks.forceWrite.mockRejectedValue(new Error('disk full'))
+    const markFileWritten = vi.fn(async () => {})
+    const { store, open } = setup({ persister: { markFileWritten } as never })
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    await open().onOverwrite()
+    expect(markFileWritten).not.toHaveBeenCalled()
   })
 
   test('a password-less file is written under a null password', async () => {
     const { open } = setup({ getPassword: () => null })
     await open().onOverwrite()
-    expect(mocks.docToBytes).toHaveBeenCalledWith(expect.anything(), null)
+    expect(mocks.docToBytes).toHaveBeenCalledWith(expect.anything(), null, expect.anything(), expect.anything())
   })
 
   test('a lapsed permission shows the permission state and a toast whose action re-requests access', async () => {
     mocks.forceWrite.mockRejectedValue(new DOMException('no', 'NotAllowedError'))
-    const { flow, store, shell, deps, open } = setup()
+    const { flow, store, snapshot, deps, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
 
     await open().onOverwrite()
 
-    expect(shell.setSaveState).toHaveBeenCalledWith('permission')
-    expect(shell.setSaveState).not.toHaveBeenCalledWith('saved')
+    expect(snapshot.fileWriteFailed).toHaveBeenCalledWith('permission')
+    expect(snapshot.fileWritten).not.toHaveBeenCalled()
     expect(store.dirty).toBe(true)
     const [, opts] = mocks.toast.mock.calls[0]!
     expect(opts.sticky).toBe(true)
@@ -177,13 +309,13 @@ describe('Overwrite', () => {
 
   test('any other write failure shows the error state and a sticky toast, and stays dirty', async () => {
     mocks.forceWrite.mockRejectedValue(new Error('disk full'))
-    const { flow, store, shell, open } = setup()
+    const { flow, store, snapshot, open } = setup()
     store.update((d) => { d.prefs.fontSize = 'L' })
 
     await open().onOverwrite()
 
-    expect(shell.setSaveState).toHaveBeenCalledWith('error')
-    expect(shell.setSaveState).not.toHaveBeenCalledWith('permission')
+    expect(snapshot.fileWriteFailed).toHaveBeenCalledWith('error')
+    expect(snapshot.fileWriteFailed).not.toHaveBeenCalledWith('permission')
     const [, errOpts] = mocks.toast.mock.calls[0]!
     expect(errOpts.key).toBe('save-error')
     expect(mocks.toast).toHaveBeenCalledWith(expect.any(String), { sticky: true, key: 'save-error' })
@@ -193,12 +325,12 @@ describe('Overwrite', () => {
 
   test('a failure while serializing is handled like a failed write', async () => {
     mocks.docToBytes.mockRejectedValue(new Error('encrypt failed'))
-    const { flow, shell, open } = setup()
+    const { flow, snapshot, open } = setup()
 
     await open().onOverwrite()
 
     expect(mocks.forceWrite).not.toHaveBeenCalled()
-    expect(shell.setSaveState).toHaveBeenCalledWith('error')
+    expect(snapshot.fileWriteFailed).toHaveBeenCalledWith('error')
     expect(flow.isOpen()).toBe(false)
   })
 })
@@ -218,32 +350,13 @@ describe('Fork', () => {
 
   test('a dismissed picker changes nothing: resolves false, writes nothing, keeps the modal guard up', async () => {
     mocks.pickCreate.mockResolvedValue(null)
-    const { flow, store, deps, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
-
+    const { flow, deps, open } = setup()
     const done = await open().onFork!()
 
     expect(done).toBe(false)
     expect(mocks.forceWrite).not.toHaveBeenCalled()
     expect(deps.reopen).not.toHaveBeenCalled()
-    expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-    expect(store.doc.prefs.backupHandleId).toBe('h')
     expect(flow.isOpen()).toBe(true)
-  })
-
-  test('detaches the backup mirror BEFORE serializing, so the fork file never points at the original\'s .bck', async () => {
-    mocks.pickCreate.mockResolvedValue(FORK)
-    const { store, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
-    let seenAtSerialize: unknown
-    mocks.docToBytes.mockImplementation(async (doc) => {
-      seenAtSerialize = { on: doc.prefs.dailyBackupEnabled, id: doc.prefs.backupHandleId }
-      return BYTES
-    })
-
-    await open().onFork!()
-
-    expect(seenAtSerialize).toEqual({ on: false, id: null })
   })
 
   test('writes the fork under the live password, marks the document saved, and re-opens it on the fork', async () => {
@@ -257,8 +370,25 @@ describe('Fork', () => {
     expect(mocks.forceWrite).toHaveBeenCalledWith(FORK, BYTES)
     expect(mocks.forceWrite).not.toHaveBeenCalledWith(deps.session, expect.anything())
     expect(store.dirty).toBe(false)
-    expect(deps.reopen).toHaveBeenCalledWith(FORK, store.doc, 'pw')
+    const stampWritten = mocks.docToBytes.mock.calls.at(-1)![3]
+    expect(deps.reopen).toHaveBeenCalledWith(FORK, expect.objectContaining({ prefs: store.doc.prefs }), 'pw', store.images, stampWritten)
     expect(flow.isOpen()).toBe(false)
+  })
+
+  test('the fork is a new document: it gets its own docId, the original keeps its own', async () => {
+    mocks.pickCreate.mockResolvedValue(FORK)
+    const { store, deps, open } = setup()
+    store.update((d) => { d.prefs.fontSize = 'L' })
+    const originalId = store.doc.docId
+
+    await open().onFork!()
+
+    const written = mocks.docToBytes.mock.calls.at(-1)![0]
+    const reopened = (deps.reopen as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Doc
+    expect(written.docId).toMatch(/^[0-9a-f]{32}$/)
+    expect(written.docId).not.toBe(originalId)
+    expect(reopened.docId).toBe(written.docId)
+    expect(store.doc.docId).toBe(originalId)
   })
 
   test('releases the guard BEFORE re-opening, so the new document can raise its own conflict', async () => {
@@ -286,28 +416,16 @@ describe('Fork', () => {
     expect(flow.isOpen()).toBe(true)
   })
 
-  test('a failed fork write leaves the original backup settings alone', async () => {
+  test('a failed fork write leaves the original document dirty and open on the conflict', async () => {
     mocks.pickCreate.mockResolvedValue(FORK)
     mocks.forceWrite.mockRejectedValue(new Error('disk full'))
-    const { store, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
+    const { flow, store, deps, open } = setup()
+    store.update((d) => { d.prefs.fontSize = 'L' })
 
     await expect(open().onFork!()).rejects.toThrow('disk full')
 
-    expect(store.doc.prefs.dailyBackupEnabled).toBe(true)
-    expect(store.doc.prefs.backupHandleId).toBe('h')
-  })
-
-  test('after a successful fork the re-opened document has the backup mirror detached', async () => {
-    mocks.pickCreate.mockResolvedValue(FORK)
-    const { store, deps, open } = setup()
-    store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'h' })
-
-    await open().onFork!()
-
-    const reopened = (deps.reopen as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Doc
-    expect(reopened.prefs.dailyBackupEnabled).toBe(false)
-    expect(reopened.prefs.backupHandleId).toBeNull()
-    expect(store.dirty).toBe(false)
+    expect(store.dirty).toBe(true)
+    expect(deps.reopen).not.toHaveBeenCalled()
+    expect(flow.isOpen()).toBe(true)
   })
 })

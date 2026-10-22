@@ -17,10 +17,11 @@ import { teamRefCandidates } from '../core/search'
 import { createEditor, type Editor } from './editor'
 import { attachAtAutocomplete, makeRefClickHandler, makeRefLabelResolver } from './atref'
 import { attachTemplatePicker } from './template-picker'
+import { createImageHost } from './image-host'
 
 export interface RichEditorBundle {
   editor: Editor
-  /** Tears down the @ref dropdown, template-picker dropdown, and the editor itself, in that order. Idempotent-safe to call once per bundle. */
+  /** Tears down the @ref dropdown, template-picker dropdown, the editor itself and its image host, in that order. Idempotent-safe to call once per bundle. */
   dispose(): void
 }
 
@@ -36,6 +37,7 @@ export function createRichEditorBundle(opts: {
   getTemplates(): Template[]
   getTemplateCtx(): TemplateCtx
 }): RichEditorBundle {
+  const images = createImageHost(opts.store, opts.locale)
   const editor: Editor = createEditor(
     {
       onChange() {
@@ -45,6 +47,7 @@ export function createRichEditorBundle(opts: {
       onAtTrigger() {},
       onSlashTrigger() {},
       resolveRefLabel: makeRefLabelResolver(opts.store, opts.teamId),
+      images,
     },
     opts.locale
   )
@@ -67,6 +70,7 @@ export function createRichEditorBundle(opts: {
       atHandle.dispose()
       tplHandle.dispose()
       editor.destroy()
+      images.dispose()
     },
   }
 }

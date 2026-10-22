@@ -14,10 +14,10 @@ function fakeSaveStatus(): { api: SaveStatusApi; emit: (info: SaveStatusInfo) =>
   let requestCount = 0
   return {
     api: {
-      requestSaveNow: () => { requestCount++ },
+      requestPillAction: () => { requestCount++ },
       subscribeSaveState: (cb) => {
         subs.add(cb)
-        cb({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false, backup: null })
+        cb({ health: 'ok', label: 'Saved', title: 'Saved', clickable: false, stale: false })
         return () => { subs.delete(cb) }
       },
     },
@@ -1488,7 +1488,7 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     expect(pill.style.display).toBe('none')
   })
 
-  test('the mini pill mirrors whatever ctx.saveStatus broadcasts, including after the state changes', () => {
+  test('the mini pill mirrors whatever ctx.saveStatus broadcasts, including after the health changes', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
     const fake = fakeSaveStatus()
@@ -1499,29 +1499,22 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     const pillText = document.querySelector('.tt-save-pill-text')!
     expect(pillText.textContent).toBe('Saved') // fakeSaveStatus's immediate subscribe() callback
 
-    fake.emit({ state: 'dirty', label: 'Unsaved', title: 'Unsaved changes', clickable: true, backup: null })
-    expect(pillText.textContent).toBe('Unsaved')
-    expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('dirty')
+    fake.emit({ health: 'permission', label: 'Grant access', title: 'Click to grant', clickable: true, stale: false })
+    expect(pillText.textContent).toBe('Grant access')
+    expect(document.querySelector('.tt-save-pill')!.getAttribute('data-state')).toBe('permission')
   })
 
-  test('the mini pill is clickable for backup-permission and backup-password-mismatch, not backup-error', () => {
-    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
-    const { container, store, pm, loc } = setup(team)
+  test('the mini pill turns amber with the header pill when an export goes stale', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'a' })] }))
     const fake = fakeSaveStatus()
     render(container, loc, store, pm, 0, fake.api)
-    openModal(container)
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
-
     const pill = document.querySelector('.tt-save-pill')!
-
-    fake.emit({ state: 'backup-permission', label: 'Backup: grant needed', title: 'Backup: grant needed', clickable: true, backup: null })
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
-
-    fake.emit({ state: 'backup-password-mismatch', label: 'Backup: old password', title: 'Backup: old password', clickable: true, backup: null })
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
-
-    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false, backup: null })
-    expect(pill.classList.contains('tt-save-pill-clickable')).toBe(false)
+    fake.emit({ health: 'export', label: 'Export file · 3 h ago', title: 'x', clickable: true, stale: true })
+    expect(pill.classList.contains('tt-save-pill-stale')).toBe(true)
+    fake.emit({ health: 'export', label: 'Export file · 5 min ago', title: 'x', clickable: true, stale: false })
+    expect(pill.classList.contains('tt-save-pill-stale')).toBe(false)
   })
 
   test('the mini pill follows info.clickable', () => {
@@ -1531,11 +1524,11 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     document.querySelector<HTMLButtonElement>('.tt-kanban-expand-btn')!.click()
     const pill = document.querySelector('.tt-save-pill')!
-    fake.emit({ state: 'saved', label: 'x', title: 'x', clickable: true, backup: null })
+    fake.emit({ health: 'ok', label: 'x', title: 'x', clickable: true, stale: false })
     expect(pill.classList.contains('tt-save-pill-clickable')).toBe(true)
   })
 
-  test('clicking the mini pill triggers ctx.saveStatus.requestSaveNow(), the same explicit-save action Ctrl+S uses', () => {
+  test('clicking the mini pill triggers ctx.saveStatus.requestPillAction(), the same action a click on the header pill does', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
     const fake = fakeSaveStatus()
@@ -1547,22 +1540,12 @@ describe('renderActionItems — expand mode and the header save-state pill', () 
     expect(fake.requestCount()).toBe(1)
   })
 
-  test('the mini pill shows the backup tab only while backup is on, with the health the shell reports', () => {
+  test('the mini pill has no backup tab', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a' })] })
     const { container, store, pm, loc } = setup(team)
-    const fake = fakeSaveStatus()
-    render(container, loc, store, pm, 0, fake.api)
+    render(container, loc, store, pm, 0, fakeSaveStatus().api)
     openModal(container)
-    const tab = document.querySelector<HTMLElement>('.tt-save-pill-backup-tab')!
-    expect(tab.style.display).toBe('none')
-
-    fake.emit({ state: 'backup-error', label: 'Backup: error', title: 'Backup: error', clickable: false, backup: { health: 'error', title: 'Backup: error' } })
-    expect(tab.style.display).toBe('')
-    expect(tab.dataset.backup).toBe('error')
-    expect(tab.title).toBe('Backup: error')
-
-    fake.emit({ state: 'saved', label: 'Saved', title: 'Saved', clickable: false, backup: null })
-    expect(tab.style.display).toBe('none')
+    expect(document.querySelector('.tt-save-pill-backup-tab')).toBeNull()
   })
 
   test('closing the modal unsubscribes from saveStatus, same as the container disposer would if the module unmounted mid-edit', () => {

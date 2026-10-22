@@ -19,6 +19,8 @@
 import { createSearchIndex, searchDocument, type SearchIndex } from '../src/core/search'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyTeam } from '../src/core/document'
+import { unlinkRefsInTeam } from '../src/core/refs'
+import { deleteInTeamWithUndo, type UndoOffer } from '../src/core/undo-delete'
 import type { Section } from '../src/core/scope'
 import type { Doc, Team } from '../src/core/types'
 import { buildRichDoc, makeRng, sentence, type RichDocShape } from './search-fixture'
@@ -53,7 +55,32 @@ const scoped = (store: Store, team: Team, sections: readonly Section[], fn: (d: 
   store.update((d) => { fn(d, d.teams.find((t) => t.id === team.id)!) }, { teamId: team.id, sections })
 }
 
+// The undo offer of the latest delete-with-unlink, per store; the next op that moves the document expires it, as in the app.
+const offers = new WeakMap<Store, UndoOffer | null>()
+type Collection = 'actionItems' | 'milestones' | 'risks'
+const REF_OF = { actionItems: 'action', milestones: 'milestone', risks: 'risk' } as const
+
+/** What modules/entity-delete.ts does: flatten every mention of the entity across the team, drop it, one undoable update scoped to the team. */
+function deleteWithUnlink(store: Store, rnd: Rnd, collection: Collection): void {
+  type Row = { id: string; summary?: string; title?: string }
+  const t = teamOf(store, rnd)
+  const list = (tm: Team): Row[] => tm[collection] as Row[]
+  if (list(t).length === 0) return
+  const id = pick(rnd, list(t)).id
+  offers.set(store, deleteInTeamWithUndo(store, t.id, (tm) => list(tm).some((e) => e.id === id), (tm) => {
+    const gone = list(tm).find((e) => e.id === id)!
+    unlinkRefsInTeam(tm, REF_OF[collection], new Map([[id, gone.summary ?? gone.title ?? '']]))
+    ;(tm as unknown as Record<string, unknown>)[collection] = list(tm).filter((e) => e.id !== id)
+  }, { teamId: t.id }))
+  // Often the user hits Undo at once, so the restore is exercised right behind the delete, not only when ops line up by chance.
+  if (rnd() < 0.4) { const o = offers.get(store); if (o?.isAvailable()) o.undo() }
+}
+
 const OPS: Op[] = [
+  { name: 'delete action item with unlink (undoable)', run: (s, r) => deleteWithUnlink(s, r, 'actionItems') },
+  { name: 'delete milestone with unlink (undoable)', run: (s, r) => deleteWithUnlink(s, r, 'milestones') },
+  { name: 'delete risk with unlink (undoable)', run: (s, r) => deleteWithUnlink(s, r, 'risks') },
+  { name: 'undo the latest delete', run: (s) => { const o = offers.get(s); if (o?.isAvailable()) o.undo(); offers.set(s, null) } },
   { name: 'edit daily note', run: (s, r) => { const t = teamOf(s, r); const keys = Object.keys(t.dailyNotes); if (keys.length) { const k = pick(r, keys); scoped(s, t, ['notes'], (_, tm) => { tm.dailyNotes[k] = text(r, tm) }) } } },
   { name: 'add daily note', run: (s, r) => { const t = teamOf(s, r); scoped(s, t, ['notes'], (_, tm) => { tm.dailyNotes[`2040-${String(1 + int(r, 12)).padStart(2, '0')}-${String(1 + int(r, 28)).padStart(2, '0')}`] = text(r, tm) }) } },
   { name: 'delete daily note', run: (s, r) => { const t = teamOf(s, r); const keys = Object.keys(t.dailyNotes); if (keys.length) { const k = pick(r, keys); scoped(s, t, ['notes'], (_, tm) => { delete tm.dailyNotes[k] }) } } },

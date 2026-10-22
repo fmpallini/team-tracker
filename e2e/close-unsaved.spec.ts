@@ -1,8 +1,8 @@
-// e2e/close-unsaved.spec.ts — closing a file must never discard edits whose
-// final save did not land. main.ts's teardownApp() saves before tearing the
-// document down; these cover the two ways that save can fail to persist
+// e2e/close-unsaved.spec.ts — Lock/Close writes the file, and when it cannot the
+// document must not silently go away. core/close-document.ts writes before it
+// tears the document down; these cover the two ways that write can fail
 // (a write error, an external change) and assert the document stays open
-// instead of silently returning to the start screen.
+// behind a dialog that says why, instead of returning to the start screen.
 import { test, expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile, writeOpfsFile, setNextOpenName } from './opfs-shim'
@@ -34,8 +34,8 @@ async function diskText(page: Page): Promise<string> {
   return new TextDecoder().decode(new Uint8Array(await readOpfsFile(page, FILE)))
 }
 
-test.describe('closing a file whose final save fails', () => {
-  test('a write error keeps the document open and asks before discarding', async ({ page }) => {
+test.describe('closing a file whose final write fails', () => {
+  test('a write error keeps the document open and offers a way out', async ({ page }) => {
     await openSeededDoc(page)
     // Simulates a file locked by another process / a full disk.
     await page.evaluate(() => {
@@ -47,17 +47,19 @@ test.describe('closing a file whose final save fails', () => {
     await page.locator('.tt-btn-close-file').click()
 
     const dialog = page.getByRole('dialog')
-    await expect(dialog).toContainText(/not saved/i)
+    await expect(dialog).toContainText(/could not be written/i)
+    await expect(dialog.getByRole('button', { name: /Download a copy/i })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /Try again/i })).toBeVisible()
     await expect(page.locator('.tt-shell')).toBeVisible()
     await expect(page.locator('.tt-start-screen')).toHaveCount(0)
 
-    // Keeping it open leaves the edit in place for another attempt.
-    await dialog.getByRole('button', { name: /Keep open/i }).click()
+    // Cancelling leaves the edit in place for another attempt.
+    await dialog.getByRole('button', { name: /^Cancel$/i }).click()
     await expect(page.locator('.tt-pane[data-pane-idx="0"] .editor').first()).toContainText(MARKER)
 
-    // Discarding is an explicit, separate choice.
+    // Leaving the file behind is an explicit, separate choice — the browser keeps the work.
     await page.locator('.tt-btn-close-file').click()
-    await page.getByRole('dialog').getByRole('button', { name: /Close without saving/i }).click()
+    await page.getByRole('dialog').getByRole('button', { name: /Close anyway/i }).click()
     await expect(page.locator('.tt-start-screen')).toBeVisible()
     expect(await diskText(page)).not.toContain(MARKER)
   })

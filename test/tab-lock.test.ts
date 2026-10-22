@@ -1,9 +1,8 @@
 import { createTabLock } from '../src/core/tab-lock'
-import { createStore, type Store } from '../src/core/store'
+import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createShell, type Shell } from '../src/ui/shell'
 import type { FileSession } from '../src/core/fs'
-import type { SaveController } from '../src/core/save-controller'
 
 const modalMocks = vi.hoisted(() => ({ toast: vi.fn(), dismissToast: vi.fn() }))
 vi.mock('../src/ui/modal', () => modalMocks)
@@ -33,17 +32,8 @@ function makeSession(name = 'team.tmv'): FileSession {
   return { handle: {} as unknown as FileSystemFileHandle, name, lastModified: 1 }
 }
 
-function makeSaveCtl(overrides: Partial<SaveController> = {}): SaveController {
-  return {
-    saveNow: vi.fn(async () => {}),
-    scheduleFrom: vi.fn(),
-    runExclusive: vi.fn(async (fn) => fn()),
-    flush: vi.fn(async () => {}),
-    resolveGrants: vi.fn(async () => {}),
-    dispose: vi.fn(),
-    ...overrides,
-  }
-}
+/** The browser-copy flush a handover waits for (main.ts passes the persister's, failing when it could not store). */
+const okFlush = (): Promise<void> => Promise.resolve()
 
 /**
  * Minimal Web Locks API fake: a single named lock, granted immediately when
@@ -101,7 +91,7 @@ afterEach(() => {
 test('neither Web Locks nor BroadcastChannel supported: fully inert, no-op release', () => {
   const store = createStore(createEmptyDocument('en-US'))
   const release = createTabLock({
-    session: makeSession(), store, shell: makeShell(), saveCtl: makeSaveCtl(),
+    session: makeSession(), store, shell: makeShell(), flushLive: okFlush,
     locks: undefined, BroadcastChannelCtor: undefined,
   })
   expect(store.readOnly).toBe(false)
@@ -111,7 +101,7 @@ test('neither Web Locks nor BroadcastChannel supported: fully inert, no-op relea
 test('BroadcastChannel supported but Web Locks not (this repo\'s own jsdom test env): never goes read-only', () => {
   const store = createStore(createEmptyDocument('en-US'))
   const release = createTabLock({
-    session: makeSession(), store, shell: makeShell(), saveCtl: makeSaveCtl(), locks: undefined,
+    session: makeSession(), store, shell: makeShell(), flushLive: okFlush, locks: undefined,
   })
   expect(store.readOnly).toBe(false)
   expect(document.querySelector('.tt-readonly-banner')).toBeNull()
@@ -128,7 +118,7 @@ test('BroadcastChannel supported but Web Locks not (this repo\'s own jsdom test 
 test('releasing the tab lock unsubscribes the read-only toast listener', () => {
   const store = createStore(createEmptyDocument('en-US'))
   const release = createTabLock({
-    session: makeSession(), store, shell: makeShell(), saveCtl: makeSaveCtl(), locks: undefined,
+    session: makeSession(), store, shell: makeShell(), flushLive: okFlush, locks: undefined,
   })
 
   store.setReadOnly(true)
@@ -149,7 +139,7 @@ test('sole tab: acquires the lock immediately, stays writable, no banner', async
   const store = createStore(createEmptyDocument('en-US'))
   const shell = makeShell()
   const { locks } = makeFakeLockManager()
-  createTabLock({ session: makeSession(), store, shell, saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session: makeSession(), store, shell, flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
 
@@ -167,7 +157,7 @@ test('a second tab (lock already held): enters read-only, shows the takeover ban
   // deliberately never released.
   void locks.request('tmv:x', {}, () => new Promise<void>(() => {}))
 
-  createTabLock({ session: makeSession('x'), store, shell, saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session: makeSession('x'), store, shell, flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
 
@@ -181,7 +171,7 @@ test('a second tab (lock already held): enters read-only, shows the takeover ban
   expect(modalMocks.toast.mock.calls[0]![1]).toMatchObject({ key: 'readonly-blocked' })
 })
 
-test('take-control handshake: holder saves+flushes before releasing, requester only exits read-only after that settles', async () => {
+test('take-control handshake: the holder flushes the browser copy before releasing, requester only exits read-only after that settles', async () => {
   const { locks } = makeFakeLockManager()
   const session = makeSession('shared.tmv')
 
@@ -190,8 +180,7 @@ test('take-control handshake: holder saves+flushes before releasing, requester o
   const shellA = makeShell()
   let resolveFlush!: () => void
   const flushCalled = vi.fn(async () => new Promise<void>((resolve) => { resolveFlush = resolve }))
-  const saveCtlA = makeSaveCtl({ saveNow: vi.fn(async () => {}), flush: flushCalled })
-  createTabLock({ session, store: storeA, shell: shellA, saveCtl: saveCtlA, locks })
+  createTabLock({ session, store: storeA, shell: shellA, flushLive: flushCalled, locks })
   await Promise.resolve()
   await Promise.resolve()
   expect(storeA.readOnly).toBe(false) // A holds the lock, fully writable
@@ -199,8 +188,7 @@ test('take-control handshake: holder saves+flushes before releasing, requester o
   // Tab B: opens after A, sees the lock unavailable, goes read-only.
   const storeB = createStore(createEmptyDocument('en-US'))
   const shellB = makeShell()
-  const saveCtlB = makeSaveCtl()
-  createTabLock({ session, store: storeB, shell: shellB, saveCtl: saveCtlB, locks })
+  createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
   expect(storeB.readOnly).toBe(true)
@@ -215,12 +203,12 @@ test('take-control handshake: holder saves+flushes before releasing, requester o
   takeoverBtn!.click()
   await vi.waitFor(() => expect(flushCalled).toHaveBeenCalledTimes(1))
 
-  // A has started its handoff (flush is in flight) but hasn't released yet —
+  // A has started its handoff (the flush is in flight) but hasn't released yet —
   // B must still be blocked, proving the fix #4 ordering isn't skipped.
   expect(storeA.readOnly).toBe(false)
   expect(storeB.readOnly).toBe(true)
 
-  // A's flush() finally settles: A becomes read-only and releases; B is
+  // A's flush finally settles: A becomes read-only and releases; B is
   // granted the lock and exits read-only.
   resolveFlush()
   await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
@@ -232,7 +220,7 @@ test('releaseTabLock() lets the same file be reopened without hanging behind its
   const { locks } = makeFakeLockManager()
   const session = makeSession('reopen.tmv')
   const store1 = createStore(createEmptyDocument('en-US'))
-  const release1 = createTabLock({ session, store: store1, shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  const release1 = createTabLock({ session, store: store1, shell: makeShell(), flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
   expect(store1.readOnly).toBe(false)
@@ -242,7 +230,7 @@ test('releaseTabLock() lets the same file be reopened without hanging behind its
   await Promise.resolve()
 
   const store2 = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session, store: store2, shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session, store: store2, shell: makeShell(), flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
 
@@ -261,14 +249,14 @@ test('releasing a read-only tab with a pending takeover drops the lock as soon a
   const session = makeSession('closing-reader.tmv')
 
   const storeA = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session, store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session, store: storeA, shell: makeShell(), flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
   expect(storeA.readOnly).toBe(false)
 
   const storeB = createStore(createEmptyDocument('en-US'))
   const shellB = makeShell()
-  const releaseB = createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks })
+  const releaseB = createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
   expect(storeB.readOnly).toBe(true)
@@ -287,7 +275,7 @@ test('releasing a read-only tab with a pending takeover drops the lock as soon a
   expect(document.querySelectorAll('.tt-readonly-banner')).toHaveLength(1) // A's own banner only
 
   const storeC = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session, store: storeC, shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session, store: storeC, shell: makeShell(), flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
   expect(storeC.readOnly).toBe(false)
@@ -316,7 +304,7 @@ test('provisional read-only (re-review #4a): readOnly is already true the instan
   const shell = makeShell()
   const { locks } = makeDeferredLockManager()
 
-  createTabLock({ session: makeSession('provisional.tmv'), store, shell, saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session: makeSession('provisional.tmv'), store, shell, flushLive: okFlush, locks })
 
   // Synchronous check, no await: setReadOnly(true, {silent:true}) runs before
   // requestLock() is even called, so this must already be true.
@@ -339,7 +327,7 @@ test('provisional read-only (re-review #4a): readOnly is already true the instan
 test('a real cross-instance BroadcastChannel takeover message is ignored by a tab that isn\'t holding the lock', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const shell = makeShell()
-  createTabLock({ session: makeSession('bc-only.tmv'), store, shell, saveCtl: makeSaveCtl(), locks: undefined })
+  createTabLock({ session: makeSession('bc-only.tmv'), store, shell, flushLive: okFlush, locks: undefined })
 
   const otherTabChannel = new BroadcastChannel('tmv:bc-only.tmv')
   otherTabChannel.postMessage({ type: 'takeover' })
@@ -357,7 +345,7 @@ test('onReadOnlyChange reports only the visible read-only transitions — never 
 
   const changesA: boolean[] = []
   const storeA = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session, store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks, onReadOnlyChange: (ro) => changesA.push(ro) })
+  createTabLock({ session, store: storeA, shell: makeShell(), flushLive: okFlush, locks, onReadOnlyChange: (ro) => changesA.push(ro) })
   await Promise.resolve()
   await Promise.resolve()
   expect(changesA).toEqual([])
@@ -365,7 +353,7 @@ test('onReadOnlyChange reports only the visible read-only transitions — never 
   const changesB: boolean[] = []
   const storeB = createStore(createEmptyDocument('en-US'))
   const shellB = makeShell()
-  createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks, onReadOnlyChange: (ro) => changesB.push(ro) })
+  createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks, onReadOnlyChange: (ro) => changesB.push(ro) })
   await Promise.resolve()
   await Promise.resolve()
   expect(changesB).toEqual([true])
@@ -382,7 +370,7 @@ test('taking control refreshes the document from disk BEFORE the tab becomes wri
   // hit a conflict or (via Overwrite) erase the other tab's edits.
   const { locks } = makeFakeLockManager()
   const session = makeSession('refresh.tmv')
-  createTabLock({ session, store: createStore(createEmptyDocument('en-US')), shell: makeShell(), saveCtl: makeSaveCtl(), locks })
+  createTabLock({ session, store: createStore(createEmptyDocument('en-US')), shell: makeShell(), flushLive: okFlush, locks })
   await Promise.resolve()
   await Promise.resolve()
 
@@ -394,7 +382,7 @@ test('taking control refreshes the document from disk BEFORE the tab becomes wri
     readOnlyDuringRefresh.push(storeB.readOnly)
     return new Promise<void>((resolve) => { finishRefresh = resolve })
   })
-  createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks, refreshBeforeWritable })
+  createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks, refreshBeforeWritable })
   await Promise.resolve()
   await Promise.resolve()
   expect(refreshBeforeWritable).not.toHaveBeenCalled()
@@ -408,11 +396,36 @@ test('taking control refreshes the document from disk BEFORE the tab becomes wri
   await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
 })
 
+test('a refresh that fails leaves the tab read-only and hands the lock back, so it never goes writable on a stale document', async () => {
+  const { locks } = makeFakeLockManager()
+  const session = makeSession('refresh-fails.tmv')
+  const storeA = createStore(createEmptyDocument('en-US'))
+  const releaseA = createTabLock({ session, store: storeA, shell: makeShell(), flushLive: okFlush, locks })
+  await Promise.resolve(); await Promise.resolve()
+  const storeB = createStore(createEmptyDocument('en-US'))
+  const shellB = makeShell()
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks, refreshBeforeWritable: async () => { throw new Error('cannot read the copy') } })
+  await Promise.resolve(); await Promise.resolve()
+  modalMocks.toast.mockClear()
+
+  shellB.root.parentElement!.querySelector<HTMLButtonElement>('.tt-readonly-takeover-btn')!.click()
+  await vi.waitFor(() => expect(modalMocks.toast).toHaveBeenCalled())
+  await new Promise((r) => setTimeout(r, 30))
+
+  expect(storeB.readOnly).toBe(true)
+  expect(shellB.root.parentElement!.querySelector('.tt-readonly-banner')).not.toBeNull()
+  // A handed over and B declined: nobody holds the lock, so A can simply ask for it back
+  expect(storeA.readOnly).toBe(true)
+  releaseA()
+  spy.mockRestore()
+})
+
 test('a sole tab never refreshes from disk on acquiring the lock', async () => {
   const { locks } = makeFakeLockManager()
   const refreshBeforeWritable = vi.fn(async () => {})
   const store = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session: makeSession('solo.tmv'), store, shell: makeShell(), saveCtl: makeSaveCtl(), locks, refreshBeforeWritable })
+  createTabLock({ session: makeSession('solo.tmv'), store, shell: makeShell(), flushLive: okFlush, locks, refreshBeforeWritable })
   await vi.waitFor(() => expect(store.readOnly).toBe(false))
   expect(refreshBeforeWritable).not.toHaveBeenCalled()
 })
@@ -423,7 +436,7 @@ test('closing a visibly read-only tab reports the read-only state lifted', async
   const { locks } = makeFakeLockManager()
   void locks.request('tmv:closing.tmv', {}, () => new Promise<void>(() => {}))
   const changes: boolean[] = []
-  const release = createTabLock({ session: makeSession('closing.tmv'), store: createStore(createEmptyDocument('en-US')), shell: makeShell(), saveCtl: makeSaveCtl(), locks, onReadOnlyChange: (ro) => changes.push(ro) })
+  const release = createTabLock({ session: makeSession('closing.tmv'), store: createStore(createEmptyDocument('en-US')), shell: makeShell(), flushLive: okFlush, locks, onReadOnlyChange: (ro) => changes.push(ro) })
   await vi.waitFor(() => expect(changes).toEqual([true]))
   release()
   expect(changes).toEqual([true, false])
@@ -445,8 +458,8 @@ test('lockKey: two different files that share a name both stay writable', async 
   const locks = makeNamedLockManager()
   const storeA = createStore(createEmptyDocument('en-US'))
   const storeB = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session: makeSession('team.tmv'), store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: Promise.resolve('tmv:file-a') })
-  createTabLock({ session: makeSession('team.tmv'), store: storeB, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: Promise.resolve('tmv:file-b') })
+  createTabLock({ session: makeSession('team.tmv'), store: storeA, shell: makeShell(), flushLive: okFlush, locks, lockKey: Promise.resolve('tmv:file-a') })
+  createTabLock({ session: makeSession('team.tmv'), store: storeB, shell: makeShell(), flushLive: okFlush, locks, lockKey: Promise.resolve('tmv:file-b') })
   await vi.waitFor(() => expect(storeA.readOnly).toBe(false))
   await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
 })
@@ -454,12 +467,12 @@ test('lockKey: two different files that share a name both stay writable', async 
 test('lockKey: the same file under the same key still makes the second tab read-only, provisionally from the start', async () => {
   const locks = makeNamedLockManager()
   const storeA = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session: makeSession('team.tmv'), store: storeA, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: Promise.resolve('tmv:same') })
+  createTabLock({ session: makeSession('team.tmv'), store: storeA, shell: makeShell(), flushLive: okFlush, locks, lockKey: Promise.resolve('tmv:same') })
   await vi.waitFor(() => expect(storeA.readOnly).toBe(false))
 
   let resolveKey!: (k: string) => void
   const storeB = createStore(createEmptyDocument('en-US'))
-  createTabLock({ session: makeSession('team.tmv'), store: storeB, shell: makeShell(), saveCtl: makeSaveCtl(), locks, lockKey: new Promise<string>((r) => { resolveKey = r }) })
+  createTabLock({ session: makeSession('team.tmv'), store: storeB, shell: makeShell(), flushLive: okFlush, locks, lockKey: new Promise<string>((r) => { resolveKey = r }) })
   // Still resolving the key: already (silently) read-only, so nothing can be
   // written before the lock is known to be ours.
   expect(storeB.readOnly).toBe(true)
@@ -475,25 +488,31 @@ function bannerButton(shell: Shell): HTMLButtonElement {
 }
 
 /** Two tabs on one file: A holds the lock, B is read-only behind it. */
-async function twoTabs(saveCtlA: SaveController = makeSaveCtl()) {
+// Tabs a test leaves holding the lock would otherwise keep answering "take control" messages sent by later tests
+// (the BroadcastChannel is shared by name across the whole file).
+const openTabs: Array<() => void> = []
+afterEach(() => { openTabs.splice(0).forEach((release) => release()) })
+
+async function twoTabs(flushA: () => Promise<void> = okFlush) {
   const lm = makeFakeLockManager()
   const session = makeSession('shared.tmv')
   const storeA = createStore(createEmptyDocument('en-US'))
   const shellA = makeShell()
-  createTabLock({ session, store: storeA, shell: shellA, saveCtl: saveCtlA, locks: lm.locks })
+  openTabs.push(createTabLock({ session, store: storeA, shell: shellA, flushLive: flushA, locks: lm.locks }))
   await Promise.resolve(); await Promise.resolve()
   const storeB = createStore(createEmptyDocument('en-US'))
   const shellB = makeShell()
-  createTabLock({ session, store: storeB, shell: shellB, saveCtl: makeSaveCtl(), locks: lm.locks })
+  openTabs.push(createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks: lm.locks }))
   await Promise.resolve(); await Promise.resolve()
   return { lm, storeA, shellA, storeB, shellB }
 }
 
-describe('handover when the holder cannot save (#4)', () => {
-  test('keeps the lock, warns, and hands over automatically once the unsaved edits are finally saved', async () => {
-    const { storeA, shellB, storeB } = await twoTabs() // saveNow is a no-op: the save "fails"
+describe('handover when the holder cannot store its edits in the browser (#4)', () => {
+  test('keeps the lock and warns, and the tab that asked stays read-only', async () => {
+    const flush = vi.fn(async () => { throw new Error('quota') })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { storeA, shellB, storeB } = await twoTabs(flush)
     storeA.update((d) => { d.prefs.autoSaveMin = 3 })
-    expect(storeA.dirty).toBe(true)
 
     bannerButton(shellB).click()
     await vi.waitFor(() => expect(modalMocks.toast).toHaveBeenCalled())
@@ -501,31 +520,36 @@ describe('handover when the holder cannot save (#4)', () => {
 
     expect(storeA.readOnly).toBe(false) // A still holds write access and its edits
     expect(storeB.readOnly).toBe(true)
-
-    storeA.markSaved() // the user fixed the save problem
-    await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
-    expect(storeA.readOnly).toBe(true)
+    spy.mockRestore()
   })
 
-  test('a clean holder still goes through saveNow, so a debounced editor change gets flushed before the handover', async () => {
-    const saveNow = vi.fn(async () => {})
-    const { storeB, shellB } = await twoTabs(makeSaveCtl({ saveNow }))
+  test('asking again once the browser copy can be written hands over', async () => {
+    let failing = true
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { storeA, shellB, storeB } = await twoTabs(async () => { if (failing) throw new Error('quota') })
+    bannerButton(shellB).click()
+    await vi.waitFor(() => expect(modalMocks.toast).toHaveBeenCalled())
+    expect(storeA.readOnly).toBe(false)
+
+    failing = false
     bannerButton(shellB).click()
     await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
-    expect(saveNow).toHaveBeenCalled()
+    expect(storeA.readOnly).toBe(true)
+    spy.mockRestore()
   })
 
-  test('a successful save hands over immediately, with no warning', async () => {
-    const holder: { store?: Store } = {}
-    const saveNow = vi.fn(async () => { holder.store!.markSaved() })
-    const { storeA, storeB, shellB } = await twoTabs(makeSaveCtl({ saveNow }))
-    holder.store = storeA
+  test('a flush that succeeds hands over at once, with no warning, and without any file write', async () => {
+    const flush = vi.fn(async () => {})
+    const { storeA, storeB, shellB } = await twoTabs(flush)
     storeA.update((d) => { d.prefs.autoSaveMin = 3 })
     modalMocks.toast.mockClear()
 
     bannerButton(shellB).click()
     await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
+    expect(flush).toHaveBeenCalledTimes(1)
     expect(modalMocks.toast).not.toHaveBeenCalled()
+    // the file is not this handover's business: the new holder picks the edits up from the browser copy
+    expect(storeA.dirty).toBe(true)
   })
 })
 

@@ -1,3 +1,4 @@
+import { createImageStore } from '../src/core/image-store'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { ChangeScope } from '../src/core/scope'
@@ -10,6 +11,35 @@ test('update notifies and marks dirty', () => {
   s.update(d => { d.teams.push({ id: 't1', name: 'X', emoji: '🚀', stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {} }) })
   expect(n).toBe(1); expect(s.dirty).toBe(true); expect(dirtyStates).toEqual([true])
   s.markSaved(); expect(s.dirty).toBe(false); expect(dirtyStates).toEqual([true, false])
+})
+
+test('onReadOnlyChange fires once per real transition, silent ones included, and stops after unsubscribe', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const seen: boolean[] = []
+  const off = s.onReadOnlyChange((ro) => seen.push(ro))
+  s.setReadOnly(false) // already writable
+  s.setReadOnly(true, { silent: true })
+  s.setReadOnly(true) // still read-only, now loud: not a transition
+  s.setReadOnly(false)
+  expect(seen).toEqual([true, false])
+  off()
+  s.setReadOnly(true)
+  expect(seen).toEqual([true, false])
+})
+
+test('markDirty flags the document as ahead of its file without touching the document, subscribers or rev', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const dirtyStates: boolean[] = []; s.onDirty((d) => dirtyStates.push(d))
+  let renders = 0; s.subscribe(() => renders++)
+  const rev = s.rev
+  s.markDirty()
+  s.markDirty()
+  expect(s.dirty).toBe(true)
+  expect(dirtyStates).toEqual([true])
+  expect(renders).toBe(0)
+  expect(s.rev).toBe(rev)
+  s.markSaved()
+  expect(s.dirty).toBe(false)
 })
 
 test('updateNav marks dirty without render', () => {
@@ -322,4 +352,21 @@ test('replaceDoc fires onMutate with "content", after subscribers', () => {
   s.onMutate((kind) => order.push(`mutate:${kind}`))
   s.replaceDoc(createEmptyDocument('en-US'))
   expect(order).toEqual(['subscribe', 'mutate:content'])
+})
+
+describe('store.images', () => {
+  test('a store starts with an empty image store of its own', async () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    expect(s.images.has('a'.repeat(32))).toBe(false)
+  })
+
+  test('replaceDoc with an image store swaps it; without one it keeps the current store', () => {
+    const s = createStore(createEmptyDocument('en-US'))
+    const first = s.images
+    s.replaceDoc(createEmptyDocument('en-US'))
+    expect(s.images).toBe(first)
+    const other = createImageStore(null)
+    s.replaceDoc(createEmptyDocument('en-US'), other)
+    expect(s.images).toBe(other)
+  })
 })

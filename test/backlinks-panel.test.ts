@@ -169,7 +169,7 @@ describe('createModuleBacklinksChip', () => {
     return {
       store, pm: {} as PaneManager, paneIdx: 0, locale: 'en-US',
       searchIndex: createSearchIndex(() => store.doc, () => store.rev),
-      saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} },
+      saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} },
     }
   }
 

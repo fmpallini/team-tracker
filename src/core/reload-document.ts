@@ -9,14 +9,20 @@
 // failed, the tab went writable on an out-of-date document, and a later
 // "Overwrite" quietly reverted the other tab's password change and edits.
 import type { Doc } from './types'
-import { decryptDocument, parsePlain, WrongPasswordError } from './crypto'
+import { decryptDocumentWithVersion, parsePlainWithVersion, WrongPasswordError } from './crypto'
+import type { ImageStore } from './image-store'
+import type { FileStamp } from './file-stamp'
 
 export class ReloadCancelledError extends Error {}
 
 export interface ReloadedDocument {
   doc: Doc
+  /** The image bytes of the file as it is now, bound to `password`. */
+  images: ImageStore
   /** The password the file is under NOW — null for a password-less file. May differ from the one passed in. */
   password: string | null
+  /** The file's write stamp (null for a file written before schema 18): the lineage the browser copy adopts. */
+  stamp: FileStamp | null
 }
 
 /**
@@ -31,12 +37,13 @@ export async function decodeForReload(
 ): Promise<ReloadedDocument> {
   // Format first, not password first: a file that is now password-less must not
   // be fed to the decryptor, and one that is now encrypted must not be.
-  const plain = parsePlain(bytes)
-  if (plain) return { doc: plain, password: null }
+  const plain = parsePlainWithVersion(bytes)
+  if (plain) return { doc: plain.doc, images: plain.images, password: null, stamp: plain.stamp }
 
   if (currentPassword !== null) {
     try {
-      return { doc: await decryptDocument(bytes, currentPassword), password: currentPassword }
+      const opened = await decryptDocumentWithVersion(bytes, currentPassword)
+      return { doc: opened.doc, images: opened.images, password: currentPassword, stamp: opened.stamp }
     } catch (e) {
       if (!(e instanceof WrongPasswordError)) throw e
     }
@@ -47,7 +54,8 @@ export async function decodeForReload(
     const pw = await askPassword(wasWrong)
     if (pw === null) throw new ReloadCancelledError()
     try {
-      return { doc: await decryptDocument(bytes, pw), password: pw }
+      const opened = await decryptDocumentWithVersion(bytes, pw)
+      return { doc: opened.doc, images: opened.images, password: pw, stamp: opened.stamp }
     } catch (e) {
       if (!(e instanceof WrongPasswordError)) throw e
       wasWrong = true

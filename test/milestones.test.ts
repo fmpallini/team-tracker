@@ -55,7 +55,7 @@ function setup(team: Team): { container: HTMLElement; store: Store; pm: PaneMana
 
 function render(container: HTMLElement, loc: Loc, store: Store, pm: PaneManager, paneIdx: 0 | 1 = 0): void {
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
-  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex, saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} } }
+  const ctx: ModuleCtx = { store, pm, paneIdx, locale: 'en-US', searchIndex, saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} } }
   renderMilestones(container, loc, ctx)
 }
 

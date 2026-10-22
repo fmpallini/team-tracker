@@ -8,27 +8,40 @@
 // change-password.ts / tab-lock.ts: everything stateful comes in through deps.
 import type { Doc } from './types'
 import type { Store } from './store'
+import type { ImageStore } from './image-store'
 import type { FileSession } from './fs'
 import type { Shell } from '../ui/shell'
 import { t } from './i18n'
 import { pickCreate, forceWrite } from './fs'
 import { docToBytes } from './doc-bytes'
+import { buildSnapshot, commitSnapshot } from './snapshot'
+import { recordCodec } from './crypto'
+import { newStamp, randomHex, type FileStamp } from './file-stamp'
+import type { LivePersister } from './live-persist'
+import type { ReloadedDocument } from './reload-document'
+import type { FileSnapshot } from './file-snapshot'
 import { showConflictModal } from '../ui/conflict'
 import { toast } from '../ui/modal'
-import { SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from './save-controller'
+import { SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from '../ui/file-health-toasts'
 
 export interface ConflictFlowDeps {
   store: Store
   session: FileSession
-  shell: Pick<Shell, 'setSaveState' | 'setTitle'>
+  shell: Pick<Shell, 'setTitle'>
   /** Read live on every use — a password change updates it after this flow is built. */
   getPassword: () => string | null
-  /** Replaces the in-memory document with the file's current contents (the "Reload" choice). */
-  reloadFromDisk: () => Promise<void>
+  /** Reads and decodes the file as it is now (asking for its password if that changed) without touching the open document. */
+  readFromDisk: () => Promise<ReloadedDocument>
+  /** Replaces the open document with what `readFromDisk` returned (the "Reload" choice) and refreshes the UI around it. */
+  applyReloaded: (reloaded: ReloadedDocument) => void
   /** Re-requests the lapsed file permission; the "Grant access…" action of the permission toast. */
   resolveGrants: () => Promise<void>
+  /** Told which file write landed (null: browser storage unavailable). */
+  persister?: LivePersister | null
+  /** The file writer, told how the conflict ended (or that the overwrite failed) so the pill follows. */
+  snapshot?: Pick<FileSnapshot, 'fileWritten' | 'fileReloaded' | 'fileWriteFailed'>
   /** Re-opens the document on the fork's new file — see the note in `fork` for why not in place. */
-  reopen: (forkSession: FileSession, doc: Doc, password: string | null) => void
+  reopen: (forkSession: FileSession, doc: Doc, password: string | null, images: ImageStore, stamp: FileStamp) => void
 }
 
 export interface ConflictFlow {
@@ -50,9 +63,35 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
 
   const locale = (): Doc['prefs']['locale'] => store.doc.prefs.locale
 
+  /**
+   * The file may be under another password now (changed, added or removed elsewhere), and the document just took its
+   * images with it. The browser copy must follow that key too, or its records and its blobs end up under different keys
+   * and the next browser-wins open would hand back the old password.
+   */
+  async function followFileKey(before: Uint8Array | null, reloaded: ReloadedDocument): Promise<void> {
+    const after = reloaded.images.codec()?.header?.salt ?? null
+    if (before === null && after === null) return
+    if (before !== null && after !== null && before.length === after.length && before.every((b, i) => b === after[i])) return
+    try {
+      await deps.persister?.rekey(reloaded.password === null ? null : await recordCodec(reloaded.password, after ?? undefined))
+    } catch (e) {
+      console.error(e)
+      toast(t(locale(), 'live_rekey_failed_toast'), { sticky: true })
+    }
+  }
+
   async function reload(): Promise<void> {
     try {
-      await deps.reloadFromDisk()
+      const reloaded = await deps.readFromDisk()
+      // Another document under the same name (a different file dropped over it, or restored from elsewhere) is not
+      // this one's newer version: adopting it would graft foreign content onto this document's browser copy.
+      if (reloaded.doc.docId !== store.doc.docId) throw new Error('the file holds a different document')
+      const keyBefore = store.images.codec()?.header?.salt ?? null
+      deps.applyReloaded(reloaded)
+      await followFileKey(keyBefore, reloaded)
+      // The file is now the truth: the browser copy takes its content and its write as the lineage.
+      await deps.persister?.adoptFileStamp(reloaded.stamp)
+      deps.snapshot?.fileReloaded()
     } catch (e) {
       console.error(e)
       toast(t(locale(), 'conflict_reload_failed'), { sticky: true })
@@ -72,21 +111,12 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     const forkSession = await pickCreate(`${stem} (copy).tmv`)
     if (!forkSession) return false
 
-    // The fork file must be written with the mirror detached: `backupHandleId`
-    // travels inside the .tmv itself, so a fork that kept it would mirror its
-    // own saves into the ORIGINAL file's .bck and quietly overwrite the
-    // backups belonging to a document it just diverged from. The user re-picks
-    // a backup target for the fork in prefs. Serialized from a detached copy
-    // and applied to the live store only AFTER the write succeeds, so a failed
-    // fork (disk full, permission) doesn't silently switch the original
-    // document's backups off.
     const currentPw = deps.getPassword()
-    const detached: Doc = { ...store.doc, prefs: { ...store.doc.prefs, dailyBackupEnabled: false, backupHandleId: null } }
-    await forceWrite(forkSession, await docToBytes(detached, currentPw))
-    store.update((d) => {
-      d.prefs.dailyBackupEnabled = false
-      d.prefs.backupHandleId = null
-    })
+    // The fork is a different document from here on, with its own browser copy: a shared docId would let the
+    // original's copy (whose lineage the other writer's file broke) claim the fork file as its own.
+    const forkDoc: Doc = { ...store.doc, docId: randomHex(16) }
+    const stamp = newStamp()
+    await forceWrite(forkSession, await docToBytes(forkDoc, currentPw, store.images, stamp))
     // The document's content is now persisted — to the fork rather
     // than to `session`, but persisted. Clearing dirty here is what
     // stops teardown (reached via `reopen` below) from
@@ -101,13 +131,12 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     // file's write lock, i.e. two documents contending for one
     // lock. Going back through openDocument() gives the fork a
     // correctly-keyed tab lock, a fresh save controller and
-    // auto-save interval, a fresh backup controller, the right
-    // title and a clean save state, with no new lifecycle code:
+    // auto-save interval, the right title and a clean save state, with no new lifecycle code:
     // onDocumentOpened() already tears the previous app down.
     // (forceWrite above has also repointed the 'lastHandle' IndexedDB
     // key at the fork, so "reopen last" follows it.)
     open = false
-    deps.reopen(forkSession, store.doc, currentPw)
+    deps.reopen(forkSession, forkDoc, currentPw, store.images, stamp)
     return true
   }
 
@@ -115,18 +144,19 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     try {
       // An edit landing while the write is in flight is not in the bytes just
       // written; clearing `dirty` for it would drop it from every later save.
-      const revBefore = store.rev
-      await forceWrite(session, await docToBytes(store.doc, deps.getPassword()))
-      if (store.rev === revBefore) {
+      const snapshot = await buildSnapshot(store, deps.getPassword())
+      await forceWrite(session, snapshot.bytes)
+      await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
+      deps.snapshot?.fileWritten()
+      if (store.rev === snapshot.revAtSnapshot) {
         store.markSaved()
-        shell.setSaveState('saved')
-        shell.setTitle(session.name, false)
+        shell.setTitle(session.name)
       }
     } catch (e) {
       console.error(e)
       if (e instanceof DOMException && e.name === 'NotAllowedError') {
-        // Same lapsed-permission case save-controller.ts's doSave()
-        // handles for a normal save — reached here instead because the
+        // Same lapsed-permission case file-snapshot.ts's writeNow()
+        // handles for a normal write — reached here instead because the
         // write that hit it was this "Overwrite" retry. Reuses the same
         // recovery, resolveGrants(): if the file is still externally
         // different once permission's fixed, the retried (non-forced)
@@ -134,15 +164,15 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
         // forcing this "Overwrite" choice through a permission
         // side-channel — the user re-confirms instead of it happening
         // unattended.
-        shell.setSaveState('permission')
-        // Keyed like save-controller.ts's own toast, so the next successful save dismisses it.
+        deps.snapshot?.fileWriteFailed('permission')
+        // Keyed like file-health-toasts.ts's own toast, so the next successful write dismisses it.
         toast(t(locale(), 'save_permission_toast'), {
           sticky: true,
           key: SAVE_PERMISSION_TOAST_KEY,
           action: { label: t(locale(), 'grant_access_ellipsis'), onClick: () => void deps.resolveGrants() },
         })
       } else {
-        shell.setSaveState('error')
+        deps.snapshot?.fileWriteFailed('error')
         toast(t(locale(), 'save_error_toast'), { sticky: true, key: SAVE_ERROR_TOAST_KEY })
       }
     } finally {

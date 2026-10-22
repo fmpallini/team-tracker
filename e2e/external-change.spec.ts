@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile, writeOpfsFile } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, lockClose, reopenLast } from './helpers'
 
 async function addTeam(page: import('@playwright/test').Page, name: string): Promise<void> {
   await page.getByRole('button', { name: /Create first team/ }).click()
@@ -32,7 +32,8 @@ test.describe('external file change conflict', () => {
     await writeOpfsFile(page, 'team-tracker.tmv', Array(16).fill(0))
 
     await addTeam(page, 'Conflict Team')
-    await page.keyboard.press('Control+s')
+    // The file is written at Lock/Close (and on the timer), so that is where an external change is found.
+    await page.keyboard.press('Control+Alt+l')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
@@ -40,7 +41,7 @@ test.describe('external file change conflict', () => {
     await dialog.getByRole('button', { name: 'Overwrite' }).click()
     await expect(dialog).toBeHidden()
 
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // Disk now holds the real in-memory doc (valid ciphertext), not the garbage bytes.
     const bytes = await readOpfsFile(page, 'team-tracker.tmv')
@@ -54,27 +55,14 @@ test.describe('external file change conflict', () => {
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
-    // Turn the daily backup mirror on first, so the fork's own prefs can be
-    // checked for it afterwards: a fork that inherited backupHandleId would
-    // mirror its saves into the ORIGINAL file's .bck.
-    await page.click('.tt-btn-settings')
-    await page.getByRole('tab', { name: 'Saving & backup' }).click()
-    const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
-    await expect(backupCheckbox).toBeEnabled()
-    await backupCheckbox.check()
-    // See fs-api.spec.ts's backup test: the picker→idbSet→store.update chain
-    // that actually persists backupHandleId has no DOM signal to wait on.
-    await page.waitForTimeout(500)
-    await page.keyboard.press('Escape')
-    await page.keyboard.press('Control+s')
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // Another program clobbers the file behind the app's back.
     const EXTERNAL_BYTES = Array(16).fill(7) as number[]
     await writeOpfsFile(page, 'team-tracker.tmv', EXTERNAL_BYTES)
 
     await addTeam(page, 'Forked Team')
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('Control+Alt+l')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
@@ -83,7 +71,7 @@ test.describe('external file change conflict', () => {
 
     // The session now belongs to the fork — the shell was rebuilt around it.
     await expect(page).toHaveTitle(/team-tracker \(copy\)\.tmv/)
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
     // The fork holds a real encrypted document...
     const fork = await readOpfsFile(page, 'team-tracker (copy).tmv')
@@ -95,14 +83,9 @@ test.describe('external file change conflict', () => {
 
     // The in-memory edit that caused the conflict came along to the fork.
     await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText('Forked Team')
-
-    // The fork does not inherit the original's backup target.
-    await page.click('.tt-btn-settings')
-    await page.getByRole('tab', { name: 'Saving & backup' }).click()
-    await expect(page.locator('.tt-prefs-backup-checkbox')).not.toBeChecked()
   })
 
-  test('Escape on the conflict modal does not lock saving: the next save raises it again', async ({ page }) => {
+  test('Escape on the conflict modal does not lock writing: the next close raises it again', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
@@ -110,20 +93,21 @@ test.describe('external file change conflict', () => {
 
     await writeOpfsFile(page, 'team-tracker.tmv', Array(16).fill(0))
     await addTeam(page, 'Conflict Team')
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('Control+Alt+l')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('.tt-shell')).toBeVisible() // the failed close left the document open
 
     // Used to be a silent no-op for the rest of the session.
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('Control+Alt+l')
     await expect(page.getByRole('dialog')).toBeVisible()
     await expect(page.getByRole('dialog').locator('.tt-modal-title')).toHaveText('File changed externally')
   })
 
-  test('a touched-but-identical file (cloud sync, antivirus) is not a conflict: the save just goes through', async ({ page }) => {
+  test('a touched-but-identical file (cloud sync, antivirus) is not a conflict: the write just goes through', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
@@ -134,9 +118,8 @@ test.describe('external file change conflict', () => {
     await writeOpfsFile(page, 'team-tracker.tmv', original)
 
     await addTeam(page, 'No Conflict Team')
-    await page.keyboard.press('Control+s')
+    await lockClose(page) // closes: no conflict dialog stood in the way
 
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(0)
     const after = await readOpfsFile(page, 'team-tracker.tmv')
     expect(after.length).not.toBe(0)
@@ -149,19 +132,18 @@ test.describe('external file change conflict', () => {
     await page.goto(`${E2E_BASE_URL}/app.html`)
     await createEncryptedDoc(page, PASSWORD)
 
-    // Another program puts a DIFFERENT (but valid) version of the file on disk:
-    // save once so the app's baseline is that save, then put the original,
-    // team-less bytes back behind its back. A mere mtime bump with identical
-    // content is deliberately NOT a conflict any more (see the next test).
+    // Another program puts a DIFFERENT (but valid) version of the same document on disk: keep the original,
+    // team-less bytes, write a team to the file by closing, reopen, then put the original back behind the app's back.
+    // (A mere mtime bump with identical content is deliberately NOT a conflict — see the next test.)
     const original = await readOpfsFile(page, 'team-tracker.tmv')
     await addTeam(page, 'Saved Before The Conflict')
-    await page.keyboard.press('Control+s')
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await lockClose(page)
+    await reopenLast(page, PASSWORD)
     await writeOpfsFile(page, 'team-tracker.tmv', original)
 
-    // A nav-only change (sidebar toggle) is enough to make the document dirty.
+    // A nav-only change (sidebar toggle) is an edit the file does not have; closing tries to write it.
     await page.locator('.tt-sidebar-toggle').click()
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('Control+Alt+l')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
@@ -173,10 +155,10 @@ test.describe('external file change conflict', () => {
     await confirmDialog.getByRole('button', { name: 'Reload' }).click()
 
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
+    await expect(page.locator('.tt-save-pill[data-state="ok"]')).toBeVisible()
 
-    // The team added before Reload never made it to disk, so it's gone —
-    // the empty-state CTA proves the reload really re-read the on-disk doc.
+    // The team added before the clobber is gone with the clobbered file — the empty-state CTA proves the
+    // reload really re-read the on-disk document.
     await expect(page.getByRole('button', { name: /Create first team/ })).toBeVisible()
   })
 })

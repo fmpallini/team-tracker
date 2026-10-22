@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreateBackup, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
@@ -19,7 +19,7 @@ function mockHandle(initialMtime: number, permission?: PermissionState) {
 }
 
 // idb é chamado dentro de writeFile — stub global mínimo p/ jsdom.
-// `idbSet` is a spy (not a bare stub) so the pickCreateBackup tests below can
+// `idbSet` is a spy (not a bare stub) so the pickCreate tests below can
 // assert it never touches the 'lastHandle' key.
 const idbMocks = vi.hoisted(() => ({
   idbSet: vi.fn(async (_key: string, _value: unknown) => {}),
@@ -165,9 +165,7 @@ test('sameEntry false when either session has no handle (fallback mode)', async 
   expect(await sameEntry(fallback, fallback)).toBe(false)
 })
 
-// --- pickCreateBackup ------------------------------------------------------
-// The .bck picker is deliberately separate from pickCreate: the daily-backup
-// file must never become the "reopen last" target.
+// --- pickCreate -------------------------------------------------------------
 function stubSaveFilePicker(result: FileSystemFileHandle | Error) {
   const picker = vi.fn(async (_options?: SaveFilePickerOptions): Promise<FileSystemFileHandle> => {
     if (result instanceof Error) throw result
@@ -180,60 +178,6 @@ function stubSaveFilePicker(result: FileSystemFileHandle | Error) {
 beforeEach(() => {
   idbMocks.idbSet.mockClear()
   idbMocks.idbGet.mockClear()
-})
-
-test('pickCreateBackup never repoints lastHandle at the .bck file', async () => {
-  const { handle } = mockHandle(1000)
-  stubSaveFilePicker(handle)
-  const session = await pickCreateBackup('team-tracker.bck')
-  expect(session).not.toBeNull()
-  expect(session!.handle).toBe(handle)
-  // The whole point: pickCreate() ends with idbSet('lastHandle', handle), which
-  // would make the next launch reopen the empty .bck and report a bogus
-  // "corrupt file" error instead of opening the user's .tmv.
-  expect(idbMocks.idbSet.mock.calls.filter((c) => c[0] === 'lastHandle')).toHaveLength(0)
-  expect(idbMocks.idbSet).not.toHaveBeenCalled()
-})
-
-test('pickCreateBackup filters the picker on .bck, not .tmv', async () => {
-  const { handle } = mockHandle(1000)
-  const picker = stubSaveFilePicker(handle)
-  await pickCreateBackup('team-tracker.bck')
-  const opts = picker.mock.calls[0]![0]!
-  expect(opts.suggestedName).toBe('team-tracker.bck')
-  const extensions = Object.values(opts.types![0]!.accept).flat()
-  expect(extensions).toEqual(['.bck'])
-})
-
-test('pickCreateBackup returns null when the user cancels the picker', async () => {
-  const abort = new Error('cancelled')
-  abort.name = 'AbortError'
-  stubSaveFilePicker(abort)
-  expect(await pickCreateBackup('team-tracker.bck')).toBeNull()
-})
-
-test('pickCreateBackup rethrows a non-cancel error (e.g. permission denied) instead of swallowing it as a cancel', async () => {
-  const denied = new Error('not allowed')
-  denied.name = 'NotAllowedError'
-  stubSaveFilePicker(denied)
-  await expect(pickCreateBackup('team-tracker.bck')).rejects.toThrow('not allowed')
-})
-
-test('pickCreateBackup passes the given handle through as startIn, so the picker opens in that folder', async () => {
-  const { handle } = mockHandle(1000)
-  const picker = stubSaveFilePicker(handle)
-  const primaryHandle = {} as unknown as FileSystemFileHandle
-  await pickCreateBackup('team-tracker.bck', primaryHandle)
-  const opts = picker.mock.calls[0]![0]!
-  expect(opts.startIn).toBe(primaryHandle)
-})
-
-test('pickCreateBackup omits startIn when no handle is given', async () => {
-  const { handle } = mockHandle(1000)
-  const picker = stubSaveFilePicker(handle)
-  await pickCreateBackup('team-tracker.bck')
-  const opts = picker.mock.calls[0]![0]!
-  expect(opts.startIn).toBeUndefined()
 })
 
 test('pickCreate does not repoint lastHandle: the picked file is still empty until its first write', async () => {

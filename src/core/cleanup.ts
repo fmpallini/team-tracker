@@ -4,12 +4,15 @@
 // to gauge age by), plus the two things that do carry a date — completed
 // milestones and daily notes — once that date is older than a user-chosen
 // number of days. Favorites that no longer point anywhere (their team/person
-// is gone, or they pin a daily note this same pass is purging) go too.
+// is gone, or they pin a daily note this same pass is purging) go too, and so
+// does every picture no note references any more (the ones this pass orphaned
+// and the ones an earlier delete left behind for its undo: cleanup has none).
 import type { Doc, Favorite } from './types'
 import { diffDays } from './date'
 import { unlinkRefsInTeam } from './refs'
 import { isFavoriteOrphaned } from './favorites'
 import { isActionActive } from './due'
+import { collectImageRefs } from './image-ref'
 
 export interface CleanupCounts {
   actions: number
@@ -17,6 +20,8 @@ export interface CleanupCounts {
   risks: number
   dailyNotes: number
   favorites: number
+  /** Pictures no note references once the rest of the pass has run. */
+  images: number
 }
 
 /** True when a date is strictly more than `days` days before `today` — the shared age test for daily notes and completed milestones. */
@@ -31,7 +36,7 @@ function isDeadFavorite(doc: Doc, fav: Favorite, days: number, today: string): b
 }
 
 export function countCleanupTargets(doc: Doc, days: number, today: string): CleanupCounts {
-  const counts: CleanupCounts = { actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0 }
+  const counts: CleanupCounts = { actions: 0, milestones: 0, risks: 0, dailyNotes: 0, favorites: 0, images: 0 }
   for (const team of doc.teams) {
     for (const a of team.actionItems) {
       if (!isActionActive(a)) counts.actions++
@@ -47,10 +52,13 @@ export function countCleanupTargets(doc: Doc, days: number, today: string): Clea
     }
   }
   counts.favorites = doc.favorites.filter((f) => isDeadFavorite(doc, f, days, today)).length
+  // Which pictures go depends on every note the pass removes, so the pass itself is replayed on a copy (only when there are pictures).
+  if (Object.keys(doc.images).length > 0) counts.images = applyCleanup(JSON.parse(JSON.stringify(doc)) as Doc, days, today).length
   return counts
 }
 
-export function applyCleanup(doc: Doc, days: number, today: string): void {
+/** Cleans `doc` in place and returns the ids of the pictures it dropped, for the caller to release their bytes. */
+export function applyCleanup(doc: Doc, days: number, today: string): string[] {
   for (const team of doc.teams) {
     // Same unlink-before-delete step the single-item delete call sites use
     // (people-tree.ts/action-items.ts/milestones.ts/risks.ts) — otherwise a
@@ -77,4 +85,9 @@ export function applyCleanup(doc: Doc, days: number, today: string): void {
   }
   // Cleanup never deletes teams or people, so doing this after the team loop is order-independent.
   doc.favorites = doc.favorites.filter((f) => !isDeadFavorite(doc, f, days, today))
+
+  const referenced = collectImageRefs(doc)
+  const dropped = Object.keys(doc.images).filter((id) => !referenced.has(id))
+  for (const id of dropped) delete doc.images[id]
+  return dropped
 }

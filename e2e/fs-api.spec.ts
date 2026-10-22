@@ -64,42 +64,6 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
     await expect(page.locator('.tt-shell')).toBeVisible()
   })
 
-  test('daily backup mirrors a real, independently-readable second file on save', async ({ page }) => {
-    await installOpfsPickerShim(page)
-    await blockUpdateCheck(page)
-    await page.goto(`${E2E_BASE_URL}/app.html`)
-    await createEncryptedDoc(page, PASSWORD)
-
-    await page.click('.tt-btn-settings')
-    await page.getByRole('tab', { name: 'Saving & backup' }).click()
-    const backupCheckbox = page.locator('.tt-prefs-backup-checkbox')
-    await expect(backupCheckbox).toBeEnabled()
-    await backupCheckbox.check()
-    // The checkbox itself flips to checked synchronously (native DOM
-    // behavior) the instant .check() runs — well before
-    // pickAndStoreBackupTarget()'s real (shimmed) picker→idbSet→store.update
-    // chain actually persists backupHandleId. The prefs tab doesn't
-    // re-render live on that store.update (it only reflects backupHandleId
-    // at the tab's own initial render), so there's no DOM signal to wait on
-    // here — a bounded wait for the chain to settle is the pragmatic option.
-    // Everything in that chain is local (OPFS + IndexedDB), not network, so
-    // this margin is generous, not a source of flakiness.
-    await page.waitForTimeout(500)
-    // Enabling the pref is itself a store.update(), which marks the doc
-    // dirty — closing the modal returns focus to the shell for the save
-    // hotkey below.
-    await page.keyboard.press('Escape')
-
-    await page.keyboard.press('Control+s')
-    await expect(page.locator('.tt-save-pill[data-state="saved"]')).toBeVisible()
-
-    const primary = await readOpfsFile(page, 'team-tracker.tmv')
-    const backup = await readOpfsFile(page, 'team-tracker.bck')
-    expect(backup.length).toBeGreaterThan(0)
-    // The backup is a byte-for-byte mirror of what was just written primary-side.
-    expect(backup).toEqual(primary)
-  })
-
   test('Alt+Arrow drives pane layout (select/split/swap), Alt+Shift+Arrow drives pane history', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)

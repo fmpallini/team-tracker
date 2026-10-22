@@ -19,7 +19,7 @@ function mount(risks: Risk[]) {
   const ctx: ModuleCtx = {
     store, pm: {} as PaneManager, paneIdx: 0, locale: 'en-US',
     searchIndex: createSearchIndex(() => store.doc, () => store.rev),
-    saveStatus: { requestSaveNow: () => {}, subscribeSaveState: () => () => {} },
+    saveStatus: { requestPillAction: () => {}, subscribeSaveState: () => () => {} },
   }
   const listEl = document.body.appendChild(document.createElement('div'))
   const renderAll = vi.fn()

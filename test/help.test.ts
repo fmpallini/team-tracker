@@ -125,6 +125,17 @@ test('editor help (pt-BR) keeps markdown examples and key names in Portuguese', 
   expect(text).toContain('Ctrl+clique / clique do meio')
 })
 
+test('editor help explains pictures: how to add them, the formats and the budget', () => {
+  showEditorHelp('en-US')
+  const text = document.body.textContent!
+  expect(text).toContain('Pictures')
+  expect(text).toContain('PNG, JPEG, WebP, GIF, AVIF and BMP')
+  expect(text).toContain('150 MB')
+  document.body.innerHTML = ''
+  showEditorHelp('pt-BR')
+  expect(document.body.textContent!).toContain('Imagens')
+})
+
 test('editor help no longer carries the app-window recipe', () => {
   showEditorHelp('en-US')
   expect(document.body.textContent!).not.toContain('--app=')
@@ -254,4 +265,17 @@ test('global help draws button references as the same stroke icons the buttons u
   const history = cells.find((c) => c.querySelector('.tt-icon-back') && c.querySelector('.tt-icon-next'))
   expect(history?.querySelector('.tt-icon-mouse')).not.toBeNull()
   expect(document.body.textContent).not.toMatch(/[🔒⛶◀▶🖱]/u)
+})
+
+test('global help explains saving: the browser copy, when the file is written, and to close with the lock', () => {
+  showGlobalHelp('en-US', { pwa: true })
+  const text = document.querySelector('.tt-help-body')!.textContent!
+  expect(text).toContain('How saving works')
+  expect(text).toContain('working copy kept in the browser')
+  expect(text).toContain('Ctrl+Alt+L')
+  expect(text).toContain('There is no Save command')
+  expect(text).not.toMatch(/Ctrl\+S(?!hift)/)
+  document.body.innerHTML = ''
+  showGlobalHelp('pt-BR', { pwa: true })
+  expect(document.querySelector('.tt-help-body')!.textContent).toContain('Como o salvamento funciona')
 })

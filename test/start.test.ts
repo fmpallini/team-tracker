@@ -1,7 +1,7 @@
 import { showStartScreen, isMobileDevice, START_LINKS } from '../src/ui/start'
 import { createEmptyDocument, SCHEMA_VERSION } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
-import type { Doc } from '../src/core/types'
+import type { OpenedDocument } from '../src/ui/open-document'
 
 const fsMocks = vi.hoisted(() => ({
   supportsFsApi: true,
@@ -31,8 +31,10 @@ const cryptoMocks = vi.hoisted(() => {
   const m = {
     WrongPasswordError,
     CorruptFileError,
+    images: { has: () => false } as unknown,
     decryptDocument: vi.fn(),
     encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
+    blobCodec: vi.fn(async () => ({ seal: async () => new Uint8Array(), open: async () => new Uint8Array() })),
     serializePlain: vi.fn(() => new Uint8Array([9, 9, 9])),
     parsePlain: vi.fn((_bytes: Uint8Array) => null as unknown),
     looksLikeTmv: vi.fn((_bytes: Uint8Array) => true),
@@ -40,16 +42,25 @@ const cryptoMocks = vi.hoisted(() => {
     encryptedPreSchemaVersion: vi.fn((_bytes: Uint8Array) => SCHEMA_VERSION as number | null),
     parsePlainWithVersion: vi.fn((bytes: Uint8Array) => {
       const doc = m.parsePlain(bytes)
-      return doc ? { doc, preSchemaVersion: m.plainPreSchemaVersion(bytes) } : null
+      return doc ? { doc, preSchemaVersion: m.plainPreSchemaVersion(bytes), images: m.images, stamp: null } : null
     }),
     decryptDocumentWithVersion: vi.fn(async (bytes: Uint8Array, password: string) => {
       const doc: unknown = await m.decryptDocument(bytes, password)
-      return { doc, preSchemaVersion: m.encryptedPreSchemaVersion(bytes) }
+      return { doc, preSchemaVersion: m.encryptedPreSchemaVersion(bytes), images: m.images, stamp: null }
     }),
   }
   return m
 })
 vi.mock('../src/core/crypto', () => cryptoMocks)
+
+// What happens between "decoded" and "mounted" (reconciling with the browser copy) is covered by
+// open-document.test.ts and start-live.test.ts; here start.ts only has to route into it.
+const openDocMocks = vi.hoisted(() => ({
+  reconcileOpen: vi.fn(async (o: { session: unknown; opened: { doc: unknown; images: unknown; stamp: unknown }; password: string | null }) => ({
+    session: o.session, doc: o.opened.doc, password: o.password, images: o.opened.images, store: {}, handle: null, needsFileWrite: false, stamp: o.opened.stamp,
+  }) as unknown),
+}))
+vi.mock('../src/ui/open-document', () => openDocMocks)
 
 function flush(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0))
@@ -74,6 +85,7 @@ beforeEach(() => {
   cryptoMocks.parsePlain.mockReset().mockReturnValue(null)
   cryptoMocks.plainPreSchemaVersion.mockReset().mockReturnValue(SCHEMA_VERSION)
   cryptoMocks.encryptedPreSchemaVersion.mockReset().mockReturnValue(SCHEMA_VERSION)
+  openDocMocks.reconcileOpen.mockClear()
 })
 
 function clickByText(text: string): void {
@@ -122,8 +134,8 @@ test('reopen-last: opens directly via reopenLast (no fallback dance)', async () 
   const doc = createEmptyDocument('en-US')
   cryptoMocks.decryptDocument.mockResolvedValue(doc)
 
-  let opened: [FileSession, Doc, string | null] | null = null
-  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  let opened: OpenedDocument | null = null
+  showStartScreen('en-US', (o) => { opened = o })
   await flush()
 
   clickByText('Reopen last…')
@@ -138,7 +150,7 @@ test('reopen-last: opens directly via reopenLast (no fallback dance)', async () 
 
   expect(fsMocks.reopenLast).toHaveBeenCalledTimes(1)
   expect(opened).not.toBeNull()
-  expect(opened![0]).toBe(session)
+  expect(opened!.session).toBe(session)
 })
 
 test('file handling launch: consumes launchQueue file, decrypts, and calls onOpen', async () => {
@@ -151,8 +163,8 @@ test('file handling launch: consumes launchQueue file, decrypts, and calls onOpe
   const doc = createEmptyDocument('en-US')
   cryptoMocks.decryptDocument.mockResolvedValue(doc)
 
-  let opened: [FileSession, Doc, string | null] | null = null
-  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  let opened: OpenedDocument | null = null
+  showStartScreen('en-US', (o) => { opened = o })
   await flush()
 
   getConsumer()({ files: [handle] })
@@ -167,8 +179,8 @@ test('file handling launch: consumes launchQueue file, decrypts, and calls onOpe
 
   expect(fsMocks.openFromHandle).toHaveBeenCalledWith(handle)
   expect(opened).not.toBeNull()
-  expect(opened![0]).toBe(session)
-  expect(opened![1]).toEqual(doc)
+  expect(opened!.session).toBe(session)
+  expect(opened!.doc).toEqual(doc)
 })
 
 test('file handling launch: fetchResult resolving null (e.g. picker cancel) is a no-op', async () => {
@@ -193,8 +205,8 @@ test('open flow: wrong password loops until correct, then calls onOpen', async (
   const doc = createEmptyDocument('en-US')
   cryptoMocks.decryptDocument.mockRejectedValueOnce(new cryptoMocks.WrongPasswordError()).mockResolvedValueOnce(doc)
 
-  let opened: [FileSession, Doc, string | null] | null = null
-  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  let opened: OpenedDocument | null = null
+  showStartScreen('en-US', (o) => { opened = o })
   await flush()
 
   clickByText('Open file…')
@@ -219,8 +231,8 @@ test('open flow: wrong password loops until correct, then calls onOpen', async (
   await flush()
 
   expect(opened).not.toBeNull()
-  expect(opened![1]).toEqual(doc)
-  expect(opened![2]).toBe('right')
+  expect(opened!.doc).toEqual(doc)
+  expect(opened!.password).toBe('right')
 })
 
 test('open flow: corrupt file shows error modal and does not call onOpen', async () => {
@@ -326,10 +338,12 @@ test('create flow: prompts confirm password, encrypts, writes, then calls onOpen
 
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, expect.any(Uint8Array))
   expect(onOpen).toHaveBeenCalledTimes(1)
-  const [openedSession, openedDoc, openedPw] = onOpen.mock.calls[0] as [FileSession, Doc, string | null]
+  const { session: openedSession, doc: openedDoc, password: openedPw, stamp } = onOpen.mock.calls[0]![0] as OpenedDocument
   expect(openedSession).toBe(session)
   expect(openedDoc.schemaVersion).toBe(SCHEMA_VERSION)
   expect(openedPw).toBe('sekret')
+  // the stamp that went into the written file is the one the browser copy starts its lineage from
+  expect((cryptoMocks.encryptDocument.mock.calls[0] as unknown[])[4]).toEqual(stamp)
 })
 
 test('create flow: "Create without password" writes serializePlain bytes and calls onOpen with password null', async () => {
@@ -350,7 +364,7 @@ test('create flow: "Create without password" writes serializePlain bytes and cal
   expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([9, 9, 9]))
   expect(onOpen).toHaveBeenCalledTimes(1)
-  const [, openedDoc, openedPw] = onOpen.mock.calls[0] as [FileSession, Doc, string | null]
+  const { doc: openedDoc, password: openedPw } = onOpen.mock.calls[0]![0] as OpenedDocument
   expect(openedDoc.schemaVersion).toBe(SCHEMA_VERSION)
   expect(openedPw).toBeNull()
 })
@@ -362,16 +376,16 @@ test('open flow: a plain file opens directly, no password prompt at all', async 
   const plainDoc = createEmptyDocument('en-US')
   cryptoMocks.parsePlain.mockReturnValue(plainDoc)
 
-  let opened: [FileSession, Doc, string | null] | null = null
-  showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+  let opened: OpenedDocument | null = null
+  showStartScreen('en-US', (o) => { opened = o })
   await flush()
   clickByText('Open file…')
   await flush()
 
   expect(document.querySelector('input[name="tt-password"]')).toBeNull()
   expect(opened).not.toBeNull()
-  expect(opened![1]).toEqual(plainDoc)
-  expect(opened![2]).toBeNull()
+  expect(opened!.doc).toEqual(plainDoc)
+  expect(opened!.password).toBeNull()
   expect(cryptoMocks.decryptDocument).not.toHaveBeenCalled()
 })
 
@@ -390,55 +404,17 @@ test('open flow: a non-plain file (parsePlain returns null) still goes through t
   expect(document.querySelector('input[name="tt-password"]')).not.toBeNull()
 })
 
-test('open flow: a plain file below the current schema version calls onOpen with the raw bytes as migratedFrom', async () => {
-  const session: FileSession = { handle: null, name: 'old.tmv', lastModified: 1 }
-  const bytes = new Uint8Array([9])
-  fsMocks.pickOpen.mockResolvedValue({ session, bytes })
-  const plainDoc = createEmptyDocument('en-US')
-  cryptoMocks.parsePlain.mockReturnValue(plainDoc)
-  cryptoMocks.plainPreSchemaVersion.mockReturnValue(SCHEMA_VERSION - 1)
-
-  const onOpen = vi.fn()
-  showStartScreen('en-US', onOpen)
-  await flush()
-  clickByText('Open file…')
-  await flush()
-
-  expect(onOpen).toHaveBeenCalledTimes(1)
-  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
-  expect(migratedFrom).toBe(bytes)
-})
-
-test('open flow: a plain file already at the current schema version calls onOpen with migratedFrom null', async () => {
-  const session: FileSession = { handle: null, name: 'current.tmv', lastModified: 1 }
+test('open flow: the decoded file, its password and the start-screen locale go to the reconcile step, and its result is what opens', async () => {
+  const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
   fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
-  cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
-  cryptoMocks.plainPreSchemaVersion.mockReturnValue(SCHEMA_VERSION)
-
-  const onOpen = vi.fn()
-  showStartScreen('en-US', onOpen)
-  await flush()
-  clickByText('Open file…')
-  await flush()
-
-  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
-  expect(migratedFrom).toBeNull()
-})
-
-test('open flow: an encrypted file below the current schema version calls onOpen with the raw bytes as migratedFrom', async () => {
-  const session: FileSession = { handle: null, name: 'old-enc.tmv', lastModified: 1 }
-  const bytes = new Uint8Array([9])
-  fsMocks.pickOpen.mockResolvedValue({ session, bytes })
+  const doc = createEmptyDocument('en-US')
   cryptoMocks.parsePlain.mockReturnValue(null)
-  cryptoMocks.decryptDocument.mockResolvedValue(createEmptyDocument('en-US'))
-  cryptoMocks.encryptedPreSchemaVersion.mockReturnValue(SCHEMA_VERSION - 1)
-
+  cryptoMocks.decryptDocument.mockResolvedValue(doc)
   const onOpen = vi.fn()
-  showStartScreen('en-US', onOpen)
+  showStartScreen('pt-BR', onOpen)
   await flush()
-  clickByText('Open file…')
+  clickByText('Abrir arquivo…')
   await flush()
-
   const pwInput = document.querySelector('input[name="tt-password"]') as HTMLInputElement
   pwInput.value = 'right'
   pwInput.dispatchEvent(new Event('input'))
@@ -446,26 +422,25 @@ test('open flow: an encrypted file below the current schema version calls onOpen
   await flush()
   await flush()
 
+  expect(openDocMocks.reconcileOpen).toHaveBeenCalledTimes(1)
+  expect(openDocMocks.reconcileOpen.mock.calls[0]![0]).toMatchObject({ locale: 'pt-BR', session, password: 'right', opened: { doc } })
   expect(onOpen).toHaveBeenCalledTimes(1)
-  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
-  expect(migratedFrom).toBe(bytes)
 })
 
-test('create flow: always calls onOpen with migratedFrom null (a brand-new document is never migrated)', async () => {
-  const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team-tracker.tmv', lastModified: 1 }
-  fsMocks.pickCreate.mockResolvedValue(session)
-
+test('open flow: backing out of a reconcile question opens nothing and leaves the start screen up', async () => {
+  const session: FileSession = { handle: null, name: 'x.tmv', lastModified: 1 }
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: new Uint8Array([9]) })
+  cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+  openDocMocks.reconcileOpen.mockResolvedValueOnce(null)
   const onOpen = vi.fn()
   showStartScreen('en-US', onOpen)
   await flush()
-  clickByText('Create new…')
-  await flush()
-  clickByText('Create without password')
+  clickByText('Open file…')
   await flush()
   await flush()
 
-  const [, , , migratedFrom] = onOpen.mock.calls[0] as [FileSession, Doc, string | null, Uint8Array | null]
-  expect(migratedFrom).toBeNull()
+  expect(onOpen).not.toHaveBeenCalled()
+  expect(document.querySelector('.tt-start-screen')).not.toBeNull()
 })
 
 test('fallback mode (no FS API): open uses hidden file input', async () => {
@@ -473,7 +448,7 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
   showStartScreen('en-US', () => {})
   await flush()
   expect(document.querySelector('.tt-start-fallback-notice')?.textContent).toBe(
-    'This browser does not support direct file access: saving will download the file.'
+    'This browser cannot write the file by itself. Your work is kept in the browser; use Export file in the header to download a copy.'
   )
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
   expect(fileInput).not.toBeNull()
@@ -499,7 +474,7 @@ describe('fallback mode (no FS API): opening the picked file', () => {
     await flush()
 
     expect(document.querySelector('input[name="tt-password"]')).toBeNull()
-    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, plainDoc, null, null)
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ session: { handle: null, name: 'team.tmv', lastModified: 42 }, doc: plainDoc, password: null, images: cryptoMocks.images }))
   })
 
   test('an encrypted file goes through the password prompt, then opens', async () => {
@@ -519,7 +494,7 @@ describe('fallback mode (no FS API): opening the picked file', () => {
     await flush()
     await flush()
 
-    expect(onOpen).toHaveBeenCalledWith({ handle: null, name: 'team.tmv', lastModified: 42 }, doc, 'right', null)
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ session: { handle: null, name: 'team.tmv', lastModified: 42 }, doc, password: 'right', images: cryptoMocks.images }))
   })
 
   test('a corrupt plain file shows the corrupt-file error and opens nothing', async () => {
@@ -586,7 +561,8 @@ test('renders the cloud-backup tip with the desktop-client download links', () =
   showStartScreen('en-US', () => {})
   const tip = document.querySelector('.tt-start-backup-tip')
   expect(tip).not.toBeNull()
-  expect(tip!.textContent).toContain('synced folder')
+  expect(tip!.textContent).toContain('cloud-synced folder')
+  expect(tip!.textContent).toContain('that is your backup')
   const links = Array.from(tip!.querySelectorAll('a'))
   expect(links.map((a) => a.getAttribute('href'))).toEqual([
     'https://workspace.google.com/products/drive/#download',
@@ -637,7 +613,7 @@ describe('auto-load last file on startup', () => {
     await flush()
 
     expect(onOpen).toHaveBeenCalledTimes(1)
-    expect(onOpen.mock.calls[0]![0]).toBe(launched)
+    expect((onOpen.mock.calls[0]![0] as OpenedDocument).session).toBe(launched)
   })
 
   test('clicking Open before auto-open resolves suppresses the auto-open', async () => {
@@ -654,7 +630,7 @@ describe('auto-load last file on startup', () => {
     await flush()
 
     expect(onOpen).toHaveBeenCalledTimes(1)
-    expect(onOpen.mock.calls[0]![0]).toBe(picked)
+    expect((onOpen.mock.calls[0]![0] as OpenedDocument).session).toBe(picked)
   })
 
   test('checkbox hidden when peekLastFile finds nothing (no handle, or permission not silently granted)', async () => {
@@ -703,14 +679,14 @@ describe('auto-load last file on startup', () => {
     cryptoMocks.parsePlain.mockReturnValue(plainDoc)
     idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? true : undefined))
 
-    let opened: [FileSession, Doc, string | null] | null = null
-    showStartScreen('en-US', (s, d, p) => { opened = [s, d, p] })
+    let opened: OpenedDocument | null = null
+    showStartScreen('en-US', (o) => { opened = o })
     await flush()
 
     expect(opened).not.toBeNull()
-    expect(opened![0]).toBe(session)
-    expect(opened![1]).toEqual(plainDoc)
-    expect(opened![2]).toBeNull()
+    expect(opened!.session).toBe(session)
+    expect(opened!.doc).toEqual(plainDoc)
+    expect(opened!.password).toBeNull()
   })
 
   test('skipAutoLoad option: does not auto-fire onOpen even when pref is true and file is passwordless (used when closing a file, to avoid re-opening it immediately)', async () => {

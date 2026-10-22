@@ -18,7 +18,7 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
    without duplicating every alpha value across a light/dark pair. */
 :root, [data-theme=light] {
   --bg:#eee7d6; --fg:#23241d; --muted:#5c5744; --accent:#3b5a6b; --accent-rgb:59,90,107;
-  --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#4a6b45;
+  --panel:#f5efe1; --border:#c3b596; --brass:#9c6b2e; --danger:#a1402c; --ok:#476742;
   --card-slate:#3b5a6b; --card-brass:#9c6b2e; --card-sage:#3f7a45; --card-rust:#a1402c; --card-plum:#6b4a7a; --card-ledger:#6e6a64;
   /* Code-block token colours (core/highlight.ts) — dedicated, not the muted
      --accent/--card-* set, so they actually read against the grey <pre>
@@ -445,7 +445,8 @@ body { background: var(--bg); color: var(--fg); }
   padding: 0 .4rem; display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* Save-state pill (header): always visible, states differentiated by both
+/* Save pill (header): always visible, states (data-state = the pill's health:
+   ok, writing, permission, error, store-error, readonly, export) differentiated by both
    the text label and a tinted background/border (color-mix keeps this to
    one rule per state instead of needing an --ok-rgb/--danger-rgb variable
    in all 20 theme/palette blocks — safe here since :has() elsewhere in this
@@ -456,116 +457,47 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid var(--border); background: var(--panel); color: var(--muted);
   font-size: .78rem; font-weight: 600; white-space: nowrap; cursor: default;
   transition: background-color .2s ease, border-color .2s ease, color .2s ease;
-  /* Stacks above .tt-save-pill-backup-tab, which tucks its rounded left
-     cap behind this pill's flat side (see that rule below). */
-  position: relative; z-index: 2;
 }
 .tt-save-pill-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .tt-save-pill-icon svg { display: block; }
 .tt-save-pill-text { font-family: var(--font-data); letter-spacing: .01em; }
 
-.tt-save-pill[data-state="saved"] {
+.tt-save-pill[data-state="ok"] {
   color: var(--ok);
   background: color-mix(in srgb, var(--ok) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
 }
-.tt-save-pill[data-state="saving"] {
+.tt-save-pill[data-state="writing"],
+.tt-save-pill[data-state="export"] {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
-.tt-save-pill[data-state="error"] {
+.tt-save-pill[data-state="error"],
+.tt-save-pill[data-state="store-error"] {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
-/* A lapsed write permission (main file and/or backup file) — amber, distinct
+/* A lapsed write permission — amber, distinct
    from "error": the user can fix this themselves with one click, it isn't a
-   failure needing investigation. Reuses --brass, the same amber token
+   failure needing investigation — and an export gone stale (older than the write interval).
+   Reuses --brass, the same amber token
    already used for "medium" risk exposure and the password meter's "fair"
    step, rather than introducing a new color variable across every palette. */
-.tt-save-pill[data-state="permission"] {
+.tt-save-pill[data-state="permission"],
+.tt-save-pill[data-state="export"].tt-save-pill-stale {
   color: var(--brass);
   background: color-mix(in srgb, var(--brass) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
-}
-/* Backup-specific pill states — same severity-coded tokens as the primary
-   file's states (danger=broken, brass=needs a grant), so color still means
-   the same thing everywhere; the pill's "Backup:" label prefix is what
-   disambiguates which file a given state is about. */
-.tt-save-pill[data-state="backup-error"] {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, var(--panel));
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-}
-.tt-save-pill[data-state="backup-permission"] {
-  color: var(--brass);
-  background: color-mix(in srgb, var(--brass) 14%, var(--panel));
-  border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
-}
-.tt-save-pill[data-state="backup-password-mismatch"] {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 /* The header slot for the save pill: an invisible flex wrapper, not a
    visible box of its own. Its only jobs are (1) hosting the single onclick
-   both .tt-save-pill and .tt-save-pill-backup-tab bubble up to, so the
-   compound shape acts as one control, and (2) being what settings.ts's
+   .tt-save-pill bubbles up to, and (2) being what settings.ts's
    size options (html[data-size]) resize *through* — every dimension below
    is in rem specifically so XS through XL keep the same proportions. */
 .tt-save-pill-wrap { display: inline-flex; align-items: center; }
-/* Backup indicator tab: a second, narrower pill tucked behind the main
-   pill's right edge whenever prefs.dailyBackupEnabled is on, showing at a
-   glance even while the main pill has nothing backup-specific to say
-   ("saved" tells you nothing about whether the backup mirror is healthy).
-   Its color is its own severity signal (BACKUP_TAB_HEALTH in shell.ts),
-   independent of the main pill's — the two can disagree, e.g. primary
-   "Saved" next to a red backup tab if only the mirror write failed.
-   margin-left's magnitude must clear the main pill's own corner radius
-   (roughly height/2) so the tab's rounded left cap sits behind the main
-   pill's flat side rather than still inside its curve — anything less
-   leaks a sliver of the tab's color top/bottom-left. Both margin-left and
-   padding-left are rem (not px): the main pill's height — and so its
-   corner radius — scales with html[data-size]'s root font-size (12px at
-   XS to 18px at XL), so a fixed px overlap tuned for one size falls short
-   at the larger ones and over-hides at the smaller ones. rem keeps the
-   ratio, and so the "fully tucked in" look, constant across all five. */
-.tt-save-pill-backup-tab {
-  position: relative; z-index: 1;
-  display: inline-flex; align-items: center; justify-content: flex-end;
-  margin-left: -1.44rem;
-  box-sizing: border-box; height: var(--tt-header-ctl-h); padding: 0 .55rem 0 1.75rem;
-  border-radius: 999px;
-  border: 1px solid var(--border); background: var(--panel); color: var(--muted);
-  font-size: .78rem; cursor: default;
-  transition: background-color .2s ease, border-color .2s ease, color .2s ease;
-}
-.tt-save-pill-backup-tab svg { display: block; }
-.tt-save-pill-backup-tab[data-backup="ok"] {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-}
-.tt-save-pill-backup-tab[data-backup="permission"] {
-  color: var(--brass);
-  background: color-mix(in srgb, var(--brass) 14%, var(--panel));
-  border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
-}
-.tt-save-pill-backup-tab[data-backup="error"] {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, var(--panel));
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-}
-.tt-save-pill-backup-tab[data-backup="mismatch"] {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-}
-/* Fallback mode (no File System Access API — every save is a download). The
-   mark replaces a sticky toast that used to sit over the app for the whole
-   session; the pill's tooltip carries the full sentence. */
-.tt-save-pill-fallback-mark { font-family: var(--font-data); opacity: .7; margin-left: .1rem; }
+/* Read-only (this tab lost the write lock) keeps the pill's default muted look: it is information, not a problem. */
 .tt-save-pill-clickable { cursor: pointer; }
 .tt-save-pill-clickable:hover { filter: brightness(0.95); }
 [data-theme="dark"] .tt-save-pill-clickable:hover { filter: brightness(1.15); }
@@ -1079,6 +1011,11 @@ body { background: var(--bg); color: var(--fg); }
 .editor h3 { font-size: 1.15rem; }
 .editor ul, .editor ol { padding-left: 1.5em; }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
+/* Embedded image: its own centered block at natural pixel size. Sizes are in px on purpose (never em/rem), so the app's font size and Ctrl+wheel zoom steps do not scale a picture; max-width only shrinks it to fit the pane. */
+.editor .tt-img { display: flex; justify-content: center; margin: 0; padding: 2px 0; user-select: none; }
+.editor .tt-img img { display: block; max-width: 100%; height: auto; border-radius: 2px; }
+.editor .tt-img.is-selected img { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editor .tt-img-missing { color: var(--muted); font-style: italic; border: 1px dashed var(--muted); border-radius: 4px; padding: .6em 1em; }
 .editor blockquote { margin: .5em 0; padding: .15em 0 .15em .9em; border-left: 3px solid var(--muted); color: var(--muted); }
 .editor pre { position: relative; margin: .5em 0; padding: .6em .8em; background: rgba(128, 128, 128, .14); border-radius: var(--r-md); white-space: pre; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .92em; }
 .editor pre[data-collapsed] { max-height: 6.2em; overflow: hidden; cursor: pointer; }
@@ -2066,7 +2003,7 @@ select option { background: var(--bg); color: var(--fg); }
    otherwise inherit the default cross-axis `stretch` and balloon into a
    full-width bar (this modal's only flex-column contexts, so the selector
    stays scoped to it) — every prefs/data-tab action button (export, import,
-   cleanup, change-backup-location, migrate-to-plain, tag cross-apply) sizes
+   cleanup, migrate-to-plain, tag cross-apply) sizes
    to its own content instead, matching the compact buttons elsewhere in the
    app. Buttons nested inside their own row (.tt-prefs-template-toolbar,
    .tt-prefs-template-actions, .tt-data-import-actions) aren't direct
@@ -2104,7 +2041,7 @@ select option { background: var(--bg); color: var(--fg); }
 }
 .tt-prefs-radio input[type="radio"]:checked::before { transform: scale(1); }
 .tt-prefs-radio input[type="radio"]:checked { border-color: var(--accent); }
-/* Disabled (e.g. backup frequency while backup is off): dimmed like
+/* Disabled: dimmed like
    .tt-btn:disabled, and no accent on hover — the pill is custom-drawn, so
    the browser's own disabled look never reaches it. */
 .tt-prefs-radio:has(input:disabled),
@@ -2141,6 +2078,9 @@ select option { background: var(--bg); color: var(--fg); }
 /* Data tab (team export/import) */
 .tt-data-hint { font-size: .8rem; color: var(--muted); margin: 0; }
 .tt-data-empty { color: var(--muted); padding: .5rem; }
+.tt-data-images-usage { margin: 0; }
+.tt-data-images-warn { color: var(--brass); font-weight: 600; }
+.tt-data-images-full { color: var(--danger); font-weight: 600; }
 .tt-data-team-list { display: flex; flex-direction: column; gap: .25rem; }
 .tt-data-team-row {
   display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border-radius: var(--r-sm);
@@ -2244,8 +2184,8 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-kanban-board > .tt-kanban-col { flex: 1 1 15.667rem; min-width: 15.667rem; }
 .tt-kanban-board > .tt-kanban-col:last-child { flex: 1.15 1 18.333rem; min-width: 18.333rem; }
 .tt-kanban-col { background: color-mix(in srgb, var(--fg) 5%, var(--bg)); border-radius: var(--r-lg); padding: .25rem .5rem .5rem; }
-/* Cancelled sits compact under the Done cards instead of taking half the column. The floor is permanent (not set on dragstart) so a drag never reflows the board. */
-.tt-kanban-cancelled-wrap { flex: 0 1 auto; min-height: 4.5rem; max-height: 45%; }
+/* Cancelled sits compact under the Done cards instead of taking half the column. The floor is permanent (not set on dragstart) so a drag never reflows the board, and big enough that an empty zone is still a usable drop target once the dragging dropzone loses 44px to the trash bar. */
+.tt-kanban-cancelled-wrap { flex: 0 1 auto; min-height: 8.5rem; max-height: 45%; }
 .tt-kanban-card-due.overdue, .tt-kanban-card-due.soon {
   border-radius: 999px; padding: 0 .4rem; font-weight: 700;
   border: 1px solid color-mix(in srgb, currentColor 45%, transparent);

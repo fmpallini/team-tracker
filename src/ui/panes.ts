@@ -25,15 +25,15 @@ export type ModuleRenderer = (container: HTMLElement, loc: Loc, ctx: ModuleCtx) 
 
 /**
  * The one sliver of Shell a module is allowed to see: mirroring the header's
- * save-state pill (state/label/tooltip already formatted) and triggering the
- * same explicit-save action it does. Deliberately narrower than `Shell`
+ * save pill (health/label/tooltip already formatted) and triggering the
+ * same action a click on it does. Deliberately narrower than `Shell`
  * itself — a module has no business touching the sidebar, prefs, or any of
  * Shell's other two dozen methods, and a narrow interface keeps every other
  * module test's fake ModuleCtx a two-line stub instead of a full Shell mock.
  * See action-items.ts's expanded-modal header pill, the first consumer.
  */
 export interface SaveStatusApi {
-  requestSaveNow(): void
+  requestPillAction(): void
   subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void
 }
 
@@ -464,7 +464,7 @@ export function createPaneManager(shell: Shell, store: Store): PaneManager & { s
   // The narrow Shell slice every ModuleCtx gets — see SaveStatusApi's doc
   // comment for why this isn't `shell` itself.
   const saveStatus: SaveStatusApi = {
-    requestSaveNow: () => shell.requestSaveNow(),
+    requestPillAction: () => shell.requestPillAction(),
     subscribeSaveState: (cb) => shell.subscribeSaveState(cb),
   }
 

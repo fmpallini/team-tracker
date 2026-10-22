@@ -5,8 +5,7 @@ test('createEmptyDocument shape', () => {
   expect(d.schemaVersion).toBe(SCHEMA_VERSION)
   expect(d.prefs).toEqual({
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
-    autoSaveMin: 10, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
-    dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
+    autoSaveMin: 60, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
     ctrlWheelFontSize: true, dailyEdgeScroll: true,
   })
   expect(d.teams).toEqual([])
@@ -169,43 +168,17 @@ describe('v7 → v8 migration (open refs in secondary pane)', () => {
   })
 })
 
-describe('v8 → v9 migration (daily backup prefs)', () => {
-  it('defaults dailyBackupEnabled to false and backupHandleId to null when missing', () => {
+describe('backup prefs (removed in schema 18)', () => {
+  it('drops the three backup fields from a pre-18 document', () => {
     const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 8
-    delete d.prefs.dailyBackupEnabled
-    delete d.prefs.backupHandleId
-    const doc = migrate(d)
-    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
-    expect(doc.prefs.dailyBackupEnabled).toBe(false)
-    expect(doc.prefs.backupHandleId).toBeNull()
-  })
-  it('leaves existing values untouched', () => {
-    const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 8
+    d.schemaVersion = 9
     d.prefs.dailyBackupEnabled = true
     d.prefs.backupHandleId = 'abc-123'
-    const doc = migrate(d)
-    expect(doc.prefs.dailyBackupEnabled).toBe(true)
-    expect(doc.prefs.backupHandleId).toBe('abc-123')
-  })
-})
-
-describe('v9 → v10 migration (backup frequency)', () => {
-  it('defaults backupFrequency to "daily" when missing', () => {
-    const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 9
-    delete d.prefs.backupFrequency
-    const doc = migrate(d)
-    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
-    expect(doc.prefs.backupFrequency).toBe('daily')
-  })
-  it('leaves an existing backupFrequency untouched', () => {
-    const d = createEmptyDocument('en-US') as any
-    d.schemaVersion = 9
     d.prefs.backupFrequency = 'hourly'
     const doc = migrate(d)
-    expect(doc.prefs.backupFrequency).toBe('hourly')
+    expect(doc.prefs).not.toHaveProperty('dailyBackupEnabled')
+    expect(doc.prefs).not.toHaveProperty('backupHandleId')
+    expect(doc.prefs).not.toHaveProperty('backupFrequency')
   })
 })
 
@@ -637,5 +610,106 @@ describe('validateDoc', () => {
     const d = goodDoc()
     first(team0(d), 'actionItems').assignee = 'Ghost'
     expect(validateDoc(d)).toBeNull()
+  })
+})
+
+describe('v16 → v17 migration (embedded images)', () => {
+  const v16 = () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 16
+    delete d.images
+    return d
+  }
+  const ID = 'a'.repeat(32)
+
+  it('adds an empty image map', () => {
+    const doc = migrate(v16())
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.images).toEqual({})
+  })
+
+  it('a new empty document has an empty image map', () => {
+    expect(createEmptyDocument('en-US').images).toEqual({})
+  })
+
+  it('validateDoc rejects a non-object image map', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.images = []
+    expect(validateDoc(d)).toBe('images')
+  })
+
+  it('validateDoc rejects a non-numeric size and a malformed id', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.images = { [ID]: { mime: 'image/webp', w: 'x', h: 1, bytes: 1 } }
+    expect(validateDoc(d)).toBe(`images["${ID}"]`)
+    d.images = { NOTANID: { mime: 'image/webp', w: 1, h: 1, bytes: 1 } }
+    expect(validateDoc(d)).toBe('images["NOTANID"]')
+  })
+
+  it('validateDoc accepts a good entry', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.images = { [ID]: { mime: 'image/webp', w: 10, h: 20, bytes: 300 } }
+    expect(validateDoc(d)).toBeNull()
+  })
+})
+
+describe('v17 → v18 migration (docId)', () => {
+  const v17 = () => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 17
+    delete d.docId
+    return d
+  }
+
+  it('gives an older document a fresh 32-hex docId', () => {
+    const doc = migrate(v17())
+    expect(doc.schemaVersion).toBe(18)
+    expect(doc.docId).toMatch(/^[0-9a-f]{32}$/)
+    expect(migrate(v17()).docId).not.toBe(doc.docId)
+  })
+
+  it('a new empty document has its own docId', () => {
+    const a = createEmptyDocument('en-US'), b = createEmptyDocument('en-US')
+    expect(a.docId).toMatch(/^[0-9a-f]{32}$/)
+    expect(a.docId).not.toBe(b.docId)
+  })
+
+  it('validateDoc rejects a missing or malformed docId', () => {
+    const d = createEmptyDocument('en-US') as any
+    d.docId = undefined
+    expect(validateDoc(d)).toBe('docId')
+    d.docId = 'xyz'
+    expect(validateDoc(d)).toBe('docId')
+    d.docId = 'A'.repeat(32)
+    expect(validateDoc(d)).toBe('docId')
+  })
+})
+
+describe('autoSaveMin (the file-write interval, 60..1440 minutes since schema 18)', () => {
+  const at17 = (autoSaveMin: unknown) => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 17
+    delete d.docId
+    d.prefs.autoSaveMin = autoSaveMin
+    return d
+  }
+
+  it('a new document writes the file every hour', () => {
+    expect(createEmptyDocument('en-US').prefs.autoSaveMin).toBe(60)
+  })
+
+  it('raises an old, shorter interval to one hour and caps a longer one at a day, keeping the ones in range', () => {
+    expect(migrate(at17(5)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(59)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(5000)).prefs.autoSaveMin).toBe(1440)
+    expect(migrate(at17(120)).prefs.autoSaveMin).toBe(120)
+    expect(migrate(at17(60)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(1440)).prefs.autoSaveMin).toBe(1440)
+  })
+
+  it('a value that is not a number becomes the default', () => {
+    expect(migrate(at17('soon')).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(undefined)).prefs.autoSaveMin).toBe(60)
+    expect(migrate(at17(NaN)).prefs.autoSaveMin).toBe(60)
   })
 })

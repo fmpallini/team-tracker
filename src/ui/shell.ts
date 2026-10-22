@@ -3,22 +3,37 @@ import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { icon } from './icons'
-import { formatHHMM } from '../core/date'
+import { formatHHMM, formatAge } from '../core/date'
+import type { FileHealth } from '../core/file-snapshot'
 import { syncThemeColor } from '../core/theme-color'
 
-export type BackupHealth = 'ok' | 'permission' | 'error' | 'mismatch'
+/** What the save pill reports. The file's own health, plus two conditions that outrank it. */
+export type PillHealth = FileHealth['kind'] | 'store-error' | 'readonly'
 
-export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'permission' | 'backup-error' | 'backup-permission' | 'backup-password-mismatch'
+/** The pill's click, by what it does: re-grant a lapsed permission, export a copy (browsers that cannot write the file), or open the dialog for a failed write. */
+export type PillAction = 'regrant' | 'export' | 'failure'
 
-/** Already-formatted (current-locale) snapshot of the save-state pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of SAVE_STATE_KEY/renderSaveIndicator's formatting rules. */
+/** What the pill needs to know besides the file's health. */
+export interface PillContext {
+  /** When the file is next due (or, in export mode, when the last export turns stale); null if unknown. */
+  nextWriteAt: number | null
+  /** `navigator.storage.persisted()`: false means clearing site data could lose work not yet written to the file; null unknown. */
+  persistent: boolean | null
+  /** The browser store is failing: edits exist only in memory. */
+  storeError: boolean
+  /** This tab lost the write lock. */
+  readOnly: boolean
+}
+
+/** Already-formatted (current-locale) snapshot of the save pill — what `subscribeSaveState` broadcasts, so a mirroring control (e.g. action-items.ts's expanded-modal header pill) never needs its own copy of the label/tooltip rules. */
 export interface SaveStatusInfo {
-  state: SaveState
+  health: PillHealth
   label: string
   title: string
-  /** Whether clicking the pill does anything in this state (save, re-grant, or rewrite the backup). */
+  /** Whether clicking the pill does anything in this state. */
   clickable: boolean
-  /** Backup-health tab state, or null while daily/hourly backup is off (no tab then). */
-  backup: { health: BackupHealth; title: string } | null
+  /** Export mode only: the last export is older than the write interval. */
+  stale: boolean
 }
 
 export interface Shell {
@@ -29,18 +44,13 @@ export interface Shell {
   headerRight: HTMLElement
   sidebar: HTMLElement
   panesRoot: HTMLElement
-  setSaveState(state: SaveState): void
   /**
-   * Task 25 re-review item #4b: fallback mode (no FS handle — the browser
-   * doesn't support the File System Access API) has no silent auto-save;
-   * every save is a download the user must explicitly trigger with Ctrl+S.
-   * When `active` is true, the save indicator's tooltip in the `dirty` state
-   * spells that out instead of just saying "Unsaved" with no next step.
-   * main.ts sets this once, at document-open time, from `!session.handle`.
+   * Repaints the save pill. The pill reports whether the app can write the file when it needs to — not whether the
+   * document is "dirty", which the browser copy makes mostly moot. The label is static; every time is in the hover.
    */
-  setFallbackHint(active: boolean): void
+  setFileHealth(health: FileHealth, ctx: PillContext): void
   applyPrefs(prefs: Prefs): void
-  setTitle(fileName: string | null, dirty: boolean): void
+  setTitle(fileName: string | null): void
   /** Registers the click handler for the header ⚙ button (Task 24: opens the preferences modal). */
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
@@ -55,38 +65,19 @@ export interface Shell {
   setAppNameEnabled(enabled: boolean): void
   /** Registers the click handler for the header 🔒 button (saves and closes the current file, returning to the start screen — same action as Ctrl+Alt+L). */
   onCloseFile(cb: () => void): void
-  /** Registers the click handler for the save-state pill — clicking it while a save is pending ('dirty'/'error') triggers an explicit save, same as Ctrl+S. */
-  onSaveRequest(cb: () => void): void
+  /** Registers the handler for clicks on the save pill, called with what the click is for. Only permission, a failed write and export respond; every other state is inert. */
+  onPillAction(cb: (action: PillAction) => void): void
   /**
-   * Registers the click handler for the save-state pill while it's in the
-   * 'permission' state — a lapsed write grant on the primary file, the
-   * backup file, or both. Separate from `onSaveRequest` because the recovery
-   * action is different: re-requesting permission(s), not just retrying a
-   * write that would fail the same way again.
+   * Same effect as clicking the real pill, for a caller that mirrors it in its own UI (action-items.ts's
+   * expanded-modal header pill) instead of the header pill itself.
    */
-  onGrantRequest(cb: () => void): void
-  /**
-   * Registers the click handler for the save-state pill while it's in the
-   * 'backup-password-mismatch' state — the backup mirror is known to still be
-   * encrypted under a previous password. Separate from onGrantRequest: the
-   * fix here is a fresh write, not a permission re-grant.
-   */
-  onBackupRetryRequest(cb: () => void): void
-  /**
-   * Same effect as clicking the real save-state pill — an explicit save while
-   * a save is pending ('dirty'/'error'), the grant-recovery action while
-   * 'permission', a no-op otherwise — for a caller that mirrors the pill in
-   * its own UI (action-items.ts's expanded-modal header "force save") instead
-   * of the header pill itself.
-   */
-  requestSaveNow(): void
+  requestPillAction(): void
   /**
    * Subscribes to every save-state pill update — state plus its
    * already-formatted (current-locale) label/tooltip, the same strings the
    * real pill renders. Fires once immediately with the current snapshot (a
    * fresh subscriber doesn't wait for the next change), then again on every
-   * subsequent `setSaveState`/`setFallbackHint`/locale-changing `applyPrefs`
-   * call. Returns an unsubscribe function.
+   * subsequent `setFileHealth`/locale-changing `applyPrefs` call (and, in export mode, as the age ticks over). Returns an unsubscribe function.
    */
   subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void
   /**
@@ -110,7 +101,7 @@ export interface Shell {
    * Load-bearing, not hygiene: `matchMedia`'s MediaQueryList outlives any one
    * document, so a shell that never unregisters stays reachable from it
    * forever — and because that handler shares `createShell`'s closure scope
-   * with `setSaveState`/`applyPrefs`/etc., which capture `root`, keeping it
+   * with `setFileHealth`/`applyPrefs`/etc., which capture `root`, keeping it
    * alive pins the shell's *entire DOM tree*. Every close-file → open-file
    * cycle then retained a whole previous UI (~340 nodes, ~140 listeners
    * measured in e2e/leak.spec.ts). main.ts calls this from its per-document
@@ -119,66 +110,28 @@ export interface Shell {
   dispose(): void
 }
 
-/** States where clicking the save pill does something (save, re-grant permission, or rewrite the backup). Single source for the pill's click look and for `SaveStatusInfo.clickable`. */
-const CLICKABLE_STATES: ReadonlySet<SaveState> = new Set<SaveState>(['dirty', 'error', 'permission', 'backup-permission', 'backup-password-mismatch'])
+/** Which clicks do something, and what. Single source for the pill's click look and for `SaveStatusInfo.clickable`. */
+const CLICK_ACTION: Partial<Record<PillHealth, PillAction>> = { permission: 'regrant', error: 'failure', 'store-error': 'failure', export: 'export' }
 
-const SAVE_STATE_KEY: Record<SaveState, MsgKey> = {
-  saved: 'save_saved',
-  dirty: 'save_dirty',
-  saving: 'save_saving',
-  error: 'save_error',
-  permission: 'save_permission',
-  'backup-error': 'save_backup_error',
-  'backup-permission': 'save_backup_permission',
-  'backup-password-mismatch': 'save_backup_password_mismatch',
+const LABEL_KEY: Record<Exclude<PillHealth, 'export'>, MsgKey> = {
+  ok: 'pill_ok',
+  writing: 'pill_writing',
+  permission: 'pill_permission',
+  error: 'pill_error',
+  'store-error': 'pill_store_error',
+  readonly: 'pill_readonly',
 }
 
-/**
- * Maps every `SaveState` to the backup tab's own color, independent of what
- * the main pill's color/label are doing. A `backup-*` state already means
- * the main pill's own text/color is showing that problem (SAVE_STATE_KEY
- * above) — the tab echoes the same severity so it's legible without reading
- * the label. Every other state (including plain 'error', a primary-file
- * write failure with no bearing on backup health) reads as 'ok' here: the
- * tab's job is backup health specifically, not a mirror of primary status.
- */
-const BACKUP_TAB_HEALTH: Record<SaveState, BackupHealth> = {
-  saved: 'ok',
-  dirty: 'ok',
-  saving: 'ok',
-  error: 'ok',
-  permission: 'ok',
-  'backup-error': 'error',
-  'backup-permission': 'permission',
-  'backup-password-mismatch': 'mismatch',
+const TITLE_KEY: Record<Exclude<PillHealth, 'ok' | 'export'>, MsgKey> = {
+  writing: 'pill_writing_title',
+  permission: 'pill_permission_title',
+  error: 'pill_error_title',
+  'store-error': 'pill_store_error_title',
+  readonly: 'pill_readonly_title',
 }
 
-/**
- * The backup-health tab tucked behind a save pill (see the long note on
- * `.tt-save-pill-backup-tab` in styles.css), shared by the header pill and the
- * mirrored one in the expanded action-item modal. Hidden until `paintBackupTab`
- * says backup is on; `style.display`, not `hidden`, because the class sets its
- * own `display` (see the trap noted where the header pill is built).
- */
-export function createBackupTab(): HTMLElement {
-  const tab = el('span', { class: 'tt-save-pill-backup-tab', 'aria-hidden': 'true' })
-  tab.innerHTML =
-    '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="7.4" height="7.4" rx="1.5"/><path d="M5.6 5.4V3.6A1.6 1.6 0 0 1 7.2 2H11.8A1.6 1.6 0 0 1 13.4 3.6V8.2A1.6 1.6 0 0 1 11.8 9.8H10.4"/></svg>'
-  tab.style.display = 'none'
-  return tab
-}
-
-/** Syncs a `createBackupTab()` tab to a save-state snapshot. */
-export function paintBackupTab(tab: HTMLElement, info: SaveStatusInfo): void {
-  tab.style.display = info.backup ? '' : 'none'
-  if (info.backup) {
-    tab.dataset.backup = info.backup.health
-    tab.title = info.backup.title
-  }
-  // Same class on the tab as on the pill so hovering the sliver peeking out
-  // from behind the pill gets the same pointer cursor + dim-on-hover.
-  tab.classList.toggle('tt-save-pill-clickable', info.clickable)
-}
+/** How often the export age ("Export file · 3 h ago") is refreshed. */
+const AGE_TICK_MS = 60_000
 
 function toggleFullscreen(): void {
   if (document.fullscreenElement) {
@@ -195,7 +148,7 @@ function toggleFullscreen(): void {
  * re-syncs the shell's closed-over locale on every call — so when Task 24's
  * settings panel changes the locale and calls `applyPrefs()` again, the
  * save-indicator tooltip (the shell's only i18n string) picks up the new
- * locale the next time `setSaveState()` runs. This avoids a redundant API
+ * locale the next time `setFileHealth()` runs. This avoids a redundant API
  * while keeping locale-consuming logic in one place (`applyPrefs`).
  */
 export function createShell(locale: Locale): Shell {
@@ -234,42 +187,19 @@ export function createShell(locale: Locale): Shell {
   savePillIcon.innerHTML =
     '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75V8.25L10.25 9.75"/></svg>'
   const savePillText = el('span', { class: 'tt-save-pill-text' })
-  // Shown only in fallback mode (no File System Access API), where every save
-  // is a download the user must trigger. Hidden by default; renderSaveIndicator
-  // flips it from `fallbackHint`.
-  const savePillFallbackMark = el('span', { class: 'tt-save-pill-fallback-mark', 'aria-hidden': 'true' }, '⤓')
-  savePillFallbackMark.hidden = true
-  // A second, narrower pill tucked BEHIND the main pill's right edge (lower
-  // z-index, pulled under it with a negative margin) — present whenever
-  // prefs.dailyBackupEnabled is on, independent of it. Its color carries
-  // backup health on its own (the same brass/danger/accent tokens the
-  // pill's backup-* states already use) so there's always a glance-able
-  // signal even when backup is perfectly healthy and the main pill's own
-  // state/label has nothing backup-specific to say. Must be a *sibling* of
-  // saveIndicator, not a child of it: saveIndicator draws its own
-  // border/background/border-radius as one box, so nesting the tab inside
-  // that box would draw the tab as a second little chip stranded inside the
-  // parent's padding instead of a second pill hiding behind the first one.
-  const savePillBackupTab = createBackupTab()
-  let saveRequestHandler: (() => void) | null = null
-  let grantRequestHandler: (() => void) | null = null
-  let backupRetryRequestHandler: (() => void) | null = null
+  let pillActionHandler: ((action: PillAction) => void) | null = null
   const saveIndicator = el(
     'span',
     { class: 'tt-save-pill' },
     savePillIcon,
-    savePillText,
-    savePillFallbackMark
+    savePillText
   )
-  // The click target: both saveIndicator and the backup tab are its
-  // children, so clicking either one (or the sliver of the tab peeking out
-  // from behind saveIndicator) bubbles up to this single onclick — the
-  // compound shape reads and behaves as one control.
+  // The click target: the pill is its only child; kept as a wrapper so the mirrored
+  // pill in the expanded action-item modal can clone the same shape.
   const savePillWrap = el(
     'span',
-    { class: 'tt-save-pill-wrap', onclick: () => requestSaveNow() },
-    saveIndicator,
-    savePillBackupTab
+    { class: 'tt-save-pill-wrap', onclick: () => requestPillAction() },
+    saveIndicator
   )
 
   const fullscreenBtn = el(
@@ -326,86 +256,80 @@ export function createShell(locale: Locale): Shell {
   }
   mq.addEventListener('change', onSystemThemeChange)
 
-  let currentState: SaveState = 'saved'
-  let fallbackHint = false
-  let backupEnabled = false
-  let backupFrequency: Prefs['backupFrequency'] = 'daily'
-  // Raw hours/minutes, not a pre-formatted string — formatting happens in
-  // computeSaveInfo() so a locale switch reformats the last-saved time
-  // immediately (12h/24h), instead of leaving it stuck in whatever format
-  // was current when the save actually happened.
-  let lastSavedAt: { h: number; m: number } | null = null
+  // What the pill last painted from. Kept raw (never pre-formatted text) so a locale switch, or the minute tick in
+  // export mode, reformats instead of showing what was true when it was last painted.
+  let fileHealth: FileHealth = { kind: 'ok', lastWrittenAt: null }
+  let pillCtx: PillContext = { nextWriteAt: null, persistent: null, storeError: false, readOnly: false }
+  let ageTimer: ReturnType<typeof setInterval> | null = null
   const saveStateSubscribers = new Set<(info: SaveStatusInfo) => void>()
 
-  /** `label`/`title` computation shared by the real pill (renderSaveIndicator) and every subscribeSaveState() listener — one place text/tooltip rules live, so a mirroring control never drifts from the real pill's wording. */
-  function computeSaveInfo(): SaveStatusInfo {
-    const label = t(currentLocale, SAVE_STATE_KEY[currentState])
-    const time = lastSavedAt ? formatHHMM(lastSavedAt.h, lastSavedAt.m, currentLocale) : null
-    // `label · time` is right for 'saved' ("Saved · 5:11 PM") and 'error', but
-    // reads wrong for 'dirty': the timestamp is the last *successful* save,
-    // and joining it to "Unsaved" with a middot makes it look like the moment
-    // things went wrong. The dirty state names what the time refers to.
-    const text =
-      currentState === 'saving' || !time ? label
-      : currentState === 'dirty' ? t(currentLocale, 'save_dirty_since', { time })
-      : `${label} · ${time}`
-    let title = label
-    if (currentState === 'dirty' && fallbackHint) {
-      title += ` — ${t(currentLocale, 'save_fallback_hint')}`
-    }
-    const health = BACKUP_TAB_HEALTH[currentState]
-    const backup = !backupEnabled ? null : {
-      health,
-      title: health === 'ok'
-        ? t(currentLocale, backupFrequency === 'hourly' ? 'save_backup_tab_ok_title_hourly' : 'save_backup_tab_ok_title_daily')
-        : label,
-    }
-    return { state: currentState, label: text, title, clickable: CLICKABLE_STATES.has(currentState), backup }
+  const clock = (ms: number): string => {
+    const d = new Date(ms)
+    return formatHHMM(d.getHours(), d.getMinutes(), currentLocale)
   }
 
-  // Redraws the pill from `currentState`/`lastSavedAt`/`fallbackHint`/
-  // `currentLocale` without touching `lastSavedAt` — callers that only need
-  // to refresh the displayed text (locale switch, fallback-hint toggle) use
-  // this instead of setSaveState() so a re-render never re-stamps the
-  // timestamp as if a fresh save had just happened.
+  /** The health the pill shows: a read-only tab outranks a failed browser store, which outranks any problem with the file. */
+  function pillHealth(): PillHealth {
+    if (pillCtx.readOnly) return 'readonly'
+    if (pillCtx.storeError) return 'store-error'
+    return fileHealth.kind
+  }
+
+  /** `label`/`title` computation shared by the real pill (renderSaveIndicator) and every subscribeSaveState() listener — one place the text and tooltip rules live, so a mirroring control never drifts from the real pill's wording. */
+  function computeSaveInfo(): SaveStatusInfo {
+    const health = pillHealth()
+    let label: string
+    let title: string
+    let stale = false
+    if (health === 'export') {
+      const at = fileHealth.kind === 'export' ? fileHealth.lastExportedAt : null
+      const age = at === null ? null : formatAge(Date.now() - at)
+      label = at === null ? t(currentLocale, 'pill_export') : age === null ? t(currentLocale, 'pill_export_now') : t(currentLocale, 'pill_export_ago', { age })
+      title = t(currentLocale, 'pill_export_title')
+      stale = pillCtx.nextWriteAt !== null && Date.now() > pillCtx.nextWriteAt
+    } else {
+      label = t(currentLocale, LABEL_KEY[health])
+      if (health === 'ok') {
+        const written = fileHealth.kind === 'ok' ? fileHealth.lastWrittenAt : null
+        const next = pillCtx.nextWriteAt
+        title = written !== null && next !== null
+          ? t(currentLocale, 'pill_ok_title', { written: clock(written), next: clock(next) })
+          : next !== null
+            ? t(currentLocale, 'pill_ok_title_nofile', { next: clock(next) })
+            : t(currentLocale, 'pill_ok_title_plain')
+        if (pillCtx.persistent === false) title += '\n' + t(currentLocale, 'pill_persist_warning')
+      } else {
+        title = t(currentLocale, TITLE_KEY[health])
+      }
+    }
+    return { health, label, title, clickable: CLICK_ACTION[health] !== undefined, stale }
+  }
+
   function renderSaveIndicator(): void {
     const info = computeSaveInfo()
     savePillText.textContent = info.label
-    savePillIcon.classList.toggle('tt-save-pill-spin', currentState === 'saving')
+    savePillIcon.classList.toggle('tt-save-pill-spin', info.health === 'writing')
     saveIndicator.title = info.title
-    // Fallback mode is permanent for the life of the file, so it belongs on
-    // the pill rather than in a sticky toast — and it needs to be legible
-    // without a hover, hence the mark rather than tooltip-only.
-    savePillFallbackMark.hidden = !fallbackHint
-    saveIndicator.classList.toggle('tt-save-pill-fallback', fallbackHint)
-    saveIndicator.dataset.state = currentState
+    saveIndicator.dataset.state = info.health
     saveIndicator.classList.toggle('tt-save-pill-clickable', info.clickable)
-    paintBackupTab(savePillBackupTab, info)
+    saveIndicator.classList.toggle('tt-save-pill-stale', info.stale)
     for (const sub of saveStateSubscribers) sub(info)
   }
 
-  function setSaveState(state: SaveState): void {
-    currentState = state
-    if (state === 'saved') {
-      const now = new Date()
-      lastSavedAt = { h: now.getHours(), m: now.getMinutes() }
-    }
+  function setFileHealth(health: FileHealth, ctx: PillContext): void {
+    fileHealth = health
+    pillCtx = ctx
     renderSaveIndicator()
-  }
-
-  function setFallbackHint(active: boolean): void {
-    fallbackHint = active
-    renderSaveIndicator()
+    // The age is the one thing on the pill that changes with time alone.
+    const needsTick = pillHealth() === 'export'
+    if (needsTick && ageTimer === null) ageTimer = setInterval(renderSaveIndicator, AGE_TICK_MS)
+    else if (!needsTick && ageTimer !== null) { clearInterval(ageTimer); ageTimer = null }
   }
 
   function applyPrefs(prefs: Prefs): void {
     const localeChanged = prefs.locale !== currentLocale
-    const backupEnabledChanged = prefs.dailyBackupEnabled !== backupEnabled
-    const backupFrequencyChanged = prefs.backupFrequency !== backupFrequency
     currentLocale = prefs.locale
     currentTheme = prefs.theme
-    backupEnabled = prefs.dailyBackupEnabled
-    backupFrequency = prefs.backupFrequency
     applyTheme(prefs.theme)
     document.documentElement.dataset.palette = prefs.palette
     syncThemeColor()
@@ -419,12 +343,11 @@ export function createShell(locale: Locale): Shell {
       settingsBtn.title = t(currentLocale, 'settings')
       helpBtn.title = t(currentLocale, 'help_global_title')
     }
-    if (localeChanged || backupEnabledChanged || backupFrequencyChanged) renderSaveIndicator()
+    if (localeChanged) renderSaveIndicator()
   }
 
-  function setTitle(fileName: string | null, dirty: boolean): void {
-    document.title =
-      `Team Tracker v${__APP_VERSION__}` + (fileName ? ` — ${fileName}` : '') + (dirty ? ' ●' : '')
+  function setTitle(fileName: string | null): void {
+    document.title = `Team Tracker v${__APP_VERSION__}` + (fileName ? ` — ${fileName}` : '')
   }
 
   function onSettings(cb: () => void): void {
@@ -447,28 +370,13 @@ export function createShell(locale: Locale): Shell {
     closeFileHandler = cb
   }
 
-  function onSaveRequest(cb: () => void): void {
-    saveRequestHandler = cb
+  function onPillAction(cb: (action: PillAction) => void): void {
+    pillActionHandler = cb
   }
 
-  function onGrantRequest(cb: () => void): void {
-    grantRequestHandler = cb
-  }
-
-  function onBackupRetryRequest(cb: () => void): void {
-    backupRetryRequestHandler = cb
-  }
-
-  function requestSaveNow(): void {
-    if (currentState === 'permission' || currentState === 'backup-permission') {
-      grantRequestHandler?.()
-      return
-    }
-    if (currentState === 'backup-password-mismatch') {
-      backupRetryRequestHandler?.()
-      return
-    }
-    if (currentState === 'dirty' || currentState === 'error') saveRequestHandler?.()
+  function requestPillAction(): void {
+    const action = CLICK_ACTION[pillHealth()]
+    if (action) pillActionHandler?.(action)
   }
 
   function subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void {
@@ -485,11 +393,13 @@ export function createShell(locale: Locale): Shell {
     header.classList.toggle('tt-header-team-hidden', hidden)
   }
 
-  setSaveState('saved')
+  renderSaveIndicator()
 
   function dispose(): void {
     mq.removeEventListener('change', onSystemThemeChange)
+    if (ageTimer !== null) clearInterval(ageTimer)
+    ageTimer = null
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setSaveState, setFallbackHint, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onSaveRequest, onGrantRequest, onBackupRetryRequest, requestSaveNow, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setFileHealth, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onPillAction, requestPillAction, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, dispose }
 }

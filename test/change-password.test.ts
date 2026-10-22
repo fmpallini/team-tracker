@@ -3,7 +3,6 @@ import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { Shell } from '../src/ui/shell'
-import { createBackupController, type BackupController, type BackupHealth } from '../src/core/backup-controller'
 import { t } from '../src/core/i18n'
 
 const fsMocks = vi.hoisted(() => ({
@@ -15,6 +14,8 @@ vi.mock('../src/core/fs', () => fsMocks)
 const cryptoMocks = vi.hoisted(() => ({
   encryptDocument: vi.fn(async () => new Uint8Array([1, 2, 3])),
   serializePlain: vi.fn(() => new Uint8Array([7, 7, 7])),
+  blobCodec: vi.fn(async () => ({ seal: async () => new Uint8Array(), open: async () => new Uint8Array() })),
+  recordCodec: vi.fn(async () => ({ salt: new Uint8Array(16), tag: 'new-record-codec' })),
 }))
 vi.mock('../src/core/crypto', () => cryptoMocks)
 
@@ -29,21 +30,7 @@ function makeSession(withHandle = true): FileSession {
 }
 
 function makeShell(): Shell {
-  return { setSaveState: vi.fn(), setTitle: vi.fn() } as unknown as Shell
-}
-
-function makeBackupCtl(overrides?: Partial<BackupController>): BackupController {
-  return {
-    writeBackupNow: vi.fn(async () => true),
-    maybeWriteBackup: vi.fn(async () => {}),
-    regrantPermission: vi.fn(async () => {}),
-    hasMissingGrant: vi.fn(async () => false),
-    checkOrphaned: vi.fn(async () => false),
-    getStatus: vi.fn(async () => null),
-    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
-    markPasswordMismatch: vi.fn(),
-    ...overrides,
-  }
+  return { setTitle: vi.fn() } as unknown as Shell
 }
 
 beforeEach(() => {
@@ -58,33 +45,99 @@ test('changing to a new password encrypts and writes, never touches serializePla
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession()
   const shell = makeShell()
-  const backupCtl = makeBackupCtl()
   const setPassword = vi.fn()
+  const snapshot = { fileWritten: vi.fn() }
   const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword,
+    store, session, shell, snapshot, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await changePassword('newpw')
 
-  expect(cryptoMocks.encryptDocument).toHaveBeenCalledWith(store.doc, 'newpw')
+  expect(cryptoMocks.encryptDocument).toHaveBeenCalledWith(store.doc, 'newpw', store.images, [], expect.objectContaining({ writeId: expect.any(String) }))
   expect(cryptoMocks.serializePlain).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([1, 2, 3]))
   expect(setPassword).toHaveBeenCalledWith('newpw')
   expect(store.dirty).toBe(false)
-  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
-  expect(shell.setTitle).toHaveBeenCalledWith(session.name, false)
+  expect(snapshot.fileWritten).toHaveBeenCalledTimes(1)
+  expect(shell.setTitle).toHaveBeenCalledWith(session.name)
+})
+
+test('the new file write is committed to the persister with its stamp, then the browser copy follows to the new key', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const order: string[] = []
+  const persister = {
+    flush: vi.fn(async () => { order.push('flush') }),
+    markFileWritten: vi.fn(async () => { order.push('stamp') }),
+    rekey: vi.fn(async () => { order.push('rekey') }),
+  }
+  fsMocks.writeFile.mockImplementation(async () => { order.push('write') })
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: persister as never,
+    runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+  })
+
+  await changePassword('newpw')
+
+  const stampWritten = (cryptoMocks.encryptDocument.mock.calls[0] as unknown[])[4]
+  expect(persister.markFileWritten).toHaveBeenCalledWith(stampWritten, store.rev)
+  expect(persister.rekey).toHaveBeenCalledWith(expect.objectContaining({ tag: 'new-record-codec' }))
+  // the browser copy is current under the old key first; the file is written; only then does the copy move
+  expect(order).toEqual(['flush', 'write', 'stamp', 'rekey'])
+})
+
+test('a password-less result re-seals the browser copy as plain', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => {}) }
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: persister as never,
+    runExclusive: (fn) => fn(), getPassword: () => 'old', setPassword: vi.fn(),
+  })
+  await changePassword(null)
+  expect(persister.rekey).toHaveBeenCalledWith(null)
+})
+
+test('a failed file write leaves the browser copy where it was', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => {}) }
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: persister as never,
+    runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+  })
+
+  await expect(changePassword('newpw')).rejects.toThrow('disk full')
+  expect(persister.markFileWritten).not.toHaveBeenCalled()
+  expect(persister.rekey).not.toHaveBeenCalled()
+})
+
+test('a browser copy that cannot be re-keyed is reported, and the password change still stands', async () => {
+  const store = createStore(createEmptyDocument('en-US'))
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => { throw new Error('quota') }) }
+  const onBrowserCopyRekeyFailed = vi.fn()
+  const setPassword = vi.fn()
+  const changePassword = createChangePassword({
+    store, session: makeSession(), shell: makeShell(), persister: persister as never, onBrowserCopyRekeyFailed,
+    runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
+  })
+
+  await expect(changePassword('newpw')).resolves.toBeUndefined()
+  expect(onBrowserCopyRekeyFailed).toHaveBeenCalledTimes(1)
+  expect(setPassword).toHaveBeenCalledWith('newpw')
+  expect(store.dirty).toBe(false)
+  spy.mockRestore()
 })
 
 test('migrating to password-less (newPw null) uses serializePlain, never encryptDocument', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession()
   const changePassword = createChangePassword({
-    store, session, shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell: makeShell(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword(null)
 
-  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc)
+  expect(cryptoMocks.serializePlain).toHaveBeenCalledWith(store.doc, store.images, [], expect.objectContaining({ writeId: expect.any(String) }))
   expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).toHaveBeenCalledWith(session, new Uint8Array([7, 7, 7]))
 })
@@ -93,7 +146,7 @@ test('fallback mode (no FS handle) downloads instead of writing, and toasts a no
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession(false)
   const changePassword = createChangePassword({
-    store, session, shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive: (fn) => fn(), setPassword: vi.fn(),
+    store, session, shell: makeShell(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
@@ -103,69 +156,22 @@ test('fallback mode (no FS handle) downloads instead of writing, and toasts a no
   expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'fallback_notice'))
 })
 
-test('mirrors the just-written bytes to the backup controller', async () => {
-  const store = createStore(createEmptyDocument('en-US'))
-  const backupCtl = makeBackupCtl()
-  const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
-  })
-
-  await changePassword('newpw')
-
-  expect(backupCtl.writeBackupNow).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]))
-})
-
-// `writeBackupNow` is contractually non-throwing, but this call site can't
-// rely on that alone: the primary file is already written under the new
-// password by the time it's awaited, so an escaping rejection here would
-// leave the in-memory password out of sync with what's on disk. Belt and
-// braces (see the matching comment in core/change-password.ts).
-test('a rejecting backup write is swallowed — password still flips and the doc still settles as saved', async () => {
-  const store = createStore(createEmptyDocument('en-US'))
-  const backupCtl: BackupController = {
-    writeBackupNow: vi.fn(async () => {
-      throw new Error('disk full')
-    }),
-    maybeWriteBackup: vi.fn(async () => {}),
-    regrantPermission: vi.fn(async () => {}),
-    hasMissingGrant: vi.fn(async () => false),
-    checkOrphaned: vi.fn(async () => false),
-    getStatus: vi.fn(async () => null),
-    markPasswordMismatch: vi.fn(),
-    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
-  }
-  const setPassword = vi.fn()
-  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-  const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), setPassword,
-  })
-
-  await expect(changePassword('newpw')).resolves.toBeUndefined()
-
-  expect(consoleErrorSpy).toHaveBeenCalled()
-  expect(setPassword).toHaveBeenCalledWith('newpw')
-  expect(store.dirty).toBe(false)
-  consoleErrorSpy.mockRestore()
-})
-
-test('a read-only store rejects before ever encrypting, writing, backing up, or flipping the password', async () => {
+test('a read-only store rejects before ever encrypting, writing, or flipping the password', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   store.setReadOnly(true)
-  const backupCtl = makeBackupCtl()
   const setPassword = vi.fn()
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl, runExclusive: (fn) => fn(), setPassword,
+    store, session: makeSession(), shell: makeShell(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
   })
 
   await expect(changePassword('newpw')).rejects.toThrow('read-only')
 
   expect(cryptoMocks.encryptDocument).not.toHaveBeenCalled()
   expect(fsMocks.writeFile).not.toHaveBeenCalled()
-  expect(backupCtl.writeBackupNow).not.toHaveBeenCalled()
   expect(setPassword).not.toHaveBeenCalled()
 })
 
-test('runs the whole write+backup+bookkeeping sequence inside runExclusive', async () => {
+test('runs the whole write+bookkeeping sequence inside runExclusive', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const calls: unknown[] = []
   const runExclusive: ChangePasswordDeps['runExclusive'] = (fn) => {
@@ -173,90 +179,10 @@ test('runs the whole write+backup+bookkeeping sequence inside runExclusive', asy
     return fn()
   }
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl: makeBackupCtl(), runExclusive, setPassword: vi.fn(),
+    store, session: makeSession(), shell: makeShell(), runExclusive, getPassword: () => null, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
 
   expect(calls).toHaveLength(1)
-})
-
-test('does NOT mark the password-mismatch latch when the immediate backup write "fails" because no backup is configured', async () => {
-  // writeBackupNow() returns false for three different reasons — backups off,
-  // no handle configured yet, or a genuine write failure — and only the last
-  // one means the backup file itself might still be under the old password.
-  // createEmptyDocument()'s default prefs (dailyBackupEnabled: false, no
-  // backupHandleId) is exactly the "nothing configured" case, so a false
-  // return here must NOT be read as a stale-password signal.
-  const store = createStore(createEmptyDocument('en-US'))
-  const session = makeSession()
-  const shell = makeShell()
-  const backupCtl = makeBackupCtl({
-    writeBackupNow: vi.fn(async () => false),
-    currentHealth: vi.fn(async () => 'ok' as BackupHealth),
-  })
-  const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
-  })
-
-  await changePassword('new-password')
-
-  expect(backupCtl.markPasswordMismatch).not.toHaveBeenCalled()
-  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
-})
-
-test('marks the password-mismatch latch and reflects it on the pill when a configured backup write genuinely fails', async () => {
-  const store = createStore(createEmptyDocument('en-US'))
-  store.update((d) => {
-    d.prefs.dailyBackupEnabled = true
-    d.prefs.backupHandleId = 'backup-1'
-  })
-  const session = makeSession()
-  const shell = makeShell()
-  const backupCtl = makeBackupCtl({
-    writeBackupNow: vi.fn(async () => false),
-    currentHealth: vi.fn(async () => 'password-mismatch' as BackupHealth),
-  })
-  const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
-  })
-
-  await changePassword('new-password')
-
-  expect(backupCtl.markPasswordMismatch).toHaveBeenCalledTimes(1)
-  expect(shell.setSaveState).toHaveBeenCalledWith('backup-password-mismatch')
-})
-
-test('does not mark the password-mismatch latch when the immediate backup write succeeds', async () => {
-  const store = createStore(createEmptyDocument('en-US'))
-  const session = makeSession()
-  const shell = makeShell()
-  const backupCtl = makeBackupCtl({ writeBackupNow: vi.fn(async () => true), currentHealth: vi.fn(async () => 'ok' as BackupHealth) })
-  const changePassword = createChangePassword({
-    store, session, shell, backupCtl, runExclusive: (fn) => fn(), setPassword: vi.fn(),
-  })
-
-  await changePassword('new-password')
-
-  expect(backupCtl.markPasswordMismatch).not.toHaveBeenCalled()
-  expect(shell.setSaveState).toHaveBeenCalledWith('saved')
-})
-
-// With IndexedDB unavailable the backup handle lookup rejects. The primary
-// file is already written under the new password by the time the pill's
-// health is read, so that read must not turn the change into a reported failure.
-test('IndexedDB unavailable: the change still resolves, with the new password in effect', async () => {
-  idbMocks.idbGet.mockRejectedValue(new Error('IndexedDB unavailable'))
-  const store = createStore(createEmptyDocument('en-US'))
-  store.update((d) => { d.prefs.dailyBackupEnabled = true; d.prefs.backupHandleId = 'b1' })
-  const setPassword = vi.fn()
-  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-  const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), backupCtl: createBackupController({ store }), runExclusive: (fn) => fn(), setPassword,
-  })
-
-  await expect(changePassword('newpw')).resolves.toBeUndefined()
-
-  expect(setPassword).toHaveBeenCalledWith('newpw')
-  consoleErrorSpy.mockRestore()
 })

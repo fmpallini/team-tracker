@@ -14,7 +14,6 @@
 import { comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from './hotkeys'
 
 export type AppHotkeyAction =
-  | { type: 'save' }
   | { type: 'palette' }
   | { type: 'closeFile' }
   /** F1..F7 → pane module index 0..6. */
@@ -52,6 +51,15 @@ export interface AppHotkeyContext {
 }
 
 /**
+ * Ctrl/Cmd+S. The app has no manual save (the browser holds the live copy and the file is written at open, close and
+ * on a timer), but the chord must still be swallowed, even inside an editor field or with a modal open, or the
+ * browser's own "save page" dialog appears over the app. No allow-check, and not an action: the caller just preventDefaults.
+ */
+export function isBrowserSaveChord(e: KeyboardEvent): boolean {
+  return (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 's')
+}
+
+/**
  * Resolve a document keydown to the app action it triggers, or null to let
  * the browser keep the key. A non-null result always means "consume the
  * event": every branch here mirrors one that called `e.preventDefault()`
@@ -68,10 +76,6 @@ export interface AppHotkeyContext {
  * is preserved there.
  */
 export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHotkeyAction | null {
-  // Always claim Ctrl/Cmd+S, even inside an editor field, so the browser's
-  // own "save page" dialog never appears. No allow-check.
-  if ((e.ctrlKey || e.metaKey) && matchKey(e, 's')) return { type: 'save' }
-
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && matchKey(e, 'k')) {
     return comboHotkeyAllowed(e) ? { type: 'palette' } : null
   }

@@ -14,6 +14,7 @@ const TOKENS = [
   '\\', '\\*', '<', '>', '&', '&amp;', '"', "'", '<b>', '</b>', '<script>x</script>', '<img src=x onerror=1>',
   ch(0xe9), 'ca' + ch(0xe7) + ch(0xe3) + 'o', ch(0xd83d, 0xde00), ch(0x200b), ch(0xa0), ch(0x202e),
   '|', '| a | b |', '- [ ] ', '- [x] ', '    ', '1.', '#', '-',
+  `![x](img:${'a'.repeat(32)})`, NL + `![y](img:${'b'.repeat(32)})` + NL,
 ]
 const gen = (rnd: () => number, n: number): string => {
   let s = ''

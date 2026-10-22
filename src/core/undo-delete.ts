@@ -1,7 +1,7 @@
 // src/core/undo-delete.ts — one-level undo for deletions.
 //
 // Every delete in the app is permanent the moment its confirm dialog is
-// accepted; the daily backup mirror can be 24h stale, so it is not an undo.
+// accepted; the .tmv file can be hours behind, so it is not an undo.
 // This gives each delete a short window in which the exact pre-delete state
 // can be put back.
 //

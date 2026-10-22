@@ -2,7 +2,7 @@
 // Notifies the user a newer release exists (spec:
 // docs/superpowers/specs/2026-07-21-update-check-design.md). PWA build
 // (__PWA__): offers a reload that the caller wires to a save-then-verify
-// flow (this module never touches save-controller.ts or location.reload()
+// flow (this module never touches the file writer or location.reload()
 // itself — see onReload). Standalone build: links to the GitHub releases
 // page, since a static file:// build can't self-update.
 import { t, type Locale } from '../core/i18n'

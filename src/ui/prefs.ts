@@ -6,20 +6,23 @@
 import type { Store } from '../core/store'
 import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
-import { t, todayIso, formatDateTime, type Locale, type MsgKey } from '../core/i18n'
-import type { BackupStatus, BackupHealth } from '../core/backup-controller'
+import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam } from '../core/document'
+import { getPersistStatus } from '../core/storage-persist'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
-import { supportsFsApi, pickSaveJson, downloadFallback, pickCreateBackup, type FileSession } from '../core/fs'
-import { idbSet } from '../core/idb'
+import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
 import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
 import { icon } from './icons'
+import { collectImageRefs, referencedBytes } from '../core/image-ref'
+import { IMAGE_LIMITS } from '../core/image-import'
+
+const MB = 1024 * 1024
 
 /**
  * Every write in this file that only moves a preference. No module renders
@@ -53,25 +56,8 @@ export interface PrefsAppCtl {
    * to that same guard.
    */
   isReadOnly(): boolean
-  /** Whether the current session has a real FS-API file handle (not fallback/download mode) — gates the daily-backup toggle, which needs "same folder as the original" to mean something. */
-  hasFileHandle(): boolean
-  /** The primary file's handle, when one exists — passed as `startIn` to the backup-file picker so it defaults to the same folder. */
-  fileHandle(): FileSystemFileHandle | null
   fileName: string
   fileSchemaVersion: number
-  /** Read-only snapshot of the configured backup (filename/size/last/next), for the Backup tab's status display. Null when nothing is configured/resolvable — see BackupController.getStatus. */
-  backupStatus(): Promise<BackupStatus | null>
-  /**
-   * Single priority-ordered backup health summary (orphaned / lapsed grant /
-   * stale password / generic write error / ok) — see BackupController.currentHealth.
-   * Replaces the old orphan-only checkBackupOrphaned() so the Backup tab and
-   * the save pill read from the same source of truth.
-   */
-  backupHealth(): Promise<BackupHealth>
-  /** Re-requests write permission on the configured backup handle — the Backup tab's action for a "permission" health notice. */
-  regrantBackupPermission(): Promise<void>
-  /** Encrypts/serializes the current document under the live password and writes it straight to the backup handle — the Backup tab's action for an "error" or "password-mismatch" health notice. */
-  retryBackupWrite(): Promise<void>
 }
 
 /**
@@ -99,19 +85,11 @@ export function onLocaleChanged(cb: () => void): () => void {
   }
 }
 
-/** Simple KB/MB byte formatting for the backup status table — no need for anything more precise than one decimal place there. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const kb = bytes / 1024
-  if (kb < 1024) return `${kb.toFixed(1)} KB`
-  return `${(kb / 1024).toFixed(1)} MB`
-}
-
-export type TabId = 'general' | 'backup' | 'templates' | 'security' | 'data' | 'about'
+export type TabId = 'general' | 'saving' | 'templates' | 'security' | 'data' | 'about'
 
 const TABS: readonly { id: TabId; key: MsgKey }[] = [
   { id: 'general', key: 'prefs_tab_general' },
-  { id: 'backup', key: 'prefs_tab_backup' },
+  { id: 'saving', key: 'prefs_tab_saving' },
   { id: 'templates', key: 'prefs_tab_templates' },
   { id: 'security', key: 'prefs_tab_security' },
   { id: 'data', key: 'prefs_tab_data' },
@@ -171,11 +149,6 @@ const SIZE_OPTIONS: readonly { value: Prefs['fontSize']; key: MsgKey; sizePrevie
   { value: 'XL', key: 'prefs_size_xl', sizePreview: '18px' },
 ]
 
-const FREQUENCY_OPTIONS: readonly { value: Prefs['backupFrequency']; key: MsgKey }[] = [
-  { value: 'daily', key: 'prefs_backup_frequency_daily' },
-  { value: 'hourly', key: 'prefs_backup_frequency_hourly' },
-]
-
 const SCOPE_OPTIONS: readonly { value: Template['scope']; key: MsgKey }[] = [
   { value: 'personal', key: 'prefs_templates_scope_personal' },
   { value: 'daily', key: 'prefs_templates_scope_daily' },
@@ -189,15 +162,6 @@ function scopeLabel(locale: Locale, scope: Template['scope']): string {
 
 export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: PrefsAppCtl, initialTab: TabId = 'general'): void {
   let activeTab: TabId = initialTab
-  // Sticky across a renderBackup() rebuild: once backupHealth() has come back
-  // non-'ok' we hold onto it and re-render, which would otherwise lose the
-  // notice (the rebuild would just re-issue the same check and briefly show
-  // nothing while it resolves again). Also gates the health check itself off
-  // on that second pass so it can't loop. Cleared when a fresh target is
-  // picked (orphaned) or the underlying condition is fixed (permission/error/
-  // password-mismatch).
-  let backupHealthNotice: Exclude<BackupHealth, 'ok'> | null = null
-
   function radioField(
     name: string,
     labelKey: MsgKey,
@@ -320,294 +284,36 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     )
   }
 
-  // --- Tab 1b: Backup -----------------------------------------------------
-  function renderBackup(container: HTMLElement): void {
+  // --- Tab 1b: Saving -----------------------------------------------------
+  function renderSaving(container: HTMLElement): void {
     container.innerHTML = ''
     const prefs = store.doc.prefs
 
-    const backupAvailable = supportsFsApi && appCtl.hasFileHandle()
-
-    // Guards pickAndStoreBackupTarget's async picker→idbSet→store.update
-    // chain against a stale resolution clobbering more recent user intent —
-    // bumped both when a new pick starts (so an overlapping "Change
-    // location" double-click can't have its earlier call win) and when the
-    // checkbox is unchecked directly (so a pick already in flight can't
-    // silently re-enable the pref right after the user turned it off).
-    let pickGeneration = 0
-
-    // Shared by the checkbox's enable path and the "Change location" button:
-    // runs the .bck picker, and on a real pick (not a cancel/error) persists
-    // the new handle and turns the pref on. Always re-prompts — even if
-    // `backupHandleId` is already set — so enabling never silently resumes a
-    // stale reference to a file the user may not even want anymore. Resolves
-    // true iff a new handle was actually picked, stored, and this was still
-    // the most recent pick attempt when it resolved — false for a cancel,
-    // error, or a pick superseded by a later one.
-    function pickAndStoreBackupTarget(): Promise<boolean> {
-      const generation = ++pickGeneration
-      const suggested = appCtl.fileName.replace(/\.tmv$/i, '.bck')
-      // `pickCreateBackup`, not `pickCreate`: the latter stores the picked
-      // handle under 'lastHandle', which would repoint "reopen last" at the
-      // empty .bck file instead of the user's .tmv.
-      const persist = (session: FileSession): Promise<boolean> => {
-        const id = crypto.randomUUID()
-        return idbSet(id, session.handle).then(() => {
-          if (generation !== pickGeneration) return false
-          store.update((d) => {
-            d.prefs.dailyBackupEnabled = true
-            d.prefs.backupHandleId = id
-          }, PREFS_ONLY)
-          return true
-        })
-      }
-      return pickCreateBackup(suggested, appCtl.fileHandle() ?? undefined)
-        .then((session) => {
-          if (!session) return false
-          // Mirroring a file onto itself would rewrite the primary file behind
-          // its own back: every backup write moves its mtime, so the very next
-          // save would trip the external-change check. The picker lets the user
-          // choose any existing file, so refuse that one here.
-          const primary = appCtl.fileHandle()
-          const picked = session.handle
-          if (!primary || !picked || typeof primary.isSameEntry !== 'function') return persist(session)
-          return primary.isSameEntry(picked)
-            .catch((e: unknown) => { console.error(e); return false })
-            .then((same) => {
-              if (!same) return persist(session)
-              toast(t(locale, 'backup_same_file_toast'))
-              return false
-            })
-        })
-        .catch((err: unknown) => {
-          console.error(err)
-          return false
-        })
-    }
-
-    const backupCheckbox = el('input', {
-      type: 'checkbox',
-      class: 'tt-prefs-backup-checkbox',
-      checked: prefs.dailyBackupEnabled,
-      disabled: !backupAvailable,
-      onchange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked
-        if (!checked) {
-          pickGeneration++ // supersede any in-flight pick — see pickGeneration's own comment
-          store.update((d) => { d.prefs.dailyBackupEnabled = false }, PREFS_ONLY)
-          renderActiveTab() // hides the status block/Change-location button immediately, not just on next tab visit
-          return
-        }
-        // Always re-prompts, even with an existing `backupHandleId` — see
-        // pickAndStoreBackupTarget's own comment.
-        // `pickAndStoreBackupTarget` never rejects (its own `.catch` already
-        // swallows and logs), but the linter can't see that from here.
-        pickAndStoreBackupTarget()
-          .then((picked) => {
-            // A rebuild already reflects the unchecked box on `false` (nothing
-            // else changed) — only the `true` case needs the explicit
-            // `.checked = false` un-tick, since there's no rebuild to do it.
-            if (picked) renderActiveTab() // reveals the status block/Change-location button immediately
-            else backupCheckbox.checked = false
-          })
-          .catch(() => {})
-      },
-    })
-    // Only shown while backup is actually enabled — with it off there's
-    // nothing active to point elsewhere, and unchecking then rechecking the
-    // box already re-prompts on its own (see pickAndStoreBackupTarget's
-    // comment), so this button is purely a same-state shortcut for that.
-    // Placed at the very bottom of the tab (see container.append below) —
-    // it's a secondary action, subordinate to the toggle/frequency/status
-    // controls above it.
-    // Stays visible for the permission/error/password-mismatch notices too —
-    // only 'orphaned' hides it, since re-picking a target IS that notice's
-    // own action already offered by healthNoticeField below. Otherwise a
-    // user whose real problem is e.g. a deleted/moved .bck file (which the
-    // 'error' hint text itself suggests checking) would have no in-UI way to
-    // point the app at a new file except toggling the pref off and back on.
-    const changeBackupBtn = prefs.dailyBackupEnabled && prefs.backupHandleId && backupHealthNotice !== 'orphaned'
-      ? el(
-          'button',
-          {
-            // Second class distinguishes this from the health-notice action
-            // button below, which reuses `tt-prefs-backup-change-btn` for its
-            // own styling — the two can now render side by side (any
-            // non-orphan health notice), so tests need to tell them apart.
-            class: 'tt-btn tt-prefs-backup-change-btn tt-prefs-backup-relocate-btn',
-            type: 'button',
-            disabled: !backupAvailable,
-            onclick: () => {
-              pickAndStoreBackupTarget()
-                .then((picked) => {
-                  // Rebuild refreshes the status block for the newly picked
-                  // target too, not just the checkbox — the old table would
-                  // otherwise keep showing the previous file's stats.
-                  if (picked) renderActiveTab()
-                })
-                .catch(() => {})
-            },
-          },
-          t(locale, 'prefs_backup_change_btn')
-        )
-      : null
-
-    // Greyed out, not hidden, while backup is off: there's no backup for a
-    // frequency to apply to, but hiding it would make the layout jump on every
-    // toggle. The checkbox's enable/disable paths both renderActiveTab(), so
-    // this follows the pref without a listener of its own.
-    const frequencyField = radioField(
-      'tt-prefs-backup-frequency',
-      'prefs_backup_frequency_label',
-      FREQUENCY_OPTIONS,
-      prefs.backupFrequency,
-      (value) => {
-        store.update((d) => {
-          d.prefs.backupFrequency = value as Prefs['backupFrequency']
-        }, PREFS_ONLY)
-      },
-      !backupAvailable || !prefs.dailyBackupEnabled
-    )
-
-    // Two separate top-level fields (not one field stacking everything with
-    // the tighter intra-field gap) — the toggle+picker group and the
-    // frequency selector are separate decisions, so they get the same
-    // section-to-section spacing General's tab uses between e.g. Theme and
-    // Color palette, instead of reading as one crowded block.
-    const backupToggleField = el(
-      'div',
-      { class: 'tt-prefs-field' },
-      prefsHint(t(locale, 'prefs_backup_hint')),
-      el('label', { class: 'tt-prefs-checkbox-label' }, backupCheckbox, t(locale, 'prefs_backup_label')),
-      backupAvailable ? null : prefsHint(t(locale, 'prefs_backup_disabled_hint'), 'tt-prefs-backup-disabled-hint')
-    )
-
-    // Fired only while no notice is pinned yet — once backupHealthNotice is
-    // set, this must NOT run again on the next renderActiveTab() it itself
-    // triggers below, or a non-'ok' health would refetch/re-render forever.
-    if (prefs.dailyBackupEnabled && prefs.backupHandleId && !backupHealthNotice) {
-      appCtl
-        .backupHealth()
-        .then((health) => {
-          if (health === 'ok') return
-          backupHealthNotice = health
-          if (health === 'orphaned' && !appCtl.isReadOnly()) {
-            store.update((d) => { d.prefs.dailyBackupEnabled = false }, PREFS_ONLY)
-          }
-          renderActiveTab()
-        })
-        .catch(() => {})
-    }
-
-    // Visibility is independent of the health-check trigger above (it stays
-    // on across re-renders once a permission/error/password-mismatch notice
-    // is pinned, unlike that one-shot fetch) — only 'orphaned' hides it,
-    // matching changeBackupBtn's own reasoning: re-picking a target is
-    // 'orphaned's own notice action, but the other three health states leave
-    // the existing target configured and worth still showing stats for.
-    // Rendered as an (initially empty) table appended in the right DOM slot
-    // immediately, then filled in once the async `backupStatus()` read
-    // resolves, so the surrounding layout doesn't jump once the data arrives.
-    let statusWrap: HTMLElement | null = null
-    if (prefs.dailyBackupEnabled && prefs.backupHandleId && backupHealthNotice !== 'orphaned') {
-      const statusBody = el('tbody', {})
-      statusWrap = el('div', { class: 'tt-prefs-backup-status' }, el('table', { class: 'tt-help-table' }, statusBody))
-      appCtl
-        .backupStatus()
-        .then((status) => {
-          statusBody.innerHTML = ''
-          if (!status) return
-          const everWritten = status.lastBackupAt > 0
-          const rows: readonly (readonly [string, string])[] = [
-            [t(locale, 'prefs_backup_status_filename_label'), status.fileName],
-            [t(locale, 'prefs_backup_status_size_label'), formatBytes(status.size)],
-            [t(locale, 'prefs_backup_status_last_label'), everWritten ? formatDateTime(status.lastBackupAt, locale) : t(locale, 'prefs_backup_status_never')],
-          ]
-          for (const [label, value] of rows) statusBody.appendChild(el('tr', {}, el('td', {}, label), el('td', {}, value)))
-        })
-        .catch(() => {})
-    }
-
-    // Shown alongside the status table (not in place of it, except for
-    // 'orphaned' where the table is hidden — see above) when backupHealth()
-    // reports anything but 'ok'. For 'orphaned' the pref is already off by
-    // now; the other three states leave it on and just need the underlying
-    // condition fixed (regrant permission / retry the write / change the
-    // target via changeBackupBtn, still visible for those three).
-    const HEALTH_NOTICE_HINT_KEY: Record<Exclude<BackupHealth, 'ok'>, MsgKey> = {
-      orphaned: 'prefs_backup_orphaned_hint',
-      permission: 'prefs_backup_permission_hint',
-      error: 'prefs_backup_error_hint',
-      'password-mismatch': 'prefs_backup_password_mismatch_hint',
-    }
-    const HEALTH_NOTICE_ACTION_KEY: Record<Exclude<BackupHealth, 'ok'>, MsgKey> = {
-      orphaned: 'backup_orphaned_action',
-      permission: 'prefs_backup_permission_action',
-      error: 'prefs_backup_retry_action',
-      'password-mismatch': 'prefs_backup_retry_action',
-    }
-    const healthNoticeField = backupHealthNotice
-      ? el(
-          'div',
-          { class: 'tt-prefs-field tt-prefs-backup-orphaned' },
-          prefsHint(t(locale, HEALTH_NOTICE_HINT_KEY[backupHealthNotice]), 'tt-prefs-backup-orphaned-hint'),
-          el(
-            'button',
-            {
-              class: 'tt-btn tt-prefs-backup-change-btn',
-              type: 'button',
-              disabled: !backupAvailable || appCtl.isReadOnly(),
-              onclick: () => {
-                if (backupHealthNotice === 'orphaned') {
-                  pickAndStoreBackupTarget()
-                    .then((picked) => {
-                      if (picked) {
-                        backupHealthNotice = null
-                        renderActiveTab()
-                      }
-                    })
-                    .catch(() => {})
-                } else if (backupHealthNotice === 'permission') {
-                  appCtl.regrantBackupPermission().then(() => {
-                    backupHealthNotice = null
-                    renderActiveTab()
-                  }).catch(() => {})
-                } else {
-                  appCtl.retryBackupWrite().then(() => {
-                    backupHealthNotice = null
-                    renderActiveTab()
-                  }).catch(() => {})
-                }
-              },
-            },
-            t(locale, HEALTH_NOTICE_ACTION_KEY[backupHealthNotice])
-          )
-        )
-      : null
-
-    // Auto-save lives here, not in General: it and the backup below answer the
-    // same question — how is my data protected — and the save pill already
-    // links users to this tab.
+    // Hours in the field, minutes in the document (the snapshot controller measures in minutes): 60..1440 <-> 1..24.
     const autoSaveField = prefsNumberField({
       inputClass: 'tt-prefs-autosave-input',
       label: t(locale, 'prefs_autosave_label'),
       hint: t(locale, 'prefs_autosave_hint'),
       min: 1,
-      max: 60,
-      value: prefs.autoSaveMin,
-      onCommit: (minutes) => {
+      max: 24,
+      value: Math.min(24, Math.max(1, Math.round(prefs.autoSaveMin / 60))),
+      onCommit: (hours) => {
         store.update((d) => {
-          d.prefs.autoSaveMin = minutes
+          d.prefs.autoSaveMin = hours * 60
         }, PREFS_ONLY)
       },
     })
 
-    const backupChildren: HTMLElement[] = [backupToggleField, frequencyField]
-    if (healthNoticeField) backupChildren.push(healthNoticeField)
-    if (statusWrap) backupChildren.push(statusWrap)
-    if (changeBackupBtn) backupChildren.push(changeBackupBtn)
+    // Read-only: whether the browser promised to keep this origin's storage (where the live copy lives).
+    const storageStatus = el('p', { class: 'tt-prefs-hint tt-prefs-storage-status' }, t(locale, 'prefs_storage_unknown'))
+    void getPersistStatus().then((persisted) => {
+      if (!storageStatus.isConnected) return
+      storageStatus.textContent = t(locale, persisted === true ? 'prefs_storage_protected' : persisted === false ? 'prefs_storage_not_guaranteed' : 'prefs_storage_unknown')
+    })
+
     container.append(
       prefsSection(t(locale, 'prefs_group_autosave'), autoSaveField),
-      prefsSection(t(locale, 'prefs_group_backup'), ...backupChildren)
+      prefsSection(t(locale, 'prefs_group_storage'), storageStatus)
     )
   }
 
@@ -1185,7 +891,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       const days = clampInt(Number(cleanupDaysInput.value), 1, 3650, 1)
       const today = todayIso()
       const counts = countCleanupTargets(store.doc, days, today)
-      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0) {
+      if (counts.actions === 0 && counts.milestones === 0 && counts.risks === 0 && counts.dailyNotes === 0 && counts.favorites === 0 && counts.images === 0) {
         const nothingHandle: ModalHandle = showModal({
           title: t(locale, 'data_cleanup_nothing_title'),
           body: el('p', { class: 'tt-modal-message' }, t(locale, 'data_cleanup_nothing_body')),
@@ -1201,12 +907,15 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           risks: String(counts.risks),
           dailyNotes: String(counts.dailyNotes),
           favorites: String(counts.favorites),
+          images: String(counts.images),
         }),
         warning: t(locale, 'data_cleanup_no_undo_warning'),
         confirmLabel: t(locale, 'data_cleanup_btn'),
         variant: 'danger',
         onConfirm: () => {
-          store.update((d) => applyCleanup(d, days, today))
+          let dropped: string[] = []
+          store.update((d) => { dropped = applyCleanup(d, days, today) })
+          for (const id of dropped) store.images.discard(id)
           if (!store.readOnly) toast(t(locale, 'data_cleanup_success_toast'))
         },
       })
@@ -1225,8 +934,21 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       cleanupBtn
     )
 
+    // --- Pictures: how much of the budget the notes use (read-only, so it needs no lock exemption) ---
+    function buildImagesSection(): HTMLElement {
+      const n = collectImageRefs(store.doc).size
+      const used = referencedBytes(store.doc)
+      const cls = used >= IMAGE_LIMITS.totalCapBytes ? ' tt-data-images-full' : used >= IMAGE_LIMITS.warnBytes ? ' tt-data-images-warn' : ''
+      const line = t(locale, n === 1 ? 'data_images_usage_one' : 'data_images_usage_other', {
+        n: String(n),
+        used: (used / MB).toFixed(1),
+        cap: String(IMAGE_LIMITS.totalCapBytes / MB),
+      })
+      return prefsSection(t(locale, 'data_images_heading'), el('p', { class: `tt-data-images-usage${cls}` }, line))
+    }
+
     // Destructive cleanup stays last.
-    container.append(exportSection, importSection, buildTagsSection(), cleanupSection)
+    container.append(exportSection, importSection, buildTagsSection(), buildImagesSection(), cleanupSection)
   }
 
   // --- Tab 6: Sobre ----------------------------------------------------
@@ -1260,7 +982,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   /**
    * Renders `activeTab` into the shared content area. `resetScroll` is true
    * only when the user switched tabs — every other call is a rebuild of the
-   * tab already on screen (backup toggle, health notice, picker result) and
+   * tab already on screen and
    * must leave the user where they were: emptying the container collapses the
    * scroll height, which would otherwise snap them back to the top.
    */
@@ -1278,8 +1000,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       case 'general':
         renderGeneral(contentEl)
         break
-      case 'backup':
-        renderBackup(contentEl)
+      case 'saving':
+        renderSaving(contentEl)
         break
       case 'templates':
         renderTemplates(contentEl)
@@ -1310,8 +1032,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     else return
     e.preventDefault()
     // Arrows only move focus (Enter/Space then activates, as for any button):
-    // activating on focus would rebuild a tab — and fire the Backup tab's
-    // async health check — for every tab the user merely passes over.
+    // activating on focus would rebuild a tab for every tab the user merely passes over.
     const target = tabButtons.get(ids[next]!)
     if (!target) return
     for (const btn of tabButtons.values()) btn.tabIndex = btn === target ? 0 : -1

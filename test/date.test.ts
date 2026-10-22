@@ -1,4 +1,4 @@
-import { pad2, addDaysIso, diffDays, formatHHMM, nowHHMM, isWithinTwoMonthWindow } from '../src/core/date'
+import { pad2, addDaysIso, diffDays, formatHHMM, formatAge, nowHHMM, isWithinTwoMonthWindow } from '../src/core/date'
 
 describe('pad2', () => {
   test('pads single digits, leaves two-plus digits alone', () => {
@@ -86,5 +86,20 @@ describe('isWithinTwoMonthWindow', () => {
 
   test('same year/month, different day -> true regardless of day', () => {
     expect(isWithinTwoMonthWindow('2026-07-01', '2026-07-31')).toBe(true)
+  })
+})
+
+describe('formatAge', () => {
+  test('under a minute there is nothing to say', () => {
+    expect(formatAge(0)).toBeNull()
+    expect(formatAge(59_999)).toBeNull()
+  })
+  test('minutes, then hours, then days, each rounded down', () => {
+    expect(formatAge(60_000)).toBe('1 min')
+    expect(formatAge(59 * 60_000 + 59_000)).toBe('59 min')
+    expect(formatAge(60 * 60_000)).toBe('1 h')
+    expect(formatAge(23 * 3_600_000 + 59 * 60_000)).toBe('23 h')
+    expect(formatAge(24 * 3_600_000)).toBe('1 d')
+    expect(formatAge(50 * 3_600_000)).toBe('2 d')
   })
 })

@@ -25,7 +25,6 @@ import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
 import { emptyState } from '../ui/empty-state'
-import { createBackupTab, paintBackupTab } from '../ui/shell'
 import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
 import { BACKLINK_SECTIONS, normalize } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
@@ -565,21 +564,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // the plain `hidden` attribute (a low-specificity UA rule) can't actually
     // hide it; `style.display` is set directly instead, which always wins.
     const savePillMiniPill = el('span', { class: 'tt-save-pill' }, savePillMiniText)
-    const savePillMiniTab = createBackupTab()
-    // Same wrap as the header pill: it hosts the click both pill and backup
-    // tab bubble up to, and `display` goes on it (the two children are one
-    // control).
+    // Same wrap as the header pill: it hosts the click, and `display` goes on it.
     const savePillMini = el('span', {
       class: 'tt-save-pill-wrap',
-      onclick: () => ctx.saveStatus.requestSaveNow(),
-    }, savePillMiniPill, savePillMiniTab)
+      onclick: () => ctx.saveStatus.requestPillAction(),
+    }, savePillMiniPill)
     savePillMini.style.display = 'none'
     const unsubscribeSaveStatus = ctx.saveStatus.subscribeSaveState((info) => {
       savePillMiniText.textContent = info.label
       savePillMiniPill.title = info.title
-      savePillMiniPill.dataset.state = info.state
+      savePillMiniPill.dataset.state = info.health
       savePillMiniPill.classList.toggle('tt-save-pill-clickable', info.clickable)
-      paintBackupTab(savePillMiniTab, info)
+      savePillMiniPill.classList.toggle('tt-save-pill-stale', info.stale)
     })
     const expandBtn = el(
       'button',
