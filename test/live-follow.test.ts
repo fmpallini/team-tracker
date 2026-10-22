@@ -4,7 +4,7 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { openLiveDb, type LiveDb } from '../src/core/live-db'
 import { createLiveStore } from '../src/core/live-store'
 import { followLiveCopy, FollowCancelled } from '../src/core/live-follow'
-import { splitDoc } from '../src/core/doc-records'
+import { splitDoc, serializeRecords } from '../src/core/doc-records'
 import { recordCodec, blobCodec, resetSessionKey, CorruptFileError } from '../src/core/crypto'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import type { Doc } from '../src/core/types'
@@ -33,7 +33,7 @@ async function holderWrites(doc: Doc, password: string | null) {
   const codec = password === null ? null : await recordCodec(password, blob!.header!.salt)
   const live = createLiveStore(db, doc.docId, codec)
   const stored = blob ? await blob.seal(IMG, new Uint8Array([7, 7])) : new Uint8Array([7, 7])
-  await live.write({ puts: splitDoc(doc), putBlobs: new Map([[IMG, stored]]), meta: { fileName: 'f.tmv', unwrittenChanges: true } })
+  await live.write({ puts: serializeRecords(splitDoc(doc)), putBlobs: new Map([[IMG, stored]]), meta: { fileName: 'f.tmv', unwrittenChanges: true } })
   return live
 }
 
@@ -97,7 +97,7 @@ test('cancelling the password prompt cancels the follow, so the tab stays as it 
 test('a copy with no document record is unreadable, not a crash with a stray Error', async () => {
   const doc = docWith('x')
   const live = createLiveStore(db, doc.docId, null)
-  await live.write({ puts: new Map([['team/T1', { id: 'T1' }]]), meta: { fileName: 'f.tmv' } })
+  await live.write({ puts: new Map([['team/T1', '{"id":"T1"}']]), meta: { fileName: 'f.tmv' } })
   await expect(followLiveCopy({ live: createLiveStore(db, doc.docId, null), currentPassword: null, askPassword: async () => null }))
     .rejects.toBeInstanceOf(CorruptFileError)
 })

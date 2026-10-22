@@ -6,7 +6,7 @@ import { createStore } from '../src/core/store'
 import { createImageStore, type ImageStore } from '../src/core/image-store'
 import { blobCodec, recordCodec, resetSessionKey, type OpenedDoc } from '../src/core/crypto'
 import { createEmptyDocument, createEmptyTeam, SCHEMA_VERSION } from '../src/core/document'
-import { joinDoc } from '../src/core/doc-records'
+import { joinDoc, splitDoc } from '../src/core/doc-records'
 import { newStamp, type FileStamp } from '../src/core/file-stamp'
 import type { Doc } from '../src/core/types'
 
@@ -14,7 +14,7 @@ const modalMocks = vi.hoisted(() => ({ toast: vi.fn() }))
 vi.mock('../src/ui/modal', () => modalMocks)
 
 const base = (over: Partial<LiveMeta> = {}): LiveMeta => ({
-  docId: 'd', encrypted: false, salt: null, check: null, lastWriteId: 'W2', knownWriteIds: ['W2', 'W1'],
+  docId: 'd', encrypted: false, salt: null, check: null, keySecret: new Uint8Array(16), lastWriteId: 'W2', knownWriteIds: ['W2', 'W1'],
   unwrittenChanges: false, schemaVersion: SCHEMA_VERSION, fileName: 'f.tmv', modifiedAt: 1, lastFileWriteAt: null, ...over,
 })
 const file = (writeId: string | null) => ({ docId: 'd', stamp: writeId ? { writeId, savedAt: 1 } : null })
@@ -53,13 +53,15 @@ describe('decideOpen', () => {
 let rawDb: LiveDb
 let db: LiveDb
 let commits: LiveBatch[]
+let reads: number
 beforeEach(async () => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange)
   resetSessionKey()
   modalMocks.toast.mockReset()
   rawDb = await openLiveDb(new IDBFactory())
   commits = []
-  db = { ...rawDb, commit: (id, b) => { commits.push(b); return rawDb.commit(id, b) } }
+  reads = 0
+  db = { ...rawDb, commit: (id, b) => { commits.push(b); return rawDb.commit(id, b) }, readAll: (id) => { reads++; return rawDb.readAll(id) } }
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -143,6 +145,103 @@ test('opening the same file again is identical: nothing is rewritten', async () 
   expect(commits.every((b) => b.putRecords.length === 0 && b.deleteRecords.length === 0)).toBe(true)
   expect(a.older).not.toHaveBeenCalled()
   expect(a.both).not.toHaveBeenCalled()
+})
+
+describe.each([['password-less', null], ['encrypted', 'correct horse']] as const)('opening a file the browser copy already matches (%s)', (_label, password) => {
+  const IMG = 'a'.repeat(32)
+  async function withImage(doc: Doc, stamp: FileStamp): Promise<OpenedDoc> {
+    const o = await opened(doc, stamp, password)
+    o.doc.images[IMG] = { mime: 'image/webp', w: 1, h: 1, bytes: 3 }
+    o.doc.teams[0]!.dailyNotes['2026-07-02'] = `![p](img:${IMG})`
+    o.images.putPlain(IMG, new Uint8Array([1, 2, 3]))
+    return o
+  }
+
+  test('reads no stored row and no image bytes, and still writes only what is edited afterwards', async () => {
+    const doc = docWith('same')
+    const stamp = newStamp()
+    const first = await open(await withImage(doc, stamp), password, asks())
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+
+    reads = 0
+    commits.length = 0
+    const r = await open(await withImage(doc, stamp), password, asks())
+    expect(r.source).toBe('file')
+    expect(reads).toBe(0)
+    expect(modalMocks.toast).not.toHaveBeenCalled()
+    await r.handle.persister.flush()
+    expect(commits).toHaveLength(0)
+
+    r.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'edited' })
+    await r.handle.persister.flush()
+    expect(commits).toHaveLength(1)
+    expect(commits[0]!.putRecords).toHaveLength(1)
+    expect(commits[0]!.deleteRecords).toHaveLength(0)
+    expect(commits[0]!.putBlobs).toHaveLength(0)
+    expect(await stored(doc.docId, password === null ? null : await recordCodec(password, r.images.codec()!.header!.salt))).toEqual(r.doc)
+  }, 60000)
+
+  test('the swept-away image stays out and the kept one is not written again', async () => {
+    const doc = docWith('same')
+    const stamp = newStamp()
+    const first = await open(await withImage(doc, stamp), password, asks())
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+    const r = await open(await withImage(doc, stamp), password, asks())
+    r.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-03'] = 'unrelated' })
+    commits.length = 0
+    await r.handle.persister.flush()
+    expect(commits.flatMap((b) => b.putBlobs)).toHaveLength(0)
+  }, 60000)
+
+  test('a copy that lost a row is not trusted: the file replaces it and the user is told', async () => {
+    const doc = docWith('same')
+    const stamp = newStamp()
+    const first = await open(await withImage(doc, stamp), password, asks())
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+    const row = (await rawDb.readAll(doc.docId)).records[0]!
+    await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [row.key], putBlobs: [], deleteBlobs: [] })
+
+    const o = await withImage(doc, stamp)
+    const r = await open(o, password, asks())
+    expect(modalMocks.toast).toHaveBeenCalled()
+    await r.handle.persister.flush()
+    expect((await rawDb.readAll(doc.docId)).records).toHaveLength(splitDoc(r.doc).size)
+    expect(await stored(doc.docId, password === null ? null : await recordCodec(password, o.images.codec()!.header!.salt))).toEqual(r.doc)
+  }, 60000)
+
+  test('a copy from another schema version is replaced by the file without a word', async () => {
+    const doc = docWith('same')
+    const stamp = newStamp()
+    const first = await open(await withImage(doc, stamp), password, asks())
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+    const meta = (await rawDb.getMeta(doc.docId))!
+    await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...meta, schemaVersion: SCHEMA_VERSION - 1 } })
+
+    const r = await open(await withImage(doc, stamp), password, asks())
+    await r.handle.persister.flush()
+    expect(modalMocks.toast).not.toHaveBeenCalled()
+    expect((await rawDb.getMeta(doc.docId))!.schemaVersion).toBe(SCHEMA_VERSION)
+  }, 60000)
+
+  test('a copy written by an earlier build (no key secret) is replaced by the file and the user is told', async () => {
+    const doc = docWith('same')
+    const stamp = newStamp()
+    const first = await open(await withImage(doc, stamp), password, asks())
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+    const old: Partial<LiveMeta> = { ...(await rawDb.getMeta(doc.docId))! }
+    delete old.keySecret
+    await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: old as LiveMeta })
+
+    const r = await open(await withImage(doc, stamp), password, asks())
+    await r.handle.persister.flush()
+    expect(modalMocks.toast).toHaveBeenCalled()
+    expect((await rawDb.getMeta(doc.docId))!.keySecret).toBeDefined()
+  }, 60000)
 })
 
 test('only a document opened from the browser copy starts ahead of its file', async () => {
@@ -426,7 +525,7 @@ test('a copy with no document record (what a half-removed copy looks like) is un
   const stamp = newStamp()
   const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
   await createLiveStore(rawDb, doc.docId, null).write({
-    puts: new Map([['team/T1', { id: 'T1' }]]),
+    puts: new Map([['team/T1', '{"id":"T1"}']]),
     meta: { lastWriteId: stamp.writeId, knownWriteIds: [stamp.writeId], unwrittenChanges: true, fileName: 'f.tmv' },
   })
   const a = asks()

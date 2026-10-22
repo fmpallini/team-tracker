@@ -21,7 +21,7 @@ import type { FileStamp } from './file-stamp'
 import type { LiveDb, LiveMeta } from './live-db'
 import { createLiveStore, type LiveStore } from './live-store'
 import { createLivePersister, type LivePersister } from './live-persist'
-import { joinDoc, type DocRecords } from './doc-records'
+import { joinDoc, splitDoc, type DocRecords } from './doc-records'
 import { migrate, validateDoc, SCHEMA_VERSION } from './document'
 import { createImageStore, type ImageStore } from './image-store'
 import type { Store } from './store'
@@ -188,14 +188,24 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
 
   // --- the file is what the copy already holds -----------------------------------------------------
 
+  /**
+   * The file was just decoded and the copy is, by lineage, that very document: nothing needs reading back out of the
+   * copy. The persister is seeded with the records of the file's own document, and the copy is only counted (its
+   * records, and the ids of its blobs) instead of opened row by row, which for a large document with pictures was most
+   * of the time an unchanged file took to open. A copy of another schema version is simply replaced by the file.
+   */
   async function reuseIdentical(m: LiveMeta): Promise<Reconciled | null> {
     const key = await unlock(m, false)
     if (!key || key.password !== deps.password) return null
+    if (m.schemaVersion !== SCHEMA_VERSION) return null
     try {
       const live = createLiveStore(db, docId, key.codec)
-      const { records, blobs } = await live.load()
+      const stat = await live.stat()
+      const records = splitDoc(opened.doc)
+      // A missing row would never be rewritten (the persister believes the copy holds it), so a copy that is not whole is not reused.
+      if (stat.records !== records.size) throw new CorruptFileError()
       const store = deps.createStore(opened.doc, opened.images)
-      const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: blobs.keys() } })
+      const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: stat.blobIds } })
       return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: false }
     } catch (e) {
       if (!(e instanceof CorruptFileError)) throw e

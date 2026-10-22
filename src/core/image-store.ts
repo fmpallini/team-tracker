@@ -5,10 +5,11 @@
  * Two forms per image: `plain` (what the browser renders) and `stored` (what
  * the file holds: AES-GCM sealed, or the same bytes when the file has no
  * password). An image read from a file is adopted in stored form and opened
- * lazily; an imported one arrives plain and is sealed on first save. Both
- * forms are cached for the life of the session and never evicted — that is
- * what lets "delete a note, save, undo, save" bring the image back (the save
- * sweep drops unreferenced images from the FILE, not from here).
+ * on demand; an imported one arrives plain and is sealed on first save, after
+ * which only the sealed form is kept (a password-less file has one form only).
+ * Images are never evicted — that is what lets "delete a note, save, undo,
+ * save" bring the image back (the save sweep drops unreferenced images from
+ * the FILE, not from here).
  */
 export interface BlobCodec {
   seal(id: string, plain: Uint8Array): Promise<Uint8Array>
@@ -45,10 +46,11 @@ export function createImageStore(initial: BlobCodec | null): ImageStore {
   async function plainOf(id: string, e: Entry): Promise<Uint8Array | null> {
     if (e.plain) return e.plain
     if (!e.stored) return null
-    if (!codec) { e.plain = e.stored; return e.plain }
+    if (!codec) { e.plain = e.stored; return e.plain } // the same bytes: no second copy
+    // Not kept: an image that has a sealed form is held in that one form, and opened for each reader (the editor
+    // caches what it renders), so a document full of pictures does not sit in memory twice.
     try {
-      e.plain = await codec.open(id, e.stored)
-      return e.plain
+      return await codec.open(id, e.stored)
     } catch {
       return null
     }
@@ -81,12 +83,16 @@ export function createImageStore(initial: BlobCodec | null): ImageStore {
       if (e.stored) return e.stored
       if (!e.plain) return null
       e.stored = await codec.seal(id, e.plain)
+      e.plain = null // sealed: the sealed form is the one kept (see plainOf)
       return e.stored
     },
 
     async rekey(next) {
+      // Every image is opened with the OLD codec and held plain until the new codec seals it again.
       for (const [id, e] of entries) {
-        if (!(await plainOf(id, e))) { e.stored = null; continue }
+        const plain = await plainOf(id, e)
+        if (plain) e.plain = plain
+        else e.stored = null
       }
       codec = next
       for (const e of entries.values()) e.stored = null

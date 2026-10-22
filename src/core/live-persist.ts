@@ -23,7 +23,7 @@ import type { Store } from './store'
 import type { LiveStore } from './live-store'
 import type { LiveMeta } from './live-db'
 import type { FileStamp } from './file-stamp'
-import { splitDoc, type DocRecords } from './doc-records'
+import { splitDoc, serializeRecords, type DocRecords } from './doc-records'
 import { collectImageRefs } from './image-ref'
 import type { RecordCodec } from './crypto'
 
@@ -138,9 +138,6 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   let initialOwed: RunOptions | null = null
   let initialDone = false
 
-  const serialize = (records: Map<string, unknown>): Map<string, string> =>
-    new Map([...records].map(([path, value]) => [path, JSON.stringify(value)]))
-
   function arm(ms: number, retry: boolean): void {
     if (disposed) return
     if (timer) {
@@ -207,10 +204,12 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       }
       opts = { ...opts, rekey: undefined }
     }
-    const records = splitDoc(store.doc)
-    const next = serialize(records)
-    const puts = new Map<string, unknown>()
-    for (const [path, json] of next) if (cache.get(path) !== json) puts.set(path, records.get(path))
+    const next = serializeRecords(splitDoc(store.doc))
+    const puts = new Map<string, string>()
+    // The compared JSON text itself goes to the store, not the aliased live object: an edit landing while the commit is
+    // prepared would otherwise be stored although the cache records the older text — revert it before the trailing
+    // flush and the diff sees no change, leaving the browser copy on the intermediate value for good.
+    for (const [path, json] of next) if (cache.get(path) !== json) puts.set(path, json)
     const deletes = [...cache.keys()].filter((p) => !next.has(p))
 
     const images = store.doc.images
@@ -276,7 +275,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   if (existing && !replacing) {
     // The caller loaded this document from the browser store (or verified the file equals it), so what the
     // store holds is what the document holds: seed the cache from it rather than rewriting everything.
-    for (const [path, json] of deps.stored ? serialize(deps.stored.records) : serialize(splitDoc(store.doc))) cache.set(path, json)
+    for (const [path, json] of deps.stored ? serializeRecords(deps.stored.records) : serializeRecords(splitDoc(store.doc))) cache.set(path, json)
     for (const id of deps.stored ? deps.stored.blobIds : Object.keys(store.doc.images)) persistedBlobs.add(id)
     lineage = { lastWriteId: existing.lastWriteId, knownWriteIds: existing.knownWriteIds, lastFileWriteAt: existing.lastFileWriteAt }
     unwritten = existing.unwrittenChanges
@@ -317,7 +316,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       const reseeding = chain.then(async () => {
         const meta = await live.meta()
         cache.clear()
-        for (const [path, json] of serialize(stored.records)) cache.set(path, json)
+        for (const [path, json] of serializeRecords(stored.records)) cache.set(path, json)
         persistedBlobs.clear()
         for (const id of stored.blobIds) persistedBlobs.add(id)
         swept.clear()

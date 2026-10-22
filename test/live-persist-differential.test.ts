@@ -11,6 +11,8 @@ import { createImageStore } from '../src/core/image-store'
 import { joinDoc } from '../src/core/doc-records'
 import { readDoc } from '../src/core/live-open'
 import { collectImageRefs } from '../src/core/image-ref'
+import { unlinkRefsInTeam } from '../src/core/refs'
+import { deleteInTeamWithUndo, type UndoOffer } from '../src/core/undo-delete'
 import { newStamp } from '../src/core/file-stamp'
 import { blobCodec, recordCodec, resetSessionKey, type RecordCodec } from '../src/core/crypto'
 import type { BlobCodec } from '../src/core/image-store'
@@ -23,21 +25,42 @@ const OPS = 300
 
 afterEach(() => { vi.unstubAllGlobals() })
 
-test(`after each of ${OPS} random operations the browser copy equals the live document`, async () => {
+// Both kinds of document: with a password every record and image is sealed, so the writes, reads and sweeps below go
+// through the real codecs instead of the pass-through of a password-less file.
+test.each([['password-less', null], ['encrypted', 'correct horse']] as const)(`after each of ${OPS} random operations the browser copy equals the live document (%s)`, async (_label, password) => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange)
   const rnd = makeRng(20261021)
   const pick = <T,>(xs: T[]): T => xs[Math.floor(rnd() * xs.length)]!
   const db = await openLiveDb(new IDBFactory())
   const doc = buildRichDoc(SHAPE, 11)
-  const store = createStore(doc, createImageStore(null))
-  const live = createLiveStore(db, doc.docId, null)
+  resetSessionKey()
+  const blob = password === null ? null : await blobCodec(password)
+  const codec = password === null ? null : await recordCodec(password, blob!.header!.salt)
+  const store = createStore(doc, createImageStore(blob))
+  const live = createLiveStore(db, doc.docId, codec)
   const persister = await createLivePersister({ store, live, fileName: 'f.tmv', schedule: () => () => {} })
   let imageSeq = 0
   const log: string[] = []
+  let offer = null as UndoOffer | null
+  const REF_OF = { actionItems: 'action', milestones: 'milestone', risks: 'risk' } as const
+  const deleteWithUnlink = (collection: keyof typeof REF_OF): void => {
+    type Row = { id: string; summary?: string; title?: string }
+    const t = pick(store.doc.teams)
+    const list = (tm: typeof t): Row[] => tm[collection] as Row[]
+    if (list(t).length === 0) return
+    const id = pick(list(t)).id
+    offer = deleteInTeamWithUndo(store, t.id, (tm) => list(tm).some((e) => e.id === id), (tm) => {
+      const gone = list(tm).find((e) => e.id === id)!
+      unlinkRefsInTeam(tm, REF_OF[collection], new Map([[id, gone.summary ?? gone.title ?? '']]))
+      ;(tm as unknown as Record<string, unknown>)[collection] = list(tm).filter((e) => e.id !== id)
+    }, { teamId: t.id })
+    // Often the user hits Undo at once, so the restore is exercised right behind the delete.
+    if (rnd() < 0.4 && offer?.isAvailable()) offer.undo()
+  }
 
   for (let op = 0; op < OPS; op++) {
     const team = () => pick(store.doc.teams)
-    const kind = Math.floor(rnd() * 12)
+    const kind = Math.floor(rnd() * 18)
     switch (kind) {
       case 0: store.update((d) => { const t = pick(d.teams); const k = Object.keys(t.dailyNotes); if (k.length) t.dailyNotes[pick(k)] = `edit ${op}` }); log.push('daily edit'); break
       case 1: store.update((d) => { pick(d.teams).dailyNotes[`2027-01-${String(1 + (op % 28)).padStart(2, '0')}`] = rnd() < 0.2 ? '' : `new ${op}` }); log.push('daily add'); break
@@ -56,6 +79,12 @@ test(`after each of ${OPS} random operations the browser copy equals the live do
         log.push('image add'); break
       }
       case 10: store.update((d) => { if (d.teams.length > 1 && rnd() < 0.5) d.teams.splice(Math.floor(rnd() * d.teams.length), 1); else d.teams.reverse() }); log.push('team remove/reorder'); break
+      case 12: store.update((d) => { const t = pick(d.teams); const all = [...t.stakeholders, ...t.members]; if (all.length) pick(all).notes = `person notes ${op}` }); log.push('person notes edit'); break
+      case 13: store.update((d) => { const t = pick(d.teams); if (t.milestones.length) pick(t.milestones).followup = `milestone ${op}` }); log.push('milestone edit'); break
+      case 14: deleteWithUnlink(pick(['actionItems', 'milestones', 'risks'] as const)); log.push('delete with unlink'); break
+      case 15: if (offer?.isAvailable()) offer.undo(); offer = null; log.push('undo delete'); break
+      case 16: store.update((d) => { const t = pick(d.teams); if (t.risks.length) pick(t.risks).followup = `risk ${op}` }); log.push('risk edit'); break
+      case 17: store.update((d) => { const t = pick(d.teams); const all = [...t.stakeholders, ...t.members]; if (all.length) pick(all).name = `renamed ${op}` }); log.push('person rename'); break
       default: {
         if (rnd() < 0.15) {
           const next: Doc = JSON.parse(JSON.stringify(store.doc)) as Doc
@@ -70,7 +99,7 @@ test(`after each of ${OPS} random operations the browser copy equals the live do
       }
     }
     await persister.flush()
-    const loaded = await createLiveStore(db, doc.docId, null).load()
+    const loaded = await createLiveStore(db, doc.docId, codec).load()
     const back = joinDoc(loaded.records)
     // toEqual would swallow a missing-vs-undefined difference only for undefined fields, which JSON cannot carry anyway.
     expect(back, `after op ${op} (${log.at(-1)})`).toEqual(JSON.parse(JSON.stringify(store.doc)))
@@ -125,9 +154,26 @@ test('the browser copy keeps agreeing with the document through key changes, fil
     if (docAtFileWrite !== null && JSON.stringify(store.doc) !== docAtFileWrite) expect(meta.unwrittenChanges, `unwritten flag ${at}`).toBe(true)
   }
 
-  const OPS_LIFE = 120
+  // Entity edits and undoable deletes, interleaved with everything that moves the key and the copy.
+  let offer = null as UndoOffer | null
+  const REF_OF = { actionItems: 'action', milestones: 'milestone', risks: 'risk' } as const
+  const deleteWithUnlink = (collection: keyof typeof REF_OF): void => {
+    type Row = { id: string; summary?: string; title?: string }
+    const t = pick(store.doc.teams)
+    const list = (tm: typeof t): Row[] => tm[collection] as Row[]
+    if (list(t).length === 0) return
+    const id = pick(list(t)).id
+    offer = deleteInTeamWithUndo(store, t.id, (tm) => list(tm).some((e) => e.id === id), (tm) => {
+      const gone = list(tm).find((e) => e.id === id)!
+      unlinkRefsInTeam(tm, REF_OF[collection], new Map([[id, gone.summary ?? gone.title ?? '']]))
+      ;(tm as unknown as Record<string, unknown>)[collection] = list(tm).filter((e) => e.id !== id)
+    }, { teamId: t.id })
+    if (rnd() < 0.4 && offer?.isAvailable()) offer.undo()
+  }
+
+  const OPS_LIFE = 160
   for (let op = 0; op < OPS_LIFE; op++) {
-    const kind = Math.floor(rnd() * 16)
+    const kind = Math.floor(rnd() * 20)
     switch (kind) {
       case 0: store.update((d) => { const t = pick(d.teams); const k = Object.keys(t.dailyNotes); if (k.length) t.dailyNotes[pick(k)] = `edit ${op}` }); log.push('daily edit'); break
       case 1: store.update((d) => { pick(d.teams).dailyNotes[`2027-02-${String(1 + (op % 28)).padStart(2, '0')}`] = `new ${op}` }); log.push('daily add'); break
@@ -210,6 +256,10 @@ test('the browser copy keeps agreeing with the document through key changes, fil
         persister = await createLivePersister({ store, live, fileName: 'f.tmv', stored: { records: stored.records, blobIds: stored.blobs.keys() }, schedule: () => () => {} })
         log.push('reopen'); break
       }
+      case 16: store.update((d) => { const t = pick(d.teams); const all = [...t.stakeholders, ...t.members]; if (all.length) pick(all).notes = `person notes ${op}` }); log.push('person notes edit'); break
+      case 17: store.update((d) => { const t = pick(d.teams); if (t.milestones.length) pick(t.milestones).followup = `milestone ${op}` }); log.push('milestone edit'); break
+      case 18: deleteWithUnlink(pick(['actionItems', 'milestones', 'risks'] as const)); log.push('delete with unlink'); break
+      case 19: if (offer?.isAvailable()) offer.undo(); offer = null; log.push('undo delete'); break
       default: store.update((d) => { pick(d.teams).generalNotes = `general ${op}` }); log.push('general')
     }
     await persister.flush()

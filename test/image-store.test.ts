@@ -30,13 +30,27 @@ describe('image store', () => {
     expect(store.has('a')).toBe(true)
   })
 
-  it('opens an adopted blob once and caches the plain bytes', async () => {
+  it('opens an adopted blob for each reader and does not keep a second, plain copy of it', async () => {
     const codec = fakeCodec('k')
     const store = createImageStore(codec)
     store.adoptStored('a', enc.encode('k:hello'))
     expect(dec.decode((await store.getPlain('a'))!)).toBe('hello')
-    await store.getPlain('a')
+    expect(dec.decode((await store.getPlain('a'))!)).toBe('hello')
+    expect(codec.opens).toBe(2)
+  })
+
+  it('once an imported image is sealed only the sealed form is kept; reading it opens it again', async () => {
+    const codec = fakeCodec('k')
+    const store = createImageStore(codec)
+    store.putPlain('a', enc.encode('hello'))
+    expect(codec.opens).toBe(0)
+    await store.getStored('a')
+    expect(dec.decode((await store.getPlain('a'))!)).toBe('hello')
     expect(codec.opens).toBe(1)
+    expect(codec.seals).toBe(1)
+    // and a later write reuses the sealed bytes instead of sealing the re-opened copy again
+    await store.getStored('a')
+    expect(codec.seals).toBe(1)
   })
 
   it('returns null for a blob the codec cannot open, and still reports it as present', async () => {
@@ -91,6 +105,16 @@ describe('image store', () => {
     expect(dec.decode((await store.getStored('b'))!)).toBe('new:two')
     expect(log.indexOf('old.open(a)')).toBeGreaterThanOrEqual(0)
     expect(log.indexOf('old.open(a)')).toBeLessThan(log.indexOf('new.seal(a)'))
+  })
+
+  it('rekey keeps the images readable and writable when they were already sealed (the plain form is gone)', async () => {
+    const store = createImageStore(fakeCodec('old'))
+    store.putPlain('a', enc.encode('one'))
+    await store.getStored('a')
+    const next = fakeCodec('new')
+    await store.rekey(next)
+    expect(dec.decode((await store.getPlain('a'))!)).toBe('one')
+    expect(dec.decode((await store.getStored('a'))!)).toBe('new:one')
   })
 
   it('rekey to null makes stored bytes plain', async () => {

@@ -25,6 +25,11 @@ import type { Doc, Team, Template } from './types'
 
 export type DocRecords = Map<string, unknown>
 
+/** Each record as its JSON text — what the persister diffs, and what the live store seals or stores as it is. */
+export function serializeRecords(records: DocRecords): Map<string, string> {
+  return new Map([...records].map(([path, value]) => [path, JSON.stringify(value)]))
+}
+
 const COLLECTIONS = ['stakeholders', 'members', 'actionItems', 'milestones', 'risks'] as const
 type Collection = typeof COLLECTIONS[number]
 

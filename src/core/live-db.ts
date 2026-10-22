@@ -17,6 +17,11 @@ export interface LiveMeta {
   salt: Uint8Array | null
   /** Sealed known plaintext, so the password can be tested without opening a record. */
   check: Uint8Array | null
+  /**
+   * The random secret the document's record keys are derived from (live-store.ts): sealed under the document's key when
+   * it is encrypted, raw when it is not. Fixed for the life of the copy, so a password change keeps every key.
+   */
+  keySecret: Uint8Array
   /** writeId of the last file write or file load this browser knows about. */
   lastWriteId: string | null
   /** The last 20 writeIds this browser produced or loaded, newest first. */
@@ -43,6 +48,8 @@ export interface LiveDb {
   getMeta(docId: string): Promise<LiveMeta | undefined>
   listMeta(): Promise<LiveMeta[]>
   readAll(docId: string): Promise<{ records: { key: string; value: unknown }[]; blobs: { id: string; bytes: Uint8Array }[] }>
+  /** What the document holds, without reading a value: the number of records and the ids of its blobs. */
+  stat(docId: string): Promise<{ records: number; blobIds: string[] }>
   /** One transaction over all three stores: everything in `batch` lands, or nothing does (a rejection keeps the browser's error name, e.g. QuotaExceededError). */
   commit(docId: string, batch: LiveBatch): Promise<void>
   deleteDoc(docId: string): Promise<void>
@@ -122,6 +129,13 @@ export async function openLiveDb(factory: IDBFactory | undefined = globalThis.in
         request<BlobRow[]>(tx.objectStore('blobs').getAll(docRange(docId))),
       ])
       return { records: records.map((r) => ({ key: r.key, value: r.value })), blobs: blobs.map((b) => ({ id: b.id, bytes: b.bytes })) }
+    }),
+    stat: (docId) => read(['records', 'blobs'], async (tx) => {
+      const [records, blobKeys] = await Promise.all([
+        request<number>(tx.objectStore('records').count(docRange(docId))),
+        request<IDBValidKey[]>(tx.objectStore('blobs').getAllKeys(docRange(docId))),
+      ])
+      return { records, blobIds: blobKeys.map((k) => (k as [string, string])[1]) }
     }),
     async commit(docId, batch) {
       const db = await connect()

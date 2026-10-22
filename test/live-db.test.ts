@@ -10,7 +10,7 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals() })
 
 const meta = (docId: string, over: Partial<LiveMeta> = {}): LiveMeta => ({
-  docId, encrypted: false, salt: null, check: null, lastWriteId: null, knownWriteIds: [],
+  docId, encrypted: false, salt: null, check: null, keySecret: new Uint8Array(16), lastWriteId: null, knownWriteIds: [],
   unwrittenChanges: false, schemaVersion: 18, fileName: 'a.tmv', modifiedAt: 1, lastFileWriteAt: null, ...over,
 })
 const empty = { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [] }
