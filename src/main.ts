@@ -428,6 +428,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     shell,
     persister,
     onBrowserCopyRekeyFailed: () => toast(t(store.doc.prefs.locale, 'live_rekey_failed_toast'), { sticky: true }),
+    snapshot,
     runExclusive: (fn) => snapshot.runExclusive(fn),
     getPassword: currentPassword,
     setPassword: (newPw) => {
