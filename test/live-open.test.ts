@@ -109,6 +109,19 @@ test('a document with no browser copy is imported: the file wins and the lineage
   expect(await rawDb.getMeta(doc.docId)).toMatchObject({ lastWriteId: stamp.writeId, unwrittenChanges: false, fileName: 'f.tmv' })
 })
 
+test('a file from before the current schema is written back at once, so the docId it was just given is not lost with the tab', async () => {
+  const doc = docWith('old schema')
+  const old = await opened(doc, null)
+  old.preSchemaVersion = SCHEMA_VERSION - 1 // what a 3.1.x file reports: migration just minted this docId
+  const r = await open(old, null, asks())
+  expect(r.needsFileWrite).toBe(true)
+  expect(r.store.dirty).toBe(true)
+  // a file already at the current schema needs nothing
+  const current = await open(await opened(docWith('current'), newStamp()), null, asks())
+  expect(current.needsFileWrite).toBe(false)
+  expect(current.store.dirty).toBe(false)
+})
+
 test('the returned store is the one the persister watches', async () => {
   const doc = docWith('x')
   const r = await open(await opened(doc, newStamp()), null, asks())

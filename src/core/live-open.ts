@@ -178,7 +178,11 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
     const live = createLiveStore(db, docId, codec)
     const store = deps.createStore(opened.doc, opened.images)
     const persister = await createLivePersister({ store, live, fileName, fromFile: opened.stamp, replaceStored: hadCopy })
-    return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: false }
+    // A file from before this schema was just migrated, and migration minted its docId (the browser copy's key). Until the
+    // file is written back, the next open mints another one and the copy of everything edited meanwhile is orphaned.
+    const migrated = opened.preSchemaVersion !== null && opened.preSchemaVersion < SCHEMA_VERSION
+    if (migrated) store.markDirty()
+    return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: migrated }
   }
 
   function unreadable(e: unknown): void {

@@ -396,6 +396,31 @@ test('taking control refreshes the document from disk BEFORE the tab becomes wri
   await vi.waitFor(() => expect(storeB.readOnly).toBe(false))
 })
 
+test('a refresh that fails leaves the tab read-only and hands the lock back, so it never goes writable on a stale document', async () => {
+  const { locks } = makeFakeLockManager()
+  const session = makeSession('refresh-fails.tmv')
+  const storeA = createStore(createEmptyDocument('en-US'))
+  const releaseA = createTabLock({ session, store: storeA, shell: makeShell(), flushLive: okFlush, locks })
+  await Promise.resolve(); await Promise.resolve()
+  const storeB = createStore(createEmptyDocument('en-US'))
+  const shellB = makeShell()
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  createTabLock({ session, store: storeB, shell: shellB, flushLive: okFlush, locks, refreshBeforeWritable: async () => { throw new Error('cannot read the copy') } })
+  await Promise.resolve(); await Promise.resolve()
+  modalMocks.toast.mockClear()
+
+  shellB.root.parentElement!.querySelector<HTMLButtonElement>('.tt-readonly-takeover-btn')!.click()
+  await vi.waitFor(() => expect(modalMocks.toast).toHaveBeenCalled())
+  await new Promise((r) => setTimeout(r, 30))
+
+  expect(storeB.readOnly).toBe(true)
+  expect(shellB.root.parentElement!.querySelector('.tt-readonly-banner')).not.toBeNull()
+  // A handed over and B declined: nobody holds the lock, so A can simply ask for it back
+  expect(storeA.readOnly).toBe(true)
+  releaseA()
+  spy.mockRestore()
+})
+
 test('a sole tab never refreshes from disk on acquiring the lock', async () => {
   const { locks } = makeFakeLockManager()
   const refreshBeforeWritable = vi.fn(async () => {})

@@ -166,8 +166,13 @@ export function createTabLock(deps: TabLockDeps): () => void {
           try {
             await deps.refreshBeforeWritable!()
           } catch (e) {
+            // Writable on a document that is not the browser copy would overwrite the previous holder's edits with
+            // stale ones: stay read-only, hand the lock back (returning releases it) and say so.
             console.error(e)
+            if (!released) toast(t(store.doc.prefs.locale, 'takeover_refresh_failed_toast'), { sticky: true, key: 'takeover-refresh-failed' })
+            return
           }
+          dismissToast('takeover-refresh-failed')
           // Closed mid-refresh: hand the lock straight back, as above.
           if (released) return
           exitReadOnly()

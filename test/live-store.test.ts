@@ -256,3 +256,20 @@ test('replacing a copy sealed under another password rebuilds the meta for the n
   expect(await oldCodec.verifyCheck(meta.check!)).toBe(false)
   expect((await createLiveStore(db, 'd', newCodec).load()).records.get('a')).toBe('new')
 }, 120000)
+
+test('useCodec points the store at another key and forgets which rows it knew, so a following load rebuilds them', async () => {
+  const oldCodec = await recordCodec('old')
+  const s = createLiveStore(db, 'd', oldCodec)
+  await s.write({ puts: puts({ a: 'one' }) })
+  const other = createLiveStore(db, 'd', oldCodec)
+  await other.load()
+  resetSessionKey()
+  const newCodec = await recordCodec('new')
+  await other.rekey(newCodec, new Map())
+  // `s` still has the old key: it cannot read the copy until told
+  await expect(s.load()).rejects.toBeInstanceOf(CorruptFileError)
+  s.useCodec(newCodec)
+  expect((await s.load()).records.get('a')).toBe('one')
+  await s.write({ puts: puts({ a: 'two' }) })
+  expect((await db.readAll('d')).records).toHaveLength(1)
+}, 120000)

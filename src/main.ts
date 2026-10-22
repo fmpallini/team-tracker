@@ -1,5 +1,6 @@
 declare global { const __APP_VERSION__: string; const __PWA__: boolean; const __PAGES_URL__: string; const __REPO__: string }
 
+import { followLiveCopy } from './core/live-follow'
 import type { Locale } from './core/i18n'
 import type { FileSession } from './core/fs'
 import type { Store } from './core/store'
@@ -40,9 +41,6 @@ import { createFileSnapshot, type FileSnapshot } from './core/file-snapshot'
 import { closeDocument, createBeforeUnloadHandler, downloadCopy } from './core/close-document'
 import { showWriteFailedDialog } from './ui/write-failed'
 import { watchFileHealth } from './ui/file-health-toasts'
-import { createImageStore } from './core/image-store'
-import { joinDoc } from './core/doc-records'
-import { migrate, validateDoc } from './core/document'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { resolveFileLockKey } from './core/file-identity'
@@ -261,18 +259,24 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   // way out, so that copy — not the file, which may be hours older — is what this tab must continue from.
   async function reloadFromLive(): Promise<void> {
     if (!handle || !persister) return
-    const stored = await handle.live.load()
-    const doc = migrate(joinDoc(stored.records))
-    const bad = validateDoc(doc)
-    if (bad) throw new Error(`browser copy invalid at ${bad}`)
-    const images = createImageStore(store.images.codec())
-    for (const [id, bytes] of stored.blobs) images.adoptStored(id, bytes)
+    // The previous holder may have changed the password meanwhile: follow the key the copy is under now.
+    const followed = await followLiveCopy({
+      live: handle.live,
+      currentPassword: currentPassword(),
+      askPassword: async (wasWrong) => {
+        const lc = store.doc.prefs.locale
+        if (wasWrong) toast(t(lc, 'err_wrong_password'))
+        const result = await promptPassword(lc, { title: t(lc, 'reload_password_title') })
+        return result === null ? null : (result as { password: string }).password
+      },
+    })
     // Reseed first: the persister's cache is from before the other tab's writes, and diffing the reloaded
     // document against it would rewrite every record the other tab changed.
-    await persister.reseed({ records: stored.records, blobIds: stored.blobs.keys() })
-    store.replaceDoc(doc, images)
-    if ((await handle.live.meta())?.unwrittenChanges) store.markDirty()
-    shell.applyPrefs(doc.prefs)
+    await persister.reseed({ records: followed.stored.records, blobIds: followed.stored.blobs.keys() })
+    if (app && app.store === store) app.password = followed.password
+    store.replaceDoc(followed.doc, followed.images)
+    if (followed.unwritten) store.markDirty()
+    shell.applyPrefs(followed.doc.prefs)
     pm.renderAll()
   }
 

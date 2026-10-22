@@ -42,6 +42,8 @@ export interface LiveStore {
   write(change: LiveChange): Promise<void>
   /** Re-seals every record under `codec` (null: plain), replaces the blobs with `blobs`, and updates meta, in one commit; only then swaps the codec. A failure leaves the old codec in force. */
   rekey(codec: RecordCodec | null, blobs: Map<string, Uint8Array>): Promise<void>
+  /** Points the store at the key the copy is under now (another tab may have re-keyed it) and forgets which rows it knew: the next `load()` rebuilds them. */
+  useCodec(codec: RecordCodec | null): void
   /** Deletes the document's meta, records and blobs. */
   remove(): Promise<void>
 }
@@ -166,6 +168,12 @@ export function createLiveStore(db: LiveDb, docId: string, initialCodec: RecordC
       codec = next
       pathToKey = index
       indexed = true
+    },
+
+    useCodec(next) {
+      codec = next
+      pathToKey = new Map()
+      indexed = false
     },
 
     async remove() {
