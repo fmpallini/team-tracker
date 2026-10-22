@@ -31,6 +31,26 @@ export interface CloseDocumentDeps {
   isConflictOpen?(): boolean
 }
 
+/**
+ * Edits that exist only in this tab's memory: the browser copy is failing or was never available, and the file does
+ * not have them either. Closing or reloading now would discard them.
+ */
+export function browserCopyAtRisk(store: Pick<Store, 'dirty'>, persister: Pick<LivePersister, 'lastError'> | null): boolean {
+  return store.dirty && (!persister || persister.lastError != null)
+}
+
+/**
+ * "Try again" in the write-failed dialog: the browser copy first, then the file where there is a file to write. True
+ * only when everything that can hold the edits does. With no file handle and no browser storage nothing can be fixed.
+ */
+export async function retryWrites(deps: Pick<CloseDocumentDeps, 'persister' | 'session'> & { snapshot: Pick<FileSnapshot, 'writeNow'> }): Promise<boolean> {
+  const { persister, snapshot, session } = deps
+  await persister?.flush()
+  if (persister && persister.lastError != null) return false
+  if (!session.handle) return persister != null
+  return (await snapshot.writeNow('close')).ok
+}
+
 export async function closeDocument(deps: CloseDocumentDeps): Promise<'closed' | 'kept-open'> {
   const { store, persister, snapshot } = deps
   const locale = store.doc.prefs.locale
@@ -50,7 +70,10 @@ export async function closeDocument(deps: CloseDocumentDeps): Promise<'closed' |
   for (;;) {
     const result = await snapshot.writeNow('close')
     await snapshot.flush()
-    if (result.ok || result.reason === 'readonly' || result.reason === 'nohandle') {
+    // With no file to write, the browser copy is the only place the edits live: when that is failing too, leaving
+    // would discard them, so it is a failure like any other (its way out is a download or a recovered store).
+    const noWhereToKeepEdits = result.ok === false && result.reason === 'nohandle' && browserCopyAtRisk(store, persister)
+    if (result.ok || result.reason === 'readonly' || (result.reason === 'nohandle' && !noWhereToKeepEdits)) {
       // The file now holds the document, so nothing is at risk; the browser merely could not keep its own copy.
       if (result.ok && browserCopyFailed) toast(t(locale, 'close_browser_copy_failed_toast'))
       return finish()
@@ -59,11 +82,13 @@ export async function closeDocument(deps: CloseDocumentDeps): Promise<'closed' |
     if (result.reason === 'conflict' || deps.isConflictOpen?.()) return 'kept-open'
 
     const choice = await deps.ask({
-      reason: result.reason,
+      reason: result.reason === 'nohandle' ? 'error' : result.reason,
       canRegrant: result.reason === 'permission' && deps.session.handle !== null,
+      // Whether "the browser keeps your work" is still true: it is not when its own copy is failing or missing.
+      copyFailed: !persister || persister.lastError != null,
       onRegrant: () => snapshot.resolveGrants(),
       onDownload: () => { void downloadCopy(deps.store, deps.session, () => deps.getPassword()) },
-      onRetry: async () => (await snapshot.writeNow('close')).ok,
+      onRetry: () => retryWrites(deps),
     })
     if (choice === 'cancelled') return 'kept-open'
     if (choice === 'closed-anyway') return finish()
@@ -86,17 +111,19 @@ export async function downloadCopy(store: Store, session: FileSession, getPasswo
  * `beforeunload`: the window cannot wait for an asynchronous file write, so all that is done is to get the browser
  * copy as current as an unload allows. The browser's "leave site?" prompt appears only when the file is overdue (older
  * than the timer interval) — then the user is nudged towards Lock/Close, which guarantees a file write. Leaving anyway
- * loses nothing: the next open reconciles the file with the browser copy.
+ * loses nothing: the next open reconciles the file with the browser copy. The exception is a document with no working
+ * browser copy (storage failing, or never available): its edits would be lost, so that prompts at once.
  */
 export function createBeforeUnloadHandler(deps: {
   flushEditors(): void
+  store: Pick<Store, 'dirty'>
   persister: LivePersister | null
   snapshot: Pick<FileSnapshot, 'isOverdue'>
 }): (e: BeforeUnloadEvent) => void {
   return (e) => {
     deps.flushEditors()
     void deps.persister?.flush()
-    if (deps.snapshot.isOverdue()) {
+    if (deps.snapshot.isOverdue() || browserCopyAtRisk(deps.store, deps.persister)) {
       e.preventDefault()
       e.returnValue = ''
     }

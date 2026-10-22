@@ -80,6 +80,12 @@ export interface LivePersisterDeps {
    * rather than from the document in memory, so records the open changed (a schema migration) are written, not assumed.
    */
   stored?: { records: DocRecords; blobIds: Iterable<string> }
+  /**
+   * The stored copy is under another key than the document now holds (the file's password wins over a drifted copy):
+   * move it to `codec` as part of the initial sync, so like the rest of it this waits for the write lock. The store's
+   * image store must already hold the new key.
+   */
+  rekeyTo?: { codec: RecordCodec | null }
   debounceMs?: number
   schedule?: (fn: () => void, ms: number) => () => void
 }
@@ -101,6 +107,8 @@ interface RunOptions {
   initial?: boolean
   /** The first reconcile of a loaded copy: what the diff finds is derived data (a migration), not a user edit, so it does not raise `unwrittenChanges`. */
   quiet?: boolean
+  /** Move the stored copy to this key before anything else (see `LivePersisterDeps.rekeyTo`). */
+  rekey?: { codec: RecordCodec | null }
 }
 
 export async function createLivePersister(deps: LivePersisterDeps): Promise<LivePersister> {
@@ -168,8 +176,37 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     return run
   }
 
+  function noteFailure(e: unknown): void {
+    const first = lastError === null
+    lastError = e
+    if (first) { deps.onError?.(e); announceError(true) }
+    arm(RETRY_MS, true)
+  }
+
+  /** Re-seals every stored record and the persisted blobs under `codec`; the image store must already hold the matching blob key. */
+  async function rekeyStored(codec: RecordCodec | null): Promise<void> {
+    const blobs = new Map<string, Uint8Array>()
+    const lost: string[] = []
+    for (const id of persistedBlobs) {
+      const bytes = store.images.has(id) ? await store.images.getStored(id) : null
+      if (bytes) blobs.set(id, bytes)
+      else lost.push(id) // damaged or gone: it is not carried over (the store drops blobs absent from the new set)
+    }
+    await live.rekey(codec, blobs)
+    for (const id of lost) persistedBlobs.delete(id)
+  }
+
   async function commitOnce(opts: RunOptions): Promise<void> {
     if (disposed || store.readOnly) return
+    if (opts.rekey) {
+      try {
+        await rekeyStored(opts.rekey.codec)
+      } catch (e) {
+        noteFailure(e)
+        return
+      }
+      opts = { ...opts, rekey: undefined }
+    }
     const records = splitDoc(store.doc)
     const next = serialize(records)
     const puts = new Map<string, unknown>()
@@ -214,10 +251,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     try {
       await live.write({ puts, deletes, putBlobs, deleteBlobs, meta, clear: opts.clear })
     } catch (e) {
-      const first = lastError === null
-      lastError = e
-      if (first) { deps.onError?.(e); announceError(true) }
-      arm(RETRY_MS, true)
+      noteFailure(e)
       return
     }
     for (const [path, json] of next) cache.set(path, json)
@@ -256,8 +290,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   ]
   if (!existing || replacing) {
     initialOwed = { initial: true, ...(deps.fromFile !== undefined ? { adopt: { stamp: deps.fromFile } } : {}), ...(replacing ? { clear: true } : {}) }
-  } else if (deps.stored || existing.fileName !== deps.fileName) {
-    initialOwed = { initial: true, quiet: true }
+  } else if (deps.stored || deps.rekeyTo || existing.fileName !== deps.fileName) {
+    initialOwed = { initial: true, quiet: true, ...(deps.rekeyTo ? { rekey: deps.rekeyTo } : {}) }
   } else {
     initialDone = true
   }
@@ -272,17 +306,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     },
     adoptFileStamp: (stamp) => run({ adopt: { stamp } }),
     rekey: (codec) => {
-      const rekeying = chain.then(async () => {
-        const blobs = new Map<string, Uint8Array>()
-        const lost: string[] = []
-        for (const id of persistedBlobs) {
-          const bytes = store.images.has(id) ? await store.images.getStored(id) : null
-          if (bytes) blobs.set(id, bytes)
-          else lost.push(id) // damaged or gone: it is not carried over (the store drops blobs absent from the new set)
-        }
-        await live.rekey(codec, blobs)
-        for (const id of lost) persistedBlobs.delete(id)
-      })
+      const rekeying = chain.then(() => rekeyStored(codec))
       chain = rekeying.catch(() => {})
       return rekeying
     },

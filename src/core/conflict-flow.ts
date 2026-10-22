@@ -15,6 +15,7 @@ import { t } from './i18n'
 import { pickCreate, forceWrite } from './fs'
 import { docToBytes } from './doc-bytes'
 import { buildSnapshot, commitSnapshot } from './snapshot'
+import { recordCodec } from './crypto'
 import { newStamp, randomHex, type FileStamp } from './file-stamp'
 import type { LivePersister } from './live-persist'
 import type { ReloadedDocument } from './reload-document'
@@ -62,13 +63,32 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
 
   const locale = (): Doc['prefs']['locale'] => store.doc.prefs.locale
 
+  /**
+   * The file may be under another password now (changed, added or removed elsewhere), and the document just took its
+   * images with it. The browser copy must follow that key too, or its records and its blobs end up under different keys
+   * and the next browser-wins open would hand back the old password.
+   */
+  async function followFileKey(before: Uint8Array | null, reloaded: ReloadedDocument): Promise<void> {
+    const after = reloaded.images.codec()?.header?.salt ?? null
+    if (before === null && after === null) return
+    if (before !== null && after !== null && before.length === after.length && before.every((b, i) => b === after[i])) return
+    try {
+      await deps.persister?.rekey(reloaded.password === null ? null : await recordCodec(reloaded.password, after ?? undefined))
+    } catch (e) {
+      console.error(e)
+      toast(t(locale(), 'live_rekey_failed_toast'), { sticky: true })
+    }
+  }
+
   async function reload(): Promise<void> {
     try {
       const reloaded = await deps.readFromDisk()
       // Another document under the same name (a different file dropped over it, or restored from elsewhere) is not
       // this one's newer version: adopting it would graft foreign content onto this document's browser copy.
       if (reloaded.doc.docId !== store.doc.docId) throw new Error('the file holds a different document')
+      const keyBefore = store.images.codec()?.header?.salt ?? null
       deps.applyReloaded(reloaded)
+      await followFileKey(keyBefore, reloaded)
       // The file is now the truth: the browser copy takes its content and its write as the lineage.
       await deps.persister?.adoptFileStamp(reloaded.stamp)
       deps.snapshot?.fileReloaded()

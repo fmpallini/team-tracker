@@ -111,7 +111,7 @@ export interface Shell {
 }
 
 /** Which clicks do something, and what. Single source for the pill's click look and for `SaveStatusInfo.clickable`. */
-const CLICK_ACTION: Partial<Record<PillHealth, PillAction>> = { permission: 'regrant', error: 'failure', export: 'export' }
+const CLICK_ACTION: Partial<Record<PillHealth, PillAction>> = { permission: 'regrant', error: 'failure', 'store-error': 'failure', export: 'export' }
 
 const LABEL_KEY: Record<Exclude<PillHealth, 'export'>, MsgKey> = {
   ok: 'pill_ok',

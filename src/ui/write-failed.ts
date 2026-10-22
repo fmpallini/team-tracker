@@ -18,6 +18,8 @@ export interface WriteFailedOptions {
   onDownload(): void
   /** Tries the write again; true when it worked. */
   onRetry(): Promise<boolean>
+  /** The browser copy is failing (or missing) too, so "the browser keeps your work" is not true: say so, and call closing what it is. */
+  copyFailed?: boolean
   /** Offer "close anyway" (default). Off when the dialog was opened from the pill: there is no closing to push through. */
   allowCloseAnyway?: boolean
 }
@@ -54,7 +56,7 @@ export function showWriteFailedDialog(opts: WriteFailedOptions): Promise<'closed
 
     const buttons: ModalButton[] = []
     if (opts.allowCloseAnyway !== false) {
-      buttons.push({ label: t(locale, 'write_failed_close_anyway'), danger: true, left: true, onClick: () => { finish('closed-anyway'); handle.close() } })
+      buttons.push({ label: t(locale, opts.copyFailed ? 'write_failed_close_discard' : 'write_failed_close_anyway'), danger: true, left: true, onClick: () => { finish('closed-anyway'); handle.close() } })
     }
     buttons.push(
       { label: t(locale, 'cancel'), icon: 'close', onClick: () => { finish('cancelled'); handle.close() } },
@@ -65,7 +67,7 @@ export function showWriteFailedDialog(opts: WriteFailedOptions): Promise<'closed
       buttons.push({ label: t(locale, 'write_failed_regrant'), primary: true, onClick: () => attempt(() => opts.onRegrant()) })
     }
 
-    const bodyKey = opts.reason === 'permission' ? 'write_failed_body_permission' : 'write_failed_body_error'
+    const bodyKey = opts.copyFailed ? 'write_failed_body_store' : opts.reason === 'permission' ? 'write_failed_body_permission' : 'write_failed_body_error'
     const handle: ModalHandle = showModal({
       title: t(locale, 'write_failed_title'),
       body: el('div', {}, el('p', { class: 'tt-modal-message' }, t(locale, bodyKey)), still),

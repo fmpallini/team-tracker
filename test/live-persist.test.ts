@@ -600,6 +600,70 @@ describe('rekey', () => {
     expect(joinDoc(loaded.records).teams[0]!.dailyNotes['2026-07-01']).toBe('racing edit')
   }, 120000)
 
+  test('rekeyTo is owed like the initial sync: nothing is touched while the tab is read-only, then the copy moves to the new key', async () => {
+    const doc = sampleDoc()
+    const oldBlob = await blobCodec('old')
+    const oldImages = createImageStore(oldBlob)
+    oldImages.putPlain(IMG, new Uint8Array([4, 5, 6]))
+    doc.images[IMG] = { ...meta }
+    doc.teams[0]!.dailyNotes['2026-07-01'] = `![x](img:${IMG})`
+    const oldCodec = await recordCodec('old', oldBlob.header!.salt)
+    const first = await createLivePersister({ store: createStore(doc, oldImages), live: createLiveStore(db, doc.docId, oldCodec), fileName: 'a.tmv', schedule: manualTimers().schedule })
+    first.dispose()
+
+    // reopened: the copy is loaded under the old key, the document is to be held under the file's new one
+    const live = createLiveStore(db, doc.docId, oldCodec)
+    const stored = await live.load()
+    const images = createImageStore(oldBlob)
+    for (const [id, bytes] of stored.blobs) images.adoptStored(id, bytes)
+    resetSessionKey()
+    const newBlob = await blobCodec('new')
+    await images.rekey(newBlob)
+    const newCodec = await recordCodec('new', newBlob.header!.salt)
+    const store = createStore(doc, images)
+    store.setReadOnly(true, { silent: true })
+    const before = commits.length
+    const persister = await createLivePersister({
+      store, live, fileName: 'a.tmv', stored: { records: stored.records, blobIds: stored.blobs.keys() }, rekeyTo: { codec: newCodec }, schedule: manualTimers().schedule,
+    })
+    expect(commits.length).toBe(before)
+    expect(await oldCodec.verifyCheck((await live.meta())!.check!)).toBe(true)
+
+    store.setReadOnly(false)
+    await persister.flush()
+    const m = (await live.meta())!
+    expect(await newCodec.verifyCheck(m.check!)).toBe(true)
+    const loaded = await createLiveStore(rawDb, doc.docId, newCodec).load()
+    expect(joinDoc(loaded.records)).toEqual(doc)
+    expect(Array.from(await newBlob.open(IMG, loaded.blobs.get(IMG)!))).toEqual([4, 5, 6])
+    // and the lineage the copy had is untouched
+    expect(m.fileName).toBe('a.tmv')
+  }, 240000)
+
+  test('a failed rekeyTo is reported like a failed commit and retried, and the copy stays readable under its old key', async () => {
+    const doc = sampleDoc()
+    const oldCodec = await recordCodec('old')
+    const first = await createLivePersister({ store: createStore(doc, createImageStore(null)), live: createLiveStore(db, doc.docId, oldCodec), fileName: 'a.tmv', schedule: manualTimers().schedule })
+    first.dispose()
+    const live = createLiveStore(db, doc.docId, oldCodec)
+    const stored = await live.load()
+    resetSessionKey()
+    const newCodec = await recordCodec('new')
+    const timers = manualTimers()
+    const onError = vi.fn()
+    failNext.push(new Error('quota'))
+    const persister = await createLivePersister({
+      store: createStore(doc, createImageStore(null)), live, fileName: 'a.tmv', onError,
+      stored: { records: stored.records, blobIds: stored.blobs.keys() }, rekeyTo: { codec: newCodec }, schedule: timers.schedule,
+    })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(persister.lastError).toBeInstanceOf(Error)
+    expect(await oldCodec.verifyCheck((await live.meta())!.check!)).toBe(true)
+    timers.fire()
+    await persister.flush()
+    expect(await newCodec.verifyCheck((await live.meta())!.check!)).toBe(true)
+  }, 240000)
+
   test('a failed rekey rejects and leaves the old codec writing', async () => {
     const doc = sampleDoc()
     const store = createStore(doc, createImageStore(null))

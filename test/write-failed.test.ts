@@ -94,3 +94,11 @@ test('the text exists in both locales', () => {
     expect(t('en-US', key)).not.toBe(t('pt-BR', key))
   }
 })
+
+test('when the browser copy has failed too, the dialog stops promising the browser has the work, and closing says it discards', () => {
+  void showWriteFailedDialog(opts({ reason: 'error', canRegrant: false, copyFailed: true }))
+  expect(document.querySelector('.tt-modal-message')?.textContent).toBe(t('en-US', 'write_failed_body_store'))
+  expect(labels()).toContain(t('en-US', 'write_failed_close_discard'))
+  expect(labels()).not.toContain(t('en-US', 'write_failed_close_anyway'))
+  expect(labels()).toContain(t('en-US', 'write_failed_download'))
+})

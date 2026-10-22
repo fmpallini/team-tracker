@@ -1,4 +1,4 @@
-import { watchFileHealth, SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY } from '../src/ui/file-health-toasts'
+import { watchFileHealth, watchStoreHealth, SAVE_PERMISSION_TOAST_KEY, SAVE_ERROR_TOAST_KEY, STORE_ERROR_TOAST_KEY } from '../src/ui/file-health-toasts'
 import type { FileHealth, FileSnapshot } from '../src/core/file-snapshot'
 import { t } from '../src/core/i18n'
 
@@ -65,4 +65,33 @@ test('the export health never toasts, and unsubscribing stops everything', () =>
   expect(modal.toast).not.toHaveBeenCalled()
   stop()
   expect(f.subscribed()).toBe(false)
+})
+
+describe('watchStoreHealth', () => {
+  function fakePersister(initial: unknown = null) {
+    let listener: ((failed: boolean) => void) | null = null
+    const persister = {
+      get lastError() { return initial },
+      onErrorChange: (fn: (failed: boolean) => void) => { listener = fn; return () => { listener = null } },
+    } as unknown as import('../src/core/live-persist').LivePersister
+    return { persister, emit: (failed: boolean) => listener?.(failed), subscribed: () => listener !== null }
+  }
+
+  test('a failing browser store raises one sticky toast (it says the edits are only in memory); recovery clears it', () => {
+    const f = fakePersister()
+    watchStoreHealth(f.persister, () => 'en-US')
+    f.emit(true)
+    expect(modal.toast).toHaveBeenCalledTimes(1)
+    expect(modal.toast).toHaveBeenCalledWith(t('en-US', 'live_store_failed_toast'), { sticky: true, key: STORE_ERROR_TOAST_KEY })
+    f.emit(false)
+    expect(modal.dismissToast).toHaveBeenCalledWith(STORE_ERROR_TOAST_KEY)
+  })
+
+  test('a store that is already failing when watched is announced at once; the unsubscribe stops the watching', () => {
+    const f = fakePersister(new Error('quota'))
+    const off = watchStoreHealth(f.persister, () => 'pt-BR')
+    expect(modal.toast).toHaveBeenCalledWith(t('pt-BR', 'live_store_failed_toast'), { sticky: true, key: STORE_ERROR_TOAST_KEY })
+    off()
+    expect(f.subscribed()).toBe(false)
+  })
 })

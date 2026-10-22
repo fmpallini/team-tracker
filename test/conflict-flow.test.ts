@@ -4,6 +4,8 @@ import type { Doc } from '../src/core/types'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { FileStamp } from '../src/core/file-stamp'
+import { createImageStore } from '../src/core/image-store'
+import { blobCodec, resetSessionKey } from '../src/core/crypto'
 
 const mocks = vi.hoisted(() => ({
   showConflictModal: vi.fn<(opts: ConflictModalOptions) => void>(),
@@ -130,6 +132,61 @@ describe('Reload', () => {
     expect(order).toEqual(['apply', 'adopt'])
     expect(adoptFileStamp).toHaveBeenCalledWith(stamp)
   })
+
+  test('a file whose password was changed elsewhere re-keys the browser copy to it, before adopting the stamp', async () => {
+    resetSessionKey()
+    const order: string[] = []
+    const rekey = vi.fn(async (_codec: { salt: Uint8Array } | null) => { order.push('rekey') })
+    const adoptFileStamp = vi.fn(async () => { order.push('adopt') })
+    const { store, deps, open } = setup({ persister: { rekey, adoptFileStamp } as never, getPassword: () => 'old' })
+    store.images.rekey(await blobCodec('old'))
+    resetSessionKey()
+    const reloadedImages = createImageStore(await blobCodec('new'))
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: reloadedImages, password: 'new', stamp: null,
+    })
+
+    await open().onReload()
+
+    expect(order).toEqual(['rekey', 'adopt'])
+    const codec = rekey.mock.calls[0]![0]
+    expect(codec).not.toBeNull()
+    expect(Array.from(codec!.salt)).toEqual(Array.from(reloadedImages.codec()!.header!.salt))
+  }, 240000)
+
+  test('a file whose password was removed elsewhere re-keys the browser copy to plain; an unchanged key does not touch it', async () => {
+    const rekey = vi.fn(async () => {})
+    const { store, deps, open } = setup({ persister: { rekey, adoptFileStamp: vi.fn(async () => {}) } as never })
+    await store.images.rekey(await blobCodec('was'))
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: createImageStore(null), password: null, stamp: null,
+    })
+    await open().onReload()
+    expect(rekey).toHaveBeenCalledWith(null)
+
+    rekey.mockClear()
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: createImageStore(null), password: null, stamp: null,
+    })
+    // `applyReloaded` is mocked, so the store still holds the old codec: make "before" plain too
+    await store.images.rekey(null)
+    await open().onReload()
+    expect(rekey).not.toHaveBeenCalled()
+  }, 120000)
+
+  test('a re-key that fails after a good reload is reported, and the reload still stands', async () => {
+    const rekey = vi.fn(async () => { throw new Error('quota') })
+    const adoptFileStamp = vi.fn(async () => {})
+    const { store, deps, snapshot, open } = setup({ persister: { rekey, adoptFileStamp } as never })
+    await store.images.rekey(await blobCodec('was'))
+    ;(deps.readFromDisk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      doc: { ...createEmptyDocument('en-US'), docId: store.doc.docId }, images: createImageStore(null), password: null, stamp: null,
+    })
+    await open().onReload()
+    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('browser'), expect.objectContaining({ sticky: true }))
+    expect(adoptFileStamp).toHaveBeenCalled()
+    expect(snapshot.fileReloaded).toHaveBeenCalled()
+  }, 120000)
 
   test('a reload that went through tells the file writer the conflict is over; a refused one does not', async () => {
     const { snapshot, open } = setup()

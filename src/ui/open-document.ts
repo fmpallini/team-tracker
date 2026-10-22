@@ -11,7 +11,7 @@ import type { LiveDb } from '../core/live-db'
 import { resolveOpen, OpenCancelled, type LiveHandle } from '../core/live-open'
 import { createStore as newStore, type Store } from '../core/store'
 import { t, type Locale } from '../core/i18n'
-import { askOlderFile, askBothChanged } from './reconcile-dialogs'
+import { askOlderFile, askBothChanged, confirmDiscardCopy } from './reconcile-dialogs'
 import { promptPassword, toast } from './modal'
 
 /**
@@ -63,6 +63,7 @@ export async function reconcileOpen(opts: {
         const result = await promptPassword(locale, { title: t(locale, 'live_copy_password_title') })
         return result !== null && 'password' in result ? result.password : null
       },
+      confirmDiscardCopy: () => confirmDiscardCopy(locale),
       createStore,
     })
     return { session, doc: r.doc, password: r.password, images: r.images, store: r.store, handle: r.handle, needsFileWrite: r.needsFileWrite, stamp: r.stamp }

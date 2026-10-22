@@ -9,6 +9,12 @@ import { createLivePersister } from '../src/core/live-persist'
 import { createStore } from '../src/core/store'
 import { createImageStore } from '../src/core/image-store'
 import { joinDoc } from '../src/core/doc-records'
+import { readDoc } from '../src/core/live-open'
+import { collectImageRefs } from '../src/core/image-ref'
+import { newStamp } from '../src/core/file-stamp'
+import { blobCodec, recordCodec, resetSessionKey, type RecordCodec } from '../src/core/crypto'
+import type { BlobCodec } from '../src/core/image-store'
+import type { LivePersister } from '../src/core/live-persist'
 import { buildRichDoc, makeRng } from './search-fixture'
 import type { Doc } from '../src/core/types'
 
@@ -73,3 +79,140 @@ test(`after each of ${OPS} random operations the browser copy equals the live do
     }
   }
 }, 120000)
+
+// The lifecycle fuzz: the same agreement (the browser copy read back through a FRESH store with the CURRENT key equals
+// the live document, and every referenced image opens to its bytes), but through everything that moves the copy
+// around: encryption and re-keying, file writes with the image sweep, a takeover reseed, read-only toggling, a document
+// swapped for another with its own image store, a duplicate id, and a full close-and-reopen from the copy.
+test('the browser copy keeps agreeing with the document through key changes, file writes, reseeds, swaps and reopens', async () => {
+  vi.stubGlobal('IDBKeyRange', IDBKeyRange)
+  const rnd = makeRng(20261022)
+  const pick = <T,>(xs: T[]): T => xs[Math.floor(rnd() * xs.length)]!
+  const db = await openLiveDb(new IDBFactory())
+
+  // Two real keys, derived once (deriving is the slow part), plus "no key".
+  resetSessionKey()
+  const blobA = await blobCodec('alpha')
+  const recA = await recordCodec('alpha', blobA.header!.salt)
+  resetSessionKey()
+  const blobB = await blobCodec('beta')
+  const recB = await recordCodec('beta', blobB.header!.salt)
+  const keys: { blob: BlobCodec | null; rec: RecordCodec | null }[] = [{ blob: null, rec: null }, { blob: blobA, rec: recA }, { blob: blobB, rec: recB }]
+  let cur = keys[1]!
+
+  const doc = buildRichDoc({ teams: 2, dailyNotes: 4, people: 3, actions: 4, milestones: 3, risks: 3 }, 12)
+  let store = createStore(doc, createImageStore(cur.blob))
+  let persister: LivePersister = await createLivePersister({ store, live: createLiveStore(db, doc.docId, cur.rec), fileName: 'f.tmv', schedule: () => () => {} })
+  let imageSeq = 0
+  const log: string[] = []
+  let docAtFileWrite: string | null = null
+
+  const check = async (label: string): Promise<void> => {
+    const at = `after ${label} (${log.length} ops)`
+    const loaded = await createLiveStore(db, doc.docId, cur.rec).load()
+    expect(readDoc(loaded.records), at).toEqual(JSON.parse(JSON.stringify(store.doc)))
+    const refs = collectImageRefs(store.doc)
+    for (const id of refs) {
+      if (!store.images.has(id)) continue
+      const stored = loaded.blobs.get(id)
+      expect(stored, `blob ${id} ${at}`).toBeDefined()
+      const plain = cur.blob ? await cur.blob.open(id, stored!) : stored!
+      expect(Array.from(plain), `blob ${id} content ${at}`).toEqual(Array.from((await store.images.getPlain(id))!))
+    }
+    const meta = (await db.getMeta(doc.docId))!
+    expect(meta.encrypted, `encrypted flag ${at}`).toBe(cur.rec !== null)
+    if (cur.rec) expect(await cur.rec.verifyCheck(meta.check!), `check block ${at}`).toBe(true)
+    if (docAtFileWrite !== null && JSON.stringify(store.doc) !== docAtFileWrite) expect(meta.unwrittenChanges, `unwritten flag ${at}`).toBe(true)
+  }
+
+  const OPS_LIFE = 120
+  for (let op = 0; op < OPS_LIFE; op++) {
+    const kind = Math.floor(rnd() * 16)
+    switch (kind) {
+      case 0: store.update((d) => { const t = pick(d.teams); const k = Object.keys(t.dailyNotes); if (k.length) t.dailyNotes[pick(k)] = `edit ${op}` }); log.push('daily edit'); break
+      case 1: store.update((d) => { pick(d.teams).dailyNotes[`2027-02-${String(1 + (op % 28)).padStart(2, '0')}`] = `new ${op}` }); log.push('daily add'); break
+      case 2: store.update((d) => { const t = pick(d.teams); if (t.actionItems.length) t.actionItems[0]!.summary += '!' }); log.push('action edit'); break
+      case 3: {
+        // A damaged file can carry two entities with one id: each must keep its own record.
+        store.update((d) => { const t = pick(d.teams); if (t.actionItems.length) t.actionItems.push({ ...t.actionItems[0]!, summary: `dup ${op}` }) })
+        log.push('duplicate id'); break
+      }
+      case 4: {
+        const id = String(imageSeq++).padStart(32, '0')
+        store.images.putPlain(id, new Uint8Array([op % 256, 3, 4]))
+        const t = pick(store.doc.teams)
+        store.update((d) => { d.images[id] = { mime: 'image/webp', w: 1, h: 1, bytes: 3 }; d.teams.find((x) => x.id === t.id)!.generalNotes = `![p](img:${id})` })
+        log.push('image add'); break
+      }
+      case 5: {
+        // image metadata changes with no note change at all
+        store.update((d) => { const ids = Object.keys(d.images); if (ids.length) d.images[pick(ids)]!.w += 1 })
+        log.push('image metadata'); break
+      }
+      case 6: store.update((d) => { for (const t of d.teams) if (t.generalNotes?.includes('img:') && rnd() < 0.5) t.generalNotes = 'no picture any more' }); log.push('image unreferenced'); break
+      case 7: {
+        // a file write: the sweep deletes blobs nothing references, and the copy records the lineage
+        await persister.flush()
+        await persister.markFileWritten(newStamp(), store.rev)
+        store.markSaved()
+        docAtFileWrite = JSON.stringify(store.doc)
+        log.push('file write'); break
+      }
+      case 8: {
+        // a password change: the image store first (it re-seals every blob), then the copy
+        const next = pick(keys.filter((k) => k !== cur))
+        await persister.flush()
+        await store.images.rekey(next.blob)
+        await persister.rekey(next.rec)
+        cur = next
+        log.push(`rekey -> ${next.rec ? 'key' : 'plain'}`); break
+      }
+      case 9: {
+        // a tab takeover: the persister is re-seeded from whatever the copy holds now
+        await persister.flush()
+        const stored = await createLiveStore(db, doc.docId, cur.rec).load()
+        await persister.reseed({ records: stored.records, blobIds: stored.blobs.keys() })
+        log.push('reseed'); break
+      }
+      case 10: {
+        // losing the lock: nothing may reach the copy while read-only
+        await persister.flush()
+        const before = JSON.stringify(await db.readAll(doc.docId))
+        store.setReadOnly(true, { silent: true })
+        await persister.flush()
+        expect(JSON.stringify(await db.readAll(doc.docId)), 'read-only write').toBe(before)
+        store.setReadOnly(false)
+        log.push('read-only toggle'); break
+      }
+      case 11: {
+        // the document replaced by another (a conflict Reload), arriving with an image store of its own
+        const next: Doc = JSON.parse(JSON.stringify(store.doc)) as Doc
+        next.teams = next.teams.slice(0, 2)
+        next.teams[0]!.name = `replaced ${op}`
+        const images = createImageStore(cur.blob)
+        for (const id of Object.keys(next.images)) {
+          const plain = await store.images.getPlain(id)
+          if (plain) images.putPlain(id, plain)
+        }
+        store.replaceDoc(next, images)
+        log.push('replaceDoc with images'); break
+      }
+      case 12: {
+        // close and reopen from the copy: the whole document comes back from storage and the diff starts from that
+        await persister.flush()
+        persister.dispose()
+        const live = createLiveStore(db, doc.docId, cur.rec)
+        const stored = await live.load()
+        const reopened = readDoc(stored.records)
+        const images = createImageStore(cur.blob)
+        for (const [id, bytes] of stored.blobs) images.adoptStored(id, bytes)
+        store = createStore(reopened, images)
+        persister = await createLivePersister({ store, live, fileName: 'f.tmv', stored: { records: stored.records, blobIds: stored.blobs.keys() }, schedule: () => () => {} })
+        log.push('reopen'); break
+      }
+      default: store.update((d) => { pick(d.teams).generalNotes = `general ${op}` }); log.push('general')
+    }
+    await persister.flush()
+    await check(log.at(-1)!)
+  }
+}, 600000)

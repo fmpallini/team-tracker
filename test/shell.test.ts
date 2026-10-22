@@ -127,7 +127,7 @@ describe('save pill', () => {
     { name: 'writing', health: { kind: 'writing' }, state: 'writing', clickable: false, en: 'Writing file…', pt: 'Gravando arquivo…' },
     { name: 'permission', health: { kind: 'permission' }, state: 'permission', clickable: true, en: 'Grant access', pt: 'Conceder acesso' },
     { name: 'error', health: { kind: 'error' }, state: 'error', clickable: true, en: 'File not written', pt: 'Arquivo não gravado' },
-    { name: 'store-error', health: { kind: 'ok', lastWrittenAt: null }, ctx: { storeError: true }, state: 'store-error', clickable: false, en: 'Browser storage failed', pt: 'Navegador sem armazenamento' },
+    { name: 'store-error', health: { kind: 'ok', lastWrittenAt: null }, ctx: { storeError: true }, state: 'store-error', clickable: true, en: 'Browser storage failed', pt: 'Navegador sem armazenamento' },
     { name: 'readonly', health: { kind: 'ok', lastWrittenAt: null }, ctx: { readOnly: true }, state: 'readonly', clickable: false, en: 'Read-only', pt: 'Somente leitura' },
     { name: 'export', health: { kind: 'export', lastExportedAt: at(11, 32) }, state: 'export', clickable: true, en: 'Export file · 3 h ago', pt: 'Exportar arquivo · há 3 h' },
   ]
@@ -247,12 +247,18 @@ describe('save pill', () => {
       expect(cb).toHaveBeenCalledWith(action)
     })
 
-    test('ok, writing, store-error and read-only respond to nothing', () => {
+    test('a failed browser store opens the failure dialog (its download is the only safe way out where the pill is the export button)', () => {
+      const shell = setup()
+      shell.setFileHealth({ kind: 'export', lastExportedAt: null }, ctx({ storeError: true }))
+      const cb = clickWith(shell)
+      expect(cb).toHaveBeenCalledWith('failure')
+    })
+
+    test('ok, writing and read-only respond to nothing', () => {
       const shell = setup()
       for (const [h, over] of [
         [{ kind: 'ok', lastWrittenAt: at(14, 0) }, {}],
         [{ kind: 'writing' }, {}],
-        [{ kind: 'ok', lastWrittenAt: null }, { storeError: true }],
         [{ kind: 'ok', lastWrittenAt: null }, { readOnly: true }],
       ] as [FileHealth, Partial<PillContext>][]) {
         shell.setFileHealth(h, ctx(over))

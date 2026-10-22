@@ -38,13 +38,14 @@ import { UNDO_TOAST_KEY } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage, ensurePersistentStorage } from './core/storage-persist'
 import { createFileSnapshot, type FileSnapshot } from './core/file-snapshot'
-import { closeDocument, createBeforeUnloadHandler, downloadCopy } from './core/close-document'
+import { closeDocument, createBeforeUnloadHandler, downloadCopy, browserCopyAtRisk, retryWrites } from './core/close-document'
 import { showWriteFailedDialog } from './ui/write-failed'
-import { watchFileHealth } from './ui/file-health-toasts'
+import { watchFileHealth, watchStoreHealth } from './ui/file-health-toasts'
 import { createChangePassword } from './core/change-password'
 import { createTabLock } from './core/tab-lock'
 import { resolveFileLockKey } from './core/file-identity'
 import { createConflictFlow } from './core/conflict-flow'
+import { reopenFork } from './core/fork-reopen'
 import { closeAnyContextMenu } from './ui/context-menu'
 import { closeAnyBacklinksPanel } from './ui/backlinks-panel'
 import { showGlobalHelp } from './ui/help'
@@ -141,7 +142,8 @@ function detectBrowserLocale(): Locale {
   return navigator.language.startsWith('pt') ? 'pt-BR' : 'en-US'
 }
 
-async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
+/** Resolves whether the document was mounted: false when the file is already open, or the open one could not be closed. */
+async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   const { session, doc, password, store, handle, needsFileWrite } = opened
   const persister = handle?.persister ?? null
   // A second file can be opened while one is already open — e.g. the File
@@ -159,11 +161,11 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     // in-memory state with whatever's on disk.
     if (await sameEntry(prev.session, session)) {
       toast(t(prev.store.doc.prefs.locale, 'already_open_toast'))
-      return
+      return false
     }
     // A file that can't be written keeps the previous document open and
     // abandons this open, unless the user explicitly closes it anyway.
-    if (!(await closeAppDocument({ ...prev, getPassword: () => prev.password }))) return
+    if (!(await closeAppDocument({ ...prev, getPassword: () => prev.password }))) return false
     app = null
   }
 
@@ -294,15 +296,14 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     // The fork is a new document with a browser copy of its own; the original's copy (docId unchanged) goes once
     // the fork is up, because its edits now live in the fork and the original file belongs to the other writer.
     reopen: (forkSession, forkDoc, forkPassword, forkImages, stamp) => {
-      void (async () => {
-        const forked = await reconcileOpen({
+      void reopenFork({
+        reconcile: async () => reconcileOpen({
           locale: forkDoc.prefs.locale, db: await sharedLiveDb(), session: forkSession, password: forkPassword,
           opened: { doc: forkDoc, preSchemaVersion: forkDoc.schemaVersion, images: forkImages, stamp },
-        })
-        if (!forked) return
-        await onDocumentOpened(forked)
-        await handle?.live.remove()
-      })().catch((e: unknown) => {
+        }),
+        mount: (forked) => onDocumentOpened(forked),
+        removeOriginalCopy: async () => { await handle?.live.remove() },
+      }).catch((e: unknown) => {
         console.error(e)
         showErrorModal(forkDoc.prefs.locale, t(forkDoc.prefs.locale, 'err_unexpected'))
       })
@@ -342,6 +343,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   // Asked once per opened document, in every build: the live copy lives in this origin's storage.
   void ensurePersistentStorage().then((persisted) => { persistentStorage = persisted; paintPill() })
   disposers.push(watchFileHealth(snapshot, () => store.doc.prefs.locale))
+  if (persister) disposers.push(watchStoreHealth(persister, () => store.doc.prefs.locale))
   // A document opened from the browser's copy starts ahead of its file: write it as soon as this tab may write
   // (the tab lock decides that a moment after opening; a read-only tab never writes the file).
   let openWriteOwed = needsFileWrite
@@ -383,7 +385,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   )
 
   // Closing the window cannot wait for an asynchronous file write: see createBeforeUnloadHandler.
-  const onBeforeUnload = createBeforeUnloadHandler({ flushEditors: flushAllEditors, persister, snapshot })
+  const onBeforeUnload = createBeforeUnloadHandler({ flushEditors: flushAllEditors, store, persister, snapshot })
   window.addEventListener('beforeunload', onBeforeUnload)
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
@@ -500,9 +502,10 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
     else {
       void showWriteFailedDialog({
         locale: store.doc.prefs.locale, reason: 'error', canRegrant: false, allowCloseAnyway: false,
+        copyFailed: !persister || persister.lastError != null,
         onRegrant: () => snapshot.resolveGrants(),
         onDownload: () => { void downloadCopy(store, session, currentPassword) },
-        onRetry: async () => (await snapshot.writeNow('close')).ok,
+        onRetry: () => retryWrites({ persister, snapshot, session }),
       })
     }
   })
@@ -628,6 +631,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<void> {
   disposers.push(installMouseHistoryButtons(pm, store, navPastModelessCard))
 
   disposers.push(installCtrlWheelFontSize(store, shell))
+  return true
 }
 
 /**
@@ -644,8 +648,11 @@ async function reloadForUpdate(): Promise<void> {
     const written = await current.snapshot.writeNow('close')
     await current.snapshot.flush()
     await current.persister?.flush()
-    // A write that failed leaves whatever error UI the snapshot raised as the user's way out; the page stays.
+    // A write that failed leaves whatever error UI the snapshot raised as the user's way out; the page stays. So does a
+    // reload that would drop edits only this tab's memory holds (no file to write and no working browser copy): the
+    // store-failure toast and pill are that case's way out.
     if (!written.ok && written.reason !== 'readonly' && written.reason !== 'nohandle') return
+    if (browserCopyAtRisk(current.store, current.persister)) return
   }
   location.reload()
 }

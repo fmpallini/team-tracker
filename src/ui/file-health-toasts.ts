@@ -3,12 +3,14 @@
 // failed write are both sticky until a later write succeeds; the browser copy keeps
 // the work meanwhile, which is what the wording says.
 import type { FileHealth, FileSnapshot } from '../core/file-snapshot'
+import type { LivePersister } from '../core/live-persist'
 import { t, type Locale } from '../core/i18n'
 import { toast, dismissToast } from './modal'
 
 /** `toast()` keys, shared by every place that raises these notices so a repeat replaces instead of stacking, and so one success can clear them. */
 export const SAVE_PERMISSION_TOAST_KEY = 'save-permission'
 export const SAVE_ERROR_TOAST_KEY = 'save-error'
+export const STORE_ERROR_TOAST_KEY = 'live-store-error'
 
 /** Returns the unsubscribe. `locale` is read on every use: it can change while the document is open. */
 export function watchFileHealth(snapshot: FileSnapshot, locale: () => Locale): () => void {
@@ -45,4 +47,17 @@ export function watchFileHealth(snapshot: FileSnapshot, locale: () => Locale): (
   }
 
   return snapshot.subscribe(onHealth)
+}
+
+/**
+ * The browser copy failing (typically out of space) is the one failure that can lose work, and the pill alone is easy
+ * to miss: a sticky toast says the edits are only in memory until a later commit succeeds. Returns the unsubscribe.
+ */
+export function watchStoreHealth(persister: LivePersister, locale: () => Locale): () => void {
+  const announce = (failed: boolean): void => {
+    if (failed) toast(t(locale(), 'live_store_failed_toast'), { sticky: true, key: STORE_ERROR_TOAST_KEY })
+    else dismissToast(STORE_ERROR_TOAST_KEY)
+  }
+  if (persister.lastError != null) announce(true)
+  return persister.onErrorChange(announce)
 }

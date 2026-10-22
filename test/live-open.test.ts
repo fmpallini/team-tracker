@@ -3,7 +3,7 @@ import { openLiveDb, type LiveBatch, type LiveDb, type LiveMeta } from '../src/c
 import { createLiveStore } from '../src/core/live-store'
 import { decideOpen, resolveOpen, OpenCancelled, type Reconciled } from '../src/core/live-open'
 import { createStore } from '../src/core/store'
-import { createImageStore } from '../src/core/image-store'
+import { createImageStore, type ImageStore } from '../src/core/image-store'
 import { blobCodec, recordCodec, resetSessionKey, type OpenedDoc } from '../src/core/crypto'
 import { createEmptyDocument, createEmptyTeam, SCHEMA_VERSION } from '../src/core/document'
 import { joinDoc } from '../src/core/doc-records'
@@ -77,20 +77,21 @@ async function opened(doc: Doc, stamp: FileStamp | null, password: string | null
   return { doc: JSON.parse(JSON.stringify(doc)) as Doc, preSchemaVersion: SCHEMA_VERSION, images, stamp }
 }
 
-interface Asks { older: ReturnType<typeof vi.fn>; both: ReturnType<typeof vi.fn>; pw: ReturnType<typeof vi.fn> }
-function asks(over: { older?: 'browser' | 'file'; both?: 'browser' | 'file' | 'cancel'; pw?: (string | null)[] } = {}): Asks {
+interface Asks { older: ReturnType<typeof vi.fn>; both: ReturnType<typeof vi.fn>; pw: ReturnType<typeof vi.fn>; discard: ReturnType<typeof vi.fn> }
+function asks(over: { older?: 'browser' | 'file'; both?: 'browser' | 'file' | 'cancel'; pw?: (string | null)[]; discard?: 'cancel' } = {}): Asks {
   const passwords = [...(over.pw ?? [])]
   return {
     older: vi.fn(async () => over.older ?? 'browser'),
     both: vi.fn(async () => { if (over.both === 'cancel') throw new OpenCancelled(); return over.both ?? 'browser' }),
     pw: vi.fn(async () => passwords.shift() ?? null),
+    discard: vi.fn(async () => { if (over.discard === 'cancel') throw new OpenCancelled() }),
   }
 }
 
 function open(o: OpenedDoc, password: string | null, a: Asks): Promise<Reconciled> {
   return resolveOpen({
     db, opened: o, password, fileName: 'f.tmv',
-    askOlderFile: a.older as never, askBothChanged: a.both as never, askBrowserPassword: a.pw as never,
+    askOlderFile: a.older as never, askBothChanged: a.both as never, askBrowserPassword: a.pw as never, confirmDiscardCopy: a.discard as never,
     createStore: (doc, images) => createStore(doc, images),
   })
 }
@@ -316,24 +317,64 @@ test('an encrypted browser copy opens with the file\'s own password', async () =
   expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('browser only edit')
 }, 120000)
 
-test('a browser copy under another password prompts until the right one is typed, and that password is the document\'s', async () => {
+test("a browser copy under another password prompts until the right one is typed; the file's password still wins and the copy is moved to it", async () => {
   const { doc, stamp } = await encryptedCopy('pw1')
   resetSessionKey()
   const a = asks({ pw: ['nope', 'pw1'] })
-  const r = await open(await opened(doc, stamp, 'pw2'), 'pw2', a)
+  const file = await opened(doc, stamp, 'pw2')
+  const r = await open(file, 'pw2', a)
   expect(a.pw).toHaveBeenCalledTimes(2)
   expect(r.source).toBe('browser')
-  expect(r.password).toBe('pw1')
   expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('browser only edit')
-  // the images are bound to the browser copy's key, so the file written next carries that header
-  expect(r.images.codec()).not.toBeNull()
-}, 180000)
+  // The file at this write is the latest one, so its password is the latest the user set: the old copy key was drift.
+  // Handing the copy's password back would silently undo a password change at the next file write.
+  expect(r.password).toBe('pw2')
+  expect(Array.from(r.images.codec()!.header!.salt)).toEqual(Array.from(file.images.codec()!.header!.salt))
+  // the move itself waits for the write lock like the initial sync (this test store is writable)
+  await r.handle.persister.flush()
+  const m = (await rawDb.getMeta(doc.docId))!
+  const fileCodec = await recordCodec('pw2', file.images.codec()!.header!.salt)
+  expect(await fileCodec.verifyCheck(m.check!)).toBe(true)
+  expect((await createLiveStore(rawDb, doc.docId, fileCodec).load()).records.size).toBeGreaterThan(0)
+}, 300000)
+
+test('a read-only tab opening a drifted copy leaves it under its old key until it holds the lock', async () => {
+  const { doc, stamp } = await encryptedCopy('pw1')
+  resetSessionKey()
+  const roStore = (d: Doc, images: ImageStore) => { const s = createStore(d, images); s.setReadOnly(true, { silent: true }); return s }
+  const file = await opened(doc, stamp, 'pw2')
+  const r = await resolveOpen({
+    db, opened: file, password: 'pw2', fileName: 'f.tmv',
+    askOlderFile: async () => 'browser', askBothChanged: async () => 'browser', askBrowserPassword: async () => 'pw1', confirmDiscardCopy: async () => {},
+    createStore: roStore,
+  })
+  const before = (await rawDb.getMeta(doc.docId))!
+  expect(await (await recordCodec('pw1', before.salt!)).verifyCheck(before.check!)).toBe(true)
+  r.store.setReadOnly(false)
+  await r.handle.persister.flush()
+  const after = (await rawDb.getMeta(doc.docId))!
+  expect(await (await recordCodec('pw2', file.images.codec()!.header!.salt)).verifyCheck(after.check!)).toBe(true)
+}, 300000)
+
+test('a copy the user chose over an OLDER file keeps its own password: the file is the stale side there', async () => {
+  const { doc, stamp } = await encryptedCopy('pw1')
+  const older = { ...stamp, writeId: 'e'.repeat(32) }
+  const first = (await rawDb.getMeta(doc.docId))!
+  await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...first, knownWriteIds: [...first.knownWriteIds, older.writeId] } })
+  resetSessionKey()
+  const a = asks({ older: 'browser', pw: ['pw1'] })
+  const r = await open(await opened(doc, older, 'pw2'), 'pw2', a)
+  expect(r.source).toBe('browser')
+  expect(r.password).toBe('pw1')
+}, 300000)
 
 test('cancelling the browser-password prompt falls back to the file', async () => {
   const { doc, stamp } = await encryptedCopy('pw1')
   resetSessionKey()
   const a = asks({ pw: [null] })
   const r = await open(await opened(doc, stamp, 'pw2'), 'pw2', a)
+  // the copy held an edit the file never got: replacing it is a choice, not a side effect
+  expect(a.discard).toHaveBeenCalledTimes(1)
   expect(r.source).toBe('file')
   expect(r.password).toBe('pw2')
   expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('secret base')
@@ -352,6 +393,46 @@ test('a plain browser copy is never used for a password-protected file', async (
   const a = asks()
   const r = await open(await opened(doc, stamp, 'pw'), 'pw', a)
   expect(r.source).toBe('file')
+  expect(a.discard).toHaveBeenCalledTimes(1)
   expect(a.pw).not.toHaveBeenCalled()
   expect((await rawDb.getMeta(doc.docId))!.encrypted).toBe(true)
 }, 60000)
+
+test('declining to discard an unusable copy that holds unwritten edits cancels the open and leaves the copy untouched', async () => {
+  const { doc, stamp } = await encryptedCopy('pw1')
+  resetSessionKey()
+  const before = await rawDb.readAll(doc.docId)
+  const a = asks({ pw: [null], discard: 'cancel' })
+  await expect(open(await opened(doc, stamp, 'pw2'), 'pw2', a)).rejects.toBeInstanceOf(OpenCancelled)
+  const after = await rawDb.readAll(doc.docId)
+  expect(after.records).toEqual(before.records)
+  expect(await rawDb.getMeta(doc.docId)).toMatchObject({ unwrittenChanges: true, encrypted: true })
+}, 180000)
+
+test('an unusable copy with nothing unwritten is replaced by the file without asking', async () => {
+  const doc = docWith('plain base')
+  const stamp = newStamp()
+  const first = await open(await opened(doc, stamp), null, asks())
+  first.handle.persister.dispose()
+  // identical copy, but the file now needs a password the plain copy cannot serve
+  const a = asks()
+  const r = await open(await opened(doc, stamp, 'pw'), 'pw', a)
+  expect(r.source).toBe('file')
+  expect(a.discard).not.toHaveBeenCalled()
+}, 60000)
+
+test('a copy with no document record (what a half-removed copy looks like) is unreadable, not a crash: the file opens after the usual choice', async () => {
+  const doc = docWith('from file')
+  const stamp = newStamp()
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  await createLiveStore(rawDb, doc.docId, null).write({
+    puts: new Map([['team/T1', { id: 'T1' }]]),
+    meta: { lastWriteId: stamp.writeId, knownWriteIds: [stamp.writeId], unwrittenChanges: true, fileName: 'f.tmv' },
+  })
+  const a = asks()
+  const r = await open(await opened(doc, stamp), null, a)
+  expect(r.source).toBe('file')
+  expect(a.discard).toHaveBeenCalledTimes(1)
+  expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('from file')
+  spy.mockRestore()
+})

@@ -78,7 +78,7 @@ async function reopen(password: string | null, asks: { pw?: (string | null)[] } 
   const askBrowserPassword = vi.fn(async () => queue.shift() ?? null)
   const result = await resolveOpen({
     db, opened, password, fileName: 'f.tmv',
-    askOlderFile: async () => 'browser', askBothChanged: async () => 'browser', askBrowserPassword,
+    askOlderFile: async () => 'browser', askBothChanged: async () => 'browser', askBrowserPassword, confirmDiscardCopy: async () => {},
     createStore: (doc, images) => createStore(doc, images),
   })
   return { result, askBrowserPassword }
@@ -145,7 +145,7 @@ test('a failed file write leaves the file key AND the browser key as they were',
   expect(joinDoc(loaded.records).teams[0]!.dailyNotes['2026-07-04']).toBe('still old key')
 }, 240000)
 
-test('a browser copy that cannot be re-keyed after a good file write is reported, keeps its old key, and is asked for on the next open', async () => {
+test("a browser copy that cannot be re-keyed after a good file write is reported, keeps its old key, and on the next open is read with it and moved to the file's password", async () => {
   const r = await rig('old-pw')
   // The stamp commit goes through; the re-keying commit (the one that rewrites every record) fails.
   const realCommit = db.commit.bind(db)
@@ -170,8 +170,12 @@ test('a browser copy that cannot be re-keyed after a good file write is reported
   const { result, askBrowserPassword } = await reopen('new-pw', { pw: ['old-pw'] })
   expect(askBrowserPassword).toHaveBeenCalledTimes(1)
   expect(result.source).toBe('browser')
-  expect(result.password).toBe('old-pw')
+  // the file holds the newest password, so the document continues under it: handing back the old one would silently undo the change
+  expect(result.password).toBe('new-pw')
   expect(result.doc.teams[0]!.dailyNotes['2026-07-05']).toBe('under the old key')
+  await result.handle.persister.flush()
+  const moved = (await db.getMeta(r.doc.docId))!
+  expect(await (await recordCodec('new-pw', result.images.codec()!.header!.salt)).verifyCheck(moved.check!)).toBe(true)
 }, 360000)
 
 test('plain to encrypted re-seals everything; encrypted to plain makes it readable again', async () => {

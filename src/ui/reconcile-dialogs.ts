@@ -57,3 +57,15 @@ export async function askBothChanged(locale: Locale): Promise<Choice> {
   if (answer === 'cancel') throw new OpenCancelled()
   return answer
 }
+
+/**
+ * The browser copy holds edits the file never got, but cannot be read (wrong or forgotten password, damaged). Opening
+ * the file replaces it, so that is a choice: dismissing cancels the open and leaves the copy as it is.
+ */
+export async function confirmDiscardCopy(locale: Locale): Promise<void> {
+  const answer = await ask<'file' | 'cancel'>(locale, 'reconcile_unusable_title', 'reconcile_unusable_body', [
+    { label: 'reconcile_unusable_cancel', value: 'cancel', primary: true },
+    { label: 'reconcile_unusable_use_file', value: 'file' },
+  ], () => 'cancel')
+  if (answer === 'cancel') throw new OpenCancelled()
+}

@@ -21,7 +21,7 @@ import type { FileStamp } from './file-stamp'
 import type { LiveDb, LiveMeta } from './live-db'
 import { createLiveStore, type LiveStore } from './live-store'
 import { createLivePersister, type LivePersister } from './live-persist'
-import { joinDoc } from './doc-records'
+import { joinDoc, type DocRecords } from './doc-records'
 import { migrate, validateDoc, SCHEMA_VERSION } from './document'
 import { createImageStore, type ImageStore } from './image-store'
 import type { Store } from './store'
@@ -39,6 +39,24 @@ export function decideOpen(file: { docId: string; stamp: FileStamp | null }, met
   if (id !== undefined && id === meta.lastWriteId) return meta.unwrittenChanges ? 'browser-newer' : 'identical'
   if (id !== undefined && meta.knownWriteIds.includes(id)) return 'ask-older-file'
   return meta.unwrittenChanges ? 'ask-both-changed' : 'file-from-elsewhere'
+}
+
+function sameBytes(a: Uint8Array | undefined | null, b: Uint8Array | undefined | null): boolean {
+  if (!a || !b) return a === b
+  return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
+/** The document the stored records describe. A damaged copy (a missing document record, an invalid document) is corrupt, not a crash. */
+export function readDoc(records: DocRecords): Doc {
+  let doc: Doc
+  try {
+    doc = migrate(joinDoc(records))
+  } catch {
+    throw new CorruptFileError()
+  }
+  const bad = validateDoc(doc)
+  if (bad) throw new CorruptFileError(bad)
+  return doc
 }
 
 export interface LiveHandle { live: LiveStore; persister: LivePersister }
@@ -69,6 +87,8 @@ export interface ResolveOpenDeps {
   askBothChanged(): Promise<'browser' | 'file'>
   /** A password for the browser copy, or null to give up on it. */
   askBrowserPassword(): Promise<string | null>
+  /** The browser copy holds edits the file never got and cannot be used: the file is about to replace it. Resolves to go on; rejects with OpenCancelled to back out and leave the copy as it is. */
+  confirmDiscardCopy(): Promise<void>
   createStore(doc: Doc, images: ImageStore): Store
 }
 
@@ -92,8 +112,10 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
   else if (decision === 'ask-both-changed') want = await deps.askBothChanged()
 
   if (meta && want === 'browser') {
-    const r = await useBrowserCopy(meta)
+    const r = await useBrowserCopy(meta, decision === 'browser-newer')
     if (r) return r
+    // Falling back to the file replaces the copy, and with it the edits only the copy holds.
+    if (meta.unwrittenChanges) await deps.confirmDiscardCopy()
   } else if (meta && decision === 'identical') {
     const r = await reuseIdentical(meta)
     if (r) return r
@@ -126,23 +148,37 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
     }
   }
 
-  async function useBrowserCopy(m: LiveMeta): Promise<Reconciled | null> {
+  /**
+   * `fileIsLatest`: the file is the copy's own last file write. Every password change writes the file first, so the
+   * file's password is then the newest one and a copy under another key has drifted (a re-key that failed after the
+   * file write): the copy is moved to the file's key rather than the document being handed back under the old password,
+   * which the next file write would turn into a silent undo of the password change. When the user instead picked the
+   * copy over an older or foreign file, that file is the stale side and the copy's password stands.
+   */
+  async function useBrowserCopy(m: LiveMeta, fileIsLatest: boolean): Promise<Reconciled | null> {
     const key = await unlock(m, true)
     if (!key) return null
     try {
       const live = createLiveStore(db, docId, key.codec)
       const { records, blobs } = await live.load()
-      const doc = migrate(joinDoc(records))
-      const bad = validateDoc(doc)
-      if (bad) throw new CorruptFileError(bad)
+      const doc = readDoc(records)
       // The blobs are in the form the copy's key sealed them, so the image store must hold that very key.
       const images = createImageStore(key.password === null ? null : await blobCodec(key.password, m.salt ?? undefined))
       for (const [id, bytes] of blobs) images.adoptStored(id, bytes)
+      let password = key.password
+      let rekeyTo: { codec: RecordCodec | null } | undefined
+      const fileSalt = opened.images.codec()?.header?.salt
+      if (fileIsLatest && (deps.password !== key.password || (deps.password !== null && !sameBytes(fileSalt, m.salt)))) {
+        // Moving the copy is the persister's owed initial step (it needs the write lock); the image store moves now.
+        await images.rekey(deps.password === null ? null : await blobCodec(deps.password, fileSalt))
+        rekeyTo = { codec: deps.password === null ? null : await recordCodec(deps.password, fileSalt) }
+        password = deps.password
+      }
       const store = deps.createStore(doc, images)
-      const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: blobs.keys() } })
+      const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: blobs.keys() }, rekeyTo })
       // The file is behind this copy, so the first file write must not be skipped as "nothing changed".
       store.markDirty()
-      return { doc, images, password: key.password, stamp: opened.stamp, source: 'browser', store, handle: { live, persister }, needsFileWrite: true }
+      return { doc, images, password, stamp: opened.stamp, source: 'browser', store, handle: { live, persister }, needsFileWrite: true }
     } catch (e) {
       if (!(e instanceof CorruptFileError)) throw e
       unreadable(e)

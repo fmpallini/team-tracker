@@ -1,4 +1,4 @@
-import { askOlderFile, askBothChanged } from '../src/ui/reconcile-dialogs'
+import { askOlderFile, askBothChanged, confirmDiscardCopy } from '../src/ui/reconcile-dialogs'
 import { OpenCancelled } from '../src/core/live-open'
 import { t } from '../src/core/i18n'
 
@@ -76,4 +76,24 @@ test('every reconcile string exists in both locales', () => {
     expect(t('en-US', key)).not.toBe(t('pt-BR', key))
     expect(t('en-US', key).length).toBeGreaterThan(3)
   }
+})
+
+describe('confirmDiscardCopy', () => {
+  test('proceeds only when the user explicitly opens the file and discards', async () => {
+    const p = confirmDiscardCopy('en-US')
+    expect(document.querySelector('.tt-modal-title')?.textContent).toBe(t('en-US', 'reconcile_unusable_title'))
+    expect(buttonLabels()).toEqual([t('en-US', 'reconcile_unusable_cancel'), t('en-US', 'reconcile_unusable_use_file')])
+    clickByText(t('en-US', 'reconcile_unusable_use_file'))
+    await expect(p).resolves.toBeUndefined()
+    expect(overlays()).toHaveLength(0)
+  })
+
+  test('Cancel and Escape both back out of the open', async () => {
+    const a = confirmDiscardCopy('pt-BR')
+    clickByText(t('pt-BR', 'reconcile_unusable_cancel'))
+    await expect(a).rejects.toBeInstanceOf(OpenCancelled)
+    const b = confirmDiscardCopy('en-US')
+    esc()
+    await expect(b).rejects.toBeInstanceOf(OpenCancelled)
+  })
 })

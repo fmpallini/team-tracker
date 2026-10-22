@@ -5,9 +5,8 @@ import type { Doc } from './types'
 import { blobCodec, recordCodec, CorruptFileError } from './crypto'
 import type { RecordCodec } from './crypto'
 import type { LiveStore } from './live-store'
-import { joinDoc } from './doc-records'
-import { migrate, validateDoc } from './document'
 import { createImageStore, type ImageStore } from './image-store'
+import { readDoc } from './live-open'
 import type { DocRecords } from './doc-records'
 
 /** The user gave up entering the copy's password; the tab stays as it is. */
@@ -61,14 +60,7 @@ export async function followLiveCopy(deps: FollowDeps): Promise<Followed> {
 
   live.useCodec(codec)
   const stored = await live.load()
-  let doc: Doc
-  try {
-    doc = migrate(joinDoc(stored.records))
-  } catch {
-    throw new CorruptFileError()
-  }
-  const bad = validateDoc(doc)
-  if (bad) throw new CorruptFileError(bad)
+  const doc = readDoc(stored.records)
   // The blobs are in the form the copy's key sealed them, so the image store must hold that very key.
   const images = createImageStore(password === null ? null : await blobCodec(password, meta.salt ?? undefined))
   for (const [id, bytes] of stored.blobs) images.adoptStored(id, bytes)
