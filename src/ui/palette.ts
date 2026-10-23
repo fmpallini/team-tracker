@@ -132,7 +132,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
         'div',
         { class: 'tt-palette-group', role: 'group', 'aria-labelledby': headingId },
         el('div', { class: 'tt-palette-heading', id: headingId, title: section.heading },
-          ...(HEADING_ICON[section.id] ? [icon(HEADING_ICON[section.id]!, 12)] : []),
+          ...(HEADING_ICON[section.id] ? [icon(HEADING_ICON[section.id]!, 14)] : []),
           `${section.heading}${count}`)
       )
       for (const row of section.rows) group.appendChild(buildRow(row, index++))
