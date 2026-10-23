@@ -55,8 +55,8 @@ jobs:
   # merges them.
   #
   # Three jobs make that up: `e2e-plan` decides whether the suite has to run,
-  # `e2e-shard` runs it in two halves in parallel, and `e2e` (the name the rest
-  # of the repo knows) folds the halves into one verdict.
+  # `e2e-shard` runs it in two parts in parallel, and `e2e` (the name the rest
+  # of the repo knows) folds the parts into one verdict.
 
   # A release PR (dev -> main) is the same commit the dev push already tested.
   # Re-running e2e there proves nothing new when (a) that exact SHA already has
@@ -95,16 +95,16 @@ jobs:
           echo "E2E skip: $skip"
 
   e2e-shard:
-    name: E2E shard ${{ matrix.shard }}/2
+    name: E2E ${{ matrix.part }}
     needs: e2e-plan
     if: needs.e2e-plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
-      # One red half must not hide the other half's result (or its trace artifact).
+      # One red part must not hide the other part's result (or its trace artifact).
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        part: [leak, main]
     permissions:
       contents: read
     steps:
@@ -135,11 +135,14 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      # Two halves of the same suite (fullyParallel, so tests, not files, are
-      # split): same coverage, about half the wall time. Each half keeps the
-      # runner's own 2 workers — more workers per runner would only make the
-      # timing-sensitive specs (search/nav cost, large paste) noisier.
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
+      # The same suite, in two parts that together cover every spec (the two
+      # Playwright projects in playwright.config.ts): leak.spec.ts is one serial
+      # chain of several minutes — the floor of the whole run — so it gets a
+      # runner of its own, and everything else runs beside it. Splitting by test
+      # count instead left that chain alone at the tail of one half. Each part
+      # keeps the runner's own 2 workers; more workers per runner would only
+      # make the timing-sensitive specs (search/nav cost, large paste) noisier.
+      - run: npm run test:e2e -- --project=${{ matrix.part == 'leak' && 'leak' || 'chromium' }}
 
       # playwright.config.ts records a trace on first retry; without this the
       # trace is written into the runner and thrown away, leaving a CI-only
@@ -147,7 +150,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: playwright-results-${{ github.run_id }}-shard${{ matrix.shard }}
+          name: playwright-results-${{ github.run_id }}-${{ matrix.part }}
           path: |
             test-results/
             playwright-report/
@@ -175,7 +178,7 @@ jobs:
             echo "Skipped: this exact commit already passed E2E and main adds nothing to it."
             exit 0
           fi
-          [ "$SHARDS" = success ] || { echo "::error::an E2E shard did not succeed"; exit 1; }
+          [ "$SHARDS" = success ] || { echo "::error::an E2E part did not succeed"; exit 1; }
 
   # Only runs for PRs targeting main — dev -> main is where releases are cut,
   # so this is the heavier gate: full build, on both OSes, with output
