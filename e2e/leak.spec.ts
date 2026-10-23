@@ -378,8 +378,10 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
 }
 
 test.describe('resource growth over a long session', () => {
-  // Long, serial, and CDP-bound: give it room and keep it off the parallel path.
-  test.describe.configure({ mode: 'serial', timeout: 300_000 })
+  // Long and CDP-bound: give it room. Every test opens its own page and measures counts (nodes, listeners, heap)
+  // against its own baseline, so they do not depend on each other or on the wall clock — they run on two
+  // workers (serial was one 3+ minute chain; two workers take ~1.9 min with the same results).
+  test.describe.configure({ timeout: 300_000 })
 
   test('repeated edit/navigate cycles do not accumulate DOM nodes or listeners', async ({ page }) => {
     await installOpfsPickerShim(page)
