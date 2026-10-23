@@ -9,7 +9,19 @@
 [data-theme=light] { color-scheme: light; }
 [data-theme=dark] { color-scheme: dark; }
 * { box-sizing: border-box; margin: 0; }
-body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; overflow: hidden; }
+/* Color emoji, always. Without this the browser picks the fallback font from
+   the surrounding text font, and older emoji (e.g. 😎) can land on Segoe UI
+   Symbol's monochrome glyph. This face covers only emoji code points (so ✓ ✕ ⚙
+   keep the text font) and is listed first in every font stack below; if none of
+   the local fonts exist it fails to load and the normal stack applies. */
+@font-face {
+  font-family: "TT Emoji";
+  src: local("Segoe UI Emoji"), local("Apple Color Emoji"), local("Noto Color Emoji");
+  unicode-range: U+1F000-1FAFF, U+200D, U+20E3, U+FE0F;
+}
+/* Form controls don't inherit the page font; system-ui is what they default to. */
+button, input, select, textarea { font-family: "TT Emoji", system-ui; }
+body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; overflow: hidden; }
 #app { height: 100%; display: flex; flex-direction: column; }
 
 /* Theme custom properties — "Field Ledger": warm paper, ink, brass stamps.
@@ -171,16 +183,16 @@ body { font-family: Bahnschrift, -apple-system, "Segoe UI", Roboto, sans-serif; 
 
 /* Display face (brand, headings, team/person names) stays serif regardless
    of the body font preference below — brand identity, not body copy. */
-:root { --font-display: "Sitka Text", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+:root { --font-display: "TT Emoji", "Sitka Text", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
 /* Data face (dates, exposure numbers, hotkeys, code) — a monospace "logged
    entry" read, distinct from the display serif and the default body sans. */
-:root { --font-data: "SFMono-Regular", Consolas, "Cascadia Mono", monospace; }
-html[data-font=serif] body { font-family: Georgia, 'Times New Roman', serif; }
-html[data-font=mono] body { font-family: Consolas, 'Cascadia Mono', monospace; }
-html[data-font=classic] body { font-family: Constantia, Cambria, 'Times New Roman', serif; }
-html[data-font=rounded] body { font-family: Candara, Corbel, sans-serif; }
-html[data-font=segoe] body { font-family: 'Segoe UI', Calibri, Roboto, sans-serif; }
-html[data-font=legible] body { font-family: Verdana, Tahoma, 'DejaVu Sans', sans-serif; }
+:root { --font-data: "TT Emoji", "SFMono-Regular", Consolas, "Cascadia Mono", monospace; }
+html[data-font=serif] body { font-family: "TT Emoji", Georgia, 'Times New Roman', serif; }
+html[data-font=mono] body { font-family: "TT Emoji", Consolas, 'Cascadia Mono', monospace; }
+html[data-font=classic] body { font-family: "TT Emoji", Constantia, Cambria, 'Times New Roman', serif; }
+html[data-font=rounded] body { font-family: "TT Emoji", Candara, Corbel, sans-serif; }
+html[data-font=segoe] body { font-family: "TT Emoji", 'Segoe UI', Calibri, Roboto, sans-serif; }
+html[data-font=legible] body { font-family: "TT Emoji", Verdana, Tahoma, 'DejaVu Sans', sans-serif; }
 html[data-size=XS] { font-size: 12px; } html[data-size=S] { font-size: 13.5px; } html[data-size=M] { font-size: 15px; } html[data-size=L] { font-size: 16.5px; } html[data-size=XL] { font-size: 18px; }
 /* --tt-fs-k = root px / 15 (M). Inline SVG text is sized in the drawing's own
    user units, so rem can't reach it; calc(9px * var(--tt-fs-k)) lets the
@@ -852,7 +864,7 @@ body { background: var(--bg); color: var(--fg); }
    as separate lists at a glance. */
 .tt-palette-group + .tt-palette-group { margin-top: .35rem; padding-top: .35rem; border-top: 1px solid var(--border); }
 .tt-palette-heading {
-  padding: .25rem .6rem; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: .25rem .6rem; font-size: .85rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* One line per entry whatever the title length: the label ellipsizes (full text
@@ -1163,7 +1175,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-badge-slot { margin: 0 .4rem .4rem; }
 .tt-daily-calendar-slot { padding: 0 .5rem .5rem; }
 .tt-daily-calendar-actions { display: flex; padding: 0 .1rem; margin-top: .5rem; }
-.tt-daily-calendar-today-btn { flex: 1; font-size: .8rem; padding: .3rem .4rem; }
+.tt-daily-calendar-today-btn { flex: 1; font-size: .9rem; font-weight: 600; padding: .35rem .4rem; }
 .tt-daily-editor-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tt-daily-editor-col .tt-editor { flex: 1; }
 
