@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.2.2] - 2026-10-23
+
+### Changed
+- The save indicator stays a plain "Saved"; hovering it shows the last and next file write and that your changes are safe in the browser cache.
+- Preferences → Saving explains that the file is written at your chosen interval, that closing the file writes it now, and to close the file before clearing the browser cache.
+- Closing the file is called "Close file" everywhere.
+
+### Fixed
+- The indicator's "next write" time could stay in the past after an automatic save that had nothing to write.
+
 ## [3.2.1] - 2026-10-22
 
 ### Changed

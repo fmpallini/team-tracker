@@ -209,6 +209,7 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
       timerRun = writeNow('timer').then(() => undefined).finally(() => {
         lastAttemptAt = now()
         arm()
+        emit() // a clean document writes nothing, yet the next write moved: repaint the pill's "next"
       })
     }, delay)
   }

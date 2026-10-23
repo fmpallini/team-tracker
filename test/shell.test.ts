@@ -112,7 +112,7 @@ describe('PWA theme-color meta', () => {
 })
 
 describe('save pill', () => {
-  const ctx = (over: Partial<PillContext> = {}): PillContext => ({ nextWriteAt: null, persistent: null, storeError: false, readOnly: false, ...over })
+  const ctx = (over: Partial<PillContext> = {}): PillContext => ({ nextWriteAt: null, storeError: false, readOnly: false, ...over })
   const at = (h: number, m: number): number => new Date(2026, 6, 20, h, m).getTime()
   const pillEl = (shell: Shell): HTMLElement => shell.root.querySelector('.tt-save-pill') as HTMLElement
   const text = (shell: Shell): string => shell.root.querySelector('.tt-save-pill-text')!.textContent!
@@ -157,29 +157,25 @@ describe('save pill', () => {
   })
 
   describe('hover', () => {
-    test('ok: everything is in browser storage; last file write, next write, and how to force one', () => {
+    test('ok: last and next file write, the browser cache holds the changes, and how to force a write', () => {
       const shell = setup()
       shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0) }))
-      expect(pillEl(shell).title).toBe('Everything is saved in the browser\'s storage.\nLast file write: 2:00 PM\nNext: 3:00 PM\nTo write the file now, close the file.')
+      expect(pillEl(shell).title).toBe('Last file write: 2:00 PM\nNext file write: 3:00 PM\nYour modified data is safe in the browser cache (encrypted when the file has a password).\nTo write the file now, close the file (🔒).')
       shell.applyPrefs(prefsWith('pt-BR'))
-      expect(pillEl(shell).title).toBe('Tudo está salvo no armazenamento do navegador.\nÚltima gravação no arquivo: 14:00\nPróxima: 15:00\nPara gravar no arquivo agora, feche o arquivo.')
+      expect(pillEl(shell).title).toBe('Última gravação no arquivo: 14:00\nPróxima gravação: 15:00\nSeus dados alterados estão seguros no cache do navegador (cifrados, se o arquivo tem senha).\nPara gravar o arquivo agora, feche o arquivo (🔒).')
     })
 
-    test('ok before the first write of the session says none yet and when the next one is due', () => {
+    test('ok before any write this session leaves out the last-write line and gives the next one', () => {
       const shell = setup()
       shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx({ nextWriteAt: at(15, 32) }))
-      expect(pillEl(shell).title).toBe('Everything is saved in the browser\'s storage.\nLast file write: not yet\nNext: 3:32 PM\nTo write the file now, close the file.')
+      expect(pillEl(shell).title).toBe('Next file write: 3:32 PM\nYour modified data is safe in the browser cache (encrypted when the file has a password).\nTo write the file now, close the file (🔒).')
     })
 
-    test('storage that may be cleared adds a warning line but keeps the pill green', () => {
+    test('ok without a known next write still says the data is safe, and carries no alarm', () => {
       const shell = setup()
-      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0), persistent: false }))
-      expect(pillEl(shell).title).toContain('Clearing site data would lose work not yet written to the file.')
+      shell.setFileHealth({ kind: 'ok', lastWrittenAt: null }, ctx())
+      expect(pillEl(shell).title).toBe('Your modified data is safe in the browser cache (encrypted when the file has a password).')
       expect(pillEl(shell).dataset.state).toBe('ok')
-      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0), persistent: true }))
-      expect(pillEl(shell).title).not.toContain('Clearing site data')
-      shell.setFileHealth({ kind: 'ok', lastWrittenAt: at(14, 0) }, ctx({ nextWriteAt: at(15, 0), persistent: null }))
-      expect(pillEl(shell).title).not.toContain('Clearing site data')
     })
 
     test('each other state explains itself and says the work is safe', () => {

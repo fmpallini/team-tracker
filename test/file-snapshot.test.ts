@@ -278,6 +278,20 @@ describe('nextWriteAt', () => {
     expect(snap.nextWriteAt()).toBe(clock + HOUR)
   })
 
+  test('a timer tick that writes nothing (clean document) still moves it and notifies, so the pill repaints', async () => {
+    const { snap, timers } = rig({ dirty: false })
+    snap.scheduleFrom(prefs(60))
+    const seen = vi.fn()
+    snap.subscribe(seen)
+    seen.mockClear()
+    clock += HOUR
+    timers.fire()
+    await snap.flush()
+    expect(fsMocks.writeFile).not.toHaveBeenCalled()
+    expect(snap.nextWriteAt()).toBe(clock + HOUR)
+    expect(seen).toHaveBeenCalled()
+  })
+
   test('follows the configured interval, clamped to 1..24 hours', () => {
     const { snap } = rig()
     snap.scheduleFrom(prefs(180))
