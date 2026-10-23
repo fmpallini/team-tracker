@@ -48,5 +48,13 @@ export default defineConfig({
     // pin it so button/dialog copy in tests is deterministic across machines.
     locale: 'en-US',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Two projects over one browser: leak.spec.ts is a single serial chain of
+  // CDP-bound tests (minutes long, one worker), so it is the floor of the whole
+  // run. Splitting it out as its own project lets CI start it on a runner of its
+  // own (`--project=leak`) while the rest (`--project=chromium`) runs beside it;
+  // a plain `playwright test` still runs both.
+  projects: [
+    { name: 'chromium', testIgnore: /leak\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
+    { name: 'leak', testMatch: /leak\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
+  ],
 })

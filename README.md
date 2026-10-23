@@ -114,11 +114,10 @@ the data is unrecoverable.
 **How saving works.** Every edit goes to the browser's own storage (IndexedDB)
 within a fraction of a second — only the part that changed, never the whole file.
 The `.tmv` file is a snapshot, written at three moments: when you open a file
-whose browser copy is ahead of it, when you close the file with the lock button
-(`Ctrl+Alt+L`), and on a timer (every hour by default; 1 to 24 hours in Settings →
-Saving). There is no Save command, and `Ctrl+S` does nothing. **Close with the lock
-button:** it writes the file before the document is released, so it is the one way
-to be sure the file is current. The save indicator reports whether the app *can*
+whose browser copy is ahead of it, when you close the file (`Ctrl+Alt+L`), and on a
+timer (every hour by default; 1 to 24 hours in Settings → Saving). There is no Save
+command, and `Ctrl+S` does nothing. **Close the file:** it writes the file before the
+document is released, so it is the one way to be sure the file is current. The save indicator reports whether the app *can*
 write the file, not whether it is up to date: "Saved" means the browser copy is
 current; hover it to see when the file was last written and when the next write is
 due.
@@ -222,23 +221,22 @@ the sidebar.
 **How does saving work? When is my `.tmv` file written?**
 The browser holds the live copy and the file is a snapshot of it. Your edits reach the
 browser within a fraction of a second. The file is written when you open a file whose
-browser copy is ahead of it, when you close it with the lock button (`Ctrl+Alt+L`),
-and every 1–24 hours (Settings → Saving, one hour by default). There is no Save
-command. Close with the lock button: it is the only thing that guarantees a file write
-before the document is released.
+browser copy is ahead of it, when you close the file (`Ctrl+Alt+L`), and every 1–24
+hours (Settings → Saving, one hour by default). There is no Save command. Close the
+file: it is the only thing that guarantees a file write before the document is released.
 
 **What do I lose if I clear my browser data?**
 Whatever was not yet written to the file: the work since the last file write, up to
 the timer interval. Clearing site data (or closing a private window) deletes the
-browser copy. Everything written to the file is safe. When the browser has not
-promised to keep its storage, the save indicator's hover and Settings → Saving say so.
+browser copy. Everything written to the file is safe. If you need to clear the
+browser data for any reason, close the file first.
 
 **What happens if the file can't be written?**
 The indicator says why ("Grant access" or "File not written") and your changes stay
 safe in the browser. Closing the file then shows a dialog: grant access again,
 download a copy of the document right now, try again, or close anyway — the browser
 keeps your work, and the next time you open the file the app reconciles the two. If you
-close the window without Lock/Close you get the browser's "leave site?" warning only
+close the window without closing the file you get the browser's "leave site?" warning only
 when the file is overdue (older than the timer interval).
 
 **Why a Chromium-based browser?**

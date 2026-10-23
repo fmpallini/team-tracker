@@ -331,18 +331,16 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
 
   // The save pill shows whether the file can be written when it needs to be (the browser copy is what keeps the work
   // safe), and nothing about "unsaved": every time it mentions is in its hover.
-  let persistentStorage: boolean | null = null // whether the browser promised to keep this origin's storage
   const paintPill = (): void => shell.setFileHealth(snapshot.health(), {
     nextWriteAt: snapshot.nextWriteAt(),
-    persistent: persistentStorage,
     storeError: persister?.lastError != null,
     readOnly: store.readOnly,
   })
   disposers.push(snapshot.subscribe(paintPill))
   if (persister) disposers.push(persister.onErrorChange(paintPill))
   disposers.push(store.onReadOnlyChange(paintPill))
-  // Asked once per opened document, in every build: the live copy lives in this origin's storage.
-  void ensurePersistentStorage().then((persisted) => { persistentStorage = persisted; paintPill() })
+  // Asked once per opened document, in every build: the live copy lives in this origin's storage. The answer is shown in Preferences.
+  void ensurePersistentStorage()
   disposers.push(watchFileHealth(snapshot, () => store.doc.prefs.locale))
   if (persister) disposers.push(watchStoreHealth(persister, () => store.doc.prefs.locale))
   // A document opened from the browser's copy starts ahead of its file: write it as soon as this tab may write

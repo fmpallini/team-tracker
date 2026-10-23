@@ -23,9 +23,6 @@ vi.mock('../src/core/fs', async (importOriginal) => {
   }
 })
 
-const persistMocks = vi.hoisted(() => ({ getPersistStatus: vi.fn(async () => null as boolean | null) }))
-vi.mock('../src/core/storage-persist', () => persistMocks)
-
 // jsdom does not implement matchMedia; createShell() needs it to watch the OS theme preference.
 function stubMatchMedia(): void {
   window.matchMedia = ((query: string): MediaQueryList => ({
@@ -266,47 +263,44 @@ test('an interval that is not a whole number of hours is shown rounded, and the 
   clickTab('Saving')
   expect((document.querySelector('.tt-prefs-autosave-input') as HTMLInputElement).value).toBe('3')
   expect(document.body.textContent).toContain('Write the file every (hours)')
-  expect(document.body.textContent).toContain('The browser copy is saved continuously')
+  expect(document.body.textContent).toContain('written automatically at this frequency')
 })
 
-describe('browser storage status line', () => {
-  async function statusText(status: boolean | null, locale: 'en-US' | 'pt-BR' = 'en-US'): Promise<string> {
-    persistMocks.getPersistStatus.mockResolvedValue(status)
+describe('browser storage explanation', () => {
+  function storageText(locale: 'en-US' | 'pt-BR' = 'en-US'): { rule: string; note: string } {
     const { store, shell, appCtl } = setup()
     store.doc.prefs.locale = locale
     openPrefs(store, shell, locale, appCtl)
     clickTab(locale === 'en-US' ? 'Saving' : 'Salvamento')
-    await new Promise((r) => setTimeout(r, 0))
-    return document.querySelector('.tt-prefs-storage-status')!.textContent!
+    return {
+      rule: document.querySelector('.tt-prefs-storage-rule')!.textContent!,
+      note: document.querySelector('.tt-prefs-storage-note')!.textContent!,
+    }
   }
 
-  test('protected, in both locales', async () => {
-    expect(await statusText(true)).toBe(t('en-US', 'prefs_storage_protected'))
-    expect(await statusText(true, 'pt-BR')).toBe(t('pt-BR', 'prefs_storage_protected'))
+  test('the rule says changes are safe in the browser cache, in both locales', () => {
+    expect(storageText().rule).toBe(t('en-US', 'prefs_storage_rule'))
+    expect(storageText('pt-BR').rule).toBe(t('pt-BR', 'prefs_storage_rule'))
   })
 
-  test('not guaranteed warns that clearing site data loses what the file does not have yet', async () => {
-    const text = await statusText(false)
-    expect(text).toBe(t('en-US', 'prefs_storage_not_guaranteed'))
-    expect(text).toContain('clearing site data')
-    expect(await statusText(false, 'pt-BR')).toBe(t('pt-BR', 'prefs_storage_not_guaranteed'))
+  test('a separate, light note says what to do before clearing the cache', () => {
+    const { note } = storageText()
+    expect(note).toBe(t('en-US', 'prefs_storage_clear_note', { hours: '1' }))
+    expect(note).toContain('close the file')
+    expect(storageText('pt-BR').note).toBe(t('pt-BR', 'prefs_storage_clear_note', { hours: '1' }))
   })
 
-  test('unknown when the browser does not say', async () => {
-    expect(await statusText(null)).toBe(t('en-US', 'prefs_storage_unknown'))
-    expect(await statusText(null, 'pt-BR')).toBe(t('pt-BR', 'prefs_storage_unknown'))
-  })
-
-  test('a tab closed before the answer arrives is not written to', async () => {
-    let resolve!: (v: boolean) => void
-    persistMocks.getPersistStatus.mockReturnValue(new Promise<boolean>((r) => { resolve = r }))
+  test('the note quotes the auto-save interval and follows it when it changes', () => {
     const { store, shell, appCtl } = setup()
+    store.doc.prefs.autoSaveMin = 180
     openPrefs(store, shell, 'en-US', appCtl)
     clickTab('Saving')
-    clickTab('Templates')
-    expect(() => resolve(true)).not.toThrow()
-    await new Promise((r) => setTimeout(r, 0))
-    expect(document.querySelector('.tt-prefs-storage-status')).toBeNull()
+    const note = (): string => document.querySelector('.tt-prefs-storage-note')!.textContent!
+    expect(note()).toContain('at most 3 h')
+    const input = document.querySelector('.tt-prefs-autosave-input') as HTMLInputElement
+    input.value = '6'
+    input.dispatchEvent(new Event('change'))
+    expect(note()).toContain('at most 6 h')
   })
 })
 

@@ -53,11 +53,58 @@ jobs:
   # on PRs into main (release gate); skipped for PRs into dev, i.e. Dependabot
   # bumps — those still get `check`, and the e2e run on the dev push that
   # merges them.
-  e2e:
-    name: E2E (Playwright)
+  #
+  # Three jobs make that up: `e2e-plan` decides whether the suite has to run,
+  # `e2e-shard` runs it in two parts in parallel, and `e2e` (the name the rest
+  # of the repo knows) folds the parts into one verdict.
+
+  # A release PR (dev -> main) is the same commit the dev push already tested.
+  # Re-running e2e there proves nothing new when (a) that exact SHA already has
+  # a green `E2E (Playwright)` and (b) main is an ancestor of it, so merging
+  # changes no file and the merge ref's tree equals the tested tree. If either
+  # fails (main gained a commit dev lacks, or the dev run is red or still
+  # going), the suite runs in full as before.
+  e2e-plan:
+    name: E2E plan
     if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.base_ref }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          skip=false
+          if [ "$EVENT" = pull_request ]; then
+            behind=$(gh api "repos/$REPO/compare/$BASE...$SHA" --jq .behind_by)
+            green=$(gh api -X GET "repos/$REPO/commits/$SHA/check-runs" -f check_name='E2E (Playwright)' -f per_page=100               --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+            echo "main is $behind commit(s) ahead of the PR head; green E2E runs on $SHA: $green"
+            if [ "$behind" = 0 ] && [ "$green" -gt 0 ]; then skip=true; fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "E2E skip: $skip"
+
+  e2e-shard:
+    name: E2E ${{ matrix.part }}
+    needs: e2e-plan
+    if: needs.e2e-plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # One red part must not hide the other part's result (or its trace artifact).
+      fail-fast: false
+      matrix:
+        part: [leak, main]
     permissions:
       contents: read
     steps:
@@ -71,21 +118,31 @@ jobs:
       - run: npm ci
 
       # The Chromium build is ~150MB and only changes when @playwright/test
-      # does, so key the cache on the lockfile: a bump misses and re-downloads,
-      # everything else reuses. The OS-level libraries `--with-deps` installs
-      # live outside ~/.cache/ms-playwright and are not cached, hence the
-      # separate install-deps on a hit.
+      # does, so key the cache on that package's version — not on the whole
+      # lockfile, which every app version bump edits (that missed the cache on
+      # every release and stored a fresh 268MB copy each time). The OS-level
+      # libraries `--with-deps` installs live outside ~/.cache/ms-playwright
+      # and are not cached, hence the separate install-deps on a hit.
+      - id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
       - if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      - run: npm run test:e2e
+      # The same suite, in two parts that together cover every spec (the two
+      # Playwright projects in playwright.config.ts): leak.spec.ts is one serial
+      # chain of several minutes — the floor of the whole run — so it gets a
+      # runner of its own, and everything else runs beside it. Splitting by test
+      # count instead left that chain alone at the tail of one half. Each part
+      # keeps the runner's own 2 workers; more workers per runner would only
+      # make the timing-sensitive specs (search/nav cost, large paste) noisier.
+      - run: npm run test:e2e -- --project=${{ matrix.part == 'leak' && 'leak' || 'chromium' }}
 
       # playwright.config.ts records a trace on first retry; without this the
       # trace is written into the runner and thrown away, leaving a CI-only
@@ -93,12 +150,35 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: playwright-results-${{ github.run_id }}
+          name: playwright-results-${{ github.run_id }}-${{ matrix.part }}
           path: |
             test-results/
             playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  # The one E2E verdict. Keeps the name the earlier single job had, which is
+  # also what `e2e-plan` looks up on a release PR's head SHA.
+  e2e:
+    name: E2E (Playwright)
+    needs: [e2e-plan, e2e-shard]
+    if: always() && (github.event_name == 'push' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          PLAN: ${{ needs.e2e-plan.result }}
+          SKIP: ${{ needs.e2e-plan.outputs.skip }}
+          SHARDS: ${{ needs.e2e-shard.result }}
+        run: |
+          echo "plan=$PLAN skip=$SKIP shards=$SHARDS"
+          [ "$PLAN" = success ] || { echo "::error::E2E plan did not succeed"; exit 1; }
+          if [ "$SKIP" = true ]; then
+            echo "Skipped: this exact commit already passed E2E and main adds nothing to it."
+            exit 0
+          fi
+          [ "$SHARDS" = success ] || { echo "::error::an E2E part did not succeed"; exit 1; }
 
   # Only runs for PRs targeting main — dev -> main is where releases are cut,
   # so this is the heavier gate: full build, on both OSes, with output

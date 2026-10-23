@@ -17,8 +17,6 @@ export type PillAction = 'regrant' | 'export' | 'failure'
 export interface PillContext {
   /** When the file is next due (or, in export mode, when the last export turns stale); null if unknown. */
   nextWriteAt: number | null
-  /** `navigator.storage.persisted()`: false means clearing site data could lose work not yet written to the file; null unknown. */
-  persistent: boolean | null
   /** The browser store is failing: edits exist only in memory. */
   storeError: boolean
   /** This tab lost the write lock. */
@@ -46,7 +44,7 @@ export interface Shell {
   panesRoot: HTMLElement
   /**
    * Repaints the save pill. The pill reports whether the app can write the file when it needs to — not whether the
-   * document is "dirty", which the browser copy makes mostly moot. The label is static; every time is in the hover.
+   * document is "dirty", which the browser copy makes mostly moot. The label is static; the last and next file write are in the hover.
    */
   setFileHealth(health: FileHealth, ctx: PillContext): void
   applyPrefs(prefs: Prefs): void
@@ -259,7 +257,7 @@ export function createShell(locale: Locale): Shell {
   // What the pill last painted from. Kept raw (never pre-formatted text) so a locale switch, or the minute tick in
   // export mode, reformats instead of showing what was true when it was last painted.
   let fileHealth: FileHealth = { kind: 'ok', lastWrittenAt: null }
-  let pillCtx: PillContext = { nextWriteAt: null, persistent: null, storeError: false, readOnly: false }
+  let pillCtx: PillContext = { nextWriteAt: null, storeError: false, readOnly: false }
   let ageTimer: ReturnType<typeof setInterval> | null = null
   const saveStateSubscribers = new Set<(info: SaveStatusInfo) => void>()
 
@@ -290,14 +288,14 @@ export function createShell(locale: Locale): Shell {
     } else {
       label = t(currentLocale, LABEL_KEY[health])
       if (health === 'ok') {
+        // Green: the label stays plain; the hover gives the last and next file write and says the browser cache holds the changes.
         const written = fileHealth.kind === 'ok' ? fileHealth.lastWrittenAt : null
         const next = pillCtx.nextWriteAt
-        title = written !== null && next !== null
-          ? t(currentLocale, 'pill_ok_title', { written: clock(written), next: clock(next) })
-          : next !== null
-            ? t(currentLocale, 'pill_ok_title_nofile', { next: clock(next) })
-            : t(currentLocale, 'pill_ok_title_plain')
-        if (pillCtx.persistent === false) title += '\n' + t(currentLocale, 'pill_persist_warning')
+        title = next === null
+          ? t(currentLocale, 'pill_ok_title_plain')
+          : written !== null
+            ? t(currentLocale, 'pill_ok_title', { written: clock(written), next: clock(next) })
+            : t(currentLocale, 'pill_ok_title_nofile', { next: clock(next) })
       } else {
         title = t(currentLocale, TITLE_KEY[health])
       }
