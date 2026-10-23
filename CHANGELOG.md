@@ -7,8 +7,8 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [3.2.1] - 2026-10-22
 
 ### Changed
-- The browser-storage note in Preferences now explains what it means: your changes live in the browser until the next file write and survive closing the browser or a crash; only clearing site data before that write loses them.
-- Fast switch headings and the daily notes "Today" button are a little larger and easier to read.
+- The browser-storage note in Preferences now says plainly that changes survive closing the browser or a crash; only clearing site data before the next file write loses them.
+- Fast switch headings and the daily notes "Today" button are a little larger.
 
 ### Fixed
 - Emoji always show in color instead of occasionally appearing as flat black-and-white symbols.
