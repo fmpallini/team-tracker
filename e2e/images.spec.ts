@@ -14,53 +14,74 @@ import { buildDoc, openDoc } from './layout-fixtures'
 
 const PASSWORD = 'e2e-images-password'
 
-/** A PNG made in the page: a gradient, or random noise (incompressible, so the file visibly grows). */
-async function makePng(page: Page, w: number, h: number, kind: 'gradient' | 'noise' = 'gradient'): Promise<number[]> {
-  return page.evaluate(async ({ w, h, kind }) => {
-    const c = document.createElement('canvas')
-    c.width = w
-    c.height = h
-    const ctx = c.getContext('2d')!
-    if (kind === 'noise') {
-      const data = ctx.createImageData(w, h)
-      for (let i = 0; i < data.data.length; i += 4) {
-        data.data[i] = Math.random() * 256
-        data.data[i + 1] = Math.random() * 256
-        data.data[i + 2] = Math.random() * 256
-        data.data[i + 3] = 255
+/** What to draw: a gradient, or random noise (incompressible, so the file visibly grows). */
+interface Pic { name: string; w: number; h: number; kind?: 'gradient' | 'noise' }
+
+/**
+ * Defines `window.__ttPicFile(pic)` in every page: draws the PNG there and wraps it in a File. A picture is made and
+ * handed to the app inside the page — shipping its bytes through Playwright as a number array (a 2400x1200 gradient is
+ * 3 MB, millions of elements, ~8 s each way) is what used to eat most of this suite's per-test timeout.
+ */
+async function installPicMaker(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    window.__ttPicFile = async (pic) => {
+      const c = document.createElement('canvas')
+      c.width = pic.w
+      c.height = pic.h
+      const ctx = c.getContext('2d')!
+      if (pic.kind === 'noise') {
+        const data = ctx.createImageData(pic.w, pic.h)
+        for (let i = 0; i < data.data.length; i += 4) {
+          data.data[i] = Math.random() * 256
+          data.data[i + 1] = Math.random() * 256
+          data.data[i + 2] = Math.random() * 256
+          data.data[i + 3] = 255
+        }
+        ctx.putImageData(data, 0, 0)
+      } else {
+        const g = ctx.createLinearGradient(0, 0, pic.w, pic.h)
+        g.addColorStop(0, '#c0392b')
+        g.addColorStop(1, '#2980b9')
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, pic.w, pic.h)
       }
-      ctx.putImageData(data, 0, 0)
-    } else {
-      const g = ctx.createLinearGradient(0, 0, w, h)
-      g.addColorStop(0, '#c0392b')
-      g.addColorStop(1, '#2980b9')
-      ctx.fillStyle = g
-      ctx.fillRect(0, 0, w, h)
+      const blob: Blob = await new Promise((resolve) => c.toBlob((b) => resolve(b!), 'image/png'))
+      return new File([blob], pic.name, { type: 'image/png' })
     }
-    const blob: Blob = await new Promise((resolve) => c.toBlob((b) => resolve(b!), 'image/png'))
-    return Array.from(new Uint8Array(await blob.arrayBuffer()))
-  }, { w, h, kind })
+  })
 }
 
-/** Dispatches a paste carrying the given files and/or HTML at the first editor. */
-async function pasteInto(page: Page, data: { files?: { name: string; bytes: number[] }[]; html?: string; text?: string }): Promise<void> {
-  await page.evaluate((data) => {
+type PicMaker = (pic: Pic) => Promise<File>
+// Inside page.evaluate callbacks (serialized to the page, so no Node-side closure is visible there).
+declare global { interface Window { __ttPicFile: PicMaker } }
+
+/** A PNG's bytes, for the few tests that embed it in HTML or hand it to a file input. Keep it small. */
+async function makePng(page: Page, w: number, h: number): Promise<number[]> {
+  return page.evaluate(async (pic) => {
+    const file = await window.__ttPicFile(pic)
+    return Array.from(new Uint8Array(await file.arrayBuffer()))
+  }, { name: 'x.png', w, h })
+}
+
+/** Dispatches a paste carrying the given pictures and/or HTML at the first editor. */
+async function pasteInto(page: Page, data: { files?: Pic[]; html?: string; text?: string }): Promise<void> {
+  await page.evaluate(async (data) => {
     const ed = document.querySelector('.editor') as HTMLElement
     ed.focus()
     const dt = new DataTransfer()
-    for (const f of data.files ?? []) dt.items.add(new File([new Uint8Array(f.bytes)], f.name, { type: 'image/png' }))
+    for (const f of data.files ?? []) dt.items.add(await window.__ttPicFile(f))
     if (data.html) dt.setData('text/html', data.html)
     if (data.text) dt.setData('text/plain', data.text)
     ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
   }, data)
 }
 
-async function dropOnto(page: Page, files: { name: string; bytes: number[] }[]): Promise<void> {
-  await page.evaluate((files) => {
+async function dropOnto(page: Page, files: Pic[]): Promise<void> {
+  await page.evaluate(async (files) => {
     const ed = document.querySelector('.editor') as HTMLElement
     const r = ed.getBoundingClientRect()
     const dt = new DataTransfer()
-    for (const f of files) dt.items.add(new File([new Uint8Array(f.bytes)], f.name, { type: 'image/png' }))
+    for (const f of files) dt.items.add(await window.__ttPicFile(f))
     const init = { dataTransfer: dt, bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 20 }
     ed.dispatchEvent(new DragEvent('dragover', init))
     ed.dispatchEvent(new DragEvent('drop', init))
@@ -80,6 +101,7 @@ async function newTeamWithEditor(page: Page): Promise<void> {
 
 async function startEncrypted(page: Page): Promise<void> {
   await installOpfsPickerShim(page)
+  await installPicMaker(page)
   await blockUpdateCheck(page)
   await page.goto(`${E2E_BASE_URL}/app.html`)
   await createEncryptedDoc(page, PASSWORD)
@@ -90,7 +112,7 @@ test.describe('pictures in notes', () => {
   test('a pasted screenshot is shown centered, fitted to the pane, with a blank line on each side', async ({ page }) => {
     await startEncrypted(page)
     // Wider than the pane: must be re-encoded under the 1600 px edge and then shrunk to fit.
-    await pasteInto(page, { files: [{ name: 'shot.png', bytes: await makePng(page, 2400, 1200) }] })
+    await pasteInto(page, { files: [{ name: 'shot.png', w: 2400, h: 1200 }] })
     await expect(blocks(page)).toHaveCount(1)
     await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
 
@@ -139,8 +161,8 @@ test.describe('pictures in notes', () => {
   test('dropping two image files adds both', async ({ page }) => {
     await startEncrypted(page)
     await dropOnto(page, [
-      { name: 'a.png', bytes: await makePng(page, 320, 200) },
-      { name: 'b.png', bytes: await makePng(page, 200, 320) },
+      { name: 'a.png', w: 320, h: 200 },
+      { name: 'b.png', w: 200, h: 320 },
     ])
     await expect(blocks(page)).toHaveCount(2)
   })
@@ -169,7 +191,7 @@ test.describe('pictures in notes', () => {
 
   test('encrypted: the picture survives save, close and reopen, and the file holds no readable pixels', async ({ page }) => {
     await startEncrypted(page)
-    await pasteInto(page, { files: [{ name: 'shot.png', bytes: await makePng(page, 400, 260) }] })
+    await pasteInto(page, { files: [{ name: 'shot.png', w: 400, h: 260 }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500) // the debounced commit
     await page.click('.tt-btn-close-file') // Lock/Close writes the file, picture included
@@ -193,9 +215,10 @@ test.describe('pictures in notes', () => {
   })
 
   test('password-less: the picture survives close and reopen', async ({ page }) => {
+    await installPicMaker(page)
     await openDoc(page, buildDoc('M', { kind: 'general' }))
     await page.locator('.editor').first().click()
-    await pasteInto(page, { files: [{ name: 'shot.png', bytes: await makePng(page, 400, 260) }] })
+    await pasteInto(page, { files: [{ name: 'shot.png', w: 400, h: 260 }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500)
 
@@ -213,7 +236,7 @@ test.describe('pictures in notes', () => {
 
   test('deleting the note drops its picture from the file at the next write', async ({ page }) => {
     await startEncrypted(page)
-    await pasteInto(page, { files: [{ name: 'noise.png', bytes: await makePng(page, 500, 400, 'noise') }] })
+    await pasteInto(page, { files: [{ name: 'noise.png', w: 500, h: 400, kind: 'noise' }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500)
     await lockClose(page)
@@ -231,7 +254,7 @@ test.describe('pictures in notes', () => {
 
   test('Backspace removes a clicked picture and Ctrl+Z brings it back', async ({ page }) => {
     await startEncrypted(page)
-    await pasteInto(page, { files: [{ name: 'undo.png', bytes: await makePng(page, 300, 200) }] })
+    await pasteInto(page, { files: [{ name: 'undo.png', w: 300, h: 200 }] })
     await expect(blocks(page)).toHaveCount(1)
     await blocks(page).first().click()
     await page.keyboard.press('Backspace')
@@ -244,7 +267,7 @@ test.describe('pictures in notes', () => {
   test('Backspace after the caret has moved on edits text, it does not delete the picture clicked earlier', async ({ page }) => {
     await startEncrypted(page)
     await page.keyboard.type('hello')
-    await pasteInto(page, { files: [{ name: 'keep.png', bytes: await makePng(page, 300, 200) }] })
+    await pasteInto(page, { files: [{ name: 'keep.png', w: 300, h: 200 }] })
     await expect(blocks(page)).toHaveCount(1)
     await blocks(page).first().click()
     await page.keyboard.press('ArrowUp')
@@ -256,7 +279,7 @@ test.describe('pictures in notes', () => {
     for (const title of ['Blockquote', 'Bulleted list']) {
       await startEncrypted(page)
       await page.keyboard.type('hello')
-      await pasteInto(page, { files: [{ name: 'wrap.png', bytes: await makePng(page, 300, 200) }] })
+      await pasteInto(page, { files: [{ name: 'wrap.png', w: 300, h: 200 }] })
       await expect(blocks(page)).toHaveCount(1)
       await page.locator('.editor').first().click()
       await page.keyboard.press('Control+a')
@@ -268,9 +291,10 @@ test.describe('pictures in notes', () => {
   })
 
   test('the font-size setting does not change how wide a picture is', async ({ page }) => {
+    await installPicMaker(page)
     await openDoc(page, buildDoc('M', { kind: 'general' }))
     await page.locator('.editor').first().click()
-    await pasteInto(page, { files: [{ name: 'fixed.png', bytes: await makePng(page, 300, 200) }] })
+    await pasteInto(page, { files: [{ name: 'fixed.png', w: 300, h: 200 }] })
     await expect(blocks(page)).toHaveCount(1)
     await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
     const widthAt = async (size: string): Promise<number> => {
@@ -285,7 +309,7 @@ test.describe('pictures in notes', () => {
 
   test('the Data tab counts the picture and its megabytes', async ({ page }) => {
     await startEncrypted(page)
-    await pasteInto(page, { files: [{ name: 'shot.png', bytes: await makePng(page, 300, 200) }] })
+    await pasteInto(page, { files: [{ name: 'shot.png', w: 300, h: 200 }] })
     await expect(blocks(page)).toHaveCount(1)
     await page.waitForTimeout(500)
     await page.click('.tt-btn-settings')
