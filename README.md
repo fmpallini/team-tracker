@@ -5,7 +5,10 @@ hierarchy, daily/per-person notes, tasks, milestones (with a calendar
 view), and risks.
 
 **[Try it now](https://fmpallini.github.io/team-tracker/)** — runs entirely in
-your browser, nothing to install.
+your browser, nothing to install. No data yet? Download the
+**[sample file](https://fmpallini.github.io/team-tracker/sample.tmv)** (five
+made-up teams, no password) and open it from the start screen to see the app
+with a populated workspace.
 
 ### A one-minute tour
 

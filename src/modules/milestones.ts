@@ -82,6 +82,22 @@ export function truncateTitle(title: string): string {
   return title.length > 22 ? `${title.slice(0, 22)}…` : title
 }
 
+/** Milestones that share a date, in list order; the timeline draws each such group as one dot. */
+export function groupByDate<T extends { date: string }>(sortedMilestones: T[]): { date: string; items: T[] }[] {
+  const groups: { date: string; items: T[] }[] = []
+  for (const m of sortedMilestones) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === m.date) last.items.push(m)
+    else groups.push({ date: m.date, items: [m] })
+  }
+  return groups
+}
+
+/** The under-dot label of one or more milestones due the same day: the first title, plus how many more share the date. The dot's tooltip lists them all. */
+export function groupLabel(titles: string[]): string {
+  return titles.length > 1 ? `${truncateTitle(titles[0]!)} +${titles.length - 1}` : truncateTitle(titles[0] ?? '')
+}
+
 /**
  * True when a milestone row is a blank-title draft carrying nothing else
  * worth keeping: not done and no follow-up. `date` is deliberately ignored —
@@ -270,13 +286,15 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     const containerWidth = timelineEl.clientWidth > 0 ? timelineEl.clientWidth : FALLBACK_WIDTH
     const scale = fontScale(ctx.store.doc.prefs.fontSize)
     // The end dots' labels are centered on them, so the margin has to hold half of the longer of each end's title and date label.
-    const ends = [sorted[0]!, sorted[sorted.length - 1]!]
-    const hPad = timelinePadding(ends.flatMap((e) => [truncateTitle(e.title).length, formatDate(e.date, lc).length]), scale)
+    // Milestones due the same day share one dot, so a tie never has to be pushed sideways (which widened the drawing and made it scroll).
+    const groups = groupByDate(sorted)
+    const ends = [groups[0]!, groups[groups.length - 1]!]
+    const hPad = timelinePadding(ends.flatMap((g) => [groupLabel(g.items.map((m) => m.title)).length, formatDate(g.date, lc).length]), scale)
     const drawWidth = Math.max(containerWidth - hPad * 2, 1)
     // Date labels are CSS-sized from the size setting (--tt-fs-k), so the
     // spacing floor that keeps them from touching has to grow with them.
     const layout = computeTimelineLayout(
-      sorted.map((m) => ({ id: m.id, date: m.date })),
+      groups.map((g) => ({ id: g.date, date: g.date })),
       MIN_LABEL_GAP * scale,
       drawWidth,
       today
@@ -329,9 +347,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       svg.appendChild(todayTag)
     }
 
-    sorted.forEach((m, i) => {
-      const cx = hPad + layout.x[m.id]!
-      const overdue = m.date < today && !m.done
+    groups.forEach((g, i) => {
+      const cx = hPad + layout.x[g.date]!
+      const done = g.items.every((m) => m.done)
+      const overdue = g.date < today && !done
       // Titles alternate between a near and a far row. Two labels that would
       // have collided are now on different rows, which doubles the label
       // density a given width can carry — and lets MIN_LABEL_GAP be set from
@@ -347,8 +366,8 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       circle.setAttribute('cx', String(cx))
       circle.setAttribute('cy', String(midY))
       circle.setAttribute('r', String(CIRCLE_R))
-      circle.setAttribute('class', `tt-milestone-dot ${m.done ? 'tt-milestone-dot-done' : overdue ? 'tt-milestone-dot-overdue' : 'tt-milestone-dot-future'}${m.id === justDoneId ? ' tt-milestone-just-done' : ''}`)
-      if (m.done) {
+      circle.setAttribute('class', `tt-milestone-dot ${done ? 'tt-milestone-dot-done' : overdue ? 'tt-milestone-dot-overdue' : 'tt-milestone-dot-future'}${g.items.some((m) => m.id === justDoneId) ? ' tt-milestone-just-done' : ''}`)
+      if (done) {
         circle.setAttribute('fill', 'var(--ok)')
         circle.setAttribute('stroke', 'var(--ok)')
       } else if (overdue) {
@@ -360,10 +379,10 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       }
 
       const titleNode = document.createElementNS(SVG_NS, 'title')
-      titleNode.textContent = m.title
+      titleNode.textContent = g.items.map((m) => m.title).join('\n')
       circle.appendChild(titleNode)
       svg.appendChild(circle)
-      if (m.done) {
+      if (done) {
         // A check inside the filled dot, so "done" does not rest on color alone.
         const check = document.createElementNS(SVG_NS, 'path')
         check.setAttribute('d', `M${cx - 2.6} ${midY + 0.2} l1.9 2.1 3.5-4`)
@@ -375,7 +394,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       dateText.setAttribute('x', String(cx))
       dateText.setAttribute('y', String(midY - 16))
       dateText.setAttribute('class', 'tt-milestone-date-label')
-      dateText.textContent = formatDate(m.date, lc)
+      dateText.textContent = formatDate(g.date, lc)
       svg.appendChild(dateText)
 
       // Leader line from the dot down to its title — without it, a title on
@@ -395,7 +414,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       // Truncated by truncateTitle; the dot's own <title> a few lines up
       // carries the full text. Deliberately not repeated here — an SVG
       // <title> child would fold into this element's textContent.
-      label.textContent = truncateTitle(m.title)
+      label.textContent = groupLabel(g.items.map((m) => m.title))
       svg.appendChild(label)
     })
 

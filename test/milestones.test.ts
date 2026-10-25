@@ -3,6 +3,8 @@ import {
   computeTimelineLayout,
   sortByDate,
   truncateTitle,
+  groupByDate,
+  groupLabel,
   timelinePadding,
   isBlankMilestoneDraft,
 } from '../src/modules/milestones'
@@ -143,7 +145,21 @@ describe('pure helpers', () => {
     })
   })
 
-  describe('truncateTitle', () => {
+  describe('groupByDate / groupLabel', () => {
+  test('groupByDate merges neighbours with the same date and keeps list order', () => {
+    const groups = groupByDate([{ date: '2026-08-02', t: 'a' }, { date: '2026-08-02', t: 'b' }, { date: '2026-08-03', t: 'c' }])
+    expect(groups.map((g) => [g.date, g.items.map((i) => i.t)])).toEqual([['2026-08-02', ['a', 'b']], ['2026-08-03', ['c']]])
+    expect(groupByDate([])).toEqual([])
+  })
+
+  test('groupLabel shows one title as is, and the first title plus a count for several', () => {
+    expect(groupLabel(['Caseiro'])).toBe('Caseiro')
+    expect(groupLabel(['Caseiro', 'Outro', 'Mais'])).toBe('Caseiro +2')
+    expect(groupLabel(['x'.repeat(30), 'y'])).toBe(`${'x'.repeat(22)}… +1`)
+  })
+})
+
+describe('truncateTitle', () => {
     test('leaves short titles untouched', () => {
       expect(truncateTitle('Launch')).toBe('Launch')
     })
@@ -332,15 +348,15 @@ describe('renderMilestones', () => {
     expect(label.textContent).toBe(`${'A very long milestone title indeed'.slice(0, 22)}…`)
   })
 
-  // Regression: three same-day milestones used to print their labels through
+  // Regression: three milestones a day apart used to print their labels through
   // each other ("Auth cutBetarewith GA release") because the minimum gap was
   // sized against the dots (24px) rather than the labels under them.
   test('title labels alternate between two rows so neighbours never share a baseline', () => {
     const team = makeTeam({
       milestones: [
         milestone({ id: 'a', date: '2026-08-02', title: 'Auth cutover complete' }),
-        milestone({ id: 'b', date: '2026-08-02', title: 'Beta with 3 pilots' }),
-        milestone({ id: 'c', date: '2026-08-02', title: 'GA release' }),
+        milestone({ id: 'b', date: '2026-08-03', title: 'Beta with 3 pilots' }),
+        milestone({ id: 'c', date: '2026-08-04', title: 'GA release' }),
       ],
     })
     const { container, store, pm, loc } = setup(team)
@@ -356,20 +372,52 @@ describe('renderMilestones', () => {
     expect(container.querySelectorAll('.tt-milestone-leader')).toHaveLength(3)
   })
 
-  test('same-day milestones are spread far enough apart for their date labels to clear', () => {
+  test('milestones due the same day share one dot, labelled with the first title and how many more', () => {
     const team = makeTeam({
       milestones: [
-        milestone({ id: 'a', date: '2026-08-02', title: 'A' }),
-        milestone({ id: 'b', date: '2026-08-02', title: 'B' }),
+        milestone({ id: 'a', date: '2026-08-02', title: 'Caseiro' }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'Outro' }),
+        milestone({ id: 'c', date: '2026-08-09', title: 'Depois' }),
       ],
     })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const xs = [...container.querySelectorAll('.tt-milestone-dot')].map((n) => Number(n.getAttribute('cx')))
-    // A dd/mm/yyyy label at 9px is roughly 55px wide; anything under that
-    // overprints its neighbour.
-    expect(Math.abs(xs[1]! - xs[0]!)).toBeGreaterThanOrEqual(56)
+    expect(container.querySelectorAll('.tt-milestone-dot')).toHaveLength(2)
+    expect([...container.querySelectorAll('.tt-milestone-title-label')].map((n) => n.textContent)).toEqual(['Caseiro +1', 'Depois'])
+    expect(container.querySelectorAll('.tt-milestone-date-label')).toHaveLength(2)
+    // The tooltip names every milestone on the dot; the list below still has one row each.
+    expect(container.querySelector('.tt-milestone-dot title')!.textContent).toBe('Caseiro\nOutro')
+    expect(container.querySelectorAll('.tt-milestone-row')).toHaveLength(3)
+  })
+
+  test('same-day milestones never widen the drawing: two on one date draw as wide as one', () => {
+    const two = setup(makeTeam({
+      milestones: [
+        milestone({ id: 'a', date: '2026-08-02', title: 'A' }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'B' }),
+      ],
+    }))
+    render(two.container, two.loc, two.store, two.pm)
+    const one = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2026-08-02', title: 'A' })] }))
+    render(one.container, one.loc, one.store, one.pm)
+
+    // No layout in jsdom, so both use the fallback width; a tie pushed 80px apart used to add that to the drawing.
+    expect(two.container.querySelector('.tt-milestone-svg')!.getAttribute('width')).toBe(one.container.querySelector('.tt-milestone-svg')!.getAttribute('width'))
+  })
+
+  test('a dot is done only when every milestone on its date is done; any late one marks it overdue', () => {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'a', date: '2026-08-02', title: 'A', done: true }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'B', done: false }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const dot = container.querySelector('.tt-milestone-dot')!
+    expect(dot.classList.contains('tt-milestone-dot-done')).toBe(false)
+    expect(dot.classList.contains('tt-milestone-dot-overdue')).toBe(true)
   })
 
   test('circle classes/fill: done is filled solid, overdue-and-not-done is muted, future-and-not-done is accent', () => {

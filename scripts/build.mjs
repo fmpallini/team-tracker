@@ -1,6 +1,7 @@
 import { build, transform } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { computeAppOrigin } from './app-origin.mjs'
+import { buildSampleBytes, SAMPLE_FILENAME } from './sample-seed.mjs'
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
 
@@ -70,5 +71,7 @@ copyFileSync('pwa/icon-192.png', 'dist/pwa/icon-192.png')
 copyFileSync('pwa/icon-512.png', 'dist/pwa/icon-512.png')
 const sw = readFileSync('pwa/sw.js', 'utf8').replaceAll('__APP_VERSION__', pkg.version)
 writeFileSync('dist/pwa/sw.js', sw)
+// Served next to the app (not part of the service worker shell) for the README's "try with sample data" link.
+writeFileSync(`dist/pwa/${SAMPLE_FILENAME}`, buildSampleBytes())
 
-console.log('built dist/app.html and dist/pwa/index.html (+ manifest, sw.js, icon.svg)')
+console.log('built dist/app.html and dist/pwa/index.html (+ manifest, sw.js, icon.svg, sample.tmv)')

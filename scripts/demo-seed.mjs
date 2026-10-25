@@ -36,22 +36,23 @@ const SCHEMA_VERSION = Number(
 )
 if (!Number.isInteger(SCHEMA_VERSION)) throw new Error('demo-seed: could not read SCHEMA_VERSION from document.ts')
 
-function todayIso() {
+export function todayIso() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 /** `YYYY-MM-DD` for today shifted by `deltaDays` (negative = past). */
-function isoOffset(deltaDays) {
+export function isoOffset(deltaDays) {
   const d = new Date(todayIso() + 'T00:00:00')
   d.setDate(d.getDate() + deltaDays)
   return d.toISOString().slice(0, 10)
 }
 
 // createEmptyDocument's default prefs (src/core/document.ts), English locale.
+// Keep this file in step with the persisted shape: test/sample-seed.test.ts opens
+// the result through the app's own parser and fails when it drifts.
 const defaultPrefs = {
-  theme: 'system', locale: 'en-US', font: 'system', fontSize: 'M', autoSaveMin: 10,
+  theme: 'system', locale: 'en-US', font: 'system', fontSize: 'M', autoSaveMin: 60,
   palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
-  dailyBackupEnabled: false, backupHandleId: null, backupFrequency: 'daily',
   ctrlWheelFontSize: true, dailyEdgeScroll: true,
 }
 
@@ -72,7 +73,7 @@ const suggestedTagNames = {
   sage: 'Technical', plum: 'Operations', ledger: 'Legal',
 }
 
-function emptyTeam(id, name, emoji) {
+export function emptyTeam(id, name, emoji) {
   return {
     id, name, emoji,
     stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
@@ -177,6 +178,8 @@ export function buildSeedDoc() {
   ]
 
   return {
+    // Fixed so every copy of the demo file is the same document to the browser copy.
+    docId: '7e3d1c9a5b2f48e6a0c4d8f1b3a5e792',
     schemaVersion: SCHEMA_VERSION,
     prefs: { ...defaultPrefs },
     templates: builtinTemplates.map((t) => ({ ...t })),
@@ -200,6 +203,7 @@ export function buildSeedDoc() {
       { teamId: star.id, ref: { kind: 'milestones' } },
       { teamId: 't-design', ref: { kind: 'daily', date: todayIso() } },
     ],
+    images: {},
   }
 }
 

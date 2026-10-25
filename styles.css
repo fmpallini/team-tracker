@@ -1570,8 +1570,8 @@ body { background: var(--bg); color: var(--fg); }
    (MIN_LABEL_GAP, scaled with the text-size setting) so labels never touch;
    the plain mouse wheel scrolls it (wheelScrollsHorizontally). The print
    window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
-/* The timeline sits on a ledger card: panel fill, hairline border, resting shadow. */
-.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding: .35rem .5rem .5rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card); }
+/* The timeline sits on a ledger card: panel fill, hairline border, resting shadow. No side padding: the drawing is sized to the element's width and already keeps its own margin for the end labels, so padding here would make it overflow and show a scrollbar nothing needs. */
+.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding: .35rem 0 .5rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card); }
 .tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
@@ -1719,10 +1719,10 @@ body { background: var(--bg); color: var(--fg); }
 /* 8.8rem: the options carry a word ("2 · Medium", "3 · Alto") and the pill adds a level dot on the left and a chevron on the right. */
 .tt-risk-header-chance, .tt-risk-chance-select,
 .tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 8.8rem; }
-.tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
+.tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
 /* The header's Exposure column heads the gutter, so it comes first; its width plus the header's padding and gap lands the Title where the rows' padded content starts. */
-.tt-risk-header-exposure { order: -1; width: calc(4.5rem - .3rem + 1px); }
+.tt-risk-header-exposure { order: -1; width: calc(5rem - .3rem + 1px); min-width: 0; overflow: hidden; white-space: nowrap; }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
 /* The chip (or its placeholder, when the row has no mentions) is a fixed-
    width column like the header spacers above it — without `flex: none` it
@@ -1733,12 +1733,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-row .tt-backlinks-chip, .tt-risk-row .tt-backlinks-chip-slot { flex: none; width: 2.6rem; text-align: center; }
 .tt-risk-header-exposure {
   display: flex; align-items: center; justify-content: center; gap: .1rem;
-  background: none; border: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; padding: 0;
+  background: none; border: none; color: inherit; font: inherit; font-size: .75rem; font-weight: 600; cursor: pointer; padding: 0;
 }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
 .tt-risk-header-chance, .tt-risk-header-impact, .tt-risk-header-plan { text-align: center; }
-/* The indicator and an equal-width ghost on the other side keep the "Exposure" label itself centered over the badge column. */
-.tt-risk-header-exposure::before { content: ''; display: inline-block; width: .9em; }
 .tt-risk-sort-indicator { opacity: .45; display: inline-block; width: .9em; text-align: center; }
 .tt-risk-header-exposure:hover .tt-risk-sort-indicator, .tt-risk-header-exposure.active .tt-risk-sort-indicator { opacity: 1; }
 /* Monospace "tag" read for the editable data selects — bordered, muted,
@@ -1816,7 +1814,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-list { display: flex; flex-direction: column; gap: .55rem; }
 .tt-risk-row { position: relative; overflow: hidden; padding: var(--card-row-pad); border: 1px solid transparent; cursor: grab; }
 /* The exposure cell is the row's gutter: a full-height strip on the left, tinted with the level and holding the disc, so a high risk shows while scrolling. It is absolutely placed, so the row's own layout (wide or wrapped) does not move it; the row pads past it. A closed risk has no cell and keeps its plain padding. */
-.tt-risk-row:has(> .tt-risk-exposure-cell) { --risk-gut: 4.5rem; padding-left: calc(var(--risk-gut) + .5rem); }
+.tt-risk-row:has(> .tt-risk-exposure-cell) { --risk-gut: 5rem; padding-left: calc(var(--risk-gut) + .5rem); }
 .tt-risk-row > .tt-risk-exposure-cell {
   --lv: var(--exposure-low); position: absolute; inset: 0 auto 0 0; width: var(--risk-gut);
   background: color-mix(in srgb, var(--lv) 14%, var(--panel)); border-right: 1px solid color-mix(in srgb, var(--lv) 40%, var(--border));
