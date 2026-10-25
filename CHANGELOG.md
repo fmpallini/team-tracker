@@ -9,11 +9,12 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ### Added
 - Moving, copying or duplicating a task, risk or milestone to another team now says what happened, and a move has an Undo.
 - People in the org chart can be reached from the keyboard: arrows walk the chart, Enter opens the person's notes.
+- The team's emoji shows beside its name in cross-team search and the Deadlines panel, and each entry in the back/forward history list shows its module icon.
 
 ### Changed
-- Deleting a single person, task, risk or milestone no longer asks first; the Undo notice is the safety net. Bigger deletes still confirm, in red.
-- Cards, highlights, motion and spacing are consistent across the app; the keyboard-selected row in menus reads stronger than a hovered one, and reduced-motion stops every animation.
-- Dialog buttons read Save instead of OK, the team picker says Copy or Move, and cards are called tasks everywhere.
+- Deleting a single person, task, risk or milestone no longer asks first; the Undo notice is the safety net. Bigger deletes still confirm, in red. Dialog buttons read Save instead of OK.
+- The calendar, tasks, risks and milestones have a new look: month cards, a label band on tasks, and tinted side strips for risk exposure and milestone state.
+- Cards, highlights, motion and spacing are consistent across the app, and reduced-motion stops every animation.
 
 ### Fixed
 - Deleting a task that had notes but no title from its dialog lost the notes with no Undo.
