@@ -12,7 +12,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Changed
 - Deleting a single person, task, risk or milestone no longer asks first; the Undo notice is the safety net. Bigger deletes still confirm, in red.
-- Risks and Milestones are shown as soft cards, and the add buttons stand out; toasts, Preferences, task cards and the team sidebar were polished.
+- Cards, highlights, motion and spacing are consistent across the app; the keyboard-selected row in menus reads stronger than a hovered one, and reduced-motion stops every animation.
 - Dialog buttons read Save instead of OK, the team picker says Copy or Move, and cards are called tasks everywhere.
 
 ### Fixed

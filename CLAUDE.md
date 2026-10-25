@@ -44,10 +44,11 @@ Every `package.json` version bump needs a matching non-empty `## [X.Y.Z]` entry 
 
 ## Conventions
 
-- Edit surfaces: rich or many-field entities (kanban card, risk, milestone) autosave as you type — a modeless dialog or an inline row, closed with Close/Escape, never Cancel. Small forms (person, team, template, tag names, link) are an Cancel/Save dialog where Cancel discards; their confirm button reads **Save**, and a picker's reads its verb (Copy, Move). Don't mix: a new screen picks one of the two by that rule.
+- Edit surfaces: rich or many-field entities (kanban card, risk, milestone) autosave as you type — a modeless dialog or an inline row, closed with Close/Escape, never Cancel. Small forms (person, team, template, tag names, link) are a Cancel/Save dialog where Cancel discards; their confirm button reads **Save**, and a picker's reads its verb (Copy, Move). Don't mix: a new screen picks one of the two by that rule.
 - Deletes: one item is never confirmed, it gets an Undo toast (`createEntityDelete` / `deleteInTeamWithUndo` + `offerUndoToast`). Bulk or irreversible deletes (team, clear zone, delete all closed, column with cards, data cleanup) use `confirmDelete`, which is always danger-styled; a delete with no Undo says so in its `warning`. The Undo expires on the next edit, so keep the toast short-lived and prominent.
 - A missing name reads "Name is required" in a dialog field and "This {thing} needs a name." on an inline row or card.
-- Icon-only buttons go through the shared helper in `ui/dom.ts`, which sets `title` and `aria-label` together.
+- Icon-only buttons go through `iconButton()` in `ui/icons.ts`, which sets `title` and `aria-label` together.
+- Styling uses the scales at the top of `styles.css`, not literals: `--dur-fast`/`--dur-base`/`--ease` for motion, `--hover-soft` (large surfaces) / `--hover` (compact items) / `--selected` (keyboard-selected or current entry) / `--card-hover` for highlights, `--sp-1..4`, `--row-pad`, `--card-row-pad`, `--state-bar`, `--r-*` and `--shadow-*`. Reduced motion is one rule at the end of the file; don't add per-rule overrides. Card-like items share one recipe (panel fill, `--shadow-card`, `--r-md`, `--card-hover`) and one inset focus ring.
 
 - i18n: two locales, `pt-BR` and `en-US`, via `t(locale, key)` in `core/i18n.ts`. All user-visible strings go through `t()`; add keys for both locales.
 - Every `src` module has a matching `test/*.test.ts` (except type-only `core/types.ts`, wiring-only `main.ts`, and `*.d.ts`); tests run in jsdom, rely on browser APIs being feature-detected (Web Locks, BroadcastChannel, FS Access API absent in jsdom — code must degrade gracefully, also what keeps it testable).
