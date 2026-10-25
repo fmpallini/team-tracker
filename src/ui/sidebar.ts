@@ -692,7 +692,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), icon: 'close', onClick: () => handle.close() }
     const okBtn: ModalButton = {
-      label: t(locale(), 'ok'),
+      label: t(locale(), 'save'),
       primary: true,
       onClick: () => {
         const name = nameInput.value.trim()
@@ -724,6 +724,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), icon: 'close', onClick: () => handle.close() }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
+      danger: true,
       onClick: () => {
         handle.close()
         confirmDelete(locale(), {
@@ -738,7 +739,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       },
     }
     const saveBtn: ModalButton = {
-      label: t(locale(), 'ok'),
+      label: t(locale(), 'save'),
       primary: true,
       onClick: () => {
         const name = nameInput.value.trim()

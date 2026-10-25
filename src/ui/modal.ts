@@ -255,9 +255,9 @@ export function showErrorModal(locale: Locale, message: string): ModalHandle {
 
 /**
  * Shared shape for every "confirm before deleting" dialog in the app: a
- * message, Cancel, and a confirm button that closes the dialog either way.
- * `variant` defaults to 'primary' (most callers) — action-items.ts's kanban
- * card delete is the one caller that wants the stronger 'danger' styling.
+ * message, Cancel, and a danger-styled confirm button that closes the dialog
+ * either way. Single items are not confirmed at all (they get an Undo toast,
+ * see modules/entity-delete.ts); this is for bulk and irreversible deletes.
  */
 export function confirmDelete(locale: Locale, opts: {
   title: string
@@ -270,7 +270,6 @@ export function confirmDelete(locale: Locale, opts: {
    */
   warning?: string
   confirmLabel: string
-  variant?: 'danger' | 'primary'
   onConfirm: () => void
 }): void {
   const message = el('p', { class: 'tt-modal-message' }, opts.message)
@@ -280,8 +279,7 @@ export function confirmDelete(locale: Locale, opts: {
   const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,
-    danger: opts.variant === 'danger',
-    primary: opts.variant !== 'danger',
+    danger: true,
     onClick: () => {
       opts.onConfirm()
       handle.close()

@@ -433,7 +433,6 @@ test('confirmDelete shows a title/message/confirm button and calls onConfirm', (
     title: 'Delete X',
     message: 'Are you sure?',
     confirmLabel: 'Delete',
-    variant: 'danger',
     onConfirm,
   })
   const dialog = document.querySelector('.tt-modal-dialog')!
@@ -462,7 +461,6 @@ test('confirmDelete renders a warning paragraph after the message when given one
     message: 'Are you sure?',
     warning: 'This one cannot be undone.',
     confirmLabel: 'Delete',
-    variant: 'danger',
     onConfirm: () => {},
   })
   const dialog = document.querySelector('.tt-modal-dialog')!

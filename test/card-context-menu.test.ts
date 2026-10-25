@@ -61,7 +61,7 @@ test('"Copy to team…" calls transfer with mode "copy" and the picked team', ()
   menuItems()[1]!.click()
   const select = document.querySelector('select') as HTMLSelectElement
   select.value = 'T2'
-  modalButton('Confirm').click()
+  modalButton('Copy').click()
   expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'copy')
 })
 
@@ -72,7 +72,7 @@ test('"Move to team…" calls transfer with mode "move" and the picked team', ()
   menuItems()[2]!.click()
   const select = document.querySelector('select') as HTMLSelectElement
   select.value = 'T2'
-  modalButton('Confirm').click()
+  modalButton('Move').click()
   expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'move')
 })
 
@@ -133,7 +133,7 @@ test('openItemContextMenu dispatches transfer (copy) to the right kind and targe
   menuItems()[1]!.click() // "Copy to team…"
   const select = document.querySelector('select') as HTMLSelectElement
   select.value = 't2'
-  modalButton('Confirm').click()
+  modalButton('Copy').click()
 
   expect(store.doc.teams[0]!.actionItems.length).toBe(1) // copy mode: source untouched
   expect(store.doc.teams[1]!.actionItems.length).toBe(1) // landed in the target team's actionItems
@@ -153,7 +153,7 @@ test('when getColumnsForTeam is supplied, "Copy to team…" opens the combined t
   selects[0]!.value = 'T2'
   selects[0]!.dispatchEvent(new Event('change', { bubbles: true }))
   selects[1]!.value = 'review'
-  modalButton('Confirm').click()
+  modalButton('Copy').click()
 
   expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'copy', 'review')
 })
@@ -164,7 +164,7 @@ test('without getColumnsForTeam, the plain team-only picker is used (milestones/
   showCardContextMenu(LOCALE, 'T1', teams, 'item-1', 0, 0, { duplicate: vi.fn(), transfer, delete: vi.fn() })
   menuItems()[1]!.click()
   expect(document.querySelectorAll('select')).toHaveLength(1)
-  modalButton('Confirm').click()
+  modalButton('Copy').click()
   expect(transfer).toHaveBeenCalledWith('item-1', 'T2', 'copy')
 })
 

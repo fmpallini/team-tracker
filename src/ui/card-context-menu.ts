@@ -29,7 +29,7 @@ function openTransferModal(
   const title = t(locale, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title')
   if (getColumnsForTeam) {
     openTeamColumnPickerModal({
-      title, confirmLabel: t(locale, 'team_picker_confirm_btn'), cancelLabel: t(locale, 'cancel'),
+      title, confirmLabel: t(locale, mode === 'copy' ? 'team_picker_copy_btn' : 'team_picker_move_btn'), cancelLabel: t(locale, 'cancel'),
       columnLabel: t(locale, 'kanban_transfer_column_label'),
       teams: otherTeams, getColumns: getColumnsForTeam,
       onConfirm: (targetTeamId, targetStatus) => actions.transfer(itemId, targetTeamId, mode, targetStatus),
@@ -37,7 +37,7 @@ function openTransferModal(
     return
   }
   openTeamPickerModal({
-    title, confirmLabel: t(locale, 'team_picker_confirm_btn'), cancelLabel: t(locale, 'cancel'),
+    title, confirmLabel: t(locale, mode === 'copy' ? 'team_picker_copy_btn' : 'team_picker_move_btn'), cancelLabel: t(locale, 'cancel'),
     teams: otherTeams,
     onConfirm: (targetTeamId) => actions.transfer(itemId, targetTeamId, mode),
   })

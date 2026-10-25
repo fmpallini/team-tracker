@@ -1302,7 +1302,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           ...(init.editing
             ? [{ label: t(locale, 'editor_link_remove'), danger: true, onClick: () => finish({ remove: true }) }]
             : []),
-          { label: t(locale, 'ok'), primary: true, onClick: submit },
+          { label: t(locale, 'save'), primary: true, onClick: submit },
         ],
         // Escape / backdrop close routes here too, so the promise never hangs.
         onClose: () => finish(null),

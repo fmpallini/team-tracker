@@ -5,7 +5,6 @@
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
 import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
-import { confirmDelete } from '../ui/modal'
 import { openPersonModal } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
 import { el, wheelScrollsHorizontally, clearClasses } from '../ui/dom'
@@ -15,7 +14,7 @@ import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
 import { deleteInTeamWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
-import { icon } from '../ui/icons'
+import { iconButton } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -194,63 +193,46 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     }
 
     function renderBox(person: Person): HTMLElement {
-      const notesBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-people-notes-btn', type: 'button', title: t(lc, 'person_notes_title'),
-          onclick: (e: Event) => { e.stopPropagation(); ctx.pm.openInFocused({ teamId, ref: { kind: 'person', personId: person.id, group } }) },
+      const notesBtn = iconButton({
+        class: 'tt-people-notes-btn', title: t(lc, 'person_notes_title'), icon: 'note',
+        onclick: (e) => { e.stopPropagation(); ctx.pm.openInFocused({ teamId, ref: { kind: 'person', personId: person.id, group } }) },
+      })
+      const editBtn = iconButton({
+        class: 'tt-people-edit-btn', title: t(lc, 'person_edit_title'), icon: 'edit',
+        onclick: (e) => { e.stopPropagation(); openEditModal(person) },
+      })
+      const addChildBtn = iconButton({
+        class: 'tt-people-add-child-btn', title: t(lc, 'person_add_child_title'), icon: 'plus',
+        onclick: (e) => { e.stopPropagation(); openAddModal(person.id) },
+      })
+      const deleteBtn = iconButton({
+        class: 'tt-people-delete-btn', title: t(lc, 'person_delete_title'), icon: 'trash',
+        onclick: (e) => {
+          e.stopPropagation()
+          // Deep copy (taken by deleteInTeamWithUndo), for two reasons:
+          // unlinkRefsInTeam rewrites @mentions in place across the whole
+          // team, and deletePerson() re-parents this node's children and
+          // renumbers their siblings' `order` in place. A shallow capture
+          // of tm[group] would share those very objects and restore none
+          // of it.
+          //
+          // No `sections`: unlinkRefsInTeam rewrites @mentions across
+          // every content-bearing section of this team (notes, actions,
+          // milestones, risks — see refs.ts), not just 'people'.
+          // Team-only scoping is the narrowest scope that's still
+          // correct, and it won't rot if unlinkRefsInTeam's reach changes
+          // later — refs never cross teams (see refs.ts's own header
+          // comment), so `{ teamId }` alone is safe.
+          const offer = deleteInTeamWithUndo(ctx.store, teamId,
+            (tm) => tm[group].some((p) => p.id === person.id),
+            (tm) => {
+              unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
+              tm[group] = deletePerson(tm[group], person.id)
+            },
+            { teamId })
+          offerUndoToast(ctx.store, lc, t(lc, 'person_deleted_toast', { name: person.name }), offer)
         },
-        icon('note')
-      )
-      const editBtn = el(
-        'button',
-        { class: 'tt-btn tt-people-edit-btn', type: 'button', title: t(lc, 'person_edit_title'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(person) } },
-        icon('edit')
-      )
-      const addChildBtn = el(
-        'button',
-        { class: 'tt-btn tt-people-add-child-btn', type: 'button', title: t(lc, 'person_add_child_title'), onclick: (e: Event) => { e.stopPropagation(); openAddModal(person.id) } },
-        icon('plus')
-      )
-      const deleteBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-people-delete-btn', type: 'button', title: t(lc, 'person_delete_title'),
-          onclick: (e: Event) => {
-            e.stopPropagation()
-            confirmDelete(lc, {
-              title: t(lc, 'person_delete_title'),
-              message: t(lc, 'person_delete_confirm', { name: person.name }),
-              confirmLabel: t(lc, 'person_delete_btn'),
-              onConfirm: () => {
-                // Deep copy (taken by deleteInTeamWithUndo), for two reasons:
-                // unlinkRefsInTeam rewrites @mentions in place across the whole
-                // team, and deletePerson() re-parents this node's children and
-                // renumbers their siblings' `order` in place. A shallow capture
-                // of tm[group] would share those very objects and restore none
-                // of it.
-                //
-                // No `sections`: unlinkRefsInTeam rewrites @mentions across
-                // every content-bearing section of this team (notes, actions,
-                // milestones, risks — see refs.ts), not just 'people'.
-                // Team-only scoping is the narrowest scope that's still
-                // correct, and it won't rot if unlinkRefsInTeam's reach changes
-                // later — refs never cross teams (see refs.ts's own header
-                // comment), so `{ teamId }` alone is safe.
-                const offer = deleteInTeamWithUndo(ctx.store, teamId,
-                  (tm) => tm[group].some((p) => p.id === person.id),
-                  (tm) => {
-                    unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
-                    tm[group] = deletePerson(tm[group], person.id)
-                  },
-                  { teamId })
-                offerUndoToast(ctx.store, lc, t(lc, 'person_deleted_toast', { name: person.name }), offer)
-              },
-            })
-          },
-        },
-        icon('trash')
-      )
+      })
       const actions = el('div', { class: 'tt-people-actions' }, notesBtn, editBtn, addChildBtn, deleteBtn)
 
       const box = el(

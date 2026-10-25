@@ -312,14 +312,13 @@ test('deleting an item refreshes a stale mention chip in a different-section pan
   expect(bodies[1]!.querySelector('a.ref[data-ref="action:a1"]')).not.toBeNull()
 
   // Delete the action item from pane 0 via the real UI flow: dblclick opens
-  // the edit modal, its Delete button opens the confirm-delete modal over it, and
-  // that modal's own Delete button fires the actual delete call site (entity-delete.ts).
+  // the edit modal, and its Delete button deletes at once (no confirm dialog,
+  // Undo toast instead), firing the actual delete call site (entity-delete.ts).
   const card = bodies[0]!.querySelector('.tt-kanban-card') as HTMLElement
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   const findDeleteBtn = (): HTMLButtonElement =>
     Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter((b) => b.textContent === 'Delete').pop()!
-  findDeleteBtn().click() // opens confirm-delete over the still-open edit modal
-  findDeleteBtn().click() // confirms (topmost Delete) and closes both — the shared delete fires store.update()
+  findDeleteBtn().click() // deletes immediately and closes the edit modal — the shared delete fires store.update()
 
   // unlinkRefsInTeam() rewrote m1.followup's raw text back to plain "Card"
   // (no ref markup at all) as part of the same store.update(). The other

@@ -28,7 +28,7 @@ import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally } from
 import { withDisposal } from './lifecycle'
 import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
-import { icon } from '../ui/icons'
+import { iconButton } from '../ui/icons'
 import { emptyState } from '../ui/empty-state'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -231,12 +231,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     renderAll()
   }
 
-  // Confirm/undo/silent delete shared with risks and action items (see
+  // Undo/silent delete shared with risks and action items (see
   // modules/entity-delete.ts). `expandable.collapse` is the local UI state that
   // must flip before the store update fires the synchronous subscriber.
   const { removeSilently: removeMilestoneSilently, requestDelete } = createEntityDelete({
     ctx, teamId, collection: 'milestones', refKind: 'milestone', labelOf: (m) => m.title, labelParam: 'title',
-    messages: { title: 'milestone_delete_title', confirm: 'milestone_delete_confirm', button: 'milestone_delete_btn', toast: 'milestone_deleted_toast' },
+    toast: 'milestone_deleted_toast',
     beforeRemove: (id) => expandable.collapse(id),
     isBlank: isBlankMilestoneDraft,
   })
@@ -447,17 +447,15 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // click/hover" is no longer the *only* way to reach them.
     const backlinksChip = followups.backlinksSlot(m.id)
 
-    const expandBtn = el(
-      'button',
-      { class: 'tt-btn tt-milestone-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'), onclick: () => followups.toggleExpand(m.id) },
-      icon(expandable.isExpanded(m.id) ? 'chevDown' : 'chevRight', 14)
-    )
+    const expandBtn = iconButton({
+      class: 'tt-milestone-expand-btn', tabindex: '-1', title: t(lc, 'milestone_followup_toggle_title'),
+      icon: expandable.isExpanded(m.id) ? 'chevDown' : 'chevRight', size: 14, onclick: () => followups.toggleExpand(m.id),
+    })
 
-    const deleteBtn = el(
-      'button',
-      { class: 'tt-btn tt-milestone-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'milestone_delete_title'), onclick: () => requestDelete(m) },
-      icon('trash', 16)
-    )
+    const deleteBtn = iconButton({
+      class: 'tt-milestone-delete-btn', tabindex: '-1', title: t(lc, 'milestone_delete_title'),
+      icon: 'trash', size: 16, onclick: () => requestDelete(m),
+    })
 
     const row = el(
       'div',

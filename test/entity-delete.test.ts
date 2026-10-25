@@ -21,7 +21,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
   }
 }
 
-interface Extra { variant?: 'danger' | 'primary'; beforeRemove?: (id: string) => void; isBlank?: (r: Risk) => boolean }
+interface Extra { beforeRemove?: (id: string) => void; isBlank?: (r: Risk) => boolean }
 
 function mount(team: Team, extra: Extra = {}): { store: Store; del: ReturnType<typeof createEntityDelete<'risks'>> } {
   const doc = createEmptyDocument('en-US')
@@ -35,14 +35,10 @@ function mount(team: Team, extra: Extra = {}): { store: Store; del: ReturnType<t
   }
   const del = createEntityDelete<'risks'>({
     ctx, teamId: team.id, collection: 'risks', refKind: 'risk', labelOf: (r) => r.title, labelParam: 'title',
-    messages: { title: 'risk_delete_title', confirm: 'risk_delete_confirm', button: 'risk_delete_btn', toast: 'risk_deleted_toast' },
+    toast: 'risk_deleted_toast',
     ...extra,
   })
   return { store, del }
-}
-
-function confirmButton(): HTMLButtonElement {
-  return Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Delete')!
 }
 
 afterEach(() => {
@@ -143,42 +139,40 @@ describe('createEntityDelete.requestDelete', () => {
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
-  test('a named entity asks first, interpolating the label under labelParam, and does nothing until confirmed', () => {
+  test('a named entity deletes at once, with no dialog, and toasts the label under labelParam', () => {
     const entity = risk({})
     const { store, del } = mount(makeTeam({ risks: [entity] }))
 
     del.requestDelete(entity)
 
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Slip"?')
-    expect(store.doc.teams[0]!.risks).toHaveLength(1)
-  })
-
-  test('confirming deletes, then toasts the label with an Undo that restores it', () => {
-    const entity = risk({})
-    const { store, del } = mount(makeTeam({ risks: [entity] }))
-
-    del.requestDelete(entity)
-    confirmButton().click()
-
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
     expect(document.querySelector('.tt-toast')?.textContent).toContain('Risk "Slip" deleted')
+  })
+
+  test('the toast carries an Undo that restores the entity', () => {
+    const entity = risk({})
+    const { store, del } = mount(makeTeam({ risks: [entity] }))
+
+    del.requestDelete(entity)
     document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+
     expect(store.doc.teams[0]!.risks).toHaveLength(1)
   })
 
-  test('variant "danger" styles the confirm button; the default does not', () => {
+  test('onDeleting runs before the removal', () => {
     const entity = risk({})
-    mount(makeTeam({ risks: [entity] })).del.requestDelete(entity)
-    const plainClass = confirmButton().className
-    document.body.innerHTML = ''
+    const order: string[] = []
+    const { store, del } = mount(makeTeam({ risks: [entity] }))
+    store.subscribe(() => order.push('notified'))
 
-    mount(makeTeam({ risks: [entity] }), { variant: 'danger' }).del.requestDelete(entity)
+    del.requestDelete(entity, () => order.push('onDeleting'))
 
-    expect(confirmButton().className).not.toBe(plainClass)
+    expect(order).toEqual(['onDeleting', 'notified'])
   })
 })
 
-describe('createEntityDelete.requestDelete — what counts as "blank" (silent, no confirm, no undo)', () => {
+describe('createEntityDelete.requestDelete — what counts as "blank" (silent, no undo)', () => {
   const hasConfirm = (): boolean => !!document.querySelector('.tt-modal-overlay')
 
   test('default rule: an empty title is silent', () => {
@@ -188,18 +182,19 @@ describe('createEntityDelete.requestDelete — what counts as "blank" (silent, n
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
   })
 
-  test('with isBlank: an empty title that still carries content is NOT deleted silently — it asks first', () => {
+  test('with isBlank: an empty title that still carries content is NOT deleted silently — it gets an undo toast', () => {
     const { store, del } = mount(makeTeam({ risks: [risk({ title: '', followup: 'agreed with vendor' })] }), { isBlank: (r) => r.title.trim() === '' && r.followup.trim() === '' })
     del.requestDelete(store.doc.teams[0]!.risks[0]!)
-    expect(hasConfirm()).toBe(true)
+    expect(hasConfirm()).toBe(false)
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('(untitled)')
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
     expect(store.doc.teams[0]!.risks).toHaveLength(1)
-    expect(document.querySelector('.tt-modal-message')?.textContent).toContain('(untitled)')
   })
 
-  test('with isBlank: confirming that prompt deletes and offers undo that restores the content', () => {
+  test('with isBlank: undoing that delete restores the content', () => {
     const { store, del } = mount(makeTeam({ risks: [risk({ title: '', followup: 'agreed with vendor' })] }), { isBlank: (r) => r.followup.trim() === '' })
     del.requestDelete(store.doc.teams[0]!.risks[0]!)
-    confirmButton().click()
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
     document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
     expect(store.doc.teams[0]!.risks[0]!.followup).toBe('agreed with vendor')
@@ -212,9 +207,10 @@ describe('createEntityDelete.requestDelete — what counts as "blank" (silent, n
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
   })
 
-  test('with isBlank: a named item always asks, whatever isBlank says about the rest', () => {
+  test('with isBlank: a named item always gets an undo toast, whatever isBlank says about the rest', () => {
     const { store, del } = mount(makeTeam({ risks: [risk({ title: 'Slip' })] }), { isBlank: () => true })
     del.requestDelete(store.doc.teams[0]!.risks[0]!)
-    expect(hasConfirm()).toBe(true)
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')).not.toBeNull()
   })
 })

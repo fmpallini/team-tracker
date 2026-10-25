@@ -6,7 +6,7 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 Team Tracker — zero-runtime-dependency single-file web app tracking teams (people/hierarchy, daily and per-person notes, action items, milestones, risks). No server, no backend: the browser's IndexedDB holds the live copy of the open document (sealed with the file's key when it has a password) and one `.tmv` file — AES-GCM encrypted, or plain-text password-less — is a snapshot the user opens and keeps, written at open, Lock/Close and on a 1–24 h timer. Original design spec + implementation plan in `docs/superpowers/`.
 
-Desktop-only by design: layout fixed desktop shell (sidebar + split panes), UX keyboard-driven (Ctrl+K/Alt+…; there is no Ctrl+S), mobile browsers lack the File System Access API the file-write flow depends on. Mobile devices get blocking notice instead of start screen — don't invest in responsive/mobile layouts.
+Desktop-only by design: layout fixed desktop shell (sidebar + split panes), UX keyboard-driven (Ctrl+Shift+K/Alt+…; there is no Ctrl+S), mobile browsers lack the File System Access API the file-write flow depends on. Mobile devices get blocking notice instead of start screen — don't invest in responsive/mobile layouts.
 
 ## Commands
 
@@ -30,7 +30,7 @@ Tests define `__PWA__: false` in `vitest.config.ts`, so service-worker branch ne
 - **`src/core/`** — headless logic, no DOM construction. Per-module notes (schema/migrations, `.tmv` crypto format, store mutation channels, scope, switcher, pane layout, fs, browser live store + file snapshot, change-password, tab lock, idb) live in `src/core/CLAUDE.md`, loaded when working there.
 - **`src/modules/`** — feature panes (daily notes, people trees, person notes, action items, milestones, risks). Each exports render function registered with pane manager in `main.ts` under module id. Every renderer wrapped in `lifecycle.ts`'s `withDisposal()`, tears down whatever instance previously mounted into container before mounting new one — including instance of *different* module, since `ui/panes.ts` reuses one body element across module switches. Renderer's returned teardown must release everything attached outside `container` (its `store.subscribe` unsubscribe above all); `test/lifecycle.test.ts` counts live subscriptions to catch dropped one.
 - **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane history), fast switch (`palette.ts`), search, modals, prefs. `dom.ts` `el()` DOM-building helper used everywhere.
-- **`src/main.ts`** — wires everything: start screen → `onDocumentOpened` builds shell/panes/file-snapshot around the store `ui/open-document.ts` reconciled with the browser copy, registers hotkeys (Ctrl+K palette, Alt+Shift+arrows history, Alt+1..9 team switch), sets up cross-tab single-writer locking (Web Locks API + BroadcastChannel: one read-write tab per file, others read-only with "take control" handshake). In-memory password lives only in module-level `app` closure — never on window/globals.
+- **`src/main.ts`** — wires everything: start screen → `onDocumentOpened` builds shell/panes/file-snapshot around the store `ui/open-document.ts` reconciled with the browser copy, registers hotkeys (Ctrl+Shift+K palette, Alt+Shift+arrows history, Alt+1..9 team switch), sets up cross-tab single-writer locking (Web Locks API + BroadcastChannel: one read-write tab per file, others read-only with "take control" handshake). In-memory password lives only in module-level `app` closure — never on window/globals.
 
 ## Git workflow
 
@@ -43,6 +43,11 @@ Tests define `__PWA__: false` in `vitest.config.ts`, so service-worker branch ne
 Every `package.json` version bump needs a matching non-empty `## [X.Y.Z]` entry in `CHANGELOG.md` (CI `changelog-gate`). Load the `changelog` skill for the full rules before writing one. Keep entries short: a line or two per change, folding sweeping ones into a single headline bullet rather than listing every screen or button touched (the pre-push hook nags past 6 bullets or a 200-char line).
 
 ## Conventions
+
+- Edit surfaces: rich or many-field entities (kanban card, risk, milestone) autosave as you type — a modeless dialog or an inline row, closed with Close/Escape, never Cancel. Small forms (person, team, template, tag names, link) are an Cancel/Save dialog where Cancel discards; their confirm button reads **Save**, and a picker's reads its verb (Copy, Move). Don't mix: a new screen picks one of the two by that rule.
+- Deletes: one item is never confirmed, it gets an Undo toast (`createEntityDelete` / `deleteInTeamWithUndo` + `offerUndoToast`). Bulk or irreversible deletes (team, clear zone, delete all closed, column with cards, data cleanup) use `confirmDelete`, which is always danger-styled; a delete with no Undo says so in its `warning`. The Undo expires on the next edit, so keep the toast short-lived and prominent.
+- A missing name reads "Name is required" in a dialog field and "This {thing} needs a name." on an inline row or card.
+- Icon-only buttons go through the shared helper in `ui/dom.ts`, which sets `title` and `aria-label` together.
 
 - i18n: two locales, `pt-BR` and `en-US`, via `t(locale, key)` in `core/i18n.ts`. All user-visible strings go through `t()`; add keys for both locales.
 - Every `src` module has a matching `test/*.test.ts` (except type-only `core/types.ts`, wiring-only `main.ts`, and `*.d.ts`); tests run in jsdom, rely on browser APIs being feature-detected (Web Locks, BroadcastChannel, FS Access API absent in jsdom — code must degrade gracefully, also what keeps it testable).

@@ -67,7 +67,7 @@ function setup(): Setup {
 
 // Nested modals (e.g. the template edit modal opened on top of the prefs
 // modal) stack multiple `.tt-modal-overlay`s in document order; scope button
-// lookups to the topmost (last) one so "OK" resolves to the active dialog's
+// lookups to the topmost (last) one so "Save" resolves to the active dialog's
 // button rather than an earlier/background modal's same-labelled button.
 function clickByText(text: string): void {
   const overlays = document.querySelectorAll('.tt-modal-overlay')
@@ -535,7 +535,7 @@ test('"+ New" adds a template with the entered name/scope/body', () => {
   const bodyTextarea = document.querySelector('.tt-prefs-template-textarea') as HTMLTextAreaElement
   bodyTextarea.value = 'body {date}'
   bodyTextarea.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   expect(store.doc.templates).toHaveLength(6)
   const added = store.doc.templates.find((tp) => tp.name === 'Custom')
@@ -551,7 +551,7 @@ test('"+ New" requires a non-empty name', () => {
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates')
   clickByText('+ New')
-  clickByText('OK')
+  clickByText('Save')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
   expect(store.doc.templates).toHaveLength(5)
 })
@@ -568,7 +568,7 @@ test('edit (pencil) button updates the existing template in place', () => {
   expect(nameInput.value).toBe(store.doc.templates[0]!.name)
   nameInput.value = 'Renamed'
   nameInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   expect(store.doc.templates).toHaveLength(5)
   expect(store.doc.templates[0]!.id).toBe(firstId)

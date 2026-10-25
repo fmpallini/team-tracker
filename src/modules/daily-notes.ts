@@ -18,7 +18,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { actionStatusLabel } from './action-items'
 import { isActionActive } from '../core/due'
-import { icon } from '../ui/icons'
+import { icon, iconButton } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
 
 function findTeam(ctx: ModuleCtx, teamId: string): Team | undefined {
@@ -184,20 +184,16 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   const calendarCol = el('div', {
     class: 'tt-daily-calendar-col',
   })
-  const toggleBtn = el(
-    'button',
-    {
-      class: 'tt-btn tt-daily-calendar-toggle',
-      type: 'button',
-      title: t(lc, 'calendar_toggle_title'),
-      onclick: () => {
-        const collapsed = !ctx.store.doc.nav.calendarCollapsed
-        ctx.store.updateNav((d) => { d.nav.calendarCollapsed = collapsed })
-        applyCalendarCollapsed(calendarColEntry)
-      },
+  const toggleBtn = iconButton({
+    class: 'tt-daily-calendar-toggle',
+    title: t(lc, 'calendar_toggle_title'),
+    icon: 'calendar',
+    onclick: () => {
+      const collapsed = !ctx.store.doc.nav.calendarCollapsed
+      ctx.store.updateNav((d) => { d.nav.calendarCollapsed = collapsed })
+      applyCalendarCollapsed(calendarColEntry)
     },
-    icon('calendar')
-  )
+  })
   // Registered for the lifetime of this mount so setDailyCalendarSpaceConstrained()
   // can fold/unfold it as the window crosses the narrow threshold; unregistered
   // in the teardown below.

@@ -34,7 +34,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { makeRefLabelResolver } from '../ui/atref'
 import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
-import { icon, type IconName } from '../ui/icons'
+import { icon, iconButton, type IconName } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -342,12 +342,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     clearClasses(listEl, '.tt-risk-row', 'tt-risk-drop-before', 'tt-risk-drop-after')
   }
 
-  // Confirm/undo/silent delete shared with milestones and action items (see
+  // Undo/silent delete shared with milestones and action items (see
   // modules/entity-delete.ts). `expandable.collapse` is the local UI state that
   // must flip before the store update fires the synchronous subscriber.
   const { removeSilently: removeRiskSilently, requestDelete } = createEntityDelete({
     ctx, teamId, collection: 'risks', refKind: 'risk', labelOf: (r) => r.title, labelParam: 'title',
-    messages: { title: 'risk_delete_title', confirm: 'risk_delete_confirm', button: 'risk_delete_btn', toast: 'risk_deleted_toast' },
+    toast: 'risk_deleted_toast',
     beforeRemove: (id) => expandable.collapse(id),
     // Untitled is not the same as empty: a risk can still carry a plan,
     // exposure or follow-up worth a confirm and an undo.
@@ -816,11 +816,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const backlinksChip = followups.backlinksSlot(r.id)
 
     const expanded = expandable.isExpanded(r.id)
-    const expandBtn = el(
-      'button',
-      { class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'), onclick: () => followups.toggleExpand(r.id) },
-      icon(expanded ? 'chevDown' : 'chevRight', 14)
-    )
+    const expandBtn = iconButton({
+      class: 'tt-risk-expand-btn', tabindex: '-1', title: t(lc, 'risk_followup_toggle_title'),
+      icon: expanded ? 'chevDown' : 'chevRight', size: 14, onclick: () => followups.toggleExpand(r.id),
+    })
 
     const closeBtn = el(
       'button',
@@ -829,11 +828,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       el('span', { class: 'tt-risk-btn-label' }, t(lc, 'risk_close_btn'))
     )
 
-    const deleteBtn = el(
-      'button',
-      { class: 'tt-btn tt-risk-delete-btn', type: 'button', tabindex: '-1', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
-      icon('trash', 16)
-    )
+    const deleteBtn = iconButton({
+      class: 'tt-risk-delete-btn', tabindex: '-1', title: t(lc, 'risk_delete_title'),
+      icon: 'trash', size: 16, onclick: () => requestDelete(r),
+    })
 
     // Narrow-row scaffolding, inert until the container query in styles.css
     // turns it on (see `.tt-risks` container-type). `lineBreak` is a
@@ -938,15 +936,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     const exposure = computeExposure(r.chance, r.impact)
     const hasFollowup = r.followup.trim() !== ''
     const expandBtn = hasFollowup
-      ? el(
-          'button',
-          {
-            class: 'tt-btn tt-risk-expand-btn', type: 'button', tabindex: '-1',
-            title: t(lc, 'risk_followup_toggle_title'),
-            onclick: () => { expandable.toggle(r.id); renderAll() },
-          },
-          icon(expandable.isExpanded(r.id) ? 'chevDown' : 'chevRight', 14)
-        )
+      ? iconButton({
+          class: 'tt-risk-expand-btn', tabindex: '-1',
+          title: t(lc, 'risk_followup_toggle_title'),
+          icon: expandable.isExpanded(r.id) ? 'chevDown' : 'chevRight', size: 14,
+          onclick: () => { expandable.toggle(r.id); renderAll() },
+        })
       : el('span', { class: 'tt-risk-header-spacer' }) // keep the column aligned with rows that do have a caret
     const reopenBtn = el(
       'button',
@@ -957,11 +952,10 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // Same delete flow as an open row's — closed carries no other content
     // worth losing beyond what requestDelete already guards (confirm +
     // undo toast, or silent removal for a blank title).
-    const deleteBtn = el(
-      'button',
-      { class: 'tt-btn tt-risk-delete-btn', type: 'button', title: t(lc, 'risk_delete_title'), onclick: () => requestDelete(r) },
-      icon('trash', 16)
-    )
+    const deleteBtn = iconButton({
+      class: 'tt-risk-delete-btn', title: t(lc, 'risk_delete_title'),
+      icon: 'trash', size: 16, onclick: () => requestDelete(r),
+    })
     const row = el(
       'div',
       { class: 'tt-risk-row tt-risk-row-closed', 'data-risk-id': r.id, 'data-item-id': r.id },

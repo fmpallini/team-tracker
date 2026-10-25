@@ -135,7 +135,7 @@ test('renaming a person refreshes its mention label in the milestones pane', () 
   clickButtonLabelled(left, 'Edit person')
   const nameInput = document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!
   nameInput.value = 'Alicia'
-  clickButtonLabelled(document, 'OK')
+  clickButtonLabelled(document, 'Save')
 
   expect(refChip(panes()[1], 'person:p1')?.textContent).toBe('@Alicia')
 })
@@ -199,7 +199,6 @@ test('deleting a person clears its mention chip in the milestones pane', () => {
   expect(refChip(right, 'person:p1')).not.toBeNull()
 
   clickButtonLabelled(left, 'Delete person')
-  clickButtonLabelled(document.querySelector('.tt-modal-overlay')!, 'Delete')
 
   expect(refChip(panes()[1], 'person:p1')).toBeNull()
 })
@@ -215,7 +214,7 @@ test("clearing a kanban zone clears its cards' mention chips in the milestones p
 
   // The 🗑 button on the done zone's label — clearZone('done'), the fifth and
   // last unlinkRefsInTeam() call site.
-  clickButtonLabelled(left, 'Clear cards')
+  clickButtonLabelled(left, 'Clear tasks')
   clickButtonLabelled(document.querySelector('.tt-modal-overlay')!, 'Delete all')
 
   expect(refChip(panes()[1], 'action:a1')).toBeNull()
@@ -230,7 +229,6 @@ test('deleting a milestone clears its mention chip in the risks pane', () => {
   expect(refChip(right, 'milestone:m1')).not.toBeNull()
 
   clickButtonLabelled(left, 'Delete milestone')
-  clickButtonLabelled(document.querySelector('.tt-modal-overlay')!, 'Delete')
 
   expect(refChip(panes()[1], 'milestone:m1')).toBeNull()
 })
@@ -244,7 +242,6 @@ test('deleting a risk clears its mention chip in the milestones pane', () => {
   expect(refChip(right, 'risk:r1')).not.toBeNull()
 
   clickButtonLabelled(left, 'Delete risk')
-  clickButtonLabelled(document.querySelector('.tt-modal-overlay')!, 'Delete')
 
   expect(refChip(panes()[1], 'risk:r1')).toBeNull()
 })
@@ -269,7 +266,7 @@ test("a card's assignee display refreshes when the linked person is renamed from
   // its WATCHED.
   clickButtonLabelled(left, 'Edit person')
   document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!.value = 'Alicia'
-  clickButtonLabelled(document, 'OK')
+  clickButtonLabelled(document, 'Save')
 
   expect(cardAssignee()).toBe('Alicia')
 })

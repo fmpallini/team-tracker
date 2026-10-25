@@ -280,7 +280,7 @@ describe('renderPeopleTree', () => {
     nameInput.dispatchEvent(new Event('input'))
     roleInput.value = 'Eng'
     roleInput.dispatchEvent(new Event('input'))
-    clickByTitleOrText(document.body, 'OK')
+    clickByTitleOrText(document.body, 'Save')
 
     expect(store.doc.teams[0]!.members).toHaveLength(1)
     const added = store.doc.teams[0]!.members[0]!
@@ -297,7 +297,7 @@ describe('renderPeopleTree', () => {
     render(container, loc, store, pm, 'members')
 
     clickByTitleOrText(container, '+ Person')
-    clickByTitleOrText(document.body, 'OK')
+    clickByTitleOrText(document.body, 'Save')
 
     expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
     expect(store.doc.teams[0]!.members).toHaveLength(0)
@@ -312,7 +312,7 @@ describe('renderPeopleTree', () => {
     const nameInput = document.querySelector('input[name="tt-person-name"]') as HTMLInputElement
     nameInput.value = 'Child'
     nameInput.dispatchEvent(new Event('input'))
-    clickByTitleOrText(document.body, 'OK')
+    clickByTitleOrText(document.body, 'Save')
 
     const child = store.doc.teams[0]!.members.find((p) => p.name === 'Child')!
     expect(child.parentId).toBe('a')
@@ -328,13 +328,13 @@ describe('renderPeopleTree', () => {
     expect(nameInput.value).toBe('Ana')
     nameInput.value = 'Ana Renamed'
     nameInput.dispatchEvent(new Event('input'))
-    clickByTitleOrText(document.body, 'OK')
+    clickByTitleOrText(document.body, 'Save')
 
     expect(store.doc.teams[0]!.members[0]!.name).toBe('Ana Renamed')
     expect(store.doc.teams[0]!.members[0]!.role).toBe('PM')
   })
 
-  test('the trash hover button deletes after confirmation, promoting children', () => {
+  test('the trash hover button deletes at once (no confirm dialog), promoting children', () => {
     const team = makeTeam({
       members: [
         person({ id: 'a', name: 'Ana', order: 0 }),
@@ -345,12 +345,12 @@ describe('renderPeopleTree', () => {
     render(container, loc, store, pm, 'members')
 
     clickByTitleOrText(container, 'Delete person')
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete Ana? Their reports will be promoted.')
-    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
     const remaining = store.doc.teams[0]!.members
     expect(remaining.map((p) => p.name)).toEqual(['Child'])
     expect(remaining[0]!.parentId).toBeNull()
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
   test('the notes hover button opens the person via pm.openInFocused', () => {
@@ -384,7 +384,7 @@ describe('renderPeopleTree', () => {
     expect(container.children).toHaveLength(0)
   })
 
-  test('the trash hover button\'s delete-confirm handler unlinks references to the deleted person from another person\'s notes', () => {
+  test('the trash hover button\'s delete handler unlinks references to the deleted person from another person\'s notes', () => {
     const team = makeTeam({
       members: [
         person({ id: 'a', name: 'Ana', order: 0 }),
@@ -396,7 +396,6 @@ describe('renderPeopleTree', () => {
 
     const anaBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ana')!
     clickByTitleOrText(anaBox, 'Delete person')
-    clickByTitleOrText(document.body, 'Delete')
 
     const remaining = store.doc.teams[0]!.members
     expect(remaining.map((p) => p.name)).toEqual(['Bruno'])
@@ -470,8 +469,7 @@ describe('person delete undo', () => {
 
     const parentBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ann')!
     clickByTitleOrText(parentBox, 'Delete person')
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete Ann? Their reports will be promoted.')
-    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
     const afterDelete = store.doc.teams.find((t) => t.id === teamId)!
     expect(afterDelete.members.map((p) => p.id)).not.toContain('parent')

@@ -384,7 +384,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
       const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => inner.close() }
       const saveBtn: ModalButton = {
-        label: t(locale, 'ok'),
+        label: t(locale, 'save'),
         primary: true,
         onClick: () => {
           const name = nameInput.value.trim()
@@ -490,7 +490,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             // speak for itself.
             warning: t(locale, 'prefs_templates_delete_no_undo_warning'),
             confirmLabel: t(locale, 'prefs_templates_delete_btn'),
-            variant: 'danger',
             onConfirm: () => removeTemplate(tpl.id),
           }),
         },
@@ -909,7 +908,6 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         }),
         warning: t(locale, 'data_cleanup_no_undo_warning'),
         confirmLabel: t(locale, 'data_cleanup_btn'),
-        variant: 'danger',
         onConfirm: () => {
           let dropped: string[] = []
           store.update((d) => { dropped = applyCleanup(d, days, today) })

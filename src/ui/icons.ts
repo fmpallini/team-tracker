@@ -126,6 +126,29 @@ export function icon(name: IconName, size = 14): HTMLSpanElement {
   return proto.cloneNode(true) as HTMLSpanElement
 }
 
+export interface IconButtonOptions {
+  /** Classes after `tt-btn`, e.g. `'tt-risk-delete-btn'`. */
+  class: string
+  /** The button's accessible name; also its tooltip. */
+  title: string
+  icon: IconName
+  size?: number
+  tabindex?: string
+  onclick: (e: Event) => void
+}
+
+/** A button holding only an icon. `title` and `aria-label` are set from the one string, so the tooltip and the accessible name cannot drift apart. */
+export function iconButton(opts: IconButtonOptions): HTMLButtonElement {
+  return el(
+    'button',
+    {
+      class: `tt-btn ${opts.class}`, type: 'button', title: opts.title, 'aria-label': opts.title,
+      ...(opts.tabindex ? { tabindex: opts.tabindex } : {}), onclick: opts.onclick,
+    },
+    icon(opts.icon, opts.size)
+  )
+}
+
 /** Swaps the icon inside an existing `icon()` span in place (favorite star, expander chevron…) without replacing the element, so listeners/focus on its parent stay put. */
 export function setIcon(span: HTMLElement, name: IconName, size = 14): void {
   span.className = `tt-icon tt-icon-${name}`
