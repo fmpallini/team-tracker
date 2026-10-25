@@ -174,8 +174,8 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
    picker. */
 /* Radius scale: sm = controls and chips, md = cards and menus, lg = dialogs and panels. Pills (999px) and circles (50%) stay literal. */
 :root { --r-sm: 4px; --r-md: 6px; --r-lg: 8px; }
-/* Elevation scale: card = resting surface, pop = menus/popovers/toasts, dialog = modals and the command palette. */
-:root { --shadow-card: 0 1px 3px rgba(0, 0, 0, .1); --shadow-pop: 0 8px 24px rgba(0, 0, 0, .25); --shadow-dialog: 0 10px 40px rgba(0, 0, 0, .3); }
+/* Elevation scale: card = resting surface, lift = the one card that is current among its siblings, pop = menus/popovers/toasts, dialog = modals and the command palette. */
+:root { --shadow-card: 0 1px 3px rgba(0, 0, 0, .1); --shadow-pop: 0 8px 24px rgba(0, 0, 0, .25); --shadow-dialog: 0 10px 40px rgba(0, 0, 0, .3); --shadow-lift: 0 4px 14px rgba(0, 0, 0, .16); }
 /* One keyboard-focus ring for every button-like control. :where() keeps it at zero specificity so the app's own inset rings (rows, cards) and field outlines still win. */
 :root { --focus-ring: 2px solid var(--accent); }
 /* Motion scale: fast = hover, press and reveal; base = entrances and sizing. One easing. Reduced motion is switched off once, at the end of this file. */
@@ -1121,12 +1121,12 @@ body { background: var(--bg); color: var(--fg); }
   min-width: 170px; padding: .25rem; display: flex; flex-direction: column;
 }
 .tt-context-menu-item {
-  display: block; width: 100%; text-align: left; padding: var(--row-pad); border-radius: var(--r-sm);
+  display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left; padding: var(--row-pad); border-radius: var(--r-sm);
   cursor: pointer; font-size: .9rem; background: none; border: none; color: inherit; font-family: inherit;
 }
 .tt-context-menu-item:hover { background: var(--hover); }
 .tt-context-menu-item.danger { color: var(--danger); }
-.tt-context-menu-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; }
+.tt-context-menu-check { display: inline-block; flex: none; width: 1.1em; color: var(--accent); font-weight: 700; }
 
 /* Backlinks badge/chip + popover (references pointing at a person/day/action/milestone/risk) */
 .tt-backlinks-chip {
@@ -1202,40 +1202,58 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-editor-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tt-daily-editor-col .tt-editor { flex: 1; }
 
-/* Calendar */
-.tt-calendar {
-  display: flex; flex-direction: column; gap: .35rem; padding: .5rem;
-  border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card);
+/* Calendar, "ledger" style: each month is its own card (header band, hairline week rules), the days either side of the month stay in as faint numbers, and a stacked pair lifts the month holding the selection while the other recedes. */
+.tt-calendar { display: flex; flex-direction: column; gap: .7rem; }
+.tt-calendar-month {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card); overflow: hidden;
+  transition: opacity var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
 }
-.tt-calendar-header { display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
-.tt-calendar-month-label { font-weight: 600; font-size: .9rem; text-align: center; flex: 1; }
-.tt-calendar-nav-btn { min-width: 1.8rem; padding: .1rem .4rem; }
-.tt-calendar-weekdays, .tt-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-.tt-calendar-weekday { text-align: center; font-size: .7rem; color: var(--muted); }
+.tt-calendar-stacked .tt-calendar-month:not(.tt-calendar-month-current) { opacity: .86; }
+.tt-calendar-stacked .tt-calendar-month:not(.tt-calendar-month-current):hover,
+.tt-calendar-stacked .tt-calendar-month:not(.tt-calendar-month-current):focus-within { opacity: 1; }
+.tt-calendar-stacked .tt-calendar-month-current { box-shadow: var(--shadow-lift); }
+.tt-calendar-header {
+  display: flex; align-items: center; justify-content: space-between; gap: .25rem; min-height: 2.5rem; padding: .3rem .4rem;
+  background: color-mix(in srgb, var(--accent) 11%, var(--panel)); border-bottom: 1px solid var(--border);
+}
+.tt-calendar-month-label { font-family: var(--font-display); font-weight: 600; font-size: 1rem; text-align: center; flex: 1; }
+.tt-calendar-nav-btn { min-width: 1.8rem; padding: .2rem .3rem; border-color: transparent; }
+.tt-calendar-weekdays, .tt-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); margin: 0 .45rem; }
+.tt-calendar-weekdays { margin-top: .3rem; }
+.tt-calendar-weekday { text-align: center; font-family: var(--font-data); font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; color: color-mix(in srgb, var(--muted) 60%, var(--fg)); padding: .15rem 0 .25rem; }
+/* One hairline at the top of every week row: the row height is fixed so the rule can be a repeating gradient instead of a wrapper per week. */
+.tt-calendar-grid {
+  --cal-row: 2rem; grid-auto-rows: var(--cal-row); margin-bottom: .45rem;
+  background-image: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--border) 70%, transparent) 0 1px, transparent 1px var(--cal-row));
+}
 .tt-calendar-day {
-  position: relative; aspect-ratio: 1; border: none; border-radius: var(--r-sm); background: transparent;
-  color: var(--fg); cursor: pointer; font-size: .8rem;
+  position: relative; align-self: stretch; margin: 2px 1px; padding: .15rem 0 0; border: none; border-radius: var(--r-sm); background: transparent;
+  color: var(--fg); cursor: pointer; font-size: .8rem; font-variant-numeric: tabular-nums;
 }
 .tt-calendar-day:hover { background: var(--hover); }
-.tt-calendar-day-blank { cursor: default; visibility: hidden; }
-.tt-calendar-day-today { box-shadow: inset 0 0 0 2px var(--accent); }
-.tt-calendar-day-has-note { background: rgba(var(--accent-rgb), .15); }
-/* The dark accent is a desaturated blue-gray: 15% alpha over the dark page
-   background is nearly invisible, so noted days get a stronger wash there. */
-[data-theme="dark"] .tt-calendar-day-has-note { background: rgba(var(--accent-rgb), .32); }
-.tt-calendar-day-selected { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.tt-calendar-day-blank { cursor: default; display: grid; place-items: center; }
+.tt-calendar-day-blank:hover { background: none; }
+.tt-calendar-day-outside { color: var(--muted); opacity: .4; }
+/* A day with a note carries a short bar under its number; two notes or more lengthen it. The count is not stored per day here, so it is one bar length. */
+.tt-calendar-day-has-note { font-weight: 600; }
+.tt-calendar-day-has-note::after {
+  content: ''; position: absolute; left: 50%; bottom: 3px; width: 14px; height: 2px; border-radius: 1px; background: var(--accent); transform: translateX(-50%);
+}
+.tt-calendar-day-today { box-shadow: inset 0 0 0 1.5px var(--brass); color: var(--brass); font-weight: 700; }
+.tt-calendar-day-selected { background: var(--accent); color: var(--on-accent); font-weight: 700; box-shadow: none; }
+.tt-calendar-day-selected::after { background: var(--on-accent); }
 [data-theme="dark"] .tt-calendar-day-selected {
   color: var(--bg);
   /* Dark theme's --accent is a light blue close in brightness to
      surrounding UI chrome, so the selected cell can read as barely
-     distinguishable from a hovered/has-note cell — an outer ring in the
+     distinguishable from a hovered cell — an outer ring in the
      theme's foreground color makes "this is the selected day" unambiguous
      regardless of how close accent/background luminance happen to land. */
   box-shadow: 0 0 0 2px var(--fg);
 }
-.tt-calendar-flag { position: absolute; top: -2px; right: -2px; font-size: .6rem; line-height: 1; }
-.tt-calendar-check { position: absolute; bottom: -2px; right: -2px; font-size: .6rem; line-height: 1; }
-.tt-calendar-divider { border-top: 1px solid var(--border); margin: 1rem 0; }
+.tt-calendar-flag { position: absolute; top: 1px; right: 1px; font-size: .6rem; line-height: 1; }
+.tt-calendar-check { position: absolute; top: 1px; left: 1px; font-size: .6rem; line-height: 1; }
+.tt-calendar-day-selected .tt-calendar-flag, .tt-calendar-day-selected .tt-calendar-check { color: var(--on-accent); }
 
 /* People tree module (stakeholders / members) — org-chart layout */
 .tt-people { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
@@ -1402,17 +1420,19 @@ body { background: var(--bg); color: var(--fg); }
 
 .tt-kanban-card {
   position: relative; border: 1px solid var(--border);
-  padding: .5rem .55rem .45rem .8rem; cursor: grab;
+  padding: 0; cursor: grab;
   overflow: hidden; /* hard backstop: nothing bleeds past the rounded border */
   /* overflow:hidden zeroes a flex item's automatic min-height, so inside the
      column-direction .tt-kanban-col-body a card would flex-shrink to fit the
      column and clip its meta row instead of letting the column scroll. */
   flex: none;
 }
-/* The card's colour is a slim inset bar, not a thick border: the tag chip beside the meta line already names it, so the edge only needs to hint. Uncategorized cards get a neutral bar. */
-.tt-kanban-card::before {
-  content: ''; position: absolute; left: 0; top: .5rem; bottom: .5rem; width: 3px;
-  border-radius: 0 3px 3px 0; background: var(--stripe, var(--border));
+/* The card's color is a label band on top, not a side stripe: the tag (when the team named the color) sits left, the due date right, and the band is tinted with the color so the card is filed at a glance. An uncolored card gets the neutral ledger tint. The right padding keeps the edit button's corner clear. */
+.tt-kanban-card { --stripe: var(--card-ledger); }
+.tt-kanban-card-band {
+  display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 1.45rem; padding: .2rem 1.9rem .2rem .75rem;
+  background: color-mix(in srgb, var(--stripe) 15%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--stripe) 38%, var(--border));
+  font-family: var(--font-data); font-size: .7rem; color: var(--muted);
 }
 .tt-kanban-card.color-slate { --stripe: var(--card-slate); }
 .tt-kanban-card.color-brass { --stripe: var(--card-brass); }
@@ -1427,25 +1447,17 @@ body { background: var(--bg); color: var(--fg); }
    above, where it costs no rows. Two-line clamp with the full text on the
    card's own `title` attribute, so nothing is lost, only folded. */
 .tt-kanban-card-title {
-  font-weight: 600; font-size: .9rem; line-height: 1.35; margin-bottom: .3rem; padding-right: 1.3rem;
+  font-weight: 600; font-size: .9rem; line-height: 1.35; padding: .45rem 1.9rem .15rem .75rem;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 /* Wraps, not nowrap: a card can carry up to four chips (due / assignee / tag
    / backlinks) and at the larger text sizes their combined width outruns the
    card whatever the column width — so let them fall to a second line instead
    of clipping. row-gap keeps the wrapped line from touching. */
-.tt-kanban-card-meta { display: flex; flex-wrap: wrap; gap: .3rem .55rem; align-items: center; font-size: .7rem; color: var(--muted); font-family: var(--font-data); }
+.tt-kanban-card-meta { display: flex; flex-wrap: wrap; gap: .3rem .55rem; align-items: center; padding: .1rem .55rem .45rem .75rem; font-size: .7rem; color: var(--muted); font-family: var(--font-data); }
 .tt-kanban-card-due.overdue { color: var(--danger); font-weight: 700; }
-/* The tag was plain muted text, indistinguishable from the assignee beside
-   it. A hairline outline in the card's own color ties it to the left edge
-   stripe without adding a second filled block to the card. */
-.tt-kanban-card-tag { border: 1px solid currentColor; border-radius: var(--r-sm); padding: 0 .25rem; opacity: .85; white-space: nowrap; }
-.tt-kanban-card.color-slate .tt-kanban-card-tag { color: var(--card-slate); }
-.tt-kanban-card.color-brass .tt-kanban-card-tag { color: var(--card-brass); }
-.tt-kanban-card.color-sage .tt-kanban-card-tag { color: var(--card-sage); }
-.tt-kanban-card.color-rust .tt-kanban-card-tag { color: var(--card-rust); }
-.tt-kanban-card.color-plum .tt-kanban-card-tag { color: var(--card-plum); }
-.tt-kanban-card.color-ledger .tt-kanban-card-tag { color: var(--card-ledger); }
+/* The tag is a small-caps label in the band, in the card's own color (pulled toward the text color so it keeps its contrast on the tint). */
+.tt-kanban-card-tag { color: color-mix(in srgb, var(--stripe) 75%, var(--fg)); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
 /* No margin-left:auto — that pushed the chip to the card's right edge and,
    in a wrapping row, stranded it alone past the edge. It now flows inline
    with the other chips and wraps with them. */
@@ -1558,13 +1570,16 @@ body { background: var(--bg); color: var(--fg); }
    (MIN_LABEL_GAP, scaled with the text-size setting) so labels never touch;
    the plain mouse wheel scrolls it (wheelScrollsHorizontally). The print
    window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
-.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding-bottom: .5rem; }
+/* The timeline sits on a ledger card: panel fill, hairline border, resting shadow. */
+.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding: .35rem .5rem .5rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card); }
 .tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
-.tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
+.tt-milestone-today-line { stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.tt-milestone-today-pill { fill: var(--brass); }
+.tt-milestone-dot-check { fill: none; stroke: var(--on-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .tt-milestone-dot { stroke-width: 2; }
 .tt-milestone-date-label, .tt-milestone-title-label, .tt-milestone-today-label { font-size: calc(11px * var(--tt-fs-k, 1)); fill: var(--fg); text-anchor: middle; }
-.tt-milestone-today-label { fill: var(--accent); font-weight: 700; }
+.tt-milestone-today-label { fill: var(--on-accent); font-weight: 700; }
 .tt-milestone-date-label { font-family: var(--font-data); }
 .tt-milestone-title-label { fill: var(--muted); }
 /* Connects a dot to its title on the far stagger row. Hairline and border-
@@ -1574,19 +1589,22 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-expand-all-btn { margin-left: auto; }
 .tt-milestone-list { display: flex; flex-direction: column; gap: .55rem; }
 /* Rows and the Risks list share one look: a soft card (fill + resting shadow, no outline), with the title and date fields quiet until hovered or focused so a row is not a box inside a box. */
-.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: var(--card-row-pad); border: 1px solid transparent; border-left: var(--state-bar) solid transparent; }
-/* State edge, in the timeline dots' own vocabulary: filled accent = done,
-   muted = overdue, hollow accent = upcoming. The list is the half you edit
-   and it encoded none of this; borrowing the timeline's three treatments
-   rather than inventing a fourth means there's no new legend to learn. */
-/* Row state reads the same as the timeline dot above it: done = green, late = red, upcoming = accent. */
-.tt-milestone-row.tt-milestone-state-done { border-left-color: var(--ok); }
-.tt-milestone-row.tt-milestone-state-overdue { border-left-color: var(--danger); }
-.tt-milestone-row.tt-milestone-state-future { border-left-color: rgba(var(--accent-rgb), .45); }
+.tt-milestone-row { position: relative; overflow: hidden; display: flex; align-items: center; gap: .4rem; --ms-gut: 3.4rem; --st: var(--accent); padding: var(--card-row-pad); padding-left: calc(var(--ms-gut) + .5rem); border: 1px solid transparent; }
+/* The done toggle lives in a full-height gutter on the left, tinted with the row's state, the way a risk's exposure disc does. The gutter is a pseudo-element and the toggle is placed over it, so the row's own layout does not move. */
+.tt-milestone-row::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: var(--ms-gut);
+  background: color-mix(in srgb, var(--st) 14%, var(--panel)); border-right: 1px solid color-mix(in srgb, var(--st) 40%, var(--border));
+}
+/* The gutter would hide the left edge of the row's inset focus ring, so it repeats it. */
+.tt-milestone-row:focus-visible::before { box-shadow: inset 2px 2px 0 0 rgba(var(--accent-rgb), .55), inset 0 -2px 0 0 rgba(var(--accent-rgb), .55); }
+/* Row state reads the same as the timeline dot above it: done = green, late = red, upcoming = accent. It colors the gutter and the done toggle. */
+.tt-milestone-row.tt-milestone-state-done { --st: var(--ok); }
+.tt-milestone-row.tt-milestone-state-overdue { --st: var(--danger); }
+.tt-milestone-row.tt-milestone-state-future { --st: var(--accent); }
 .tt-milestone-row.tt-milestone-state-overdue .tt-date-picker-input { color: var(--danger); }
 .tt-milestone-row.tt-milestone-done-row .tt-date-picker-input { color: var(--muted); }
 /* Done toggle: an open ring (red when late, accent when upcoming) that fills green with a check, like the timeline dot. A native checkbox underneath, so keyboard, label and form behavior are unchanged. */
-.tt-milestone-done-checkbox { appearance: none; -webkit-appearance: none; flex: none; width: 1.2rem; height: 1.2rem; margin: 0 .15rem; border: 2px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; display: inline-grid; place-content: center; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.tt-milestone-done-checkbox { appearance: none; -webkit-appearance: none; position: absolute; left: calc((var(--ms-gut) - 1.4rem) / 2); top: 50%; flex: none; width: 1.4rem; height: 1.4rem; margin: -.7rem 0 0; border: 2px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; display: inline-grid; place-content: center; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 .tt-milestone-row.tt-milestone-state-overdue .tt-milestone-done-checkbox { border-color: var(--danger); }
 .tt-milestone-done-checkbox:hover { border-color: var(--ok); }
 .tt-milestone-done-checkbox::after { content: ''; width: .3rem; height: .58rem; margin-top: -.12rem; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform var(--dur-fast) var(--ease); }
@@ -1703,6 +1721,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 8.8rem; }
 .tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.5rem; text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8.5rem; }
+/* The header's Exposure column heads the gutter, so it comes first; its width plus the header's padding and gap lands the Title where the rows' padded content starts. */
+.tt-risk-header-exposure { order: -1; width: calc(4.5rem - .3rem + 1px); }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.6rem; padding: .15rem .45rem; }
 /* The chip (or its placeholder, when the row has no mentions) is a fixed-
    width column like the header spacers above it — without `flex: none` it
@@ -1794,7 +1814,17 @@ body { background: var(--bg); color: var(--fg); }
    select in the app). */
 select option { background: var(--bg); color: var(--fg); }
 .tt-risk-list { display: flex; flex-direction: column; gap: .55rem; }
-.tt-risk-row { padding: var(--card-row-pad); border: 1px solid transparent; cursor: grab; }
+.tt-risk-row { position: relative; overflow: hidden; padding: var(--card-row-pad); border: 1px solid transparent; cursor: grab; }
+/* The exposure cell is the row's gutter: a full-height strip on the left, tinted with the level and holding the disc, so a high risk shows while scrolling. It is absolutely placed, so the row's own layout (wide or wrapped) does not move it; the row pads past it. A closed risk has no cell and keeps its plain padding. */
+.tt-risk-row:has(> .tt-risk-exposure-cell) { --risk-gut: 4.5rem; padding-left: calc(var(--risk-gut) + .5rem); }
+.tt-risk-row > .tt-risk-exposure-cell {
+  --lv: var(--exposure-low); position: absolute; inset: 0 auto 0 0; width: var(--risk-gut);
+  background: color-mix(in srgb, var(--lv) 14%, var(--panel)); border-right: 1px solid color-mix(in srgb, var(--lv) 40%, var(--border));
+}
+.tt-risk-row > .tt-risk-exposure-cell:has(.tt-risk-exposure-medium) { --lv: var(--exposure-medium); }
+.tt-risk-row > .tt-risk-exposure-cell:has(.tt-risk-exposure-high) { --lv: var(--exposure-high); }
+/* The gutter would hide the left edge of the row's inset focus ring, so it repeats it. */
+.tt-risk-row:focus-visible > .tt-risk-exposure-cell { box-shadow: inset 2px 2px 0 0 rgba(var(--accent-rgb), .55), inset 0 -2px 0 0 rgba(var(--accent-rgb), .55); }
 .tt-risk-row[draggable="false"] { cursor: default; }
 .tt-risk-row.tt-risk-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-risk-row.tt-risk-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
@@ -1875,7 +1905,8 @@ select option { background: var(--bg); color: var(--fg); }
      back to the default order: 0 and renders inline with the title on the
      first line, ahead of everything else. */
   .tt-risk-row .tt-backlinks-chip, .tt-risk-row .tt-backlinks-chip-slot { order: 1; }
-  .tt-risk-row .tt-risk-exposure-cell { order: 2; width: 2.6rem; }
+  /* The exposure cell is the absolutely placed gutter, so it needs no slot in the line; the gutter just gets narrower. */
+  .tt-risk-row:has(> .tt-risk-exposure-cell) { --risk-gut: 3.4rem; }
   .tt-risk-row .tt-risk-expand-btn { order: 3; }
   .tt-risk-row .tt-risk-close-btn { order: 4; }
   .tt-risk-row .tt-risk-delete-btn { order: 5; }
@@ -2199,6 +2230,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-calendar-check[data-state=pending] { color: var(--card-sage); }
 .tt-calendar-flag[data-state=done], .tt-calendar-check[data-state=done] { color: var(--ok); }
 .tt-calendar-flag, .tt-calendar-check { display: inline-flex; }
+.tt-calendar-day-selected .tt-calendar-flag[data-state], .tt-calendar-day-selected .tt-calendar-check[data-state] { color: var(--on-accent); }
 
 /* Sidebar due button: icon and label, centred; the per-team badges carry the counts. */
 .tt-due-btn .tt-icon { color: var(--brass); }

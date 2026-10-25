@@ -870,6 +870,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // The title is clamped to two lines (styles.css) so cards stay dense in a
     // split pane; its own tooltip carries the untruncated summary.
     const titleEl = el('div', { class: 'tt-kanban-card-title', title: item.summary }, item.summary)
+    // The label band on top carries what files the card: its tag (when the team named that color) and its due date.
+    const bandChildren: (Node | string)[] = []
+    const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
+    if (customName) bandChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const metaChildren: (Node | string)[] = []
     if (item.dueDate) {
       // Date stays the text (that is what people scan for); lateness is the
@@ -880,7 +884,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const rel = item.dueDate < today
         ? t(lc, 'due_overdue_by', { days: String(diffDays(today, item.dueDate)) })
         : t(lc, 'due_in_days', { days: String(diffDays(item.dueDate, today)) })
-      metaChildren.push(el('span', {
+      bandChildren.push(el('span', {
         class: 'tt-kanban-card-due' + (overdue ? ' overdue' : soon ? ' soon' : ''),
         ...(isActionActive(item) ? { title: rel } : {}),
       }, formatDate(item.dueDate, lc)))
@@ -890,11 +894,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const assigneeText = display.kind === 'linked' ? display.name : display.kind === 'unlinked' ? display.label : display.text
       metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, ...(display.kind === 'linked' ? [kindIcon('person', 11)] : []), assigneeText))
     }
-    const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
-    if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const chip = createModuleBacklinksChip(ctx, teamId, 'action', item.id)
     if (chip) metaChildren.push(chip)
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
+    // A card with no color, tag or due date has nothing to file, so it gets no band.
+    const bandEl = item.color !== null || bandChildren.length > 0 ? el('div', { class: 'tt-kanban-card-band' }, ...bandChildren) : null
 
     const card = el(
       'div',
@@ -907,7 +911,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         'data-item-id': item.id,
         title: t(lc, 'kanban_card_context_hint'),
       },
-      editBtn, titleEl, metaEl
+      editBtn, ...(bandEl ? [bandEl] : []), titleEl, metaEl
     )
     card.addEventListener('dblclick', () => openEditModal(item))
     card.addEventListener('contextmenu', (e) => {

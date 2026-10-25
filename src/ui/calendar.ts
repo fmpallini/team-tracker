@@ -40,7 +40,7 @@ export function createCalendar(opts: {
   let viewYear = initial.y
   let viewMonth = initial.m // 1-12
 
-  const root = el('div', { class: 'tt-calendar' })
+  const root = el('div', { class: 'tt-calendar' + (opts.showPrevMonth ? ' tt-calendar-stacked' : '') })
 
   function monthLabel(year: number, month: number): string {
     return `${t(opts.locale, `calendar_month_${month}` as 'calendar_month_1')} ${year}`
@@ -102,9 +102,10 @@ export function createCalendar(opts: {
     const daysInMonth = new Date(year, month, 0).getDate()
     const today = todayIso()
 
-    for (let i = 0; i < firstDow; i++) {
-      grid.appendChild(el('div', { class: 'tt-calendar-day tt-calendar-day-blank' }))
-    }
+    // The days either side of the month stay in the grid as faint, inert numbers, so every week row reads complete.
+    const outside = (n: number): HTMLElement => el('div', { class: 'tt-calendar-day tt-calendar-day-blank tt-calendar-day-outside', 'aria-hidden': 'true' }, String(n))
+    const prevMonthDays = new Date(year, month - 1, 0).getDate()
+    for (let i = 0; i < firstDow; i++) grid.appendChild(outside(prevMonthDays - firstDow + 1 + i))
 
     for (let day = 1; day <= daysInMonth; day++) {
       const iso = `${year}-${pad2(month)}-${pad2(day)}`
@@ -144,32 +145,34 @@ export function createCalendar(opts: {
       grid.appendChild(dayBtn)
     }
 
+    for (let n = 1; n <= (7 - ((firstDow + daysInMonth) % 7)) % 7; n++) grid.appendChild(outside(n))
+
     return grid
+  }
+
+  /** One month as its own card. The one holding the selected day is marked, so a stacked pair can lift it and let the other recede. */
+  function buildMonth(year: number, month: number, withNav: boolean): HTMLElement {
+    const holdsSelected = opts.selected.startsWith(`${year}-${pad2(month)}-`)
+    return el(
+      'section',
+      { class: 'tt-calendar-month' + (holdsSelected ? ' tt-calendar-month-current' : '') },
+      buildHeader(monthLabel(year, month), withNav),
+      buildWeekdaysRow(),
+      buildGrid(year, month)
+    )
   }
 
   function render(): void {
     root.innerHTML = ''
 
-    const header = buildHeader(monthLabel(viewYear, viewMonth), !opts.showPrevMonth)
-    const weekdaysRow = buildWeekdaysRow()
-    const grid = buildGrid(viewYear, viewMonth)
-
     if (opts.showPrevMonth) {
       let prevMonth = viewMonth - 1
       let prevYear = viewYear
       if (prevMonth < 1) { prevMonth = 12; prevYear -= 1 }
-
-      const prevHeader = buildHeader(monthLabel(prevYear, prevMonth), true)
-      const prevWeekdaysRow = buildWeekdaysRow()
-      const prevGrid = buildGrid(prevYear, prevMonth)
-
-      root.append(
-        prevHeader, prevWeekdaysRow, prevGrid,
-        el('div', { class: 'tt-calendar-divider' }),
-        header, weekdaysRow, grid
-      )
+      // Both arrows sit on the upper month's header, as they always have.
+      root.append(buildMonth(prevYear, prevMonth, true), buildMonth(viewYear, viewMonth, false))
     } else {
-      root.append(header, weekdaysRow, grid)
+      root.append(buildMonth(viewYear, viewMonth, true))
     }
   }
 

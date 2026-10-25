@@ -301,19 +301,31 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
     if (layout.todayX !== null) {
       const tx = hPad + layout.todayX
+      // The marker is a brass pill (the same brass as today in the calendar) sized to its label, with the dashed line hanging from it.
+      const todayText = t(lc, 'date_picker_today_btn')
+      const pillW = Math.round(todayText.length * 6.4 * scale) + 14
+      const pillH = Math.round(15 * scale)
       const todayLine = document.createElementNS(SVG_NS, 'line')
       todayLine.setAttribute('x1', String(tx))
       todayLine.setAttribute('x2', String(tx))
-      todayLine.setAttribute('y1', '16')
+      todayLine.setAttribute('y1', String(Math.max(16, pillH + 1)))
       todayLine.setAttribute('y2', String(TIMELINE_HEIGHT - 4))
       todayLine.setAttribute('class', 'tt-milestone-today-line')
       svg.appendChild(todayLine)
       // The dashed line alone never said what it marked.
+      const todayPill = document.createElementNS(SVG_NS, 'rect')
+      todayPill.setAttribute('x', String(tx - pillW / 2))
+      todayPill.setAttribute('y', '0')
+      todayPill.setAttribute('width', String(pillW))
+      todayPill.setAttribute('height', String(pillH))
+      todayPill.setAttribute('rx', String(pillH / 2))
+      todayPill.setAttribute('class', 'tt-milestone-today-pill')
+      svg.appendChild(todayPill)
       const todayTag = document.createElementNS(SVG_NS, 'text')
       todayTag.setAttribute('x', String(tx))
-      todayTag.setAttribute('y', '11')
+      todayTag.setAttribute('y', String(Math.round(pillH * 0.73)))
       todayTag.setAttribute('class', 'tt-milestone-today-label')
-      todayTag.textContent = t(lc, 'date_picker_today_btn')
+      todayTag.textContent = todayText
       svg.appendChild(todayTag)
     }
 
@@ -351,6 +363,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       titleNode.textContent = m.title
       circle.appendChild(titleNode)
       svg.appendChild(circle)
+      if (m.done) {
+        // A check inside the filled dot, so "done" does not rest on color alone.
+        const check = document.createElementNS(SVG_NS, 'path')
+        check.setAttribute('d', `M${cx - 2.6} ${midY + 0.2} l1.9 2.1 3.5-4`)
+        check.setAttribute('class', 'tt-milestone-dot-check')
+        svg.appendChild(check)
+      }
 
       const dateText = document.createElementNS(SVG_NS, 'text')
       dateText.setAttribute('x', String(cx))

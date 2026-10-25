@@ -651,6 +651,7 @@ ${t(lc, 'pane_history_hint')}`
     if (entries.length < 2) return
     const items: ContextMenuItem[] = entries.map((e) => ({
       label: historyEntryLabel(e.loc),
+      icon: kindIcon(e.loc.ref.kind),
       checked: e.current,
       onClick: () => {
         if (layout$.jumpToIndex(idx, e.index)) renderAll()

@@ -1900,6 +1900,28 @@ describe('renderActionItems — tag display and filter', () => {
     expect(cardB.querySelector('.tt-kanban-card-tag')).toBeNull()
   })
 
+  test('the tag and due date sit in a label band above the title; a card with neither, and no color, gets no band', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [
+        item({ id: 'a', color: 'rust', dueDate: '2026-07-20' }),
+        item({ id: 'b', color: 'slate', dueDate: null }),
+        item({ id: 'c', color: null, dueDate: null }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const byId = (id: string): HTMLElement => cards(container).find((c) => c.getAttribute('data-item-id') === id)!
+    const bandA = byId('a').querySelector('.tt-kanban-card-band')!
+    expect(bandA.querySelector('.tt-kanban-card-tag')?.textContent).toBe('Blocked')
+    expect(bandA.querySelector('.tt-kanban-card-due')).not.toBeNull()
+    expect(bandA.compareDocumentPosition(byId('a').querySelector('.tt-kanban-card-title')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A colored but unnamed, undated card keeps an empty tinted band: the color is still its filing mark.
+    expect(byId('b').querySelector('.tt-kanban-card-band')?.children).toHaveLength(0)
+    expect(byId('c').querySelector('.tt-kanban-card-band')).toBeNull()
+  })
+
   test('renders one filter chip per color; only custom-named colors show visible text, unnamed ones stay blank with an aria-label', () => {
     const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
     const { container, store, pm, loc } = setup(team)

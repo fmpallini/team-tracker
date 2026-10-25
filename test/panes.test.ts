@@ -1463,6 +1463,16 @@ describe('pane history: tooltips, list menu, jump-to-latest, mouse buttons', () 
     expect(menuLabels()).toEqual([`✓${label('risks')}`, label('milestones'), label('actions')])
   })
 
+  test('each history entry wears its module icon, between the tick gutter and the label', () => {
+    setupHistory()
+    rightClick(paneBtn(0, 'tt-pane-back-btn'))
+    const kinds = Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.querySelector('.tt-kind-icon')?.className ?? '')
+    expect(kinds).toHaveLength(3)
+    expect(kinds[0]).toContain('tt-kind-risks')
+    expect(kinds[1]).toContain('tt-kind-milestones')
+    expect(kinds[2]).toContain('tt-kind-actions')
+  })
+
   test('picking an entry jumps the pane straight there without touching the history', () => {
     const { store } = setupHistory()
     rightClick(paneBtn(0, 'tt-pane-back-btn'))
