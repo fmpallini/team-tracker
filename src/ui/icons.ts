@@ -64,6 +64,8 @@ const PATHS = {
   paragraph: '<path d="M9 3v10M12 3v10M12 3H6.25a3.25 3.25 0 0 0 0 6.5H9"/>',
   codeBlock:
     '<path d="M6.5 2.5C5 2.5 4.75 3.25 4.75 4.5v1.25C4.75 7 4 8 2.75 8 4 8 4.75 9 4.75 10.25v1.25c0 1.25.25 2 1.75 2M9.5 2.5C11 2.5 11.25 3.25 11.25 4.5v1.25C11.25 7 12 8 13.25 8 12 8 11.25 9 11.25 10.25v1.25c0 1.25-.25 2-1.75 2"/>',
+  // Three dots: the "more actions" button on a card that opens its context menu.
+  more: '<g class="f"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></g>',
   hr: '<path d="M2.5 8h11"/>',
   olist: '<path d="M7.5 4h6M7.5 8h6M7.5 12h6M2.75 4.25L4 3.25V6.5M2.75 8.75h2.5L2.75 12h2.5"/>',
   quote: '<path d="M3 3v10M6.5 5h6.5M6.5 8h6.5M6.5 11h4"/>',

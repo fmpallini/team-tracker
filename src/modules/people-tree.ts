@@ -4,7 +4,7 @@
 // disposal/store.subscribe discipline documented in src/modules/lifecycle.ts.
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
-import type { ModuleCtx, ModuleRenderer } from '../ui/panes'
+import { installArrowFallbackFocus, type ModuleCtx, type ModuleRenderer } from '../ui/panes'
 import { openPersonModal } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
 import { el, wheelScrollsHorizontally, clearClasses } from '../ui/dom'
@@ -14,7 +14,8 @@ import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
 import { deleteInTeamWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
-import { iconButton } from '../ui/icons'
+import { icon, iconButton } from '../ui/icons'
+import { showContextMenu } from '../ui/context-menu'
 
 // --- pure, unit-testable helpers -------------------------------------------
 
@@ -193,47 +194,56 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     }
 
     function renderBox(person: Person): HTMLElement {
-      const notesBtn = iconButton({
-        class: 'tt-people-notes-btn', title: t(lc, 'person_notes_title'), icon: 'note',
-        onclick: (e) => { e.stopPropagation(); ctx.pm.openInFocused({ teamId, ref: { kind: 'person', personId: person.id, group } }) },
-      })
-      const editBtn = iconButton({
-        class: 'tt-people-edit-btn', title: t(lc, 'person_edit_title'), icon: 'edit',
-        onclick: (e) => { e.stopPropagation(); openEditModal(person) },
-      })
-      const addChildBtn = iconButton({
-        class: 'tt-people-add-child-btn', title: t(lc, 'person_add_child_title'), icon: 'plus',
-        onclick: (e) => { e.stopPropagation(); openAddModal(person.id) },
-      })
-      const deleteBtn = iconButton({
-        class: 'tt-people-delete-btn', title: t(lc, 'person_delete_title'), icon: 'trash',
+      const openNotes = (): void => {
+        ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'person', personId: person.id, group } })
+      }
+
+      function deleteThisPerson(): void {
+        // Deep copy (taken by deleteInTeamWithUndo), for two reasons:
+        // unlinkRefsInTeam rewrites @mentions in place across the whole
+        // team, and deletePerson() re-parents this node's children and
+        // renumbers their siblings' `order` in place. A shallow capture
+        // of tm[group] would share those very objects and restore none
+        // of it.
+        //
+        // No `sections`: unlinkRefsInTeam rewrites @mentions across
+        // every content-bearing section of this team (notes, actions,
+        // milestones, risks — see refs.ts), not just 'people'.
+        // Team-only scoping is the narrowest scope that's still
+        // correct, and it won't rot if unlinkRefsInTeam's reach changes
+        // later — refs never cross teams (see refs.ts's own header
+        // comment), so `{ teamId }` alone is safe.
+        const offer = deleteInTeamWithUndo(ctx.store, teamId,
+          (tm) => tm[group].some((p) => p.id === person.id),
+          (tm) => {
+            unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
+            tm[group] = deletePerson(tm[group], person.id)
+          },
+          { teamId })
+        offerUndoToast(ctx.store, lc, t(lc, 'person_deleted_toast', { name: person.name }), offer)
+      }
+
+      // The box carries no action buttons of its own: the ⋯ button, a right-click and Space all open this one menu.
+      const openMenu = (x: number, y: number): void => {
+        showContextMenu(x, y, [
+          { label: t(lc, 'person_notes_title'), icon: icon('note'), onClick: openNotes },
+          { label: t(lc, 'person_edit_title'), icon: icon('edit'), onClick: () => openEditModal(person) },
+          { label: t(lc, 'person_add_child_title'), icon: icon('plus'), onClick: () => openAddModal(person.id) },
+          { label: t(lc, 'person_delete_title'), icon: icon('trash'), danger: true, onClick: deleteThisPerson },
+        ])
+      }
+
+      const moreBtn = iconButton({
+        class: 'tt-people-more-btn', title: t(lc, 'person_more_title'), icon: 'more',
         onclick: (e) => {
           e.stopPropagation()
-          // Deep copy (taken by deleteInTeamWithUndo), for two reasons:
-          // unlinkRefsInTeam rewrites @mentions in place across the whole
-          // team, and deletePerson() re-parents this node's children and
-          // renumbers their siblings' `order` in place. A shallow capture
-          // of tm[group] would share those very objects and restore none
-          // of it.
-          //
-          // No `sections`: unlinkRefsInTeam rewrites @mentions across
-          // every content-bearing section of this team (notes, actions,
-          // milestones, risks — see refs.ts), not just 'people'.
-          // Team-only scoping is the narrowest scope that's still
-          // correct, and it won't rot if unlinkRefsInTeam's reach changes
-          // later — refs never cross teams (see refs.ts's own header
-          // comment), so `{ teamId }` alone is safe.
-          const offer = deleteInTeamWithUndo(ctx.store, teamId,
-            (tm) => tm[group].some((p) => p.id === person.id),
-            (tm) => {
-              unlinkRefsInTeam(tm, 'person', new Map([[person.id, person.name]]))
-              tm[group] = deletePerson(tm[group], person.id)
-            },
-            { teamId })
-          offerUndoToast(ctx.store, lc, t(lc, 'person_deleted_toast', { name: person.name }), offer)
+          const r = moreBtn.getBoundingClientRect()
+          openMenu(r.left, r.bottom + 2)
         },
       })
-      const actions = el('div', { class: 'tt-people-actions' }, notesBtn, editBtn, addChildBtn, deleteBtn)
+      moreBtn.setAttribute('aria-haspopup', 'menu')
+      // A double-click on the button must not fall through to the box's open-notes handler.
+      moreBtn.addEventListener('dblclick', (e) => e.stopPropagation())
 
       const box = el(
         'div',
@@ -244,21 +254,28 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         { class: 'tt-org-box', draggable: 'true', tabindex: '0', 'data-person-id': person.id, 'data-item-id': person.id, title: t(lc, 'person_box_hint') },
         el('div', { class: 'tt-org-name' }, person.name),
         el('div', { class: 'tt-org-role' }, person.role),
-        actions
+        moreBtn
       )
 
-      const openNotes = (): void => {
-        ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'person', personId: person.id, group } })
-      }
       box.addEventListener('dblclick', openNotes)
+      box.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault()
+        openMenu(ev.clientX, ev.clientY)
+      })
       // The same row keys the task, risk and milestone rows answer to: Enter opens the full view (the
-      // person's notes), and the arrows walk the chart — Left/Right between siblings, Up to the
-      // manager, Down to the first report. Guarded on the box itself so a keypress on one of its buttons is left alone.
+      // person's notes), Space the context menu, and the arrows walk the chart — Left/Right between siblings,
+      // Up to the manager, Down to the first report. Guarded on the box itself so a keypress on its button is left alone.
       box.addEventListener('keydown', (ev) => {
         if (ev.target !== box) return
         if (ev.key === 'Enter') {
           ev.preventDefault()
           openNotes()
+          return
+        }
+        if (ev.key === ' ') {
+          ev.preventDefault()
+          const rect = box.getBoundingClientRect()
+          openMenu(rect.left + 16, rect.bottom)
           return
         }
         const next = adjacentBox(box, ev.key)
@@ -423,11 +440,19 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     // A wide chart scrolls sideways under the plain wheel, as the kanban board does.
     const unbindWheel = wheelScrollsHorizontally(treeEl)
 
+    // With nothing focused an arrow key starts the walk at the root, as it does on the task, risk and
+    // milestone lists.
+    const disposeArrowFallback = installArrowFallbackFocus(ctx, treeEl, '.tt-org-box', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
+
     container.appendChild(el('div', { class: 'tt-people' }, toolbar, rootDropEl, treeEl))
+    // Lands focus on the root the moment the module opens, so the arrows work without a preceding Tab. Only
+    // for the pane the user is in: a team switch remounts both panes, and the second would steal the first's focus.
+    if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) treeEl.querySelector<HTMLElement>('.tt-org-box')?.focus()
 
     return () => {
       unsubscribe()
       unbindWheel()
+      disposeArrowFallback()
     }
   })
 }

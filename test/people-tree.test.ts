@@ -11,6 +11,7 @@ import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { unlinkRefsInTeam } from '../src/core/refs'
 import { createSearchIndex } from '../src/core/search'
+import { closeAnyContextMenu } from '../src/ui/context-menu'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Person, Team } from '../src/core/types'
 
@@ -70,7 +71,20 @@ function boxes(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.tt-org-box'))
 }
 
+function menuLabels(): string[] {
+  return Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.textContent ?? '')
+}
+
+/** Right-clicks `box` and picks `label` from the context menu it opens. */
+function chooseFromMenu(box: HTMLElement, label: string): void {
+  box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  const item = Array.from(document.querySelectorAll<HTMLElement>('.tt-context-menu-item')).find((b) => b.textContent === label)
+  if (!item) throw new Error(`menu item "${label}" not found`)
+  item.click()
+}
+
 afterEach(() => {
+  closeAnyContextMenu()
   document.body.innerHTML = ''
 })
 
@@ -232,7 +246,7 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
     const box = boxes(container)[0]!
-    expect(box.title).toBe('Double-click or Enter to open person notes')
+    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions')
   })
 
   test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
@@ -256,7 +270,6 @@ describe('renderPeopleTree', () => {
       ] })
       const { container, store, pm, loc } = setup(team, 'members')
       render(container, loc, store, pm, 'members')
-      document.body.appendChild(container)
       return { container, pm, boxById: (id) => container.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${id}"]`)! }
     }
 
@@ -285,6 +298,26 @@ describe('renderPeopleTree', () => {
       expect(document.activeElement).toBe(boss)
     })
 
+    test('opening the chart focuses its root, so the arrows work at once', () => {
+      const { boxById } = chart()
+      expect(document.activeElement).toBe(boxById('boss'))
+    })
+
+    test('the pane that is not focused leaves focus where it is', () => {
+      const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members', 1)
+      expect(document.activeElement).toBe(document.body)
+    })
+
+    test('with nothing focused, an arrow key starts the walk at the root', () => {
+      const { boxById } = chart()
+      ;(document.activeElement as HTMLElement).blur()
+      expect(document.activeElement).toBe(document.body)
+      key(document.body, 'ArrowDown')
+      expect(document.activeElement).toBe(boxById('boss'))
+    })
+
     test('an arrow at the edge of the chart does nothing', () => {
       const { boxById } = chart()
       boxById('boss').focus()
@@ -293,10 +326,16 @@ describe('renderPeopleTree', () => {
       expect(document.activeElement).toBe(boxById('boss'))
     })
 
-    test('a key pressed on one of the box own buttons is not hijacked', () => {
+    test('a key pressed on the box own button is not hijacked', () => {
       const { boxById, pm } = chart()
-      key(boxById('a').querySelector('.tt-people-edit-btn')!, 'Enter')
+      key(boxById('a').querySelector('.tt-people-more-btn')!, 'Enter')
       expect(pm.calls).toEqual([])
+    })
+
+    test('Space opens the context menu, like a right-click', () => {
+      const { boxById } = chart()
+      key(boxById('a'), ' ')
+      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Delete person'])
     })
 
     test('focus survives the tree rebuild a store change causes', () => {
@@ -369,12 +408,27 @@ describe('renderPeopleTree', () => {
     expect(store.doc.teams[0]!.members).toHaveLength(0)
   })
 
-  test('the + (add child) hover button adds a child under that node', () => {
+  test('a box holds no action buttons but ⋯, whose click opens the context menu', () => {
     const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
 
-    clickByTitleOrText(container, 'Add report')
+    const box = boxes(container)[0]!
+    const buttons = Array.from(box.querySelectorAll('button'))
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]!.getAttribute('aria-label')).toBe('More actions')
+
+    buttons[0]!.click()
+    expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Delete person'])
+    expect(pm.calls).toEqual([])
+  })
+
+  test('the menu Add report adds a child under that node', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+
+    chooseFromMenu(boxes(container)[0]!, 'Add report')
     const nameInput = document.querySelector('input[name="tt-person-name"]') as HTMLInputElement
     nameInput.value = 'Child'
     nameInput.dispatchEvent(new Event('input'))
@@ -384,12 +438,12 @@ describe('renderPeopleTree', () => {
     expect(child.parentId).toBe('a')
   })
 
-  test('the pencil hover button edits name/role in place', () => {
+  test('the menu Edit person edits name/role in place', () => {
     const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', role: 'PM', order: 0 })] })
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
 
-    clickByTitleOrText(container, 'Edit person')
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
     const nameInput = document.querySelector('input[name="tt-person-name"]') as HTMLInputElement
     expect(nameInput.value).toBe('Ana')
     nameInput.value = 'Ana Renamed'
@@ -400,7 +454,7 @@ describe('renderPeopleTree', () => {
     expect(store.doc.teams[0]!.members[0]!.role).toBe('PM')
   })
 
-  test('the trash hover button deletes at once (no confirm dialog), promoting children', () => {
+  test('the menu Delete person deletes at once (no confirm dialog), promoting children', () => {
     const team = makeTeam({
       members: [
         person({ id: 'a', name: 'Ana', order: 0 }),
@@ -410,7 +464,7 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
 
-    clickByTitleOrText(container, 'Delete person')
+    chooseFromMenu(boxes(container)[0]!, 'Delete person')
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
     const remaining = store.doc.teams[0]!.members
@@ -419,12 +473,12 @@ describe('renderPeopleTree', () => {
     expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
-  test('the notes hover button opens the person via pm.openInFocused', () => {
+  test('the menu Open notes opens the person notes', () => {
     const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
 
-    clickByTitleOrText(container, 'Open notes')
+    chooseFromMenu(boxes(container)[0]!, 'Open notes')
 
     expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'a', group: 'members' } } }])
   })
@@ -450,7 +504,7 @@ describe('renderPeopleTree', () => {
     expect(container.children).toHaveLength(0)
   })
 
-  test('the trash hover button\'s delete handler unlinks references to the deleted person from another person\'s notes', () => {
+  test('the menu delete unlinks references to the deleted person from another person\'s notes', () => {
     const team = makeTeam({
       members: [
         person({ id: 'a', name: 'Ana', order: 0 }),
@@ -461,7 +515,7 @@ describe('renderPeopleTree', () => {
     render(container, loc, store, pm, 'members')
 
     const anaBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ana')!
-    clickByTitleOrText(anaBox, 'Delete person')
+    chooseFromMenu(anaBox, 'Delete person')
 
     const remaining = store.doc.teams[0]!.members
     expect(remaining.map((p) => p.name)).toEqual(['Bruno'])
@@ -534,7 +588,7 @@ describe('person delete undo', () => {
     const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
 
     const parentBox = boxes(container).find((b) => b.querySelector('.tt-org-name')!.textContent === 'Ann')!
-    clickByTitleOrText(parentBox, 'Delete person')
+    chooseFromMenu(parentBox, 'Delete person')
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
     const afterDelete = store.doc.teams.find((t) => t.id === teamId)!

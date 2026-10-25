@@ -1295,7 +1295,7 @@ body { background: var(--bg); color: var(--fg); }
   content: ''; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px;
   background: var(--bg); border: 1px solid var(--border); transform: rotate(8deg);
 }
-.tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 .9rem; box-sizing: border-box; }
 /* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
    (needed for the ellipsis) clips at the padding box, and both the synthesized
    oblique of the body font — Bahnschrift has no true italic — and the search
@@ -1307,10 +1307,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-org-box.tt-people-drop-after { box-shadow: inset -2px 0 0 0 var(--accent); }
 .tt-org-box.tt-people-drop-child { background: rgba(var(--accent-rgb), .18); }
 
-.tt-people-actions { display: flex; gap: .1rem; flex: none; }
-.tt-people-actions button { opacity: .38; padding: .1rem .3rem; font-size: .8rem; border: none; background: transparent; }
-.tt-org-box:hover .tt-people-actions button, .tt-people-actions button:focus { opacity: 1; }
-
+/* The ⋯ button floats over the card's top-right corner and only shows on hover or focus; the name keeps clear of it. */
+.tt-people-more-btn { position: absolute; top: 2px; right: 6px; padding: .1rem .3rem; border: none; background: transparent; border-radius: var(--r-sm); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.tt-people-more-btn:hover { background: var(--hover); }
+.tt-org-box:hover .tt-people-more-btn, .tt-org-box:focus-within .tt-people-more-btn { opacity: 1; }
 /* Connector lines: the parent's children wrapper draws the trunk down to the
    horizontal rail; each child draws its own stub up to the rail plus a half-
    width rail segment that merges with its siblings (first/last child drop

@@ -113,6 +113,14 @@ function clickButtonLabelled(scope: ParentNode, label: string): void {
   btn.click()
 }
 
+/** Right-clicks the pane's first org-chart box and picks `label` from its context menu. */
+function chooseFromPersonMenu(pane: ParentNode, label: string): void {
+  pane.querySelector<HTMLElement>('.tt-org-box')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  const item = Array.from(document.querySelectorAll<HTMLElement>('.tt-context-menu-item')).find((b) => b.textContent === label)
+  if (!item) throw new Error(`no menu item "${label}"`)
+  item.click()
+}
+
 function setInputValue(input: HTMLInputElement, value: string): void {
   input.value = value
   input.dispatchEvent(new Event('change', { bubbles: true }))
@@ -132,7 +140,7 @@ test('renaming a person refreshes its mention label in the milestones pane', () 
 
   // Real UI path: the box's edit button opens the person modal; OK fires the
   // rename call site.
-  clickButtonLabelled(left, 'Edit person')
+  chooseFromPersonMenu(left, 'Edit person')
   const nameInput = document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!
   nameInput.value = 'Alicia'
   clickButtonLabelled(document, 'Save')
@@ -198,7 +206,7 @@ test('deleting a person clears its mention chip in the milestones pane', () => {
   expandFollowups(right)
   expect(refChip(right, 'person:p1')).not.toBeNull()
 
-  clickButtonLabelled(left, 'Delete person')
+  chooseFromPersonMenu(left, 'Delete person')
 
   expect(refChip(panes()[1], 'person:p1')).toBeNull()
 })
@@ -264,7 +272,7 @@ test("a card's assignee display refreshes when the linked person is renamed from
   // so, since nothing else stores a person's name. The kanban card meta
   // resolves the assignee's *current* name live, which is why 'people' is in
   // its WATCHED.
-  clickButtonLabelled(left, 'Edit person')
+  chooseFromPersonMenu(left, 'Edit person')
   document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!.value = 'Alicia'
   clickButtonLabelled(document, 'Save')
 
