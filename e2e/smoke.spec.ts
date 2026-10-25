@@ -63,7 +63,7 @@ test.describe('create → main shell (fallback flow)', () => {
     await page.getByRole('button', { name: /Create first team/ }).click()
     const teamDialog = page.getByRole('dialog')
     await teamDialog.locator('input[name="tt-team-name"]').fill('Smoke Test Team')
-    await teamDialog.getByRole('button', { name: 'OK' }).click()
+    await teamDialog.getByRole('button', { name: 'Save' }).click()
     await expect(teamDialog).toBeHidden()
 
     await page.keyboard.press('Control+Shift+k')

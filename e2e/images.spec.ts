@@ -94,7 +94,7 @@ async function newTeamWithEditor(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Create first team/ }).click()
   const teamDialog = page.getByRole('dialog')
   await teamDialog.locator('input[name="tt-team-name"]').fill('T')
-  await teamDialog.getByRole('button', { name: 'OK' }).click()
+  await teamDialog.getByRole('button', { name: 'Save' }).click()
   await teamDialog.waitFor({ state: 'hidden' })
   await page.locator('.editor').first().click()
 }

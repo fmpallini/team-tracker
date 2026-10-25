@@ -21,7 +21,7 @@ test('Ctrl+K link modal submitted with Enter inserts the link without a stray pa
   await page.getByRole('button', { name: /Create first team/ }).click()
   const teamDialog = page.getByRole('dialog')
   await teamDialog.locator('input[name="tt-team-name"]').fill('T')
-  await teamDialog.getByRole('button', { name: 'OK' }).click()
+  await teamDialog.getByRole('button', { name: 'Save' }).click()
   await teamDialog.waitFor({ state: 'hidden' })
 
   const editor = page.locator('.editor').first()

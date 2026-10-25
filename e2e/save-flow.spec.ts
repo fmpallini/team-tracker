@@ -12,7 +12,7 @@ async function addTeam(page: Page, name: string, first: boolean): Promise<void> 
   await (first ? page.getByRole('button', { name: /Create first team/ }) : page.locator('.tt-team-add-btn')).click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[name="tt-team-name"]').fill(name)
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
 }
 

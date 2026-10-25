@@ -14,7 +14,7 @@ async function addTeam(page: import('@playwright/test').Page, name: string): Pro
   await page.getByRole('button', { name: /Create first team/ }).click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[name="tt-team-name"]').fill(name)
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
 }
 

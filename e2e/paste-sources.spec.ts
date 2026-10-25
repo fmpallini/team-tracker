@@ -185,7 +185,7 @@ test('pasted content from common sources stays clean, safe and unchanged after a
   await page.getByRole('button', { name: /Create first team/ }).click()
   const teamDialog = page.getByRole('dialog')
   await teamDialog.locator('input[name="tt-team-name"]').fill('T')
-  await teamDialog.getByRole('button', { name: 'OK' }).click()
+  await teamDialog.getByRole('button', { name: 'Save' }).click()
   await teamDialog.waitFor({ state: 'hidden' })
   await page.locator('.editor').first().click()
 
