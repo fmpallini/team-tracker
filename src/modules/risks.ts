@@ -1088,18 +1088,15 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     followups.paintExpandAllBtn(expandAllBtn, open.map((r) => r.id), 'risk_collapse_all_btn', 'risk_expand_all_btn')
 
     closedEl.innerHTML = ''
-    const clearClosedBtn = el(
-      'button',
-      {
-        class: 'tt-btn tt-risks-clear-closed-btn',
-        type: 'button',
-        title: t(lc, 'risks_delete_all_closed_title'),
-        // Prevents the click from also toggling the <details> this sits
-        // inside of — a native <summary> click always does that first.
-        onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); requestDeleteAllClosed() },
-      },
-      icon('trash', 16)
-    )
+    const clearClosedBtn = iconButton({
+      class: 'tt-risks-clear-closed-btn',
+      title: t(lc, 'risks_delete_all_closed_title'),
+      icon: 'trash',
+      size: 16,
+      // Prevents the click from also toggling the <details> this sits
+      // inside of — a native <summary> click always does that first.
+      onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); requestDeleteAllClosed() },
+    })
     // A hand-drawn arrow instead of the native <summary> marker — the
     // native one is a list-item marker, which forces the flex row holding
     // the heading text + clear button onto its own line below it in

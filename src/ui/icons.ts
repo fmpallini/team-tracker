@@ -134,6 +134,10 @@ export interface IconButtonOptions {
   icon: IconName
   size?: number
   tabindex?: string
+  disabled?: boolean
+  /** Drops the shared `tt-btn` chrome, for a button styled by its own class alone (dismiss crosses, code-block tools). */
+  bare?: boolean
+  onmousedown?: (e: Event) => void
   onclick: (e: Event) => void
 }
 
@@ -142,11 +146,18 @@ export function iconButton(opts: IconButtonOptions): HTMLButtonElement {
   return el(
     'button',
     {
-      class: `tt-btn ${opts.class}`, type: 'button', title: opts.title, 'aria-label': opts.title,
-      ...(opts.tabindex ? { tabindex: opts.tabindex } : {}), onclick: opts.onclick,
+      class: opts.bare ? opts.class : `tt-btn ${opts.class}`, type: 'button', title: opts.title, 'aria-label': opts.title,
+      ...(opts.tabindex ? { tabindex: opts.tabindex } : {}), disabled: opts.disabled ?? false,
+      ...(opts.onmousedown ? { onmousedown: opts.onmousedown } : {}), onclick: opts.onclick,
     },
     icon(opts.icon, opts.size)
   )
+}
+
+/** Re-labels an icon button (a locale switch) so its tooltip and accessible name change together. */
+export function setIconButtonTitle(btn: HTMLElement, title: string): void {
+  btn.title = title
+  btn.setAttribute('aria-label', title)
 }
 
 /** Swaps the icon inside an existing `icon()` span in place (favorite star, expander chevron…) without replacing the element, so listeners/focus on its parent stay put. */

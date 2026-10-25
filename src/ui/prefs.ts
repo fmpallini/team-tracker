@@ -17,7 +17,7 @@ import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
 import { currentThemeAttr, prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
-import { icon } from './icons'
+import { icon, iconButton } from './icons'
 import { collectImageRefs, referencedBytes } from '../core/image-ref'
 import { IMAGE_LIMITS } from '../core/image-import'
 
@@ -432,48 +432,32 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     function renderRow(tpl: Template, index: number, count: number): HTMLElement {
       const nameEl = el('span', { class: 'tt-prefs-template-name' }, tpl.name)
       const scopeEl = el('span', { class: 'tt-prefs-template-scope-badge' }, scopeLabel(locale, tpl.scope))
-      const upBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-prefs-template-up-btn',
-          type: 'button',
-          title: t(locale, 'prefs_templates_up_title'),
-          disabled: index === 0,
-          onclick: () => moveTemplate(index, -1),
-        },
-        icon('up')
-      )
-      const downBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-prefs-template-down-btn',
-          type: 'button',
-          title: t(locale, 'prefs_templates_down_title'),
-          disabled: index === count - 1,
-          onclick: () => moveTemplate(index, 1),
-        },
-        icon('down')
-      )
-      const editBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-prefs-template-edit-btn',
-          type: 'button',
-          title: t(locale, 'prefs_templates_edit_btn_title'),
-          onclick: () => openEditModal(tpl),
-        },
-        icon('edit')
-      )
-      const dupBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-prefs-template-dup-btn',
-          type: 'button',
-          title: t(locale, 'prefs_templates_duplicate_title'),
-          onclick: () => duplicateTemplate(index),
-        },
-        icon('copy')
-      )
+      const upBtn = iconButton({
+        class: 'tt-prefs-template-up-btn',
+        title: t(locale, 'prefs_templates_up_title'),
+        icon: 'up',
+        disabled: index === 0,
+        onclick: () => moveTemplate(index, -1),
+      })
+      const downBtn = iconButton({
+        class: 'tt-prefs-template-down-btn',
+        title: t(locale, 'prefs_templates_down_title'),
+        icon: 'down',
+        disabled: index === count - 1,
+        onclick: () => moveTemplate(index, 1),
+      })
+      const editBtn = iconButton({
+        class: 'tt-prefs-template-edit-btn',
+        title: t(locale, 'prefs_templates_edit_btn_title'),
+        icon: 'edit',
+        onclick: () => openEditModal(tpl),
+      })
+      const dupBtn = iconButton({
+        class: 'tt-prefs-template-dup-btn',
+        title: t(locale, 'prefs_templates_duplicate_title'),
+        icon: 'copy',
+        onclick: () => duplicateTemplate(index),
+      })
       const delBtn = el(
         'button',
         {

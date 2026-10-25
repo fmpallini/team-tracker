@@ -1203,7 +1203,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         'div', { class: 'tt-kanban-col-head' },
         gripEl, nameSpan, nameInput,
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card')),
-        iconButton({ class: 'tt-kanban-col-delete-btn', title: t(lc, 'kanban_delete_column_title'), icon: 'trash', size: 14, onclick: () => deleteColumn(id) })
+        iconButton({
+          class: 'tt-kanban-col-delete-btn',
+          title: t(lc, 'kanban_delete_column_title'),
+          icon: 'trash',
+          size: 14,
+          onclick: () => deleteColumn(id),
+        })
       )
       wireColumnHeaderDrag(headEl, gripEl, id)
       if (pendingColumnFocusId === id) {
@@ -1221,11 +1227,23 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl,
         el('button', { class: 'tt-btn tt-kanban-add-btn tt-kanban-head-spacer', type: 'button', tabindex: '-1', 'aria-hidden': 'true' }, t(lc, 'kanban_add_card'))),
       el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
-        iconButton({ class: 'tt-kanban-zone-trash', title: t(lc, 'kanban_clear_zone_title'), icon: 'trash', size: 14, onclick: () => clearZone('done') })),
+        iconButton({
+          class: 'tt-kanban-zone-trash',
+          title: t(lc, 'kanban_clear_zone_title'),
+          icon: 'trash',
+          size: 14,
+          onclick: () => clearZone('done'),
+        })),
       el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('done')!.bodyEl, cols.get('done')!.zoneEl),
       el('div', { class: 'tt-kanban-divider' }),
       el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
-        iconButton({ class: 'tt-kanban-zone-trash', title: t(lc, 'kanban_clear_zone_title'), icon: 'trash', size: 14, onclick: () => clearZone('cancelled') })),
+        iconButton({
+          class: 'tt-kanban-zone-trash',
+          title: t(lc, 'kanban_clear_zone_title'),
+          icon: 'trash',
+          size: 14,
+          onclick: () => clearZone('cancelled'),
+        })),
       el('div', { class: 'tt-kanban-col-body-wrap tt-kanban-cancelled-wrap' }, cols.get('cancelled')!.bodyEl, cols.get('cancelled')!.zoneEl)
     )
 

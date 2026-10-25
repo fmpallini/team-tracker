@@ -22,3 +22,10 @@ declare const process: {
   memoryUsage(): { heapUsed: number }
   env: Record<string, string | undefined>
 }
+
+declare module 'node:fs' {
+  /** Just enough to walk `src/` and read a file — used by test/design-rules.test.ts. */
+  export interface Dirent { name: string; isDirectory(): boolean }
+  export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[]
+  export function readFileSync(path: string, encoding: 'utf-8'): string
+}

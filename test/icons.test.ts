@@ -1,4 +1,4 @@
-import { icon, iconLine, iconSvg, kindIcon, setIcon } from '../src/ui/icons'
+import { icon, iconButton, iconLine, iconSvg, kindIcon, setIcon, setIconButtonTitle } from '../src/ui/icons'
 
 describe('iconSvg', () => {
   test('is a 16x16-grid stroke icon sized by the argument and tinted by currentColor', () => {
@@ -84,5 +84,41 @@ describe('image icon', () => {
     expect(doc.querySelector('circle')).not.toBeNull()
     expect(doc.querySelector('path')?.getAttribute('d')).toBeTruthy()
     expect(icon('image').classList.contains('tt-icon-image')).toBe(true)
+  })
+})
+
+describe('iconButton', () => {
+  test('is a button with the shared chrome, one icon, and the same string as tooltip and accessible name', () => {
+    const onclick = vi.fn()
+    const b = iconButton({ class: 'tt-x-btn', title: 'Remove', icon: 'trash', size: 16, onclick })
+    expect(b.tagName).toBe('BUTTON')
+    expect(b.type).toBe('button')
+    expect(b.className).toBe('tt-btn tt-x-btn')
+    expect(b.title).toBe('Remove')
+    expect(b.getAttribute('aria-label')).toBe('Remove')
+    expect(b.querySelectorAll('.tt-icon-trash')).toHaveLength(1)
+    expect(b.textContent).toBe('')
+    b.click()
+    expect(onclick).toHaveBeenCalledOnce()
+  })
+
+  test('bare drops the shared chrome; tabindex and disabled pass through', () => {
+    const b = iconButton({ class: 'tt-x-dismiss', title: 'Dismiss', icon: 'close', bare: true, tabindex: '-1', disabled: true, onclick: () => {} })
+    expect(b.className).toBe('tt-x-dismiss')
+    expect(b.getAttribute('tabindex')).toBe('-1')
+    expect(b.disabled).toBe(true)
+  })
+
+  test('onmousedown is wired only when given', () => {
+    const onmousedown = vi.fn()
+    iconButton({ class: 'a', title: 'A', icon: 'copy', onmousedown, onclick: () => {} }).dispatchEvent(new MouseEvent('mousedown'))
+    expect(onmousedown).toHaveBeenCalledOnce()
+  })
+
+  test('setIconButtonTitle re-labels the tooltip and the accessible name together', () => {
+    const b = iconButton({ class: 'a', title: 'Settings', icon: 'gear', onclick: () => {} })
+    setIconButtonTitle(b, 'Preferências')
+    expect(b.title).toBe('Preferências')
+    expect(b.getAttribute('aria-label')).toBe('Preferências')
   })
 })

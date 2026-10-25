@@ -11,7 +11,7 @@ import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
-import { icon } from './icons'
+import { icon, iconButton } from './icons'
 import type { ImageHost } from './image-host'
 import { imageRefLine } from '../core/image-ref'
 import { IMAGE_ACCEPT, IMAGE_LIMITS } from '../core/image-import'
@@ -2339,14 +2339,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // The copy / collapse buttons are ONE shared element floated over the
   // hovered block from the .tt-editor chrome, never inside the editable
   // surface.
-  const cbCopyBtn = el('button', {
-    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_copy'),
-    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbCopy,
-  }, icon('copy'))
-  const cbToggleBtn = el('button', {
-    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_collapse'),
-    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbToggle,
-  }, icon('chevUp'))
+  const cbCopyBtn = iconButton({
+    class: 'tt-cb-btn',
+    title: t(locale, 'editor_cb_copy'),
+    icon: 'copy',
+    bare: true,
+    tabindex: '-1',
+    onmousedown: (e: Event) => e.preventDefault(),
+    onclick: onCbCopy,
+  })
+  const cbToggleBtn = iconButton({
+    class: 'tt-cb-btn',
+    title: t(locale, 'editor_cb_collapse'),
+    icon: 'chevUp',
+    bare: true,
+    tabindex: '-1',
+    onmousedown: (e: Event) => e.preventDefault(),
+    onclick: onCbToggle,
+  })
   const cbControls = el('div', { class: 'tt-cb-controls', contenteditable: 'false' }, cbCopyBtn, cbToggleBtn)
   cbControls.hidden = true
   root.appendChild(cbControls)

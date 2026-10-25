@@ -12,7 +12,7 @@ import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam, findTeam as docFindTeam } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport, clearClasses } from './dom'
-import { icon } from './icons'
+import { icon, iconButton } from './icons'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from './undo-toast'
@@ -644,19 +644,16 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
             String(dueCount)
           )
         : null
-      const editBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-team-edit-btn',
-          type: 'button',
-          title: t(locale(), 'team_edit_title'),
-          onclick: (e: Event) => {
-            e.stopPropagation()
-            openEditModal(team)
-          },
+      const editBtn = iconButton({
+        class: 'tt-team-edit-btn',
+        title: t(locale(), 'team_edit_title'),
+        icon: 'edit',
+        size: 12,
+        onclick: (e: Event) => {
+          e.stopPropagation()
+          openEditModal(team)
         },
-        icon('edit', 12)
-      )
+      })
       item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
 
       listEl.appendChild(item)
