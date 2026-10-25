@@ -3,7 +3,7 @@
 // dedupe and the 20-row allocation. No DOM, no store: callers pass the Doc.
 // ui/palette.ts only renders what this returns.
 import type { Doc, Favorite, ModuleRef } from './types'
-import { findTeam } from './document'
+import { findTeam, teamLabel } from './document'
 import { t, type Locale } from './i18n'
 import { collectDueItems, dueRelativeLabel } from './due'
 import { favoriteKey, liveFavorites } from './favorites'
@@ -74,10 +74,6 @@ function hasItemId(ref: ModuleRef): boolean {
   return 'itemId' in ref && ref.itemId !== undefined
 }
 
-function badge(team: { emoji: string; name: string }): string {
-  return `${team.emoji} ${team.name}`.trim()
-}
-
 export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: string): SwitcherSection[] {
   const words = queryWords(query)
   const active = doc.nav.activeTeamId === null ? undefined : findTeam(doc, doc.nav.activeTeamId)
@@ -89,7 +85,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
     if (!team) continue
     const label = titleFor(doc, fav, locale)
     if (!matches(words, team.name, label)) continue
-    favRows.push({ label, teamId: fav.teamId, ref: fav.ref, teamBadge: badge(team), favorite: fav })
+    favRows.push({ label, teamId: fav.teamId, ref: fav.ref, teamBadge: teamLabel(team), favorite: fav })
   }
 
   // 2. Due dates: overdue first, then due soon (collectDueItems already sorts each bucket).
@@ -101,7 +97,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
     const label = item.title
     if (!matches(words, team.name, label)) continue
     const dueLabel = dueRelativeLabel(locale, item.date, today)
-    dueRows.push({ label, teamId: item.loc.teamId, ref: item.loc.ref, teamBadge: badge(team), dueLabel })
+    dueRows.push({ label, teamId: item.loc.teamId, ref: item.loc.ref, teamBadge: teamLabel(team), dueLabel })
   }
 
   // 3. Current team (before dedupe — see the allocation loop below).
@@ -120,7 +116,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
       if (team.id === active?.id) continue
       for (const item of buildModuleItems(team, locale)) {
         if (!matches(words, team.name, item.label)) continue
-        otherRows.push({ label: item.label, teamId: team.id, ref: item.ref, teamBadge: badge(team) })
+        otherRows.push({ label: item.label, teamId: team.id, ref: item.ref, teamBadge: teamLabel(team) })
       }
     }
   }
@@ -148,7 +144,7 @@ export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: st
   const all: { id: SwitcherSectionId; heading: string; rows: SwitcherRow[] }[] = [
     { id: 'favorites', heading: t(locale, 'switcher_favorites'), rows: favRows },
     { id: 'due', heading: t(locale, 'switcher_due'), rows: dueRows },
-    { id: 'current', heading: active ? badge(active) : '', rows: currentRows },
+    { id: 'current', heading: active ? teamLabel(active) : '', rows: currentRows },
     { id: 'others', heading: t(locale, 'switcher_others'), rows: otherRows },
   ]
   return all

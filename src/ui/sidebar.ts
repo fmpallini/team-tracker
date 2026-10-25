@@ -10,7 +10,7 @@ import { watchDayChange } from './day-change'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
-import { createEmptyTeam, findTeam as docFindTeam } from '../core/document'
+import { createEmptyTeam, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport, clearClasses } from './dom'
 import { icon, iconButton } from './icons'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
@@ -153,7 +153,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerDueSummary.title = t(locale(), 'due_badge_title')
     // Written only on change: renderCollapseState() runs on every nav mutation,
     // and re-assigning identical text still replaces the node and repaints it.
-    if (team) setTextIfChanged(headerTeamIndicatorLabel, team.emoji ? `${team.emoji} ${team.name}` : team.name)
+    if (team) setTextIfChanged(headerTeamIndicatorLabel, teamLabel(team))
 
     const teamDueCounts = teamDueCountsMap(dueBuckets())
     const ownCount = team ? teamDueCounts.get(team.id) ?? 0 : 0

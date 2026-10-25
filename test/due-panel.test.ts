@@ -7,6 +7,7 @@ function makeItem(overrides: Partial<DueItem> = {}): DueItem {
     loc: { teamId: 'T1', ref: { kind: 'actions', itemId: 'a1' } },
     title: 'Task A',
     teamName: 'Alpha',
+    teamEmoji: '🚀',
     date: '2000-01-01',
     kind: 'action',
     ...overrides,
@@ -58,7 +59,7 @@ describe('openDuePanel', () => {
 
   test('shows each row\'s team name when unfiltered (multiple teams in view)', () => {
     openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem()], dueSoon: [] }, onOpenItem: () => {} })
-    expect(document.querySelector('.tt-due-row-team')?.textContent).toBe('Alpha')
+    expect(document.querySelector('.tt-due-row-team')?.textContent).toBe('🚀 Alpha')
   })
 
   test('omits the redundant team name from rows when filtered to a single team (already named in the modal title)', () => {
@@ -132,7 +133,7 @@ describe('openDuePanel', () => {
     const long = 'A very long action item title that the row will cut off with an ellipsis'
     openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem({ title: long })], dueSoon: [] }, onOpenItem: () => {} })
     expect(document.querySelector<HTMLElement>('.tt-due-row-title')!.title).toBe(long)
-    expect(document.querySelector<HTMLElement>('.tt-due-row-team')!.title).toBe('Alpha')
+    expect(document.querySelector<HTMLElement>('.tt-due-row-team')!.title).toBe('🚀 Alpha')
   })
 
   test('closes on a backdrop click', () => {
