@@ -21,13 +21,37 @@ afterEach(() => {
 })
 
 describe('createCalendar grid math', () => {
-  test('renders exactly the number of days in the displayed month, plus correct leading blanks', () => {
+  test('renders exactly the number of days in the displayed month, padded to whole weeks with the neighbouring days', () => {
     const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {} })
     const daysInMonth = new Date(2026, 7, 0).getDate() // July 2026 -> 31
-    const firstDow = new Date(2026, 6, 1).getDay()
+    const firstDow = new Date(2026, 6, 1).getDay() // Wed -> 3 leading days
+    const trailing = (7 - ((firstDow + daysInMonth) % 7)) % 7 // 34 cells -> 1 trailing day
 
     expect(dayButtons(root)).toHaveLength(daysInMonth)
-    expect(root.querySelectorAll('.tt-calendar-day-blank')).toHaveLength(firstDow)
+    const outside = Array.from(root.querySelectorAll('.tt-calendar-day-blank'))
+    expect(outside).toHaveLength(firstDow + trailing)
+    // Same numbers the neighbouring months show: June 28-30 before, August 1 after.
+    expect(outside.map((o) => o.textContent)).toEqual(['28', '29', '30', '1'])
+    // Inert: not buttons, hidden from assistive tech.
+    expect(outside.every((o) => o.tagName === 'DIV' && o.getAttribute('aria-hidden') === 'true')).toBe(true)
+  })
+
+  test('each month is its own card, and the one holding the selected day is marked', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {}, showPrevMonth: true })
+    expect(root.classList.contains('tt-calendar-stacked')).toBe(true)
+    const months = Array.from(root.querySelectorAll('.tt-calendar-month'))
+    expect(months).toHaveLength(2)
+    expect(months.map((m) => m.classList.contains('tt-calendar-month-current'))).toEqual([false, true])
+    // Both arrows live on the upper month's header; the lower one carries none.
+    expect(months[0]!.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(2)
+    expect(months[1]!.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(0)
+  })
+
+  test('a single month is not stacked and keeps its own arrows', () => {
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick: () => {} })
+    expect(root.classList.contains('tt-calendar-stacked')).toBe(false)
+    expect(root.querySelectorAll('.tt-calendar-month')).toHaveLength(1)
+    expect(root.querySelectorAll('.tt-calendar-nav-btn')).toHaveLength(2)
   })
 
   test('renders 7 weekday headers', () => {

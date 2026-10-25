@@ -35,7 +35,7 @@ test('a write error raises a sticky error toast, replacing a previous one rather
   const f = fakeSnapshot()
   watchFileHealth(f.snap, () => 'en-US')
   f.emit({ kind: 'error', message: 'disk full' })
-  expect(modal.toast).toHaveBeenCalledWith(t('en-US', 'save_error_toast'), { sticky: true, key: SAVE_ERROR_TOAST_KEY })
+  expect(modal.toast).toHaveBeenCalledWith(t('en-US', 'save_error_toast'), { kind: 'error', sticky: true, key: SAVE_ERROR_TOAST_KEY })
 })
 
 test('an external change is the conflict modal\'s business: no toast', () => {
@@ -82,7 +82,7 @@ describe('watchStoreHealth', () => {
     watchStoreHealth(f.persister, () => 'en-US')
     f.emit(true)
     expect(modal.toast).toHaveBeenCalledTimes(1)
-    expect(modal.toast).toHaveBeenCalledWith(t('en-US', 'live_store_failed_toast'), { sticky: true, key: STORE_ERROR_TOAST_KEY })
+    expect(modal.toast).toHaveBeenCalledWith(t('en-US', 'live_store_failed_toast'), { kind: 'error', sticky: true, key: STORE_ERROR_TOAST_KEY })
     f.emit(false)
     expect(modal.dismissToast).toHaveBeenCalledWith(STORE_ERROR_TOAST_KEY)
   })
@@ -90,7 +90,7 @@ describe('watchStoreHealth', () => {
   test('a store that is already failing when watched is announced at once; the unsubscribe stops the watching', () => {
     const f = fakePersister(new Error('quota'))
     const off = watchStoreHealth(f.persister, () => 'pt-BR')
-    expect(modal.toast).toHaveBeenCalledWith(t('pt-BR', 'live_store_failed_toast'), { sticky: true, key: STORE_ERROR_TOAST_KEY })
+    expect(modal.toast).toHaveBeenCalledWith(t('pt-BR', 'live_store_failed_toast'), { kind: 'error', sticky: true, key: STORE_ERROR_TOAST_KEY })
     off()
     expect(f.subscribed()).toBe(false)
   })

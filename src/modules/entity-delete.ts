@@ -1,6 +1,6 @@
 // src/modules/entity-delete.ts — the delete flow shared by the card-style
-// modules (action items, milestones, risks): confirm → delete with undo, or a
-// silent delete for blank rows. Each module used to carry its own copy of
+// modules (action items, milestones, risks): delete with an undo
+// toast, or a silent delete for blank rows. Each module used to carry its own copy of
 // these three functions; they differ only in which team collection they touch,
 // which @mention kind they unlink, and which strings they show.
 //
@@ -26,7 +26,6 @@ import { t, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam, type IdRefKind } from '../core/refs'
 import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import type { TeamItemCollection } from '../core/team-items'
-import { confirmDelete } from '../ui/modal'
 import { offerUndoToast } from '../ui/undo-toast'
 import type { ModuleCtx } from '../ui/panes'
 
@@ -37,13 +36,12 @@ export interface EntityDeleteConfig<K extends TeamItemCollection> {
   collection: K
   /** The @mention kind whose references get flattened to plain text on delete. */
   refKind: IdRefKind
-  /** The label shown in the confirm/toast and used to unlink mentions (a title or summary). */
+  /** The label shown in the toast and used to unlink mentions (a title or summary). */
   labelOf: (entity: Team[K][number]) => string
-  /** Name of the `{param}` the three messages below interpolate the label into. */
+  /** Name of the `{param}` the toast message interpolates the label into. */
   labelParam: string
-  messages: { title: MsgKey; confirm: MsgKey; button: MsgKey; toast: MsgKey }
-  /** 'danger' for the one module (action items) that styles its confirm button that way. */
-  variant?: 'danger' | 'primary'
+  /** The toast that follows a delete; the Undo button rides on it. */
+  toast: MsgKey
   /**
    * Local UI state that must flip BEFORE store.update fires the synchronous
    * subscriber — e.g. collapsing an expanded follow-up editor so the rebuild
@@ -51,11 +49,11 @@ export interface EntityDeleteConfig<K extends TeamItemCollection> {
    */
   beforeRemove?: (id: string) => void
   /**
-   * Whether an entity is an untouched draft — nothing worth a confirm dialog or
-   * an undo. Defaults to "its label is blank", which is only right for modules
+   * Whether an entity is an untouched draft — nothing worth an undo
+   * toast. Defaults to "its label is blank", which is only right for modules
    * whose label is the entity's only content; a risk, milestone or card with
    * no title can still carry a plan, follow-up, notes or an assignee, and
-   * deleting THAT silently (no confirm, no undo) is data loss.
+   * deleting THAT silently (no undo) is data loss.
    */
   isBlank?: (entity: Team[K][number]) => boolean
 }
@@ -65,13 +63,13 @@ export interface EntityDelete<E> {
   remove: (id: string) => UndoOffer | null
   /** Deletes with no capture and no undo — see the header for when that's right. */
   removeSilently: (id: string) => void
-  /** Blank label → silent delete; otherwise confirm dialog, then `remove` + undo toast. */
+  /** Blank label → silent delete; otherwise `remove` + undo toast. No confirm: the Undo is the guard for a single item. */
   requestDelete: (entity: E, onDeleting?: () => void) => void
 }
 
 export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDeleteConfig<K>): EntityDelete<Team[K][number]> {
   type Entity = Team[K][number]
-  const { ctx, teamId, collection, refKind, labelOf, labelParam, messages, variant, beforeRemove, isBlank } = cfg
+  const { ctx, teamId, collection, refKind, labelOf, labelParam, toast, beforeRemove, isBlank } = cfg
   const locale = ctx.locale
 
   // Team's collections are all `{ id: string }[]`; K only narrows which one.
@@ -100,32 +98,22 @@ export function createEntityDelete<K extends TeamItemCollection>(cfg: EntityDele
     }, { teamId })
   }
 
-  // `onDeleting` runs only once the delete is certain (right before the removal,
-  // after the confirm is accepted), never on Cancel — so a caller that has an
-  // editor open on the entity (the action-item card) can keep it up behind the
-  // confirm and close it only if the user goes through with it.
+  // `onDeleting` runs right before the removal, so a caller that has an editor
+  // open on the entity (the action-item card) can close it only once the
+  // delete is certain.
   function requestDelete(entity: Entity, onDeleting?: () => void): void {
     const rawLabel = labelOf(entity)
     const id = (entity as Entity & { id: string }).id
-    // A titled item always asks; an untitled one is silent only if it is also an untouched draft.
+    onDeleting?.()
+    // A titled item is undoable; an untitled one is silent only if it is also an untouched draft.
     if (rawLabel.trim() === '' && (isBlank ? isBlank(entity) : true)) {
-      onDeleting?.()
       removeSilently(id) // nothing meaningful to lose
       return
     }
     // Only reachable with a blank label when `isBlank` says there IS content.
     const label = rawLabel.trim() === '' ? t(locale, 'untitled_item') : rawLabel
-    confirmDelete(locale, {
-      title: t(locale, messages.title),
-      message: t(locale, messages.confirm, { [labelParam]: label }),
-      confirmLabel: t(locale, messages.button),
-      ...(variant ? { variant } : {}),
-      onConfirm: () => {
-        onDeleting?.()
-        const offer = remove(id)
-        offerUndoToast(ctx.store, locale, t(locale, messages.toast, { [labelParam]: label }), offer)
-      },
-    })
+    const offer = remove(id)
+    offerUndoToast(ctx.store, locale, t(locale, toast, { [labelParam]: label }), offer)
   }
 
   return { remove, removeSilently, requestDelete }

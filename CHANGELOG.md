@@ -4,6 +4,22 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.3.0] - 2026-10-25
+
+### Added
+- Moving, copying or duplicating a task, risk or milestone to another team now says what happened, and a move has an Undo.
+- People in the org chart can be reached from the keyboard: arrows walk the chart from the root, Enter opens the person's notes.
+- The team's emoji shows beside its name in cross-team search and the Deadlines panel, and each entry in the back/forward history list shows its module icon.
+
+### Changed
+- Deleting a single person, task, risk or milestone no longer asks first; the Undo notice is the safety net. Bigger deletes still confirm, in red. Dialog buttons read Save instead of OK.
+- The calendar, tasks, risks and milestones have a new look: month cards, a label band on tasks, and tinted side strips for risk exposure and milestone state.
+- Cards, highlights, motion and spacing are consistent across the app, and reduced-motion stops every animation.
+- Org chart cards are smaller: the four action icons moved into a ⋯ menu (also on right-click or Space) with open notes, edit, add report and delete.
+
+### Fixed
+- Deleting a task that had notes but no title from its dialog lost the notes with no Undo.
+
 ## [3.2.2] - 2026-10-23
 
 ### Changed

@@ -134,7 +134,7 @@ export function showStartScreen(
         return { opened: await decryptDocumentWithVersion(bytes, password), password }
       } catch (e) {
         if (e instanceof WrongPasswordError) {
-          toast(t(locale, 'err_wrong_password'))
+          toast(t(locale, 'err_wrong_password'), { kind: 'error' })
           continue
         }
         if (e instanceof CorruptFileError) {
@@ -234,7 +234,7 @@ export function showStartScreen(
       // *ongoing* fact that this browser has no direct file access is a mode,
       // not an event, and lives on the save pill (shell.setFallbackHint) —
       // a sticky toast here outlived the start screen and sat over the app.
-      toast(t(locale, 'fallback_notice'))
+      toast(t(locale, 'fallback_notice'), { kind: 'warn' })
       const session: FileSession = { handle: null, name: SUGGESTED_NAME, lastModified: Date.now() }
       await finishOpen(session, { doc, preSchemaVersion: SCHEMA_VERSION, images, stamp }, password)
     }
@@ -251,7 +251,7 @@ export function showStartScreen(
       // *ongoing* fact that this browser has no direct file access is a mode,
       // not an event, and lives on the save pill (shell.setFallbackHint) —
       // a sticky toast here outlived the start screen and sat over the app.
-      toast(t(locale, 'fallback_notice'))
+      toast(t(locale, 'fallback_notice'), { kind: 'warn' })
       handleOpenFallbackFile(file)
         .catch(reportUnexpected)
         .finally(() => {

@@ -10,9 +10,9 @@ import { watchDayChange } from './day-change'
 import { collectDueItems, type DueBuckets } from '../core/due'
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
-import { createEmptyTeam, findTeam as docFindTeam } from '../core/document'
+import { createEmptyTeam, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { el, bindOutsideDismiss, clampToViewport, clearClasses } from './dom'
-import { icon } from './icons'
+import { icon, iconButton } from './icons'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from './undo-toast'
@@ -153,7 +153,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerDueSummary.title = t(locale(), 'due_badge_title')
     // Written only on change: renderCollapseState() runs on every nav mutation,
     // and re-assigning identical text still replaces the node and repaints it.
-    if (team) setTextIfChanged(headerTeamIndicatorLabel, team.emoji ? `${team.emoji} ${team.name}` : team.name)
+    if (team) setTextIfChanged(headerTeamIndicatorLabel, teamLabel(team))
 
     const teamDueCounts = teamDueCountsMap(dueBuckets())
     const ownCount = team ? teamDueCounts.get(team.id) ?? 0 : 0
@@ -328,8 +328,10 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       title: t(locale(), 'team_add_title'),
       onclick: () => openAddModal(),
     },
-    icon('plus')
+    icon('plus'),
+    el('span', { class: 'tt-team-add-label' }, t(locale(), 'team_add_title'))
   )
+  const teamsHeadingEl = el('div', { class: 'tt-sidebar-heading' }, t(locale(), 'sidebar_teams_heading'))
 
   // Icon and label only: each team row already shows its own due count, this
   // button just opens the all-teams list.
@@ -386,7 +388,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   }
 
   shell.sidebar.innerHTML = ''
-  contentEl.append(dueBtn, listEl, addBtn)
+  contentEl.append(dueBtn, teamsHeadingEl, listEl, addBtn)
   shell.sidebar.append(contentEl)
   // Lives in the header, not the sidebar itself, so collapsing the sidebar
   // frees its full width instead of reserving room for the toggle.
@@ -608,6 +610,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     // Static chrome tooltips are re-stamped here so a locale change (a store
     // update like any other) refreshes them through the same render path.
     addBtn.title = t(locale(), 'team_add_title')
+    addBtn.querySelector('.tt-team-add-label')!.textContent = t(locale(), 'team_add_title')
+    teamsHeadingEl.textContent = t(locale(), 'sidebar_teams_heading')
     dueBtn.title = t(locale(), 'due_badge_title')
     renderCollapseState()
     const buckets = dueBuckets()
@@ -640,19 +644,16 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
             String(dueCount)
           )
         : null
-      const editBtn = el(
-        'button',
-        {
-          class: 'tt-btn tt-team-edit-btn',
-          type: 'button',
-          title: t(locale(), 'team_edit_title'),
-          onclick: (e: Event) => {
-            e.stopPropagation()
-            openEditModal(team)
-          },
+      const editBtn = iconButton({
+        class: 'tt-team-edit-btn',
+        title: t(locale(), 'team_edit_title'),
+        icon: 'edit',
+        size: 12,
+        onclick: (e: Event) => {
+          e.stopPropagation()
+          openEditModal(team)
         },
-        icon('edit', 12)
-      )
+      })
       item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
 
       listEl.appendChild(item)
@@ -688,7 +689,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), icon: 'close', onClick: () => handle.close() }
     const okBtn: ModalButton = {
-      label: t(locale(), 'ok'),
+      label: t(locale(), 'save'),
       primary: true,
       onClick: () => {
         const name = nameInput.value.trim()
@@ -720,6 +721,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const cancelBtn: ModalButton = { label: t(locale(), 'cancel'), icon: 'close', onClick: () => handle.close() }
     const deleteBtn: ModalButton = {
       label: t(locale(), 'team_delete_btn'),
+      danger: true,
       onClick: () => {
         handle.close()
         confirmDelete(locale(), {
@@ -734,7 +736,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       },
     }
     const saveBtn: ModalButton = {
-      label: t(locale(), 'ok'),
+      label: t(locale(), 'save'),
       primary: true,
       onClick: () => {
         const name = nameInput.value.trim()

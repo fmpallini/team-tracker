@@ -3,6 +3,8 @@ import {
   computeTimelineLayout,
   sortByDate,
   truncateTitle,
+  groupByDate,
+  groupLabel,
   timelinePadding,
   isBlankMilestoneDraft,
 } from '../src/modules/milestones'
@@ -143,7 +145,21 @@ describe('pure helpers', () => {
     })
   })
 
-  describe('truncateTitle', () => {
+  describe('groupByDate / groupLabel', () => {
+  test('groupByDate merges neighbours with the same date and keeps list order', () => {
+    const groups = groupByDate([{ date: '2026-08-02', t: 'a' }, { date: '2026-08-02', t: 'b' }, { date: '2026-08-03', t: 'c' }])
+    expect(groups.map((g) => [g.date, g.items.map((i) => i.t)])).toEqual([['2026-08-02', ['a', 'b']], ['2026-08-03', ['c']]])
+    expect(groupByDate([])).toEqual([])
+  })
+
+  test('groupLabel shows one title as is, and the first title plus a count for several', () => {
+    expect(groupLabel(['Caseiro'])).toBe('Caseiro')
+    expect(groupLabel(['Caseiro', 'Outro', 'Mais'])).toBe('Caseiro +2')
+    expect(groupLabel(['x'.repeat(30), 'y'])).toBe(`${'x'.repeat(22)}… +1`)
+  })
+})
+
+describe('truncateTitle', () => {
     test('leaves short titles untouched', () => {
       expect(truncateTitle('Launch')).toBe('Launch')
     })
@@ -332,15 +348,15 @@ describe('renderMilestones', () => {
     expect(label.textContent).toBe(`${'A very long milestone title indeed'.slice(0, 22)}…`)
   })
 
-  // Regression: three same-day milestones used to print their labels through
+  // Regression: three milestones a day apart used to print their labels through
   // each other ("Auth cutBetarewith GA release") because the minimum gap was
   // sized against the dots (24px) rather than the labels under them.
   test('title labels alternate between two rows so neighbours never share a baseline', () => {
     const team = makeTeam({
       milestones: [
         milestone({ id: 'a', date: '2026-08-02', title: 'Auth cutover complete' }),
-        milestone({ id: 'b', date: '2026-08-02', title: 'Beta with 3 pilots' }),
-        milestone({ id: 'c', date: '2026-08-02', title: 'GA release' }),
+        milestone({ id: 'b', date: '2026-08-03', title: 'Beta with 3 pilots' }),
+        milestone({ id: 'c', date: '2026-08-04', title: 'GA release' }),
       ],
     })
     const { container, store, pm, loc } = setup(team)
@@ -356,20 +372,52 @@ describe('renderMilestones', () => {
     expect(container.querySelectorAll('.tt-milestone-leader')).toHaveLength(3)
   })
 
-  test('same-day milestones are spread far enough apart for their date labels to clear', () => {
+  test('milestones due the same day share one dot, labelled with the first title and how many more', () => {
     const team = makeTeam({
       milestones: [
-        milestone({ id: 'a', date: '2026-08-02', title: 'A' }),
-        milestone({ id: 'b', date: '2026-08-02', title: 'B' }),
+        milestone({ id: 'a', date: '2026-08-02', title: 'Caseiro' }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'Outro' }),
+        milestone({ id: 'c', date: '2026-08-09', title: 'Depois' }),
       ],
     })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    const xs = [...container.querySelectorAll('.tt-milestone-dot')].map((n) => Number(n.getAttribute('cx')))
-    // A dd/mm/yyyy label at 9px is roughly 55px wide; anything under that
-    // overprints its neighbour.
-    expect(Math.abs(xs[1]! - xs[0]!)).toBeGreaterThanOrEqual(56)
+    expect(container.querySelectorAll('.tt-milestone-dot')).toHaveLength(2)
+    expect([...container.querySelectorAll('.tt-milestone-title-label')].map((n) => n.textContent)).toEqual(['Caseiro +1', 'Depois'])
+    expect(container.querySelectorAll('.tt-milestone-date-label')).toHaveLength(2)
+    // The tooltip names every milestone on the dot; the list below still has one row each.
+    expect(container.querySelector('.tt-milestone-dot title')!.textContent).toBe('Caseiro\nOutro')
+    expect(container.querySelectorAll('.tt-milestone-row')).toHaveLength(3)
+  })
+
+  test('same-day milestones never widen the drawing: two on one date draw as wide as one', () => {
+    const two = setup(makeTeam({
+      milestones: [
+        milestone({ id: 'a', date: '2026-08-02', title: 'A' }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'B' }),
+      ],
+    }))
+    render(two.container, two.loc, two.store, two.pm)
+    const one = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2026-08-02', title: 'A' })] }))
+    render(one.container, one.loc, one.store, one.pm)
+
+    // No layout in jsdom, so both use the fallback width; a tie pushed 80px apart used to add that to the drawing.
+    expect(two.container.querySelector('.tt-milestone-svg')!.getAttribute('width')).toBe(one.container.querySelector('.tt-milestone-svg')!.getAttribute('width'))
+  })
+
+  test('a dot is done only when every milestone on its date is done; any late one marks it overdue', () => {
+    const team = makeTeam({
+      milestones: [
+        milestone({ id: 'a', date: '2026-08-02', title: 'A', done: true }),
+        milestone({ id: 'b', date: '2026-08-02', title: 'B', done: false }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    const dot = container.querySelector('.tt-milestone-dot')!
+    expect(dot.classList.contains('tt-milestone-dot-done')).toBe(false)
+    expect(dot.classList.contains('tt-milestone-dot-overdue')).toBe(true)
   })
 
   test('circle classes/fill: done is filled solid, overdue-and-not-done is muted, future-and-not-done is accent', () => {
@@ -511,10 +559,9 @@ describe('renderMilestones', () => {
   })
 
   test('deleting a milestone with an empty title does not pay for a whole-team clone', () => {
-    // The silent path has no confirm dialog and offers no undo, so the
-    // spec's justification for deleteWithUndo's structuredClone cost ("paid
-    // once, on an explicit user action that has already been through a
-    // confirm dialog") does not apply here — this must not clone at all.
+    // The silent path offers no undo, so the spec's justification for
+    // deleteWithUndo's structuredClone cost (paid once, to back the Undo
+    // toast) does not apply here — this must not clone at all.
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: todayIso() })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -533,17 +580,18 @@ describe('renderMilestones', () => {
     }
   })
 
-  test('deleting a milestone with a non-empty title requires confirmation', () => {
+  test('deleting a milestone with a non-empty title removes it at once, with an undo toast and no confirm dialog', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, 'Delete milestone')
-    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
-
-    clickByTitleOrText(document.body, 'Delete')
     expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+    expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['a'])
   })
 
   describe('blank-name guard mirrors the action-item card', () => {
@@ -717,16 +765,6 @@ describe('renderMilestones', () => {
     })
   })
 
-  test('canceling the delete confirmation keeps the milestone', () => {
-    const team = makeTeam({ milestones: [milestone({ id: 'a', title: 'Important' })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, 'Delete milestone')
-    clickByTitleOrText(document.body, 'Cancel')
-    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
-  })
-
   test('deleting a milestone unlinks every reference to it across the team\'s notes', () => {
     const team = makeTeam({
       milestones: [
@@ -739,7 +777,6 @@ describe('renderMilestones', () => {
 
     // Milestones render sorted by date ascending, so row 0 is 'Launch'.
     clickByTitleOrText(rows(container)[0]!, 'Delete milestone')
-    clickByTitleOrText(document.body, 'Delete')
 
     const remaining = store.doc.teams[0]!.milestones
     expect(remaining.map((m) => m.id)).toEqual(['b'])
@@ -1209,7 +1246,7 @@ describe('row context menu', () => {
     contextMenuItem('Copy to team…').click()
     const select = document.querySelector('select') as HTMLSelectElement
     select.value = 'to'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Copy')!.click()
 
     expect(store.doc.teams.find((t) => t.id === 'from')!.milestones).toHaveLength(1)
     const copied = store.doc.teams.find((t) => t.id === 'to')!.milestones
@@ -1217,7 +1254,7 @@ describe('row context menu', () => {
     expect(copied[0]!.followup).toBe('blocked by Fix')
   })
 
-  test('Delete opens the same confirm dialog as the row delete button, and removes the row on confirm', () => {
+  test('Delete removes the row straight away, like the row delete button (no confirm dialog)', () => {
     const team = makeTeam({ milestones: [milestone({ id: 'm1' })] })
     const { container, store, pm } = setup(team)
     render(container, { teamId: team.id, ref: { kind: 'milestones' } }, store, pm)
@@ -1225,11 +1262,8 @@ describe('row context menu', () => {
     rightClick(rows(container)[0]!)
     contextMenuItem('Delete').click()
 
-    const confirmBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Delete')
-    expect(confirmBtn).toBeTruthy()
-    confirmBtn!.click()
-
     expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 })
 
@@ -1436,18 +1470,13 @@ describe('milestone delete undo', () => {
     return { store, teamId: team.id }
   }
 
-  function clickDeleteAndConfirm(title: string): void {
-    clickByTitleOrText(document.body, 'Delete milestone')
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe(`Delete "${title}"?`)
-    clickByTitleOrText(document.body, 'Delete')
-  }
-
   it('offers an undo toast that restores the milestone and its @-mentions', () => {
     const { store, teamId } = mountMilestonesWithMentionedMilestone()
 
     const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
 
-    clickDeleteAndConfirm('Ship')
+    clickByTitleOrText(document.body, 'Delete milestone')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
     expect(store.doc.teams.find((t) => t.id === teamId)!.milestones).toHaveLength(0)
     const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
@@ -1513,10 +1542,9 @@ describe('milestone delete — behaviour pins', () => {
     return seen
   }
 
-  it('a confirmed delete toasts the deleted title, with an Undo action', () => {
+  it('a delete toasts the deleted title, with an Undo action', () => {
     const { container } = mount()
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(document.querySelector('.tt-toast')?.textContent).toContain('Milestone "Ship" deleted')
     expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
@@ -1537,25 +1565,28 @@ describe('milestone delete — behaviour pins', () => {
     const { container, store } = mount()
     const seen = recordScopes(store)
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     const deletion = seen.filter((s) => s.milestones === 1)
     expect(deletion).toHaveLength(1)
     expect(deletion[0]!.scope).toEqual({ teamId: 'T1' })
   })
 
-  it('an UNTITLED milestone that carries a follow-up is not deleted silently: it asks first', () => {
+  it('an UNTITLED milestone that carries a follow-up is not deleted silently: it gets an Undo toast', () => {
     const { container, store } = mount({ milestones: [milestone({ id: 'm1', title: '', followup: 'confirm budget with finance' })] })
     deleteRowButton(container, 'm1').click()
-    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
-    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+    expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m1'])
   })
 
-  it('an untitled milestone already marked done is not an untouched draft', () => {
+  it('an untitled milestone already marked done is not an untouched draft: it gets an Undo toast', () => {
     const { container, store } = mount({ milestones: [milestone({ id: 'm1', title: '', done: true })] })
     deleteRowButton(container, 'm1').click()
-    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
-    expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
   it('the silent delete is scoped the same way', () => {
@@ -1573,7 +1604,6 @@ describe('milestone delete — behaviour pins', () => {
   it('only the targeted milestone goes; siblings stay, and the mention is flattened to plain text', () => {
     const { container, store } = mount()
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m2'])
     expect(store.doc.teams[0]!.dailyNotes['2026-01-01']).toBe('See ~Ship~ for context.')
@@ -1589,7 +1619,6 @@ describe('milestone delete — behaviour pins', () => {
     const otherBefore = structuredClone(store.doc.teams[1])
 
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[1]).toEqual(otherBefore)
   })
@@ -1600,7 +1629,6 @@ describe('milestone delete — behaviour pins', () => {
     expect(container.querySelectorAll('.tt-milestone-followup-row')).toHaveLength(2)
 
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     const followups = Array.from(container.querySelectorAll('.tt-milestone-followup-row')).map((n) => n.getAttribute('data-milestone-followup-id'))
     expect(followups).toEqual(['m2'])
@@ -1610,7 +1638,6 @@ describe('milestone delete — behaviour pins', () => {
     const { container } = mount()
     container.querySelector<HTMLButtonElement>('[data-milestone-id="m1"].tt-milestone-row .tt-milestone-expand-btn')!.click()
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
     document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
 
     expect(container.querySelector('[data-milestone-id="m1"].tt-milestone-row')).not.toBeNull()
@@ -1620,7 +1647,6 @@ describe('milestone delete — behaviour pins', () => {
   it('the undo offer expires once any other edit lands', () => {
     const { container, store } = mount()
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
     store.update((d) => { d.teams[0]!.milestones[0]!.title = 'Edited later' }, { teamId: 'T1', sections: ['milestones'] })
 
     // The toast is dismissed the instant anything else mutates the doc — no stale Undo button.
@@ -1632,7 +1658,6 @@ describe('milestone delete — behaviour pins', () => {
     const { container, store } = mount()
     store.setReadOnly(true)
     deleteRowButton(container, 'm1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[0]!.milestones.map((m) => m.id)).toEqual(['m1', 'm2'])
     expect(document.querySelector('.tt-toast')).toBeNull()

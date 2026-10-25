@@ -11,7 +11,7 @@ import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
-import { icon } from './icons'
+import { icon, iconButton } from './icons'
 import type { ImageHost } from './image-host'
 import { imageRefLine } from '../core/image-ref'
 import { IMAGE_ACCEPT, IMAGE_LIMITS } from '../core/image-import'
@@ -1302,7 +1302,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           ...(init.editing
             ? [{ label: t(locale, 'editor_link_remove'), danger: true, onClick: () => finish({ remove: true }) }]
             : []),
-          { label: t(locale, 'ok'), primary: true, onClick: submit },
+          { label: t(locale, 'save'), primary: true, onClick: submit },
         ],
         // Escape / backdrop close routes here too, so the promise never hangs.
         onClose: () => finish(null),
@@ -2277,6 +2277,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return btn
   }
 
+  /** A hairline between button groups (text style | lists | headings | blocks and inserts); decorative, so it stays out of the accessibility tree. */
+  function toolbarSeparator(): HTMLElement {
+    return el('span', { class: 'tt-editor-toolbar-sep', 'aria-hidden': 'true' })
+  }
+
   // The picker behind the image button. Kept in the DOM (hidden) so one input serves every click; its caret is remembered at click time because the dialog takes focus.
   const imageInput = el('input', { type: 'file', accept: IMAGE_ACCEPT, tabindex: '-1', 'aria-hidden': 'true' }) as HTMLInputElement
   imageInput.multiple = true
@@ -2300,12 +2305,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
+    toolbarSeparator(),
     toolbarButton(icon('list'), t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton(icon('olist'), t(locale, 'editor_ol_title'), () => insertList('ol')),
+    toolbarSeparator(),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton(icon('paragraph'), t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
+    toolbarSeparator(),
     toolbarButton(icon('quote'), t(locale, 'editor_quote_title'), () => toggleBlockquote()),
     toolbarButton(icon('codeBlock'), t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton(icon('hr'), t(locale, 'editor_hr_title'), () => insertHr()),
@@ -2331,14 +2339,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // The copy / collapse buttons are ONE shared element floated over the
   // hovered block from the .tt-editor chrome, never inside the editable
   // surface.
-  const cbCopyBtn = el('button', {
-    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_copy'),
-    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbCopy,
-  }, icon('copy'))
-  const cbToggleBtn = el('button', {
-    class: 'tt-cb-btn', type: 'button', tabindex: '-1', title: t(locale, 'editor_cb_collapse'),
-    onmousedown: (e: Event) => e.preventDefault(), onclick: onCbToggle,
-  }, icon('chevUp'))
+  const cbCopyBtn = iconButton({
+    class: 'tt-cb-btn',
+    title: t(locale, 'editor_cb_copy'),
+    icon: 'copy',
+    bare: true,
+    tabindex: '-1',
+    onmousedown: (e: Event) => e.preventDefault(),
+    onclick: onCbCopy,
+  })
+  const cbToggleBtn = iconButton({
+    class: 'tt-cb-btn',
+    title: t(locale, 'editor_cb_collapse'),
+    icon: 'chevUp',
+    bare: true,
+    tabindex: '-1',
+    onmousedown: (e: Event) => e.preventDefault(),
+    onclick: onCbToggle,
+  })
   const cbControls = el('div', { class: 'tt-cb-controls', contenteditable: 'false' }, cbCopyBtn, cbToggleBtn)
   cbControls.hidden = true
   root.appendChild(cbControls)

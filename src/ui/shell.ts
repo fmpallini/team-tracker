@@ -2,7 +2,7 @@
 import type { Prefs } from '../core/types'
 import { t, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
-import { icon } from './icons'
+import { iconButton, setIconButtonTitle } from './icons'
 import { formatHHMM, formatAge } from '../core/date'
 import type { FileHealth } from '../core/file-snapshot'
 import { syncThemeColor } from '../core/theme-color'
@@ -200,29 +200,33 @@ export function createShell(locale: Locale): Shell {
     saveIndicator
   )
 
-  const fullscreenBtn = el(
-    'button',
-    { class: 'tt-btn tt-btn-fullscreen', type: 'button', title: t(locale, 'fullscreen'), onclick: () => toggleFullscreen() },
-    icon('fullscreen')
-  )
+  const fullscreenBtn = iconButton({
+    class: 'tt-btn-fullscreen',
+    title: t(locale, 'fullscreen'),
+    icon: 'fullscreen',
+    onclick: () => toggleFullscreen(),
+  })
   let closeFileHandler: (() => void) | null = null
-  const closeFileBtn = el(
-    'button',
-    { class: 'tt-btn tt-btn-close-file', type: 'button', title: t(locale, 'close_file_title'), onclick: () => closeFileHandler?.() },
-    icon('lock')
-  )
+  const closeFileBtn = iconButton({
+    class: 'tt-btn-close-file',
+    title: t(locale, 'close_file_title'),
+    icon: 'lock',
+    onclick: () => closeFileHandler?.(),
+  })
   let settingsHandler: (() => void) | null = null
-  const settingsBtn = el(
-    'button',
-    { class: 'tt-btn tt-btn-settings', type: 'button', title: t(locale, 'settings'), onclick: () => settingsHandler?.() },
-    icon('gear')
-  )
+  const settingsBtn = iconButton({
+    class: 'tt-btn-settings',
+    title: t(locale, 'settings'),
+    icon: 'gear',
+    onclick: () => settingsHandler?.(),
+  })
   let helpHandler: (() => void) | null = null
-  const helpBtn = el(
-    'button',
-    { class: 'tt-btn tt-btn-help', type: 'button', title: t(locale, 'help_global_title'), onclick: () => helpHandler?.() },
-    icon('help')
-  )
+  const helpBtn = iconButton({
+    class: 'tt-btn-help',
+    title: t(locale, 'help_global_title'),
+    icon: 'help',
+    onclick: () => helpHandler?.(),
+  })
 
   // The right cluster is status, then view/help utilities, then settings and the session-ending close-file button last, kept apart from the utilities. (mountSearch() appends the search box to headerLeft.)
   headerRight.append(
@@ -336,10 +340,10 @@ export function createShell(locale: Locale): Shell {
     if (localeChanged) {
       appNameBtn.title = t(currentLocale, 'app_name_button_title')
       appNameLabel.textContent = t(currentLocale, 'app_name')
-      fullscreenBtn.title = t(currentLocale, 'fullscreen')
-      closeFileBtn.title = t(currentLocale, 'close_file_title')
-      settingsBtn.title = t(currentLocale, 'settings')
-      helpBtn.title = t(currentLocale, 'help_global_title')
+      setIconButtonTitle(fullscreenBtn, t(currentLocale, 'fullscreen'))
+      setIconButtonTitle(closeFileBtn, t(currentLocale, 'close_file_title'))
+      setIconButtonTitle(settingsBtn, t(currentLocale, 'settings'))
+      setIconButtonTitle(helpBtn, t(currentLocale, 'help_global_title'))
     }
     if (localeChanged) renderSaveIndicator()
   }

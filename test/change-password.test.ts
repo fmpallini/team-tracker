@@ -153,7 +153,7 @@ test('fallback mode (no FS handle) downloads instead of writing, and toasts a no
 
   expect(fsMocks.writeFile).not.toHaveBeenCalled()
   expect(fsMocks.downloadFallback).toHaveBeenCalledWith(session.name, new Uint8Array([1, 2, 3]))
-  expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'fallback_notice'))
+  expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'fallback_notice'), { kind: 'warn' })
 })
 
 test('a read-only store rejects before ever encrypting, writing, or flipping the password', async () => {

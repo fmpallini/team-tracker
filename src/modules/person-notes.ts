@@ -15,7 +15,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { openPersonModal } from '../ui/person-modal'
-import { icon } from '../ui/icons'
+import { iconButton } from '../ui/icons'
 
 export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'person') return // registered only for 'person'; defensive
@@ -56,51 +56,43 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const initialChip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
   if (initialChip) headerBadgeSlot.appendChild(initialChip)
 
-  const editBtn = el(
-    'button',
-    {
-      class: 'tt-btn tt-person-header-btn tt-person-header-edit-btn', type: 'button',
-      title: t(lc, 'person_edit_title'),
-      onclick: () => {
-        const p = findPerson()
-        if (!p) return
-        openPersonModal(lc, {
-          title: t(lc, 'person_edit_title'),
-          initialName: p.name,
-          initialRole: p.role,
-          onSubmit: (name, role) => {
-            ctx.store.update((d) => {
-              const tm = docFindTeam(d, teamId)
-              const pp = tm?.[group].find((x) => x.id === personId)
-              if (!pp) return
-              pp.name = name
-              pp.role = role
-              // Unscoped beyond the team, exactly as people-tree.ts's rename
-              // site: `name`/`role` are the label every @[…](person:id)
-              // mention in this team resolves through live, so a pane showing
-              // a mention of this person in another section must be free to
-              // re-render.
-            }, { teamId })
-          },
-        })
-      },
+  const editBtn = iconButton({
+    class: 'tt-person-header-btn tt-person-header-edit-btn',
+    title: t(lc, 'person_edit_title'), icon: 'edit',
+    onclick: () => {
+      const p = findPerson()
+      if (!p) return
+      openPersonModal(lc, {
+        title: t(lc, 'person_edit_title'),
+        initialName: p.name,
+        initialRole: p.role,
+        onSubmit: (name, role) => {
+          ctx.store.update((d) => {
+            const tm = docFindTeam(d, teamId)
+            const pp = tm?.[group].find((x) => x.id === personId)
+            if (!pp) return
+            pp.name = name
+            pp.role = role
+            // Unscoped beyond the team, exactly as people-tree.ts's rename
+            // site: `name`/`role` are the label every @[…](person:id)
+            // mention in this team resolves through live, so a pane showing
+            // a mention of this person in another section must be free to
+            // re-render.
+          }, { teamId })
+        },
+      })
     },
-    icon('edit')
-  )
+  })
 
-  const gotoOrgBtn = el(
-    'button',
-    {
-      class: 'tt-btn tt-person-header-btn tt-person-header-goto-org-btn', type: 'button',
-      title: t(lc, 'person_notes_goto_org_title'),
-      onclick: () => navigateToLoc(
-        ctx.store, ctx.pm, ctx.paneIdx,
-        { teamId, ref: group === 'members' ? { kind: 'members' } : { kind: 'stakeholders' } },
-        { secondary: false, focusItemId: personId }
-      ),
-    },
-    icon('orgchart')
-  )
+  const gotoOrgBtn = iconButton({
+    class: 'tt-person-header-btn tt-person-header-goto-org-btn',
+    title: t(lc, 'person_notes_goto_org_title'), icon: 'orgchart',
+    onclick: () => navigateToLoc(
+      ctx.store, ctx.pm, ctx.paneIdx,
+      { teamId, ref: group === 'members' ? { kind: 'members' } : { kind: 'stakeholders' } },
+      { secondary: false, focusItemId: personId }
+    ),
+  })
 
   const headerEl = el(
     'div',

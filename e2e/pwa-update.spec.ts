@@ -104,7 +104,7 @@ test.describe('PWA update banner (src/main.ts reloadForUpdate / ensureServiceWor
     await page.locator('.tt-team-add-btn').click()
     const teamDialog = page.getByRole('dialog')
     await teamDialog.locator('input[name="tt-team-name"]').fill('Alpha')
-    await teamDialog.getByRole('button', { name: 'OK' }).click()
+    await teamDialog.getByRole('button', { name: 'Save' }).click()
 
     await page.evaluate(() => {
       window.__poisonNextWrite = true

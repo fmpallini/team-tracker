@@ -3,6 +3,7 @@
 // to choose the destination team. Locale-agnostic: callers pass already-
 // translated labels, same convention as ui/modal.ts's ModalButton.
 import type { Team } from '../core/types'
+import { teamLabel } from '../core/document'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
 import { el } from './dom'
 
@@ -15,7 +16,7 @@ export function openTeamPickerModal(opts: {
 }): void {
   const select = el('select', { class: 'tt-input' }) as HTMLSelectElement
   for (const team of opts.teams) {
-    select.appendChild(el('option', { value: team.id }, team.emoji ? `${team.emoji} ${team.name}` : team.name))
+    select.appendChild(el('option', { value: team.id }, teamLabel(team)))
   }
   const body = el('div', { class: 'tt-prefs-field' }, select)
 
@@ -43,7 +44,7 @@ export function openTeamColumnPickerModal(opts: {
 }): void {
   const teamSelect = el('select', { class: 'tt-input' }) as HTMLSelectElement
   for (const team of opts.teams) {
-    teamSelect.appendChild(el('option', { value: team.id }, team.emoji ? `${team.emoji} ${team.name}` : team.name))
+    teamSelect.appendChild(el('option', { value: team.id }, teamLabel(team)))
   }
   const columnSelect = el('select', { class: 'tt-input' }) as HTMLSelectElement
   function populateColumns(team: Team): void {

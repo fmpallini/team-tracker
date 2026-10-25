@@ -26,7 +26,7 @@ export function watchFileHealth(snapshot: FileSnapshot, locale: () => Locale): (
       if (permissionToasted) return
       permissionToasted = true
       const lc = locale()
-      toast(t(lc, 'save_permission_toast'), {
+      toast(t(lc, 'save_permission_toast'), { kind: 'warn',
         sticky: true,
         key: SAVE_PERMISSION_TOAST_KEY,
         action: { label: t(lc, 'grant_access_ellipsis'), onClick: () => void snapshot.resolveGrants() },
@@ -35,7 +35,7 @@ export function watchFileHealth(snapshot: FileSnapshot, locale: () => Locale): (
       // 'conflict' belongs to the conflict modal, which is already up.
       if (h.message === 'conflict' || errorToasted) return
       errorToasted = true
-      toast(t(locale(), 'save_error_toast'), { sticky: true, key: SAVE_ERROR_TOAST_KEY })
+      toast(t(locale(), 'save_error_toast'), { kind: 'error', sticky: true, key: SAVE_ERROR_TOAST_KEY })
     } else if (h.kind === 'ok') {
       // Only on a transition into ok (a write just succeeded), not for the snapshot subscribe() announces at once.
       if (was === null || was === 'ok') return
@@ -55,7 +55,7 @@ export function watchFileHealth(snapshot: FileSnapshot, locale: () => Locale): (
  */
 export function watchStoreHealth(persister: LivePersister, locale: () => Locale): () => void {
   const announce = (failed: boolean): void => {
-    if (failed) toast(t(locale(), 'live_store_failed_toast'), { sticky: true, key: STORE_ERROR_TOAST_KEY })
+    if (failed) toast(t(locale(), 'live_store_failed_toast'), { kind: 'error', sticky: true, key: STORE_ERROR_TOAST_KEY })
     else dismissToast(STORE_ERROR_TOAST_KEY)
   }
   if (persister.lastError != null) announce(true)

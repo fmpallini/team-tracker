@@ -88,12 +88,6 @@ function clickByTitleOrText(root: ParentNode, text: string): void {
   btn.click()
 }
 
-/** Clicks "Delete" in the topmost dialog — the confirm, when it is stacked over the still-open card modal (which has its own Delete button). */
-function clickConfirmDelete(): void {
-  const dialogs = document.querySelectorAll('.tt-modal-dialog')
-  clickByTitleOrText(dialogs[dialogs.length - 1]!, 'Delete')
-}
-
 function cards(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card'))
 }
@@ -315,7 +309,7 @@ describe('card context menu', () => {
     expect(labels).toEqual(['Duplicate', 'Delete'])
   })
 
-  test('Delete opens the same confirm dialog as the pencil-icon delete button, and removes the card on confirm', () => {
+  test('Delete removes the card at once — no confirm dialog — and offers an Undo', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a1', order: 0, summary: 'Do the thing' })] })
     const { container, store, pm } = setup(team)
     render(container, { teamId: team.id, ref: { kind: 'actions' } }, store, pm)
@@ -323,11 +317,9 @@ describe('card context menu', () => {
     rightClick(cards(container)[0]!)
     contextMenuItem('Delete').click()
 
-    const confirmBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Delete')
-    expect(confirmBtn).toBeTruthy()
-    confirmBtn!.click()
-
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
   test('Duplicate appends a copy to the same team', () => {
@@ -357,7 +349,7 @@ describe('card context menu', () => {
     contextMenuItem('Copy to team…').click()
     const select = document.querySelector('select') as HTMLSelectElement
     select.value = 'to'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Copy')!.click()
 
     expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(1)
     const copied = store.doc.teams.find((t) => t.id === 'to')!.actionItems
@@ -381,7 +373,7 @@ describe('card context menu', () => {
     contextMenuItem('Move to team…').click()
     const select = document.querySelector('select') as HTMLSelectElement
     select.value = 'to'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Move')!.click()
 
     expect(store.doc.teams.find((t) => t.id === 'from')!.actionItems).toHaveLength(0)
     expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems).toHaveLength(1)
@@ -406,7 +398,7 @@ describe('card context menu', () => {
     teamSelect!.dispatchEvent(new Event('change', { bubbles: true }))
     expect(Array.from(columnSelect!.querySelectorAll('option')).map((o) => o.value)).toEqual(['todo', 'review', 'done', 'cancelled'])
     columnSelect!.value = 'review'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Copy')!.click()
 
     expect(store.doc.teams.find((t) => t.id === 'to')!.actionItems[0]!.status).toBe('review')
   })
@@ -520,7 +512,7 @@ describe('keyboard route to the card actions', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const summaryInput = document.querySelector('.tt-modal-dialog input.tt-input') as HTMLInputElement
     setValue(summaryInput, 'New card')
     clickByTitleOrText(document.body, 'Close')
@@ -536,7 +528,7 @@ describe('keyboard route to the card actions', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     // The draft is a real (if empty) store entry the instant the modal
     // opens — same as risks.ts's addRisk — so every field, including
     // whichever one is touched first, has something to attach to.
@@ -576,7 +568,7 @@ describe('edit modal is modeless — nav can close it without losing the edit', 
     const team = makeTeam({ actionItems: [] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     setValue(document.querySelector('.tt-modal-dialog input.tt-assignee-input') as HTMLInputElement, 'Bruno')
 
     // This is exactly what every guarded nav path checks before switching.
@@ -596,7 +588,7 @@ describe('edit modal is modeless — nav can close it without losing the edit', 
     const team = makeTeam({ actionItems: [] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     setValue(document.querySelector('.tt-modal-dialog input.tt-assignee-input') as HTMLInputElement, 'Bruno')
 
     disposeContainer(container) // e.g. a cross-tab control handoff, which no pre-guard covers
@@ -842,7 +834,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card') // To Do column's add button (first in DOM order)
+    clickByTitleOrText(container, '+ Task') // To Do column's add button (first in DOM order)
     assigneeToggle().click()
 
     expect(assigneeMenuHeaders()).toEqual(['Stakeholders', 'Members'])
@@ -867,7 +859,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const input = assigneeInput()
     input.value = 'car'
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -933,7 +925,7 @@ describe('renderActionItems — board', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     assigneeToggle().click()
     expect(document.querySelector('.tt-kanban-form-row .tt-assignee-menu')).not.toBeNull()
 
@@ -980,14 +972,14 @@ describe('renderActionItems — board', () => {
 })
 
 describe('renderActionItems — edit modal', () => {
-  test('"+ Card" in To Do creates a card in the todo column with the entered fields', () => {
+  test('"+ Task" in To Do creates a card in the todo column with the entered fields', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 7, 1)) // Aug 1, 2026 — the date picker opens on "today"'s month when empty
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     setValue(summaryInput, 'New task')
     pickDate(1)
@@ -1007,7 +999,7 @@ describe('renderActionItems — edit modal', () => {
     expect(created.color).toBe('sage')
   })
 
-  test('"+ Card" in WIP creates a card in the wip column', () => {
+  test('"+ Task" in WIP creates a card in the wip column', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -1026,7 +1018,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     clickByTitleOrText(document.body, 'Close')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-field-error')).toBeNull()
@@ -1034,14 +1026,14 @@ describe('renderActionItems — edit modal', () => {
   })
 
   test('leaving summary blank and closing discards the draft without paying for a whole-team clone', () => {
-    // Fires from the card modal's onClose whenever a "+ Card" draft was
+    // Fires from the card modal's onClose whenever a "+ Task" draft was
     // abandoned blank — on a team with years of daily notes, this used to
     // cost a multi-MB structuredClone for a delete with no confirm dialog
     // and no undo offer, purely thrown away.
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     // Restored in finally: vi.spyOn on an already-spied global returns the
     // SAME spy instance with its call history intact, so an unrestored spy
     // here would leak stale calls into any other test (in this file or
@@ -1062,7 +1054,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
     setBlockText(editorEl, 'A note I do not want to lose')
     fireInput(editorEl)
@@ -1084,7 +1076,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const editorEl = document.querySelector('.tt-kanban-form .editor') as HTMLElement
     setBlockText(editorEl, 'Keep me')
     fireInput(editorEl)
@@ -1107,7 +1099,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     pickDate(10)
     clickByTitleOrText(document.body, 'Close')
 
@@ -1118,7 +1110,7 @@ describe('renderActionItems — edit modal', () => {
     clickByTitleOrText(document.body, 'Close')
   })
 
-  test('the Delete button on an existing card edited down to blank is not blocked by the name rule — it asks (the notes are real content), then closes', () => {
+  test('the Delete button on an existing card edited down to blank is not blocked by the name rule — the notes are real content, so it deletes with an Undo (not silently), and closes', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Had a name', notes: 'has notes' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -1127,12 +1119,11 @@ describe('renderActionItems — edit modal', () => {
     setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, '')
     clickByTitleOrText(document.body, 'Delete')
 
-    // The notes make this more than an empty draft: confirm first, card stays up behind it.
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
-    clickConfirmDelete()
-
+    // The notes make this more than an empty draft: no silent delete, an Undo toast is offered.
     expect(document.querySelector('.tt-kanban-form')).toBeNull()
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
   test('the Delete button on an existing card edited down to blank with NOTHING else closes immediately', () => {
@@ -1152,7 +1143,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const chips = document.querySelectorAll('.tt-kanban-form .tt-kanban-color-chip')
     expect(chips.length).toBeGreaterThan(0)
     expect(Array.from(chips).some((c) => c.classList.contains('selected'))).toBe(false)
@@ -1162,7 +1153,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     setValue(summaryInput, 'No color yet')
     clickByTitleOrText(document.body, 'Close')
@@ -1178,7 +1169,7 @@ describe('renderActionItems — edit modal', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', order: 0 }), item({ id: 'c', order: 2 })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const summaryInput = document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement
     setValue(summaryInput, 'New one')
     clickByTitleOrText(document.body, 'Close')
@@ -1231,7 +1222,7 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
   })
 
-  test('the edit modal\'s Delete button opens the confirm over the card, and confirming closes both', () => {
+  test('the edit modal\'s Delete button deletes at once and closes the modal — no confirm dialog left open', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -1240,25 +1231,22 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
 
     clickByTitleOrText(document.body, 'Delete')
-    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
-
-    clickConfirmDelete()
+    expect(document.querySelector('.tt-modal-message')).toBeNull()
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     expect(document.querySelector('.tt-kanban-form')).toBeNull()
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
-  test('canceling the delete confirmation keeps the card and returns to the open edit modal', () => {
+  test('undoing the edit modal\'s delete restores the card', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     clickByTitleOrText(document.body, 'Delete')
-    clickByTitleOrText(document.body, 'Cancel')
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
-    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
-    expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+    expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).toEqual(['a'])
   })
 
   test('deleting an action item unlinks every reference to it across the team\'s notes', () => {
@@ -1274,7 +1262,6 @@ describe('renderActionItems — edit modal', () => {
     const cardA1 = cards(container).find((c) => c.getAttribute('data-item-id') === 'a1')!
     cardA1.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     clickByTitleOrText(document.body, 'Delete')
-    clickConfirmDelete()
 
     const remaining = store.doc.teams[0]!.actionItems
     expect(remaining.map((i) => i.id)).toEqual(['a2'])
@@ -1291,14 +1278,15 @@ describe('renderActionItems — edit modal', () => {
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
-  test('deleting a card with no summary but real notes asks for confirmation instead of vanishing', () => {
+  test('deleting a card with no summary but real notes is undoable instead of vanishing silently', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: '', notes: 'call the vendor before Friday' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     clickByTitleOrText(document.body, 'Delete')
-    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
-    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
   test('deleting a card whose summary is blank does not pay for a whole-team clone', () => {
@@ -1591,8 +1579,8 @@ describe('renderActionItems — zone clear-all', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete all 2 cards in this area?')
+    clickByTitleOrText(container, 'Clear tasks') // first zone-trash button = Done zone
+    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete all 2 tasks in this area?')
     clickByTitleOrText(document.body, 'Delete all')
 
     expect(store.doc.teams[0]!.actionItems.filter((i) => i.status === 'done')).toHaveLength(0)
@@ -1603,7 +1591,7 @@ describe('renderActionItems — zone clear-all', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, 'Clear cards')
+    clickByTitleOrText(container, 'Clear tasks')
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
   })
 
@@ -1611,7 +1599,7 @@ describe('renderActionItems — zone clear-all', () => {
     const team = makeTeam({ actionItems: [item({ id: 'd1', status: 'done' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, 'Clear cards')
+    clickByTitleOrText(container, 'Clear tasks')
     clickByTitleOrText(document.body, 'Cancel')
     expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
   })
@@ -1626,7 +1614,7 @@ describe('renderActionItems — zone clear-all', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
+    clickByTitleOrText(container, 'Clear tasks') // first zone-trash button = Done zone
     clickByTitleOrText(document.body, 'Delete all')
 
     const remaining = store.doc.teams[0]!.actionItems
@@ -1662,7 +1650,7 @@ describe('renderActionItems — edit tags modal (toolbar)', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     expect(document.querySelector('.tt-kanban-color-names-btn')).toBeNull()
   })
 
@@ -1912,6 +1900,28 @@ describe('renderActionItems — tag display and filter', () => {
     expect(cardB.querySelector('.tt-kanban-card-tag')).toBeNull()
   })
 
+  test('the tag and due date sit in a label band above the title; a card with neither, and no color, gets no band', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [
+        item({ id: 'a', color: 'rust', dueDate: '2026-07-20' }),
+        item({ id: 'b', color: 'slate', dueDate: null }),
+        item({ id: 'c', color: null, dueDate: null }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const byId = (id: string): HTMLElement => cards(container).find((c) => c.getAttribute('data-item-id') === id)!
+    const bandA = byId('a').querySelector('.tt-kanban-card-band')!
+    expect(bandA.querySelector('.tt-kanban-card-tag')?.textContent).toBe('Blocked')
+    expect(bandA.querySelector('.tt-kanban-card-due')).not.toBeNull()
+    expect(bandA.compareDocumentPosition(byId('a').querySelector('.tt-kanban-card-title')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A colored but unnamed, undated card keeps an empty tinted band: the color is still its filing mark.
+    expect(byId('b').querySelector('.tt-kanban-card-band')?.children).toHaveLength(0)
+    expect(byId('c').querySelector('.tt-kanban-card-band')).toBeNull()
+  })
+
   test('renders one filter chip per color; only custom-named colors show visible text, unnamed ones stay blank with an aria-label', () => {
     const team = makeTeam({ actionTagNames: { rust: 'Blocked' } })
     const { container, store, pm, loc } = setup(team)
@@ -1991,7 +2001,7 @@ describe('renderActionItems — tag display and filter', () => {
     chipByColor(container, '.tt-kanban-tag-chip', 'slate').click() // filter to slate
     expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['old'])
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'New task')
     ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-rust') as HTMLButtonElement).click()
     clickByTitleOrText(document.body, 'Close')
@@ -2007,7 +2017,7 @@ describe('renderActionItems — tag display and filter', () => {
 
     chipByColor(container, '.tt-kanban-tag-chip', 'slate').click() // filter to slate
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     setValue(document.querySelector('.tt-kanban-form input[type="text"]') as HTMLInputElement, 'New slate task')
     ;(document.querySelector('.tt-kanban-form .tt-kanban-color-chip.color-slate') as HTMLButtonElement).click()
     clickByTitleOrText(document.body, 'Close')
@@ -2069,7 +2079,7 @@ describe('renderActionItems — color chip labels in the edit modal', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Card')
+    clickByTitleOrText(container, '+ Task')
     const chips = Array.from(document.querySelectorAll('.tt-kanban-form .tt-kanban-color-chip'))
     const rustChip = chips.find((c) => c.classList.contains('color-rust'))!
     const slateChip = chips.find((c) => c.classList.contains('color-slate'))!
@@ -2138,7 +2148,7 @@ describe('renderActionItems — drag and drop', () => {
     expect(store.doc.teams[0]!.actionItems.find((i) => i.id === 'a')!.status).toBe('done')
   })
 
-  test('dropping a card on the floating trash zone opens the delete-confirm modal', () => {
+  test('dropping a card on the floating trash zone deletes it at once, with an Undo toast', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -2148,9 +2158,9 @@ describe('renderActionItems — drag and drop', () => {
     card.dispatchEvent(new Event('dragstart', { bubbles: true }))
     trash.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
 
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
-    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
   test('dragstart on a card reveals a dashed highlight on all 4 drop zones (todo/wip/done/cancelled); dragend hides them', () => {
@@ -2410,8 +2420,7 @@ describe('renderActionItems — delete undo', () => {
 
     cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     clickByTitleOrText(document.body, 'Delete')
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Ship it"?')
-    clickConfirmDelete()
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
 
     expect(store.doc.teams[0]!.actionItems).toHaveLength(0)
     const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
@@ -2440,7 +2449,7 @@ describe('renderActionItems — delete undo', () => {
 
     const before = structuredClone(store.doc.teams.find((t) => t.id === team.id))
 
-    clickByTitleOrText(container, 'Clear cards') // first zone-trash button = Done zone
+    clickByTitleOrText(container, 'Clear tasks') // first zone-trash button = Done zone
     clickByTitleOrText(document.body, 'Delete all')
 
     expect(store.doc.teams[0]!.actionItems.filter((i) => i.status === 'done')).toHaveLength(0)
@@ -2526,10 +2535,9 @@ describe('renderActionItems — delete behaviour pins', () => {
     cards(container).find((c) => c.getAttribute('data-item-id') === id)!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   }
 
-  function deleteViaModal(container: HTMLElement, id: string, confirm = true): void {
+  function deleteViaModal(container: HTMLElement, id: string): void {
     openCard(container, id)
     clickByTitleOrText(document.body, 'Delete')
-    if (confirm) clickConfirmDelete()
   }
 
   function recordScopes(store: Store): { scope: unknown; items: number }[] {
@@ -2538,11 +2546,11 @@ describe('renderActionItems — delete behaviour pins', () => {
     return seen
   }
 
-  it('a confirmed delete toasts the deleted summary, with an Undo action', () => {
+  it('a delete toasts the deleted summary, with an Undo action', () => {
     const { container } = mount()
     deleteViaModal(container, 'a1')
 
-    expect(document.querySelector('.tt-toast')?.textContent).toContain('Action "Ship it" deleted')
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Task "Ship it" deleted')
     expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
 
@@ -2550,19 +2558,18 @@ describe('renderActionItems — delete behaviour pins', () => {
     const { container, store } = mount({
       actionItems: [item({ id: 'a1', summary: '' }), item({ id: 'a2', summary: 'Other', order: 1 })],
     })
-    deleteViaModal(container, 'a1', false)
+    deleteViaModal(container, 'a1')
 
     expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).toEqual(['a2'])
     expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
-  it('the confirmed delete is scoped to the team with no sections (it rewrites mentions team-wide)', () => {
+  it('the delete is scoped to the team with no sections (it rewrites mentions team-wide)', () => {
     const { container, store } = mount()
     openCard(container, 'a1')
-    clickByTitleOrText(document.body, 'Delete')
     const seen = recordScopes(store)
-    clickConfirmDelete()
+    clickByTitleOrText(document.body, 'Delete')
 
     const firstDeletion = seen.find((s) => s.items === 1)
     expect(firstDeletion?.scope).toEqual({ teamId: 'T1' })

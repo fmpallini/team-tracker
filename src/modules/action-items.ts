@@ -29,7 +29,7 @@ import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list
 import { BACKLINK_SECTIONS, normalize } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { withDisposal } from './lifecycle'
-import { icon, kindIcon } from '../ui/icons'
+import { icon, iconButton, kindIcon } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
 
 // Display order: red, yellow, blue (the three with a suggested default name
@@ -228,13 +228,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     clearClasses(boardEl, '.tt-kanban-card', 'tt-kanban-drop-before', 'tt-kanban-drop-after')
   }
 
-  // Confirm/undo/silent delete shared with risks and milestones (see
+  // Undo/silent delete shared with risks and milestones (see
   // modules/entity-delete.ts). Cards have no inline follow-up editor, so
   // there's no local UI state to flip first.
   const { removeSilently: removeItemSilently, requestDelete } = createEntityDelete({
     ctx, teamId, collection: 'actionItems', refKind: 'action', labelOf: (i) => i.summary, labelParam: 'summary',
-    messages: { title: 'kanban_delete_title', confirm: 'kanban_delete_confirm', button: 'kanban_delete_btn', toast: 'action_deleted_toast' },
-    variant: 'danger',
+    toast: 'action_deleted_toast',
     // A card with no summary can still hold notes, an assignee or a due date.
     isBlank: isBlankActionDraft,
   })
@@ -270,7 +269,6 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       title: t(lc, 'kanban_clear_zone_title'),
       message: t(lc, 'kanban_clear_zone_confirm', { count: String(count) }),
       confirmLabel: t(lc, 'kanban_clear_zone_btn'),
-      variant: 'danger',
       onConfirm: () => {
         // Deep copy (taken by deleteInTeamWithUndo) — same unlinkRefsInTeam
         // cross-section rationale as entity-delete.ts.
@@ -577,19 +575,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       savePillMiniPill.classList.toggle('tt-save-pill-clickable', info.clickable)
       savePillMiniPill.classList.toggle('tt-save-pill-stale', info.stale)
     })
-    const expandBtn = el(
-      'button',
-      {
-        class: 'tt-btn tt-kanban-expand-btn', type: 'button', title: t(lc, 'kanban_expand_title'),
-        onclick: () => {
-          expanded = !expanded
-          handle.dialogEl.classList.toggle('tt-kanban-expanded', expanded)
-          savePillMini.style.display = expanded ? '' : 'none'
-          expandBtn.title = t(lc, expanded ? 'kanban_collapse_title' : 'kanban_expand_title')
-        },
+    const expandBtn = iconButton({
+      class: 'tt-kanban-expand-btn', title: t(lc, 'kanban_expand_title'), icon: 'fullscreen',
+      onclick: () => {
+        expanded = !expanded
+        handle.dialogEl.classList.toggle('tt-kanban-expanded', expanded)
+        savePillMini.style.display = expanded ? '' : 'none'
+        const label = t(lc, expanded ? 'kanban_collapse_title' : 'kanban_expand_title')
+        expandBtn.title = label
+        expandBtn.setAttribute('aria-label', label)
       },
-      icon('fullscreen')
-    )
+    })
     const headerExtra = el('div', { class: 'tt-kanban-modal-header-extra' }, savePillMini, expandBtn)
 
     openBundle = { richBundle, datePicker, unsubscribeSaveStatus, refreshAssignee: renderAssigneeField, teardownAssignee: () => closeAssigneeMenu() }
@@ -647,9 +643,9 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const buttons: ModalButton[] = []
     if (existing !== null) {
       buttons.push({ label: t(lc, 'kanban_delete_btn'), danger: true, left: true, onClick: () => {
-        // Card stays open behind the confirm so Cancel returns to it; it closes
-        // only once the delete is certain. Live item, not `existing`: the
-        // summary may have been edited since the modal opened.
+        // Live item, not `existing`: the summary may have been edited since
+        // the modal opened. `deleting` stops onClose from silently removing a
+        // blank-summary card first, which would leave remove() nothing to undo.
         const live = items().find((i) => i.id === itemId) ?? existing
         requestDelete(live, () => { deleting = true; closeModal() })
       } })
@@ -691,7 +687,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // draft nothing was typed into and an existing card cleared to blank.
         const current = items().find((i) => i.id === itemId)
         if (current && current.summary.trim() === '') {
-          removeItemSilently(itemId)
+          if (!deleting) removeItemSilently(itemId)
         } else if (current && existing === null && activeTagFilter !== null && activeTagFilter !== current.color) {
           // A new card whose final color the active filter would hide is
           // invisible the moment the modal closes — clear the filter so the
@@ -744,7 +740,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     const body = el('div', { class: 'tt-kanban-color-name-rows' }, ...rows)
     const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
     const saveBtn: ModalButton = {
-      label: t(lc, 'kanban_save_btn'),
+      label: t(lc, 'save'),
       primary: true,
       onClick: () => {
         ctx.store.update((d) => {
@@ -867,14 +863,17 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>, team: Team | undefined): HTMLElement {
-    const editBtn = el(
-      'button',
-      { class: 'tt-btn tt-kanban-edit-btn', type: 'button', tabindex: '-1', title: t(lc, 'kanban_edit_hint'), onclick: (e: Event) => { e.stopPropagation(); openEditModal(item) } },
-      icon('edit', 13)
-    )
+    const editBtn = iconButton({
+      class: 'tt-kanban-edit-btn', tabindex: '-1', title: t(lc, 'kanban_edit_hint'),
+      icon: 'edit', size: 13, onclick: (e) => { e.stopPropagation(); openEditModal(item) },
+    })
     // The title is clamped to two lines (styles.css) so cards stay dense in a
     // split pane; its own tooltip carries the untruncated summary.
     const titleEl = el('div', { class: 'tt-kanban-card-title', title: item.summary }, item.summary)
+    // The label band on top carries what files the card: its tag (when the team named that color) and its due date.
+    const bandChildren: (Node | string)[] = []
+    const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
+    if (customName) bandChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const metaChildren: (Node | string)[] = []
     if (item.dueDate) {
       // Date stays the text (that is what people scan for); lateness is the
@@ -885,7 +884,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const rel = item.dueDate < today
         ? t(lc, 'due_overdue_by', { days: String(diffDays(today, item.dueDate)) })
         : t(lc, 'due_in_days', { days: String(diffDays(item.dueDate, today)) })
-      metaChildren.push(el('span', {
+      bandChildren.push(el('span', {
         class: 'tt-kanban-card-due' + (overdue ? ' overdue' : soon ? ' soon' : ''),
         ...(isActionActive(item) ? { title: rel } : {}),
       }, formatDate(item.dueDate, lc)))
@@ -895,11 +894,11 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       const assigneeText = display.kind === 'linked' ? display.name : display.kind === 'unlinked' ? display.label : display.text
       metaChildren.push(el('span', { class: 'tt-kanban-card-assignee' }, ...(display.kind === 'linked' ? [kindIcon('person', 11)] : []), assigneeText))
     }
-    const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
-    if (customName) metaChildren.push(el('span', { class: 'tt-kanban-card-tag' }, customName))
     const chip = createModuleBacklinksChip(ctx, teamId, 'action', item.id)
     if (chip) metaChildren.push(chip)
     const metaEl = el('div', { class: 'tt-kanban-card-meta' }, ...metaChildren)
+    // A card with no color, tag or due date has nothing to file, so it gets no band.
+    const bandEl = item.color !== null || bandChildren.length > 0 ? el('div', { class: 'tt-kanban-card-band' }, ...bandChildren) : null
 
     const card = el(
       'div',
@@ -912,7 +911,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         'data-item-id': item.id,
         title: t(lc, 'kanban_card_context_hint'),
       },
-      editBtn, titleEl, metaEl
+      editBtn, ...(bandEl ? [bandEl] : []), titleEl, metaEl
     )
     card.addEventListener('dblclick', () => openEditModal(item))
     card.addEventListener('contextmenu', (e) => {
@@ -1208,7 +1207,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         'div', { class: 'tt-kanban-col-head' },
         gripEl, nameSpan, nameInput,
         el('button', { class: 'tt-btn tt-kanban-add-btn', type: 'button', onclick: () => openEditModal(null, id) }, t(lc, 'kanban_add_card')),
-        el('button', { class: 'tt-btn tt-kanban-col-delete-btn', type: 'button', title: t(lc, 'kanban_delete_column_title'), onclick: () => deleteColumn(id) }, icon('trash', 14))
+        iconButton({
+          class: 'tt-kanban-col-delete-btn',
+          title: t(lc, 'kanban_delete_column_title'),
+          icon: 'trash',
+          size: 14,
+          onclick: () => deleteColumn(id),
+        })
       )
       wireColumnHeaderDrag(headEl, gripEl, id)
       if (pendingColumnFocusId === id) {
@@ -1226,11 +1231,23 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       el('div', { class: 'tt-kanban-col-head' }, doneCancelTitleEl,
         el('button', { class: 'tt-btn tt-kanban-add-btn tt-kanban-head-spacer', type: 'button', tabindex: '-1', 'aria-hidden': 'true' }, t(lc, 'kanban_add_card'))),
       el('div', { class: 'tt-kanban-zone-label' }, doneCountEl,
-        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('done') }, icon('trash', 14))),
+        iconButton({
+          class: 'tt-kanban-zone-trash',
+          title: t(lc, 'kanban_clear_zone_title'),
+          icon: 'trash',
+          size: 14,
+          onclick: () => clearZone('done'),
+        })),
       el('div', { class: 'tt-kanban-col-body-wrap' }, cols.get('done')!.bodyEl, cols.get('done')!.zoneEl),
       el('div', { class: 'tt-kanban-divider' }),
       el('div', { class: 'tt-kanban-zone-label' }, cancelledCountEl,
-        el('button', { class: 'tt-btn tt-kanban-zone-trash', type: 'button', title: t(lc, 'kanban_clear_zone_title'), onclick: () => clearZone('cancelled') }, icon('trash', 14))),
+        iconButton({
+          class: 'tt-kanban-zone-trash',
+          title: t(lc, 'kanban_clear_zone_title'),
+          icon: 'trash',
+          size: 14,
+          onclick: () => clearZone('cancelled'),
+        })),
       el('div', { class: 'tt-kanban-col-body-wrap tt-kanban-cancelled-wrap' }, cols.get('cancelled')!.bodyEl, cols.get('cancelled')!.zoneEl)
     )
 

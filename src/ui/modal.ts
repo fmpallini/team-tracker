@@ -255,9 +255,9 @@ export function showErrorModal(locale: Locale, message: string): ModalHandle {
 
 /**
  * Shared shape for every "confirm before deleting" dialog in the app: a
- * message, Cancel, and a confirm button that closes the dialog either way.
- * `variant` defaults to 'primary' (most callers) — action-items.ts's kanban
- * card delete is the one caller that wants the stronger 'danger' styling.
+ * message, Cancel, and a danger-styled confirm button that closes the dialog
+ * either way. Single items are not confirmed at all (they get an Undo toast,
+ * see modules/entity-delete.ts); this is for bulk and irreversible deletes.
  */
 export function confirmDelete(locale: Locale, opts: {
   title: string
@@ -270,7 +270,6 @@ export function confirmDelete(locale: Locale, opts: {
    */
   warning?: string
   confirmLabel: string
-  variant?: 'danger' | 'primary'
   onConfirm: () => void
 }): void {
   const message = el('p', { class: 'tt-modal-message' }, opts.message)
@@ -280,8 +279,7 @@ export function confirmDelete(locale: Locale, opts: {
   const cancelBtn: ModalButton = { label: t(locale, 'cancel'), icon: 'close', onClick: () => handle.close() }
   const confirmBtn: ModalButton = {
     label: opts.confirmLabel,
-    danger: opts.variant === 'danger',
-    primary: opts.variant !== 'danger',
+    danger: true,
     onClick: () => {
       opts.onConfirm()
       handle.close()
@@ -407,7 +405,14 @@ interface ToastAction {
   onClick: () => void
 }
 
+/** What a toast is telling the user: it sets the icon and the colour of the edge (styles.css `.tt-toast[data-kind]`). */
+export type ToastKind = 'info' | 'success' | 'warn' | 'error'
+
+const TOAST_ICON: Record<ToastKind, IconName> = { info: 'info', success: 'check', warn: 'alert', error: 'alert' }
+
 interface ToastOptions {
+  /** Defaults to 'info'. 'success' confirms something the user did; 'warn' is a condition they can fix; 'error' is a failure. */
+  kind?: ToastKind
   sticky?: boolean
   /** Task 25: e.g. the "Salvar como…" recovery action on a failed save. */
   action?: ToastAction
@@ -450,15 +455,23 @@ function getToastStack(): HTMLElement {
 
 export function toast(msg: string, opts?: ToastOptions): void {
   const stack = getToastStack()
-  const children: (Node | string)[] = [msg]
+  const kind = opts?.kind ?? 'info'
+  const body: (Node | string)[] = [el('span', { class: 'tt-toast-msg' }, msg)]
   if (opts?.action) {
     const action = opts.action
-    children.push(el('button', { class: 'tt-toast-action', type: 'button', onclick: () => action.onClick() }, action.label))
+    body.push(el('button', { class: 'tt-toast-action', type: 'button', onclick: () => action.onClick() }, action.label))
   }
   if (opts?.key) {
     stack.querySelector(`.tt-toast[data-toast-key="${opts.key}"]`)?.remove()
   }
-  const node = el('div', { class: 'tt-toast' }, ...children)
+  // The close mark is decorative: the whole toast is the click target (below) and was never a tab stop, so a button here would only add one.
+  const node = el(
+    'div',
+    { class: 'tt-toast', 'data-kind': kind },
+    el('span', { class: 'tt-toast-icon', 'aria-hidden': 'true' }, icon(TOAST_ICON[kind], 14)),
+    el('div', { class: 'tt-toast-body' }, ...body),
+    el('span', { class: 'tt-toast-close', 'aria-hidden': 'true' }, icon('close', 12))
+  )
   if (opts?.key) node.dataset.toastKey = opts.key
   function dismiss(): void {
     node.remove()

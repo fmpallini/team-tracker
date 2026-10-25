@@ -95,8 +95,8 @@ export function offerUndoToast(
         // this is about to show.
         const active = heldOffer
         stopWatching()
-        if (active?.undo()) toast(t(locale, 'undo_restored'))
-        else toast(t(locale, 'undo_unavailable'))
+        if (active?.undo()) toast(t(locale, 'undo_restored'), { kind: 'success' })
+        else toast(t(locale, 'undo_unavailable'), { kind: 'warn' })
       },
     },
   })

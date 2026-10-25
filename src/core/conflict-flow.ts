@@ -76,7 +76,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       await deps.persister?.rekey(reloaded.password === null ? null : await recordCodec(reloaded.password, after ?? undefined))
     } catch (e) {
       console.error(e)
-      toast(t(locale(), 'live_rekey_failed_toast'), { sticky: true })
+      toast(t(locale(), 'live_rekey_failed_toast'), { kind: 'error', sticky: true })
     }
   }
 
@@ -94,7 +94,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       deps.snapshot?.fileReloaded()
     } catch (e) {
       console.error(e)
-      toast(t(locale(), 'conflict_reload_failed'), { sticky: true })
+      toast(t(locale(), 'conflict_reload_failed'), { kind: 'error', sticky: true })
     } finally {
       open = false
     }
@@ -166,14 +166,14 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
         // unattended.
         deps.snapshot?.fileWriteFailed('permission')
         // Keyed like file-health-toasts.ts's own toast, so the next successful write dismisses it.
-        toast(t(locale(), 'save_permission_toast'), {
+        toast(t(locale(), 'save_permission_toast'), { kind: 'warn',
           sticky: true,
           key: SAVE_PERMISSION_TOAST_KEY,
           action: { label: t(locale(), 'grant_access_ellipsis'), onClick: () => void deps.resolveGrants() },
         })
       } else {
         deps.snapshot?.fileWriteFailed('error')
-        toast(t(locale(), 'save_error_toast'), { sticky: true, key: SAVE_ERROR_TOAST_KEY })
+        toast(t(locale(), 'save_error_toast'), { kind: 'error', sticky: true, key: SAVE_ERROR_TOAST_KEY })
       }
     } finally {
       open = false

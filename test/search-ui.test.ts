@@ -155,7 +155,7 @@ test('renders module icons per kind, in candidate order, and toggles teamName wi
   checkbox.dispatchEvent(new Event('change'))
 
   const teamNames = Array.from(document.querySelectorAll('.tt-search-team')).map((n) => n.textContent)
-  expect(teamNames).toEqual(['Team One', 'Team One', 'Team One', 'Team One', 'Team One'])
+  expect(teamNames).toEqual(Array(5).fill('🚀 Team One'))
 })
 
 test('highlights matched terms found via normalize() at the correct position in accented text', () => {
@@ -203,7 +203,7 @@ test('scopes to the active team by default; the all-teams checkbox widens the se
 
   const rows = document.querySelectorAll('.tt-search-row')
   expect(rows).toHaveLength(1)
-  expect(document.querySelector('.tt-search-team')!.textContent).toBe('Team Two')
+  expect(document.querySelector('.tt-search-team')!.textContent).toBe('🎯 Team Two')
 })
 
 test('Ctrl+Shift+F checks the all-teams box, focuses the search input, and widens an existing query', () => {
@@ -231,7 +231,7 @@ test('Ctrl+Shift+F checks the all-teams box, focuses the search input, and widen
   expect((document.querySelector('.tt-search-all-teams input') as HTMLInputElement).checked).toBe(true)
   const rows = document.querySelectorAll('.tt-search-row')
   expect(rows).toHaveLength(1)
-  expect(document.querySelector('.tt-search-team')!.textContent).toBe('Team Two')
+  expect(document.querySelector('.tt-search-team')!.textContent).toBe('🎯 Team Two')
 })
 
 test('Ctrl+F (no Shift) still just focuses the search input, without touching the all-teams scope', () => {

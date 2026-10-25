@@ -38,9 +38,9 @@ test('t ignores an unused param and a message with no placeholders', () => {
 })
 
 test('t leaves an unmatched placeholder untouched', () => {
-  // 'milestone_delete_confirm' is "Excluir \"{title}\"?" — passing only an
+  // 'milestone_deleted_toast' is "Marco \"{title}\" excluído" — passing only an
   // unrelated param must not disturb {title}.
-  expect(t('pt-BR', 'milestone_delete_confirm', { name: 'x' })).toBe('Excluir "{title}"?')
+  expect(t('pt-BR', 'milestone_deleted_toast', { name: 'x' })).toBe('Marco "{title}" excluído')
 })
 test('editor quote/hr/link keys exist in both locales', () => {
   for (const loc of ['pt-BR', 'en-US'] as const) {

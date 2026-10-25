@@ -286,10 +286,6 @@ test.describe('split view — an edit in one pane leaves the other pane mounted'
 
     const targetRow = p1.locator('.tt-milestone-row[data-milestone-id="t0-m3"]')
     await targetRow.locator('.tt-milestone-delete-btn').click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole('button', { name: 'Delete' }).click()
-    await expect(dialog).toHaveCount(0)
     await expect(targetRow).toHaveCount(0)
 
     // The chip is gone, replaced by the same dead-marker span mdToHtml itself

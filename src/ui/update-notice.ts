@@ -8,7 +8,7 @@
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { blockedByModal } from './hotkeys'
-import { icon } from './icons'
+import { iconButton } from './icons'
 
 export interface UpdateNoticeOpts {
   pwa?: boolean
@@ -83,16 +83,14 @@ export function showUpdateNotice(
         t(locale, 'update_notice_view_release')
       )
 
-  const dismissBtn = el(
-    'button',
-    {
-      class: 'tt-update-banner-dismiss',
-      type: 'button',
-      title: t(locale, 'update_notice_dismiss_title'),
-      onclick: () => dismiss(),
-    },
-    icon('close', 12)
-  )
+  const dismissBtn = iconButton({
+    class: 'tt-update-banner-dismiss',
+    title: t(locale, 'update_notice_dismiss_title'),
+    icon: 'close',
+    size: 12,
+    bare: true,
+    onclick: () => dismiss(),
+  })
 
   const row = el(
     'div',

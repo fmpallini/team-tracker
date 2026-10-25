@@ -11,6 +11,7 @@ export interface SearchResult {
   title: string
   snippet: string
   teamName: string
+  teamEmoji: string
 }
 
 const RESULT_LIMIT = 50
@@ -390,6 +391,7 @@ interface ScoredHit {
   candidate: PreparedCandidate
   teamId: string
   teamName: string
+  teamEmoji: string
   /** Each term's first-match index in `candidate.normalized` — where the snippet gets anchored. */
   positions: number[]
   span: number
@@ -410,12 +412,12 @@ interface ScoredHit {
  *     (the one term's length) for single-term queries, so it naturally drops
  *     out of the sort and `minPos` alone decides.
  */
-function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: string, terms: string[], order: number): ScoredHit | null {
+function scoreCandidate(candidate: PreparedCandidate, teamId: string, teamName: string, teamEmoji: string, terms: string[], order: number): ScoredHit | null {
   const positions = termPositions(candidate.normalized, terms)
   if (!positions) return null
   const minPos = Math.min(...positions)
   const maxEnd = Math.max(...positions.map((p, i) => p + terms[i]!.length))
-  return { candidate, teamId, teamName, positions, span: maxEnd - minPos, minPos, order }
+  return { candidate, teamId, teamName, teamEmoji, positions, span: maxEnd - minPos, minPos, order }
 }
 
 /** Cuts the displayed snippet — the one step that needs the markdown-stripped text, so it is paid per shown result rather than per cached candidate. */
@@ -427,6 +429,7 @@ function toResult(hit: ScoredHit): SearchResult {
     title: hit.candidate.title,
     snippet: makeSnippet(hit.candidate.stripped ?? stripMd(hit.candidate.raw), offsets ? hit.positions.map((p) => offsets[p]!) : hit.positions),
     teamName: hit.teamName,
+    teamEmoji: hit.teamEmoji,
   }
 }
 
@@ -678,7 +681,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
         // Typing forward: re-score the previous query's matches only. Each
         // hit already knows its team, so no team walk is needed here.
         for (const previous of lastQuery!.hits) {
-          const hit = scoreCandidate(previous.candidate, previous.teamId, previous.teamName, terms, previous.order)
+          const hit = scoreCandidate(previous.candidate, previous.teamId, previous.teamName, previous.teamEmoji, terms, previous.order)
           if (hit) hits.push(hit)
         }
       } else {
@@ -686,7 +689,7 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
         let order = 0
         for (const team of teams) {
           for (const candidate of candidatesFor(team, doc)) {
-            const hit = scoreCandidate(candidate, team.id, team.name, terms, order++)
+            const hit = scoreCandidate(candidate, team.id, team.name, team.emoji, terms, order++)
             if (hit) hits.push(hit)
           }
         }
@@ -718,7 +721,7 @@ export function searchDocument(doc: Doc, query: string, scopeTeamId: string | nu
   let order = 0
   for (const team of teams) {
     for (const candidate of collectCandidates(team, doc)) {
-      const hit = scoreCandidate(prepareCandidate(candidate), team.id, team.name, terms, order++)
+      const hit = scoreCandidate(prepareCandidate(candidate), team.id, team.name, team.emoji, terms, order++)
       if (hit) hits.push(hit)
     }
   }

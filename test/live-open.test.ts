@@ -360,7 +360,7 @@ test('a browser copy that cannot be read is replaced by the file, with a notice'
 
   const r = await open(await opened(doc, stamp), null, asks())
   expect(r.source).toBe('file')
-  expect(modalMocks.toast).toHaveBeenCalledWith(expect.stringContaining('could not be read'))
+  expect(modalMocks.toast).toHaveBeenCalledWith(expect.stringContaining('could not be read'), { kind: 'warn' })
   expect(await stored(doc.docId)).toEqual(r.doc)
 })
 

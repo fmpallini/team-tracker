@@ -162,6 +162,14 @@ test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar', () 
   expect(rows[0]!.classList.contains('active')).toBe(true)
 })
 
+test('the list is headed "Teams" and the add control is a labelled row, not a bare plus', () => {
+  setup()
+  expect(document.querySelector('.tt-sidebar-heading')?.textContent).toBe('Teams')
+  const add = document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!
+  expect(add.textContent).toBe('New team')
+  expect(add.title).toBe('New team')
+})
+
 test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   const { store } = setup()
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
@@ -171,7 +179,7 @@ test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   nameInput.dispatchEvent(new Event('input'))
   emojiInput.value = '🐙'
   emojiInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   expect(store.doc.teams).toHaveLength(1)
   expect(store.doc.teams[0]!.name).toBe('Gamma')
@@ -187,7 +195,7 @@ test('+ modal in a read-only store creates nothing and does not select a ghost t
   store.setReadOnly(true)
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
   ;(document.querySelector('input[name="tt-team-name"]') as HTMLInputElement).value = 'Gamma'
-  clickByText('OK')
+  clickByText('Save')
 
   expect(store.doc.teams).toHaveLength(0)
   expect(selectTeam).not.toHaveBeenCalled()
@@ -219,7 +227,7 @@ test('a new team is seeded with default names for the urgent/blocked/in-review c
   const emojiInput = document.querySelector('input[name="tt-team-emoji"]') as HTMLInputElement
   emojiInput.value = '🐙'
   emojiInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   expect(store.doc.teams[0]!.actionTagNames).toEqual({
     rust: 'Process', brass: 'People', slate: 'Financial', sage: 'Technical', plum: 'Operations', ledger: 'Legal',
@@ -229,7 +237,7 @@ test('a new team is seeded with default names for the urgent/blocked/in-review c
 test('+ modal requires a name', () => {
   setup()
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()
-  clickByText('OK')
+  clickByText('Save')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
 })
@@ -249,7 +257,7 @@ test('+ modal allows a blank emoji — no default is silently persisted', () => 
   const nameInput = document.querySelector('input[name="tt-team-name"]') as HTMLInputElement
   nameInput.value = 'Gamma'
   nameInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(0)
   expect(store.doc.teams).toHaveLength(1)
@@ -268,7 +276,7 @@ test('adding a team while another already exists still auto-selects the new team
   const emojiInput = document.querySelector('input[name="tt-team-emoji"]') as HTMLInputElement
   emojiInput.value = '🅱️'
   emojiInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   const newTeam = store.doc.teams.find((t) => t.name === 'Beta')!
   expect(selectTeam).toHaveBeenCalledWith(newTeam.id)
@@ -285,7 +293,7 @@ test('pencil icon opens edit modal to rename/re-emoji a team', () => {
   expect(nameInput.value).toBe('Alpha')
   nameInput.value = 'Alpha Renamed'
   nameInput.dispatchEvent(new Event('input'))
-  clickByText('OK')
+  clickByText('Save')
 
   expect(store.doc.teams[0]!.name).toBe('Alpha Renamed')
 })

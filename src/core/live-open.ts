@@ -233,6 +233,6 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
 
   function unreadable(e: unknown): void {
     console.error(e)
-    toast(t(opened.doc.prefs.locale, 'live_copy_unreadable_toast'))
+    toast(t(opened.doc.prefs.locale, 'live_copy_unreadable_toast'), { kind: 'warn' })
   }
 }

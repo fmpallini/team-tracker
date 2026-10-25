@@ -8,7 +8,7 @@
 import { t, type Locale } from '../core/i18n'
 import { el } from './dom'
 import { showModal, type ModalHandle } from './modal'
-import { icon, iconLine } from './icons'
+import { iconLine, iconButton, setIconButtonTitle } from './icons'
 
 /**
  * Test seam only — production callers (main.ts, start.ts) never pass it and
@@ -193,19 +193,17 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
     },
     t(locale, pwa ? 'promo_action_install' : 'promo_action_open_hosted')
   )
-  const dismiss = el(
-    'button',
-    {
-      class: 'tt-promo-dismiss',
-      type: 'button',
-      title: t(locale, 'promo_dismiss_title'),
-      onclick: () => {
-        setDismissed()
-        card.remove()
-      },
+  const dismiss = iconButton({
+    class: 'tt-promo-dismiss',
+    title: t(locale, 'promo_dismiss_title'),
+    icon: 'close',
+    size: 12,
+    bare: true,
+    onclick: () => {
+      setDismissed()
+      card.remove()
     },
-    icon('close', 12)
-  )
+  })
   const card = el(
     'div',
     { class: 'tt-promo-card' },
@@ -242,20 +240,16 @@ export function promoStartCard(locale: Locale, opts?: PromoOpts): HTMLElement | 
 export function promoHeaderButton(locale: Locale, opts?: PromoOpts): HTMLElement | null {
   const { pwa, pagesUrl, protocol } = resolve(opts)
   if (hiddenEverywhere(pwa, pagesUrl, protocol)) return null
-  return el(
-    'button',
-    {
-      class: 'tt-btn tt-btn-promo',
-      type: 'button',
-      title: t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title'),
-      onclick: () => promoAction(locale, pwa, pagesUrl),
-    },
-    icon(pwa ? 'download' : 'globe')
-  )
+  return iconButton({
+    class: 'tt-btn-promo',
+    title: t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title'),
+    icon: pwa ? 'download' : 'globe',
+    onclick: () => promoAction(locale, pwa, pagesUrl),
+  })
 }
 
 /** Re-stamps the header button's locale-sensitive tooltip — called from main.ts's onLocaleChanged wiring so the title doesn't stay stale after a locale switch. */
 export function refreshPromoHeaderButton(btn: HTMLElement, locale: Locale, opts?: PromoOpts): void {
   const { pwa } = resolve(opts)
-  btn.title = t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title')
+  setIconButtonTitle(btn, t(locale, pwa ? 'promo_header_install_title' : 'promo_header_hosted_title'))
 }

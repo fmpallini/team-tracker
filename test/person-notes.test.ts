@@ -128,7 +128,7 @@ describe('renderPersonNotes', () => {
 
     nameInput.value = 'Bruna'
     roleInput.value = 'Lead'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-buttons button')).find((b) => b.textContent === 'OK')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-buttons button')).find((b) => b.textContent === 'Save')!.click()
 
     expect(store.doc.teams[0]!.members[0]!.name).toBe('Bruna')
     expect(store.doc.teams[0]!.members[0]!.role).toBe('Lead')
@@ -146,7 +146,7 @@ describe('renderPersonNotes', () => {
 
     container.querySelector<HTMLButtonElement>('.tt-person-header-edit-btn')!.click()
     ;(document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!).value = 'Bruna'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-buttons button')).find((b) => b.textContent === 'OK')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-buttons button')).find((b) => b.textContent === 'Save')!.click()
 
     expect(seen).toEqual([{ teamId: 'T1' }])
   })

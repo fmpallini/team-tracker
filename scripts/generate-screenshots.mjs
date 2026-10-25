@@ -66,7 +66,8 @@ async function addPerson(page, paneIdx, name, role, addBtnSelector) {
 
 async function addChildPerson(page, paneIdx, parentName, childName, role) {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
-  await pane.locator('.tt-org-box', { hasText: parentName }).locator('.tt-people-add-child-btn').click()
+  await pane.locator('.tt-org-box', { hasText: parentName }).locator('.tt-people-more-btn').click()
+  await page.locator('.tt-context-menu-item', { hasText: 'Add report' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[name="tt-person-name"]').fill(childName)
   await dialog.locator('input[name="tt-person-role"]').fill(role)

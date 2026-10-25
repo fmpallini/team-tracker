@@ -27,7 +27,7 @@ export function openPersonModal(lc: Locale, opts: {
   )
   const cancelBtn: ModalButton = { label: t(lc, 'cancel'), icon: 'close', onClick: () => handle.close() }
   const okBtn: ModalButton = {
-    label: t(lc, 'ok'),
+    label: t(lc, 'save'),
     primary: true,
     onClick: () => {
       const name = nameInput.value.trim()

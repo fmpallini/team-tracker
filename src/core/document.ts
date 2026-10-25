@@ -53,6 +53,11 @@ export function findTeam(doc: Doc, teamId: string): Team | undefined {
   return doc.teams.find((tm) => tm.id === teamId)
 }
 
+/** "<emoji> <name>" (just the name when there is no emoji) — how a team is named wherever rows from several teams mix. */
+export function teamLabel(team: { emoji: string; name: string }): string {
+  return team.emoji ? `${team.emoji} ${team.name}` : team.name
+}
+
 /**
  * The date in `dailyNotes` nearest to `fromIso` (exclusive) whose note is
  * non-empty, searching forward (`dir` 1) or backward (`dir` -1). Any run of

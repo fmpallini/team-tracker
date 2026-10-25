@@ -31,6 +31,12 @@ export interface RadioOption {
   sizePreview?: string
   /** CSS color of a dot rendered before the label. */
   swatch?: string
+  /**
+   * A palette id: the option renders as a card holding a miniature of that palette. The miniature carries
+   * `data-palette`, so styles.css resolves its colours from the same blocks the real app uses and the card
+   * can never drift from the palette it names.
+   */
+  palette?: string
 }
 
 export interface RadioFieldOpts {
@@ -43,11 +49,18 @@ export interface RadioFieldOpts {
   disabled?: boolean
 }
 
-/** A labelled row of pill-style radios. */
+/** The theme a palette miniature should be drawn in: the one the app is showing right now. */
+export function currentThemeAttr(): 'light' | 'dark' {
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+}
+
+/** A labelled row of pill-style radios (palette options render as a card grid, size options as a stepper). */
 export function prefsRadioField(opts: RadioFieldOpts): HTMLElement {
+  const isPalette = opts.options.some((o) => o.palette !== undefined)
+  const isSize = opts.options.some((o) => o.sizePreview !== undefined)
   const row = el(
     'div',
-    { class: 'tt-prefs-radio-row' },
+    { class: isPalette ? 'tt-prefs-radio-row tt-palette-grid' : isSize ? 'tt-prefs-radio-row tt-size-steps' : 'tt-prefs-radio-row' },
     ...opts.options.map((opt) => {
       const input = el('input', {
         type: 'radio',
@@ -61,11 +74,27 @@ export function prefsRadioField(opts: RadioFieldOpts): HTMLElement {
       // already rendered at the *current* preference's root size, so a
       // relative unit would scale every option with it and the five steps
       // would look identical to each other at any setting.
-      const text = opt.preview
-        ? el('span', { class: 'tt-prefs-radio-preview', style: `font-family:${opt.preview}` }, opt.label)
-        : opt.sizePreview
-          ? el('span', { class: 'tt-prefs-radio-preview', style: `font-size:${opt.sizePreview}` }, opt.label)
-          : opt.label
+      if (opt.palette !== undefined) {
+        const miniature = el(
+          'span',
+          { class: 'tt-palette-preview', 'data-palette': opt.palette, 'data-theme': currentThemeAttr(), 'aria-hidden': 'true' },
+          el('span', { class: 'tt-palette-preview-panel' }),
+          el('span', { class: 'tt-palette-preview-accent' }),
+          el('span', { class: 'tt-palette-preview-ink' })
+        )
+        return el('label', { class: 'tt-prefs-radio tt-palette-card' }, input, miniature, el('span', { class: 'tt-palette-card-name' }, opt.label))
+      }
+      // A size step shows only its "A" at that size; the name stays in the label for screen readers and as a tooltip.
+      if (opt.sizePreview) {
+        return el(
+          'label',
+          { class: 'tt-prefs-radio tt-size-step', title: opt.label },
+          input,
+          el('span', { class: 'tt-prefs-radio-preview', style: `font-size:${opt.sizePreview}`, 'aria-hidden': 'true' }, 'A'),
+          el('span', { class: 'tt-visually-hidden' }, opt.label)
+        )
+      }
+      const text = opt.preview ? el('span', { class: 'tt-prefs-radio-preview', style: `font-family:${opt.preview}` }, opt.label) : opt.label
       const swatch = opt.swatch ? el('span', { class: 'tt-prefs-radio-swatch', style: `background:${opt.swatch}` }) : null
       return el('label', { class: 'tt-prefs-radio' }, input, swatch, text)
     })

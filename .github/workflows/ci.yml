@@ -98,7 +98,12 @@ jobs:
     name: E2E ${{ matrix.part }}
     needs: e2e-plan
     if: needs.e2e-plan.outputs.skip != 'true'
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: `playwright install-deps` apt-gets fonts and
+    # xvfb on every run, and on the Ubuntu 26.04 image latest moved to that
+    # download crawled at ~35 kB/s (5 to 11 minutes for 25 MB, against ~20 s
+    # on 24.04). Pinning also keeps the fonts the layout specs measure against
+    # from changing under us with an image migration.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       # One red part must not hide the other part's result (or its trace artifact).

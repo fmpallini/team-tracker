@@ -724,10 +724,10 @@ describe('renderRisks', () => {
   })
 
   test('deleting a risk with an empty title does not pay for a whole-team clone', () => {
-    // The silent path has no confirm dialog and offers no undo, so the
-    // spec's justification for deleteWithUndo's structuredClone cost ("paid
-    // once, on an explicit user action that has already been through a
-    // confirm dialog") does not apply here — this must not clone at all.
+    // The silent path offers no undo, so the spec's justification for
+    // deleteWithUndo's structuredClone cost (paid once, on an explicit user
+    // action that offers an Undo) does not apply here — this must not clone
+    // at all.
     const team = makeTeam({ risks: [risk({ id: 'a', title: '' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
@@ -746,27 +746,16 @@ describe('renderRisks', () => {
     }
   })
 
-  test('deleting a risk with a non-empty title requires confirmation', () => {
+  test('deleting a risk with a non-empty title removes it at once, with an Undo toast and no confirmation', () => {
     const team = makeTeam({ risks: [risk({ id: 'a', title: 'Important' })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container, 'Delete risk')
-    expect(store.doc.teams[0]!.risks).toHaveLength(1)
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Delete "Important"?')
 
-    clickByTitleOrText(document.body, 'Delete')
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
-  })
-
-  test('canceling the delete confirmation keeps the risk', () => {
-    const team = makeTeam({ risks: [risk({ id: 'a', title: 'Important' })] })
-    const { container, store, pm, loc } = setup(team)
-    render(container, loc, store, pm)
-
-    clickByTitleOrText(container, 'Delete risk')
-    clickByTitleOrText(document.body, 'Cancel')
-    expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast-action')).not.toBeNull()
   })
 
   describe('a new risk carries its creation date', () => {
@@ -966,7 +955,6 @@ describe('renderRisks', () => {
     render(container, loc, store, pm)
 
     clickByTitleOrText(rows(container)[0]!, 'Delete risk')
-    clickByTitleOrText(document.body, 'Delete')
 
     const remaining = store.doc.teams[0]!.risks
     expect(remaining.map((r) => r.id)).toEqual(['r2'])
@@ -1020,13 +1008,12 @@ describe('renderRisks', () => {
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
-  test('a closed row has its own delete button, using the same confirm+undo flow as an open row', () => {
+  test('a closed row has its own delete button, using the same delete+undo flow as an open row', () => {
     const team = makeTeam({ risks: [risk({ id: 'r1', title: 'Vendor delay', closed: true })] })
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
     clickByTitleOrText(container.querySelector('.tt-risk-row-closed')!, 'Delete risk')
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
   })
@@ -1040,6 +1027,7 @@ describe('renderRisks', () => {
     contextMenuItem('Duplicate').click()
 
     expect(store.doc.teams[0]!.risks).toHaveLength(2)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Duplicated')
   })
 
   describe('clear all closed', () => {
@@ -1947,7 +1935,7 @@ describe('row context menu', () => {
     expect(store.doc.teams[0]!.risks).toHaveLength(2)
   })
 
-  test('Delete opens the same confirm dialog as the row delete button, and removes the row on confirm', () => {
+  test('Delete removes the row straight away, like the row delete button: no dialog, an Undo toast', () => {
     const team = makeTeam({ risks: [risk({ id: 'r1', order: 0 })] })
     const { container, store, pm } = setup(team)
     render(container, { teamId: team.id, ref: { kind: 'risks' } }, store, pm)
@@ -1955,11 +1943,9 @@ describe('row context menu', () => {
     rightClick(rows(container)[0]!)
     contextMenuItem('Delete').click()
 
-    const confirmBtn = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Delete')
-    expect(confirmBtn).toBeTruthy()
-    confirmBtn!.click()
-
     expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(document.querySelector('.tt-toast-action')).not.toBeNull()
   })
 
   test('Move to team… removes the row from the source team', () => {
@@ -1978,10 +1964,52 @@ describe('row context menu', () => {
     contextMenuItem('Move to team…').click()
     const select = document.querySelector('select') as HTMLSelectElement
     select.value = 'to'
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Confirm')!.click()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Move')!.click()
 
     expect(store.doc.teams.find((t) => t.id === 'from')!.risks).toHaveLength(0)
     expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Moved to Team 2')
+  })
+
+  test('the Move toast offers an Undo that puts the row back in the source team and removes it from the target', () => {
+    const from = makeTeam({ id: 'from', risks: [risk({ id: 'r1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'risks' } }, store, fakePM())
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Move to team…').click()
+    ;(document.querySelector('select') as HTMLSelectElement).value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Move')!.click()
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.risks.map((r) => r.id)).toEqual(['r1'])
+    expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(0)
+  })
+
+  test('Copy to team… toasts the target team and leaves the source row alone', () => {
+    const from = makeTeam({ id: 'from', risks: [risk({ id: 'r1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'risks' } }, store, fakePM())
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    ;(document.querySelector('select') as HTMLSelectElement).value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Copy')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Copied to Team 2')
   })
 })
 
@@ -2110,18 +2138,12 @@ describe('risk delete undo', () => {
     return { store, teamId: team.id }
   }
 
-  function clickDeleteAndConfirm(title: string): void {
-    clickByTitleOrText(document.body, 'Delete risk')
-    expect(document.querySelector('.tt-modal-message')?.textContent).toBe(`Delete "${title}"?`)
-    clickByTitleOrText(document.body, 'Delete')
-  }
-
   it('offers an undo toast that restores the risk and its @-mentions', () => {
     const { store, teamId } = mountRisksWithMentionedRisk()
 
     const before = structuredClone(store.doc.teams.find((t) => t.id === teamId))
 
-    clickDeleteAndConfirm('Slip')
+    clickByTitleOrText(document.body, 'Delete risk')
 
     expect(store.doc.teams.find((t) => t.id === teamId)!.risks).toHaveLength(0)
     const undoBtn = document.querySelector<HTMLButtonElement>('.tt-toast-action')
@@ -2160,11 +2182,11 @@ describe('risk delete — behaviour pins', () => {
     return seen
   }
 
-  it('a confirmed delete toasts the deleted title, with an Undo action', () => {
+  it('a delete toasts the deleted title, with an Undo action, and asks nothing first', () => {
     const { container } = mount()
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(document.querySelector('.tt-toast')?.textContent).toContain('Risk "Slip" deleted')
     expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
   })
@@ -2178,14 +2200,11 @@ describe('risk delete — behaviour pins', () => {
     expect(document.querySelector('.tt-toast')).toBeNull()
   })
 
-  it('an UNTITLED risk that carries a plan/follow-up is not deleted silently: it asks first, and Undo brings the content back', () => {
+  it('an UNTITLED risk that carries a plan/follow-up is not deleted silently: it gets an Undo toast, and Undo brings the content back', () => {
     const { container, store } = mount({ risks: [risk({ id: 'r1', title: '', followup: 'vendor agreed to patch by Q3' }), risk({ id: 'r2', title: 'Other', order: 1 })] })
     deleteRowButton(container, 'r1').click()
 
-    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
-    expect(store.doc.teams[0]!.risks).toHaveLength(2)
-
-    clickByTitleOrText(document.body, 'Delete')
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
     expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r2'])
     document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
     expect(store.doc.teams[0]!.risks.find((r) => r.id === 'r1')!.followup).toBe('vendor agreed to patch by Q3')
@@ -2194,15 +2213,15 @@ describe('risk delete — behaviour pins', () => {
   it('an untitled risk whose exposure was changed is not an untouched draft either', () => {
     const { container, store } = mount({ risks: [risk({ id: 'r1', title: '', chance: 3, impact: 3 })] })
     deleteRowButton(container, 'r1').click()
-    expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
-    expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+    expect(store.doc.teams[0]!.risks).toHaveLength(0)
+    expect(document.querySelector('.tt-toast-action')).not.toBeNull()
   })
 
   it('the delete lands as ONE mutation scoped to the team with no sections (it rewrites mentions team-wide)', () => {
     const { container, store } = mount()
     const seen = recordScopes(store)
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     const deletion = seen.filter((s) => s.risks === 1)
     expect(deletion).toHaveLength(1)
@@ -2222,7 +2241,6 @@ describe('risk delete — behaviour pins', () => {
   it('only the targeted risk goes; siblings keep their order, and the mention is flattened to plain text', () => {
     const { container, store } = mount()
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[0]!.risks.map((r) => [r.id, r.order])).toEqual([['r2', 1]])
     expect(store.doc.teams[0]!.dailyNotes['2026-09-10']).toBe('See ~Slip~ for context.')
@@ -2238,7 +2256,6 @@ describe('risk delete — behaviour pins', () => {
     const otherBefore = structuredClone(store.doc.teams[1])
 
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[1]).toEqual(otherBefore)
   })
@@ -2249,7 +2266,6 @@ describe('risk delete — behaviour pins', () => {
     expect(container.querySelectorAll('.tt-risk-followup-row')).toHaveLength(2)
 
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     const followups = Array.from(container.querySelectorAll('.tt-risk-followup-row')).map((n) => n.getAttribute('data-risk-followup-id'))
     expect(followups).toEqual(['r2'])
@@ -2259,7 +2275,6 @@ describe('risk delete — behaviour pins', () => {
     const { container } = mount()
     container.querySelector<HTMLButtonElement>('[data-risk-id="r1"].tt-risk-row .tt-risk-expand-btn')!.click()
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
     document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
 
     expect(container.querySelector('[data-risk-id="r1"].tt-risk-row')).not.toBeNull()
@@ -2269,7 +2284,6 @@ describe('risk delete — behaviour pins', () => {
   it('the undo offer expires once any other edit lands', () => {
     const { container, store } = mount()
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
     store.update((d) => { d.teams[0]!.risks[0]!.title = 'Edited later' }, { teamId: 'T1', sections: ['risks'] })
 
     // The toast is dismissed the instant anything else mutates the doc — no stale Undo button.
@@ -2281,7 +2295,6 @@ describe('risk delete — behaviour pins', () => {
     const { container, store } = mount()
     store.setReadOnly(true)
     deleteRowButton(container, 'r1').click()
-    clickByTitleOrText(document.body, 'Delete')
 
     expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r1', 'r2'])
     expect(document.querySelector('.tt-toast')).toBeNull()

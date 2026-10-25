@@ -634,6 +634,22 @@ describe('@ trigger', () => {
     editor.destroy()
   })
 
+  test('the toolbar puts a hairline between its button groups, hidden from assistive tech', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    const bar = editor.root.querySelector('.tt-editor-toolbar')!
+    const seps = Array.from(bar.querySelectorAll('.tt-editor-toolbar-sep'))
+    expect(seps).toHaveLength(3)
+    expect(seps.every((sep) => sep.getAttribute('aria-hidden') === 'true')).toBe(true)
+    // Groups: text style (4) | lists (2) | headings and paragraph (4) | blocks and inserts.
+    const sizes: number[] = []
+    let run = 0
+    for (const child of Array.from(bar.children)) {
+      if (child.classList.contains('tt-editor-toolbar-sep')) { sizes.push(run); run = 0 } else if (child.classList.contains('tt-editor-btn')) run++
+    }
+    expect(sizes).toEqual([4, 2, 4])
+    editor.destroy()
+  })
+
   test('the @ toolbar button with the caret in a fenced code block inserts nothing', () => {
     const hooks = makeHooks()
     const editor = createEditor(hooks, 'en-US')
@@ -1770,7 +1786,7 @@ describe('toolbar', () => {
 
   const linkInput = (name: 'tt-link-text' | 'tt-link-url'): HTMLInputElement =>
     document.querySelector(`.tt-modal-dialog input[name="${name}"]`) as HTMLInputElement
-  const linkModalButton = (key: 'ok' | 'cancel'): HTMLButtonElement =>
+  const linkModalButton = (key: 'save' | 'cancel'): HTMLButtonElement =>
     Array.from(document.querySelectorAll('.tt-modal-dialog button')).find(b => b.textContent === t('en-US', key)) as HTMLButtonElement
 
   // Drive the two-field link modal. `text: undefined` leaves the text field
@@ -1781,7 +1797,7 @@ describe('toolbar', () => {
     if (res === null) { linkModalButton('cancel').click(); return }
     if (res.text !== undefined) linkInput('tt-link-text').value = res.text
     linkInput('tt-link-url').value = res.url
-    linkModalButton('ok').click()
+    linkModalButton('save').click()
   }
 
   test('🔗 button wraps the selection as a markdown link', async () => {
@@ -3980,7 +3996,7 @@ describe('setEditorsReadOnly', () => {
     }
   })
 
-  test('read-only: a link dialog left open when the lock arms inserts nothing on OK', async () => {
+  test('read-only: a link dialog left open when the lock arms inserts nothing on Save', async () => {
     const { editor, editorEl } = mountRo('a')
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     try {
@@ -3990,7 +4006,7 @@ describe('setEditorsReadOnly', () => {
       setEditorsReadOnly(true)
       const url = document.querySelector('.tt-modal-dialog input[name="tt-link-url"]') as HTMLInputElement
       url.value = 'https://example.com'
-      const ok = Array.from(document.querySelectorAll('.tt-modal-dialog button')).find((b) => b.textContent === t('en-US', 'ok')) as HTMLButtonElement
+      const ok = Array.from(document.querySelectorAll('.tt-modal-dialog button')).find((b) => b.textContent === t('en-US', 'save')) as HTMLButtonElement
       ok.click()
       await Promise.resolve()
       await Promise.resolve()

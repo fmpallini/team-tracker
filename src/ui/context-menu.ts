@@ -15,6 +15,8 @@ export interface ContextMenuItem {
   danger?: boolean
   /** Renders a leading ✓ (and reserves the gutter on every row when any item sets this, so labels stay aligned). */
   checked?: boolean
+  /** A leading icon (e.g. a module's `kindIcon`), drawn between the ✓ gutter and the label. */
+  icon?: HTMLElement
 }
 
 // Module-level so opening a new menu always closes any menu already open —
@@ -71,6 +73,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[], 
         type: 'button',
       },
       ...(hasChecks ? [el('span', { class: 'tt-context-menu-check' }, item.checked ? '✓' : '')] : []),
+      ...(item.icon ? [item.icon] : []),
       item.label
     )
   )

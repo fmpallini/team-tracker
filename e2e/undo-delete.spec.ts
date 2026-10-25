@@ -22,7 +22,7 @@ test.describe('undo on delete', () => {
     await page.getByRole('button', { name: /Create first team/ }).click()
     const createDialog = page.getByRole('dialog')
     await createDialog.locator('input[name="tt-team-name"]').fill('Doomed Team')
-    await createDialog.getByRole('button', { name: 'OK' }).click()
+    await createDialog.getByRole('button', { name: 'Save' }).click()
     await expect(createDialog).toBeHidden()
 
     // Give it distinctive daily-notes content a shallow restore would lose.
@@ -38,7 +38,7 @@ test.describe('undo on delete', () => {
     await page.locator('.tt-team-add-btn').click()
     const addDialog = page.getByRole('dialog')
     await addDialog.locator('input[name="tt-team-name"]').fill('Safe Team')
-    await addDialog.getByRole('button', { name: 'OK' }).click()
+    await addDialog.getByRole('button', { name: 'Save' }).click()
     await expect(addDialog).toBeHidden()
 
     const teamItems = page.locator('.tt-team-item')

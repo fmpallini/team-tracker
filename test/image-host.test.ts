@@ -107,7 +107,7 @@ describe('importFiles', () => {
     const { host } = build()
     await host.importFiles([pngFile('one.png', 1), pngFile('two.png', 2)])
     expect(modalMocks.toast).toHaveBeenCalledTimes(1)
-    expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'img_added', { n: '2' }), { key: 'image-import' })
+    expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'img_added', { n: '2' }), { kind: 'success', key: 'image-import' })
   })
 
   it('reports refusals next to the count, and keeps the aligned slot empty', async () => {
@@ -116,13 +116,13 @@ describe('importFiles', () => {
     expect(items[0]).not.toBeNull()
     expect(items[1]).toBeNull()
     expect(modalMocks.toast).toHaveBeenCalledWith(
-      t('en-US', 'img_added_partial', { n: '1', m: '1', why: t('en-US', 'img_reason_unsupported') }), { key: 'image-import' })
+      t('en-US', 'img_added_partial', { n: '1', m: '1', why: t('en-US', 'img_reason_unsupported') }), { kind: 'warn', key: 'image-import' })
   })
 
   it('says only images can be added when nothing in the batch was an image', async () => {
     const { host, update } = build()
     expect(await host.importFiles([textFile()])).toEqual([null])
-    expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'img_only_images'), { key: 'image-import' })
+    expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'img_only_images'), { kind: 'warn', key: 'image-import' })
     expect(update).not.toHaveBeenCalled()
   })
 
@@ -132,7 +132,7 @@ describe('importFiles', () => {
     const { host } = build(codec)
     expect(await host.importFiles([pngFile('bad.png')])).toEqual([null])
     expect(modalMocks.toast).toHaveBeenCalledWith(
-      t('en-US', 'img_added_partial', { n: '0', m: '1', why: t('en-US', 'img_reason_corrupt') }), { key: 'image-import' })
+      t('en-US', 'img_added_partial', { n: '0', m: '1', why: t('en-US', 'img_reason_corrupt') }), { kind: 'warn', key: 'image-import' })
   })
 
   it('does not even read a file over the source size limit', async () => {
@@ -143,7 +143,7 @@ describe('importFiles', () => {
     expect(await host.importFiles([huge])).toEqual([null])
     expect(read).not.toHaveBeenCalled()
     expect(modalMocks.toast).toHaveBeenCalledWith(
-      t('en-US', 'img_added_partial', { n: '0', m: '1', why: t('en-US', 'img_reason_too_large') }), { key: 'image-import' })
+      t('en-US', 'img_added_partial', { n: '0', m: '1', why: t('en-US', 'img_reason_too_large') }), { kind: 'warn', key: 'image-import' })
   })
 
   it('the same picture twice is stored once', async () => {
@@ -171,6 +171,6 @@ describe('importFiles', () => {
     store.doc.teams.push({ id: 'T', name: 'T', emoji: '', stakeholders: [], members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {}, generalNotes: `![x](img:${'e'.repeat(32)})` })
     store.doc.images['e'.repeat(32)] = { mime: 'image/webp', w: 1, h: 1, bytes: IMAGE_LIMITS.warnBytes - 100 }
     await host.importFiles([pngFile('tip.png', 2000)])
-    expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'img_warn_toast', { used: '100.0 MB', cap: '150 MB' }), { key: 'image-warn' })
+    expect(modalMocks.toast).toHaveBeenCalledWith(t('en-US', 'img_warn_toast', { used: '100.0 MB', cap: '150 MB' }), { kind: 'warn', key: 'image-warn' })
   })
 })

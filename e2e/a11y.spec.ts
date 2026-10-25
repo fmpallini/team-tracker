@@ -35,7 +35,7 @@ test.describe('accessibility (axe-core)', () => {
     await page.getByRole('button', { name: /Create first team/ }).click()
     const teamDialog = page.getByRole('dialog')
     await teamDialog.locator('input[name="tt-team-name"]').fill('Team A')
-    await teamDialog.getByRole('button', { name: 'OK' }).click()
+    await teamDialog.getByRole('button', { name: 'Save' }).click()
     await teamDialog.waitFor({ state: 'hidden' })
 
     const results = await scan(page, '.tt-shell')

@@ -127,7 +127,7 @@ async function addTeam(page: Page, name: string): Promise<void> {
   await page.locator('.tt-team-add-btn').click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[name="tt-team-name"]').fill(name)
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
 }
 
@@ -246,7 +246,7 @@ async function overlayCycle(page: Page): Promise<void> {
   for (const tab of ['Saving', 'Templates', 'Security', 'Data', 'About']) {
     await dialog.locator('.tt-prefs-tab-btn', { hasText: tab }).first().click()
   }
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.locator('.tt-modal-close').click()
   await expect(dialog).toHaveCount(0)
 
   // Help modal.
@@ -284,7 +284,7 @@ async function overlayCycle(page: Page): Promise<void> {
   // via ExpandableRowsController), collapse it, open the row context menu,
   // then delete the row so the cycle nets to zero.
   await switchModule(page, /Risks/i)
-  await page.locator('.tt-risk-add-btn').click()
+  await page.locator('.tt-risk-add-btn:visible, .tt-risk-empty .tt-empty-state-action').first().click()
   // A follow-up opens only under a title, so name the row first.
   const riskTitle = page.locator('.tt-risk-title-input').first()
   await riskTitle.fill('Leak probe')
@@ -295,12 +295,11 @@ async function overlayCycle(page: Page): Promise<void> {
   await page.locator('.tt-risk-row').first().click({ button: 'right' })
   await page.keyboard.press('Escape')
   await page.locator('.tt-risk-delete-btn').first().click()
-  await dialog.getByRole('button', { name: 'Delete' }).click() // a named row asks before it goes
   await expect(page.locator('.tt-risk-row')).toHaveCount(0)
 
   // Milestones: same shape, plus its own date picker.
   await switchModule(page, /Milestones/i)
-  await page.locator('.tt-milestone-add-btn').click()
+  await page.locator('.tt-milestone-add-btn:visible, .tt-milestone-empty .tt-empty-state-action').first().click()
   const milestoneTitle = page.locator('.tt-milestone-title-input').first()
   await milestoneTitle.fill('Leak probe')
   await milestoneTitle.blur()
@@ -308,13 +307,12 @@ async function overlayCycle(page: Page): Promise<void> {
   await expect(page.locator('.tt-milestone-followup-row .editor')).toHaveCount(1)
   await page.locator('.tt-milestone-expand-btn').first().click()
   await page.locator('.tt-milestone-delete-btn').first().click()
-  await dialog.getByRole('button', { name: 'Delete' }).click()
   await expect(page.locator('.tt-milestone-row')).toHaveCount(0)
 
   // Tasks: the card modal hosts its own rich editor and date picker — the
   // one editor that lives outside the pane tree entirely.
   await switchModule(page, /Tasks/i)
-  await page.locator('.tt-kanban-add-btn').first().click()
+  await page.locator('.tt-kanban-add-btn:visible, .tt-kanban-empty-board .tt-empty-state-action').first().click()
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
@@ -378,8 +376,10 @@ async function controllerCycle(page: Page, i: number): Promise<void> {
 }
 
 test.describe('resource growth over a long session', () => {
-  // Long, serial, and CDP-bound: give it room and keep it off the parallel path.
-  test.describe.configure({ mode: 'serial', timeout: 300_000 })
+  // Long and CDP-bound: give it room. Every test opens its own page and measures counts (nodes, listeners, heap)
+  // against its own baseline, so they do not depend on each other or on the wall clock — they run on two
+  // workers (serial was one 3+ minute chain; two workers take ~1.9 min with the same results).
+  test.describe.configure({ timeout: 300_000 })
 
   test('repeated edit/navigate cycles do not accumulate DOM nodes or listeners', async ({ page }) => {
     await installOpfsPickerShim(page)
@@ -633,7 +633,7 @@ test.describe('resource growth over a long session', () => {
 
     await addTeam(page, 'Alpha')
     await switchModule(page, /Risks/i)
-    await page.locator('.tt-risk-add-btn').click()
+    await page.locator('.tt-risk-add-btn:visible, .tt-risk-empty .tt-empty-state-action').first().click()
     // Named, not left blank: risks.ts drops an unnamed row once focus moves
     // on, and this cycle's whole point is exercising close/reopen with the
     // row still there to right-click.
@@ -746,34 +746,30 @@ test.describe('resource growth over a long session', () => {
 
     await addTeam(page, 'Alpha')
 
-    const dialog = page.getByRole('dialog')
-
-    async function confirmDeleteRow(kind: 'risk' | 'milestone'): Promise<void> {
+    async function deleteRow(kind: 'risk' | 'milestone'): Promise<void> {
       await page.locator(`.tt-${kind}-delete-btn`).first().click()
-      await expect(dialog).toBeVisible()
-      await dialog.getByRole('button', { name: 'Delete' }).click()
-      await expect(dialog).toHaveCount(0)
+      await expect(page.locator('.tt-toast-action')).toBeVisible()
     }
 
     async function roundTrip(kind: 'risk' | 'milestone', title: string): Promise<void> {
       await switchModule(page, kind === 'risk' ? /Risks/i : /Milestones/i)
-      await page.locator(`.tt-${kind}-add-btn`).click()
+      await page.locator(`.tt-${kind}-add-btn:visible, .tt-${kind}-empty .tt-empty-state-action`).first().click()
       const input = page.locator(`.tt-${kind}-title-input`).first()
       await input.fill(title)
       await input.blur()
 
       // Delete, then undo — the click-driven cleanup path.
-      await confirmDeleteRow(kind)
+      await deleteRow(kind)
       await page.locator('.tt-toast-action').click()
       await expect(page.locator(`.tt-${kind}-row`)).toHaveCount(1)
 
       // Delete again, and walk away — the mutation-driven cleanup path, left
       // for the next round trip's own add() to release.
-      await confirmDeleteRow(kind)
+      await deleteRow(kind)
       await expect(page.locator(`.tt-${kind}-row`)).toHaveCount(0)
     }
 
-    // This shape's one-time costs (first-ever confirm dialog + toast + undo
+    // This shape's one-time costs (first-ever toast + undo
     // restore combination) take noticeably longer to finish than this file's
     // usual 3-cycle warmup — measured climbing until ~cycle 17 before it goes
     // flat. WARMUP is set past that plateau rather than guessed, so what
@@ -826,7 +822,7 @@ test.describe('resource growth over a long session', () => {
     // A milestone with a known title, referenced once from the daily note, so
     // a backlinks chip is present on its row for every cycle to open/close.
     await switchModule(page, /Milestones/i)
-    await page.locator('.tt-milestone-add-btn').click()
+    await page.locator('.tt-milestone-add-btn:visible, .tt-milestone-empty .tt-empty-state-action').first().click()
     const title = page.locator('.tt-pane[data-pane-idx="0"] .tt-milestone-title-input').first()
     await title.fill('Beacon')
     await title.blur()

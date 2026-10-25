@@ -11,6 +11,7 @@ export interface DueItem {
   loc: Loc
   title: string
   teamName: string
+  teamEmoji: string
   date: string
   kind: 'action' | 'milestone'
 }
@@ -52,14 +53,14 @@ export function collectDueItems(doc: Doc, today: string): DueBuckets {
       if (!isActionActive(it) || it.dueDate === null) continue
       classify({
         loc: { teamId: team.id, ref: { kind: 'actions', itemId: it.id } },
-        title: it.summary, teamName: team.name, date: it.dueDate, kind: 'action',
+        title: it.summary, teamName: team.name, teamEmoji: team.emoji, date: it.dueDate, kind: 'action',
       })
     }
     for (const m of team.milestones) {
       if (m.done) continue
       classify({
         loc: { teamId: team.id, ref: { kind: 'milestones', itemId: m.id } },
-        title: m.title, teamName: team.name, date: m.date, kind: 'milestone',
+        title: m.title, teamName: team.name, teamEmoji: team.emoji, date: m.date, kind: 'milestone',
       })
     }
   }

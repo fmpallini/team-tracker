@@ -6,6 +6,7 @@
 import { dueRelativeLabel, type DueBuckets, type DueItem } from '../core/due'
 import type { Loc } from '../core/types'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
+import { teamLabel } from '../core/document'
 import { REF_KINDS } from '../core/refs'
 import { el } from './dom'
 import { kindIcon } from './icons'
@@ -31,6 +32,7 @@ export function filterBucketsByTeam(buckets: DueBuckets, teamId: string | undefi
 }
 
 function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenItem: (loc: Loc) => void, closeModal: () => void): HTMLElement {
+  const label = teamLabel({ emoji: item.teamEmoji, name: item.teamName })
   function activate(): void {
     // Close first, unconditionally: if an open card then refuses to close
     // (revealLoc returns false), its veto focuses the card's name field and
@@ -51,7 +53,7 @@ function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenIt
     // The team name only carries information when the panel spans multiple
     // teams — a team-scoped panel (teamId set) already says which team it's
     // for in the modal title, so repeating it on every row is just noise.
-    ...(showTeam ? [el('span', { class: 'tt-due-row-team', title: item.teamName }, item.teamName)] : []),
+    ...(showTeam ? [el('span', { class: 'tt-due-row-team', title: label }, label)] : []),
     el('span', { class: 'tt-due-row-date' }, `${formatDate(item.date, locale)} · ${dueRelativeLabel(locale, item.date, todayIso())}`)
   )
   // Guarded on e.target === row (mirrors risks.ts/milestones.ts's row nav):

@@ -169,7 +169,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
             // Writable on a document that is not the browser copy would overwrite the previous holder's edits with
             // stale ones: stay read-only, hand the lock back (returning releases it) and say so.
             console.error(e)
-            if (!released) toast(t(store.doc.prefs.locale, 'takeover_refresh_failed_toast'), { sticky: true, key: 'takeover-refresh-failed' })
+            if (!released) toast(t(store.doc.prefs.locale, 'takeover_refresh_failed_toast'), { kind: 'warn', sticky: true, key: 'takeover-refresh-failed' })
             return
           }
           dismissToast('takeover-refresh-failed')
@@ -195,7 +195,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
   }
 
   const unsubscribeBlocked = store.onBlockedUpdate(() => {
-    toast(t(store.doc.prefs.locale, 'readonly_blocked_toast'), { key: READONLY_TOAST_KEY })
+    toast(t(store.doc.prefs.locale, 'readonly_blocked_toast'), { kind: 'warn', key: READONLY_TOAST_KEY })
   })
 
   // Task 25 re-review item #4a: without this, the tab is fully writable from
@@ -239,7 +239,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
         await deps.flushLive()
       } catch (e) {
         console.error(e)
-        toast(t(store.doc.prefs.locale, 'takeover_deferred_toast'), { sticky: true, key: 'takeover-deferred' })
+        toast(t(store.doc.prefs.locale, 'takeover_deferred_toast'), { kind: 'warn', sticky: true, key: 'takeover-deferred' })
         return
       }
       dismissToast('takeover-deferred')

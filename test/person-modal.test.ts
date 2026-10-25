@@ -10,7 +10,7 @@ function fields() {
     name: document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')!,
     role: document.querySelector<HTMLInputElement>('input[name="tt-person-role"]')!,
     error: document.querySelector<HTMLElement>('.tt-field-error')!,
-    ok: buttons.find((b) => b.textContent === 'OK')!,
+    ok: buttons.find((b) => b.textContent === 'Save')!,
     cancel: buttons.find((b) => b.textContent === 'Cancel')!,
   }
 }

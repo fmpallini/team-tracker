@@ -16,7 +16,7 @@ import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { blockedByModal } from './hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
-import { icon, kindIcon } from './icons'
+import { icon, kindIcon, iconButton } from './icons'
 // Runtime dependency in one direction only: modules/lifecycle.ts imports
 // ModuleCtx/ModuleRenderer from here as *types*, which are erased at build.
 import { disposeContainer } from '../modules/lifecycle'
@@ -651,6 +651,7 @@ ${t(lc, 'pane_history_hint')}`
     if (entries.length < 2) return
     const items: ContextMenuItem[] = entries.map((e) => ({
       label: historyEntryLabel(e.loc),
+      icon: kindIcon(e.loc.ref.kind),
       checked: e.current,
       onClick: () => {
         if (layout$.jumpToIndex(idx, e.index)) renderAll()
@@ -1033,45 +1034,33 @@ ${t(lc, 'pane_history_hint')}`
     const flashTitle = pendingTitleFlash[idx]
     pendingTitleFlash[idx] = false
 
-    const backBtn = el(
-      'button',
-      {
-        class: 'tt-btn tt-pane-nav-btn tt-pane-back-btn',
-        type: 'button',
-        title: historyBtnTitle(-1, backTarget),
-        disabled: !canBack,
-        onclick: () => goHistory(idx, -1),
-      },
-      icon('back')
-    )
-    const fwdBtn = el(
-      'button',
-      {
-        class: 'tt-btn tt-pane-nav-btn tt-pane-fwd-btn',
-        type: 'button',
-        title: historyBtnTitle(1, fwdTarget),
-        disabled: !canFwd,
-        onclick: () => goHistory(idx, 1),
-      },
-      icon('next')
-    )
+    const backBtn = iconButton({
+      class: 'tt-pane-nav-btn tt-pane-back-btn',
+      title: historyBtnTitle(-1, backTarget),
+      icon: 'back',
+      disabled: !canBack,
+      onclick: () => goHistory(idx, -1),
+    })
+    const fwdBtn = iconButton({
+      class: 'tt-pane-nav-btn tt-pane-fwd-btn',
+      title: historyBtnTitle(1, fwdTarget),
+      icon: 'next',
+      disabled: !canFwd,
+      onclick: () => goHistory(idx, 1),
+    })
     bindHistoryMenu(backBtn, idx)
     bindHistoryMenu(fwdBtn, idx)
     // Only while the pane sits in the past of its own history — the same jump
     // Alt+Shift+↑ does, made clickable.
     const latestBtn = canLatest
-      ? el(
-          'button',
-          {
-            class: 'tt-btn tt-pane-nav-btn tt-pane-latest-btn',
-            type: 'button',
-            title: `${t(lc, 'pane_latest_title')} (Alt+Shift+↑)`,
-            onclick: () => {
-              if (layout$.jumpToLatest(idx)) renderAll()
-            },
-          },
-          icon('latest')
-        )
+      ? iconButton({
+        class: 'tt-pane-nav-btn tt-pane-latest-btn',
+        title: `${t(lc, 'pane_latest_title')} (Alt+Shift+↑)`,
+        icon: 'latest',
+        onclick: () => {
+          if (layout$.jumpToLatest(idx)) renderAll()
+        },
+      })
       : null
     const teamId = nav.activeTeamId
     const modulesBtn = el(
@@ -1104,27 +1093,19 @@ ${t(lc, 'pane_history_hint')}`
       },
       icon(isFav ? 'starFill' : 'star')
     )
-    const printBtn = el(
-      'button',
-      {
-        class: 'tt-btn tt-pane-print-btn',
-        type: 'button',
-        title: t(lc, 'pane_print_title'),
-        disabled: cur === null,
-        onclick: () => printPane(idx),
-      },
-      icon('print')
-    )
-    const splitBtn = el(
-      'button',
-      {
-        class: 'tt-btn tt-pane-split-btn',
-        type: 'button',
-        title: t(lc, effectiveSplit() ? 'pane_unsplit_title' : 'pane_split_title'),
-        onclick: () => toggleSplit(),
-      },
-      icon('split')
-    )
+    const printBtn = iconButton({
+      class: 'tt-pane-print-btn',
+      title: t(lc, 'pane_print_title'),
+      icon: 'print',
+      disabled: cur === null,
+      onclick: () => printPane(idx),
+    })
+    const splitBtn = iconButton({
+      class: 'tt-pane-split-btn',
+      title: t(lc, effectiveSplit() ? 'pane_unsplit_title' : 'pane_split_title'),
+      icon: 'split',
+      onclick: () => toggleSplit(),
+    })
 
     const moduleTriggerWrap = el(
       'div',

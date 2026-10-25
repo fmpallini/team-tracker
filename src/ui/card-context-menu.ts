@@ -4,10 +4,13 @@
 // duplicate/transfer callbacks (backed by src/core/card-transfer.ts's
 // per-kind functions) since the menu itself has no notion of which list a
 // card belongs to.
-import type { Team } from '../core/types'
+import type { Doc, Team } from '../core/types'
 import { findTeam as docFindTeam } from '../core/document'
 import { t, type Locale } from '../core/i18n'
 import { showContextMenu, type ContextMenuItem } from './context-menu'
+import { toast } from './modal'
+import { offerUndoToast } from './undo-toast'
+import { deleteWithUndo } from '../core/undo-delete'
 import { openTeamPickerModal, openTeamColumnPickerModal } from './team-picker-modal'
 import type { ModuleCtx } from './panes'
 import {
@@ -29,7 +32,7 @@ function openTransferModal(
   const title = t(locale, mode === 'copy' ? 'team_picker_copy_title' : 'team_picker_move_title')
   if (getColumnsForTeam) {
     openTeamColumnPickerModal({
-      title, confirmLabel: t(locale, 'team_picker_confirm_btn'), cancelLabel: t(locale, 'cancel'),
+      title, confirmLabel: t(locale, mode === 'copy' ? 'team_picker_copy_btn' : 'team_picker_move_btn'), cancelLabel: t(locale, 'cancel'),
       columnLabel: t(locale, 'kanban_transfer_column_label'),
       teams: otherTeams, getColumns: getColumnsForTeam,
       onConfirm: (targetTeamId, targetStatus) => actions.transfer(itemId, targetTeamId, mode, targetStatus),
@@ -37,7 +40,7 @@ function openTransferModal(
     return
   }
   openTeamPickerModal({
-    title, confirmLabel: t(locale, 'team_picker_confirm_btn'), cancelLabel: t(locale, 'cancel'),
+    title, confirmLabel: t(locale, mode === 'copy' ? 'team_picker_copy_btn' : 'team_picker_move_btn'), cancelLabel: t(locale, 'cancel'),
     teams: otherTeams,
     onConfirm: (targetTeamId) => actions.transfer(itemId, targetTeamId, mode),
   })
@@ -83,17 +86,39 @@ export function openItemContextMenu(ctx: ModuleCtx, kind: CardKind, teamId: stri
         { id: 'cancelled', label: t(ctx.locale, 'kanban_status_cancelled') },
       ]
     : undefined
-  showCardContextMenu(ctx.locale, teamId, ctx.store.doc.teams, itemId, x, y, {
+  const { store, locale } = ctx
+  showCardContextMenu(locale, teamId, store.doc.teams, itemId, x, y, {
     duplicate: (id) => {
-      ctx.store.update((d) => {
+      store.update((d) => {
         const tm = docFindTeam(d, teamId)
         if (tm) DUPLICATE_FNS[kind](tm, id)
       })
+      if (!store.readOnly) toast(t(locale, 'duplicated_toast'))
     },
     transfer: (id, targetTeamId, mode, targetStatus) => {
-      ctx.store.update((d) => {
-        TRANSFER_FNS[kind](d.teams, id, teamId, targetTeamId, mode, targetStatus)
+      const targetName = docFindTeam(store.doc, targetTeamId)?.name ?? ''
+      const run = (d: Doc): void => TRANSFER_FNS[kind](d.teams, id, teamId, targetTeamId, mode, targetStatus)
+      if (mode === 'copy') {
+        store.update(run)
+        if (!store.readOnly) toast(t(locale, 'transfer_copied_toast', { team: targetName }))
+        return
+      }
+      // A move changes two teams (and flattens the source's @mentions of the card), so the undo
+      // restores deep copies of both, as the delete flows do for one.
+      const offer = deleteWithUndo(store, (d) => {
+        const from = docFindTeam(d, teamId)
+        const to = docFindTeam(d, targetTeamId)
+        if (!from || !to) return null
+        const before = [structuredClone(from), structuredClone(to)]
+        run(d)
+        return (d2) => {
+          for (const tm of before) {
+            const i = d2.teams.findIndex((x) => x.id === tm.id)
+            if (i !== -1) d2.teams[i] = tm
+          }
+        }
       })
+      offerUndoToast(store, locale, t(locale, 'transfer_moved_toast', { team: targetName }), offer)
     },
     delete: () => onDelete(),
   }, getColumnsForTeam)
