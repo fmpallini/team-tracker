@@ -1268,6 +1268,7 @@ body { background: var(--bg); color: var(--fg); }
   cursor: grab; position: relative; z-index: 1;
 }
 .tt-org-box:hover { background: rgba(var(--accent-rgb), .08); }
+.tt-org-box:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 /* Dog-eared index-card corner — the org chart reads as cards pinned to a board. */
 .tt-org-box::after {
   content: ''; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px;

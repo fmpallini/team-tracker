@@ -1027,6 +1027,7 @@ describe('renderRisks', () => {
     contextMenuItem('Duplicate').click()
 
     expect(store.doc.teams[0]!.risks).toHaveLength(2)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Duplicated')
   })
 
   describe('clear all closed', () => {
@@ -1967,6 +1968,48 @@ describe('row context menu', () => {
 
     expect(store.doc.teams.find((t) => t.id === 'from')!.risks).toHaveLength(0)
     expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Moved to Team 2')
+  })
+
+  test('the Move toast offers an Undo that puts the row back in the source team and removes it from the target', () => {
+    const from = makeTeam({ id: 'from', risks: [risk({ id: 'r1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'risks' } }, store, fakePM())
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Move to team…').click()
+    ;(document.querySelector('select') as HTMLSelectElement).value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Move')!.click()
+    document.querySelector<HTMLButtonElement>('.tt-toast-action')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.risks.map((r) => r.id)).toEqual(['r1'])
+    expect(store.doc.teams.find((t) => t.id === 'to')!.risks).toHaveLength(0)
+  })
+
+  test('Copy to team… toasts the target team and leaves the source row alone', () => {
+    const from = makeTeam({ id: 'from', risks: [risk({ id: 'r1', order: 0 })] })
+    const to = makeTeam({ id: 'to', name: 'Team 2' })
+    const doc = createEmptyDocument('en-US')
+    doc.teams.push(from, to)
+    doc.nav.activeTeamId = from.id
+    const store = createStore(doc)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    render(container, { teamId: from.id, ref: { kind: 'risks' } }, store, fakePM())
+
+    rightClick(rows(container)[0]!)
+    contextMenuItem('Copy to team…').click()
+    ;(document.querySelector('select') as HTMLSelectElement).value = 'to'
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-modal-dialog button')).find((b) => b.textContent === 'Copy')!.click()
+
+    expect(store.doc.teams.find((t) => t.id === 'from')!.risks).toHaveLength(1)
+    expect(document.querySelector('.tt-toast')?.textContent).toContain('Copied to Team 2')
   })
 })
 

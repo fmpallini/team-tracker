@@ -232,7 +232,7 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
     const box = boxes(container)[0]!
-    expect(box.title).toBe('Double-click to open person notes')
+    expect(box.title).toBe('Double-click or Enter to open person notes')
   })
 
   test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
@@ -244,6 +244,72 @@ describe('renderPeopleTree', () => {
     box.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
 
     expect(pm.calls).toEqual([{ idx: 1, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'a', group: 'members' } } }])
+  })
+
+  describe('keyboard', () => {
+    const key = (el: Element, k: string): void => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })) }
+    function chart(): { container: HTMLElement; pm: ReturnType<typeof setup>['pm']; boxById: (id: string) => HTMLElement } {
+      const team = makeTeam({ members: [
+        person({ id: 'boss', name: 'Boss', order: 0 }),
+        person({ id: 'a', name: 'Ana', parentId: 'boss', order: 0 }),
+        person({ id: 'b', name: 'Bia', parentId: 'boss', order: 1 }),
+      ] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members')
+      document.body.appendChild(container)
+      return { container, pm, boxById: (id) => container.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${id}"]`)! }
+    }
+
+    test('every box is focusable', () => {
+      const { boxById } = chart()
+      expect(boxById('a').tabIndex).toBe(0)
+    })
+
+    test('Enter opens the person notes, like a double-click', () => {
+      const { boxById, pm } = chart()
+      key(boxById('a'), 'Enter')
+      expect(pm.calls).toEqual([{ idx: 0, loc: { teamId: 'T1', ref: { kind: 'person', personId: 'a', group: 'members' } } }])
+    })
+
+    test('arrows walk the chart: Down to the first report, Right to the next sibling, Left back, Up to the manager', () => {
+      const { boxById } = chart()
+      const boss = boxById('boss')
+      boss.focus()
+      key(boss, 'ArrowDown')
+      expect(document.activeElement).toBe(boxById('a'))
+      key(boxById('a'), 'ArrowRight')
+      expect(document.activeElement).toBe(boxById('b'))
+      key(boxById('b'), 'ArrowLeft')
+      expect(document.activeElement).toBe(boxById('a'))
+      key(boxById('a'), 'ArrowUp')
+      expect(document.activeElement).toBe(boss)
+    })
+
+    test('an arrow at the edge of the chart does nothing', () => {
+      const { boxById } = chart()
+      boxById('boss').focus()
+      key(boxById('boss'), 'ArrowUp')
+      key(boxById('boss'), 'ArrowLeft')
+      expect(document.activeElement).toBe(boxById('boss'))
+    })
+
+    test('a key pressed on one of the box own buttons is not hijacked', () => {
+      const { boxById, pm } = chart()
+      key(boxById('a').querySelector('.tt-people-edit-btn')!, 'Enter')
+      expect(pm.calls).toEqual([])
+    })
+
+    test('focus survives the tree rebuild a store change causes', () => {
+      const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members')
+      document.body.appendChild(container)
+      container.querySelector<HTMLElement>('.tt-org-box')!.focus()
+
+      store.update((d) => { d.teams[0]!.members[0]!.role = 'Lead' }, { teamId: 'T1', sections: ['people'] })
+
+      expect((document.activeElement as HTMLElement).dataset.personId).toBe('a')
+    })
   })
 
   test('shows a placeholder when the group is empty', () => {

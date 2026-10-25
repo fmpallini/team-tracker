@@ -241,14 +241,30 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         // highlight pass scrolls to and flash-rings — e.g. the person-notes
         // header's "show in org chart" jump. Same attribute the kanban/
         // milestone/risk rows carry for the identical search/@ref highlight.
-        { class: 'tt-org-box', draggable: 'true', 'data-person-id': person.id, 'data-item-id': person.id, title: t(lc, 'person_box_hint') },
+        { class: 'tt-org-box', draggable: 'true', tabindex: '0', 'data-person-id': person.id, 'data-item-id': person.id, title: t(lc, 'person_box_hint') },
         el('div', { class: 'tt-org-name' }, person.name),
         el('div', { class: 'tt-org-role' }, person.role),
         actions
       )
 
-      box.addEventListener('dblclick', () => {
+      const openNotes = (): void => {
         ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'person', personId: person.id, group } })
+      }
+      box.addEventListener('dblclick', openNotes)
+      // The same row keys the task, risk and milestone rows answer to: Enter opens the full view (the
+      // person's notes), and the arrows walk the chart — Left/Right between siblings, Up to the
+      // manager, Down to the first report. Guarded on the box itself so a keypress on one of its buttons is left alone.
+      box.addEventListener('keydown', (ev) => {
+        if (ev.target !== box) return
+        if (ev.key === 'Enter') {
+          ev.preventDefault()
+          openNotes()
+          return
+        }
+        const next = adjacentBox(box, ev.key)
+        if (!next) return
+        ev.preventDefault()
+        next.focus()
       })
 
       box.addEventListener('dragstart', (e) => {
@@ -318,6 +334,19 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       return box
     }
 
+    function boxOf(node: Element | null | undefined): HTMLElement | null {
+      return node?.querySelector<HTMLElement>(':scope > .tt-org-box') ?? null
+    }
+    /** The box an arrow key moves to from `box`, or null at the edge of the chart. */
+    function adjacentBox(box: HTMLElement, key: string): HTMLElement | null {
+      const node = box.parentElement
+      if (key === 'ArrowDown') return boxOf(node?.querySelector(':scope > .tt-org-children > .tt-org-node'))
+      if (key === 'ArrowUp') return boxOf(node?.parentElement?.closest('.tt-org-node'))
+      if (key !== 'ArrowLeft' && key !== 'ArrowRight') return null
+      const siblings = Array.from(node?.parentElement?.children ?? []).filter((c) => c.classList.contains('tt-org-node'))
+      return boxOf(siblings[siblings.indexOf(node!) + (key === 'ArrowRight' ? 1 : -1)])
+    }
+
     function renderNode(person: Person): HTMLElement {
       const kids = childrenOf(people(), person.id)
       const box = renderBox(person)
@@ -359,6 +388,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
     function renderAll(): void {
+      // The rebuild replaces every box, so a focused one is found again by person id afterwards.
+      const focusedId = treeEl.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>('[data-person-id]')?.dataset.personId : undefined
       treeEl.innerHTML = ''
       const roots = childrenOf(people(), null)
       if (roots.length === 0) {
@@ -370,6 +401,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         return
       }
       roots.forEach((r) => treeEl.appendChild(renderNode(r)))
+      if (focusedId) treeEl.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${focusedId}"]`)?.focus()
     }
     renderAll()
 
