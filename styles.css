@@ -447,8 +447,8 @@ body { background: var(--bg); color: var(--fg); }
 /* A button holding an icon (alone, or ahead of its label) centres it in both axes. Left as an inline-block/block box, the icon's baseline alignment inside the button's line box sat it ~1px low (pane back/forward/split). :where() keeps it at (0,1,0) so display:none rules (compact header) still win. */
 .tt-btn:where(:has(> .tt-icon)) { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; }
 /* Text action buttons in the panes: accent-tinted like the modal's secondary buttons. (The kanban "add card" keeps its dashed muted look.) */
-:where(.tt-people-add-btn, .tt-risk-add-btn, .tt-milestone-add-btn, .tt-risk-expand-all-btn, .tt-milestone-expand-all-btn, .tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
-:where(.tt-people-add-btn, .tt-risk-add-btn, .tt-milestone-add-btn, .tt-risk-expand-all-btn, .tt-milestone-expand-all-btn, .tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled):hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+:where(.tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
+:where(.tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled):hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .tt-icon-svg { display: block; flex: none; }
 .tt-icon-svg .f { fill: currentColor; stroke: none; }
 /* Header buttons: true squares at the shared control height (the pills above use the same token). */
@@ -1558,7 +1558,7 @@ body { background: var(--bg); color: var(--fg); }
    (MIN_LABEL_GAP, scaled with the text-size setting) so labels never touch;
    the plain mouse wheel scrolls it (wheelScrollsHorizontally). The print
    window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
-.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding-bottom: .5rem; }
 .tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
@@ -1572,9 +1572,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-leader { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-toolbar { flex: none; display: flex; align-items: center; }
 .tt-milestone-expand-all-btn { margin-left: auto; }
-.tt-milestone-list { display: flex; flex-direction: column; gap: .2rem; }
-.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem; border-radius: var(--r-sm); border: 1px solid var(--border); border-left-width: 3px; border-left-color: transparent; }
-.tt-milestone-row:hover { background: rgba(var(--accent-rgb), .08); }
+.tt-milestone-list { display: flex; flex-direction: column; gap: .55rem; }
+/* Rows and the Risks list share one look: a soft card (fill + resting shadow, no outline), with the title and date fields quiet until hovered or focused so a row is not a box inside a box. */
+.tt-milestone-row { display: flex; align-items: center; gap: .4rem; padding: .5rem .6rem; border-radius: var(--r-md); border: 1px solid transparent; border-left: 3px solid transparent; background: var(--panel); box-shadow: var(--shadow-card); }
+.tt-milestone-row:hover { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
 /* State edge, in the timeline dots' own vocabulary: filled accent = done,
    muted = overdue, hollow accent = upcoming. The list is the half you edit
    and it encoded none of this; borrowing the timeline's three treatments
@@ -1635,7 +1636,7 @@ body { background: var(--bg); color: var(--fg); }
    the exposure badge already uses (see risks.ts), tinted very lightly via
    color-mix so the red/yellow/green reading is a background hint, not a
    competing signal against the dots. */
-.tt-risk-quadrant { flex: none; border-bottom: 1px solid var(--border); padding-bottom: 1rem; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1.5rem; }
+.tt-risk-quadrant { flex: none; padding-bottom: .75rem; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1.5rem; }
 .tt-risk-quadrant-chart { display: flex; flex-direction: column; align-items: center; gap: .6rem; min-width: 0; }
 .tt-risk-quadrant-svg { display: block; max-width: 100%; height: auto; }
 /* Sum of every open risk's exposure, next to the chart it summarizes — a
@@ -1687,7 +1688,7 @@ body { background: var(--bg); color: var(--fg); }
   display: flex; align-items: center; gap: .4rem; padding: .3rem .4rem;
 }
 .tt-risk-header-row {
-  font-size: .8rem; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border);
+  font-size: .8rem; font-weight: 600; color: var(--muted);
 }
 /* min-width floor, not 0: with five fixed columns and three action slots
    claiming ~490px, `flex: 1` correctly handed the title whatever was left —
@@ -1794,9 +1795,9 @@ body { background: var(--bg); color: var(--fg); }
    author colors, so pin them to the theme explicitly (applies to every
    select in the app). */
 select option { background: var(--bg); color: var(--fg); }
-.tt-risk-list { display: flex; flex-direction: column; gap: .2rem; }
-.tt-risk-row { border-radius: var(--r-sm); border: 1px solid var(--border); cursor: grab; }
-.tt-risk-row:hover { background: rgba(var(--accent-rgb), .08); }
+.tt-risk-list { display: flex; flex-direction: column; gap: .55rem; }
+.tt-risk-row { padding: .55rem .65rem; border-radius: var(--r-md); border: 1px solid transparent; background: var(--panel); box-shadow: var(--shadow-card); cursor: grab; }
+.tt-risk-row:hover { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
 .tt-risk-row[draggable="false"] { cursor: default; }
 .tt-risk-row.tt-risk-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-risk-row.tt-risk-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
@@ -2268,3 +2269,22 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-size-step:has(input:checked) { border-color: var(--border); background: var(--accent); color: var(--on-accent); }
 .tt-size-step:has(input:focus-visible) { outline-offset: -2px; }
 .tt-size-step .tt-prefs-radio-preview { font-weight: 600; line-height: 1.2; }
+
+/* Risks and Milestones rows: title and date fields have no frame at rest (the row is the frame); hover shows it and focus shows the accent. A date in an invalid state keeps its red border. */
+:where(.tt-risk-row, .tt-milestone-row) :is(.tt-risk-title-input, .tt-milestone-title-input, .tt-date-picker-input:not(.tt-date-picker-input-invalid)) { border-color: transparent; background: transparent; }
+:where(.tt-risk-row, .tt-milestone-row):hover :is(.tt-risk-title-input, .tt-milestone-title-input, .tt-date-picker-input:not(.tt-date-picker-input-invalid)) { border-color: var(--border); }
+:where(.tt-risk-row, .tt-milestone-row) :is(.tt-risk-title-input, .tt-milestone-title-input, .tt-date-picker-input:not(.tt-date-picker-input-invalid)):focus { border-color: var(--accent); background: var(--bg); }
+/* The follow-up editor opens under its row; the wider gap between rows must not pull it away from the row it belongs to. */
+.tt-risk-row + .tt-risk-followup-row, .tt-milestone-row + .tt-milestone-followup-row { margin-top: -.35rem; }
+
+/* Add buttons (people, milestones, risks, and the one an empty pane offers) are the one filled button of their toolbar; expand-all is quiet and only shows a wash on hover. */
+.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
+.tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
+.tt-milestone-expand-all-btn, .tt-risk-expand-all-btn { border-color: transparent; background: transparent; color: var(--muted); font-size: .9rem; padding: .3rem .55rem; }
+.tt-milestone-expand-all-btn:hover:not(:disabled), .tt-risk-expand-all-btn:hover:not(:disabled) { border-color: transparent; background: rgba(var(--accent-rgb), .12); color: var(--accent); }
+
+/* A pane with nothing in it offers its add action once, in the empty state. Its toolbar (add, progress, expand all) has nothing to act on, and the To Do column's own + Card would be a second add button next to the board's. */
+.tt-people:has(.tt-people-empty) > .tt-people-toolbar,
+.tt-milestones:has(.tt-milestone-empty) > .tt-milestone-toolbar,
+.tt-risks:has(.tt-risk-empty) > .tt-risk-toolbar { display: none; }
+.tt-kanban-col:has(.tt-kanban-empty-board) .tt-kanban-add-btn { display: none; }

@@ -284,7 +284,7 @@ async function overlayCycle(page: Page): Promise<void> {
   // via ExpandableRowsController), collapse it, open the row context menu,
   // then delete the row so the cycle nets to zero.
   await switchModule(page, /Risks/i)
-  await page.locator('.tt-risk-add-btn').click()
+  await page.locator('.tt-risk-add-btn:visible, .tt-risk-empty .tt-empty-state-action').first().click()
   // A follow-up opens only under a title, so name the row first.
   const riskTitle = page.locator('.tt-risk-title-input').first()
   await riskTitle.fill('Leak probe')
@@ -300,7 +300,7 @@ async function overlayCycle(page: Page): Promise<void> {
 
   // Milestones: same shape, plus its own date picker.
   await switchModule(page, /Milestones/i)
-  await page.locator('.tt-milestone-add-btn').click()
+  await page.locator('.tt-milestone-add-btn:visible, .tt-milestone-empty .tt-empty-state-action').first().click()
   const milestoneTitle = page.locator('.tt-milestone-title-input').first()
   await milestoneTitle.fill('Leak probe')
   await milestoneTitle.blur()
@@ -314,7 +314,7 @@ async function overlayCycle(page: Page): Promise<void> {
   // Tasks: the card modal hosts its own rich editor and date picker — the
   // one editor that lives outside the pane tree entirely.
   await switchModule(page, /Tasks/i)
-  await page.locator('.tt-kanban-add-btn').first().click()
+  await page.locator('.tt-kanban-add-btn:visible, .tt-kanban-empty-board .tt-empty-state-action').first().click()
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
@@ -635,7 +635,7 @@ test.describe('resource growth over a long session', () => {
 
     await addTeam(page, 'Alpha')
     await switchModule(page, /Risks/i)
-    await page.locator('.tt-risk-add-btn').click()
+    await page.locator('.tt-risk-add-btn:visible, .tt-risk-empty .tt-empty-state-action').first().click()
     // Named, not left blank: risks.ts drops an unnamed row once focus moves
     // on, and this cycle's whole point is exercising close/reopen with the
     // row still there to right-click.
@@ -759,7 +759,7 @@ test.describe('resource growth over a long session', () => {
 
     async function roundTrip(kind: 'risk' | 'milestone', title: string): Promise<void> {
       await switchModule(page, kind === 'risk' ? /Risks/i : /Milestones/i)
-      await page.locator(`.tt-${kind}-add-btn`).click()
+      await page.locator(`.tt-${kind}-add-btn:visible, .tt-${kind}-empty .tt-empty-state-action`).first().click()
       const input = page.locator(`.tt-${kind}-title-input`).first()
       await input.fill(title)
       await input.blur()
@@ -828,7 +828,7 @@ test.describe('resource growth over a long session', () => {
     // A milestone with a known title, referenced once from the daily note, so
     // a backlinks chip is present on its row for every cycle to open/close.
     await switchModule(page, /Milestones/i)
-    await page.locator('.tt-milestone-add-btn').click()
+    await page.locator('.tt-milestone-add-btn:visible, .tt-milestone-empty .tt-empty-state-action').first().click()
     const title = page.locator('.tt-pane[data-pane-idx="0"] .tt-milestone-title-input').first()
     await title.fill('Beacon')
     await title.blur()
