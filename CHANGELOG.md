@@ -4,6 +4,20 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.3.0] - 2026-10-24
+
+### Added
+- Moving, copying or duplicating a task, risk or milestone to another team now says what happened, and a move has an Undo.
+- People in the org chart can be reached from the keyboard: arrows walk the chart, Enter opens the person's notes.
+
+### Changed
+- Deleting a single person, task, risk or milestone no longer asks first; the Undo notice is the safety net. Bigger deletes still confirm, in red.
+- Risks and Milestones are shown as soft cards, and the add buttons stand out; toasts, Preferences, task cards and the team sidebar were polished.
+- Dialog buttons read Save instead of OK, the team picker says Copy or Move, and cards are called tasks everywhere.
+
+### Fixed
+- Deleting a task that had notes but no title from its dialog lost the notes with no Undo.
+
 ## [3.2.2] - 2026-10-23
 
 ### Changed
