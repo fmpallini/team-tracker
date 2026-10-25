@@ -39,7 +39,7 @@ let armed: { locale: () => Locale } | null = null
 function refuse(e: Event): void {
   e.preventDefault()
   e.stopPropagation()
-  if (armed) toast(t(armed.locale(), 'readonly_blocked_toast'), { key: READONLY_TOAST_KEY })
+  if (armed) toast(t(armed.locale(), 'readonly_blocked_toast'), { kind: 'warn', key: READONLY_TOAST_KEY })
 }
 
 function lockedTarget(e: Event): Element | null {
@@ -59,7 +59,7 @@ function onCompositionstart(e: Event): void {
   const target = lockedTarget(e)
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
     target.blur()
-    if (armed) toast(t(armed.locale(), 'readonly_blocked_toast'), { key: READONLY_TOAST_KEY })
+    if (armed) toast(t(armed.locale(), 'readonly_blocked_toast'), { kind: 'warn', key: READONLY_TOAST_KEY })
   }
 }
 

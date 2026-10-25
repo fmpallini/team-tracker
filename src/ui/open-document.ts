@@ -50,7 +50,7 @@ export async function reconcileOpen(opts: {
 }): Promise<OpenedDocument | null> {
   const { locale, db, session, opened, password } = opts
   if (!db) {
-    toast(t(locale, 'live_store_unavailable_toast'), { sticky: true })
+    toast(t(locale, 'live_store_unavailable_toast'), { kind: 'error', sticky: true })
     const store = createStore(opened.doc, opened.images)
     return { session, doc: opened.doc, password, images: opened.images, store, handle: null, needsFileWrite: false, stamp: opened.stamp }
   }

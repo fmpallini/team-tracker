@@ -161,7 +161,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     // same .tmv again while it's the focused window) must not blow away
     // in-memory state with whatever's on disk.
     if (await sameEntry(prev.session, session)) {
-      toast(t(prev.store.doc.prefs.locale, 'already_open_toast'))
+      toast(t(prev.store.doc.prefs.locale, 'already_open_toast'), { kind: 'warn' })
       return false
     }
     // A file that can't be written keeps the previous document open and
@@ -243,7 +243,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     // (changed, added or removed in another tab) — see core/reload-document.ts.
     return decodeForReload(bytes, currentPassword(), async (wasWrong) => {
       const lc = store.doc.prefs.locale
-      if (wasWrong) toast(t(lc, 'err_wrong_password'))
+      if (wasWrong) toast(t(lc, 'err_wrong_password'), { kind: 'error' })
       const result = await promptPassword(lc, { title: t(lc, 'reload_password_title') })
       return result === null ? null : (result as { password: string }).password
     })
@@ -268,7 +268,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
       currentPassword: currentPassword(),
       askPassword: async (wasWrong) => {
         const lc = store.doc.prefs.locale
-        if (wasWrong) toast(t(lc, 'err_wrong_password'))
+        if (wasWrong) toast(t(lc, 'err_wrong_password'), { kind: 'error' })
         const result = await promptPassword(lc, { title: t(lc, 'reload_password_title') })
         return result === null ? null : (result as { password: string }).password
       },
@@ -425,7 +425,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     session,
     shell,
     persister,
-    onBrowserCopyRekeyFailed: () => toast(t(store.doc.prefs.locale, 'live_rekey_failed_toast'), { sticky: true }),
+    onBrowserCopyRekeyFailed: () => toast(t(store.doc.prefs.locale, 'live_rekey_failed_toast'), { kind: 'error', sticky: true }),
     snapshot,
     runExclusive: (fn) => snapshot.runExclusive(fn),
     getPassword: currentPassword,

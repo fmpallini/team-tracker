@@ -162,6 +162,14 @@ test('store.replaceDoc (conflict-modal reload path) re-renders the sidebar', () 
   expect(rows[0]!.classList.contains('active')).toBe(true)
 })
 
+test('the list is headed "Teams" and the add control is a labelled row, not a bare plus', () => {
+  setup()
+  expect(document.querySelector('.tt-sidebar-heading')?.textContent).toBe('Teams')
+  const add = document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!
+  expect(add.textContent).toBe('New team')
+  expect(add.title).toBe('New team')
+})
+
 test('+ button opens modal that adds a team via crypto.randomUUID', () => {
   const { store } = setup()
   document.querySelector<HTMLButtonElement>('.tt-team-add-btn')!.click()

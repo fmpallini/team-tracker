@@ -214,6 +214,60 @@ test('size field offers 5 evenly-spaced steps and previews each label at its own
   expect(['XS', 'S', 'M', 'L', 'XL'].map(previewOf)).toEqual(['12px', '13.5px', '15px', '16.5px', '18px'])
 })
 
+test('Preferences closes from the header mark; there is no OK row because every control applies as it changes', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  expect(document.querySelector('.tt-modal-buttons button')).toBeNull()
+  const close = document.querySelector<HTMLButtonElement>('.tt-modal-title-row .tt-modal-close')!
+  expect(close.getAttribute('aria-label')).toBe('Close')
+  // The mark precedes the tabs in the DOM, but focus starts on the active tab.
+  expect(document.activeElement).toBe(document.querySelector('.tt-prefs-tab-btn.active'))
+  close.click()
+  expect(document.querySelector('.tt-modal-dialog')).toBeNull()
+})
+
+test('the text-size steps follow a size changed outside the dialog (Ctrl+wheel), and the listener is released on close', () => {
+  const { store, shell, appCtl } = setup()
+  const released = vi.fn()
+  const realSubscribe = store.subscribe.bind(store)
+  vi.spyOn(store, 'subscribe').mockImplementation((fn) => {
+    const off = realSubscribe(fn)
+    return () => { released(); off() }
+  })
+  openPrefs(store, shell, 'en-US', appCtl)
+  expect(radio('tt-prefs-size', 'M').checked).toBe(true)
+
+  store.update((d) => { d.prefs.fontSize = 'XL' }, { sections: ['prefs'] })
+  expect(radio('tt-prefs-size', 'XL').checked).toBe(true)
+  expect(radio('tt-prefs-size', 'M').checked).toBe(false)
+
+  expect(released).not.toHaveBeenCalled()
+  document.querySelector<HTMLButtonElement>('.tt-modal-close')!.click()
+  expect(released).toHaveBeenCalledTimes(1)
+})
+
+test('the tab rail answers Up and Down as well as Left and Right', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  const strip = document.querySelector<HTMLElement>('.tt-prefs-tabs')!
+  expect(strip.getAttribute('aria-orientation')).toBe('vertical')
+  const buttons = Array.from(strip.querySelectorAll<HTMLButtonElement>('.tt-prefs-tab-btn'))
+  const press = (key: string): void => { strip.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })) }
+  press('ArrowDown')
+  expect(document.activeElement).toBe(buttons[1])
+  press('ArrowUp')
+  expect(document.activeElement).toBe(buttons[0])
+})
+
+test('switching theme re-themes the palette miniatures to the theme the app now shows', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  radio('tt-prefs-theme', 'dark').click()
+  const themes = Array.from(document.querySelectorAll<HTMLElement>('.tt-palette-preview')).map((m) => m.dataset.theme)
+  expect(themes).toHaveLength(12)
+  expect(new Set(themes)).toEqual(new Set([document.documentElement.dataset.theme ?? 'light']))
+})
+
 test('palette field defaults to ledger, offers 12 swatched options, and updates store.prefs + shell on change', () => {
   const { store, shell, appCtl } = setup()
   const applySpy = vi.spyOn(shell, 'applyPrefs')
@@ -225,8 +279,8 @@ test('palette field defaults to ledger, offers 12 swatched options, and updates 
   }
 
   const signalLabel = radio('tt-prefs-palette', 'signal').closest('label')
-  const swatch = signalLabel?.querySelector('.tt-prefs-radio-swatch') as HTMLElement
-  expect(swatch.style.background).not.toBe('')
+  const miniature = signalLabel?.querySelector('.tt-palette-preview') as HTMLElement
+  expect(miniature.dataset.palette).toBe('signal')
 
   radio('tt-prefs-palette', 'cosmic').click()
   expect(store.doc.prefs.palette).toBe('cosmic')
@@ -466,12 +520,12 @@ test('templates tab lists the 5 builtins with scope badges', () => {
   expect(document.querySelector('.tt-prefs-template-scope-badge')?.textContent).toMatch(/Personal|Daily|Any/)
 })
 
-test('"+ new" adds a template with the entered name/scope/body', () => {
+test('"+ New" adds a template with the entered name/scope/body', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates')
 
-  clickByText('+ new')
+  clickByText('+ New')
   const nameInput = document.querySelector('input[name="tt-prefs-template-name"]') as HTMLInputElement
   nameInput.value = 'Custom'
   nameInput.dispatchEvent(new Event('input'))
@@ -492,11 +546,11 @@ test('"+ new" adds a template with the entered name/scope/body', () => {
   expect(document.querySelectorAll('.tt-prefs-template-row')).toHaveLength(6)
 })
 
-test('"+ new" requires a non-empty name', () => {
+test('"+ New" requires a non-empty name', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates')
-  clickByText('+ new')
+  clickByText('+ New')
   clickByText('OK')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
   expect(store.doc.templates).toHaveLength(5)

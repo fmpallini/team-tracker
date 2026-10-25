@@ -40,7 +40,8 @@ describe('prefsRadioField', () => {
   const opts = [
     { value: 'a', label: 'A' },
     { value: 'b', label: 'B', preview: 'serif' },
-    { value: 'c', label: 'C', sizePreview: '12px', swatch: '#123456' },
+    { value: 'c', label: 'C', sizePreview: '12px' },
+    { value: 'd', label: 'D', swatch: '#123456' },
   ]
 
   it('checks the current option, labels the group and reports changes', () => {
@@ -48,7 +49,7 @@ describe('prefsRadioField', () => {
     const field = prefsRadioField({ name: 'g', label: 'Group', options: opts, current: 'b', onChange })
     expect(field.querySelector('.tt-prefs-field-label')?.textContent).toBe('Group')
     const inputs = Array.from(field.querySelectorAll<HTMLInputElement>('input[type="radio"]'))
-    expect(inputs.map((i) => i.checked)).toEqual([false, true, false])
+    expect(inputs.map((i) => i.checked)).toEqual([false, true, false, false])
     inputs[2]!.dispatchEvent(new Event('change'))
     expect(onChange).toHaveBeenCalledWith('c')
   })
@@ -59,6 +60,37 @@ describe('prefsRadioField', () => {
     expect(previews[0]!.style.fontFamily).toBe('serif')
     expect(previews[1]!.style.fontSize).toBe('12px')
     expect((field.querySelector('.tt-prefs-radio-swatch') as HTMLElement).style.background).not.toBe('')
+  })
+
+  it('draws a size option as an "A" at that size, keeping its name for screen readers and as a tooltip', () => {
+    const field = prefsRadioField({ name: 'g', label: 'Group', options: opts, current: 'a', onChange: () => {} })
+    expect(field.querySelector('.tt-prefs-radio-row')?.classList.contains('tt-size-steps')).toBe(true)
+    const label = field.querySelectorAll<HTMLElement>('label.tt-prefs-radio')[2]!
+    const glyph = label.querySelector<HTMLElement>('.tt-prefs-radio-preview')!
+    expect(glyph.textContent).toBe('A')
+    expect(glyph.getAttribute('aria-hidden')).toBe('true')
+    expect(label.querySelector('.tt-visually-hidden')?.textContent).toBe('C')
+    expect(label.title).toBe('C')
+  })
+
+  it('draws a palette option as a card with a miniature that names its palette and the current theme', () => {
+    document.documentElement.dataset.theme = 'dark'
+    try {
+      const field = prefsRadioField({
+        name: 'p', label: 'Palette', current: 'signal', onChange: () => {},
+        options: [{ value: 'ledger', label: 'Field Ledger', palette: 'ledger' }, { value: 'signal', label: 'Signal', palette: 'signal' }],
+      })
+      expect(field.querySelector('.tt-prefs-radio-row')?.classList.contains('tt-palette-grid')).toBe(true)
+      const cards = Array.from(field.querySelectorAll<HTMLElement>('label.tt-palette-card'))
+      expect(cards).toHaveLength(2)
+      const mini = cards[1]!.querySelector<HTMLElement>('.tt-palette-preview')!
+      expect(mini.dataset.palette).toBe('signal')
+      expect(mini.dataset.theme).toBe('dark')
+      expect(cards[1]!.querySelector('.tt-palette-card-name')?.textContent).toBe('Signal')
+      expect(cards[1]!.querySelector<HTMLInputElement>('input')!.checked).toBe(true)
+    } finally {
+      delete document.documentElement.dataset.theme
+    }
   })
 
   it('disables every radio when disabled', () => {

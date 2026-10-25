@@ -365,7 +365,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     patchTeamItem(ctx.store, teamId, 'risks', id, (r) => { r.closed = closed }, { teamId, sections: ['risks'] })
     // Closing files the row away in the Closed list, so say where it went and offer the way back. Reopening *is* the undo, so no snapshot is needed.
     if (closing && !ctx.store.readOnly) {
-      toast(t(lc, 'risk_closed_toast', { title: closing.title }), {
+      toast(t(lc, 'risk_closed_toast', { title: closing.title }), { kind: 'success',
         key: 'risk-closed',
         duration: 6000,
         action: { label: t(lc, 'undo'), onClick: () => setClosed(id, false) },

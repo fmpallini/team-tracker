@@ -209,7 +209,7 @@ describe('Reload', () => {
 
     expect(deps.applyReloaded).not.toHaveBeenCalled()
     expect(JSON.stringify(store.doc)).toBe(before)
-    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('reload'), { sticky: true })
+    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('reload'), { kind: 'error', sticky: true })
     expect(flow.isOpen()).toBe(false)
   })
 
@@ -218,7 +218,7 @@ describe('Reload', () => {
 
     await open().onReload()
 
-    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('reload'), { sticky: true })
+    expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('reload'), { kind: 'error', sticky: true })
     expect(flow.isOpen()).toBe(false)
   })
 })
@@ -318,7 +318,7 @@ describe('Overwrite', () => {
     expect(snapshot.fileWriteFailed).not.toHaveBeenCalledWith('permission')
     const [, errOpts] = mocks.toast.mock.calls[0]!
     expect(errOpts.key).toBe('save-error')
-    expect(mocks.toast).toHaveBeenCalledWith(expect.any(String), { sticky: true, key: 'save-error' })
+    expect(mocks.toast).toHaveBeenCalledWith(expect.any(String), { kind: 'error', sticky: true, key: 'save-error' })
     expect(store.dirty).toBe(true)
     expect(flow.isOpen()).toBe(false)
   })

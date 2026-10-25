@@ -16,7 +16,7 @@ import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
 import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
-import { prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
+import { currentThemeAttr, prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
 import { icon } from './icons'
 import { collectImageRefs, referencedBytes } from '../core/image-ref'
 import { IMAGE_LIMITS } from '../core/image-import'
@@ -101,22 +101,22 @@ const THEME_OPTIONS: readonly { value: 'light' | 'dark' | 'system'; key: MsgKey 
   { value: 'system', key: 'prefs_theme_system' },
 ]
 
-// `swatch` previews each palette with its own accent color (see
-// styles.css's [data-palette=...] blocks) — same "show, don't describe"
+// `palette` renders each option as a miniature of that palette, drawn from
+// styles.css's [data-palette=...] blocks — the same "show, don't describe"
 // idea as FONT_OPTIONS's per-option font stack below.
-const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; swatch: string }[] = [
-  { value: 'ledger', key: 'prefs_palette_ledger', swatch: '#3b5a6b' },
-  { value: 'signal', key: 'prefs_palette_signal', swatch: '#0058a3' },
-  { value: 'blueprint', key: 'prefs_palette_blueprint', swatch: '#0a6890' },
-  { value: 'forest', key: 'prefs_palette_forest', swatch: '#8f5814' },
-  { value: 'desert', key: 'prefs_palette_desert', swatch: '#14706c' },
-  { value: 'cosmic', key: 'prefs_palette_cosmic', swatch: '#5b4bc4' },
-  { value: 'synthwave', key: 'prefs_palette_synthwave', swatch: '#22d3ee' },
-  { value: 'verdant', key: 'prefs_palette_verdant', swatch: '#1f8a4a' },
-  { value: 'ember', key: 'prefs_palette_ember', swatch: '#b23a2c' },
-  { value: 'graphite', key: 'prefs_palette_graphite', swatch: '#3a3a3f' },
-  { value: 'rose', key: 'prefs_palette_rose', swatch: '#b0245a' },
-  { value: 'citrus', key: 'prefs_palette_citrus', swatch: '#b45309' },
+const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; palette: string }[] = [
+  { value: 'ledger', key: 'prefs_palette_ledger', palette: 'ledger' },
+  { value: 'signal', key: 'prefs_palette_signal', palette: 'signal' },
+  { value: 'blueprint', key: 'prefs_palette_blueprint', palette: 'blueprint' },
+  { value: 'forest', key: 'prefs_palette_forest', palette: 'forest' },
+  { value: 'desert', key: 'prefs_palette_desert', palette: 'desert' },
+  { value: 'cosmic', key: 'prefs_palette_cosmic', palette: 'cosmic' },
+  { value: 'synthwave', key: 'prefs_palette_synthwave', palette: 'synthwave' },
+  { value: 'verdant', key: 'prefs_palette_verdant', palette: 'verdant' },
+  { value: 'ember', key: 'prefs_palette_ember', palette: 'ember' },
+  { value: 'graphite', key: 'prefs_palette_graphite', palette: 'graphite' },
+  { value: 'rose', key: 'prefs_palette_rose', palette: 'rose' },
+  { value: 'citrus', key: 'prefs_palette_citrus', palette: 'citrus' },
 ]
 
 const LOCALE_OPTIONS: readonly { value: Locale; key: MsgKey }[] = [
@@ -164,7 +164,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   function radioField(
     name: string,
     labelKey: MsgKey,
-    options: readonly { value: string; key: MsgKey; preview?: string; swatch?: string; sizePreview?: string }[],
+    options: readonly { value: string; key: MsgKey; preview?: string; swatch?: string; palette?: string; sizePreview?: string }[],
     current: string,
     onChange: (value: string) => void,
     disabled = false
@@ -189,6 +189,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         d.prefs.theme = value as 'light' | 'dark' | 'system'
       }, PREFS_ONLY)
       shell.applyPrefs(store.doc.prefs)
+      // The palette miniatures draw in the theme the app is showing, so follow it.
+      container.querySelectorAll<HTMLElement>('.tt-palette-preview').forEach((m) => { m.dataset.theme = currentThemeAttr() })
     })
 
     const paletteField = radioField('tt-prefs-palette', 'prefs_palette_label', PALETTE_OPTIONS, prefs.palette, (value) => {
@@ -564,7 +566,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           })
           inner.close()
           // The lock may have gone since this tab rendered: a blocked update changed nothing.
-          if (!store.readOnly) toast(t(locale, 'tags_cross_apply_success_toast'))
+          if (!store.readOnly) toast(t(locale, 'tags_cross_apply_success_toast'), { kind: 'success' })
         },
       }
       const inner: ModalHandle = showModal({ title: t(locale, 'tags_cross_apply_confirm_title'), body, buttons: [cancelBtn, confirmBtn] })
@@ -642,7 +644,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           newInput.value = ''
           confirmInput.value = ''
           meter.update('')
-          toast(t(locale, 'prefs_security_success_toast'))
+          toast(t(locale, 'prefs_security_success_toast'), { kind: 'success' })
           // `isPlain` was captured at render time; "Set password" on a plain
           // file just invalidated it. Rebuild the tab (same as the
           // migrate-to-plain path below) so a second change in this same modal
@@ -651,7 +653,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           renderActiveTab()
         })
         .catch(() => {
-          toast(t(locale, 'prefs_security_failure_toast'), { sticky: true })
+          toast(t(locale, 'prefs_security_failure_toast'), { kind: 'error', sticky: true })
         })
     }
 
@@ -709,11 +711,11 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
             .changePassword(null)
             .then(() => {
               inner.close()
-              toast(t(locale, 'prefs_security_success_toast'))
+              toast(t(locale, 'prefs_security_success_toast'), { kind: 'success' })
               renderActiveTab()
             })
             .catch(() => {
-              toast(t(locale, 'prefs_security_failure_toast'), { sticky: true })
+              toast(t(locale, 'prefs_security_failure_toast'), { kind: 'error', sticky: true })
             })
         },
       }
@@ -773,7 +775,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       } else {
         downloadFallback(name, bytes)
       }
-      toast(t(locale, 'data_export_success_toast'))
+      toast(t(locale, 'data_export_success_toast'), { kind: 'success' })
     }
 
     const exportBtn = el(
@@ -816,7 +818,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       if (store.readOnly) return
       importTeams = null
       renderImportChecklist()
-      toast(t(locale, 'data_import_success_toast'))
+      toast(t(locale, 'data_import_success_toast'), { kind: 'success' })
     }
 
     const fileInput = el('input', {
@@ -912,7 +914,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
           let dropped: string[] = []
           store.update((d) => { dropped = applyCleanup(d, days, today) })
           for (const id of dropped) store.images.discard(id)
-          if (!store.readOnly) toast(t(locale, 'data_cleanup_success_toast'))
+          if (!store.readOnly) toast(t(locale, 'data_cleanup_success_toast'), { kind: 'success' })
         },
       })
     }
@@ -1021,8 +1023,9 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const focused = ids.find((id) => tabButtons.get(id) === document.activeElement)
     const at = focused !== undefined ? ids.indexOf(focused) : from
     let next: number
-    if (e.key === 'ArrowRight') next = (at + 1) % ids.length
-    else if (e.key === 'ArrowLeft') next = (at - 1 + ids.length) % ids.length
+    // The strip is a vertical rail, so Up/Down are the natural keys; Left/Right keep working as before.
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (at + 1) % ids.length
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (at - 1 + ids.length) % ids.length
     else if (e.key === 'Home') next = 0
     else if (e.key === 'End') next = ids.length - 1
     else return
@@ -1037,7 +1040,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
   const tabStrip = el(
     'div',
-    { class: 'tt-prefs-tabs', role: 'tablist', onkeydown: (e: Event) => onTabKeydown(e as KeyboardEvent) },
+    { class: 'tt-prefs-tabs', role: 'tablist', 'aria-orientation': 'vertical', onkeydown: (e: Event) => onTabKeydown(e as KeyboardEvent) },
     ...TABS.map(({ id, key }) => {
       const btn = el(
         'button',
@@ -1062,11 +1065,36 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
   const dialogBody = el('div', { class: 'tt-prefs-dialog' }, tabStrip, contentEl)
 
+  // These prefs can also change from outside the dialog (Ctrl+wheel steps the text size), so their radios follow the store rather than only their own clicks.
+  const RADIO_PREFS: readonly [string, 'fontSize' | 'theme' | 'palette' | 'font'][] = [
+    ['tt-prefs-size', 'fontSize'], ['tt-prefs-theme', 'theme'], ['tt-prefs-palette', 'palette'], ['tt-prefs-font', 'font'],
+  ]
+  function syncRadiosToStore(): void {
+    for (const [name, key] of RADIO_PREFS) {
+      const current = store.doc.prefs[key]
+      for (const radio of contentEl.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`)) {
+        const on = radio.value === current
+        if (radio.checked !== on) radio.checked = on
+      }
+    }
+  }
+  const unsubscribeRadios = store.subscribe(syncRadiosToStore)
+
+  // Every control here applies the moment it changes, so there is nothing to confirm: one close mark in the header replaces the OK button.
+  const closeBtn = el(
+    'button',
+    { class: 'tt-btn tt-modal-close', type: 'button', title: t(locale, 'close'), 'aria-label': t(locale, 'close'), onclick: () => handle.close() },
+    icon('close', 14)
+  )
   const handle: ModalHandle = showModal({
     title: t(locale, 'prefs_title'),
     body: dialogBody,
-    buttons: [{ label: t(locale, 'ok'), primary: true, onClick: () => handle.close() }],
+    buttons: [],
+    headerExtra: closeBtn,
+    onClose: unsubscribeRadios,
   })
 
   renderActiveTab()
+  // The close mark comes first in the DOM, so the dialog's default initial focus would land on it.
+  tabButtons.get(activeTab)?.focus()
 }

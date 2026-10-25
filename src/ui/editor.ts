@@ -2277,6 +2277,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return btn
   }
 
+  /** A hairline between button groups (text style | lists | headings | blocks and inserts); decorative, so it stays out of the accessibility tree. */
+  function toolbarSeparator(): HTMLElement {
+    return el('span', { class: 'tt-editor-toolbar-sep', 'aria-hidden': 'true' })
+  }
+
   // The picker behind the image button. Kept in the DOM (hidden) so one input serves every click; its caret is remembered at click time because the dialog takes focus.
   const imageInput = el('input', { type: 'file', accept: IMAGE_ACCEPT, tabindex: '-1', 'aria-hidden': 'true' }) as HTMLInputElement
   imageInput.multiple = true
@@ -2300,12 +2305,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton('I', t(locale, 'editor_italic_title'), () => exec('italic'), 'tt-editor-btn-italic'),
     toolbarButton('U', t(locale, 'editor_underline_title'), () => exec('underline'), 'tt-editor-btn-underline'),
     toolbarButton('S', t(locale, 'editor_strike_title'), () => exec('strikeThrough'), 'tt-editor-btn-strike'),
+    toolbarSeparator(),
     toolbarButton(icon('list'), t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton(icon('olist'), t(locale, 'editor_ol_title'), () => insertList('ol')),
+    toolbarSeparator(),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
     toolbarButton('H3', t(locale, 'editor_h3_title'), () => formatBlockTag('h3')),
     toolbarButton(icon('paragraph'), t(locale, 'editor_paragraph_title'), () => formatBlockTag('p')),
+    toolbarSeparator(),
     toolbarButton(icon('quote'), t(locale, 'editor_quote_title'), () => toggleBlockquote()),
     toolbarButton(icon('codeBlock'), t(locale, 'editor_codeblock_title'), () => toggleCodeBlock()),
     toolbarButton(icon('hr'), t(locale, 'editor_hr_title'), () => insertHr()),

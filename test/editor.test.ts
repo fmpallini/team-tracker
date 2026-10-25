@@ -634,6 +634,22 @@ describe('@ trigger', () => {
     editor.destroy()
   })
 
+  test('the toolbar puts a hairline between its button groups, hidden from assistive tech', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    const bar = editor.root.querySelector('.tt-editor-toolbar')!
+    const seps = Array.from(bar.querySelectorAll('.tt-editor-toolbar-sep'))
+    expect(seps).toHaveLength(3)
+    expect(seps.every((sep) => sep.getAttribute('aria-hidden') === 'true')).toBe(true)
+    // Groups: text style (4) | lists (2) | headings and paragraph (4) | blocks and inserts.
+    const sizes: number[] = []
+    let run = 0
+    for (const child of Array.from(bar.children)) {
+      if (child.classList.contains('tt-editor-toolbar-sep')) { sizes.push(run); run = 0 } else if (child.classList.contains('tt-editor-btn')) run++
+    }
+    expect(sizes).toEqual([4, 2, 4])
+    editor.destroy()
+  })
+
   test('the @ toolbar button with the caret in a fenced code block inserts nothing', () => {
     const hooks = makeHooks()
     const editor = createEditor(hooks, 'en-US')

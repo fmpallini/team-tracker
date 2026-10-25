@@ -481,6 +481,20 @@ test('toast renders message and is removed on click', () => {
   expect(document.querySelector('.tt-toast')).toBeNull()
 })
 
+test('a toast carries a kind icon, its kind, and a decorative close mark that add no text', () => {
+  toast('Saved', { kind: 'success' })
+  toast('Plain')
+  const [saved, plain] = Array.from(document.querySelectorAll<HTMLElement>('.tt-toast'))
+  expect(saved!.dataset.kind).toBe('success')
+  expect(plain!.dataset.kind).toBe('info')
+  for (const node of [saved!, plain!]) {
+    expect(node.querySelector('.tt-toast-icon svg')).not.toBeNull()
+    expect(node.querySelector('.tt-toast-close')?.getAttribute('aria-hidden')).toBe('true')
+  }
+  expect(saved!.textContent).toBe('Saved')
+  expect(plain!.textContent).toBe('Plain')
+})
+
 test('toast auto-dismisses after timeout unless sticky', () => {
   vi.useFakeTimers()
   try {

@@ -78,7 +78,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
         } else {
           downloadFallback(deps.session.name, snapshot.bytes)
           // Not sticky — see the matching note in src/ui/start.ts.
-          toast(t(deps.store.doc.prefs.locale, 'fallback_notice'))
+          toast(t(deps.store.doc.prefs.locale, 'fallback_notice'), { kind: 'warn' })
         }
       } catch (e) {
         await images.rekey(oldPw === null ? null : await blobCodec(oldPw))

@@ -50,6 +50,7 @@ const PATHS = {
   flag: '<path d="M4 14V2.5M4 3h8l-2 3 2 3H4"/>',
   // Filled pennant: a reached milestone on the calendar (the outline `flag` is an open one).
   flagFill: '<path class="f" d="M4 3h8l-2 3 2 3H4z"/><path d="M4 14V2.5M4 3h8l-2 3 2 3H4"/>',
+  info: '<circle cx="8" cy="8" r="6.25"/><path d="M8 7.25V11"/><circle class="f" cx="8" cy="5" r=".85"/>',
   alert: '<path d="M8 2.5l6 10.5H2z"/><path d="M8 6.75v3"/><circle class="f" cx="8" cy="11.4" r=".8"/>',
   resolve: '<path d="M8 2l5 1.75v4c0 3-2.1 5-5 6.25C5.1 13.25 3 11.25 3 8.25v-4z"/><path d="M5.75 8l1.75 1.75 3-3.25"/>',
   folder: '<path d="M2.5 4.5a1 1 0 0 1 1-1h3L8 5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',

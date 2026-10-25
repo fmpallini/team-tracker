@@ -61,7 +61,7 @@ export function createImageHost(
     const refused = results.flatMap((r) => (r.ok ? [] : [r.reason]))
     if (refused.includes('cap_reached')) {
       const lead = added > 0 ? `${t(locale, 'img_added', { n: String(added) })}. ` : ''
-      toast(lead + t(locale, 'img_cap_toast'), {
+      toast(lead + t(locale, 'img_cap_toast'), { kind: 'warn',
         key: 'image-import',
         duration: 10_000,
         action: { label: t(locale, 'img_show_usage'), onClick: onShowUsage },
@@ -69,18 +69,18 @@ export function createImageHost(
       return
     }
     if (refused.length === 0) {
-      toast(t(locale, 'img_added', { n: String(added) }), { key: 'image-import' })
+      toast(t(locale, 'img_added', { n: String(added) }), { kind: 'success', key: 'image-import' })
     } else if (added === 0 && refused.every((r) => r === 'unsupported')) {
-      toast(t(locale, 'img_only_images'), { key: 'image-import' })
+      toast(t(locale, 'img_only_images'), { kind: 'warn', key: 'image-import' })
     } else {
       const why = [...new Set(refused)].map((r) => t(locale, REASON_KEYS[r])).join('; ')
-      toast(t(locale, 'img_added_partial', { n: String(added), m: String(refused.length), why }), { key: 'image-import' })
+      toast(t(locale, 'img_added_partial', { n: String(added), m: String(refused.length), why }), { kind: 'warn', key: 'image-import' })
     }
     if (crossedWarn) {
       toast(t(locale, 'img_warn_toast', {
         used: `${(totalBytes / MB).toFixed(1)} MB`,
         cap: `${(IMAGE_LIMITS.totalCapBytes / MB).toFixed(0)} MB`,
-      }), { key: 'image-warn' })
+      }), { kind: 'warn', key: 'image-warn' })
     }
   }
 

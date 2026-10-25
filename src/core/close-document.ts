@@ -75,7 +75,7 @@ export async function closeDocument(deps: CloseDocumentDeps): Promise<'closed' |
     const noWhereToKeepEdits = result.ok === false && result.reason === 'nohandle' && browserCopyAtRisk(store, persister)
     if (result.ok || result.reason === 'readonly' || (result.reason === 'nohandle' && !noWhereToKeepEdits)) {
       // The file now holds the document, so nothing is at risk; the browser merely could not keep its own copy.
-      if (result.ok && browserCopyFailed) toast(t(locale, 'close_browser_copy_failed_toast'))
+      if (result.ok && browserCopyFailed) toast(t(locale, 'close_browser_copy_failed_toast'), { kind: 'warn' })
       return finish()
     }
     // The conflict modal resolves itself with its own choices; stacking this dialog on it would hide that.
@@ -103,7 +103,7 @@ export async function downloadCopy(store: Store, session: FileSession, getPasswo
     downloadFallback(session.name, snap.bytes)
   } catch (e) {
     console.error(e)
-    toast(t(store.doc.prefs.locale, 'save_error_toast'), { sticky: true })
+    toast(t(store.doc.prefs.locale, 'save_error_toast'), { kind: 'error', sticky: true })
   }
 }
 
