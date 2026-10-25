@@ -625,7 +625,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     const totalExposure = open.reduce((sum, r) => sum + computeExposure(r.chance, r.impact), 0)
     exposureTotalValueEl.textContent = String(totalExposure)
-    exposureTotalCountEl.textContent = t(lc, 'risk_exposure_open_count', { n: String(open.length) })
+    exposureTotalCountEl.textContent = t(lc, open.length === 1 ? 'risk_exposure_open_count_one' : 'risk_exposure_open_count_other', { n: String(open.length) })
     exposureTotalValueEl.className = `tt-risk-exposure-total-value tt-risk-exposure-${exposureLevel(totalExposure / open.length)}`
 
     const cell = computeCellSize()

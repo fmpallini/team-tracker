@@ -666,7 +666,7 @@ describe('renderRisks', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
     expect(container.querySelector('.tt-risk-exposure-total-value')!.textContent).toBe('10')
-    expect(container.querySelector('.tt-risk-exposure-total-count')!.textContent).toBe('2 open')
+    expect(container.querySelector('.tt-risk-exposure-total-count')!.textContent).toBe('2 risks open')
   })
 
   test('the chance/impact pills start tinted by their current value', () => {
