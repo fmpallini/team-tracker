@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.3.1] - 2026-10-25
+
+### Changed
+- Risks: the exposure total beside the matrix is labelled "Sum of all open risks exposure" with a count of open risks, the matrix legend has more room, and the chance, impact and plan pills and action columns are more compact so risk titles get more space.
+
 ## [3.3.0] - 2026-10-25
 
 ### Added
