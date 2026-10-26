@@ -7,10 +7,11 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [3.4.0] - 2026-10-26
 
 ### Added
-- Module tabs: a wide pane shows its modules as a tab strip (icon and name, icons only on a medium pane) instead of the dropdown; narrow panes keep the dropdown. A person opens as a tab right after Stakeholders or Members.
+- Module tabs: a wide pane shows its modules as a tab strip (icon and name, icons only on a medium pane, each with a tiny F-key hint) instead of the dropdown; narrow panes keep the dropdown. A person opens as a tab right after Stakeholders or Members.
 
 ### Changed
 - Task cards: the due date is always right-aligned and shows a two-digit year, and the edit pencil moved next to the title, appearing only on hover.
+- The team list's edit pencil no longer takes room from team names.
 
 ## [3.3.1] - 2026-10-25
 

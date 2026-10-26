@@ -644,6 +644,8 @@ describe('module tabs (CSS picks tabs or the dropdown by pane width; both are al
     ])
     expect(tabs(0).map((b) => b.title.match(/\(F\d\)$/)?.[0])).toEqual(['(F1)', '(F2)', '(F3)', '(F4)', '(F5)', '(F6)', '(F7)'])
     expect(tabs(0).map((b) => b.getAttribute('aria-current'))).toEqual([null, null, null, null, 'true', null, null])
+    expect(tabs(0).map((b) => b.querySelector('.tt-pane-tab-key')?.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
+    expect(tabs(0)[4]!.getAttribute('aria-keyshortcuts')).toBe('F5')
   })
 
   test('clicking a tab opens that module in its own pane', () => {

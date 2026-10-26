@@ -1051,6 +1051,7 @@ ${t(lc, 'pane_history_hint')}`
           class: 'tt-pane-tab' + (active ? ' active' : '') + (row.kind === parentKind ? ' trail' : ''),
           title: `${label} (F${i + 1})`,
           'aria-label': text,
+          'aria-keyshortcuts': `F${i + 1}`,
           ...(active ? { 'aria-current': 'true' } : {}),
           tabindex: row.kind === focusKind || (!hasFocus && i === 0) ? '0' : '-1',
           disabled: teamId === null,
@@ -1062,7 +1063,8 @@ ${t(lc, 'pane_history_hint')}`
           },
         },
         kindIcon(row.kind),
-        labelEl(text, active && flashTitle)
+        labelEl(text, active && flashTitle),
+        el('span', { class: 'tt-pane-tab-key', 'aria-hidden': 'true' }, `F${i + 1}`)
       )
     })
     if (cur && parentKind !== null) {

@@ -733,13 +733,14 @@ body { background: var(--bg); color: var(--fg); }
 /* Team sidebar */
 .tt-team-list { display: flex; flex-direction: column; }
 .tt-team-item {
+  --row-bg: var(--panel);
   display: flex; align-items: center; gap: .4rem; padding: var(--row-pad);
   cursor: pointer; border-left: var(--state-bar) solid transparent;
 }
-.tt-team-item:hover { background: var(--hover-soft); }
+.tt-team-item:hover { background: var(--hover-soft); --row-bg: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 /* Selection reads through fill + bar, not weight: bold is wider, so the active
    row would wrap/clip sooner than its neighbours. */
-.tt-team-item.active { border-left-color: var(--accent); background: var(--selected); }
+.tt-team-item.active { border-left-color: var(--accent); background: var(--selected); --row-bg: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
 /* Long names wrap to two lines, then ellipsis; anywhere-breaking keeps one
@@ -749,7 +750,9 @@ body { background: var(--bg); color: var(--fg); }
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
   overflow: hidden; overflow-wrap: anywhere;
 }
-.tt-team-edit-btn { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
+/* Takes no room of its own: a zero-width anchor between the name and the badge, its icon floating left over the name's tail on hover, on the row's own fill so the text does not show through. The negative margin cancels the flex gap it would add. */
+.tt-team-edit-btn { position: relative; flex: none; width: 0; margin-left: -.4rem; padding: 0; overflow: visible; opacity: 0; border: none; background: transparent; }
+.tt-team-edit-btn > .tt-icon { position: absolute; right: 0; top: 50%; transform: translateY(-50%); padding: .2rem .3rem; border-radius: var(--r-sm); background: var(--row-bg); box-shadow: -.5rem 0 .4rem var(--row-bg); }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-sidebar-heading { padding: .7rem .75rem .25rem; font-size: .78rem; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 /* A quiet row, not a bordered bar: it is the last entry of the list it adds to, and only takes a fill on hover. */
@@ -820,6 +823,9 @@ body { background: var(--bg); color: var(--fg); }
   display: inline-flex; align-items: center; gap: .4rem; padding: 0 .55rem; border: none; border-bottom: var(--state-bar) solid transparent; border-radius: 0;
   background: transparent; color: var(--fg); font-family: var(--font-display); font-size: .95rem; white-space: nowrap; cursor: pointer;
 }
+.tt-pane-tab { position: relative; }
+/* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
+.tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
 .tt-pane-tab:hover:not(:disabled) { background: var(--hover-soft); }
 .tt-pane-tab:disabled { cursor: not-allowed; opacity: .6; }
 .tt-pane-tab:focus-visible { outline-offset: -2px; }

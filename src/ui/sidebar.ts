@@ -654,7 +654,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
           openEditModal(team)
         },
       })
-      item.append(numEl, emojiEl, nameEl, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []), editBtn)
+      item.append(numEl, emojiEl, nameEl, editBtn, ...(teamDueBadgeEl ? [teamDueBadgeEl] : []))
 
       listEl.appendChild(item)
     })

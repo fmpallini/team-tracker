@@ -44,23 +44,29 @@ async function createTeam(page, name, emoji, first) {
   // that intercepts pointer events until dismissed — a real click outside it
   // (but not Escape, which would also close the whole dialog) closes it.
   await dialog.locator('input[name="tt-team-name"]').click()
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
 }
 
 async function switchPaneModule(page, paneIdx, label) {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
+  // A wide pane shows the module tabs (accessible name = the module's); a narrow one the dropdown.
+  const tab = pane.locator('button.tt-pane-tab:visible').and(pane.getByLabel(label)).first()
+  if (await tab.count()) {
+    await tab.click()
+    return
+  }
   await pane.locator('.tt-pane-modules-btn').click()
   await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
 }
 
 async function addPerson(page, paneIdx, name, role, addBtnSelector) {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
-  await pane.locator(addBtnSelector).first().click()
+  await pane.locator(addBtnSelector + ', .tt-empty-state-action').filter({ visible: true }).first().click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[name="tt-person-name"]').fill(name)
   await dialog.locator('input[name="tt-person-role"]').fill(role)
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
 }
 
@@ -71,7 +77,7 @@ async function addChildPerson(page, paneIdx, parentName, childName, role) {
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[name="tt-person-name"]').fill(childName)
   await dialog.locator('input[name="tt-person-role"]').fill(role)
-  await dialog.getByRole('button', { name: 'OK' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
 }
 
@@ -87,7 +93,7 @@ async function typeIntoEditor(editor, text, delay = 1) {
  */
 async function addKanbanCard(page, columnName, { title, date, assignee, chip }) {
   const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
-  await pane0.locator('.tt-kanban-col', { hasText: columnName }).locator('.tt-kanban-add-btn').first().click()
+  await pane0.locator('.tt-kanban-col', { hasText: columnName }).locator('.tt-kanban-add-btn, .tt-empty-state-action').filter({ visible: true }).first().click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('.tt-kanban-form input.tt-input').first().fill(title)
   if (date) {
@@ -254,7 +260,7 @@ async function buildContent(page) {
       { title: 'GA / legacy cluster decommission', date: '10/30/2026', done: false },
     ]
     for (const m of milestones) {
-      await pane0.locator('.tt-milestone-add-btn').click()
+      await pane0.locator('.tt-milestone-add-btn, .tt-empty-state-action').filter({ visible: true }).first().click()
       const row = await focusedRow(page, '.tt-milestone-row', 'data-milestone-id')
       // Date first, while the row is still pristine: milestones/risks commit
       // each field live (unlike the kanban modal's local-state-until-Save),
@@ -287,7 +293,7 @@ async function buildContent(page) {
       { title: 'Budget overrun on new cluster licensing', chance: '2', impact: '2' },
     ]
     for (const r of risks) {
-      await pane0.locator('.tt-risk-add-btn').click()
+      await pane0.locator('.tt-risk-add-btn, .tt-empty-state-action').filter({ visible: true }).first().click()
       const row = await focusedRow(page, '.tt-risk-row', 'data-risk-id')
       await row.locator('.tt-risk-title-input').fill(r.title)
       await row.locator('.tt-risk-chance-select').selectOption(r.chance)
