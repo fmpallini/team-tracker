@@ -20,7 +20,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, writeOpfsFile, setNextOpenName } from './opfs-shim'
-import { blockUpdateCheck } from './helpers'
+import { blockUpdateCheck, openModule } from './helpers'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import type { Doc } from '../src/core/types'
 
@@ -97,8 +97,7 @@ async function openDoc(page: Page): Promise<void> {
 
 async function toModule(page: Page, paneIdx: 0 | 1, label: RegExp): Promise<void> {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
-  await pane.locator('.tt-pane-modules-btn').click()
-  await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+  await openModule(pane, label)
 }
 
 /** Types `text` and returns the counters accumulated while doing so. */

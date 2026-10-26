@@ -15,6 +15,8 @@ for (const size of ['XS', 'XL'] as const) {
       // "General notes" is a short trigger: the menu hangs off a ~160px wrapper,
       // which used to cap its shrink-to-fit width and fold "Daily notes" in two.
       await openDoc(page, buildDoc(size, { kind: 'general' }))
+      // The test is about the dropdown's rows, which a wide pane replaces with the module tabs; show the dropdown.
+      await page.addStyleTag({ content: '.tt-pane-bar .tt-pane-title-trigger-wrap { display: flex !important } .tt-pane-tabs { display: none !important }' })
       await page.locator('.tt-pane-modules-btn').first().click()
       const labels = page.locator('.tt-pane-menu-label')
       expect(await labels.count()).toBeGreaterThanOrEqual(7)

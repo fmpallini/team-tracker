@@ -15,7 +15,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, openModule } from './helpers'
 
 const NL = String.fromCharCode(10)
 const CR = String.fromCharCode(13)
@@ -154,8 +154,7 @@ async function snapshot(page: Page): Promise<Snapshot> {
 async function reopen(page: Page): Promise<void> {
   const pane = page.locator('.tt-pane[data-pane-idx="0"]')
   for (const label of [/Members/i, /Daily/i]) {
-    await pane.locator('.tt-pane-modules-btn').click()
-    await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+    await openModule(pane, label)
   }
   await page.locator('.editor').first().waitFor()
 }

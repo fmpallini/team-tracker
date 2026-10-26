@@ -1,4 +1,4 @@
-import { t, formatDate, parseLocaleDate, dicts } from '../src/core/i18n'
+import { t, formatDate, formatDateShort,parseLocaleDate, dicts } from '../src/core/i18n'
 import type { MsgKey } from '../src/core/i18n'
 
 test('t interpolates', () => {
@@ -56,6 +56,10 @@ test('strike title now names both chords', () => {
 test('formatDate per locale', () => {
   expect(formatDate('2026-07-02', 'pt-BR')).toBe('02/07/2026')
   expect(formatDate('2026-07-02', 'en-US')).toBe('07/02/2026')
+})
+test('formatDateShort drops the century', () => {
+  expect(formatDateShort('2026-07-02', 'pt-BR')).toBe('02/07/26')
+  expect(formatDateShort('2026-07-02', 'en-US')).toBe('07/02/26')
 })
 test('parseLocaleDate valid and invalid', () => {
   expect(parseLocaleDate('02/07/2026', 'pt-BR')).toBe('2026-07-02')

@@ -4,7 +4,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile, writeOpfsFile, setNextOpenName } from './opfs-shim'
-import { blockUpdateCheck } from './helpers'
+import { blockUpdateCheck, openModule } from './helpers'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 
 const FILE = 'team-tracker.tmv'
@@ -14,8 +14,7 @@ async function openDaily(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Open/ }).first().click()
   await expect(page.locator('.tt-shell')).toBeVisible()
   const pane = page.locator('.tt-pane[data-pane-idx="0"]')
-  await pane.locator('.tt-pane-modules-btn').click()
-  await pane.locator('.tt-pane-menu-item', { hasText: /Daily/i }).first().click()
+  await openModule(pane, /Daily/i)
   await expect(pane.locator('.editor').first()).toBeVisible()
 }
 

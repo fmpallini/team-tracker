@@ -16,6 +16,7 @@
 // starts scaling with document size again.
 import { test, expect } from '@playwright/test'
 import { TEAMS, ITEMS_PER_TEAM, openLargeDoc } from './large-doc'
+import { openModule } from './helpers'
 
 /** Median of `runs` timings of `fn`, in ms. Median, not mean: one GC pause or one scheduler hiccup shouldn't decide whether the suite passes. */
 async function timeMedian(runs: number, fn: () => Promise<void>): Promise<number> {
@@ -36,8 +37,7 @@ test.describe(`latency on a large document (${TEAMS} teams x ${ITEMS_PER_TEAM} i
     await openLargeDoc(page)
 
     const pane = page.locator('.tt-pane[data-pane-idx="0"]')
-    await pane.locator('.tt-pane-modules-btn').click()
-    await pane.locator('.tt-pane-menu-item', { hasText: /Daily/i }).first().click()
+    await openModule(pane, /Daily/i)
     const editor = pane.locator('.editor').first()
     await editor.click()
 
@@ -72,8 +72,7 @@ test.describe(`latency on a large document (${TEAMS} teams x ${ITEMS_PER_TEAM} i
     const pane = page.locator('.tt-pane[data-pane-idx="0"]')
 
     async function toModule(label: RegExp): Promise<void> {
-      await pane.locator('.tt-pane-modules-btn').click()
-      await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+      await openModule(pane, label)
     }
 
     // Each of these renders a full board/list of ITEMS_PER_TEAM rows.

@@ -1291,6 +1291,11 @@ export function formatDate(iso: string, locale: Locale): string {
   return `${m}/${d}/${y}`
 }
 
+/** formatDate() with a two-digit year ("02/07/26") — for tight spots like the task card's due date. */
+export function formatDateShort(iso: string, locale: Locale): string {
+  return formatDate(iso, locale).replace(/\d{2}(?=\d{2}$)/, '')
+}
+
 /** Locale-ordered date (see formatDate) plus 24h time — for timestamps where the date alone would be ambiguous for an hourly interval. */
 export function formatDateTime(ms: number, locale: Locale): string {
   const d = new Date(ms)

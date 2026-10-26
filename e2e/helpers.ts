@@ -1,5 +1,5 @@
 // e2e/helpers.ts — shared flows used across the e2e suite.
-import type { Page, BrowserContext } from '@playwright/test'
+import type { Page, BrowserContext, Locator } from '@playwright/test'
 import { expect } from '@playwright/test'
 
 export async function createEncryptedDoc(page: Page, password: string): Promise<void> {
@@ -129,4 +129,18 @@ export async function blockUpdateCheck(target: Page | BrowserContext): Promise<v
   await target.route('https://api.github.com/repos/**/releases/latest', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tag_name: 'v0.0.1' }) })
   )
+}
+
+/**
+ * Switches `pane` to the module called `name`, by whichever selector the pane's width shows: the module tabs when
+ * they are laid out (their accessible name is the module's, also when only the icon is drawn), else the dropdown.
+ */
+export async function openModule(pane: Locator, name: string | RegExp): Promise<void> {
+  const tab = pane.locator('button.tt-pane-tab:visible').and(pane.getByLabel(name)).first()
+  if (await tab.count()) {
+    await tab.click()
+    return
+  }
+  await pane.locator('.tt-pane-modules-btn').click()
+  await pane.locator('.tt-pane-menu-item', { hasText: name }).first().click()
 }

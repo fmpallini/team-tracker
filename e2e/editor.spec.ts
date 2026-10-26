@@ -21,7 +21,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, openModule } from './helpers'
 
 const PASSWORD = 'e2e-editor-password'
 
@@ -208,8 +208,7 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     // Away to another module and back: the note is rebuilt from what was saved.
     const pane = page.locator('.tt-pane[data-pane-idx="0"]')
     for (const label of [/Members/i, /Daily/i]) {
-      await pane.locator('.tt-pane-modules-btn').click()
-      await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+      await openModule(pane, label)
     }
     const reopened = page.locator('.editor').first()
     await expect(reopened.locator('> div')).toHaveCount(1500)
