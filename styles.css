@@ -537,7 +537,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-toast { animation: tt-toast-in var(--dur-base) var(--ease); }
 .tt-btn { transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease); }
 /* Hoverable surfaces ease their wash the way buttons do (a button's own rule above wins where one is both). */
-:where(.tt-team-item, .tt-team-switcher-item, .tt-org-box, .tt-kanban-card, .tt-risk-row, .tt-milestone-row, .tt-due-row, .tt-pane-menu-item, .tt-palette-item, .tt-search-row, .tt-atref-item, .tt-context-menu-item, .tt-backlinks-row, .tt-calendar-day, .tt-emoji-grid button, .tt-emoji-tab, .tt-prefs-tab-btn, .tt-prefs-template-row, .tt-data-team-row, .tt-size-step, .tt-assignee-toggle) { transition: background-color var(--dur-fast) var(--ease); }
+:where(.tt-team-item, .tt-team-switcher-item, .tt-org-box, .tt-kanban-card, .tt-risk-row, .tt-milestone-row, .tt-due-row, .tt-pane-menu-item, .tt-pane-tab, .tt-palette-item, .tt-search-row, .tt-atref-item, .tt-context-menu-item, .tt-backlinks-row, .tt-calendar-day, .tt-emoji-grid button, .tt-emoji-tab, .tt-prefs-tab-btn, .tt-prefs-template-row, .tt-data-team-row, .tt-size-step, .tt-assignee-toggle) { transition: background-color var(--dur-fast) var(--ease); }
 .tt-kanban-col-grip { transition: opacity var(--dur-fast) var(--ease); }
 
 .tt-btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
@@ -733,13 +733,14 @@ body { background: var(--bg); color: var(--fg); }
 /* Team sidebar */
 .tt-team-list { display: flex; flex-direction: column; }
 .tt-team-item {
+  --row-bg: var(--panel);
   display: flex; align-items: center; gap: .4rem; padding: var(--row-pad);
   cursor: pointer; border-left: var(--state-bar) solid transparent;
 }
-.tt-team-item:hover { background: var(--hover-soft); }
+.tt-team-item:hover { background: var(--hover-soft); --row-bg: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 /* Selection reads through fill + bar, not weight: bold is wider, so the active
    row would wrap/clip sooner than its neighbours. */
-.tt-team-item.active { border-left-color: var(--accent); background: var(--selected); }
+.tt-team-item.active { border-left-color: var(--accent); background: var(--selected); --row-bg: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
 /* Long names wrap to two lines, then ellipsis; anywhere-breaking keeps one
@@ -749,7 +750,8 @@ body { background: var(--bg); color: var(--fg); }
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
   overflow: hidden; overflow-wrap: anywhere;
 }
-.tt-team-edit-btn { opacity: 0; padding: .1rem .35rem; font-size: .85rem; border: none; background: transparent; }
+/* Takes no room of its own: a real button box, but its negative margin (its width plus the flex gap) cancels its footprint, so it floats over the name's tail on hover, on the row's own fill so the text does not show through. */
+.tt-team-edit-btn { position: relative; flex: none; width: 1.5rem; margin-left: -1.9rem; padding: .2rem 0; opacity: 0; border: none; background: var(--row-bg); box-shadow: -.5rem 0 .4rem var(--row-bg); }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-sidebar-heading { padding: .7rem .75rem .25rem; font-size: .78rem; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 /* A quiet row, not a bordered bar: it is the last entry of the list it adds to, and only takes a fill on hover. */
@@ -806,11 +808,41 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-divider { cursor: col-resize; background: var(--border); }
 .tt-pane-divider:hover { background: var(--accent); }
 .tt-pane-bar {
+  --bar-pad-y: .35rem;
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
-  padding: .35rem .5rem; background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: var(--bar-pad-y) .5rem; background: var(--panel); border-bottom: 1px solid var(--border);
   position: relative; flex: none;
+  /* A size container so the module tabs below can pick their layout from the pane's own width. Containment makes the bar a stacking context, so it takes a z-index above anything positioned in the pane body (6 at most) for the module dropdown to still open over it. */
+  container-type: inline-size; z-index: 10;
 }
 .tt-pane-bar-left, .tt-pane-bar-right { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+/* Module tabs (panes.ts buildTabs). Narrow pane: dropdown only. Wide enough (below): the strip replaces it, inactive tabs icon-only and the current one named; wider still: every tab named. The strip reaches the bar's top and bottom edges so the current tab's bar sits on the bar's border. */
+.tt-pane-tabs { display: none; align-items: stretch; align-self: stretch; min-width: 0; margin: calc(-1 * var(--bar-pad-y)) 0 calc(-1 * var(--bar-pad-y)) var(--sp-1); }
+.tt-pane-tab {
+  display: inline-flex; align-items: center; gap: .4rem; padding: 0 .55rem; border: none; border-bottom: var(--state-bar) solid transparent; border-radius: 0;
+  background: transparent; color: var(--fg); font-family: var(--font-display); font-size: .95rem; white-space: nowrap; cursor: pointer;
+}
+.tt-pane-tab { position: relative; }
+/* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
+.tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
+.tt-pane-tab:hover:not(:disabled) { background: var(--hover-soft); }
+.tt-pane-tab:disabled { cursor: not-allowed; opacity: .6; }
+.tt-pane-tab:focus-visible { outline-offset: -2px; }
+.tt-pane-tab.active, .tt-pane-tab.active:hover { border-bottom-color: var(--accent); background: var(--selected); font-weight: 700; cursor: default; }
+.tt-pane-tab:not(.active) .tt-pane-tab-label { display: none; }
+/* A person's tab hangs off its module: the module keeps a faint bar (the trail), the person's tab starts with a chevron. */
+.tt-pane-tab.trail { border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.tt-pane-tab.child { padding-left: .4rem; }
+.tt-pane-tab.child .tt-pane-tab-label { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
+.tt-pane-tab.child > .tt-icon:first-child { color: var(--muted); margin-right: -.15rem; }
+@container (min-width: 46rem) {
+  .tt-pane-tabs { display: flex; }
+  .tt-pane-bar .tt-pane-title-trigger-wrap { display: none; }
+}
+@container (min-width: 72rem) {
+  .tt-pane-tab { padding: 0 .85rem; }
+  .tt-pane-tab:not(.active) .tt-pane-tab-label { display: inline; }
+}
 /* Favorite star: same square-ish icon button as print/split; filled state tinted with the accent. */
 .tt-pane-fav-btn {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
@@ -1427,10 +1459,10 @@ body { background: var(--bg); color: var(--fg); }
      column and clip its meta row instead of letting the column scroll. */
   flex: none;
 }
-/* The card's color is a label band on top, not a side stripe: the tag (when the team named the color) sits left, the due date right, and the band is tinted with the color so the card is filed at a glance. An uncolored card gets the neutral ledger tint. The right padding keeps the edit button's corner clear. */
+/* The card's color is a label band on top, not a side stripe: the tag (when the team named the color) sits left, the due date right, and the band is tinted with the color so the card is filed at a glance. An uncolored card gets the neutral ledger tint. The due date is always right-aligned, with or without a tag. */
 .tt-kanban-card { --stripe: var(--card-ledger); }
 .tt-kanban-card-band {
-  display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 1.45rem; padding: .2rem 1.9rem .2rem .75rem;
+  display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 1.45rem; padding: .2rem .75rem;
   background: color-mix(in srgb, var(--stripe) 15%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--stripe) 38%, var(--border));
   font-family: var(--font-data); font-size: .7rem; color: var(--muted);
 }
@@ -1447,7 +1479,7 @@ body { background: var(--bg); color: var(--fg); }
    above, where it costs no rows. Two-line clamp with the full text on the
    card's own `title` attribute, so nothing is lost, only folded. */
 .tt-kanban-card-title {
-  font-weight: 600; font-size: .9rem; line-height: 1.35; padding: .45rem 1.9rem .15rem .75rem;
+  font-weight: 600; font-size: .9rem; line-height: 1.35; padding: .45rem .75rem .15rem;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 /* Wraps, not nowrap: a card can carry up to four chips (due / assignee / tag
@@ -1469,7 +1501,9 @@ body { background: var(--bg); color: var(--fg); }
    focus style of their own: keyboard nav landed real DOM focus correctly
    (confirmable via document.activeElement) with no *visible* cue, reading as
    "selection lost" after closing the edit modal or context menu. */
-.tt-kanban-edit-btn { position: absolute; top: .3rem; right: .35rem; opacity: .38; border: none; background: transparent; font-size: .78rem; padding: .05rem .25rem; cursor: pointer; }
+.tt-kanban-card-head { position: relative; }
+/* Hidden until the card is hovered (or the button focused), so it takes no room at rest; it floats over the title's end with the card's own fill behind it. */
+.tt-kanban-edit-btn { position: absolute; top: .25rem; right: .4rem; opacity: 0; border: none; background: var(--card-hover); border-radius: var(--r-sm); padding: .2rem .3rem; cursor: pointer; transition: opacity var(--dur-fast) var(--ease); }
 .tt-kanban-card:hover .tt-kanban-edit-btn, .tt-kanban-edit-btn:focus { opacity: 1; }
 .tt-kanban-card.tt-kanban-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-kanban-card.tt-kanban-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
@@ -2262,6 +2296,7 @@ select option { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, currentColor 10%, transparent);
 }
 .tt-kanban-card-due.soon { color: var(--brass); }
+.tt-kanban-card-due { margin-left: auto; white-space: nowrap; }
 .tt-kanban-card-assignee { display: inline-flex; align-items: center; gap: .2rem; }
 
 /* Empty states with an action, and forms that reserve no error line until there is an error. */

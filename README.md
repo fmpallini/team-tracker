@@ -20,7 +20,7 @@ teams, jump to any module, item or favorite in any team with Fast Switch
 drop in one-key templates, run a kanban board with custom columns, drag a risk
 on the chance × impact chart to re-score it, and switch to dark mode.
 
-![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, favorites, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
+![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, module tabs, favorites, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
 
 [▶ Watch with sound](https://github.com/fmpallini/team-tracker/blob/main/docs/videos/feature-tour-short.webm)
 (the GIF is silent; GitHub can't embed `<video>` in a README, so this link

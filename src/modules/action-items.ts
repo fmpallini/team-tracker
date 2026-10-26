@@ -8,7 +8,7 @@
 // store update while it's focused defers the rebuild to the input's next
 // blur instead of wiping the in-progress edit.
 import type { ActionColumn, ActionItem, ActionItemColor, Loc, Person, Team } from '../core/types'
-import { t, todayIso, formatDate, type Locale } from '../core/i18n'
+import { t, todayIso, formatDateShort, type Locale } from '../core/i18n'
 import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } from '../core/refs'
 import { isOverdue, isActionActive } from '../core/due'
 import { addDaysIso, diffDays } from '../core/date'
@@ -865,11 +865,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>, team: Team | undefined): HTMLElement {
     const editBtn = iconButton({
       class: 'tt-kanban-edit-btn', tabindex: '-1', title: t(lc, 'kanban_edit_hint'),
-      icon: 'edit', size: 13, onclick: (e) => { e.stopPropagation(); openEditModal(item) },
+      icon: 'edit', size: 16, onclick: (e) => { e.stopPropagation(); openEditModal(item) },
     })
     // The title is clamped to two lines (styles.css) so cards stay dense in a
-    // split pane; its own tooltip carries the untruncated summary.
+    // split pane; its own tooltip carries the untruncated summary. The edit
+    // button lives with it (revealed on hover), not in the card's corner.
     const titleEl = el('div', { class: 'tt-kanban-card-title', title: item.summary }, item.summary)
+    const headEl = el('div', { class: 'tt-kanban-card-head' }, titleEl, editBtn)
     // The label band on top carries what files the card: its tag (when the team named that color) and its due date.
     const bandChildren: (Node | string)[] = []
     const customName = item.color !== null ? (tagNames[item.color] ?? null) : null
@@ -887,7 +889,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       bandChildren.push(el('span', {
         class: 'tt-kanban-card-due' + (overdue ? ' overdue' : soon ? ' soon' : ''),
         ...(isActionActive(item) ? { title: rel } : {}),
-      }, formatDate(item.dueDate, lc)))
+      }, formatDateShort(item.dueDate, lc)))
     }
     if (item.assignee) {
       const display = team ? resolveAssigneeDisplay(item.assignee, team) : { kind: 'text' as const, text: item.assignee }
@@ -911,7 +913,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         'data-item-id': item.id,
         title: t(lc, 'kanban_card_context_hint'),
       },
-      editBtn, ...(bandEl ? [bandEl] : []), titleEl, metaEl
+      ...(bandEl ? [bandEl] : []), headEl, metaEl
     )
     card.addEventListener('dblclick', () => openEditModal(item))
     card.addEventListener('contextmenu', (e) => {

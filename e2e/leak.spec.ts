@@ -24,7 +24,7 @@
 import { test, expect, type Page, type CDPSession } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck, flushLiveCopy } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, flushLiveCopy, openModule } from './helpers'
 
 interface Counters { nodes: number; listeners: number; heapMB: number }
 
@@ -134,8 +134,7 @@ async function addTeam(page: Page, name: string): Promise<void> {
 /** Opens pane 0's module menu and picks the entry with the given label. */
 async function switchModule(page: Page, label: string | RegExp): Promise<void> {
   const pane = page.locator('.tt-pane[data-pane-idx="0"]')
-  await pane.locator('.tt-pane-modules-btn').click()
-  await pane.locator('.tt-pane-menu-item', { hasText: label }).first().click()
+  await openModule(pane, label)
 }
 
 /**

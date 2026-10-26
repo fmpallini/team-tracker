@@ -7,7 +7,7 @@ import {
   installOpfsPickerShim, installFileWriteCounter, fileWrites, installPermissionControl, setFilePermission, regrantRequests,
   readOpfsFile, writeOpfsFile, setNextOpenName,
 } from './opfs-shim'
-import { blockUpdateCheck, createEncryptedDoc, createPlainDoc, lockClose, reopenLast, reopenLastPlain, clearBrowserCopy, flushLiveCopy, liveDatabaseDump, liveRowCounts } from './helpers'
+import { blockUpdateCheck, createEncryptedDoc, createPlainDoc, lockClose, reopenLast, reopenLastPlain, clearBrowserCopy, flushLiveCopy, liveDatabaseDump, liveRowCounts, openModule } from './helpers'
 import { openLargeDoc } from './large-doc'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 
@@ -297,8 +297,7 @@ test.describe('two tabs', () => {
       await p.getByRole('button', { name: /Open/ }).first().click()
       await expect(p.locator('.tt-shell')).toBeVisible()
       const pane = p.locator('.tt-pane[data-pane-idx="0"]')
-      await pane.locator('.tt-pane-modules-btn').click()
-      await pane.locator('.tt-pane-menu-item', { hasText: /Daily/i }).first().click()
+      await openModule(pane, /Daily/i)
       await expect(editor(p)).toBeVisible()
     }
     await open(a)
@@ -335,8 +334,7 @@ test.describe('a very large document', () => {
     await page.evaluate(() => { const t = performance.now(); while (performance.now() - t < 120) { /* busy */ } })
     await expect.poll(() => page.evaluate(() => (window as unknown as { __e2eLongTasks: number[] }).__e2eLongTasks.length)).toBeGreaterThan(0)
     const pane = page.locator('.tt-pane[data-pane-idx="0"]')
-    await pane.locator('.tt-pane-modules-btn').click()
-    await pane.locator('.tt-pane-menu-item', { hasText: /Daily/i }).first().click()
+    await openModule(pane, /Daily/i)
     await editor(page).click()
     await page.evaluate(() => { (window as unknown as { __e2eLongTasks: number[] }).__e2eLongTasks.length = 0 })
 

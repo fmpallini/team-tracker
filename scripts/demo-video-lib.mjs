@@ -204,23 +204,29 @@ export async function createTeam(page, name, emoji, first) {
   await type(page, dialog.locator('input[name="tt-team-name"]'), name)
   await type(page, dialog.locator('input[name="tt-team-emoji"]'), emoji)
   await click(page, dialog.locator('input[name="tt-team-name"]')) // closes emoji-picker popup
-  await click(page, dialog.getByRole('button', { name: 'OK' }))
+  await click(page, dialog.getByRole('button', { name: 'Save' }))
   await expect(dialog).toBeHidden()
 }
 
 export async function switchPaneModule(page, paneIdx, label) {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
+  // A wide pane shows the module tabs (accessible name = the module's); a narrow one the dropdown.
+  const tab = pane.locator('button.tt-pane-tab:visible').and(pane.getByLabel(label)).first()
+  if (await tab.count()) {
+    await click(page, tab)
+    return
+  }
   await click(page, pane.locator('.tt-pane-modules-btn'))
   await click(page, pane.locator('.tt-pane-menu-item', { hasText: label }).first())
 }
 
 export async function addPerson(page, paneIdx, name, role) {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
-  await click(page, pane.locator('.tt-people-add-btn').first())
+  await click(page, pane.locator('.tt-people-add-btn, .tt-empty-state-action').filter({ visible: true }).first())
   const dialog = page.getByRole('dialog')
   await type(page, dialog.locator('input[name="tt-person-name"]'), name)
   await type(page, dialog.locator('input[name="tt-person-role"]'), role)
-  await click(page, dialog.getByRole('button', { name: 'OK' }))
+  await click(page, dialog.getByRole('button', { name: 'Save' }))
   await expect(dialog).toBeHidden()
 }
 
@@ -231,7 +237,7 @@ export async function addChildPerson(page, paneIdx, parentName, childName, role)
   const dialog = page.getByRole('dialog')
   await type(page, dialog.locator('input[name="tt-person-name"]'), childName)
   await type(page, dialog.locator('input[name="tt-person-role"]'), role)
-  await click(page, dialog.getByRole('button', { name: 'OK' }))
+  await click(page, dialog.getByRole('button', { name: 'Save' }))
   await expect(dialog).toBeHidden()
 }
 

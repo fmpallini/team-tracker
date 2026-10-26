@@ -6,7 +6,7 @@
 import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, readOpfsFile } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, blockUpdateCheck, openModule } from './helpers'
 
 test.describe('real File System Access API (served over http for OPFS)', () => {
   const PASSWORD = 'e2e-roundtrip-password'
@@ -119,12 +119,10 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
     // Milestones then Risks, not the daily note it started on: that day holds
     // no note, and an empty day is deliberately kept out of history once left
     // (pruneEmptyDailies in src/core/nav.ts), so it is not a step to land on.
-    await pane0.locator('.tt-pane-modules-btn').click()
-    await pane0.locator('.tt-pane-menu-item', { hasText: /Milestones|Marcos/i }).first().click()
+    await openModule(pane0, /Milestones|Marcos/i)
     const first = await title0.textContent()
     expect(first).not.toBe(leftBefore)
-    await pane0.locator('.tt-pane-modules-btn').click()
-    await pane0.locator('.tt-pane-menu-item', { hasText: /Risks|Riscos/i }).first().click()
+    await openModule(pane0, /Risks|Riscos/i)
     const second = await title0.textContent()
     expect(second).not.toBe(first)
 
@@ -201,11 +199,10 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
     await editor.click()
     const daily = await pane0.locator('.tt-pane-title-text').textContent()
     await editor.type(' more text')
-    await pane0.locator('.tt-pane-modules-btn').click()
     // Milestones, not Members: the default team layout already shows Members
     // in pane 1, and openInPane's same-module-in-both-panes guard would
     // redirect focus to pane 1 instead of actually navigating pane 0.
-    await pane0.locator('.tt-pane-menu-item', { hasText: /Milestones|Marcos/i }).first().click()
+    await openModule(pane0, /Milestones|Marcos/i)
     const milestones = await pane0.locator('.tt-pane-title-text').textContent()
     expect(milestones).not.toBe(daily)
 

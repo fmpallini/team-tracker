@@ -626,6 +626,95 @@ test('pane module dropdown always shows an F1..F7 hotkey hint per row, in order'
   expect(hints.map((h) => h.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
 })
 
+describe('module tabs (CSS picks tabs or the dropdown by pane width; both are always in the bar)', () => {
+  const tabs = (idx: 0 | 1): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>(`[data-pane-idx="${idx}"] .tt-pane-tab`))
+  const withTeam = (): { store: Store; pm: PaneManager } => {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    return { store, pm }
+  }
+
+  test('seven tabs in dropdown order, an F-key hint on each, the current module marked', () => {
+    const { pm } = withTeam()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+    expect(tabs(0).map((b) => b.getAttribute('aria-label'))).toEqual([
+      t('en-US', 'module_daily'), t('en-US', 'module_general_notes'), t('en-US', 'module_stakeholders'), t('en-US', 'module_members'),
+      t('en-US', 'module_actions'), t('en-US', 'module_milestones'), t('en-US', 'module_risks'),
+    ])
+    expect(tabs(0).map((b) => b.title.match(/\(F\d\)$/)?.[0])).toEqual(['(F1)', '(F2)', '(F3)', '(F4)', '(F5)', '(F6)', '(F7)'])
+    expect(tabs(0).map((b) => b.getAttribute('aria-current'))).toEqual([null, null, null, null, 'true', null, null])
+    expect(tabs(0).map((b) => b.querySelector('.tt-pane-tab-key')?.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
+    expect(tabs(0)[4]!.getAttribute('aria-keyshortcuts')).toBe('F5')
+  })
+
+  test('clicking a tab opens that module in its own pane', () => {
+    const { store, pm } = withTeam()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+    tabs(0)[5]!.click()
+    expect(currentLoc(store.doc.nav.panes[0])).toEqual({ teamId: 'T1', ref: { kind: 'milestones' } })
+    expect(tabs(0)[5]!.getAttribute('aria-current')).toBe('true')
+  })
+
+  test('the current daily tab carries the full title (with the date)', () => {
+    const { pm } = withTeam()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    const cur = tabs(0)[0]!
+    expect(cur.querySelector('.tt-pane-tab-label')!.textContent).toContain('07/01/2026')
+    expect(tabs(0)[1]!.querySelector('.tt-pane-tab-label')!.textContent).toBe(t('en-US', 'module_general_notes'))
+  })
+
+  test('a person pane gets its own current tab right after its module, which stays marked as the trail', () => {
+    const { store, pm } = withTeam()
+    store.update((d) => {
+      d.teams[0]!.members.push({ id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '' })
+      d.teams[0]!.stakeholders.push({ id: 's1', name: 'Bia', role: '', parentId: null, order: 0, notes: '' })
+    })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'person', group: 'members', personId: 'p1' } })
+    expect(tabs(0)).toHaveLength(8)
+    expect(tabs(0).map((b) => b.getAttribute('aria-current'))).toEqual([null, null, null, null, 'true', null, null, null])
+    expect(tabs(0)[3]!.classList.contains('trail')).toBe(true)
+    expect(tabs(0)[4]!.textContent).toBe('Ana')
+    expect(tabs(0).filter((b) => b.tagName === 'BUTTON').map((b) => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '0', '-1', '-1', '-1'])
+
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'person', group: 'stakeholders', personId: 's1' } })
+    expect(tabs(0)[2]!.classList.contains('trail')).toBe(true)
+    expect(tabs(0)[3]!.textContent).toBe('Bia')
+    expect(tabs(0)[4]!.classList.contains('trail')).toBe(false)
+
+    tabs(0)[2]!.click() // the module tab leads back out of the person
+    expect(currentLoc(store.doc.nav.panes[0])!.ref).toEqual({ kind: 'stakeholders' })
+  })
+
+  test('one Tab stop: the current tab (the first when none is), arrows and Home/End move focus', () => {
+    const { pm } = withTeam()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+    expect(tabs(0).map((b) => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '0', '-1', '-1'])
+    tabs(0)[4]!.focus()
+    tabs(0)[4]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement).toBe(tabs(0)[5])
+    tabs(0)[5]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    expect(document.activeElement).toBe(tabs(0)[0])
+    tabs(0)[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    expect(document.activeElement).toBe(tabs(0)[0])
+    tabs(0)[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    expect(document.activeElement).toBe(tabs(0)[6])
+  })
+
+  test('the tabs are disabled while there is no team', () => {
+    const { pm } = setup()
+    pm.renderAll()
+    for (const b of tabs(0)) expect((b as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  test('the title flash lands on the current tab too', () => {
+    const { pm } = withTeam()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-09' } }, { flashTitle: true })
+    expect(tabs(0)[0]!.querySelector('.tt-pane-tab-label')!.classList.contains('tt-pane-title-flash')).toBe(true)
+  })
+})
+
 test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

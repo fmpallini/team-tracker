@@ -1014,6 +1014,82 @@ ${t(lc, 'pane_history_hint')}`
     w.print()
   }
 
+  /**
+   * The module tabs: the same seven rows as the dropdown, laid out as a strip.
+   * Both live in the bar and CSS shows one — the bar is a size container, so
+   * a pane wide enough for the strip gets tabs (full names, then icon-only
+   * with the current one named) and a narrow one — split or not — keeps the
+   * dropdown. Nothing here measures, which is also why jsdom sees both.
+   *
+   * The current tab carries the pane's full title (a daily note's date, which
+   * the title flash also draws attention to). A pane on a person has no tab of
+   * its own: the person gets a non-clickable current tab right after the
+   * module its group came from (Stakeholders or Members), which stays marked
+   * as the trail leading to it.
+   * Roving tabindex: one Tab stop per strip, arrows move within it.
+   */
+  function buildTabs(idx: 0 | 1, teamId: string | null, cur: Loc | null, flashTitle: boolean): HTMLElement {
+    const lc = localeNow()
+    const rows = paneMenuItems()
+    const curKind = cur?.ref.kind
+    // A person belongs to the module its group came from: that tab stays lit (as the trail) and the person's own tab sits right after it.
+    const parentKind = cur?.ref.kind === 'person' ? cur.ref.group : null
+    const focusKind = parentKind ?? curKind
+    const hasFocus = rows.some((row) => row.kind === focusKind)
+    const currentTitle = cur ? titleFor(store.doc, cur, lc) : ''
+    const labelEl = (text: string, flash: boolean): HTMLElement =>
+      el('span', { class: flash ? 'tt-pane-tab-label tt-pane-title-flash' : 'tt-pane-tab-label' }, text)
+
+    const tabs: HTMLElement[] = rows.map((row, i) => {
+      const active = row.kind === curKind
+      const label = t(lc, row.labelKey)
+      const text = active ? currentTitle : label
+      return el(
+        'button',
+        {
+          type: 'button',
+          class: 'tt-pane-tab' + (active ? ' active' : '') + (row.kind === parentKind ? ' trail' : ''),
+          title: `${label} (F${i + 1})`,
+          'aria-label': text,
+          'aria-keyshortcuts': `F${i + 1}`,
+          ...(active ? { 'aria-current': 'true' } : {}),
+          tabindex: row.kind === focusKind || (!hasFocus && i === 0) ? '0' : '-1',
+          disabled: teamId === null,
+          onclick: (e: Event) => {
+            if (!teamId) return
+            openInPane(idx, { teamId, ref: row.ref })
+            // The bar is rebuilt by the navigation; a keyboard activation keeps its place.
+            if ((e as MouseEvent).detail === 0) barEls[idx].querySelector<HTMLElement>('.tt-pane-tab.active')?.focus()
+          },
+        },
+        kindIcon(row.kind),
+        labelEl(text, active && flashTitle),
+        el('span', { class: 'tt-pane-tab-key', 'aria-hidden': 'true' }, `F${i + 1}`)
+      )
+    })
+    if (cur && parentKind !== null) {
+      const child = el(
+        'span',
+        { class: 'tt-pane-tab active child', 'aria-current': 'true', title: currentTitle },
+        icon('chevRight', 12), kindIcon('person'), labelEl(currentTitle, flashTitle)
+      )
+      tabs.splice(rows.findIndex((row) => row.kind === parentKind) + 1, 0, child)
+    }
+
+    const strip = el('div', { class: 'tt-pane-tabs', role: 'group', 'aria-label': t(lc, 'pane_modules_title') }, ...tabs)
+    strip.addEventListener('keydown', (e) => {
+      const key = (e as KeyboardEvent).key
+      if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') return
+      const buttons = Array.from(strip.querySelectorAll<HTMLButtonElement>('button.tt-pane-tab:not(:disabled)'))
+      const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
+      if (at === -1) return
+      e.preventDefault()
+      const next = key === 'Home' ? 0 : key === 'End' ? buttons.length - 1 : clampMove(at, key === 'ArrowRight' ? 1 : -1, buttons.length)
+      buttons[next]?.focus()
+    })
+    return strip
+  }
+
   function renderBar(idx: 0 | 1): void {
     const barEl = barEls[idx]
     barEl.innerHTML = ''
@@ -1113,7 +1189,11 @@ ${t(lc, 'pane_history_hint')}`
       modulesBtn,
       ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId)] : [])
     )
-    const left = el('div', { class: 'tt-pane-bar-left' }, backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap)
+    const left = el(
+      'div',
+      { class: 'tt-pane-bar-left' },
+      backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap, buildTabs(idx, teamId, cur, flashTitle)
+    )
     const right = el('div', { class: 'tt-pane-bar-right' }, favBtn, printBtn, splitBtn)
     barEl.append(left, right)
   }
