@@ -217,8 +217,7 @@ body { background: var(--bg); color: var(--fg); }
    once on :root covers every scroll container; the ::-webkit-scrollbar
    pseudo-elements (Chromium — the userbase) don't inherit, so they go on `*`
    to reach the sidebar, panes, editors, modal bodies and code blocks alike.
-   Translucent-accent thumb on a transparent track — the same rgba(accent,.3)
-   language the prefs scroll-fade gradients already use — resolving per
+   Translucent-accent thumb on a transparent track, resolving per
    palette+theme from --accent-rgb with no per-palette duplication. Native
    <select> popups keep the OS scrollbar (unstylable); fine, they're transient. */
 :root { scrollbar-width: thin; scrollbar-color: rgba(var(--accent-rgb), .42) transparent; }
@@ -2081,17 +2080,6 @@ select option { background: var(--bg); color: var(--fg); }
      visibly) — with no scrollbar the modal's own body padding already
      supplies this gap, so it only shows once the scrollbar appears. */
   padding: 1.1rem .75rem 1.1rem 1.25rem;
-  background:
-    linear-gradient(var(--bg) 40%, rgba(0, 0, 0, 0)) top / 100% 2rem no-repeat local,
-    linear-gradient(rgba(0, 0, 0, 0), var(--bg) 60%) bottom / 100% 2rem no-repeat local,
-    linear-gradient(to bottom, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) left top / calc(100% - 2rem) 1.1rem no-repeat scroll,
-    linear-gradient(to top, rgba(var(--accent-rgb), .3), rgba(0, 0, 0, 0)) left bottom / calc(100% - 2rem) 1.1rem no-repeat scroll;
-  /* The two `scroll` fades are 2rem narrower than the box, and clipped to the
-     content box. `local` covers only span the scrolling area, so a full-width
-     fade peeked out past them as an orphan gradient in the reserved scrollbar
-     gutter — visible on tabs that don't even scroll. The clip alone doesn't
-     prevent it (Chromium paints these layers into the gutter regardless). */
-  background-clip: border-box, border-box, content-box, content-box;
 }
 /* Type hierarchy for every tab: section title (display, bold) > field label
    (small, muted, semibold) > control text (body size, --fg) > hint (small,
