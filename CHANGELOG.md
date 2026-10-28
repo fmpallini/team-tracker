@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.4.1] - 2026-10-27
+
+### Fixed
+- Preferences: a stray thin line no longer shows above "Interface" at the largest text size.
+
 ## [3.4.0] - 2026-10-26
 
 ### Added
