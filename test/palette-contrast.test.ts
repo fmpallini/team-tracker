@@ -44,6 +44,11 @@ test.each(pairs)('$name: --on-accent and --on-danger read on their fills (AA 4.5
   expect(contrast(resolve(tokens, 'on-danger'), tokens.danger!)).toBeGreaterThanOrEqual(4.5)
 })
 
+// The due badge of a team with nothing overdue is a solid --brass pill (.tt-team-due-badge.soon).
+test.each(pairs)('$name: --on-brass reads on the --brass due-soon badge (AA 4.5:1)', ({ tokens }) => {
+  expect(contrast(resolve(tokens, 'on-brass'), tokens.brass!)).toBeGreaterThanOrEqual(4.5)
+})
+
 test('covers the default plus all 11 palettes, both themes', () => {
   expect(pairs.length).toBe(24)
 })

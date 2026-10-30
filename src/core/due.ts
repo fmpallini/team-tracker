@@ -38,6 +38,27 @@ export function dueRelativeLabel(locale: Locale, date: string, today: string): s
     : t(locale, 'due_in_days', { days: String(diffDays(date, today)) })
 }
 
+/** What a due badge shows for a team: the item count, and whether any is already late (red) or all still ahead (brass). */
+export interface TeamDue {
+  count: number
+  overdue: boolean
+}
+
+export function teamDueSummary(buckets: DueBuckets): Map<string, TeamDue> {
+  const out = new Map<string, TeamDue>()
+  function add(items: DueItem[], overdue: boolean): void {
+    for (const it of items) {
+      const cur = out.get(it.loc.teamId) ?? { count: 0, overdue: false }
+      cur.count++
+      cur.overdue ||= overdue
+      out.set(it.loc.teamId, cur)
+    }
+  }
+  add(buckets.overdue, true)
+  add(buckets.dueSoon, false)
+  return out
+}
+
 export function collectDueItems(doc: Doc, today: string): DueBuckets {
   const cutoff = addDaysIso(today, doc.prefs.dueSoonDays)
   const overdue: DueItem[] = []

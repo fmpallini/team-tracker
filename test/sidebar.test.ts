@@ -1099,6 +1099,59 @@ describe('header team indicator (shown only while the sidebar is collapsed)', ()
       expect(document.querySelectorAll('.tt-due-row')).toHaveLength(3)
       expect(document.querySelector('.tt-modal-title')?.textContent).toBe('Due')
     })
+
+    test('the clock\'s corner dot counts the other teams and is red while any of them is overdue', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      addTeam(store, 'Gamma')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' }) // own team: not in the dot
+      addActionItem(store, 'Beta', { id: 'b1', dueDate: '2000-01-01' })
+      addActionItem(store, 'Gamma', { id: 'g1', dueDate: todayIso() })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      const dot = summary().querySelector('.tt-header-due-dot') as HTMLElement
+      expect(dot.textContent).toBe('2')
+      expect(dot.classList.contains('soon')).toBe(false)
+      expect(summary().getAttribute('aria-label')).toBe('Due items in other teams: 2')
+    })
+
+    test('the dot and every badge turn brass when nothing in their scope is overdue', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: todayIso() })
+      addActionItem(store, 'Beta', { id: 'b1', dueDate: todayIso() })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(summary().querySelector('.tt-header-due-dot')!.classList.contains('soon')).toBe(true)
+      expect(indicator().querySelector('.tt-team-due-badge')!.classList.contains('soon')).toBe(true)
+      expect(document.querySelectorAll('.tt-team-item .tt-team-due-badge.soon')).toHaveLength(2)
+    })
+
+    test('a team with an overdue and a due-soon item keeps the red badge', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addActionItem(store, 'Alpha', { id: 'a1', dueDate: '2000-01-01' })
+      addActionItem(store, 'Alpha', { id: 'a2', dueDate: todayIso() })
+
+      const badge = document.querySelector('.tt-team-item .tt-team-due-badge') as HTMLElement
+      expect(badge.textContent).toBe('2')
+      expect(badge.classList.contains('soon')).toBe(false)
+    })
+
+    test('the dot caps at 99+', () => {
+      const { store } = setup()
+      addTeam(store, 'Alpha')
+      addTeam(store, 'Beta')
+      for (let i = 0; i < 100; i++) addActionItem(store, 'Beta', { id: `b${i}`, dueDate: '2000-01-01' })
+      store.updateNav((d) => { d.nav.activeTeamId = 'Alpha' })
+      toggleBtn().click()
+
+      expect(summary().querySelector('.tt-header-due-dot')!.textContent).toBe('99+')
+    })
   })
 })
 

@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.4.2] - 2026-10-29
+
+### Changed
+- Due-date counts: with the sidebar hidden, the clock now shows a count of the other teams' due items. Every due count is red while something is overdue and brass when everything is still ahead.
+
 ## [3.4.1] - 2026-10-27
 
 ### Fixed

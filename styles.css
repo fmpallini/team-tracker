@@ -37,14 +37,14 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
      wash in every palette. */
   --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
   /* Text on a solid --accent / --danger fill (primary button, badges). White fails WCAG AA on every dark theme's bright accent, so dark themes use the page background instead (ember overrides --on-danger below). */
-  --on-accent:#fff; --on-danger:#fff;
+  --on-accent:#fff; --on-danger:#fff; --on-brass:#fff;
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
   --panel:#26231a; --border:#4a4530; --brass:#c99a4e; --danger:#d97b64; --ok:#8bab7e;
   --card-slate:#8fb6c4; --card-brass:#d4a84a; --card-sage:#8bab7e; --card-rust:#d97b64; --card-plum:#b98fcb; --card-ledger:#a8a49c;
   --hl-kw:#c98fd6; --hl-str:#9cc47e; --hl-num:#d6a066; --hl-com:#8f8875;
-  --on-accent:var(--bg); --on-danger:var(--bg);
+  --on-accent:var(--bg); --on-danger:var(--bg); --on-brass:var(--bg);
 }
 
 /* Palette specimens (prefs "Color palette" picker). Each is a full
@@ -76,7 +76,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
 }
 [data-palette=forest][data-theme=light] {
   --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#8f5814; --accent-rgb:143,88,20;
-  --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3f7a5c;
+  --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3f7a5c; --on-brass:#000;
   --card-slate:#2f6f9a; --card-brass:#b8862e; --card-sage:#3f7a45; --card-rust:#a8422e; --card-plum:#6b4a7a; --card-ledger:#6b6b5c;
 }
 [data-palette=forest][data-theme=dark] {
@@ -96,7 +96,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
 }
 [data-palette=cosmic][data-theme=light] {
   --bg:#eceef2; --fg:#14141c; --muted:#55566a; --accent:#5b4bc4; --accent-rgb:91,75,196;
-  --panel:#f5f6f9; --border:#cfd1dc; --brass:#b8791e; --danger:#c23f6b; --ok:#1f7a68;
+  --panel:#f5f6f9; --border:#cfd1dc; --brass:#b8791e; --danger:#c23f6b; --ok:#1f7a68; --on-brass:#000;
   --card-slate:#3a4fb0; --card-brass:#b8791e; --card-sage:#1f7a68; --card-rust:#c23f6b; --card-plum:#9d4bc4; --card-ledger:#55566a;
 }
 [data-palette=cosmic][data-theme=dark] {
@@ -116,7 +116,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
 }
 [data-palette=verdant][data-theme=light] {
   --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1c8248; --accent-rgb:28,130,72;
-  --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#6b8a2e;
+  --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#6b8a2e; --on-brass:#000;
   --card-slate:#3a6b7a; --card-brass:#a17a1e; --card-sage:#6b8a2e; --card-rust:#a8402c; --card-plum:#6b4a7a; --card-ledger:#57684c;
 }
 [data-palette=verdant][data-theme=dark] {
@@ -126,7 +126,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
 }
 [data-palette=ember][data-theme=light] {
   --bg:#f4cebe; --fg:#2c1712; --muted:#8a6155; --accent:#b23a2c; --accent-rgb:178,58,44;
-  --panel:#f9e2d6; --border:#e2b6a2; --brass:#a1751e; --danger:#9c2a1f; --ok:#3f7a52;
+  --panel:#f9e2d6; --border:#e2b6a2; --brass:#a1751e; --danger:#9c2a1f; --ok:#3f7a52; --on-brass:#000;
   --card-slate:#3f5f78; --card-brass:#a1751e; --card-sage:#3f7a52; --card-rust:#9c2a1f; --card-plum:#6b4a7a; --card-ledger:#8a6155;
 }
 [data-palette=ember][data-theme=dark] {
@@ -279,7 +279,7 @@ body { background: var(--bg); color: var(--fg); }
    (≈ 47rem of save pill and buttons, in rem so it tracks the text size). Below
    that it shrinks to nothing — hence overflow:hidden — rather than pushing the
    search box under itself. */
-.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - var(--tt-wco-reserve) - 220px - 47rem))); overflow: hidden; }
+.tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - var(--tt-wco-reserve) - 220px - 47rem))); overflow: hidden; padding-block: .35rem; margin-block: -.35rem; }
 /* Width the window-controls overlay takes from the header's row (0 outside the installed PWA): the formula above and responsive.ts both budget against the usable row, not the window. */
 :root { --tt-wco-reserve: 0px; }
 /* responsive.ts: the slot is too narrow for more than a stub. Hides the content, not .tt-header-center itself — a display:none grid item drops out of the auto-placement and the right cluster would slide into its column. */
@@ -368,6 +368,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-due-summary.visible { display: inline-flex; }
 .tt-header-due-summary:hover, .tt-header-due-summary:focus-visible { border-color: var(--accent); color: var(--accent); }
 .tt-header-due-summary-icon { display: inline-flex; }
+/* Corner dot: the other teams' count, red while any is overdue, brass otherwise. The ring in the header fill keeps it legible over the pill's border. */
+.tt-header-due-summary { position: relative; }
+.tt-header-due-dot {
+  position: absolute; top: -.3rem; right: -.3rem; min-width: .95rem; height: .95rem; padding: 0 .25rem;
+  display: flex; align-items: center; justify-content: center; border-radius: 999px;
+  font-family: var(--font-data); font-size: .62rem; font-weight: 700; line-height: 1;
+  background: var(--danger); color: var(--on-danger); box-shadow: 0 0 0 2px var(--panel);
+}
+.tt-header-due-dot.soon { background: var(--brass); color: var(--on-brass); }
 
 /* Header team switcher dropdown (sidebar.ts openTeamSwitcher) — rows reuse
    the sidebar team list's own .tt-team-num/-emoji/-name/-due-badge classes
@@ -770,6 +779,8 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--danger); color: var(--on-danger); flex: none; cursor: pointer; border: none;
   transition: filter var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
+/* Nothing overdue, only coming up: brass instead of red (set by sidebar.ts from teamDueSummary). */
+.tt-team-due-badge.soon { background: var(--brass); color: var(--on-brass); }
 .tt-team-due-badge:empty { display: none; }
 .tt-team-due-badge:hover, .tt-team-due-badge:focus-visible { filter: brightness(1.15); transform: scale(1.08); }
 
