@@ -7,7 +7,7 @@ import type { Loc, Team } from '../core/types'
 import { lastLocForTeam, locsConflict } from '../core/nav'
 import { t, todayIso, type Locale } from '../core/i18n'
 import { watchDayChange } from './day-change'
-import { collectDueItems, type DueBuckets } from '../core/due'
+import { collectDueItems, teamDueSummary, type DueBuckets, type TeamDue } from '../core/due'
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam, findTeam as docFindTeam, teamLabel } from '../core/document'
@@ -134,13 +134,15 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicatorCaret
   )
   const headerDueSummaryIcon = el('span', { class: 'tt-header-due-summary-icon', 'aria-hidden': 'true' }, icon('clock', 14))
+  const headerDueSummaryDot = el('span', { class: 'tt-header-due-dot', 'aria-hidden': 'true' })
   const headerDueSummary = el(
     'button',
     {
       class: 'tt-header-due-summary', type: 'button',
       onclick: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     },
-    headerDueSummaryIcon
+    headerDueSummaryIcon,
+    headerDueSummaryDot
   )
   const headerTeamIndicatorGroup = el('div', { class: 'tt-header-team-indicator-group' }, headerDueSummary, headerTeamIndicator)
 
@@ -150,20 +152,30 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     headerTeamIndicator.classList.toggle('visible', collapsed && !!team)
     headerTeamIndicator.title = t(locale(), 'team_switch_title')
     headerTeamIndicatorDueBadge.title = t(locale(), 'due_team_badge_title')
-    headerDueSummary.title = t(locale(), 'due_badge_title')
     // Written only on change: renderCollapseState() runs on every nav mutation,
     // and re-assigning identical text still replaces the node and repaints it.
     if (team) setTextIfChanged(headerTeamIndicatorLabel, teamLabel(team))
 
-    const teamDueCounts = teamDueCountsMap(dueBuckets())
-    const ownCount = team ? teamDueCounts.get(team.id) ?? 0 : 0
-    setTextIfChanged(headerTeamIndicatorDueBadge, ownCount > 0 ? String(ownCount) : '')
+    const teamDue = teamDueSummary(dueBuckets())
+    const own = team ? teamDue.get(team.id) : undefined
+    setTextIfChanged(headerTeamIndicatorDueBadge, own ? String(own.count) : '')
+    headerTeamIndicatorDueBadge.classList.toggle('soon', !!own && !own.overdue)
 
+    // The clock stands for every OTHER team (the pill carries this one's own
+    // count), so its dot sums them and goes red if any of them is overdue.
     let otherCount = 0
-    for (const [tid, count] of teamDueCounts) {
-      if (tid !== team?.id) otherCount += count
+    let otherOverdue = false
+    for (const [tid, due] of teamDue) {
+      if (tid === team?.id) continue
+      otherCount += due.count
+      otherOverdue ||= due.overdue
     }
     headerDueSummary.classList.toggle('visible', collapsed && otherCount > 0)
+    setTextIfChanged(headerDueSummaryDot, otherCount > 99 ? '99+' : otherCount > 0 ? String(otherCount) : '')
+    headerDueSummaryDot.classList.toggle('soon', !otherOverdue)
+    const summaryLabel = `${t(locale(), 'due_other_teams_title')}: ${otherCount}`
+    headerDueSummary.title = summaryLabel
+    headerDueSummary.setAttribute('aria-label', summaryLabel)
 
     // The pill only exists while the sidebar is hidden — if a resize or the
     // manual toggle just brought the sidebar back, a switcher left open
@@ -250,12 +262,11 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   function openTeamSwitcher(): void {
     if (store.doc.teams.length === 0) return
     switcherTeams = store.doc.teams
-    const buckets = dueBuckets()
-    const teamDueCounts = teamDueCountsMap(buckets)
+    const teamDue = teamDueSummary(dueBuckets())
     switcherSelected = Math.max(0, switcherTeams.findIndex((tm) => tm.id === store.doc.nav.activeTeamId))
     switcherListEl = el('div', { class: 'tt-team-switcher-list' })
     switcherTeams.forEach((team, index) => {
-      const dueCount = teamDueCounts.get(team.id) ?? 0
+      const due = teamDue.get(team.id)
       const isActive = team.id === store.doc.nav.activeTeamId
       const row = el(
         'div',
@@ -273,12 +284,12 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         el('span', { class: 'tt-team-num' }, String(index + 1)),
         el('span', { class: 'tt-team-emoji' }, team.emoji),
         el('span', { class: 'tt-team-name' }, team.name),
-        ...(dueCount > 0
+        ...(due
           ? [
               el(
                 'button',
                 {
-                  class: 'tt-team-due-badge',
+                  class: dueBadgeClass(due),
                   type: 'button',
                   title: t(locale(), 'due_team_badge_title'),
                   onclick: (e: Event) => {
@@ -287,7 +298,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
                     openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
                   },
                 },
-                String(dueCount)
+                String(due.count)
               ),
             ]
           : [])
@@ -361,12 +372,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     return dueCache.buckets
   }
 
-  function teamDueCountsMap(buckets: DueBuckets): Map<string, number> {
-    const counts = new Map<string, number>()
-    for (const it of [...buckets.overdue, ...buckets.dueSoon]) {
-      counts.set(it.loc.teamId, (counts.get(it.loc.teamId) ?? 0) + 1)
-    }
-    return counts
+  // One colour rule for every due badge: red while the team has anything overdue, brass when it is all still ahead.
+  function dueBadgeClass(due: TeamDue): string {
+    return due.overdue ? 'tt-team-due-badge' : 'tt-team-due-badge soon'
   }
 
   // A due item always carries an itemId (action or milestone, see core/due.ts),
@@ -616,7 +624,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     renderCollapseState()
     const buckets = dueBuckets()
     renderDueBadge(buckets)
-    const teamDueCounts = teamDueCountsMap(buckets)
+    const teamDue = teamDueSummary(buckets)
     store.doc.teams.forEach((team, index) => {
       const isActive = store.doc.nav.activeTeamId === team.id
       const item = el('div', {
@@ -628,12 +636,12 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const numEl = el('span', { class: 'tt-team-num' }, String(index + 1))
       const emojiEl = el('span', { class: 'tt-team-emoji' }, team.emoji)
       const nameEl = el('span', { class: 'tt-team-name' }, team.name)
-      const dueCount = teamDueCounts.get(team.id) ?? 0
-      const teamDueBadgeEl = dueCount > 0
+      const due = teamDue.get(team.id)
+      const teamDueBadgeEl = due
         ? el(
             'button',
             {
-              class: 'tt-team-due-badge',
+              class: dueBadgeClass(due),
               type: 'button',
               title: t(locale(), 'due_team_badge_title'),
               onclick: (e: Event) => {
@@ -641,7 +649,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
                 openDuePanel({ locale: locale(), buckets: dueBuckets(), teamId: team.id, teamName: team.name, onOpenItem })
               },
             },
-            String(dueCount)
+            String(due.count)
           )
         : null
       const editBtn = iconButton({

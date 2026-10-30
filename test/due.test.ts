@@ -1,4 +1,4 @@
-import { collectDueItems, dueRelativeLabel } from '../src/core/due'
+import { collectDueItems, dueRelativeLabel, teamDueSummary } from '../src/core/due'
 import { createEmptyDocument } from '../src/core/document'
 import type { ActionItem, Doc, Milestone, Team } from '../src/core/types'
 
@@ -114,5 +114,19 @@ describe('dueRelativeLabel', () => {
   test('today reads as in 0 days, a future date as in the days until', () => {
     expect(dueRelativeLabel('en-US', '2026-07-20', '2026-07-20')).toBe('in 0d')
     expect(dueRelativeLabel('pt-BR', '2026-07-23', '2026-07-20')).toBe('em 3d')
+  })
+})
+
+describe('teamDueSummary', () => {
+  test('counts overdue and due-soon together per team; a team is overdue when any item is late', () => {
+    const d = doc([
+      team({ id: 'A', actionItems: [item({ id: 'a1', dueDate: '2026-07-16' }), item({ id: 'a2', dueDate: '2026-07-18' })] }),
+      team({ id: 'B', actionItems: [item({ id: 'b1', dueDate: '2026-07-18' })], milestones: [milestone({ date: '2026-07-19' })] }),
+      team({ id: 'C', actionItems: [item({ id: 'c1', dueDate: '2026-12-01' })] }),
+    ])
+    const summary = teamDueSummary(collectDueItems(d, TODAY))
+    expect(summary.get('A')).toEqual({ count: 2, overdue: true })
+    expect(summary.get('B')).toEqual({ count: 2, overdue: false })
+    expect(summary.has('C')).toBe(false)
   })
 })
