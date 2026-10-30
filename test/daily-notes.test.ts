@@ -421,6 +421,23 @@ test('clicking the chip and then a backlink row navigates via the pane manager',
   expect(pm.calls).toContainEqual({ idx: 0, loc: { teamId: 'T1', ref: { kind: 'risks', itemId: 'r1' } } })
 })
 
+test('the calendar marks a day other fields mention, follows a "risks"-scoped edit in place, and ignores the day\'s own note', () => {
+  const team = makeTeam({ dailyNotes: { '2026-07-04': 'see @[Jul 4](day:2026-07-04)' } })
+  team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false })
+  const { container, store, pm, loc } = setup(team, '2026-07-10')
+  render(container, loc, store, pm)
+  const cell = (iso: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-calendar-day[data-date="${iso}"]`)!
+  expect(cell('2026-07-04').classList.contains('tt-calendar-day-has-backlinks')).toBe(false)
+  expect(cell('2026-07-20').classList.contains('tt-calendar-day-has-backlinks')).toBe(false)
+
+  const before = cell('2026-07-20')
+  store.update((d) => { d.teams[0]!.risks[0]!.followup = 'due @[Jul 20](day:2026-07-20)' }, { teamId: 'T1', sections: ['risks'] })
+
+  expect(cell('2026-07-20')).toBe(before) // patched in place, not rebuilt
+  expect(before.classList.contains('tt-calendar-day-has-backlinks')).toBe(true)
+  expect(before.title).toBe('1 references')
+})
+
 test('a store update scoped only to "risks" live-updates the chip via rebuildBadge() — proves the widened WATCHED list (not just initial render) drives this', () => {
   const team = makeTeam()
   team.risks.push({ id: 'r1', title: 'Backlog', chance: 1, impact: 1, plan: 'accept', followup: '', order: 0, closed: false })

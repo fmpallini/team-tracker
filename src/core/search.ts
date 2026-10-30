@@ -355,6 +355,18 @@ function candidateKey(ref: ModuleRef): string {
   }
 }
 
+/** The "kind:target" key a mention of this source field itself would carry, if the field is a referenceable item — a field mentioning itself is not a backlink. */
+function ownMentionKey(ref: ModuleRef): string | undefined {
+  switch (ref.kind) {
+    case 'daily': return `day:${ref.date}`
+    case 'person': return `person:${ref.personId}`
+    case 'actions': return ref.itemId === undefined ? undefined : `action:${ref.itemId}`
+    case 'milestones': return ref.itemId === undefined ? undefined : `milestone:${ref.itemId}`
+    case 'risks': return ref.itemId === undefined ? undefined : `risk:${ref.itemId}`
+    default: return undefined
+  }
+}
+
 /** Backlinks' reverse index for one team, keyed by the mention's raw "kind:target" string (refPattern's group 2) — same key shape `backlinks()` below looks up by. */
 type BacklinksByRef = Map<string, Backlink[]>
 
@@ -584,9 +596,11 @@ export function createSearchIndex(getDoc: () => Doc, getRev: () => number): Sear
         source = previous
       } else if (c.raw.includes('@[')) { // every mention starts with it — most fields never do, so skip the regex
         const found: SourceMentions['found'] = []
+        const ownKey = ownMentionKey(c.ref)
         mentionPattern.lastIndex = 0
         let m: RegExpExecArray | null
         while ((m = mentionPattern.exec(c.raw))) {
+          if (m[2] === ownKey) continue
           found.push({
             key: m[2]!, // "kind:target" — same key shape backlinks() looks up by.
             backlink: {
