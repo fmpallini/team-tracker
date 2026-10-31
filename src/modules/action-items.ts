@@ -31,6 +31,7 @@ import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { withDisposal } from './lifecycle'
 import { icon, iconButton, kindIcon } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
+import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 
 // Display order: red, yellow, blue (the three with a suggested default name
 // — see core/document.ts's SUGGESTED_TAG_NAME_KEYS/createEmptyTeam), then
@@ -1461,20 +1462,29 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     boardEl.querySelector<HTMLElement>('.tt-kanban-card')?.focus()
   }
 
-  // No SEARCH_FOCUS_ITEM_EVENT listener here, unlike risks.ts/milestones.ts:
-  // those need it to expand their own inline follow-up row before a match
-  // inside it can be found/highlighted. A kanban card has no such inline
-  // state — search-ui.ts's commit() already resolves the matched card via
+  // A kanban card has no inline follow-up row to expand, unlike risks.ts/
+  // milestones.ts: search-ui.ts's commit() resolves the matched card via
   // `[data-item-id]` and applySearchHighlight() (search-highlight.ts) gives
-  // it real focus, which is all landing here needs: same selection ring
-  // arrow-key nav uses, and Enter opens it via the card's own keydown
-  // handler above (openEditModal(item)) — no separate open-on-search path.
+  // it real focus — same selection ring arrow-key nav uses, and Enter opens
+  // it via the card's own keydown handler above (openEditModal(item)). The
+  // one thing it can't do is find a card the colour filter is hiding, so this
+  // listener drops the filter first (the event fires just before the lookup,
+  // and renderAll() is synchronous).
+  function onSearchFocusItem(e: Event): void {
+    const itemId = (e as CustomEvent<string>).detail
+    const item = findTeam()?.actionItems.find((i) => i.id === itemId)
+    if (!item || activeTagFilter === null || activeTagFilter === item.color) return
+    activeTagFilter = null
+    renderAll()
+  }
+  container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
   const disposeArrowFallback = installArrowFallbackFocus(ctx, boardEl, '.tt-kanban-card', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
 
   return () => {
     unsubscribe()
     closeOpenCard?.()  // clean-close an open card modal (flush + remove overlay) before its host renderer goes
     disposeOpenBundle()
+    container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
     disposeArrowFallback()
     boardResize?.disconnect()
     stopDayWatch()

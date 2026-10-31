@@ -1,6 +1,7 @@
 import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, moveCard, moveColumn, resolveAssigneeDisplay, matchPersonByName } from '../src/modules/action-items'
 import { disposeContainer } from '../src/modules/lifecycle'
 import { dismissModelessModals } from '../src/ui/modal'
+import { dispatchSearchFocusItem } from '../src/ui/search-highlight'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -1973,6 +1974,22 @@ describe('renderActionItems — tag display and filter', () => {
     expect(document.querySelector('.tt-kanban-color-name-rows')).toBeNull()
     expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['b'])
     expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(true)
+  })
+
+  test('revealing an item the colour filter hides (an @-mention or search jump) drops the filter; a visible item leaves it alone', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', color: 'rust' }), item({ id: 'b', color: 'slate' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    chipByColor(container, '.tt-kanban-tag-chip', 'slate').click()
+    expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['b'])
+
+    dispatchSearchFocusItem(container, 'b')
+    expect(cards(container).map((c) => c.getAttribute('data-item-id'))).toEqual(['b'])
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').classList.contains('selected')).toBe(true)
+
+    dispatchSearchFocusItem(container, 'a')
+    expect(cards(container).map((c) => c.getAttribute('data-item-id')).sort()).toEqual(['a', 'b'])
+    expect(container.querySelector('.tt-kanban-tag-chip.selected')).toBeNull()
   })
 
   test('named chips carry the number of open cards they would filter to', () => {

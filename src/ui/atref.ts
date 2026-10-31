@@ -326,7 +326,9 @@ export function navigateToLoc(store: Store, pm: PaneManager, paneIdx: 0 | 1, loc
     // Ctrl/middle-click) leaves the card's pane alone, so it's skipped there.
     if (!dismissModelessModals()) return
     pm.openInPane(paneIdx, loc)
-    landedIdx = paneIdx
+    // Not `paneIdx`: when the other pane already shows this module, openInPane
+    // only moves focus there (and toasts), so that is the pane to reveal in.
+    landedIdx = store.doc.nav.focusedPane
   }
 
   const { ref } = loc
