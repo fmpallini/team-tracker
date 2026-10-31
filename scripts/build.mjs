@@ -1,5 +1,6 @@
 import { build, transform } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { computeAppOrigin } from './app-origin.mjs'
 import { buildSampleBytes, SAMPLE_FILENAME } from './sample-seed.mjs'
 
@@ -21,7 +22,30 @@ async function bundle(pwa) {
 
 const css = (await transform(readFileSync('styles.css', 'utf8'), { loader: 'css', minify: true })).code
 const tpl = readFileSync('index.html', 'utf8')
-const page = (js) => tpl.replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => js)
+
+// The page's Content-Security-Policy: a backstop for the markdown and paste sanitizers. Only the inlined bundle may
+// run (allowed by its hash, so an injected <script> or on* attribute cannot), nothing loads from or talks to another
+// origin except the GitHub version check, and pictures come only from data:/blob: URLs. Styles stay 'unsafe-inline':
+// the app sets style attributes, and CSS cannot run script. A <meta> policy cannot carry frame-ancestors; the app has
+// no server to send headers from. The PWA also registers its service worker and manifest from its own origin.
+function csp(js, pwa) {
+  const hash = createHash('sha256').update(js, 'utf8').digest('base64')
+  return [
+    "default-src 'none'",
+    `script-src 'sha256-${hash}'`,
+    "style-src 'unsafe-inline'",
+    'img-src data: blob:',
+    'connect-src https://api.github.com',
+    "base-uri 'none'",
+    "form-action 'none'",
+    ...(pwa ? ["worker-src 'self'", "manifest-src 'self'"] : []),
+  ].join('; ')
+}
+
+const page = (js, pwa) => tpl
+  .replace('__CSP__', () => csp(js, pwa))
+  .replace('/*__CSS__*/', () => css)
+  .replace('/*__JS__*/', () => js)
 
 // PWA variant gets a manifest link + theme-color meta injected before
 // </head>; the plain file:// variant (dist/app.html) must not reference
@@ -57,8 +81,8 @@ for (const [name, js] of [['app', appJs], ['pwa', pwaJs]]) {
   }
 }
 
-writeFileSync('dist/app.html', page(appJs))
-writeFileSync('dist/pwa/index.html', withPwaHead(page(pwaJs)))
+writeFileSync('dist/app.html', page(appJs, false))
+writeFileSync('dist/pwa/index.html', withPwaHead(page(pwaJs, true)))
 
 const appOrigin = computeAppOrigin(pkg.homepage)
 const manifest = readFileSync('pwa/manifest.json', 'utf8')

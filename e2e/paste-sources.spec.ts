@@ -175,7 +175,11 @@ test('pasted content from common sources stays clean, safe and unchanged after a
   page.on('request', (r) => { if (/evil\.example\.test|upload\.wikimedia\.org/.test(r.url())) hostRequests.push(r.url()) })
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+  // The page's Content-Security-Policy reports what it refused. Parsing the hostile payload in the paste's inert
+  // DOMParser document is enough for Chromium to report its handlers and <base> (that document inherits the policy),
+  // although nothing there ever runs: those reports are the backstop doing its job, not errors. SCRIPT RAN and the
+  // request log above are what prove nothing got through.
+  page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('violates the following Content Security Policy')) errors.push(m.text()) })
 
   await installOpfsPickerShim(page)
   await blockUpdateCheck(page)
