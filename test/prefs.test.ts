@@ -10,6 +10,7 @@ import { buildExport } from '../src/core/team-export'
 import { setReadOnlyLock } from '../src/ui/readonly-lock'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
+import { updateCheckEnabled, UPDATE_CHECK_OFF_STORAGE_KEY } from '../src/core/update-check'
 
 // `fsApi` overrides `supportsFsApi` (always false under jsdom) for the few
 // tests that need the FS-API branch; setup() resets it to jsdom's real value.
@@ -916,6 +917,20 @@ test('about tab has a GitHub source link', () => {
   expect(link).not.toBeNull()
   expect(link.href).toBe('https://github.com/fmpallini/team-tracker')
   expect(link.target).toBe('_blank')
+})
+
+test('about tab: the update check is on by default and its checkbox turns it off for this browser', () => {
+  localStorage.removeItem(UPDATE_CHECK_OFF_STORAGE_KEY)
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('About')
+
+  const box = document.querySelector('.tt-prefs-update-check-checkbox') as HTMLInputElement
+  expect(box.checked).toBe(true)
+  box.click()
+  expect(updateCheckEnabled()).toBe(false)
+  box.click()
+  expect(updateCheckEnabled()).toBe(true)
 })
 
 test('about tab reflects a mismatched file schema version from appCtl', () => {

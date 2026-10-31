@@ -188,8 +188,9 @@ downloads or installs anything by itself.
 - **Local file**: a static `file://` page can't self-update, so the banner
   links to the releases page for you to download the new file.
 
-Dismissing the banner silences it for that version. There's no preference to
-turn the check off entirely.
+Dismissing the banner silences it for that version. To turn the check off
+entirely, untick **Check for new versions** in Preferences → About; the choice
+is kept in that browser, and the app then makes no network call at all.
 
 ## Zero runtime dependencies
 

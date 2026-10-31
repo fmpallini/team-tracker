@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { shouldCheck, isNewer, checkForUpdate, LAST_CHECK_STORAGE_KEY } from '../src/core/update-check'
+import { shouldCheck, isNewer, checkForUpdate, updateCheckEnabled, setUpdateCheckEnabled, LAST_CHECK_STORAGE_KEY, UPDATE_CHECK_OFF_STORAGE_KEY } from '../src/core/update-check'
 
 describe('shouldCheck', () => {
   const DAY_MS = 24 * 60 * 60 * 1000
@@ -97,4 +97,25 @@ describe('checkForUpdate', () => {
 
 it('exports the localStorage key used for the 24h gate', () => {
   expect(LAST_CHECK_STORAGE_KEY).toBe('tt-last-update-check')
+})
+
+describe('the update-check setting', () => {
+  afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
+
+  test('is on by default and remembers being turned off and on again', () => {
+    expect(updateCheckEnabled()).toBe(true)
+    setUpdateCheckEnabled(false)
+    expect(localStorage.getItem(UPDATE_CHECK_OFF_STORAGE_KEY)).toBe('1')
+    expect(updateCheckEnabled()).toBe(false)
+    setUpdateCheckEnabled(true)
+    expect(localStorage.getItem(UPDATE_CHECK_OFF_STORAGE_KEY)).toBeNull()
+    expect(updateCheckEnabled()).toBe(true)
+  })
+
+  test('storage that cannot be used leaves the check on and never throws', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('denied', 'SecurityError') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('denied', 'SecurityError') })
+    expect(updateCheckEnabled()).toBe(true)
+    expect(() => setUpdateCheckEnabled(false)).not.toThrow()
+  })
 })

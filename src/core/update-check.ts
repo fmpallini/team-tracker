@@ -1,5 +1,28 @@
 // src/core/update-check.ts
 export const LAST_CHECK_STORAGE_KEY = 'tt-last-update-check'
+/**
+ * Set to '1' when the user turned the update check off. Kept in this browser, not in a document: the check runs at
+ * launch, before any file is open, and it is about this install rather than about a team file.
+ */
+export const UPDATE_CHECK_OFF_STORAGE_KEY = 'tt-update-check-off'
+
+/** True unless the user turned the check off. Storage that cannot be read (a strict privacy mode) leaves it on. */
+export function updateCheckEnabled(): boolean {
+  try {
+    return localStorage.getItem(UPDATE_CHECK_OFF_STORAGE_KEY) !== '1'
+  } catch {
+    return true
+  }
+}
+
+export function setUpdateCheckEnabled(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.removeItem(UPDATE_CHECK_OFF_STORAGE_KEY)
+    else localStorage.setItem(UPDATE_CHECK_OFF_STORAGE_KEY, '1')
+  } catch {
+    // Strict privacy modes: the choice just doesn't persist.
+  }
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

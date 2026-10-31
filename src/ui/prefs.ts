@@ -17,6 +17,7 @@ import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
 import { currentThemeAttr, prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
+import { updateCheckEnabled, setUpdateCheckEnabled } from '../core/update-check'
 import { icon, iconButton } from './icons'
 import { collectImageRefs, referencedBytes } from '../core/image-ref'
 import { IMAGE_LIMITS } from '../core/image-import'
@@ -950,7 +951,14 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       { class: 'tt-about-github', href: 'https://github.com/fmpallini/team-tracker', target: '_blank', rel: 'noopener' },
       t(locale, 'about_github_link')
     )
-    container.append(el('h3', { class: 'tt-help-heading' }, t(locale, 'app_name')), table, githubLink)
+    const updateCheckField = prefsCheckboxField({
+      inputClass: 'tt-prefs-update-check-checkbox',
+      label: t(locale, 'prefs_update_check_label'),
+      hint: t(locale, 'prefs_update_check_hint'),
+      checked: updateCheckEnabled(),
+      onChange: setUpdateCheckEnabled,
+    })
+    container.append(el('h3', { class: 'tt-help-heading' }, t(locale, 'app_name')), table, githubLink, updateCheckField)
   }
 
   // --- Tab strip / dispatch ----------------------------------------------

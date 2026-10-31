@@ -53,7 +53,7 @@ import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { flushAllEditors, setEditorsReadOnly } from './ui/editor'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
-import { shouldCheck, checkForUpdate, LAST_CHECK_STORAGE_KEY } from './core/update-check'
+import { shouldCheck, checkForUpdate, updateCheckEnabled, LAST_CHECK_STORAGE_KEY } from './core/update-check'
 import { waitForActivation } from './core/sw-ready'
 import { showUpdateNotice } from './ui/update-notice'
 
@@ -699,6 +699,7 @@ async function ensureServiceWorkerReady(): Promise<void> {
 }
 
 async function runUpdateCheck(): Promise<void> {
+  if (!updateCheckEnabled()) return
   if (!shouldCheck(localStorage.getItem(LAST_CHECK_STORAGE_KEY), Date.now())) return
   const result = await checkForUpdate(fetch, __APP_VERSION__, __REPO__)
   if (result.status === 'error') return
