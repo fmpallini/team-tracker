@@ -15,7 +15,7 @@ import { placePopover } from '../core/popover-place'
 import { isReadOnlyLocked } from './readonly-lock'
 import { el, bindOutsideDismiss, blurOnEnter } from './dom'
 
-const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [] }
+const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [], backlinks: () => 0 }
 
 /** Strips everything but digits, capped at 8 (2+2+4 = DDMMYYYY/MMDDYYYY). */
 export function digitsOnly(s: string): string {

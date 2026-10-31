@@ -6,7 +6,7 @@ import type { Loc, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
 import type { ModuleCtx } from '../ui/panes'
 import { createModuleEditor } from '../ui/rich-editor'
-import { createCalendar, type CalendarMarks } from '../ui/calendar'
+import { createCalendar, setDayBacklinks, type CalendarMarks } from '../ui/calendar'
 import { isWithinTwoMonthWindow } from '../core/date'
 import { findTeam as docFindTeam, nearestDatedNote } from '../core/document'
 import { OVERSCROLL, rubberBand, easeOutCubic, overscrollCommits } from '../core/overscroll'
@@ -124,6 +124,9 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
       actionItems(d: string) {
         return actionItemsByDate.get(d) ?? []
       },
+      backlinks(d: string): number {
+        return ctx.searchIndex.backlinks(teamId, 'day', d).length
+      },
     }
   }
 
@@ -167,17 +170,20 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   const stopDayWatch = watchDayChange(rebuildCalendar)
 
   /**
-   * Toggles each rendered day cell's has-note tint from live `dailyNotes`
-   * without rebuilding the calendar — for a 'notes'-scoped change, whose
-   * only possible calendar effect is a day going empty↔non-empty. Every
-   * heavier mark (milestone flag, due dot) and the month layout are
-   * untouched, so those still go through rebuildCalendar().
+   * Toggles each rendered day cell's has-note tint and referenced corner from
+   * live data without rebuilding the calendar — for a 'notes'-, 'people'- or
+   * 'risks'-scoped change, whose only possible calendar effects are a day
+   * going empty↔non-empty or gaining/losing a mention. Every heavier mark
+   * (milestone flag, due dot) and the month layout are untouched, so those
+   * still go through rebuildCalendar().
    */
-  function refreshCalendarNoteTints(): void {
+  function refreshCalendarCells(): void {
     const notes = findTeam(ctx, teamId)?.dailyNotes ?? {}
     for (const cell of calendarSlot.querySelectorAll<HTMLElement>('.tt-calendar-day[data-date]')) {
-      const note = notes[cell.dataset.date!]
+      const iso = cell.dataset.date!
+      const note = notes[iso]
       cell.classList.toggle('tt-calendar-day-has-note', typeof note === 'string' && note.trim() !== '')
+      setDayBacklinks(cell, ctx.searchIndex.backlinks(teamId, 'day', iso).length, lc)
     }
   }
 
@@ -229,29 +235,26 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   // elsewhere (this same note, the milestones module in the other split
   // pane, etc.) — refresh only the calendar; touching the editor here would
   // clobber the user's live caret position.
-  // The calendar marks show has-note tint, milestone flags, and action-item
-  // due dates, so that alone would need 'notes'/'milestones'/'actions' (plus
-  // 'teams', since a rename/delete/reorder can invalidate any pane). The
-  // remaining BACKLINK_SECTIONS entries ('people', 'risks') are watched too,
-  // for rebuildBadge() below: the day's backlinks chip must react to a
-  // mention of this date appearing/disappearing in any of those sections.
+  // The calendar marks show has-note tint, milestone flags, action-item due
+  // dates and the referenced corner (a mention of the day from any section in
+  // BACKLINK_SECTIONS), so those plus 'teams' (a rename/delete/reorder can
+  // invalidate any pane) are all watched; rebuildBadge() below reacts to the
+  // same mentions for the day's backlinks chip.
   const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
   // Sections whose change can alter a calendar *mark* (milestone flag,
   // action-item due dot) or the month layout — those need a full
-  // rebuildCalendar(). A 'notes'-only change (this pane's own debounced
-  // keystroke, the hot path) can at most flip one day's has-note tint, so it
-  // takes the in-place refreshCalendarNoteTints() instead of tearing down and
-  // re-building two month grids. A scope touching only 'people'/'risks'
-  // reaches this listener (for rebuildBadge/refreshRefLabels) but can't
-  // change the calendar at all, so neither runs.
+  // rebuildCalendar(). Any other change ('notes' — this pane's own debounced
+  // keystroke, the hot path — 'people', 'risks') can at most flip a day's
+  // has-note tint or referenced corner, so it takes the in-place
+  // refreshCalendarCells() instead of tearing down and re-building two month grids.
   const CALENDAR_STRUCTURAL: readonly Section[] = ['teams', 'milestones', 'actions']
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     const sections = scope?.sections
     if (sections === undefined || sections.some((s) => CALENDAR_STRUCTURAL.includes(s))) {
       rebuildCalendar()
-    } else if (sections.includes('notes')) {
-      refreshCalendarNoteTints()
+    } else {
+      refreshCalendarCells()
     }
     rebuildBadge()
     // Patches this note's own @mention chips in place — safe even mid-typing

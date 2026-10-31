@@ -799,6 +799,43 @@ describe('makeRefClickHandler - card highlight (real pane, mirrors search-ui.ts 
     expect(cardInPane1).not.toBeNull()
     expect(cardInPane1!.classList.contains('tt-search-target-flash')).toBe(true)
   })
+
+  test('when the other pane already shows the target module, the item is revealed there, not in the click\'s own pane', () => {
+    stubMatchMedia()
+    Element.prototype.scrollIntoView = () => {}
+    const doc = createEmptyDocument('pt-BR')
+    doc.teams.push({
+      id: 'T1', name: 'Team 1', emoji: '🚀',
+      stakeholders: [], members: [],
+      actionItems: [{ id: 'a1', summary: 'Fix bug', notes: '', status: 'todo', dueDate: null, assignee: '', color: 'ledger', order: 0 }],
+      milestones: [], risks: [], dailyNotes: {},
+    })
+    doc.nav.activeTeamId = 'T1'
+    const store = createStore(doc)
+    const shell: Shell = createShell('pt-BR')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store)
+    pm.registerModule('actions', renderActionItems)
+    pm.registerModule('daily', () => {})
+
+    // Actions in pane 1, daily notes in pane 0, focus back on pane 0.
+    pm.openInSecondaryPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-08-04' } })
+    expect(store.doc.nav.focusedPane).toBe(0)
+
+    let raf: FrameRequestCallback | null = null
+    window.requestAnimationFrame = ((cb: FrameRequestCallback): number => { raf = cb; return 0 }) as typeof window.requestAnimationFrame
+
+    makeRefClickHandler(store, pm, 0, 'pt-BR', 'T1')({ kind: 'action', id: 'a1' }, { secondary: false })
+
+    expect(store.doc.nav.focusedPane).toBe(1) // the "already open" focus hop
+    if (!raf) throw new Error('ref click handler did not schedule a requestAnimationFrame callback')
+    ;(raf as FrameRequestCallback)(0)
+
+    const card = document.querySelectorAll('.tt-pane-body')[1]!.querySelector('[data-item-id="a1"]')
+    expect(card).not.toBeNull()
+    expect(card!.classList.contains('tt-search-target-flash')).toBe(true)
+  })
 })
 
 describe('navigateToLoc', () => {

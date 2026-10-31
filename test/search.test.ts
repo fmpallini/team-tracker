@@ -388,6 +388,21 @@ describe('SearchIndex.backlinks', () => {
     expect(index.backlinks('nope', 'action', 'a1')).toEqual([])
   })
 
+  test('a field mentioning itself is not a backlink, but other fields mentioning it still are', () => {
+    const doc = backlinksFixture()
+    const t1 = doc.teams[0]!
+    t1.dailyNotes['2026-08-04'] += ' and @[today](day:2026-08-04)'
+    t1.dailyNotes['2026-08-05'] = 'yesterday was @[Aug 4](day:2026-08-04)'
+    t1.milestones[0]!.followup += ' @[Beta](milestone:m1)'
+    t1.members[0]!.notes += ' @[Ana](person:p1)'
+    const index = createSearchIndex(() => doc, () => 0)
+    expect(index.backlinks('t1', 'day', '2026-08-04').map((r) => r.loc.ref)).toEqual([{ kind: 'daily', date: '2026-08-05' }])
+    expect(index.backlinks('t1', 'milestone', 'm1')).toEqual([])
+    expect(index.backlinks('t1', 'person', 'p1')).toEqual([])
+    // The action's mentions come from other fields, so the self-skip must not touch them.
+    expect(index.backlinks('t1', 'action', 'a1')).toHaveLength(4)
+  })
+
   test('snippet is markdown-stripped and the matched mention reads as its label', () => {
     const doc = backlinksFixture()
     const index = createSearchIndex(() => doc, () => 0)

@@ -17,6 +17,15 @@ export interface CalendarMarks {
   milestones(dateIso: string): { label: string; done: boolean }[]
   /** Action items due this day, each already labelled with its summary and status for the icon's tooltip; `resolved` groups 'done' and 'cancelled' together, matching the icon's own two states. Empty array = none due. */
   actionItems(dateIso: string): { label: string; resolved: boolean }[]
+  /** How many other fields @-mention this day (the day's "↩ N" chip count); 0 = none. */
+  backlinks(dateIso: string): number
+}
+
+/** Marks a day cell as referenced (the dog-ear in the corner) with a "{count} references" tooltip, or clears both when `count` is 0. Shared with daily-notes.ts's in-place refresh. */
+export function setDayBacklinks(cell: HTMLElement, count: number, locale: Locale): void {
+  cell.classList.toggle('tt-calendar-day-has-backlinks', count > 0)
+  if (count > 0) cell.title = t(locale, 'backlinks_badge_title', { count: String(count) })
+  else cell.removeAttribute('title')
 }
 
 function parseIso(iso: string): { y: number; m: number; d: number } {
@@ -119,6 +128,7 @@ export function createCalendar(opts: {
         { class: classes.join(' '), type: 'button', 'data-date': iso, onclick: () => opts.onPick(iso) },
         String(day)
       )
+      setDayBacklinks(dayBtn, opts.marks.backlinks(iso), opts.locale)
 
       // One icon per type regardless of how many items land on the day — its
       // state groups every item on that day into "still needs attention" vs

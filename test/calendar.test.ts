@@ -2,7 +2,7 @@ import { createCalendar, type CalendarMarks } from '../src/ui/calendar'
 import type { Locale } from '../src/core/i18n'
 
 function noMarks(): CalendarMarks {
-  return { hasNote: () => false, milestones: () => [], actionItems: () => [] }
+  return { hasNote: () => false, milestones: () => [], actionItems: () => [], backlinks: () => 0 }
 }
 
 function dayButtons(root: HTMLElement): HTMLButtonElement[] {
@@ -95,11 +95,22 @@ describe('createCalendar today ring', () => {
 
 describe('createCalendar marks', () => {
   test('hasNote(day) tints that day and no other', () => {
-    const marks: CalendarMarks = { hasNote: (d) => d === '2026-07-10', milestones: () => [], actionItems: () => [] }
+    const marks: CalendarMarks = { hasNote: (d) => d === '2026-07-10', milestones: () => [], actionItems: () => [], backlinks: () => 0 }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
     expect(dayButtonFor(root, 10).classList.contains('tt-calendar-day-has-note')).toBe(true)
     expect(dayButtonFor(root, 11).classList.contains('tt-calendar-day-has-note')).toBe(false)
+  })
+
+  test('backlinks(day) > 0 marks that day with the referenced corner and a count tooltip, and no other day', () => {
+    const marks: CalendarMarks = { ...noMarks(), backlinks: (d) => (d === '2026-07-10' ? 2 : d === '2026-07-11' ? 1 : 0) }
+    const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
+
+    expect(dayButtonFor(root, 10).classList.contains('tt-calendar-day-has-backlinks')).toBe(true)
+    expect(dayButtonFor(root, 10).title).toBe('2 references')
+    expect(dayButtonFor(root, 11).title).toBe('1 references')
+    expect(dayButtonFor(root, 12).classList.contains('tt-calendar-day-has-backlinks')).toBe(false)
+    expect(dayButtonFor(root, 12).hasAttribute('title')).toBe(false)
   })
 
   test('milestones(day) renders a pending flag icon (any pending) with a title of the joined labels', () => {
@@ -107,6 +118,7 @@ describe('createCalendar marks', () => {
       hasNote: () => false,
       milestones: (d) => (d === '2026-07-20' ? [{ label: 'Launch (Pending)', done: false }, { label: 'Freeze (Done)', done: true }] : []),
       actionItems: () => [],
+      backlinks: () => 0,
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
@@ -123,6 +135,7 @@ describe('createCalendar marks', () => {
       hasNote: () => false,
       milestones: (d) => (d === '2026-07-20' ? [{ label: 'Freeze (Done)', done: true }] : []),
       actionItems: () => [],
+      backlinks: () => 0,
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
@@ -136,6 +149,7 @@ describe('createCalendar marks', () => {
       hasNote: () => false,
       milestones: () => [],
       actionItems: (d) => (d === '2026-07-20' ? [{ label: 'Ship report (To Do)', resolved: false }, { label: 'Review budget (Done)', resolved: true }] : []),
+      backlinks: () => 0,
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 
@@ -152,6 +166,7 @@ describe('createCalendar marks', () => {
       hasNote: () => false,
       milestones: () => [],
       actionItems: (d) => (d === '2026-07-20' ? [{ label: 'Ship report (Done)', resolved: true }, { label: 'Old idea (Cancelled)', resolved: true }] : []),
+      backlinks: () => 0,
     }
     const root = createCalendar({ selected: '2026-07-01', locale: 'en-US', marks, onPick: () => {} })
 

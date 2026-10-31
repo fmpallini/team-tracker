@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.4.3] - 2026-10-30
+
+### Added
+- Daily notes calendar: a day that other notes, people, risks or items mention now shows a small folded corner; hover it for the count.
+
+### Fixed
+- Opening a reference whose module is already open in the other pane now selects the item there, and an action item hidden by the colour filter clears the filter first.
+- A note that mentions itself no longer counts as one of its own references.
+
 ## [3.4.2] - 2026-10-29
 
 ### Changed
