@@ -11,14 +11,22 @@ export const supportsFsApi: boolean = typeof window !== 'undefined' && 'showOpen
 export class ExternalChangeError extends Error {}
 
 /**
- * The bytes this session last read from, or wrote to, its file. Lets
- * `writeFile` tell a real external edit from a mere mtime bump (cloud-sync
+ * Size and SHA-256 of what this session last read from, or wrote to, its file.
+ * Lets `writeFile` tell a real external edit from a mere mtime bump (cloud-sync
  * clients and antivirus touch files without changing them): when the mtime
- * moved, identical content is not a conflict. Keyed by session (not stored on
- * it) so `FileSession` keeps its shape; it holds the buffer only as long as the
- * session lives.
+ * moved, identical content is not a conflict. Only the digest is kept: holding
+ * the bytes themselves pinned a second copy of the whole file, pictures
+ * included, for the rest of the session after every write. The digest promise
+ * holds the bytes only until it settles. Keyed by session (not stored on it) so
+ * `FileSession` keeps its shape.
  */
-const lastKnownBytes = new WeakMap<FileSession, Uint8Array>()
+const baselines = new WeakMap<FileSession, { size: number; digest: Promise<ArrayBuffer> }>()
+
+function setBaseline(session: FileSession, bytes: Uint8Array): void {
+  const digest = crypto.subtle.digest('SHA-256', bytes as BufferSource)
+  digest.catch(() => {}) // a failed digest only means "no baseline": contentMatchesBaseline then reports a change
+  baselines.set(session, { size: bytes.length, digest })
+}
 
 /**
  * The "reopen last" pointer is a convenience. A failure to persist it
@@ -64,7 +72,7 @@ export async function pickOpen(): Promise<{ session: FileSession; bytes: Uint8Ar
     if (!handle) return null
     const { bytes, lastModified } = await readHandle(handle)
     const session: FileSession = { handle, name: handle.name, lastModified }
-    lastKnownBytes.set(session, bytes)
+    setBaseline(session, bytes)
     await rememberHandle(handle)
     return { session, bytes }
   } catch (e) {
@@ -122,7 +130,7 @@ export async function openFromHandle(
   if (permission !== 'granted') return null
   const { bytes, lastModified } = await readHandle(handle)
   const session: FileSession = { handle, name: handle.name, lastModified }
-  lastKnownBytes.set(session, bytes)
+  setBaseline(session, bytes)
   // `reopenLast` passes persist:false — the handle it hands in came from this
   // same IndexedDB entry, so writing it straight back is a no-op round trip.
   if (persist) await rememberHandle(handle)
@@ -150,7 +158,7 @@ export async function peekLastFile(): Promise<{ session: FileSession; bytes: Uin
   if (permission !== 'granted') return null
   const { bytes, lastModified } = await readHandle(handle)
   const session: FileSession = { handle, name: handle.name, lastModified }
-  lastKnownBytes.set(session, bytes)
+  setBaseline(session, bytes)
   return { session, bytes }
 }
 
@@ -198,19 +206,24 @@ export async function writeFile(session: FileSession, bytes: Uint8Array): Promis
   await writable.close()
   const after = await handle.getFile()
   session.lastModified = after.lastModified
-  lastKnownBytes.set(session, bytes)
+  setBaseline(session, bytes)
   await rememberHandle(handle)
 }
 
 /** True when the file on disk still holds exactly what this session last read or wrote — i.e. only its mtime moved. */
 async function contentMatchesBaseline(session: FileSession, file: File): Promise<boolean> {
-  const known = lastKnownBytes.get(session)
+  const known = baselines.get(session)
   if (!known) return false
-  if (typeof file.size === 'number' && file.size !== known.length) return false
-  const disk = new Uint8Array(await file.arrayBuffer())
-  if (disk.length !== known.length) return false
-  for (let i = 0; i < disk.length; i++) if (disk[i] !== known[i]) return false
-  return true
+  if (typeof file.size === 'number' && file.size !== known.size) return false
+  const disk = await file.arrayBuffer()
+  if (disk.byteLength !== known.size) return false
+  try {
+    const [a, b] = await Promise.all([known.digest, crypto.subtle.digest('SHA-256', disk)])
+    const x = new Uint8Array(a), y = new Uint8Array(b)
+    return x.every((v, i) => v === y[i])
+  } catch {
+    return false
+  }
 }
 
 export async function forceWrite(session: FileSession, bytes: Uint8Array): Promise<void> {
@@ -222,7 +235,7 @@ export async function forceWrite(session: FileSession, bytes: Uint8Array): Promi
   await writable.close()
   const after = await handle.getFile()
   session.lastModified = after.lastModified
-  lastKnownBytes.set(session, bytes)
+  setBaseline(session, bytes)
   await rememberHandle(handle)
 }
 
@@ -231,7 +244,7 @@ export async function readCurrent(session: FileSession): Promise<Uint8Array> {
   if (!handle) throw new Error('readCurrent requires a file handle (fallback mode has no handle)')
   const { bytes, lastModified } = await readHandle(handle)
   session.lastModified = lastModified
-  lastKnownBytes.set(session, bytes)
+  setBaseline(session, bytes)
   return bytes
 }
 

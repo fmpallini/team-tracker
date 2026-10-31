@@ -15,7 +15,7 @@ function mockHandle(initialMtime: number, permission?: PermissionState) {
     // `assertWritable()` check is skipped for the pre-existing tests.
     ...(permission ? { queryPermission: vi.fn(async () => permission) } : {}),
   } as unknown as FileSystemFileHandle
-  return { handle, createWritable, bump: () => { mtime += 5000 }, getWritten: () => written }
+  return { handle, createWritable, bump: () => { mtime += 5000 }, getWritten: () => written, setDisk: (b: Uint8Array) => { written = b } }
 }
 
 // idb é chamado dentro de writeFile — stub global mínimo p/ jsdom.
@@ -41,6 +41,24 @@ test('writeFile detects external change', async () => {
   const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
   bump()
   await expect(writeFile(s, new Uint8Array([1]))).rejects.toBeInstanceOf(ExternalChangeError)
+})
+
+test('writeFile: an mtime bump over the very bytes it last wrote is not a change', async () => {
+  const { handle, bump, getWritten } = mockHandle(1000)
+  const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
+  await writeFile(s, new Uint8Array([1, 2]))
+  bump() // a sync client re-touching the file
+  await writeFile(s, new Uint8Array([3]))
+  expect(getWritten()).toEqual(new Uint8Array([3]))
+})
+
+test('writeFile: other bytes of the same length behind a moved mtime are a change', async () => {
+  const { handle, bump, setDisk } = mockHandle(1000)
+  const s: FileSession = { handle, name: 'x.tmv', lastModified: 1000 }
+  await writeFile(s, new Uint8Array([1, 2]))
+  setDisk(new Uint8Array([2, 1]))
+  bump()
+  await expect(writeFile(s, new Uint8Array([3]))).rejects.toBeInstanceOf(ExternalChangeError)
 })
 
 test('forceWrite ignores external change', async () => {
