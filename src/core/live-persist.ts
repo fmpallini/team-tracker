@@ -55,6 +55,12 @@ export interface LivePersister {
   onErrorChange(fn: (failed: boolean) => void): () => void
   /** The error of the last failed commit, or null once a later one succeeded. */
   readonly lastError: unknown
+  /**
+   * An edit is waiting for its write, or a write is under way. A page that closes now may be gone before the commit
+   * lands (row keys and seals are asynchronous and come before the transaction opens), so the window-close prompt asks.
+   * A pending retry after a failure does not count: `lastError` covers that.
+   */
+  readonly pending: boolean
   dispose(): void
 }
 
@@ -148,6 +154,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   let disposed = false
   let timer: { cancel: () => void; retry: boolean } | null = null
   let chain: Promise<void> = Promise.resolve()
+  // Runs entered and not yet settled, from the call (before the owed initial sync) to the end of the commit.
+  let running = 0
   // The initial sync, while it is still owed. Only the tab holding the write lock may touch the browser copy, and a
   // tab learns that after it has opened, so a read-only tab (or one whose first commit failed) keeps it pending.
   let initialOwed: RunOptions | null = null
@@ -175,8 +183,13 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
 
   /** Runs the owed initial sync first when it can run, then `opts`. */
   async function run(opts: RunOptions): Promise<void> {
-    await runInitial()
-    await enqueue(opts)
+    running++
+    try {
+      await runInitial()
+      await enqueue(opts)
+    } finally {
+      running--
+    }
   }
 
   async function runInitial(): Promise<void> {
@@ -361,6 +374,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       return () => { errorListeners.delete(fn) }
     },
     get lastError() { return lastError },
+    get pending() { return running > 0 || (timer !== null && !timer.retry) },
     dispose() {
       disposed = true
       timer?.cancel()
