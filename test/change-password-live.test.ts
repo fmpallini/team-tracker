@@ -65,7 +65,7 @@ async function rig(password: string | null): Promise<Rig> {
   const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'f.tmv', lastModified: 1 }
   const changePassword = createChangePassword({
     store, session, shell: { setTitle: vi.fn() } as never, persister,
-    runExclusive: (fn) => fn(), getPassword: () => current, setPassword: (pw) => { current = pw },
+    runExclusive: (fn) => fn(), setPassword: (pw) => { current = pw },
     onBrowserCopyRekeyFailed: () => modal.toast('rekey-failed'),
   })
   return { store, persister, doc, changePassword, setPw: () => current }

@@ -27,11 +27,10 @@ async function setup(password: string | null) {
   images.putPlain(A, PIXELS)
   const store = createStore(doc, images)
   const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team.tmv', lastModified: 1 }
-  let current = password
   const exclusive = vi.fn((fn: () => Promise<unknown>): Promise<unknown> => fn())
   const changePassword = createChangePassword({
     store, session, shell: { setTitle: vi.fn() } as unknown as Shell,
-    runExclusive: <T,>(fn: () => Promise<T>) => exclusive(fn) as Promise<T>, getPassword: () => current, setPassword: (p) => { current = p },
+    runExclusive: <T,>(fn: () => Promise<T>) => exclusive(fn) as Promise<T>, setPassword: vi.fn(),
   })
   return { store, changePassword, exclusive, written: () => fsMocks.writeFile.mock.calls.at(-1)![1] }
 }
@@ -72,6 +71,15 @@ test('a failed write rolls the image store back so the next save still opens und
   const bytes = await docToBytes(store.doc, 'A', store.images)
   const opened = await decryptDocumentWithVersion(bytes, 'A')
   expect([...(await opened.images.getPlain(A))!]).toEqual([...PIXELS])
+}, 60000)
+
+test('a failed write puts back the very key the file and the browser copy are under, not a fresh salt for the old password', async () => {
+  const { store, changePassword } = await setup('A')
+  const before = store.images.codec()!.header!.salt
+  fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
+  await expect(changePassword('B')).rejects.toThrow('disk full')
+  // The browser copy's meta names the old salt: an image sealed after the rollback must open under it.
+  expect([...store.images.codec()!.header!.salt]).toEqual([...before])
 }, 60000)
 
 test('the whole sequence, re-sealing included, runs inside runExclusive', async () => {
