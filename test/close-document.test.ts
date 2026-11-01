@@ -204,10 +204,10 @@ describe('retryWrites', () => {
 })
 
 describe('the window-close handler', () => {
-  function handler(overdue: boolean, over: { dirty?: boolean; lastError?: unknown } = {}) {
+  function handler(overdue: boolean, over: { dirty?: boolean; lastError?: unknown; pending?: boolean } = {}) {
     const flushEditors = vi.fn()
     const flush = vi.fn(async () => {})
-    const h = createBeforeUnloadHandler({ flushEditors, store: { dirty: over.dirty ?? true }, persister: { flush, lastError: over.lastError ?? null } as unknown as LivePersister, snapshot: { isOverdue: () => overdue } })
+    const h = createBeforeUnloadHandler({ flushEditors, store: { dirty: over.dirty ?? true }, persister: { flush, lastError: over.lastError ?? null, pending: over.pending ?? false } as unknown as LivePersister, snapshot: { isOverdue: () => overdue } })
     const ev = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent
     h(ev)
     return { ev, flushEditors, flush }
@@ -225,6 +225,21 @@ describe('the window-close handler', () => {
     expect(ev.defaultPrevented).toBe(true)
     expect(flushEditors).toHaveBeenCalledTimes(1)
     expect(flush).toHaveBeenCalledTimes(1)
+  })
+
+  test('prompts while a browser-copy write is still waiting or under way: the page may be gone before it lands', () => {
+    expect(handler(false, { pending: true }).ev.defaultPrevented).toBe(true)
+    expect(handler(false, { pending: false }).ev.defaultPrevented).toBe(false)
+  })
+
+  test('the flush it starts itself does not count: pending is read before it', () => {
+    let pending = false
+    const flush = vi.fn(async () => {})
+    const persister = { flush: vi.fn(() => { pending = true; return flush() }), lastError: null, get pending() { return pending } } as unknown as LivePersister
+    const h = createBeforeUnloadHandler({ flushEditors: vi.fn(), store: { dirty: true }, persister, snapshot: { isOverdue: () => false } })
+    const ev = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent
+    h(ev)
+    expect(ev.defaultPrevented).toBe(false)
   })
 
   test('prompts at once when the browser copy is failing and there are edits only this tab holds', () => {

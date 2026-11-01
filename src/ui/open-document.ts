@@ -9,9 +9,11 @@ import type { FileStamp } from '../core/file-stamp'
 import type { ImageStore } from '../core/image-store'
 import type { LiveDb } from '../core/live-db'
 import { resolveOpen, OpenCancelled, type LiveHandle } from '../core/live-open'
+import { resolveFileId } from '../core/file-identity'
+import { isDocumentOpen } from '../core/browser-copies'
 import { createStore as newStore, type Store } from '../core/store'
 import { t, type Locale } from '../core/i18n'
-import { askOlderFile, askBothChanged, confirmDiscardCopy } from './reconcile-dialogs'
+import { askOlderFile, askBothChanged, askOtherFile, confirmDiscardCopy } from './reconcile-dialogs'
 import { promptPassword, toast } from './modal'
 
 /**
@@ -55,8 +57,11 @@ export async function reconcileOpen(opts: {
     return { session, doc: opened.doc, password, images: opened.images, store, handle: null, needsFileWrite: false, stamp: opened.stamp }
   }
   try {
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
     const r = await resolveOpen({
       db, opened, password, fileName: session.name,
+      // Which file this is, so an OS copy of the file the browser copy follows is told apart (core/live-open.ts).
+      fileId: await resolveFileId(session, locks),
       askOlderFile: () => askOlderFile(locale),
       askBothChanged: () => askBothChanged(locale),
       askBrowserPassword: async () => {
@@ -64,6 +69,8 @@ export async function reconcileOpen(opts: {
         return result !== null && 'password' in result ? result.password : null
       },
       confirmDiscardCopy: () => confirmDiscardCopy(locale),
+      askOtherFile: (copyFileName) => askOtherFile(locale, copyFileName),
+      isOpenElsewhere: (docId) => isDocumentOpen(docId, locks),
       createStore,
     })
     return { session, doc: r.doc, password: r.password, images: r.images, store: r.store, handle: r.handle, needsFileWrite: r.needsFileWrite, stamp: r.stamp }

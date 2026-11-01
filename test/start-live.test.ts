@@ -24,16 +24,20 @@ const fsMocks = vi.hoisted(() => ({
   peekLastFile: vi.fn(async () => null as unknown),
 }))
 vi.mock('../src/core/fs', () => fsMocks)
-vi.mock('../src/core/idb', () => ({ idbGet: vi.fn(async () => undefined), idbSet: vi.fn(async () => {}) }))
-const dialogs = vi.hoisted(() => ({ askOlderFile: vi.fn(), askBothChanged: vi.fn() }))
+// A working key/value store: core/file-identity.ts keeps its file registry there, so one file keeps one id across opens.
+const idbData = vi.hoisted(() => new Map<string, unknown>())
+vi.mock('../src/core/idb', () => ({ idbGet: vi.fn(async (k: string) => idbData.get(k)), idbSet: vi.fn(async (k: string, v: unknown) => { idbData.set(k, v) }) }))
+const dialogs = vi.hoisted(() => ({ askOlderFile: vi.fn(), askBothChanged: vi.fn(), askOtherFile: vi.fn() }))
 vi.mock('../src/ui/reconcile-dialogs', () => dialogs)
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
-const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team.tmv', lastModified: 1 }
+const handle = { isSameEntry: async (other: unknown) => other === handle } as unknown as FileSystemFileHandle
+const session: FileSession = { handle, name: 'team.tmv', lastModified: 1 }
 
 let db: LiveDb
 beforeEach(async () => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange)
+  idbData.clear()
   document.body.innerHTML = '<div id="app"></div>'
   db = await openLiveDb(new IDBFactory())
   fsMocks.pickOpen.mockReset()

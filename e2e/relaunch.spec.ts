@@ -92,7 +92,7 @@ test.describe('second-open guard (src/main.ts onDocumentOpened)', () => {
 test.describe('onBeforeUnload (src/main.ts)', () => {
   const PASSWORD = 'e2e-unload-save-password'
 
-  test('closing the window right after typing neither prompts nor loses the edit: the browser copy is flushed, the next open rewrites the file', async ({ page }) => {
+  test('closing the window right after typing asks while the browser copy is written, and the edit survives; the file is not rewritten', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)
     await page.goto(`${E2E_BASE_URL}/app.html`)
@@ -102,13 +102,14 @@ test.describe('onBeforeUnload (src/main.ts)', () => {
     await addTeam(page, 'Alpha')
 
     // A synthetic (untrusted) event: dispatchEvent() returns synchronously, well before the flush it starts
-    // can finish. The file is not overdue (it was just opened), so there is no "leave site?" prompt either.
+    // can finish. The file is not overdue (it was just opened), but the new team is still on its way into the
+    // browser copy, so the page asks to stay (e2e/close-pending.spec.ts shows a tab closed without asking can lose it).
     const prevented = await page.evaluate(() => {
       const ev = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(ev)
       return ev.defaultPrevented
     })
-    expect(prevented).toBe(false)
+    expect(prevented).toBe(true)
     expect(Array.from(await readOpfsFile(page, 'team-tracker.tmv'))).toEqual(fileAtOpen)
 
     await page.reload()

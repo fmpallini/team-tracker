@@ -6,6 +6,7 @@
 //   - a clean copy only saves the next open a re-import (live-open.ts falls back to the file), so an old one may go.
 // A copy another tab has open must not go either: that tab's persister would write rows into a document with no meta.
 // Tabs tell each other by holding a shared Web Lock per open document, for as long as it is open (`holdDocument`).
+// live-open.ts asks the same question (`isDocumentOpen`) before another file of the document may take the copy over.
 import type { LiveDb } from './live-db'
 
 export const STALE_COPY_MS = 90 * 24 * 60 * 60 * 1000
@@ -18,6 +19,18 @@ export function holdDocument(docId: string, locks: LockManager | undefined): () 
   let release: () => void = () => {}
   void locks.request(lockName(docId), { mode: 'shared' }, () => new Promise<void>((resolve) => { release = resolve })).catch(() => {})
   return () => release()
+}
+
+/** Whether some tab holds `docId` open. False where Web Locks do not exist or cannot be queried: nothing can be told then. */
+export async function isDocumentOpen(docId: string, locks: LockManager | undefined): Promise<boolean> {
+  if (!locks) return false
+  try {
+    const { held } = await locks.query()
+    return held?.some((l) => l.name === lockName(docId)) ?? false
+  } catch (e) {
+    console.error(e)
+    return false
+  }
 }
 
 /**

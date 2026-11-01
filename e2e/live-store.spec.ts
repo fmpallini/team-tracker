@@ -133,6 +133,30 @@ test.describe('opening a file that has a browser copy', () => {
     await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText(['Team One', 'Team Two'])
     await expect.poll(() => text(page)).toContain('Team Two') // the file was rewritten from the browser copy
   })
+
+  test('(k) a backup copy of the file opens as a document of its own: no question, and neither file is overwritten', async ({ page }) => {
+    await startPlain(page)
+    await addTeam(page, 'Team One')
+    await lockClose(page)
+    await writeOpfsFile(page, 'backup.tmv', await readOpfsFile(page, FILE)) // the user copies the file in the OS
+    await reopenLastPlain(page)
+    await addTeam(page, 'Team Two')
+    await lockClose(page)
+
+    await setNextOpenName(page, 'backup.tmv')
+    await page.getByRole('button', { name: /Open/ }).first().click()
+    await expect(page.locator('.tt-shell')).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText(['Team One'])
+    await lockClose(page)
+    expect(await text(page, 'backup.tmv')).toContain('Team One')
+    expect(await text(page, 'backup.tmv')).not.toContain('Team Two')
+
+    // and the original still opens with its own work, from its own browser copy
+    await setNextOpenName(page, FILE)
+    await page.getByRole('button', { name: /Open/ }).first().click()
+    await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText(['Team One', 'Team Two'])
+  })
 })
 
 test.describe('when the file cannot be written', () => {
@@ -317,6 +341,43 @@ test.describe('two tabs', () => {
     expect(await fileWrites(b, FILE)).toBe(0)
     expect(await text(a)).not.toContain('FROM-TAB-A')
     await b.close()
+  })
+
+  test('(l) a file and a copy of it, open in two tabs at once, never write into each other\'s browser copy', async ({ page: a, context }) => {
+    await installOpfsPickerShim(context)
+    await blockUpdateCheck(context)
+    await a.goto(`${E2E_BASE_URL}/app.html`)
+    await createPlainDoc(a)
+    await addTeam(a, 'T1')
+    await lockClose(a) // a file the app wrote, so it carries a write stamp
+    // the same document, as an OS copy (or a sync client's conflicted copy)
+    await writeOpfsFile(a, 'copy.tmv', await readOpfsFile(a, FILE))
+    const open = async (p: Page, name: string): Promise<void> => {
+      await setNextOpenName(p, name)
+      await p.getByRole('button', { name: /Open/ }).first().click()
+      await expect(p.locator('.tt-shell')).toBeVisible()
+      await openModule(p.locator('.tt-pane[data-pane-idx="0"]'), /Daily/i)
+      await expect(editor(p)).toBeVisible()
+    }
+    await open(a, FILE)
+    const b = await context.newPage()
+    await b.goto(`${E2E_BASE_URL}/app.html`)
+    await open(b, 'copy.tmv')
+    await expect(b.locator('.tt-readonly-banner')).toHaveCount(0) // another file: its own write lock
+
+    await editor(a).click()
+    await a.keyboard.type('FROM-THE-ORIGINAL')
+    await flushLiveCopy(a)
+    await editor(b).click()
+    await b.keyboard.type('FROM-THE-COPY')
+    await flushLiveCopy(b)
+    await b.close()
+
+    // tab A's window closes without Lock/Close: its edit lives only in its browser copy, which must still be its own
+    await a.reload()
+    await open(a, FILE)
+    await expect(editor(a)).toContainText('FROM-THE-ORIGINAL')
+    await expect(editor(a)).not.toContainText('FROM-THE-COPY')
   })
 })
 

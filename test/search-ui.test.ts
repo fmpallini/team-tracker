@@ -291,6 +291,35 @@ test('arrow keys navigate results with wraparound in both directions; Enter open
   expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } }])
 })
 
+test('Enter pressed before the debounce elapses opens the top match for what was typed, not nothing', () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const pm = fakePM()
+  const { input } = mount(store, pm)
+
+  type(input, 'alpha')
+  key(input, 'Enter')
+
+  expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } }])
+})
+
+test('Enter pressed before the debounce elapses opens a match for the full query, not the stale list of its prefix', () => {
+  const team: Team = {
+    id: 'T1', name: 'Team One', emoji: '🚀',
+    stakeholders: [], members: [], actionItems: [], milestones: [], risks: [],
+    dailyNotes: { '2026-07-01': 'roadmap', '2026-07-02': 'rollout plan' },
+  }
+  const store = buildStore([team], 'T1')
+  const pm = fakePM()
+  const { input } = mount(store, pm)
+
+  type(input, 'ro')
+  vi.advanceTimersByTime(350)
+  type(input, 'roll')
+  key(input, 'Enter')
+
+  expect(pm.calls).toEqual([{ teamId: 'T1', ref: { kind: 'daily', date: '2026-07-02' } }])
+})
+
 test('refocusing the search input with existing text re-runs the search and reopens the dropdown', () => {
   const store = buildStore([oneNoteTeam], 'T1')
   const { input } = mount(store, fakePM())

@@ -65,7 +65,7 @@ async function rig(password: string | null): Promise<Rig> {
   const session: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'f.tmv', lastModified: 1 }
   const changePassword = createChangePassword({
     store, session, shell: { setTitle: vi.fn() } as never, persister,
-    runExclusive: (fn) => fn(), getPassword: () => current, setPassword: (pw) => { current = pw },
+    runExclusive: (fn) => fn(), setPassword: (pw) => { current = pw },
     onBrowserCopyRekeyFailed: () => modal.toast('rekey-failed'),
   })
   return { store, persister, doc, changePassword, setPw: () => current }
@@ -77,8 +77,9 @@ async function reopen(password: string | null, asks: { pw?: (string | null)[] } 
   const queue = [...(asks.pw ?? [])]
   const askBrowserPassword = vi.fn(async () => queue.shift() ?? null)
   const result = await resolveOpen({
-    db, opened, password, fileName: 'f.tmv',
+    db, opened, password, fileName: 'f.tmv', fileId: null,
     askOlderFile: async () => 'browser', askBothChanged: async () => 'browser', askBrowserPassword, confirmDiscardCopy: async () => {},
+    askOtherFile: async () => 'separate', isOpenElsewhere: async () => false,
     createStore: (doc, images) => createStore(doc, images),
   })
   return { result, askBrowserPassword }

@@ -23,6 +23,12 @@ export interface Store {
    */
   readonly rev: number
   /**
+   * Like `rev`, but counts only what changed the content (`update()`, `replaceDoc()`), not navigation (`updateNav()`).
+   * For a consumer that must notice an edit but not a move: core/undo-delete.ts's offer survives the user clicking
+   * into the other pane, and expires on the next edit.
+   */
+  readonly contentRev: number
+  /**
    * `scope` describes what changed so subscribers can skip irrelevant
    * re-renders (see core/scope.ts). Omitting it means "everything changed",
    * which is the pre-scoping behavior — every existing call site is therefore
@@ -106,6 +112,7 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
   let images = initialImages
   let dirty = false
   let rev = 0
+  let contentRev = 0
   let roState: ReadOnlyState = { kind: 'writable' }
   const subscribers = new Set<(scope: ChangeScope | null) => void>()
   const mutationListeners = new Set<(kind: MutationKind) => void>()
@@ -146,12 +153,16 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
     get rev() {
       return rev
     },
+    get contentRev() {
+      return contentRev
+    },
     update(fn: (d: Doc) => void, scope?: ChangeScope): void {
       if (roState.kind !== 'writable') {
         warnBlocked()
         return
       }
       rev++
+      contentRev++
       fn(doc)
       setDirty(true)
       const s = scope ?? null
@@ -192,6 +203,7 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
     },
     replaceDoc(newDoc: Doc, newImages?: ImageStore): void {
       rev++
+      contentRev++
       doc = newDoc
       if (newImages) images = newImages
       setDirty(false)

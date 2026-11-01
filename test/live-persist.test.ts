@@ -186,6 +186,28 @@ test('50 edits inside one window arm one timer and commit once', async () => {
   expect((await loadDoc(store.doc.docId)).teams[0]!.dailyNotes['2026-07-01']).toBe('v49')
 })
 
+test('pending covers an edit waiting for its write and a write under way, but not a retry after a failure', async () => {
+  const { store, persister, timers } = await rig()
+  expect(persister.pending).toBe(false)
+  store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'edited' })
+  expect(persister.pending).toBe(true) // waiting for quiet
+  let release!: () => void
+  gate = new Promise((r) => { release = r })
+  const flushing = persister.flush()
+  expect(persister.pending).toBe(true) // the commit has not landed
+  release()
+  await flushing
+  gate = null
+  expect(persister.pending).toBe(false)
+
+  failNext.push(new Error('quota'))
+  store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'again' })
+  await persister.flush()
+  expect(persister.lastError).not.toBeNull()
+  expect(timers.delays()).toEqual([30_000])
+  expect(persister.pending).toBe(false)
+})
+
 test('nav-only changes are persisted', async () => {
   const { store, persister } = await rig()
   store.updateNav((d) => { d.nav.activeTeamId = 'T2'; d.nav.sidebarCollapsed = true })

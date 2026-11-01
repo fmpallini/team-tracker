@@ -48,7 +48,7 @@ test('changing to a new password encrypts and writes, never touches serializePla
   const setPassword = vi.fn()
   const snapshot = { fileWritten: vi.fn() }
   const changePassword = createChangePassword({
-    store, session, shell, snapshot, runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
+    store, session, shell, snapshot, runExclusive: (fn) => fn(), setPassword,
   })
 
   await changePassword('newpw')
@@ -73,7 +73,7 @@ test('the new file write is committed to the persister with its stamp, then the 
   fsMocks.writeFile.mockImplementation(async () => { order.push('write') })
   const changePassword = createChangePassword({
     store, session: makeSession(), shell: makeShell(), persister: persister as never,
-    runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+    runExclusive: (fn) => fn(), setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
@@ -90,7 +90,7 @@ test('a password-less result re-seals the browser copy as plain', async () => {
   const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => {}) }
   const changePassword = createChangePassword({
     store, session: makeSession(), shell: makeShell(), persister: persister as never,
-    runExclusive: (fn) => fn(), getPassword: () => 'old', setPassword: vi.fn(),
+    runExclusive: (fn) => fn(), setPassword: vi.fn(),
   })
   await changePassword(null)
   expect(persister.rekey).toHaveBeenCalledWith(null)
@@ -102,7 +102,7 @@ test('a failed file write leaves the browser copy where it was', async () => {
   const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), rekey: vi.fn(async () => {}) }
   const changePassword = createChangePassword({
     store, session: makeSession(), shell: makeShell(), persister: persister as never,
-    runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+    runExclusive: (fn) => fn(), setPassword: vi.fn(),
   })
 
   await expect(changePassword('newpw')).rejects.toThrow('disk full')
@@ -118,7 +118,7 @@ test('a browser copy that cannot be re-keyed is reported, and the password chang
   const setPassword = vi.fn()
   const changePassword = createChangePassword({
     store, session: makeSession(), shell: makeShell(), persister: persister as never, onBrowserCopyRekeyFailed,
-    runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
+    runExclusive: (fn) => fn(), setPassword,
   })
 
   await expect(changePassword('newpw')).resolves.toBeUndefined()
@@ -132,7 +132,7 @@ test('migrating to password-less (newPw null) uses serializePlain, never encrypt
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession()
   const changePassword = createChangePassword({
-    store, session, shell: makeShell(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+    store, session, shell: makeShell(), runExclusive: (fn) => fn(), setPassword: vi.fn(),
   })
 
   await changePassword(null)
@@ -146,7 +146,7 @@ test('fallback mode (no FS handle) downloads instead of writing, and toasts a no
   const store = createStore(createEmptyDocument('en-US'))
   const session = makeSession(false)
   const changePassword = createChangePassword({
-    store, session, shell: makeShell(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword: vi.fn(),
+    store, session, shell: makeShell(), runExclusive: (fn) => fn(), setPassword: vi.fn(),
   })
 
   await changePassword('newpw')
@@ -161,7 +161,7 @@ test('a read-only store rejects before ever encrypting, writing, or flipping the
   store.setReadOnly(true)
   const setPassword = vi.fn()
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), runExclusive: (fn) => fn(), getPassword: () => null, setPassword,
+    store, session: makeSession(), shell: makeShell(), runExclusive: (fn) => fn(), setPassword,
   })
 
   await expect(changePassword('newpw')).rejects.toThrow('read-only')
@@ -179,7 +179,7 @@ test('runs the whole write+bookkeeping sequence inside runExclusive', async () =
     return fn()
   }
   const changePassword = createChangePassword({
-    store, session: makeSession(), shell: makeShell(), runExclusive, getPassword: () => null, setPassword: vi.fn(),
+    store, session: makeSession(), shell: makeShell(), runExclusive, setPassword: vi.fn(),
   })
 
   await changePassword('newpw')

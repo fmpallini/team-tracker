@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { shouldCheck, isNewer, checkForUpdate, LAST_CHECK_STORAGE_KEY } from '../src/core/update-check'
+import { shouldCheck, isNewer, checkForUpdate, updateCheckEnabled, setUpdateCheckEnabled, createManualUpdateCheck, MANUAL_CHECK_COOLDOWN_MS, LAST_CHECK_STORAGE_KEY, UPDATE_CHECK_OFF_STORAGE_KEY, type UpdateCheckResult } from '../src/core/update-check'
 
 describe('shouldCheck', () => {
   const DAY_MS = 24 * 60 * 60 * 1000
@@ -97,4 +97,68 @@ describe('checkForUpdate', () => {
 
 it('exports the localStorage key used for the 24h gate', () => {
   expect(LAST_CHECK_STORAGE_KEY).toBe('tt-last-update-check')
+})
+
+describe('the update-check setting', () => {
+  afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
+
+  test('is on by default and remembers being turned off and on again', () => {
+    expect(updateCheckEnabled()).toBe(true)
+    setUpdateCheckEnabled(false)
+    expect(localStorage.getItem(UPDATE_CHECK_OFF_STORAGE_KEY)).toBe('1')
+    expect(updateCheckEnabled()).toBe(false)
+    setUpdateCheckEnabled(true)
+    expect(localStorage.getItem(UPDATE_CHECK_OFF_STORAGE_KEY)).toBeNull()
+    expect(updateCheckEnabled()).toBe(true)
+  })
+
+  test('storage that cannot be used leaves the check on and never throws', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('denied', 'SecurityError') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('denied', 'SecurityError') })
+    expect(updateCheckEnabled()).toBe(true)
+    expect(() => setUpdateCheckEnabled(false)).not.toThrow()
+  })
+})
+
+describe('createManualUpdateCheck (the About tab\'s "Check now")', () => {
+  function rig(results: UpdateCheckResult[] = [{ status: 'up-to-date' }]) {
+    let now = 1_000_000
+    const queue = [...results]
+    const run = vi.fn(async () => queue.shift() ?? { status: 'up-to-date' as const })
+    const check = createManualUpdateCheck(run, () => now)
+    return { check, run, advance: (ms: number) => { now += ms } }
+  }
+
+  it('runs the check and remembers its result', async () => {
+    const { check, run } = rig([{ status: 'newer', version: '9.0.0' }])
+    expect(check.lastResult).toBeNull()
+    expect(await check.run()).toEqual({ status: 'newer', version: '9.0.0' })
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(check.lastResult).toEqual({ status: 'newer', version: '9.0.0' })
+  })
+
+  it('refuses another check until the cooldown has passed, whatever the result was', async () => {
+    const { check, run, advance } = rig([{ status: 'error' }, { status: 'up-to-date' }])
+    await check.run()
+    expect(check.remainingMs()).toBe(MANUAL_CHECK_COOLDOWN_MS)
+    expect(await check.run()).toBeNull()
+    advance(MANUAL_CHECK_COOLDOWN_MS - 1)
+    expect(await check.run()).toBeNull()
+    expect(run).toHaveBeenCalledTimes(1)
+    advance(1)
+    expect(check.remainingMs()).toBe(0)
+    expect(await check.run()).toEqual({ status: 'up-to-date' })
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('clicks while a check is in flight share it instead of starting another', async () => {
+    const { check, run } = rig()
+    const a = check.run()
+    expect(check.running).toBe(true)
+    const b = check.run()
+    expect(await a).toEqual({ status: 'up-to-date' })
+    expect(await b).toEqual({ status: 'up-to-date' })
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(check.running).toBe(false)
+  })
 })

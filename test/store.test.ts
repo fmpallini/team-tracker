@@ -257,6 +257,20 @@ test('rev increments on every mutation channel', () => {
   expect(s.rev).toBe(start + 3)
 })
 
+test('contentRev counts what changed the content: update and replaceDoc, not navigation or a blocked update', () => {
+  const s = createStore(createEmptyDocument('pt-BR'))
+  const start = s.contentRev
+  s.update(() => {})
+  expect(s.contentRev).toBe(start + 1)
+  s.updateNav(() => {})
+  expect(s.contentRev).toBe(start + 1)
+  s.replaceDoc(createEmptyDocument('en-US'))
+  expect(s.contentRev).toBe(start + 2)
+  s.setReadOnly(true)
+  s.update(() => {})
+  expect(s.contentRev).toBe(start + 2)
+})
+
 test('rev does not increment for a blocked (read-only) update', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   s.setReadOnly(true)

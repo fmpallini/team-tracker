@@ -4,6 +4,20 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.5.0] - 2026-11-01
+
+### Added
+- Preferences → About can turn off the daily check for new versions (the app then makes no network request at all), or check right away with "Check now".
+
+### Changed
+- The app now refuses to run or load anything it did not ship with, a second line of defense for your decrypted notes.
+
+### Fixed
+- Opening a copy of a file (a backup, a sync "conflicted copy") opens it as a separate document, instead of overwriting it or mixing its changes with the original's.
+- Undo after a delete is no longer lost by switching panes or modules.
+- Closing the tab right after typing could lose the last edit; the browser now asks first.
+- A failed password change no longer hides pictures added afterwards, a tab that handed over control can no longer overwrite the file, and Enter in search opens what you typed.
+
 ## [3.4.3] - 2026-10-30
 
 ### Added

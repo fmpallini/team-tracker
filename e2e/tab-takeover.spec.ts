@@ -152,3 +152,33 @@ test('double-clicking "Take control" does not leave a request that steals the lo
   await expect(a.locator('.tt-readonly-banner')).toHaveCount(0)
   await b.close()
 })
+
+test('a conflict dialog left open in a tab that hands over control cannot write its stale document over the file', async ({ page: a, context }) => {
+  const b = await twoTabs(context, a)
+  await editor(a).click()
+  await a.keyboard.type('EDIT-FROM-A')
+  await a.waitForTimeout(400)
+
+  // Another program changes the file; A's next write (Lock/Close) finds it and asks.
+  const external = Array.from(new TextEncoder().encode('TMV-PLAIN\nEXTERNAL'))
+  await writeOpfsFile(a, FILE, external)
+  await a.locator('.tt-btn-close-file').click()
+  const conflict = a.getByRole('dialog').filter({ hasText: 'File changed externally' })
+  await expect(conflict).toBeVisible()
+
+  // Meanwhile control moves to B, which edits on.
+  await b.locator('.tt-readonly-takeover-btn').click()
+  await expect(b.locator('.tt-readonly-banner')).toHaveCount(0)
+  await expect(a.locator('.tt-readonly-banner')).toBeVisible()
+  await editor(b).click()
+  await b.keyboard.press('Control+End')
+  await b.keyboard.type(' EDIT-FROM-B')
+  await b.waitForTimeout(400)
+
+  // Back in A, the dialog is still up. Overwrite would put A's document (no EDIT-FROM-B) over the file.
+  await conflict.getByRole('button', { name: 'Overwrite' }).click()
+  await expect(a.locator('.tt-toast', { hasText: /edited in another tab/ })).toBeVisible()
+  await a.waitForTimeout(500)
+  expect(Array.from(new Uint8Array(await readOpfsFile(b, FILE)))).toEqual(external)
+  await b.close()
+})

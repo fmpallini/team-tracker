@@ -27,8 +27,6 @@ export interface ChangePasswordDeps {
   snapshot?: Pick<FileSnapshot, 'fileWritten'>
   /** Waits out (and blocks) any concurrent file write — see file-snapshot.ts's `runExclusive`. */
   runExclusive<T>(fn: () => Promise<T>): Promise<T>
-  /** The password the file is under right now (live read), needed to restore the image blobs' key if the write fails. */
-  getPassword(): string | null
   /** Flips the in-memory password held by main.ts's app closure. No-ops there if the app has since been torn down. */
   setPassword(newPw: string | null): void
 }
@@ -62,11 +60,13 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       // The image blobs are sealed under the file's key, so they have to move
       // to the new one before the bytes are built: `rekey` opens each image
       // with the OLD codec first, then forgets its sealed form so the write
-      // re-seals it. A failed write puts the old key back (a fresh codec for
-      // the old password: the session key cache may already hold the new
-      // one, and the next save's header must match the key the blobs use).
+      // re-seals it. A failed write puts the old codec itself back: its key is
+      // the one the file header and the browser copy's meta name. Deriving a
+      // codec for the old password again would draw a fresh salt (the session
+      // key cache holds the new password by then), so images added afterwards
+      // would be sealed under a key the browser copy cannot open.
       const images = deps.store.images
-      const oldPw = deps.getPassword()
+      const oldCodec = images.codec()
       // The browser copy first: every pending edit is in it under the old key before the key changes.
       await deps.persister?.flush()
       await images.rekey(newPw === null ? null : await blobCodec(newPw))
@@ -81,7 +81,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
           toast(t(deps.store.doc.prefs.locale, 'fallback_notice'), { kind: 'warn' })
         }
       } catch (e) {
-        await images.rekey(oldPw === null ? null : await blobCodec(oldPw))
+        await images.rekey(oldCodec)
         throw e
       }
       await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)

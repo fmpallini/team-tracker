@@ -429,3 +429,50 @@ describe('Fork', () => {
     expect(flow.isOpen()).toBe(true)
   })
 })
+
+describe('the write lock moved to another tab while the modal was up', () => {
+  test('Overwrite writes nothing: a read-only tab must not put its document over the file', async () => {
+    const markFileWritten = vi.fn(async () => {})
+    const { flow, store, snapshot, open } = setup({ persister: { markFileWritten } as never })
+    const opts = open()
+    store.setReadOnly(true)
+
+    await opts.onOverwrite()
+
+    expect(mocks.docToBytes).not.toHaveBeenCalled()
+    expect(mocks.forceWrite).not.toHaveBeenCalled()
+    expect(markFileWritten).not.toHaveBeenCalled()
+    expect(snapshot.fileWritten).not.toHaveBeenCalled()
+    expect(mocks.toast).toHaveBeenCalledWith('This file is now edited in another tab, so this choice was not applied.', expect.objectContaining({ kind: 'warn' }))
+    expect(flow.isOpen()).toBe(false)
+  })
+
+  test('Reload neither replaces the document nor re-keys the browser copy the other tab now writes', async () => {
+    const rekey = vi.fn(async () => {})
+    const adoptFileStamp = vi.fn(async () => {})
+    const { flow, store, deps, open } = setup({ persister: { rekey, adoptFileStamp } as never })
+    const opts = open()
+    store.setReadOnly(true)
+
+    await opts.onReload()
+
+    expect(deps.readFromDisk).not.toHaveBeenCalled()
+    expect(deps.applyReloaded).not.toHaveBeenCalled()
+    expect(rekey).not.toHaveBeenCalled()
+    expect(adoptFileStamp).not.toHaveBeenCalled()
+    expect(flow.isOpen()).toBe(false)
+  })
+
+  test('Fork still works: it writes a new file under a new docId, not the one the other tab holds', async () => {
+    const FORK: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'team (copy).tmv', lastModified: 2 }
+    mocks.pickCreate.mockResolvedValue(FORK)
+    const { store, deps, open } = setup()
+    const opts = open()
+    store.setReadOnly(true)
+
+    await opts.onFork!()
+
+    expect(mocks.forceWrite).toHaveBeenCalledWith(FORK, BYTES)
+    expect(deps.reopen).toHaveBeenCalledTimes(1)
+  })
+})

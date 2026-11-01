@@ -122,8 +122,11 @@ export function createBeforeUnloadHandler(deps: {
 }): (e: BeforeUnloadEvent) => void {
   return (e) => {
     deps.flushEditors()
+    // Read before flushing, which itself counts as pending. An edit still waiting for its write, or a write under way,
+    // may not land before the page goes; the prompt keeps the page alive while it does.
+    const pending = deps.persister?.pending ?? false
     void deps.persister?.flush()
-    if (deps.snapshot.isOverdue() || browserCopyAtRisk(deps.store, deps.persister)) {
+    if (deps.snapshot.isOverdue() || browserCopyAtRisk(deps.store, deps.persister) || pending) {
       e.preventDefault()
       e.returnValue = ''
     }

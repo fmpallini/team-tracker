@@ -49,28 +49,33 @@ export interface UndoOffer {
  * `mutate` reported nothing deleted; callers then show a plain toast with no
  * action button.
  *
- * Staleness is guarded by `store.rev`, which is bumped by `update()`,
- * `updateNav()` AND `replaceDoc()` — so one comparison covers every way the
- * document can move on, a conflict-modal reload included. Restoring a capture
- * after some later edit would silently revert that edit; instead the offer
- * simply expires the moment the user does anything else.
+ * Staleness is guarded by `store.contentRev`, which is bumped by `update()`
+ * AND `replaceDoc()` — so one comparison covers every way the content can
+ * move on, a conflict-modal reload included. Restoring a capture after some
+ * later edit would silently revert that edit; instead the offer simply
+ * expires on the next edit. Navigation (`updateNav()`, which by contract
+ * touches `doc.nav` alone) does not expire it: clicking into the other pane
+ * or opening another module right after a delete is how a user goes looking
+ * for what they just deleted, and an entity capture holds no `nav`. (The
+ * team delete in ui/sidebar.ts restores `nav` too, to where it was before
+ * the delete — moving back is all an undo after navigating can do to it.)
  */
 export function deleteWithUndo(
   store: Store,
   mutate: (d: Doc) => ((d: Doc) => void) | null,
   scope?: ChangeScope,
 ): UndoOffer | null {
-  const revBefore = store.rev
+  const revBefore = store.contentRev
   let restore: ((d: Doc) => void) | null = null
   store.update((d) => { restore = mutate(d) }, scope)
-  // rev is unchanged when update() was blocked by read-only mode — it returns
-  // silently rather than throwing, so this is the only way to detect it.
-  if (store.rev === revBefore) return null
+  // contentRev is unchanged when update() was blocked by read-only mode — it
+  // returns silently rather than throwing, so this is the only way to detect it.
+  if (store.contentRev === revBefore) return null
   const captured = restore as ((d: Doc) => void) | null
   if (!captured) return null
-  const revAfter = store.rev
+  const revAfter = store.contentRev
 
-  const available = (): boolean => store.rev === revAfter && !store.readOnly
+  const available = (): boolean => store.contentRev === revAfter && !store.readOnly
 
   return {
     isAvailable: available,

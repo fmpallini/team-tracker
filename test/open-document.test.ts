@@ -11,8 +11,11 @@ import { t } from '../src/core/i18n'
 import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
 
-const dialogs = vi.hoisted(() => ({ askOlderFile: vi.fn(), askBothChanged: vi.fn() }))
+const dialogs = vi.hoisted(() => ({ askOlderFile: vi.fn(), askBothChanged: vi.fn(), askOtherFile: vi.fn() }))
 vi.mock('../src/ui/reconcile-dialogs', () => dialogs)
+// Each session's file id is its handle's `entry` (core/file-identity.ts is unit-tested on its own).
+const identity = vi.hoisted(() => ({ resolveFileId: vi.fn(async (s: { handle: { entry?: string } | null }) => s.handle?.entry ?? null) }))
+vi.mock('../src/core/file-identity', () => identity)
 const modal = vi.hoisted(() => ({ toast: vi.fn(), promptPassword: vi.fn() }))
 vi.mock('../src/ui/modal', () => modal)
 
@@ -22,6 +25,7 @@ beforeEach(async () => {
   db = await openLiveDb(new IDBFactory())
   dialogs.askOlderFile.mockReset().mockResolvedValue('browser')
   dialogs.askBothChanged.mockReset().mockResolvedValue('browser')
+  dialogs.askOtherFile.mockReset().mockResolvedValue('separate')
   modal.toast.mockReset()
   modal.promptPassword.mockReset()
 })
@@ -126,4 +130,22 @@ describe('where the Web Locks API exists, opening touches nothing until this tab
     const stored = joinDoc((await createLiveStore(db, doc.docId, null).load()).records)
     expect(stored.teams[0]!.dailyNotes['2026-07-01']).toBe('edited by the lock holder')
   })
+})
+
+test('another file of the document is told apart by its file id, and the question names the copy\'s own file', async () => {
+  const fileA: FileSession = { handle: { entry: 'disk/a' } as unknown as FileSystemFileHandle, name: 'team.tmv', lastModified: 1 }
+  const fileB: FileSession = { handle: { entry: 'disk/b' } as unknown as FileSystemFileHandle, name: 'team (1).tmv', lastModified: 1 }
+  const doc = docWith('base')
+  const stamp = newStamp()
+  const first = (await reconcileOpen({ locale: 'en-US', db, session: fileA, opened: fileOf(doc, stamp), password: null }))!
+  first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'unwritten' })
+  await first.handle!.persister.flush()
+  first.handle!.persister.dispose()
+
+  const r = (await reconcileOpen({ locale: 'pt-BR', db, session: fileB, opened: fileOf(doc, stamp), password: null }))!
+  expect(dialogs.askOtherFile).toHaveBeenCalledWith('pt-BR', 'team.tmv')
+  expect(r.doc.docId).not.toBe(doc.docId)
+  expect(r.needsFileWrite).toBe(true)
+  await r.handle!.persister.flush()
+  expect((await db.getMeta(r.doc.docId))!.fileId).toBe('disk/b')
 })

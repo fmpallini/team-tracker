@@ -80,7 +80,22 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
     }
   }
 
+  /**
+   * The modal outlives a lock handover: "Take control" in another tab turns this one read-only (tab-lock.ts) without
+   * closing it, and the read-only guard leaves modal buttons working. That tab now owns the edits (this one flushed them
+   * to the browser copy on its way out), so Reload and Overwrite are not this tab's to take any more: Overwrite would
+   * put a read-only tab's document over the file the other tab writes, and Reload would re-key the browser copy under
+   * it. Fork stays: it writes a new file under a new docId, which touches neither.
+   */
+  function handedOver(): boolean {
+    if (!store.readOnly) return false
+    open = false
+    toast(t(locale(), 'conflict_handed_over_toast'), { kind: 'warn' })
+    return true
+  }
+
   async function reload(): Promise<void> {
+    if (handedOver()) return
     try {
       const reloaded = await deps.readFromDisk()
       // Another document under the same name (a different file dropped over it, or restored from elsewhere) is not
@@ -141,6 +156,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
   }
 
   async function overwrite(): Promise<void> {
+    if (handedOver()) return
     try {
       // An edit landing while the write is in flight is not in the bytes just
       // written; clearing `dirty` for it would drop it from every later save.

@@ -268,6 +268,13 @@ export function mountSearch(
       }
       return
     }
+    // A key that acts on the list must act on the list for what is typed now:
+    // within the debounce, Enter otherwise did nothing (dropdown not open yet)
+    // or opened a match for an earlier prefix ("roadmap" for "roll").
+    if (debounceTimer !== null && (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      clearTimeout(debounceTimer)
+      runSearch()
+    }
     if (!open || results.length === 0) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
