@@ -7,7 +7,7 @@
 import { test, expect } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { createEncryptedDoc, createPlainDoc, blockUpdateCheck, openModule } from './helpers'
 
 test.describe('undo on delete', () => {
   const PASSWORD = 'e2e-undo-password'
@@ -81,5 +81,30 @@ test.describe('undo on delete', () => {
     // Content intact — and the active pane switched back on its own (no
     // click here), proving the restore re-synced pane navigation too.
     await expect(page.locator('.editor').first()).toContainText('Doomed content')
+  })
+
+  test('the Undo survives navigation: opening another module right after a delete still lets it be taken back', async ({ page }) => {
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await createPlainDoc(page)
+    for (const name of ['Doomed Team', 'Safe Team']) {
+      const create = page.getByRole('button', { name: /Create first team/ })
+      await ((await create.count()) > 0 ? create : page.locator('.tt-team-add-btn')).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.locator('input[name="tt-team-name"]').fill(name)
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      await expect(dialog).toBeHidden()
+    }
+    await page.locator('.tt-team-item').nth(0).locator('.tt-team-edit-btn').click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+    const undo = page.locator('.tt-toast-action')
+    await expect(undo).toHaveText('Undo')
+
+    await openModule(page.locator('.tt-pane[data-pane-idx="0"]'), /Risks/i)
+    await expect(undo).toHaveText('Undo')
+    await undo.click()
+    await expect(page.locator('.tt-team-item .tt-team-name')).toHaveText(['Doomed Team', 'Safe Team'])
   })
 })

@@ -79,21 +79,24 @@ async function opened(doc: Doc, stamp: FileStamp | null, password: string | null
   return { doc: JSON.parse(JSON.stringify(doc)) as Doc, preSchemaVersion: SCHEMA_VERSION, images, stamp }
 }
 
-interface Asks { older: ReturnType<typeof vi.fn>; both: ReturnType<typeof vi.fn>; pw: ReturnType<typeof vi.fn>; discard: ReturnType<typeof vi.fn> }
-function asks(over: { older?: 'browser' | 'file'; both?: 'browser' | 'file' | 'cancel'; pw?: (string | null)[]; discard?: 'cancel' } = {}): Asks {
+interface Asks { older: ReturnType<typeof vi.fn>; both: ReturnType<typeof vi.fn>; pw: ReturnType<typeof vi.fn>; discard: ReturnType<typeof vi.fn>; other: ReturnType<typeof vi.fn> }
+function asks(over: { older?: 'browser' | 'file'; both?: 'browser' | 'file' | 'cancel'; pw?: (string | null)[]; discard?: 'cancel'; other?: 'separate' | 'same' | 'cancel' } = {}): Asks {
   const passwords = [...(over.pw ?? [])]
   return {
     older: vi.fn(async () => over.older ?? 'browser'),
     both: vi.fn(async () => { if (over.both === 'cancel') throw new OpenCancelled(); return over.both ?? 'browser' }),
     pw: vi.fn(async () => passwords.shift() ?? null),
     discard: vi.fn(async () => { if (over.discard === 'cancel') throw new OpenCancelled() }),
+    other: vi.fn(async () => { if (over.other === 'cancel') throw new OpenCancelled(); return over.other ?? 'separate' }),
   }
 }
 
-function open(o: OpenedDoc, password: string | null, a: Asks): Promise<Reconciled> {
+/** `fileId`: which file on disk this is (core/file-identity.ts); null where there is no handle. `openElsewhere`: another tab has the document open. */
+function open(o: OpenedDoc, password: string | null, a: Asks, at: { fileId?: string | null; fileName?: string; openElsewhere?: boolean } = {}): Promise<Reconciled> {
   return resolveOpen({
-    db, opened: o, password, fileName: 'f.tmv',
+    db, opened: o, password, fileName: at.fileName ?? 'f.tmv', fileId: at.fileId === undefined ? 'F1' : at.fileId,
     askOlderFile: a.older as never, askBothChanged: a.both as never, askBrowserPassword: a.pw as never, confirmDiscardCopy: a.discard as never,
+    askOtherFile: a.other as never, isOpenElsewhere: async () => at.openElsewhere ?? false,
     createStore: (doc, images) => createStore(doc, images),
   })
 }
@@ -443,8 +446,9 @@ test('a read-only tab opening a drifted copy leaves it under its old key until i
   const roStore = (d: Doc, images: ImageStore) => { const s = createStore(d, images); s.setReadOnly(true, { silent: true }); return s }
   const file = await opened(doc, stamp, 'pw2')
   const r = await resolveOpen({
-    db, opened: file, password: 'pw2', fileName: 'f.tmv',
+    db, opened: file, password: 'pw2', fileName: 'f.tmv', fileId: 'F1',
     askOlderFile: async () => 'browser', askBothChanged: async () => 'browser', askBrowserPassword: async () => 'pw1', confirmDiscardCopy: async () => {},
+    askOtherFile: async () => 'separate', isOpenElsewhere: async () => false,
     createStore: roStore,
   })
   const before = (await rawDb.getMeta(doc.docId))!
@@ -534,4 +538,122 @@ test('a copy with no document record (what a half-removed copy looks like) is un
   expect(a.discard).toHaveBeenCalledTimes(1)
   expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('from file')
   spy.mockRestore()
+})
+
+describe('another file holding the same document (an OS copy: a backup, a sync client\'s conflicted copy)', () => {
+  test('a backup older than the browser copy opens as a document of its own: no question, and neither the backup nor the copy is overwritten', async () => {
+    const { docA, stampA } = await twoWrites() // the browser copy follows F1, now at "version B"
+    const a = asks()
+    const r = await open(await opened(docA, stampA), null, a, { fileId: 'F2', fileName: 'backup.tmv' })
+    expect(a.older).not.toHaveBeenCalled()
+    expect(a.other).not.toHaveBeenCalled()
+    expect(r.doc.docId).not.toBe(docA.docId)
+    expect(r.source).toBe('file')
+    expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('version A')
+    // written back at once, with the content it had, so the backup keeps its new identity
+    expect(r.needsFileWrite).toBe(true)
+    expect(r.store.dirty).toBe(true)
+    await r.handle.persister.flush()
+    expect((await stored(r.doc.docId)).teams[0]!.dailyNotes['2026-07-01']).toBe('version A')
+    expect(await rawDb.getMeta(r.doc.docId)).toMatchObject({ fileId: 'F2', fileName: 'backup.tmv' })
+    expect((await stored(docA.docId)).teams[0]!.dailyNotes['2026-07-01']).toBe('version B')
+    expect((await rawDb.getMeta(docA.docId))!.fileId).toBe('F1')
+  })
+
+  test('two files of one document open at once never share the browser copy: one tab\'s open cannot wipe the other\'s rows', async () => {
+    const doc = docWith('original')
+    const tabA = await open(await opened(doc, newStamp()), null, asks(), { fileId: 'F1' })
+    await tabA.handle.persister.flush()
+    // a copy of the file, changed elsewhere (unknown stamp), opened in another tab while tab A is open
+    const tabB = await open(await opened(docWith('the copy', doc.docId), newStamp()), null, asks(), { fileId: 'F2' })
+    await tabB.handle.persister.flush()
+    expect(tabB.doc.docId).not.toBe(doc.docId)
+
+    tabA.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-02'] = 'later edit in tab A' })
+    await tabA.handle.persister.flush()
+    expect(await stored(doc.docId)).toEqual(tabA.doc)
+    expect((await stored(tabB.doc.docId)).teams[0]!.dailyNotes['2026-07-01']).toBe('the copy')
+  })
+
+  test('a copy with unwritten edits asks whether this is the copy\'s own file moved or renamed; "separate" leaves those edits alone', async () => {
+    const doc = docWith('base')
+    const stamp = newStamp()
+    const first = await open(await opened(doc, stamp), null, asks(), { fileId: 'F1' })
+    first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'unwritten in the browser' })
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+
+    const a = asks({ other: 'separate' })
+    const r = await open(await opened(doc, stamp), null, a, { fileId: 'F2' })
+    expect(a.other).toHaveBeenCalledWith('f.tmv')
+    expect(r.doc.docId).not.toBe(doc.docId)
+    expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('base')
+    expect(await rawDb.getMeta(doc.docId)).toMatchObject({ fileId: 'F1', unwrittenChanges: true })
+    expect((await stored(doc.docId)).teams[0]!.dailyNotes['2026-07-01']).toBe('unwritten in the browser')
+  })
+
+  test('answering "it is that file" continues the copy\'s edits in this file, which the copy then follows', async () => {
+    const doc = docWith('base')
+    const stamp = newStamp()
+    const first = await open(await opened(doc, stamp), null, asks(), { fileId: 'F1' })
+    first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'unwritten in the browser' })
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+
+    const r = await open(await opened(doc, stamp), null, asks({ other: 'same' }), { fileId: 'F2', fileName: 'renamed.tmv' })
+    expect(r.doc.docId).toBe(doc.docId)
+    expect(r.source).toBe('browser')
+    expect(r.needsFileWrite).toBe(true)
+    expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('unwritten in the browser')
+    await r.handle.persister.flush()
+    expect(await rawDb.getMeta(doc.docId)).toMatchObject({ fileId: 'F2', fileName: 'renamed.tmv' })
+  })
+
+  test('cancelling that question opens nothing and changes nothing', async () => {
+    const doc = docWith('base')
+    const first = await open(await opened(doc, newStamp()), null, asks(), { fileId: 'F1' })
+    first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'unwritten' })
+    await first.handle.persister.flush()
+    first.handle.persister.dispose()
+    const before = await rawDb.readAll(doc.docId)
+    await expect(open(await opened(doc, newStamp()), null, asks({ other: 'cancel' }), { fileId: 'F2' })).rejects.toBeInstanceOf(OpenCancelled)
+    expect(await rawDb.readAll(doc.docId)).toEqual(before)
+    expect((await rawDb.listMeta()).map((m) => m.docId)).toEqual([doc.docId])
+  })
+
+  test('while another tab has the document open the question is not asked: that tab owns the copy, so this file opens separately', async () => {
+    const doc = docWith('base')
+    const first = await open(await opened(doc, newStamp()), null, asks(), { fileId: 'F1' })
+    first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'being edited in the other tab' })
+    await first.handle.persister.flush()
+    const a = asks()
+    const r = await open(await opened(doc, newStamp()), null, a, { fileId: 'F2', openElsewhere: true })
+    expect(a.other).not.toHaveBeenCalled()
+    expect(r.doc.docId).not.toBe(doc.docId)
+  })
+
+  test('a copy from before files were told apart is claimed by the first file that opens it', async () => {
+    const doc = docWith('base')
+    const stamp = newStamp()
+    const legacy = await open(await opened(doc, stamp), null, asks(), { fileId: null })
+    await legacy.handle.persister.flush()
+    legacy.handle.persister.dispose()
+    expect((await rawDb.getMeta(doc.docId))!.fileId).toBeUndefined()
+
+    const r = await open(await opened(doc, stamp), null, asks(), { fileId: 'F7' })
+    expect(r.doc.docId).toBe(doc.docId)
+    await r.handle.persister.flush()
+    expect((await rawDb.getMeta(doc.docId))!.fileId).toBe('F7')
+  })
+
+  test('where a file has no identity (no file handle) nothing is told apart and the copy keeps the file it follows', async () => {
+    const doc = docWith('base')
+    const stamp = newStamp()
+    const first = await open(await opened(doc, stamp), null, asks(), { fileId: 'F1' })
+    first.handle.persister.dispose()
+    const r = await open(await opened(doc, stamp), null, asks(), { fileId: null })
+    expect(r.doc.docId).toBe(doc.docId)
+    await r.handle.persister.flush()
+    expect((await rawDb.getMeta(doc.docId))!.fileId).toBe('F1')
+  })
 })

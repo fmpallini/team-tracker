@@ -1,4 +1,4 @@
-import { resolveFileLockKey, LOCK_REGISTRY_CAP } from '../src/core/file-identity'
+import { resolveFileId, resolveFileLockKey, LOCK_REGISTRY_CAP } from '../src/core/file-identity'
 import type { FileSession } from '../src/core/fs'
 
 // In-memory stand-in for the IndexedDB wrapper, with a real await per call so
@@ -83,4 +83,14 @@ test('the registry keeps only the most recently used files', async () => {
 test('an IndexedDB failure falls back to the name key instead of throwing', async () => {
   idbMocks.idbGet.mockRejectedValueOnce(new Error('idb unavailable'))
   expect(await resolveFileLockKey(session(handle('x'), 'y.tmv'))).toBe('tmv:y.tmv')
+})
+
+test('resolveFileId names the file the lock key is built from, and is null where there is no stable identity', async () => {
+  const h = handle('disk-1')
+  const id = await resolveFileId(session(h))
+  expect(id).not.toBeNull()
+  expect(await resolveFileLockKey(session(handle('disk-1')))).toBe('tmv:' + id)
+  expect(await resolveFileId(session(null, 'x.tmv'))).toBeNull()
+  idbMocks.idbGet.mockRejectedValueOnce(new Error('idb unavailable'))
+  expect(await resolveFileId(session(handle('disk-2')))).toBeNull()
 })

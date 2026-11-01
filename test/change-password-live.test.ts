@@ -77,8 +77,9 @@ async function reopen(password: string | null, asks: { pw?: (string | null)[] } 
   const queue = [...(asks.pw ?? [])]
   const askBrowserPassword = vi.fn(async () => queue.shift() ?? null)
   const result = await resolveOpen({
-    db, opened, password, fileName: 'f.tmv',
+    db, opened, password, fileName: 'f.tmv', fileId: null,
     askOlderFile: async () => 'browser', askBothChanged: async () => 'browser', askBrowserPassword, confirmDiscardCopy: async () => {},
+    askOtherFile: async () => 'separate', isOpenElsewhere: async () => false,
     createStore: (doc, images) => createStore(doc, images),
   })
   return { result, askBrowserPassword }

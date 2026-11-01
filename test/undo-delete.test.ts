@@ -70,10 +70,22 @@ describe('deleteWithUndo', () => {
     expect(store.doc.teams[0]!.name).toBe('Renamed')
   })
 
-  it('refuses to undo once updateNav has run', () => {
+  it('survives navigation: moving around is not an edit the restore could revert', () => {
     const store = createStore(docWithTeam())
     const offer = deleteWithUndo(store, removeR1, { teamId: 't1' })
+    store.updateNav((d) => { d.nav.focusedPane = 1 })
     store.updateNav((d) => { d.nav.sidebarCollapsed = true })
+    expect(offer!.isAvailable()).toBe(true)
+    expect(offer!.undo()).toBe(true)
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['r1', 'r2'])
+    expect(store.doc.nav.sidebarCollapsed).toBe(true)
+  })
+
+  it('still refuses once an edit follows the navigation', () => {
+    const store = createStore(docWithTeam())
+    const offer = deleteWithUndo(store, removeR1, { teamId: 't1' })
+    store.updateNav((d) => { d.nav.focusedPane = 1 })
+    store.update((d) => { d.teams[0]!.name = 'Renamed' })
     expect(offer!.undo()).toBe(false)
   })
 

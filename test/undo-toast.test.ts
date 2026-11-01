@@ -77,6 +77,13 @@ describe('offerUndoToast', () => {
     expect(document.querySelector(`.tt-toast[data-toast-key="${UNDO_TOAST_KEY}"]`)).toBeNull()
   })
 
+  it('keeps the toast through navigation, which does not expire the offer', () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer())
+    store.updateNav((d) => { d.nav.focusedPane = 1 })
+    expect(actionButton()?.textContent).toBe('Undo')
+  })
+
   it('stops listening after the button is clicked, so the undo itself does not re-fire teardown', () => {
     const store = createStore(createEmptyDocument('en-US'))
     const undo = vi.fn(() => { store.update((d) => { d.prefs.dueSoonDays = 9 }); return true })

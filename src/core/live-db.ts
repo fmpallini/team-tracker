@@ -30,6 +30,11 @@ export interface LiveMeta {
   unwrittenChanges: boolean
   schemaVersion: number
   fileName: string
+  /**
+   * Which file on disk the copy follows (core/file-identity.ts's id): an OS copy of that file carries the same docId, and
+   * must not take the copy over (live-open.ts). Absent on a copy from before this field, or kept only where files had no id.
+   */
+  fileId?: string
   modifiedAt: number
   lastFileWriteAt: number | null
 }

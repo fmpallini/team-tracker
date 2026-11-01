@@ -14,10 +14,20 @@
 // A browser copy that cannot be used is never trusted blindly: one sealed under a
 // different password asks for that password (or gives up and uses the file), one
 // written by a newer schema is not read at all, one that fails to open counts as absent.
+//
+// The docId alone does not say which *file* the copy follows: an OS copy of a file
+// (a backup, a sync client's "conflicted copy") carries the same docId. Taking the
+// copy over for it would overwrite that file with the copy's content (a restored
+// backup gone), and two such files open at once would write the same rows from
+// two tabs, one open even wiping the rows the other relies on. So the copy records
+// its file's id (core/file-identity.ts), and another file of the document opens as
+// a document of its own: a fresh docId, written back to it at once. Only when the
+// copy holds edits no file has, and no tab has it open, is the user asked whether
+// this is in fact the copy's own file, moved or renamed (a new path is a new id).
 import type { Doc } from './types'
 import type { OpenedDoc, RecordCodec } from './crypto'
 import { blobCodec, recordCodec, CorruptFileError } from './crypto'
-import type { FileStamp } from './file-stamp'
+import { randomHex, type FileStamp } from './file-stamp'
 import type { LiveDb, LiveMeta } from './live-db'
 import { createLiveStore, type LiveStore } from './live-store'
 import { createLivePersister, type LivePersister } from './live-persist'
@@ -82,6 +92,9 @@ export interface ResolveOpenDeps {
   /** The password the file was opened with (null: a plain file). */
   password: string | null
   fileName: string
+  /** The opened file's id (core/file-identity.ts); null where files have none (fallback mode): nothing is told apart then. */
+  fileId: string | null
+  /** May reject with OpenCancelled. */
   askOlderFile(): Promise<'browser' | 'file'>
   /** May reject with OpenCancelled. */
   askBothChanged(): Promise<'browser' | 'file'>
@@ -89,14 +102,27 @@ export interface ResolveOpenDeps {
   askBrowserPassword(): Promise<string | null>
   /** The browser copy holds edits the file never got and cannot be used: the file is about to replace it. Resolves to go on; rejects with OpenCancelled to back out and leave the copy as it is. */
   confirmDiscardCopy(): Promise<void>
+  /**
+   * The copy follows another file (`copyFileName`) and holds edits no file has: is the opened file that one, moved or
+   * renamed ('same': continue the copy here), or a copy of it ('separate')? May reject with OpenCancelled.
+   */
+  askOtherFile(copyFileName: string): Promise<'separate' | 'same'>
+  /** Whether a tab has the document open now (core/browser-copies.ts): that tab owns the copy. */
+  isOpenElsewhere(docId: string): Promise<boolean>
   createStore(doc: Doc, images: ImageStore): Store
 }
 
 export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
-  const { db, opened, fileName } = deps
+  const { db, opened, fileName, fileId } = deps
   const docId = opened.doc.docId
   let meta = await db.getMeta(docId)
   const hadCopy = meta !== undefined
+
+  // Another file of this document (see the header). A copy that predates file ids is claimed by whichever file opens it.
+  if (meta && fileId !== null && meta.fileId !== undefined && meta.fileId !== fileId) {
+    const separate = !meta.unwrittenChanges || (await deps.isOpenElsewhere(docId)) || (await deps.askOtherFile(meta.fileName)) === 'separate'
+    if (separate) return importFile(randomHex(16))
+  }
 
   if (meta && meta.schemaVersion > SCHEMA_VERSION) {
     // Written by a newer build: this one must not read it. Only unwritten edits make that a loss, so only then ask;
@@ -175,7 +201,7 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
         password = deps.password
       }
       const store = deps.createStore(doc, images)
-      const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: blobs.keys() }, rekeyTo })
+      const persister = await createLivePersister({ store, live, fileName, fileId, stored: { records, blobIds: blobs.keys() }, rekeyTo })
       // The file is behind this copy, so the first file write must not be skipped as "nothing changed".
       store.markDirty()
       return { doc, images, password, stamp: opened.stamp, source: 'browser', store, handle: { live, persister }, needsFileWrite: true }
@@ -205,7 +231,7 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
       // A missing row would never be rewritten (the persister believes the copy holds it), so a copy that is not whole is not reused.
       if (stat.records !== records.size) throw new CorruptFileError()
       const store = deps.createStore(opened.doc, opened.images)
-      const persister = await createLivePersister({ store, live, fileName, stored: { records, blobIds: stat.blobIds } })
+      const persister = await createLivePersister({ store, live, fileName, fileId, stored: { records, blobIds: stat.blobIds } })
       return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: false }
     } catch (e) {
       if (!(e instanceof CorruptFileError)) throw e
@@ -216,19 +242,22 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
 
   // --- the file wins -------------------------------------------------------------------------------
 
-  async function importFile(): Promise<Reconciled> {
+  /** `newDocId`: the file is another file of the document, which from now on is a document of its own under this id. */
+  async function importFile(newDocId?: string): Promise<Reconciled> {
+    if (newDocId) opened.doc.docId = newDocId
     // The old rows are not deleted here: only the tab holding the write lock may touch the browser copy, and this
     // tab may turn out to be read-only. The persister replaces them in its initial commit, once it is allowed to.
     // The same key the file was just opened with (its image store holds it), not a fresh lookup of the global cache.
     const codec = deps.password === null ? null : await recordCodec(deps.password, opened.images.codec()?.header?.salt)
-    const live = createLiveStore(db, docId, codec)
+    const live = createLiveStore(db, opened.doc.docId, codec)
     const store = deps.createStore(opened.doc, opened.images)
-    const persister = await createLivePersister({ store, live, fileName, fromFile: opened.stamp, replaceStored: hadCopy })
-    // A file from before this schema was just migrated, and migration minted its docId (the browser copy's key). Until the
-    // file is written back, the next open mints another one and the copy of everything edited meanwhile is orphaned.
-    const migrated = opened.preSchemaVersion !== null && opened.preSchemaVersion < SCHEMA_VERSION
-    if (migrated) store.markDirty()
-    return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: migrated }
+    const persister = await createLivePersister({ store, live, fileName, fileId, fromFile: opened.stamp, replaceStored: hadCopy && !newDocId })
+    // A file from before this schema was just migrated, and migration minted its docId (the browser copy's key); a file
+    // split off as a document of its own was just given one. Until the file is written back, the next open mints another
+    // one and the copy of everything edited meanwhile is orphaned.
+    const minted = newDocId !== undefined || (opened.preSchemaVersion !== null && opened.preSchemaVersion < SCHEMA_VERSION)
+    if (minted) store.markDirty()
+    return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: minted }
   }
 
   function unreadable(e: unknown): void {

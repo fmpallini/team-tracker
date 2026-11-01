@@ -1,6 +1,6 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { openLiveDb, type LiveDb, type LiveMeta } from '../src/core/live-db'
-import { holdDocument, pruneStaleCopies, STALE_COPY_MS } from '../src/core/browser-copies'
+import { holdDocument, isDocumentOpen, pruneStaleCopies, STALE_COPY_MS } from '../src/core/browser-copies'
 
 const NOW = 1_800_000_000_000
 const DAY = 24 * 60 * 60 * 1000
@@ -60,4 +60,16 @@ test('holdDocument keeps the lock until released, and does nothing without Web L
   await Promise.resolve(); await Promise.resolve()
   expect([...names]).toEqual([])
   expect(() => holdDocument('d1', undefined)()).not.toThrow()
+})
+
+test('isDocumentOpen tells whether some tab holds the document, and says no without Web Locks', async () => {
+  const { locks } = fakeLocks()
+  expect(await isDocumentOpen('d1', locks)).toBe(false)
+  const release = holdDocument('d1', locks)
+  expect(await isDocumentOpen('d1', locks)).toBe(true)
+  expect(await isDocumentOpen('d2', locks)).toBe(false)
+  release()
+  expect(await isDocumentOpen('d1', undefined)).toBe(false)
+  const broken = { query: async () => { throw new Error('nope') } } as unknown as LockManager
+  expect(await isDocumentOpen('d1', broken)).toBe(false)
 })

@@ -53,20 +53,30 @@ async function lookupOrAssign(handle: FileSystemFileHandle): Promise<string> {
 }
 
 /**
+ * The id of `session`'s file: the same for every handle to that file, in
+ * every tab. Null when there is none to give — no handle (fallback mode) or
+ * an unreadable registry. Besides the write lock below, the browser copy
+ * records it (core/live-open.ts), to tell an OS copy of a file from the file.
+ */
+export async function resolveFileId(session: FileSession, locks?: LockManager): Promise<string | null> {
+  const handle = session.handle
+  if (!handle) return null
+  try {
+    return locks
+      ? ((await locks.request(REGISTRY_LOCK, () => lookupOrAssign(handle))) as string)
+      : await lookupOrAssign(handle)
+  } catch (e) {
+    console.error(e)
+    return null
+  }
+}
+
+/**
  * The lock / BroadcastChannel name for `session`'s file. Falls back to the
  * file name when there is no handle (fallback mode) or the registry can't be
  * read — no worse than before, and never a reason to fail opening a file.
  */
 export async function resolveFileLockKey(session: FileSession, locks?: LockManager): Promise<string> {
-  const handle = session.handle
-  if (!handle) return nameKey(session)
-  try {
-    const id = locks
-      ? ((await locks.request(REGISTRY_LOCK, () => lookupOrAssign(handle))) as string)
-      : await lookupOrAssign(handle)
-    return 'tmv:' + id
-  } catch (e) {
-    console.error(e)
-    return nameKey(session)
-  }
+  const id = await resolveFileId(session, locks)
+  return id === null ? nameKey(session) : 'tmv:' + id
 }

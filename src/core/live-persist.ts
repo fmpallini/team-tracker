@@ -68,6 +68,8 @@ export interface LivePersisterDeps {
   store: Store
   live: LiveStore
   fileName: string
+  /** The file's id (core/file-identity.ts), recorded in the meta; null where it has none, which keeps the one stored. */
+  fileId?: string | null
   onError?: (e: unknown) => void
   onRecovered?: () => void
   /**
@@ -107,6 +109,10 @@ const MAX_WAIT_MS = 15_000
 
 type LineageFields = Pick<LiveMeta, 'lastWriteId' | 'knownWriteIds' | 'lastFileWriteAt'>
 
+/** The meta fields a commit writes, in one fixed shape so that the JSON of two equal metas is equal. */
+const metaFields = (unwrittenChanges: boolean, fileName: string, fileId: string | undefined, lineage: LineageFields) =>
+  ({ unwrittenChanges, fileName, fileId, ...lineage })
+
 interface FileWrite { stamp: FileStamp; revAtSnapshot?: number }
 
 interface RunOptions {
@@ -135,6 +141,8 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   let lineage: LineageFields = { lastWriteId: null, knownWriteIds: [], lastFileWriteAt: null }
   let unwritten = false
   let lastMeta = ''
+  // Completed once the stored meta is read below: a file with no id keeps the one the copy already follows.
+  let fileId: string | undefined = deps.fileId ?? undefined
   // A file write whose commit failed: kept (with the revision the file holds) for the next successful commit.
   let pendingStamp: FileWrite | null = null
   // Blobs the sweep deleted. They return only once a note references them again (an undo), never by themselves.
@@ -283,7 +291,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       nextUnwritten = !opts.adopt && file!.revAtSnapshot !== undefined && store.rev !== file!.revAtSnapshot
     }
 
-    const meta = { unwrittenChanges: nextUnwritten, fileName, ...nextLineage }
+    const meta = metaFields(nextUnwritten, fileName, fileId, nextLineage)
     const metaJson = JSON.stringify(meta)
     if (puts.size === 0 && deletes.length === 0 && putBlobs.size === 0 && deleteBlobs.length === 0 && metaJson === lastMeta) return
 
@@ -311,6 +319,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
 
   // --- initial sync ---------------------------------------------------------
   const existing = await live.meta()
+  fileId ??= existing?.fileId
   const replacing = !!existing && deps.replaceStored === true
   if (existing && !replacing) {
     // The caller loaded this document from the browser store (or verified the file equals it), so what the
@@ -319,7 +328,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     for (const id of deps.stored ? deps.stored.blobIds : Object.keys(store.doc.images)) persistedBlobs.add(id)
     lineage = { lastWriteId: existing.lastWriteId, knownWriteIds: existing.knownWriteIds, lastFileWriteAt: existing.lastFileWriteAt }
     unwritten = existing.unwrittenChanges
-    lastMeta = JSON.stringify({ unwrittenChanges: unwritten, fileName: existing.fileName, ...lineage })
+    lastMeta = JSON.stringify(metaFields(unwritten, existing.fileName, existing.fileId, lineage))
   }
   const unsubscribers = [
     store.onMutate(armForEdit),
@@ -329,7 +338,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   ]
   if (!existing || replacing) {
     initialOwed = { initial: true, ...(deps.fromFile !== undefined ? { adopt: { stamp: deps.fromFile } } : {}), ...(replacing ? { clear: true } : {}) }
-  } else if (deps.stored || deps.rekeyTo || existing.fileName !== deps.fileName) {
+  } else if (deps.stored || deps.rekeyTo || existing.fileName !== deps.fileName || existing.fileId !== fileId) {
     initialOwed = { initial: true, quiet: true, ...(deps.rekeyTo ? { rekey: deps.rekeyTo } : {}) }
   } else {
     initialDone = true
@@ -363,7 +372,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
         if (meta) {
           lineage = { lastWriteId: meta.lastWriteId, knownWriteIds: meta.knownWriteIds, lastFileWriteAt: meta.lastFileWriteAt }
           unwritten = meta.unwrittenChanges
-          lastMeta = JSON.stringify({ unwrittenChanges: unwritten, fileName: meta.fileName, ...lineage })
+          lastMeta = JSON.stringify(metaFields(unwritten, meta.fileName, meta.fileId, lineage))
         }
       })
       chain = reseeding.catch(() => {})
