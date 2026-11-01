@@ -10,7 +10,7 @@ import { buildExport } from '../src/core/team-export'
 import { setReadOnlyLock } from '../src/ui/readonly-lock'
 import { downloadFallback } from '../src/core/fs'
 import type { Template, Team } from '../src/core/types'
-import { updateCheckEnabled, UPDATE_CHECK_OFF_STORAGE_KEY } from '../src/core/update-check'
+import { updateCheckEnabled, createManualUpdateCheck, MANUAL_CHECK_COOLDOWN_MS, UPDATE_CHECK_OFF_STORAGE_KEY, type UpdateCheckResult } from '../src/core/update-check'
 
 // `fsApi` overrides `supportsFsApi` (always false under jsdom) for the few
 // tests that need the FS-API branch; setup() resets it to jsdom's real value.
@@ -62,6 +62,7 @@ function setup(): Setup {
     isReadOnly: () => false,
     fileName: 'team-tracker.tmv',
     fileSchemaVersion: 1,
+    updateCheck: createManualUpdateCheck(async () => ({ status: 'up-to-date' })),
   }
   return { store, shell, appCtl, changePassword, currentPassword }
 }
@@ -931,6 +932,56 @@ test('about tab: the update check is on by default and its checkbox turns it off
   expect(updateCheckEnabled()).toBe(false)
   box.click()
   expect(updateCheckEnabled()).toBe(true)
+})
+
+describe('about tab: "Check now"', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  const button = () => document.querySelector('.tt-prefs-update-check-now') as HTMLButtonElement
+  const status = () => document.querySelector('.tt-prefs-update-check-status')?.textContent ?? ''
+
+  test.each([
+    [{ status: 'up-to-date' }, 'prefs_update_check_latest'],
+    [{ status: 'newer', version: '9.1.0' }, 'prefs_update_check_newer'],
+    [{ status: 'error' }, 'prefs_update_check_error'],
+  ] as const)('a click checks and says what it found (%o)', async (result, key) => {
+    const { store, shell, appCtl } = setup()
+    const run = vi.fn(async (): Promise<UpdateCheckResult> => result)
+    appCtl.updateCheck = createManualUpdateCheck(run)
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('About')
+    expect(button().textContent).toContain(t('en-US', 'prefs_update_check_now'))
+    expect(status()).toBe('')
+    button().click()
+    expect(button().disabled).toBe(true)
+    await vi.waitFor(() => expect(status()).toBe(t('en-US', key, { version: '9.1.0' })))
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  test('the button stays disabled through the cooldown, also after reopening the window, and comes back after it', async () => {
+    vi.useFakeTimers({ now: 5_000_000 })
+    const { store, shell, appCtl } = setup()
+    const run = vi.fn(async (): Promise<UpdateCheckResult> => ({ status: 'up-to-date' }))
+    appCtl.updateCheck = createManualUpdateCheck(run)
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('About')
+    button().click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(status()).toBe(t('en-US', 'prefs_update_check_latest'))
+    expect(button().disabled).toBe(true)
+
+    // a fresh window (the same app session) remembers both the result and the cooldown
+    const again = setup()
+    openPrefs(again.store, again.shell, 'en-US', appCtl)
+    clickTab('About')
+    expect(status()).toBe(t('en-US', 'prefs_update_check_latest'))
+    expect(button().disabled).toBe(true)
+    button().click()
+    expect(run).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(MANUAL_CHECK_COOLDOWN_MS)
+    expect(button().disabled).toBe(false)
+  })
 })
 
 test('about tab reflects a mismatched file schema version from appCtl', () => {

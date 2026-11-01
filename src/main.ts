@@ -53,7 +53,7 @@ import { showGlobalHelp } from './ui/help'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { flushAllEditors, setEditorsReadOnly } from './ui/editor'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
-import { shouldCheck, checkForUpdate, updateCheckEnabled, LAST_CHECK_STORAGE_KEY } from './core/update-check'
+import { shouldCheck, checkForUpdate, updateCheckEnabled, createManualUpdateCheck, LAST_CHECK_STORAGE_KEY } from './core/update-check'
 import { waitForActivation } from './core/sw-ready'
 import { showUpdateNotice } from './ui/update-notice'
 
@@ -453,6 +453,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     },
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
+    updateCheck: manualUpdateCheck,
   }
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)
@@ -705,13 +706,29 @@ async function runUpdateCheck(): Promise<void> {
   if (result.status === 'error') return
   localStorage.setItem(LAST_CHECK_STORAGE_KEY, new Date().toISOString())
   if (result.status !== 'newer' || result.version === dismissedUpdateVersion) return
+  await showUpdateBanner(result.version)
+}
+
+async function showUpdateBanner(version: string): Promise<void> {
   await ensureServiceWorkerReady()
   const locale = app?.store.doc.prefs.locale ?? detectBrowserLocale()
-  const banner = showUpdateNotice(locale, result.version, reloadForUpdate, (v) => {
+  const banner = showUpdateNotice(locale, version, reloadForUpdate, (v) => {
     dismissedUpdateVersion = v
   })
   document.body.appendChild(banner)
 }
+
+// Preferences → About's "Check now": one per page, so its cooldown outlives the Preferences window. It runs whether or
+// not the daily check is on (the click is the request), counts as the day's check, and shows the banner for a newer
+// version even if it was dismissed before.
+const manualUpdateCheck = createManualUpdateCheck(async () => {
+  const result = await checkForUpdate(fetch, __APP_VERSION__, __REPO__)
+  if (result.status !== 'error') {
+    try { localStorage.setItem(LAST_CHECK_STORAGE_KEY, new Date().toISOString()) } catch { /* strict privacy modes */ }
+  }
+  if (result.status === 'newer') await showUpdateBanner(result.version)
+  return result
+})
 
 // The badge only means anything while a team file is open (it mirrors that
 // file's own overdue+due-soon total, set by sidebar.ts on each render) — an

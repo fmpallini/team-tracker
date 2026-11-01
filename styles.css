@@ -2212,6 +2212,9 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; table-layout: fixed; }
 .tt-help-table td:first-child { width: 18rem; }
 .tt-help-table td { padding: .2rem .4rem; border-bottom: 1px solid var(--border); }
+/* About tab: "Check now" and what the last check found. */
+.tt-prefs-update-check-now-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.tt-prefs-update-check-status { font-size: .9rem; color: var(--muted); }
 .tt-help-code .tt-icon { vertical-align: -2px; }
 .tt-help-code { font-family: var(--font-data); white-space: nowrap; color: var(--muted); }
 .tt-help-text { font-size: .9rem; }

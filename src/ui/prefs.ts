@@ -17,7 +17,7 @@ import { countCleanupTargets, applyCleanup } from '../core/cleanup'
 import { createPasswordMeter } from './password-meter'
 import type { Section } from '../core/scope'
 import { currentThemeAttr, prefsSection, prefsHint, prefsRadioField, prefsCheckboxField, prefsNumberField, clampInt } from './prefs-fields'
-import { updateCheckEnabled, setUpdateCheckEnabled } from '../core/update-check'
+import { updateCheckEnabled, setUpdateCheckEnabled, type ManualUpdateCheck, type UpdateCheckResult } from '../core/update-check'
 import { icon, iconButton } from './icons'
 import { collectImageRefs, referencedBytes } from '../core/image-ref'
 import { IMAGE_LIMITS } from '../core/image-import'
@@ -58,6 +58,8 @@ export interface PrefsAppCtl {
   isReadOnly(): boolean
   fileName: string
   fileSchemaVersion: number
+  /** The About tab's "Check now": one per page (main.ts), so its cooldown and last result outlive this window. */
+  updateCheck: ManualUpdateCheck
 }
 
 /**
@@ -958,7 +960,35 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       checked: updateCheckEnabled(),
       onChange: setUpdateCheckEnabled,
     })
-    container.append(el('h3', { class: 'tt-help-heading' }, t(locale, 'app_name')), table, githubLink, updateCheckField)
+    container.append(el('h3', { class: 'tt-help-heading' }, t(locale, 'app_name')), table, githubLink, updateCheckField, buildCheckNow())
+  }
+
+  /** Works whether or not the daily check is on: a click is the user asking. A newer version also raises the usual banner (main.ts). */
+  function buildCheckNow(): HTMLElement {
+    const check = appCtl.updateCheck
+    const status = el('span', { class: 'tt-prefs-update-check-status', role: 'status' })
+    const button = el('button', { class: 'tt-btn tt-prefs-update-check-now', type: 'button', onclick: () => void runCheck() }, t(locale, 'prefs_update_check_now'))
+    const describe = (r: UpdateCheckResult | null): string =>
+      r === null ? '' : r.status === 'newer' ? t(locale, 'prefs_update_check_newer', { version: r.version })
+        : r.status === 'up-to-date' ? t(locale, 'prefs_update_check_latest') : t(locale, 'prefs_update_check_error')
+    // Off while a check runs and through the cooldown; it turns itself back on when the cooldown ends.
+    const sync = (): void => {
+      const wait = check.remainingMs()
+      button.disabled = check.running || wait > 0
+      button.title = wait > 0 ? t(locale, 'prefs_update_check_cooldown') : ''
+      if (wait > 0 && !check.running) setTimeout(sync, wait)
+    }
+    async function runCheck(): Promise<void> {
+      const pending = check.run()
+      sync()
+      status.textContent = t(locale, 'prefs_update_check_running')
+      const result = await pending
+      status.textContent = describe(result ?? check.lastResult)
+      sync()
+    }
+    status.textContent = describe(check.lastResult)
+    sync()
+    return el('div', { class: 'tt-prefs-update-check-now-row' }, button, status)
   }
 
   // --- Tab strip / dispatch ----------------------------------------------

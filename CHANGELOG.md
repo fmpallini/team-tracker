@@ -7,7 +7,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 ## [3.5.0] - 2026-11-01
 
 ### Added
-- Preferences → About can turn off the daily check for new versions; with it off, the app makes no network request at all.
+- Preferences → About can turn off the daily check for new versions (the app then makes no network request at all), or check right away with "Check now".
 
 ### Changed
 - The app now refuses to run or load anything it did not ship with, a second line of defense for your decrypted notes.

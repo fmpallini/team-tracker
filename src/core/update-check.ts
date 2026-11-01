@@ -59,6 +59,51 @@ export function isNewer(latestTag: string, currentVersion: string): boolean {
 
 export type UpdateCheckResult = { status: 'newer'; version: string } | { status: 'up-to-date' } | { status: 'error' }
 
+/**
+ * How long "Check now" (Preferences → About) stays off after a check, whatever it found. GitHub allows 60
+ * unauthenticated calls an hour per address, and a check can only find something new once a release is out.
+ */
+export const MANUAL_CHECK_COOLDOWN_MS = 60_000
+
+export interface ManualUpdateCheck {
+  /** Checks now; resolves with the result, or null when the cooldown refused it. A click while one runs shares it. */
+  run(): Promise<UpdateCheckResult | null>
+  readonly running: boolean
+  /** The last check's result (null: none yet), so a reopened About tab can still say it. */
+  readonly lastResult: UpdateCheckResult | null
+  /** Milliseconds until another check is allowed (0: now). */
+  remainingMs(): number
+}
+
+/**
+ * The manual check: single-flight and rate-limited. One per page (main.ts), not per Preferences window, so reopening
+ * the window does not reset the cooldown.
+ */
+export function createManualUpdateCheck(check: () => Promise<UpdateCheckResult>, now: () => number = Date.now): ManualUpdateCheck {
+  let inFlight: Promise<UpdateCheckResult> | null = null
+  let lastAt = -Infinity
+  let lastResult: UpdateCheckResult | null = null
+  const remainingMs = (): number => Math.max(0, lastAt + MANUAL_CHECK_COOLDOWN_MS - now())
+  return {
+    run() {
+      if (inFlight) return inFlight
+      if (remainingMs() > 0) return Promise.resolve(null)
+      inFlight = check()
+        .catch((e: unknown): UpdateCheckResult => { console.error(e); return { status: 'error' } })
+        .then((result) => {
+          lastResult = result
+          lastAt = now()
+          inFlight = null
+          return result
+        })
+      return inFlight
+    },
+    get running() { return inFlight !== null },
+    get lastResult() { return lastResult },
+    remainingMs,
+  }
+}
+
 export async function checkForUpdate(
   fetchImpl: typeof fetch,
   currentVersion: string,
