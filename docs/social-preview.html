@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- Source of docs/social-preview.png (1280x640, GitHub social preview).
+     Render: open in Chromium at a 1280x640 viewport and screenshot. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Team Tracker social preview</title>
+<style>
+  html, body { margin: 0; background: #0b1120; }
+  .cv {
+    width: 1280px; height: 640px; position: relative; overflow: hidden;
+    background: radial-gradient(900px 500px at 85% 0%, #14224a 0%, #0b1120 60%);
+    color: #eef2fb; font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  .cv * { box-sizing: border-box; }
+  .copy { position: absolute; left: 64px; top: 46px; width: 380px; }
+  .h1 { font: 700 72px/0.98 Georgia, "Source Serif 4", serif; letter-spacing: -.01em; }
+  .tag { color: #9fb0cf; margin: 16px 0 22px; font-size: 23px; }
+  ul { list-style: none; margin: 0; padding: 0; font-size: 22px; line-height: 1.8; color: #dfe7f7; }
+  li::before { content: "✓"; color: #4d8fe8; margin-right: 6px; }
+  .win {
+    position: absolute; width: 560px; height: 400px; overflow: hidden;
+    border-radius: 12px; border: 1px solid #2b3a5c; box-shadow: 0 30px 80px rgba(0,0,0,.55);
+  }
+  .win img { display: block; width: 1500px; height: 940px; transform-origin: 0 0; }
+  .pwa {
+    position: absolute; left: 64px; bottom: 36px; width: 540px; padding: 14px 20px;
+    border: 1px solid #2f4a80; border-radius: 12px; background: #101c38ee;
+    display: flex; gap: 16px; align-items: center;
+  }
+  .pwa .ic {
+    width: 44px; height: 44px; border-radius: 10px; background: #16294d; border: 1px solid #2f4a80;
+    display: flex; align-items: center; justify-content: center; font-size: 24px; color: #4d8fe8; flex: none;
+  }
+  .pwa b { font-size: 20px; font-weight: 600; }
+  .pwa b span { color: #4d8fe8; }
+  .pwa p { margin: 3px 0 0; font-size: 16px; color: #9fb0cf; }
+  .pwa code { font: 600 16px Consolas, monospace; color: #dfe7f7; }
+</style>
+</head>
+<body>
+<div class="cv">
+  <div class="copy">
+    <div class="h1">Team<br>Tracker</div>
+    <div class="tag">Private notes for people who lead several teams.</div>
+    <ul>
+      <li>Works 100% offline</li>
+      <li>One encrypted file you own</li>
+      <li>Keyboard-first, split panes</li>
+      <li>Free · AGPL-3.0 · no deps</li>
+    </ul>
+  </div>
+
+  <div class="win" style="left:470px;top:60px;height:351px;transform:rotate(-2.5deg)">
+    <img src="screenshots/daily-notes-and-org.png" alt="" style="transform:scale(.373)">
+  </div>
+  <div class="win" style="left:650px;top:190px;width:580px;height:364px;transform:rotate(2deg)">
+    <img src="screenshots/risks.png" alt="" style="transform:scale(.387)">
+  </div>
+
+  <div class="pwa">
+    <div class="ic">⤓</div>
+    <div>
+      <b><span>Installable PWA</span> · native desktop window</b>
+      <p>Auto-updates · <code>fmpallini.github.io/team-tracker</code></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
