@@ -12,6 +12,8 @@ import { showModal } from './modal'
 type Rows = readonly (readonly [string, MsgKey])[]
 
 const shortcutRows = (lc: Locale): Rows => [
+  ['Ctrl+Z', 'help_shortcut_undo'],
+  ['Ctrl+Shift+Z / Ctrl+Y', 'help_shortcut_redo'],
   ['Ctrl+B', 'help_shortcut_bold'],
   ['Ctrl+I', 'help_shortcut_italic'],
   ['Ctrl+U', 'help_shortcut_underline'],

@@ -454,6 +454,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     fileName: session.name,
     fileSchemaVersion: doc.schemaVersion,
     updateCheck: manualUpdateCheck,
+    reloadForUpdate: __PWA__ ? reloadForUpdate : undefined,
   }
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)
