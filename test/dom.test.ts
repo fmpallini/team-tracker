@@ -1,4 +1,4 @@
-import { blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
+import { el, blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -307,5 +307,16 @@ describe('copyText', () => {
     copyText('hello')
     expect(exec.calls).toEqual(['copy'])
     expect(exec.copied).toEqual(['hello'])
+  })
+})
+
+describe('el form-field names', () => {
+  test('an unnamed field is named after its own class; an explicit name or id wins', () => {
+    expect(el('input', { type: 'text', class: 'tt-input tt-search-input' }).name).toBe('tt-search-input')
+    expect(el('select', { class: 'tt-input' }).name).toBe('tt-input')
+    expect(el('input', { type: 'checkbox' }).name).toBe('tt-input-checkbox')
+    expect(el('input', { type: 'text', name: 'mine' }).name).toBe('mine')
+    expect(el('input', { type: 'text', id: 'mine' }).hasAttribute('name')).toBe(false)
+    expect(el('div', { class: 'x' }).hasAttribute('name')).toBe(false)
   })
 })

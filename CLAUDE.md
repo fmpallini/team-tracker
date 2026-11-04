@@ -25,7 +25,7 @@ Two variants bundled from same `src/main.ts` entry, differing only in esbuild de
 
 Tests define `__PWA__: false` in `vitest.config.ts`, so service-worker branch never runs under jsdom.
 
-Both pages carry a `<meta>` Content-Security-Policy built in `scripts/build.mjs` (`__CSP__` in `index.html`): `script-src` is the SHA-256 of the inlined bundle, `connect-src` only the GitHub version check, `img-src` only `data:`/`blob:`. So no `eval`/`new Function`, no inline `on*` attributes (use `addEventListener`, as `el()` does), and no remote resource; a new network endpoint needs its own `connect-src` entry. `e2e/content-security-policy.spec.ts` proves injected markup cannot run or call out.
+Both pages carry a `<meta>` Content-Security-Policy built in `scripts/build.mjs` (`__CSP__` in `index.html`): `script-src` is the SHA-256 of the inlined bundle, `connect-src` only the GitHub version check, `img-src` only `data:`/`blob:` (the PWA adds `'self'` for its manifest icons). So no `eval`/`new Function`, no inline `on*` attributes (use `addEventListener`, as `el()` does), and no remote resource; a new network endpoint needs its own `connect-src` entry. `e2e/content-security-policy.spec.ts` proves injected markup cannot run or call out.
 
 ## Architecture
 

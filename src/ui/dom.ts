@@ -25,6 +25,12 @@ export function el<K extends keyof HTMLElementTagNameMap>(
       node.setAttribute(key, String(value))
     }
   }
+  // Browsers flag a form field with neither id nor name (autofill and devtools issues). Most fields here are
+  // identified by their class alone, so that stands in unless the caller named the field.
+  if ((tag === 'input' || tag === 'select' || tag === 'textarea') && !node.hasAttribute('name') && !node.id) {
+    const own = node.classList.length > 1 ? Array.from(node.classList).find((c) => c !== 'tt-input') : node.classList[0]
+    node.setAttribute('name', own ?? `tt-${tag}-${node.getAttribute('type') ?? 'field'}`)
+  }
   for (const child of children) {
     if (child === null) continue
     node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child)

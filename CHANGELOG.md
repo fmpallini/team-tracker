@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.5.2] - 2026-11-04
+
+### Added
+- Reorder people among their siblings in the org charts: "Move earlier" / "Move later" in the person menu, or Ctrl+←/→.
+- Preferences → About offers "Reload now" once an update is found; the editor help now lists undo and redo.
+
+### Fixed
+- The installed app (PWA) no longer logs content-security-policy errors for its icons.
+- Form fields now carry names, clearing browser console warnings.
+
 ## [3.5.1] - 2026-11-04
 
 ### Fixed
