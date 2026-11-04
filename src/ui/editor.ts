@@ -11,6 +11,7 @@ import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
+import { createEditHistory, registerEditHistory, unregisterEditHistory } from './editor-history'
 import { icon, iconButton } from './icons'
 import type { ImageHost } from './image-host'
 import { imageRefLine } from '../core/image-ref'
@@ -215,8 +216,16 @@ export function leadingIndentLen(text: string): number {
  * flattens fully. A `<ul>`/`<ol>`/`<blockquote>`/`<pre>` child is never a
  * wrapper here — its block descendants are structural and have their own
  * handling in core/markdown.ts.
+ *
+ * Returns what it unwrapped, oldest first, so `rewrapFlattened` can put the
+ * browser's own shape back: this hoist is a DOM edit the browser's undo stack
+ * knows nothing about, and that stack's paste step still points at the nodes
+ * inside the wrapper.
  */
-export function flattenTopLevelBlockWrappers(root: HTMLElement): void {
+export interface FlattenedWrapper { wrapper: HTMLElement; kids: ChildNode[] }
+
+export function flattenTopLevelBlockWrappers(root: HTMLElement): FlattenedWrapper[] {
+  const done: FlattenedWrapper[] = []
   for (;;) {
     const wrapper = Array.from(root.children).find((el): el is HTMLElement => {
       if (!(el instanceof HTMLElement) || (el.tagName !== 'DIV' && el.tagName !== 'P')) return false
@@ -225,9 +234,31 @@ export function flattenTopLevelBlockWrappers(root: HTMLElement): void {
       // of the root — leave that shape for ensureBlock / normal editing to sort out.
       return Array.from(el.childNodes).every((n) => n.nodeType === Node.ELEMENT_NODE || !n.textContent?.trim())
     })
-    if (!wrapper) return
-    wrapper.replaceWith(...Array.from(wrapper.childNodes))
+    if (!wrapper) return done
+    const kids = Array.from(wrapper.childNodes)
+    wrapper.replaceWith(...kids)
+    done.push({ wrapper, kids })
   }
+}
+
+/**
+ * Undoes `flattenTopLevelBlockWrappers` for the steps whose hoisted nodes are
+ * all still adjacent children of `root` (newest first, so a doubly-wrapped
+ * paste nests back the way it came). A step whose nodes were since removed or
+ * split up is dropped. Returns the steps it re-wrapped.
+ */
+export function rewrapFlattened(root: HTMLElement, steps: FlattenedWrapper[]): FlattenedWrapper[] {
+  const redone: FlattenedWrapper[] = []
+  for (const step of steps.slice().reverse()) {
+    const { wrapper, kids } = step
+    const first = kids[0]
+    const intact = first !== undefined && kids.every((k, j) => k.parentNode === root && (j === 0 || k.previousSibling === kids[j - 1]))
+    if (!intact) continue
+    first.before(wrapper)
+    wrapper.append(...kids)
+    redone.push(step)
+  }
+  return redone
 }
 
 interface EditorRegistryEntry {
@@ -404,6 +435,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
+  // Hand-made DOM edits (autoformat, Tab indent, leaving a quote, chips, links) are invisible to the
+  // browser's undo stack; see ./editor-history.ts. `edit()` records one, Ctrl+Z / Ctrl+Shift+Z replay it.
+  const history = createEditHistory(editorEl, () => {
+    hydrateImages()
+    syncPreHighlight()
+    scheduleChange()
+  })
+  registerEditHistory(editorEl, history)
+  const edit = <T>(fn: () => T): T => history.record(fn)
+
   /** This editor's markdown → HTML: live ref labels plus the chip and link hover hints. */
   function renderMd(md: string): string {
     return mdToHtml(md, hooks.resolveRefLabel, t(locale, 'editor_ref_hint'), t(locale, 'editor_link_open_hint'))
@@ -543,6 +584,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * with no content at all.
    */
   function exitFlatBlock(block: HTMLElement): void {
+    edit(() => exitFlatBlockNow(block))
+  }
+
+  function exitFlatBlockNow(block: HTMLElement): void {
     const sel = window.getSelection()
     const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
     const opener = caret ? nodeBeforeCaret(caret) : null
@@ -591,12 +636,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const prev = first.previousElementSibling as HTMLElement | null
     if (!prev || prev.tagName !== 'LI') return false
     const parentList = first.parentElement as HTMLElement
-    let sub = prev.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
-    if (!sub) {
-      sub = document.createElement(parentList.tagName.toLowerCase())
-      prev.appendChild(sub)
-    }
-    items.forEach(li => sub!.appendChild(li))
+    edit(() => {
+      let sub = prev.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+      if (!sub) {
+        sub = document.createElement(parentList.tagName.toLowerCase())
+        prev.appendChild(sub)
+      }
+      items.forEach(li => sub!.appendChild(li))
+    })
     scheduleChange()
     return true
   }
@@ -638,21 +685,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!parentLi) return false
     const grandList = parentLi.parentElement as HTMLElement
 
-    const trailing: HTMLElement[] = []
-    let sib = last.nextElementSibling
-    while (sib) { trailing.push(sib as HTMLElement); sib = sib.nextElementSibling }
-    if (trailing.length > 0) {
-      let sub = last.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
-      if (!sub) {
-        sub = document.createElement(list.tagName.toLowerCase())
-        last.appendChild(sub)
+    edit(() => {
+      const trailing: HTMLElement[] = []
+      let sib = last.nextElementSibling
+      while (sib) { trailing.push(sib as HTMLElement); sib = sib.nextElementSibling }
+      if (trailing.length > 0) {
+        let sub = last.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+        if (!sub) {
+          sub = document.createElement(list.tagName.toLowerCase())
+          last.appendChild(sub)
+        }
+        trailing.forEach(li => sub!.appendChild(li))
       }
-      trailing.forEach(li => sub!.appendChild(li))
-    }
 
-    const insertBefore = parentLi.nextElementSibling
-    items.forEach(li => grandList.insertBefore(li, insertBefore))
-    if (list.children.length === 0) list.remove()
+      const insertBefore = parentLi.nextElementSibling
+      items.forEach(li => grandList.insertBefore(li, insertBefore))
+      if (list.children.length === 0) list.remove()
+    })
     scheduleChange()
     return true
   }
@@ -703,7 +752,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
     else if (type === 'blockquote') toggleBlockquote()
     else if (type === 'codeblock') toggleCodeBlock()
-    else { document.execCommand('formatBlock', false, `<${type}>`); flattenNestedHeadings(editorEl) }
+    else { document.execCommand('formatBlock', false, `<${type}>`); edit(() => flattenNestedHeadings(editorEl)) }
   }
 
   /**
@@ -732,8 +781,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const caretNode = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
     if (caretNode && closestLi(caretNode)) return
     editorEl.focus()
+    const ctx = tag === 'h1' || tag === 'h2' || tag === 'h3' ? currentBlockAndOffset() : null
+    if (ctx && ctx.block.parentElement === editorEl && (ctx.block.textContent ?? '') === '') {
+      convertBlockToHeading(ctx.block, tag as 'h1' | 'h2' | 'h3')
+      scheduleChange()
+      return
+    }
     document.execCommand('formatBlock', false, `<${tag}>`)
-    flattenNestedHeadings(editorEl)
+    edit(() => flattenNestedHeadings(editorEl))
     scheduleChange()
   }
 
@@ -807,13 +862,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const bq = blockquoteAtCaret()
     editorEl.focus()
     if (bq && range) {
-      demoteBlockquotes(editorEl, range)
+      edit(() => demoteBlockquotes(editorEl, range))
       scheduleChange()
       return
     }
     document.execCommand('formatBlock', false, '<blockquote>')
-    flattenNestedBlockquotes(editorEl)
-    normalizeFlatBlockChildren(editorEl, 'blockquote', 'inline')
+    edit(() => {
+      flattenNestedBlockquotes(editorEl)
+      normalizeFlatBlockChildren(editorEl, 'blockquote', 'inline')
+    })
     scheduleChange()
   }
 
@@ -829,10 +886,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    */
   function convertBlockToBlockquote(block: HTMLElement): void {
     editorEl.focus()
-    const bq = document.createElement('blockquote')
-    bq.appendChild(document.createElement('br'))
-    block.replaceWith(bq)
-    placeCaretAtStart(bq)
+    edit(() => {
+      const bq = document.createElement('blockquote')
+      bq.appendChild(document.createElement('br'))
+      block.replaceWith(bq)
+      placeCaretAtStart(bq)
+    })
   }
 
   // A <pre>'s literal text lines — collapse threshold, the copy button and
@@ -847,10 +906,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    */
   function convertBlockToPre(block: HTMLElement): void {
     editorEl.focus()
-    const pre = document.createElement('pre')
-    pre.appendChild(document.createElement('br'))
-    block.replaceWith(pre)
-    placeCaretAtStart(pre)
+    edit(() => {
+      const pre = document.createElement('pre')
+      pre.appendChild(document.createElement('br'))
+      block.replaceWith(pre)
+      placeCaretAtStart(pre)
+    })
   }
 
   /**
@@ -859,19 +920,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * autoformat — the "toggle off" half of toggleCodeBlock.
    */
   function unwrapPre(pre: HTMLElement): void {
-    const lines = preLines(pre)
-    const frag = document.createDocumentFragment()
-    const divs: HTMLElement[] = []
-    for (const line of lines.length ? lines : ['']) {
-      const div = document.createElement('div')
-      if (line === '') div.appendChild(document.createElement('br'))
-      else div.appendChild(document.createTextNode(line))
-      frag.appendChild(div)
-      divs.push(div)
-    }
-    pre.replaceWith(frag)
-    const first = divs[0]
-    if (first) placeCaretAtStart(first)
+    edit(() => {
+      const lines = preLines(pre)
+      const frag = document.createDocumentFragment()
+      const divs: HTMLElement[] = []
+      for (const line of lines.length ? lines : ['']) {
+        const div = document.createElement('div')
+        if (line === '') div.appendChild(document.createElement('br'))
+        else div.appendChild(document.createTextNode(line))
+        frag.appendChild(div)
+        divs.push(div)
+      }
+      pre.replaceWith(frag)
+      const first = divs[0]
+      if (first) placeCaretAtStart(first)
+    })
   }
 
   /**
@@ -906,7 +969,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     document.execCommand('formatBlock', false, '<pre>')
-    normalizeFlatBlockChildren(editorEl, 'pre', 'text')
+    edit(() => normalizeFlatBlockChildren(editorEl, 'pre', 'text'))
     scheduleChange()
   }
 
@@ -924,9 +987,29 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
     editorEl.focus()
     document.execCommand('removeFormat', false, undefined)
-    if (range) demoteHeadings(editorEl, range)
-    if (range) demoteBlockquotes(editorEl, range)
+    edit(() => {
+      if (range) demoteHeadings(editorEl, range)
+      if (range) demoteBlockquotes(editorEl, range)
+    })
     scheduleChange()
+  }
+
+  /**
+   * Replaces an emptied-out top-level block with an empty `<h1>`–`<h3>` and
+   * drops the caret inside it. The typed "# " autoformat path, and Ctrl+1..3 on
+   * a blank line — same reason as convertBlockToBlockquote: formatBlock against
+   * a collapsed caret in an empty block acts on the NEIGHBOURING line instead
+   * (typing "# " under a line turned that line into the heading, then the title
+   * landed inside it and a blank line was left behind).
+   */
+  function convertBlockToHeading(block: HTMLElement, tag: 'h1' | 'h2' | 'h3'): void {
+    editorEl.focus()
+    edit(() => {
+      const h = document.createElement(tag)
+      h.appendChild(document.createElement('br'))
+      block.replaceWith(h)
+      placeCaretAtStart(h)
+    })
   }
 
   /**
@@ -941,12 +1024,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    */
   function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol'): void {
     editorEl.focus()
-    const li = document.createElement('li')
-    li.appendChild(document.createElement('br'))
-    const list = document.createElement(type)
-    list.appendChild(li)
-    block.replaceWith(list)
-    placeCaretAtStart(li)
+    edit(() => {
+      const li = document.createElement('li')
+      li.appendChild(document.createElement('br'))
+      const list = document.createElement(type)
+      list.appendChild(li)
+      block.replaceWith(list)
+      placeCaretAtStart(li)
+    })
   }
 
   /**
@@ -956,11 +1041,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    */
   function convertBlockToHr(block: HTMLElement): void {
     editorEl.focus()
-    const hr = document.createElement('hr')
-    const next = document.createElement('div')
-    next.appendChild(document.createElement('br'))
-    block.replaceWith(hr, next)
-    placeCaretAtStart(next)
+    edit(() => {
+      const hr = document.createElement('hr')
+      const next = document.createElement('div')
+      next.appendChild(document.createElement('br'))
+      block.replaceWith(hr, next)
+      placeCaretAtStart(next)
+    })
   }
 
   /**
@@ -983,19 +1070,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const ctx = currentBlockAndOffset()
     const ref = ctx && ctx.block.parentElement === editorEl ? ctx.block : editorEl.lastElementChild
     const hr = document.createElement('hr')
-    let caretTarget: HTMLElement
-    const following = ref?.nextElementSibling as HTMLElement | null
-    if (ref && following) {
-      ref.after(hr)
-      caretTarget = following
-    } else {
-      const next = document.createElement('div')
-      next.appendChild(document.createElement('br'))
-      if (ref) ref.after(hr, next)
-      else editorEl.append(hr, next)
-      caretTarget = next
-    }
-    placeCaretAtStart(caretTarget)
+    edit(() => {
+      let caretTarget: HTMLElement
+      const following = ref?.nextElementSibling as HTMLElement | null
+      if (ref && following) {
+        ref.after(hr)
+        caretTarget = following
+      } else {
+        const next = document.createElement('div')
+        next.appendChild(document.createElement('br'))
+        if (ref) ref.after(hr, next)
+        else editorEl.append(hr, next)
+        caretTarget = next
+      }
+      placeCaretAtStart(caretTarget)
+    })
     scheduleChange()
   }
 
@@ -1007,12 +1096,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // the raw markdown characters as typed; only text-only spans get
     // auto-formatted.
     if (range.cloneContents().querySelector('*')) return
-    range.deleteContents()
-    const tag = match.marker === '**' ? 'strong' : match.marker === '~~' ? 's' : 'em'
-    const node = document.createElement(tag)
-    node.textContent = match.content
-    range.insertNode(node)
-    caretAfterInline(node)
+    edit(() => {
+      range.deleteContents()
+      const tag = match.marker === '**' ? 'strong' : match.marker === '~~' ? 's' : 'em'
+      const node = document.createElement(tag)
+      node.textContent = match.content
+      range.insertNode(node)
+      caretAfterInline(node)
+    })
   }
 
   function handleAutoFormat(): void {
@@ -1068,11 +1159,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         // survives the save (renderListMd flattens any <hN> in an <li> to
         // plain text). Leave the typed "# " as literal text inside a list
         // item; formatBlockTag guards the buttons / Ctrl+1..3 the same way.
-        if ((blockMatch.type === 'h1' || blockMatch.type === 'h2' || blockMatch.type === 'h3') && closestLi(block)) return
+        if (blockMatch.type === 'h1' || blockMatch.type === 'h2' || blockMatch.type === 'h3') {
+          if (closestLi(block)) return
+          if (block.parentElement === editorEl) { convertBlockToHeading(block, blockMatch.type); return }
+        }
         const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
-        range.deleteContents()
-        const sel = window.getSelection()
-        if (sel) { sel.removeAllRanges(); sel.addRange(range) }
+        edit(() => {
+          range.deleteContents()
+          const sel = window.getSelection()
+          if (sel) { sel.removeAllRanges(); sel.addRange(range) }
+        })
         applyBlockFormat(blockMatch.type)
         return
       }
@@ -1097,11 +1193,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const start = caretOffset - linkM[0]!.length
       const range = rangeForTextOffsets(block, start, caretOffset)
       if (!range.cloneContents().querySelector('*')) {
-        range.deleteContents()
-        const frag = inlineFragment(`[${linkM[1]!}](${linkUrl})`)
-        const lastNode = frag.lastChild
-        range.insertNode(frag)
-        if (lastNode) caretAfterInline(lastNode, 'none')
+        edit(() => {
+          range.deleteContents()
+          const frag = inlineFragment(`[${linkM[1]!}](${linkUrl})`)
+          const lastNode = frag.lastChild
+          range.insertNode(frag)
+          if (lastNode) caretAfterInline(lastNode, 'none')
+        })
         scheduleChange()
         return
       }
@@ -1368,13 +1466,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       // text nodes so htmlToMd sees one clean run.
       editorEl.focus()
       if (anchor && editorEl.contains(anchor)) {
-        const parent = anchor.parentNode
-        const frag = document.createDocumentFragment()
-        while (anchor.firstChild) frag.appendChild(anchor.firstChild)
-        const lastNode = frag.lastChild
-        anchor.replaceWith(frag)
-        if (lastNode) caretAfterInline(lastNode, 'none')
-        if (parent instanceof HTMLElement) parent.normalize()
+        edit(() => {
+          const parent = anchor.parentNode
+          const frag = document.createDocumentFragment()
+          while (anchor.firstChild) frag.appendChild(anchor.firstChild)
+          const lastNode = frag.lastChild
+          anchor.replaceWith(frag)
+          if (lastNode) caretAfterInline(lastNode, 'none')
+          if (parent instanceof HTMLElement) parent.normalize()
+        })
         scheduleChange()
       }
       return
@@ -1390,10 +1490,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (anchor && editorEl.contains(anchor)) {
       // Swap the <a> node directly — see the doc comment for why insertText
       // over a selectNode(anchor) selection can't do this cleanly.
-      const frag = inlineFragment(md)
-      const lastNode = frag.lastChild
-      anchor.replaceWith(frag)
-      if (lastNode) caretAfterInline(lastNode, 'none')
+      edit(() => {
+        const frag = inlineFragment(md)
+        const lastNode = frag.lastChild
+        anchor.replaceWith(frag)
+        if (lastNode) caretAfterInline(lastNode, 'none')
+      })
       scheduleChange()
       return
     }
@@ -1627,12 +1729,59 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (overflow > 0) editorEl.scrollTop += overflow
   }
 
+  // Paste hoists the wrapper `insertHTML` leaves (flattenTopLevelBlockWrappers), an edit the browser's undo
+  // stack never saw: its paste step still removes the nodes from inside that wrapper, so a bare Ctrl+Z did
+  // nothing visible. The nodes are put back inside the wrapper just before a history step runs (onBeforeInput)
+  // and hoisted again right after (onInput), so the stack only ever acts on the shape it made itself.
+  let flattened: FlattenedWrapper[] = []
+
+  /** Flattens the editor root after a paste, remembering what it hoisted for the next undo/redo. */
+  function flattenPaste(): void {
+    flattened.push(...flattenTopLevelBlockWrappers(editorEl))
+  }
+
+  function onBeforeInput(e: InputEvent): void {
+    if (e.defaultPrevented || !e.inputType.startsWith('history')) return
+    // Undo/redo from a menu rather than the keys; same owner rule as in onKeydown.
+    if (e.inputType === 'historyUndo' ? history.undo() : e.inputType === 'historyRedo' ? history.redo() : false) {
+      e.preventDefault()
+      return
+    }
+    if (flattened.length === 0) return
+    rewrapFlattened(editorEl, flattened)
+    flattened = []
+  }
+
+  /** Hoists again after an undo/redo, leaving the caret where the browser put it (moving nodes drops a range inside them). */
+  function reflattenAfterHistory(): void {
+    const sel = window.getSelection()
+    const r = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    const saved = r && { sc: r.startContainer, so: r.startOffset, ec: r.endContainer, eo: r.endOffset }
+    flattened = flattenTopLevelBlockWrappers(editorEl)
+    if (!sel || !saved || flattened.length === 0 || !editorEl.contains(saved.sc) || !editorEl.contains(saved.ec)) return
+    const range = document.createRange()
+    range.setStart(saved.sc, saved.so)
+    range.setEnd(saved.ec, saved.eo)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
   function onInput(e?: Event): void {
     // An undo can bring back a picture block the way the browser had it; make sure it shows its pixels.
-    if (e instanceof InputEvent && e.inputType.startsWith('history')) hydrateImages()
+    const fromHistory = e instanceof InputEvent && e.inputType.startsWith('history')
+    if (fromHistory) {
+      reflattenAfterHistory()
+      hydrateImages()
+    } else {
+      history.dropRedo()
+    }
     ensureBlock()
-    handleAutoFormat()
-    checkTriggers()
+    // An undo/redo restores text the user already saw; it must not be re-formatted (undoing back to a typed
+    // "- " would otherwise turn it into a list again at once) or open a picker.
+    if (!fromHistory) {
+      handleAutoFormat()
+      checkTriggers()
+    }
     syncPreHighlight()
     scheduleChange()
     keepCaretVisible()
@@ -1701,6 +1850,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       e.preventDefault()
       return
     }
+    // Undo/redo of a hand-made edit (autoformat, Tab indent, ...) is ours; anything else is the browser's.
+    // Also needed on a keydown (not only on beforeinput) because the browser fires no history input at all
+    // while its own stack is empty, e.g. a Tab indent in a note that was just opened.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const handled = matchKey(e, 'z') ? (e.shiftKey ? history.redo() : history.undo()) : !e.shiftKey && matchKey(e, 'y') ? history.redo() : false
+      if (handled) { e.preventDefault(); return }
+    }
     // A clicked picture stays "selected" only until the next key: moving the caret on or typing must not leave
     // a later Backspace aimed at a picture that is no longer the thing being edited.
     if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) selectImageBlock(null)
@@ -1751,8 +1907,10 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const listItems = selectedListItems()
       if (listItems.length > 0) {
         const ctx = currentBlockAndOffset() // collapsed-caret case only; null for multi-item selections
-        const moved = e.shiftKey ? outdentListItems(listItems) : indentListItems(listItems)
-        if (moved) restoreCaret(ctx ? (ctx.block) : listItems[0]!, ctx ? ctx.caretOffset : 0)
+        edit(() => {
+          const moved = e.shiftKey ? outdentListItems(listItems) : indentListItems(listItems)
+          if (moved) restoreCaret(ctx ? (ctx.block) : listItems[0]!, ctx ? ctx.caretOffset : 0)
+        })
         return
       }
       if (e.shiftKey) {
@@ -1760,14 +1918,16 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         if (ctx) {
           const n = leadingIndentLen(ctx.text)
           if (n > 0) {
-            const range = rangeForTextOffsets(ctx.block, 0, n)
-            range.deleteContents()
-            const sel = window.getSelection()
-            if (sel) {
-              sel.removeAllRanges()
-              const newOffset = Math.max(0, ctx.caretOffset - n)
-              sel.addRange(rangeForTextOffsets(ctx.block, newOffset, newOffset))
-            }
+            edit(() => {
+              const range = rangeForTextOffsets(ctx.block, 0, n)
+              range.deleteContents()
+              const sel = window.getSelection()
+              if (sel) {
+                sel.removeAllRanges()
+                const newOffset = Math.max(0, ctx.caretOffset - n)
+                sel.addRange(rangeForTextOffsets(ctx.block, newOffset, newOffset))
+              }
+            })
             scheduleChange()
           }
         }
@@ -1920,7 +2080,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // insertHTML nests a multi-block fragment inside the caret's block when
     // that block was empty — restore the editor's flat-block-children shape
     // before anything reads it back as markdown (see the fn's own comment).
-    flattenTopLevelBlockWrappers(editorEl)
+    flattenPaste()
     stripPastedStyles(styledBefore)
     normalizeImageSpacing(editorEl)
     decorateCodeBlocks()
@@ -2010,7 +2170,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       // insertHTML nests a multi-block fragment inside the caret's block when
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
-      flattenTopLevelBlockWrappers(editorEl)
+      flattenPaste()
       stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
@@ -2029,7 +2189,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         .join('')
       const styledBefore = styledElements()
       document.execCommand('insertHTML', false, html)
-      flattenTopLevelBlockWrappers(editorEl)
+      flattenPaste()
       stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
@@ -2107,10 +2267,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // A read-only editor still lets the selection be copied; it just can't lose it.
     if (editorsReadOnly) { writeSelectionToClipboard(e); return }
     if (!writeSelectionToClipboard(e)) return
-    const sel = window.getSelection()
-    sel?.getRangeAt(0).deleteContents()
-    ensureBlock()
-    syncPreHighlight()
+    // The browser's own delete, so the cut sits on its undo stack and Ctrl+Z brings the text back.
+    // (Where there is no such command — jsdom — the range is emptied by hand.)
+    if (!document.execCommand('delete')) {
+      window.getSelection()?.getRangeAt(0).deleteContents()
+      ensureBlock()
+      syncPreHighlight()
+    }
     scheduleChange()
   }
 
@@ -2226,6 +2389,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (refElFromEvent(e) || linkElFromEvent(e)) e.preventDefault()
   }
 
+  editorEl.addEventListener('beforeinput', onBeforeInput)
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
@@ -2633,6 +2797,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // not flush — unlike destroy(), the pending change here belongs to
     // content that is being replaced outright.
     cancelChange()
+    history.clear()
     editorEl.innerHTML = renderMd(md)
     decorateCodeBlocks(true)
     // Paint the freshly-loaded blocks now. This used to happen by accident:
@@ -2708,6 +2873,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     flushChange()
     closeCopyMenu()
     pendingLinkModal?.close()
+    history.clear()
+    unregisterEditHistory(editorEl)
+    editorEl.removeEventListener('beforeinput', onBeforeInput)
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)

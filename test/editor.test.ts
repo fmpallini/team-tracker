@@ -1,5 +1,5 @@
 import { normalizeImageSpacing } from '../src/ui/editor-dom'
-import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, rewrapFlattened, type Editor, type EditorHooks } from '../src/ui/editor'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 import { IMAGE_ACCEPT } from '../src/core/image-import'
@@ -2184,16 +2184,18 @@ describe('block-prefix auto-format on typing', () => {
     sel.addRange(range)
   }
 
-  test('typing "# " auto-converts the block to h1 (control case)', () => {
+  test('typing "# " auto-converts the block to h1 (built directly: formatBlock on an empty line acts on the line above)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
-
     setBlockText(editorEl, '# ')
+    editorEl.insertBefore(Object.assign(document.createElement('div'), { textContent: 'above' }), editorEl.firstChild)
+
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(editorEl.innerHTML).toBe('<div>above</div><h1><br></h1>')
     editor.destroy()
   })
 
@@ -3658,6 +3660,26 @@ describe('flattenTopLevelBlockWrappers', () => {
     const root = html('<div>just a line</div>')
     flattenTopLevelBlockWrappers(root)
     expect(root.innerHTML).toBe('<div>just a line</div>')
+  })
+
+  test('rewrapFlattened puts the browser\'s own shape back, even for a doubly-wrapped paste', () => {
+    const shape = '<div>before</div><div><div><h1>H</h1><div>x</div></div></div>'
+    const root = html(shape)
+    const steps = flattenTopLevelBlockWrappers(root)
+    expect(root.innerHTML).toBe('<div>before</div><h1>H</h1><div>x</div>')
+    expect(rewrapFlattened(root, steps)).toHaveLength(2)
+    expect(root.innerHTML).toBe(shape)
+  })
+
+  test('rewrapFlattened skips a step whose nodes were removed or split apart since', () => {
+    const root = html('<div><h1>H</h1><div>x</div></div>')
+    const steps = flattenTopLevelBlockWrappers(root)
+    root.querySelector('h1')!.after(document.createElement('hr'))
+    expect(rewrapFlattened(root, steps)).toHaveLength(0)
+    expect(root.innerHTML).toBe('<h1>H</h1><hr><div>x</div>')
+    root.querySelector('hr')!.remove()
+    root.querySelector('h1')!.remove()
+    expect(rewrapFlattened(root, steps)).toHaveLength(0)
   })
 })
 

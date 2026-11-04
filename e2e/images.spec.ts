@@ -264,6 +264,25 @@ test.describe('pictures in notes', () => {
     await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
   })
 
+  test('Ctrl+Z takes a pasted picture back out, with the text around it, and Ctrl+Shift+Z puts it in again', async ({ page }) => {
+    await startEncrypted(page)
+    await page.keyboard.type('before')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('after')
+    await page.waitForTimeout(400)
+    const text = () => page.locator('.editor').first().innerText()
+    const baseline = (await text()).trim()
+    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('End')
+    await pasteInto(page, { files: [{ name: 'p.png', w: 300, h: 200 }] })
+    await expect(blocks(page)).toHaveCount(1)
+    await page.keyboard.press('Control+z')
+    await expect(blocks(page)).toHaveCount(0)
+    expect((await text()).trim()).toBe(baseline)
+    await page.keyboard.press('Control+Shift+z')
+    await expect(blocks(page)).toHaveCount(1)
+  })
+
   test('Backspace after the caret has moved on edits text, it does not delete the picture clicked earlier', async ({ page }) => {
     await startEncrypted(page)
     await page.keyboard.type('hello')

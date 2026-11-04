@@ -299,6 +299,164 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
   })
 })
 
+test.describe('rich-text editor — Ctrl+Z after paste', () => {
+  const cases: Record<string, Record<string, string>> = {
+    'html bullet list': { 'text/html': '<ul><li>one</li><li>two</li><li>three</li></ul>', 'text/plain': '- one\n- two\n- three' },
+    'html bullet list + heading': { 'text/html': '<h2>Head</h2><ul><li>one</li><li>two</li></ul><p>tail</p>', 'text/plain': 'Head\n- one\n- two\ntail' },
+    'plain bullet lines': { 'text/plain': '- one\n- two\n- three' },
+    'plain dot bullets': { 'text/plain': '• one\n• two\n• three' },
+  }
+  // Chromium nests a multi-block paste inside the empty line it lands on; the editor hoists it out
+  // again, an edit the native undo stack never saw. Ctrl+Z must still take the paste back, and
+  // Ctrl+Shift+Z bring it back, whether the empty line is the only one or follows other text.
+  for (const [name, data] of Object.entries(cases)) {
+    for (const lead of [false, true]) {
+      test(`Ctrl+Z / Ctrl+Shift+Z undo and redo a pasted ${name}${lead ? ' after typed text' : ' into an empty note'}`, async ({ page }) => {
+        const editor = await openEditor(page)
+        if (lead) {
+          await page.keyboard.type('before')
+          await page.keyboard.press('Enter')
+          await page.waitForTimeout(350)
+        }
+        const baseline = (await editor.innerText()).trim()
+        await pasteInto(page, data)
+        const pasted = (await editor.innerText()).trim()
+        expect(pasted).not.toBe(baseline)
+        await page.keyboard.press('Control+z')
+        await page.waitForTimeout(150)
+        expect((await editor.innerText()).trim()).toBe(baseline)
+        await page.keyboard.press('Control+Shift+z')
+        await page.waitForTimeout(150)
+        expect((await editor.innerText()).trim()).toBe(pasted)
+        // still flat afterwards, so the markdown reads back as blocks
+        expect(await editor.evaluate((ed) => Array.from(ed.children).some((c) => c.tagName === 'DIV' && c.firstElementChild !== null && /^(H[1-6]|UL|OL)$/.test(c.firstElementChild.tagName)))).toBe(false)
+      })
+    }
+  }
+})
+
+// The editor makes some edits by moving nodes itself (autoformat, Tab indent, leaving a quote); the
+// browser's undo stack never sees those. Each must come back with ONE Ctrl+Z, and return on Ctrl+Shift+Z.
+test.describe('rich-text editor — Ctrl+Z after hand-made edits', () => {
+  const k = (page: Page) => page.keyboard
+  const html = (editor: Locator) => editor.evaluate((e) => e.innerHTML)
+  async function fresh(page: Page): Promise<Locator> {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    return editor
+  }
+
+  const autoformats: Array<{ name: string; type: string[]; has: string; text: string }> = [
+    { name: '"- " list', type: ['hello', 'Enter', '- '], has: 'ul', text: 'hello\n- ' },
+    { name: '"1. " list', type: ['hello', 'Enter', '1. '], has: 'ol', text: 'hello\n1. ' },
+    { name: '"# " heading', type: ['hello', 'Enter', '# '], has: 'h1', text: 'hello\n# ' },
+    { name: '"> " quote', type: ['hello', 'Enter', '> '], has: 'blockquote', text: 'hello\n> ' },
+    { name: '"---" rule', type: ['hello', 'Enter', '---', 'Enter'], has: 'hr', text: 'hello\n---' },
+    { name: '"```" code block', type: ['hello', 'Enter', '```', 'Enter'], has: 'pre', text: 'hello\n```' },
+    { name: '"**bold**" run', type: ['hello **bold**'], has: 'strong', text: 'hello **bold**' },
+  ]
+  for (const a of autoformats) {
+    test(`${a.name}: Ctrl+Z gives back what was typed, Ctrl+Shift+Z converts again`, async ({ page }) => {
+      const editor = await fresh(page)
+      for (const part of a.type) {
+        if (part === 'Enter') await k(page).press('Enter')
+        else await k(page).type(part)
+      }
+      await expect(editor.locator(a.has)).toHaveCount(1)
+      await k(page).press('Control+z')
+      await expect(editor.locator(a.has)).toHaveCount(0)
+      expect((await editor.innerText()).replace(/ /g, ' ').replace(/\s+$/, '')).toBe(a.text.replace(/\s+$/, ''))
+      await k(page).press('Control+Shift+z')
+      await expect(editor.locator(a.has)).toHaveCount(1)
+    })
+  }
+
+  test('typing "# " under a line makes a heading of the NEW line, not of the one above', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('hello')
+    await k(page).press('Enter')
+    await k(page).type('# Title')
+    await expect(editor.locator('h1')).toHaveText('Title')
+    await expect(editor.locator('div').first()).toHaveText('hello')
+    expect(await html(editor)).not.toContain('helloTitle')
+  })
+
+  test('Ctrl+1 on a blank line under text makes a heading of that line', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('hello')
+    await k(page).press('Enter')
+    await k(page).press('Control+1')
+    await k(page).type('Title')
+    await expect(editor.locator('h1')).toHaveText('Title')
+    await expect(editor.locator('div').first()).toHaveText('hello')
+  })
+
+  test('Tab / Shift+Tab on a list item: Ctrl+Z puts the item back, Ctrl+Shift+Z indents it again', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('- a')
+    await k(page).press('Enter')
+    await k(page).type('b')
+    await page.waitForTimeout(350)
+    await k(page).press('Tab')
+    await expect(editor.locator('ul ul')).toHaveCount(1)
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul')).toHaveCount(0)
+    await expect(editor.locator('li')).toHaveCount(2)
+    await k(page).press('Control+Shift+z')
+    await expect(editor.locator('ul ul')).toHaveCount(1)
+    await k(page).press('Shift+Tab')
+    await expect(editor.locator('ul ul')).toHaveCount(0)
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul')).toHaveCount(1)
+  })
+
+  test('Enter on the empty last line of a quote leaves it; Ctrl+Z puts the empty line back inside', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('> q')
+    await k(page).press('Enter')
+    await page.waitForTimeout(350)
+    await k(page).press('Enter')
+    await expect(editor.locator('blockquote + div')).toHaveCount(1)
+    await k(page).press('Control+z')
+    await expect(editor.locator('blockquote + div')).toHaveCount(0)
+    await expect(editor.locator('blockquote')).toHaveCount(1)
+  })
+
+  test('Ctrl+X: Ctrl+Z brings the cut text back', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('one')
+    await k(page).press('Enter')
+    await k(page).type('two')
+    await page.waitForTimeout(350)
+    await k(page).press('Control+a')
+    await k(page).press('Control+x')
+    await expect(editor).toHaveText('')
+    await k(page).press('Control+z')
+    await expect(editor).toContainText('one')
+    await expect(editor).toContainText('two')
+  })
+
+  test('a mixed chain walks back one step at a time: typing, Tab, typing', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('- one')
+    await k(page).press('Enter')
+    await k(page).type('two')
+    await page.waitForTimeout(350)
+    await k(page).press('Tab')
+    await k(page).type(' more')
+    await page.waitForTimeout(350)
+    await expect(editor.locator('ul ul li')).toHaveText('two more')
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul li')).toHaveText('two')
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul')).toHaveCount(0)
+    await expect(editor.locator('li').nth(1)).toHaveText('two')
+    await k(page).press('Control+Shift+z')
+    await k(page).press('Control+Shift+z')
+    await expect(editor.locator('ul ul li')).toHaveText('two more')
+  })
+})
+
 test.describe('rich-text editor — Ctrl+C / Ctrl+X carry no theme background', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
 
