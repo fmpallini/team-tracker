@@ -2560,17 +2560,19 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /** An undo/redo put `replaced` where `removed` were. A snapshot holds no view state, so each restored
    * `<pre>` gets its line count again but is never auto-collapsed on its own account: the n-th restored
    * block is collapsed only if the n-th code block it replaced was collapsed (and it is still long), and
-   * never when it holds the caret, which a collapse would hide. Blocks outside the replaced range keep
+   * never when it holds the caret or selection end, which a collapse would hide. Blocks outside the replaced range keep
    * their nodes and so their state. */
   function decorateRestoredCodeBlocks(replaced: readonly HTMLElement[], removed: readonly HTMLElement[]): void {
     const wasCollapsed = presIn(removed).map((pre) => pre.hasAttribute('data-collapsed'))
     const sel = editorEl.ownerDocument.getSelection()
-    const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    const holdsSelection = (pre: HTMLElement): boolean =>
+      !!range && (pre.contains(range.startContainer) || pre.contains(range.endContainer))
     presIn(replaced).forEach((pre, i) => {
       markPre(pre)
       const n = preLineCount(pre)
       pre.dataset.lines = String(n)
-      if (wasCollapsed[i] && n > CB_AUTO_COLLAPSE_OVER && !(caret && pre.contains(caret))) collapsePre(pre)
+      if (wasCollapsed[i] && n > CB_AUTO_COLLAPSE_OVER && !holdsSelection(pre)) collapsePre(pre)
       else expandPre(pre)
     })
   }
