@@ -13,7 +13,15 @@
 
 import { preLines } from '../core/markdown'
 
-export interface BlockPos { block: number; offset: number }
+/**
+ * `offset` is the text offset inside the block. `path` + `domOffset` pin the
+ * exact DOM point (child indexes from the block down to the container, and the
+ * DOM offset in it) where text offsets are ambiguous: the end of one `<li>` and
+ * the start of the next share an offset, and an empty `<li><br></li>` has no
+ * text node. Only captured outside `<pre>` / `.tt-img`, whose stored form is
+ * normalized so DOM paths would not match.
+ */
+export interface BlockPos { block: number; offset: number; path?: number[]; domOffset?: number }
 
 export interface Snapshot {
   blocks: string[]
@@ -146,10 +154,33 @@ function toBlockPos(root: HTMLElement, node: Node, offset: number): BlockPos | n
     for (let s = top.previousSibling; s; s = s.previousSibling) if (s.nodeType === Node.ELEMENT_NODE) idx++
     return { block: Math.min(idx, n - 1), offset: 0 }
   }
-  return {
+  const pos: BlockPos = {
     block: Array.prototype.indexOf.call(root.children, top),
     offset: offsetInBlock(top as HTMLElement, node, offset),
   }
+  const host = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+  if (!host?.closest('pre, .tt-img')) {
+    const path: number[] = []
+    for (let c: Node = node; c !== top; c = c.parentNode!) path.unshift(Array.prototype.indexOf.call(c.parentNode!.childNodes, c))
+    pos.path = path
+    pos.domOffset = offset
+  }
+  return pos
+}
+
+/** The exact DOM point of `p`, when its path still resolves and agrees with its text offset. */
+function pointFromPath(block: HTMLElement, p: BlockPos): { node: Node; offset: number } | null {
+  if (!p.path || p.domOffset === undefined) return null
+  let node: Node = block
+  for (const i of p.path) {
+    const next = node.childNodes[i]
+    if (!next) return null
+    node = next
+  }
+  const max = node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '').length : node.childNodes.length
+  if (p.domOffset < 0 || p.domOffset > max) return null
+  if (offsetInBlock(block, node, p.domOffset) !== p.offset) return null
+  return { node, offset: p.domOffset }
 }
 
 export function takeSnapshot(root: HTMLElement): Snapshot {
@@ -190,7 +221,7 @@ function setRestoredSelection(root: HTMLElement, sel: NonNullable<Snapshot['sele
   if (n === 0) return
   const point = (p: BlockPos) => {
     const el = root.children[Math.max(0, Math.min(p.block, n - 1))] as HTMLElement
-    return pointInBlock(el, Math.max(0, p.offset))
+    return pointFromPath(el, p) ?? pointInBlock(el, Math.max(0, p.offset))
   }
   const s = point(sel.start)
   const e = point(sel.end)

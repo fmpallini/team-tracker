@@ -90,19 +90,25 @@ describe('takeSnapshot selection', () => {
     const root = mount('<div>x</div><ul><li>one</li><li>two</li></ul>')
     const two = root.querySelectorAll('li')[1]!.firstChild as Text
     setRange(two, 2)
-    expect(takeSnapshot(root).selection).toEqual({ start: { block: 1, offset: 5 }, end: { block: 1, offset: 5 } })
+    expect(takeSnapshot(root).selection).toEqual({
+      start: { block: 1, offset: 5, path: [1, 0], domOffset: 2 },
+      end: { block: 1, offset: 5, path: [1, 0], domOffset: 2 },
+    })
   })
 
   test('collapsed caret after "word " stores offset 5', () => {
     const root = mount('<div>word </div>')
     setRange(root.firstChild!.firstChild!, 5)
-    expect(takeSnapshot(root).selection!.start).toEqual({ block: 0, offset: 5 })
+    expect(takeSnapshot(root).selection!.start).toEqual({ block: 0, offset: 5, path: [0], domOffset: 5 })
   })
 
   test('selection from block 0 to block 2', () => {
     const root = mount('<div>aa</div><div>bb</div><div>cc</div>')
     setRange(root.children[0]!.firstChild!, 1, root.children[2]!.firstChild!, 2)
-    expect(takeSnapshot(root).selection).toEqual({ start: { block: 0, offset: 1 }, end: { block: 2, offset: 2 } })
+    expect(takeSnapshot(root).selection).toEqual({
+      start: { block: 0, offset: 1, path: [0], domOffset: 1 },
+      end: { block: 2, offset: 2, path: [0], domOffset: 2 },
+    })
   })
 
   test('<pre> counts a <br> as one newline, same as plain text', () => {
@@ -141,6 +147,67 @@ describe('takeSnapshot selection', () => {
     expect(takeSnapshot(root).selection).toBeNull()
     window.getSelection()!.removeAllRanges()
     expect(takeSnapshot(root).selection).toBeNull()
+  })
+})
+
+describe('selection path (exact DOM point)', () => {
+  test('caret at the start of the 2nd <li> restores there, not at the end of the 1st', () => {
+    const src = mount('<ul><li>one</li><li>two</li></ul>')
+    setRange(src.querySelectorAll('li')[1]!.firstChild!, 0)
+    const target = takeSnapshot(src)
+    expect(target.selection!.start.path).toEqual([1, 0])
+    const root = mount('<div>nothing</div>')
+    restoreSnapshot(root, target)
+    const sel = window.getSelection()!
+    expect(sel.anchorNode!.textContent).toBe('two')
+    expect(sel.anchorNode!.parentElement).toBe(root.querySelectorAll('li')[1])
+    expect(sel.anchorOffset).toBe(0)
+  })
+
+  test('caret inside an empty <li><br></li> restores inside it', () => {
+    const src = mount('<ul><li>one</li><li><br></li></ul>')
+    setRange(src.querySelectorAll('li')[1]!, 0)
+    const target = takeSnapshot(src)
+    const root = mount('<div>nothing</div>')
+    restoreSnapshot(root, target)
+    const sel = window.getSelection()!
+    expect(sel.anchorNode).toBe(root.querySelectorAll('li')[1])
+    expect(sel.anchorOffset).toBe(0)
+  })
+
+  test('caret at the start of the 2nd <p> inside a blockquote', () => {
+    const src = mount('<blockquote><p>a</p><p>b</p></blockquote>')
+    setRange(src.querySelectorAll('p')[1]!.firstChild!, 0)
+    const target = takeSnapshot(src)
+    const root = mount('<div>nothing</div>')
+    restoreSnapshot(root, target)
+    const sel = window.getSelection()!
+    expect(sel.anchorNode!.parentElement).toBe(root.querySelectorAll('p')[1])
+    expect(sel.anchorOffset).toBe(0)
+  })
+
+  test('a path that no longer resolves falls back to the text offset', () => {
+    const root = mount('<div>x</div>')
+    const pos = (extra: object) => ({ block: 0, offset: 2, ...extra })
+    for (const extra of [
+      { path: [5, 5], domOffset: 1 },          // no such node
+      { path: [0], domOffset: 99 },            // offset out of range
+      { path: [0], domOffset: 1 },             // resolves but disagrees with the text offset
+    ]) {
+      expect(() => restoreSnapshot(root, snap(['<div>ab</div>'], { start: pos(extra), end: pos(extra) }))).not.toThrow()
+      const sel = window.getSelection()!
+      expect(sel.anchorNode!.textContent).toBe('ab')
+      expect(sel.anchorOffset).toBe(2)
+    }
+  })
+
+  test('<pre> and picture blocks keep text-offset addressing (no path)', () => {
+    const live = mount('<pre>aa<br>bb</pre>')
+    setRange(live.querySelector('pre')!.lastChild!, 1)
+    expect(takeSnapshot(live).selection!.start).toEqual({ block: 0, offset: 4 })
+    const pic = mount('<div class="tt-img"><img src="data:x"></div>')
+    setRange(pic.firstElementChild!, 0)
+    expect(takeSnapshot(pic).selection!.start.path).toBeUndefined()
   })
 })
 
