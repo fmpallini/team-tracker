@@ -133,6 +133,34 @@ describe('checkpoint, undo, redo', () => {
     expect(text(h.root)).toBe('a|b|c')
   })
 
+  test('a stale pending expires in a macrotask: a later unrelated change is no entry and keeps redo', async () => {
+    const h = setup()
+    h.u.checkpoint()
+    type(h.root, 0, 'X')
+    await flush()
+    h.u.undo()
+    await flush()
+    h.u.checkpoint() // changes nothing
+    await flush()
+    vi.advanceTimersByTime(0)
+    type(h.root, 1, 'Z') // e.g. a chip relabel, no checkpoint
+    await flush()
+    h.u.undo() // nothing to undo: the 'Z' change is not an entry
+    expect(text(h.root)).toBe('a|bZ|c')
+    h.u.redo() // still available: the unrelated change did not clear it
+    expect(text(h.root)).toBe('aX|b|c')
+  })
+
+  test('the expiry still commits a real edit made in that task', async () => {
+    const h = setup()
+    input(h, 'insertParagraph')
+    type(h.root, 0, 'X')
+    vi.advanceTimersByTime(0)
+    await flush()
+    h.u.undo()
+    expect(text(h.root)).toBe('a|b|c')
+  })
+
   test('a checkpoint with no mutation leaves no entry and keeps redo', async () => {
     const h = setup()
     h.u.checkpoint()
@@ -382,6 +410,59 @@ describe('typing runs', () => {
   })
 })
 
+describe('IME composition', () => {
+  test('a composition with long pauses undoes in one step', async () => {
+    const h = setup()
+    h.u.setComposing(true)
+    for (const s of ['n', 'ni', 'ni h']) {
+      input(h, 'insertCompositionText')
+      block(h.root, 0).firstChild!.textContent = 'a' + s
+      await flush()
+      vi.advanceTimersByTime(1500)
+    }
+    input(h, 'deleteCompositionText')
+    block(h.root, 0).firstChild!.textContent = 'a'
+    input(h, 'insertFromComposition')
+    block(h.root, 0).firstChild!.textContent = 'a你'
+    await flush()
+    vi.advanceTimersByTime(1500)
+    h.u.setComposing(false)
+    h.u.undo()
+    expect(text(h.root)).toBe('a|b|c')
+  })
+
+  test('a selectionchange at another caret during composition does not split the run', async () => {
+    const h = setup()
+    h.u.setComposing(true)
+    input(h, 'insertCompositionText')
+    block(h.root, 0).firstChild!.textContent = 'an'
+    await flush()
+    h.u.noteSelectionChange()
+    setCaret(block(h.root, 2).firstChild!, 0)
+    h.u.noteSelectionChange()
+    input(h, 'insertCompositionText')
+    block(h.root, 0).firstChild!.textContent = 'ani'
+    await flush()
+    h.u.undo()
+    expect(text(h.root)).toBe('a|b|c')
+  })
+
+  test('compositionend re-arms the idle close', async () => {
+    const h = setup()
+    h.u.setComposing(true)
+    input(h, 'insertCompositionText')
+    block(h.root, 0).firstChild!.textContent = 'an'
+    await flush()
+    h.u.setComposing(false)
+    vi.advanceTimersByTime(1000)
+    input(h, 'insertText')
+    type(h.root, 0, 'y')
+    await flush()
+    h.u.undo()
+    expect(text(h.root)).toBe('an|b|c')
+  })
+})
+
 describe('closing a run', () => {
   async function typedRun(h: Harness): Promise<void> {
     setCaret(block(h.root, 0).firstChild!, 1)
@@ -462,6 +543,30 @@ describe('keys and read-only', () => {
     expect(h.u.handleKeydown(y)).toBe(true)
     expect(y.defaultPrevented).toBe(true)
     expect(text(h.root)).toBe('aX|b|c')
+  })
+
+  test('the produced Latin letter wins over the physical key', async () => {
+    const h = setup()
+    h.u.checkpoint()
+    type(h.root, 0, 'X')
+    await flush()
+    h.u.undo()
+    // QWERTZ: the Y key reports code KeyZ.
+    expect(h.u.handleKeydown(key({ key: 'y', code: 'KeyZ', ctrlKey: true }))).toBe(true)
+    expect(text(h.root)).toBe('aX|b|c')
+    // Dvorak: physical KeyY produces F; Ctrl+F is the browser's Find.
+    const f = key({ key: 'f', code: 'KeyY', ctrlKey: true })
+    expect(h.u.handleKeydown(f)).toBe(false)
+    expect(f.defaultPrevented).toBe(false)
+  })
+
+  test('a non-Latin key falls back to the physical key', async () => {
+    const h = setup()
+    h.u.checkpoint()
+    type(h.root, 0, 'X')
+    await flush()
+    expect(h.u.handleKeydown(key({ key: 'я', code: 'KeyZ', ctrlKey: true }))).toBe(true)
+    expect(text(h.root)).toBe('a|b|c')
   })
 
   test('Cmd+Z works and a layout-shifted key is matched by code', async () => {

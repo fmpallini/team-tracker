@@ -12,7 +12,6 @@
 // closes on an input-kind change, Enter, a caret jump or 1 s idle.
 
 import { takeSnapshot, sameBlocks, restoreSnapshot, type Snapshot } from './editor-snapshot'
-import { matchKey } from './hotkeys'
 
 export interface UndoDeps {
   root: HTMLElement
@@ -36,6 +35,11 @@ export interface UndoStack {
   /** A `selectionchange` on the document: closes the run when the caret moved on its own. */
   noteSelectionChange(): void
   closeRun(): void
+  /**
+   * compositionstart/compositionend of the editor. While composing the run never closes by idle or
+   * caret movement, so one IME composition is one step.
+   */
+  setComposing(composing: boolean): void
   /** Empties both stacks (setMd); the stack keeps working. */
   clear(): void
   /** Empties both stacks and stops the observer. */
@@ -60,6 +64,13 @@ function sameCaret(a: Caret | null, b: Caret | null): boolean {
   return a.an === b.an && a.ao === b.ao && a.fn === b.fn && a.fo === b.fo
 }
 
+/** The key's logical letter: the produced Latin letter, else (Cyrillic etc.) the physical key. */
+function keyLetter(e: KeyboardEvent): string | null {
+  if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase()
+  const m = /^Key([A-Z])$/.exec(e.code)
+  return m ? m[1]!.toLowerCase() : null
+}
+
 function push(stack: Snapshot[], s: Snapshot): void {
   stack.push(s)
   if (stack.length > MAX_ENTRIES) stack.shift()
@@ -74,6 +85,7 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
   let run: { kind: RunKind } | null = null
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let inputPending = false
+  let composing = false
   let lastCaret: Caret | null = null
 
   /** Pending becomes an entry only if the document really changed (net of presentation-only DOM work). */
@@ -114,9 +126,17 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     drain()
     if (stepOpen) return
     closeRun()
-    pending = takeSnapshot(root)
+    const mine = takeSnapshot(root)
+    pending = mine
     stepOpen = true
     queueMicrotask(() => { stepOpen = false })
+    // An edit that changes nothing must not leave a pending snapshot that a later,
+    // unrelated DOM change (a chip relabel) would turn into an entry. A macrotask
+    // runs after the browser's default action for the beforeinput that opened it.
+    setTimeout(() => {
+      drain()
+      if (pending === mine && !run) pending = null
+    }, 0)
   }
 
   function restoreFrom(from: Snapshot[], to: Snapshot[]): boolean {
@@ -151,7 +171,7 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
       return
     }
     const kind: RunKind | null =
-      type === 'insertText' || type === 'insertCompositionText' ? 'insert'
+      type === 'insertText' || type.includes('Composition') ? 'insert'
         : type.startsWith('deleteContent') ? 'delete'
           : null
     if (kind === null) { checkpoint(); return }
@@ -163,8 +183,18 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
       pending = takeSnapshot(root)
       run = { kind }
     }
+    armIdle()
+  }
+
+  function armIdle(): void {
     stopIdle()
-    idleTimer = setTimeout(closeRun, IDLE_MS)
+    if (!composing) idleTimer = setTimeout(closeRun, IDLE_MS)
+  }
+
+  function setComposing(value: boolean): void {
+    composing = value
+    if (value) stopIdle()
+    else if (run) armIdle()
   }
 
   function noteSelectionChange(): void {
@@ -174,15 +204,17 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
       lastCaret = readCaret(root)
       return
     }
+    if (composing) { lastCaret = readCaret(root); return }
     if (!run) return
     if (!sameCaret(readCaret(root), lastCaret)) closeRun()
   }
 
   function handleKeydown(e: KeyboardEvent): boolean {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return false
+    const letter = keyLetter(e)
     let redo: boolean
-    if (matchKey(e, 'z')) redo = e.shiftKey
-    else if (!e.shiftKey && matchKey(e, 'y')) redo = true
+    if (letter === 'z') redo = e.shiftKey
+    else if (letter === 'y' && !e.shiftKey) redo = true
     else return false
     if (deps.isReadOnly()) return false
     e.preventDefault()
@@ -199,6 +231,7 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     run = null
     stepOpen = false
     inputPending = false
+    composing = false
     lastCaret = null
     stopIdle()
   }
@@ -211,6 +244,7 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     handleBeforeInput,
     noteSelectionChange,
     closeRun,
+    setComposing,
     clear,
     destroy() {
       observer.disconnect()
