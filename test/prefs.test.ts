@@ -958,6 +958,32 @@ describe('about tab: "Check now"', () => {
     expect(run).toHaveBeenCalledTimes(1)
   })
 
+  test('a newer version offers Reload now in the window when the build can reload; other results do not', async () => {
+    const reloadBtn = () => document.querySelector('.tt-prefs-update-check-reload') as HTMLButtonElement
+    const { store, shell, appCtl } = setup()
+    const reload = vi.fn(async () => {})
+    appCtl.reloadForUpdate = reload
+    appCtl.updateCheck = createManualUpdateCheck(async () => ({ status: 'newer', version: '9.1.0' }))
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('About')
+    expect(reloadBtn().hidden).toBe(true)
+    button().click()
+    await vi.waitFor(() => expect(reloadBtn().hidden).toBe(false))
+    expect(reloadBtn().textContent).toBe(t('en-US', 'update_notice_reload'))
+    reloadBtn().click()
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  test('no Reload now without reloadForUpdate (standalone build)', async () => {
+    const { store, shell, appCtl } = setup()
+    appCtl.updateCheck = createManualUpdateCheck(async () => ({ status: 'newer', version: '9.1.0' }))
+    openPrefs(store, shell, 'en-US', appCtl)
+    clickTab('About')
+    button().click()
+    await vi.waitFor(() => expect(status()).toBe(t('en-US', 'prefs_update_check_newer', { version: '9.1.0' })))
+    expect((document.querySelector('.tt-prefs-update-check-reload') as HTMLButtonElement).hidden).toBe(true)
+  })
+
   test('the button stays disabled through the cooldown, also after reopening the window, and comes back after it', async () => {
     vi.useFakeTimers({ now: 5_000_000 })
     const { store, shell, appCtl } = setup()

@@ -118,6 +118,15 @@ test('editor help lists the code-block / blockquote / link shortcuts and syntax'
   expect(text).not.toMatch(/texto|clique/)
 })
 
+test('editor help lists undo and redo', () => {
+  showEditorHelp('en-US')
+  const text = document.body.textContent!
+  expect(text).toContain('Ctrl+Z')
+  expect(text).toContain('Ctrl+Shift+Z / Ctrl+Y')
+  expect(text).toContain('Undo')
+  expect(text).toContain('Redo')
+})
+
 test('editor help (pt-BR) keeps markdown examples and key names in Portuguese', () => {
   showEditorHelp('pt-BR')
   const text = document.body.textContent!

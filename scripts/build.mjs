@@ -25,7 +25,7 @@ const tpl = readFileSync('index.html', 'utf8')
 
 // The page's Content-Security-Policy: a backstop for the markdown and paste sanitizers. Only the inlined bundle may
 // run (allowed by its hash, so an injected <script> or on* attribute cannot), nothing loads from or talks to another
-// origin except the GitHub version check, and pictures come only from data:/blob: URLs. Styles stay 'unsafe-inline':
+// origin except the GitHub version check, and pictures come only from data:/blob: URLs (plus, in the PWA, its own origin for the manifest icons). Styles stay 'unsafe-inline':
 // the app sets style attributes, and CSS cannot run script. A <meta> policy cannot carry frame-ancestors; the app has
 // no server to send headers from. The PWA also registers its service worker and manifest from its own origin.
 function csp(js, pwa) {
@@ -34,7 +34,8 @@ function csp(js, pwa) {
     "default-src 'none'",
     `script-src 'sha256-${hash}'`,
     "style-src 'unsafe-inline'",
-    'img-src data: blob:',
+    // The PWA's own origin too: the browser checks the manifest's icons (icon.svg …) against img-src.
+    `img-src ${pwa ? "'self' " : ''}data: blob:`,
     'connect-src https://api.github.com',
     "base-uri 'none'",
     "form-action 'none'",

@@ -91,6 +91,21 @@ export function moveInTree(people: Person[], draggedId: string, targetId: string
 }
 
 /**
+ * Swaps `id` with its previous (`delta` -1) or next (+1) sibling under the same parent, renumbering that group
+ * to a dense 0..n-1 sequence. No-op at either end of the group or for an unknown id. Mutates in place, like `moveInTree`.
+ */
+export function moveAmongSiblings(people: Person[], id: string, delta: -1 | 1): void {
+  const me = people.find((p) => p.id === id)
+  if (!me) return
+  const group = childrenOf(people, me.parentId)
+  const i = group.indexOf(me)
+  const j = i + delta
+  if (j < 0 || j >= group.length) return
+  group.splice(j, 0, ...group.splice(i, 1))
+  group.forEach((p, k) => { p.order = k })
+}
+
+/**
  * Promotes `draggedId` to the root level (parentId null), appended after the
  * existing roots, renumbering both affected sibling groups. No-op when the
  * person is already a root or the id is unknown. Mutates the Person objects
@@ -224,11 +239,22 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       }
 
       // The box carries no action buttons of its own: the ⋯ button, a right-click and Space all open this one menu.
+      const moveAmongSiblingsBy = (delta: -1 | 1): void => {
+        ctx.store.update((d) => {
+          const tm = docFindTeam(d, teamId)
+          if (tm) moveAmongSiblings(tm[group], person.id, delta)
+        }, { teamId, sections: ['people'] })
+      }
       const openMenu = (x: number, y: number): void => {
+        const sibs = childrenOf(people(), person.parentId)
+        const at = sibs.findIndex((p) => p.id === person.id)
         showContextMenu(x, y, [
           { label: t(lc, 'person_notes_title'), icon: icon('note'), onClick: openNotes },
           { label: t(lc, 'person_edit_title'), icon: icon('edit'), onClick: () => openEditModal(person) },
           { label: t(lc, 'person_add_child_title'), icon: icon('plus'), onClick: () => openAddModal(person.id) },
+          // Left/right in the chart: an end of the sibling group has no further to go, so that item is left out.
+          ...(at > 0 ? [{ label: t(lc, 'person_move_earlier_title'), icon: icon('back'), onClick: () => moveAmongSiblingsBy(-1) }] : []),
+          ...(at >= 0 && at < sibs.length - 1 ? [{ label: t(lc, 'person_move_later_title'), icon: icon('next'), onClick: () => moveAmongSiblingsBy(1) }] : []),
           { label: t(lc, 'person_delete_title'), icon: icon('trash'), danger: true, onClick: deleteThisPerson },
         ])
       }
@@ -276,6 +302,12 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           ev.preventDefault()
           const rect = box.getBoundingClientRect()
           openMenu(rect.left + 16, rect.bottom)
+          return
+        }
+        // Ctrl+Left/Right reorders among siblings; renderAll re-focuses the box by person id afterwards.
+        if (ev.ctrlKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+          ev.preventDefault()
+          moveAmongSiblingsBy(ev.key === 'ArrowLeft' ? -1 : 1)
           return
         }
         const next = adjacentBox(box, ev.key)

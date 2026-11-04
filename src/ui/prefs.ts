@@ -60,6 +60,8 @@ export interface PrefsAppCtl {
   fileSchemaVersion: number
   /** The About tab's "Check now": one per page (main.ts), so its cooldown and last result outlive this window. */
   updateCheck: ManualUpdateCheck
+  /** Save, then reload into the new version; set in the PWA build only. Lets About offer the reload the banner cannot while this window is open. */
+  reloadForUpdate?: () => Promise<void>
 }
 
 /**
@@ -971,6 +973,20 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const describe = (r: UpdateCheckResult | null): string =>
       r === null ? '' : r.status === 'newer' ? t(locale, 'prefs_update_check_newer', { version: r.version })
         : r.status === 'up-to-date' ? t(locale, 'prefs_update_check_latest') : t(locale, 'prefs_update_check_error')
+    // The banner's "Reload now" sits behind this modal and is disabled while one is open, so a newer version offers
+    // the same reload here (PWA build only: main.ts passes `reloadForUpdate` only there).
+    const reload = appCtl.reloadForUpdate
+    const reloadBtn = el('button', { class: 'tt-btn tt-prefs-update-check-reload', type: 'button' }, t(locale, 'update_notice_reload'))
+    reloadBtn.hidden = true
+    reloadBtn.addEventListener('click', () => {
+      reloadBtn.disabled = true
+      // Resolves without navigating only when the save failed and the caller aborted the reload.
+      void reload?.().finally(() => { reloadBtn.disabled = false })
+    })
+    const showResult = (r: UpdateCheckResult | null): void => {
+      status.textContent = describe(r)
+      reloadBtn.hidden = !reload || r?.status !== 'newer'
+    }
     // Off while a check runs and through the cooldown; it turns itself back on when the cooldown ends.
     const sync = (): void => {
       const wait = check.remainingMs()
@@ -983,12 +999,12 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       sync()
       status.textContent = t(locale, 'prefs_update_check_running')
       const result = await pending
-      status.textContent = describe(result ?? check.lastResult)
+      showResult(result ?? check.lastResult)
       sync()
     }
-    status.textContent = describe(check.lastResult)
+    showResult(check.lastResult)
     sync()
-    return el('div', { class: 'tt-prefs-update-check-now-row' }, button, status)
+    return el('div', { class: 'tt-prefs-update-check-now-row' }, button, status, reloadBtn)
   }
 
   // --- Tab strip / dispatch ----------------------------------------------

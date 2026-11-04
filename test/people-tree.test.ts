@@ -5,6 +5,7 @@ import {
   computeDropPosition,
   moveInTree,
   moveToRoot,
+  moveAmongSiblings,
   deletePerson,
 } from '../src/modules/people-tree'
 import { createStore, type Store } from '../src/core/store'
@@ -127,6 +128,23 @@ describe('pure helpers', () => {
     expect(computeDropPosition(5, -1)).toBe('child')
   })
 
+  test('moveAmongSiblings: swaps with the neighbour inside one parent only, renumbering; no-ops at the ends', () => {
+    const people = [
+      person({ id: 'r', parentId: null, order: 0 }),
+      person({ id: 'a', parentId: 'r', order: 0 }),
+      person({ id: 'b', parentId: 'r', order: 1 }),
+      person({ id: 'c', parentId: 'r', order: 2 }),
+      person({ id: 'x', parentId: null, order: 1 }),
+    ]
+    moveAmongSiblings(people, 'c', -1)
+    expect(childrenOf(people, 'r').map((p) => [p.id, p.order])).toEqual([['a', 0], ['c', 1], ['b', 2]])
+    moveAmongSiblings(people, 'a', -1)
+    moveAmongSiblings(people, 'b', 1)
+    moveAmongSiblings(people, 'nope', 1)
+    expect(childrenOf(people, 'r').map((p) => p.id)).toEqual(['a', 'c', 'b'])
+    expect(childrenOf(people, null).map((p) => p.id)).toEqual(['r', 'x'])
+  })
+
   test('moveToRoot: promotes a nested person to the end of the root list, renumbering both groups', () => {
     const people = [
       person({ id: 'a', parentId: null, order: 0 }),
@@ -246,7 +264,7 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
     const box = boxes(container)[0]!
-    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions')
+    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions · Ctrl+←/→ to reorder')
   })
 
   test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
@@ -335,7 +353,44 @@ describe('renderPeopleTree', () => {
     test('Space opens the context menu, like a right-click', () => {
       const { boxById } = chart()
       key(boxById('a'), ' ')
-      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Delete person'])
+      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Move later', 'Delete person'])
+    })
+
+    test('Ctrl+Left/Right reorders among siblings and keeps focus; a plain arrow still just walks', () => {
+      const team = makeTeam({ members: [
+        person({ id: 'a', name: 'Ana', order: 0 }),
+        person({ id: 'b', name: 'Bia', order: 1 }),
+      ] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members')
+      document.body.appendChild(container)
+      const ids = (): string[] => boxes(container).map((b) => b.dataset.personId!)
+      const a = boxes(container)[0]!
+      a.focus()
+      a.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, bubbles: true, cancelable: true }))
+      expect(ids()).toEqual(['b', 'a'])
+      expect((document.activeElement as HTMLElement).dataset.personId).toBe('a')
+    })
+
+    test('the menu offers Move earlier / Move later only where there is room, and applies them', () => {
+      const team = makeTeam({ members: [
+        person({ id: 'a', name: 'Ana', order: 0 }),
+        person({ id: 'b', name: 'Bia', order: 1 }),
+        person({ id: 'c', name: 'Cid', order: 2 }),
+      ] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members')
+      const box = (id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${id}"]`)!
+      box('a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      expect(menuLabels()).toContain('Move later')
+      expect(menuLabels()).not.toContain('Move earlier')
+      closeAnyContextMenu()
+      box('c').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      expect(menuLabels()).toContain('Move earlier')
+      expect(menuLabels()).not.toContain('Move later')
+      closeAnyContextMenu()
+      chooseFromMenu(box('b'), 'Move earlier')
+      expect(boxes(container).map((b) => b.dataset.personId)).toEqual(['b', 'a', 'c'])
     })
 
     test('focus survives the tree rebuild a store change causes', () => {
