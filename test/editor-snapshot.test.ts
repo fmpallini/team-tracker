@@ -173,12 +173,12 @@ describe('takeSnapshot selection', () => {
     expect(takeSnapshot(root).selection!.start.offset).toBe(3)
   })
 
-  test('container === root maps to {block: min(offset, n-1), offset: 0}', () => {
+  test('container === root maps to the start of child `offset`, or the end of the last block past it', () => {
     const root = mount('<div>a</div><div>b</div><div>c</div>')
     setRange(root, 1)
     expect(takeSnapshot(root).selection!.start).toEqual({ block: 1, offset: 0 })
     setRange(root, 3)
-    expect(takeSnapshot(root).selection!.start).toEqual({ block: 2, offset: 0 })
+    expect(takeSnapshot(root).selection!.start).toEqual({ block: 2, offset: 1 })
   })
 
   test('selection outside the root is null; no selection is null', () => {
@@ -492,5 +492,29 @@ describe('restoreSnapshot never executes markup', () => {
     expect(img.hasAttribute('onerror')).toBe(false)
     expect(root.querySelector('[onclick]')).toBeNull()
     expect((window as unknown as Record<string, unknown>).__x).toBeUndefined()
+  })
+})
+
+describe('a selection anchored on the root itself', () => {
+  test('a caret past the last child comes back at the end of the last block', () => {
+    const root = mount('<div>ab</div><div>cd</div>')
+    const sel = document.getSelection()!
+    sel.setBaseAndExtent(root, 2, root, 2)
+    const snap = takeSnapshot(root)
+    sel.setBaseAndExtent(root.children[0]!.firstChild!, 0, root.children[0]!.firstChild!, 0)
+    restoreSnapshot(root, snap)
+    expect(sel.anchorNode).toBe(root.children[1]!.firstChild)
+    expect(sel.anchorOffset).toBe(2)
+  })
+
+  test('a caret before child 1 comes back at the start of that block', () => {
+    const root = mount('<div>ab</div><div>cd</div>')
+    const sel = document.getSelection()!
+    sel.setBaseAndExtent(root, 1, root, 1)
+    const snap = takeSnapshot(root)
+    sel.setBaseAndExtent(root.children[0]!.firstChild!, 2, root.children[0]!.firstChild!, 2)
+    restoreSnapshot(root, snap)
+    expect(sel.anchorNode).toBe(root.children[1]!.firstChild)
+    expect(sel.anchorOffset).toBe(0)
   })
 })

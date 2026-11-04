@@ -136,7 +136,7 @@ function offsetInBlock(block: HTMLElement, node: Node, offset: number): number {
 function pointInBlock(block: HTMLElement, offset: number): { node: Node; offset: number } {
   let remaining = offset
   let lastText: Text | null = null
-  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT)
+  const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT)
   let n: Node | null
   while ((n = walker.nextNode())) {
     if (n.nodeType === Node.TEXT_NODE) {
@@ -158,7 +158,11 @@ function pointInBlock(block: HTMLElement, offset: number): { node: Node; offset:
 function toBlockPos(root: HTMLElement, node: Node, offset: number): BlockPos | null {
   const n = root.children.length
   if (n === 0) return null
-  if (node === root) return { block: Math.min(offset, n - 1), offset: 0 }
+  if (node === root) {
+    // A point on the root itself: before child `offset`. Past the last child is the end of the last block.
+    if (offset >= n) return { block: n - 1, offset: subtreeLength(root.children[n - 1]!) }
+    return { block: offset, offset: 0 }
+  }
   let top: Node = node
   while (top.parentNode && top.parentNode !== root) top = top.parentNode
   if (top.parentNode !== root) return null

@@ -1,5 +1,6 @@
 import { normalizeImageSpacing } from '../src/ui/editor-dom'
 import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { recordEdit } from '../src/ui/editor-undo'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 import { IMAGE_ACCEPT } from '../src/core/image-import'
@@ -1052,6 +1053,30 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // The collapse state of restored code blocks is matched to the removed ones from the end: a step that
+  // pasted a collapsed block before an expanded one must not hand its state to the expanded one on undo.
+  test('undo keeps an expanded code block expanded when the step also added a collapsed one before it', () => {
+    const { editor, editorEl } = setup('x')
+    const long = '```\n' + Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n') + '\n```'
+    editor.setMd(long)
+    const e = editorEl.querySelector('pre')!
+    e.removeAttribute('data-collapsed') // the user expanded it
+    window.getSelection()!.removeAllRanges()
+    recordEdit(editorEl, () => {
+      const n = e.cloneNode(true) as HTMLElement
+      n.append('?') // distinct, so the diff does not keep it as the original block
+      n.setAttribute('data-collapsed', '')
+      e.before(n)
+      e.append('!')
+    })
+    expect(editorEl.querySelectorAll('pre')).toHaveLength(2)
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    const pres = editorEl.querySelectorAll('pre')
+    expect(pres).toHaveLength(1)
+    expect(pres[0]!.hasAttribute('data-collapsed')).toBe(false)
+    editor.destroy()
   })
 
   test('setMd starts a fresh history: Ctrl+Z cannot bring back the previous note', () => {

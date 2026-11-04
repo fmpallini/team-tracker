@@ -2558,21 +2558,24 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     blocks.flatMap((b) => [...(b.matches('pre') ? [b] : []), ...Array.from(b.querySelectorAll<HTMLElement>('pre'))])
 
   /** An undo/redo put `replaced` where `removed` were. A snapshot holds no view state, so each restored
-   * `<pre>` gets its line count again but is never auto-collapsed on its own account: the n-th restored
-   * block is collapsed only if the n-th code block it replaced was collapsed (and it is still long), and
-   * never when it holds the caret or selection end, which a collapse would hide. Blocks outside the replaced range keep
-   * their nodes and so their state. */
+   * `<pre>` gets its line count again but is never auto-collapsed on its own account: the restored
+   * blocks are matched to the removed code blocks from the end, and one is collapsed only if its match
+   * was collapsed (and it is still long), and never when it holds the caret or selection end, which a
+   * collapse would hide. Blocks outside the replaced range keep their nodes and so their state. */
   function decorateRestoredCodeBlocks(replaced: readonly HTMLElement[], removed: readonly HTMLElement[]): void {
     const wasCollapsed = presIn(removed).map((pre) => pre.hasAttribute('data-collapsed'))
     const sel = editorEl.ownerDocument.getSelection()
     const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
     const holdsSelection = (pre: HTMLElement): boolean =>
       !!range && (pre.contains(range.startContainer) || pre.contains(range.endContainer))
+    // Aligned from the end: the blocks a step adds or drops are usually the leading ones, and the
+    // one nearest the unchanged tail is the one the user most likely meant to keep as it was.
+    const shift = wasCollapsed.length - presIn(replaced).length
     presIn(replaced).forEach((pre, i) => {
       markPre(pre)
       const n = preLineCount(pre)
       pre.dataset.lines = String(n)
-      if (wasCollapsed[i] && n > CB_AUTO_COLLAPSE_OVER && !holdsSelection(pre)) collapsePre(pre)
+      if (wasCollapsed[i + shift] && n > CB_AUTO_COLLAPSE_OVER && !holdsSelection(pre)) collapsePre(pre)
       else expandPre(pre)
     })
   }

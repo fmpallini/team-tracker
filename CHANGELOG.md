@@ -4,6 +4,13 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.5.1] - 2026-11-04
+
+### Fixed
+- Ctrl+Z in the note editor is reliable: pasting a list, Tab indents, auto-formatting, cut and toolbar commands each undo in one step, and Redo brings them back.
+- Undo keeps your place: the caret and scroll position no longer jump, and long code blocks stay as you left them.
+- Typing `# ` under a line turned the line above into the heading instead of the new one.
+
 ## [3.5.0] - 2026-11-01
 
 ### Added
