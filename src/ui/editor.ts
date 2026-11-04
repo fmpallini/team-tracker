@@ -417,8 +417,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // change. A restore swaps in parsed blocks, so they are made live again here.
   const undoStack = createUndoStack({
     root: editorEl,
-    afterRestore: (replaced) => {
-      decorateCodeBlocks(true, replaced)
+    afterRestore: (replaced, removed) => {
+      decorateRestoredCodeBlocks(replaced, removed)
       syncPreHighlight()
       hydrateImages()
       refreshRefLabels()
@@ -1763,8 +1763,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         } finally {
           revertingNativeHistory = false
         }
-        if (undo) undoStack.undo()
-        else undoStack.redo()
+        // The browser keeps one history per document, so its step can land on an editor the user is not
+        // in: only the focused editor's stack runs. The store hears about the result either way, in case
+        // the take-back did not bring the document all the way back.
+        ensureBlock()
+        if (editorEl.contains(document.activeElement)) {
+          if (undo) undoStack.undo()
+          else undoStack.redo()
+        }
+        scheduleChange()
       })
       return
     }
@@ -2535,18 +2542,35 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /** Sets `data-lines` on every <pre> and auto-collapses the long ones.
    * `all` re-runs it over blocks already seen this session (setMd, a fresh
    * document); the default only touches blocks with no `data-lines` yet, so
-   * a mid-session paste can't re-collapse a block the user just expanded.
-   * `within` limits it to those top-level blocks (the ones an undo replaced). */
-  function decorateCodeBlocks(all = false, within?: readonly HTMLElement[]): void {
-    const pres = within
-      ? within.flatMap((b) => [...(b.matches('pre') ? [b] : []), ...Array.from(b.querySelectorAll<HTMLElement>('pre'))])
-      : Array.from(editorEl.querySelectorAll<HTMLElement>('pre'))
-    pres.forEach((pre) => {
+   * a mid-session paste can't re-collapse a block the user just expanded. */
+  function decorateCodeBlocks(all = false): void {
+    editorEl.querySelectorAll<HTMLElement>('pre').forEach((pre) => {
       markPre(pre)
       if (!all && pre.dataset.lines !== undefined) return
       const n = preLineCount(pre)
       pre.dataset.lines = String(n)
       if (n > CB_AUTO_COLLAPSE_OVER) collapsePre(pre)
+      else expandPre(pre)
+    })
+  }
+
+  const presIn = (blocks: readonly HTMLElement[]): HTMLElement[] =>
+    blocks.flatMap((b) => [...(b.matches('pre') ? [b] : []), ...Array.from(b.querySelectorAll<HTMLElement>('pre'))])
+
+  /** An undo/redo put `replaced` where `removed` were. A snapshot holds no view state, so each restored
+   * `<pre>` gets its line count again but is never auto-collapsed on its own account: the n-th restored
+   * block is collapsed only if the n-th code block it replaced was collapsed (and it is still long), and
+   * never when it holds the caret, which a collapse would hide. Blocks outside the replaced range keep
+   * their nodes and so their state. */
+  function decorateRestoredCodeBlocks(replaced: readonly HTMLElement[], removed: readonly HTMLElement[]): void {
+    const wasCollapsed = presIn(removed).map((pre) => pre.hasAttribute('data-collapsed'))
+    const sel = editorEl.ownerDocument.getSelection()
+    const caret = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null
+    presIn(replaced).forEach((pre, i) => {
+      markPre(pre)
+      const n = preLineCount(pre)
+      pre.dataset.lines = String(n)
+      if (wasCollapsed[i] && n > CB_AUTO_COLLAPSE_OVER && !(caret && pre.contains(caret))) collapsePre(pre)
       else expandPre(pre)
     })
   }

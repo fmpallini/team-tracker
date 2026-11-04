@@ -236,6 +236,42 @@ test.describe('editor undo — redo and the Edit-menu path', () => {
 })
 
 test.describe('editor undo — out-of-band DOM rewrites', () => {
+  // A long block auto-collapses on load (over 8 lines). Once the user expands it and types inside, an undo
+  // must not collapse it again: the caret would be hidden inside the collapsed part.
+  test('an expanded long code block stays expanded after typing inside it and Ctrl+Z, caret visible', async ({ page }) => {
+    const code = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')
+    await openDoc(page, docWith({ kind: 'daily', date: DAY }, { daily: `intro\n\`\`\`\n${code}\n\`\`\`\nafter` }))
+    const editor = page.locator('.editor').first()
+    const pre = editor.locator('pre')
+    await expect(pre).toHaveAttribute('data-collapsed', '')
+    await pre.hover()
+    await page.getByTitle('Expand block', { exact: true }).click()
+    await expect(pre).not.toHaveAttribute('data-collapsed')
+    const box = (await pre.boundingBox())!
+    await pre.click({ position: { x: 40, y: box.height - 20 } })
+    await k(page).press('End')
+    await k(page).type('zz')
+    await expect(pre).toContainText('zz')
+    await page.waitForTimeout(400)
+
+    await k(page).press('Control+z')
+    await expect(pre).not.toContainText('zz')
+    await expect(pre).not.toHaveAttribute('data-collapsed')
+    const caret = await editor.evaluate((ed) => {
+      const sel = getSelection()!
+      const r = sel.getRangeAt(0)
+      const rect = r.getClientRects()[0] ?? r.getBoundingClientRect()
+      const preRect = ed.querySelector('pre')!.getBoundingClientRect()
+      const edRect = ed.getBoundingClientRect()
+      return {
+        inPre: !!ed.querySelector('pre')!.contains(r.startContainer),
+        insidePre: rect.height > 0 && rect.top >= preRect.top - 1 && rect.bottom <= preRect.bottom + 1,
+        insideEditor: rect.top >= edRect.top - 1 && rect.bottom <= edRect.bottom + 1,
+      }
+    })
+    expect(caret).toEqual({ inPre: true, insidePre: true, insideEditor: true })
+  })
+
   test('a highlighted code block: the code and the text typed elsewhere come back in order', async ({ page }) => {
     const editor = await openEditor(page)
     await clearEditor(page)

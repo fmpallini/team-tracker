@@ -93,6 +93,17 @@ describe('takeSnapshot blocks', () => {
     expect(root.querySelector('pre')!.hasAttribute('data-collapsed')).toBe(true)
   })
 
+  test('a pre block line count and collapse label are view state: not stored, ignored by sameBlocks', () => {
+    const root = mount('<pre data-lines="3" data-more-label="+2 lines" data-collapsed>a<br>b<br>c</pre>')
+    const a = takeSnapshot(root)
+    expect(a.blocks).toEqual(['<pre>a\nb\nc</pre>'])
+    const pre = root.querySelector('pre')!
+    pre.dataset.lines = '9'
+    pre.removeAttribute('data-more-label')
+    pre.removeAttribute('data-collapsed')
+    expect(sameBlocks(a, takeSnapshot(root))).toBe(true)
+  })
+
   test('empty <pre> is stored as a <br>', () => {
     const root = mount('<pre><br></pre>')
     expect(takeSnapshot(root).blocks).toEqual(['<pre><br></pre>'])
@@ -267,6 +278,14 @@ describe('restoreSnapshot', () => {
     expect(takeSnapshot(root).blocks).toEqual(target.blocks)
   })
 
+  test('the blocks taken out are handed back through `removed`', () => {
+    const root = mount('<div>a</div><pre data-collapsed>b</pre><div>c</div>')
+    const pre = root.children[1]
+    const removed: HTMLElement[] = []
+    restoreSnapshot(root, snap(['<div>a</div>', '<pre>B</pre>', '<div>c</div>']), removed)
+    expect(removed).toEqual([pre])
+  })
+
   test('insert in the middle', () => {
     const root = mount('<div>a</div><div>c</div>')
     const [a, c] = Array.from(root.children)
@@ -365,6 +384,31 @@ describe('restoreSnapshot', () => {
     expect(window.getSelection()!.isCollapsed).toBe(false)
   })
 
+  test('a backward selection comes back backward (anchor at the end, focus at the start)', () => {
+    const src = mount('<div>aa</div><div>bb</div><div>cc</div>')
+    const sel = window.getSelection()!
+    sel.setBaseAndExtent(src.children[2]!.firstChild!, 1, src.children[0]!.firstChild!, 1)
+    const target = takeSnapshot(src)
+    const root = mount('<div>q</div>')
+    restoreSnapshot(root, target)
+    const live = window.getSelection()!
+    expect(live.anchorNode).toBe(root.children[2]!.firstChild)
+    expect(live.anchorOffset).toBe(1)
+    expect(live.focusNode).toBe(root.children[0]!.firstChild)
+    expect(live.focusOffset).toBe(1)
+    expect(takeSnapshot(root).selection).toEqual(target.selection)
+  })
+
+  test('a forward selection stays forward', () => {
+    const src = mount('<div>aa</div><div>bb</div>')
+    setRange(src.children[0]!.firstChild!, 1, src.children[1]!.firstChild!, 1)
+    const target = takeSnapshot(src)
+    expect(target.selection!.backward).toBeUndefined()
+    const root = mount('<div>q</div>')
+    restoreSnapshot(root, target)
+    expect(window.getSelection()!.anchorNode).toBe(root.children[0]!.firstChild)
+  })
+
   test('<pre> restored from plain text puts the caret at the same offset', () => {
     const root = mount('<div>x</div>')
     restoreSnapshot(root, snap(['<pre>aa\nbb</pre>'], { start: { block: 0, offset: 3 }, end: { block: 0, offset: 3 } }))
@@ -410,6 +454,25 @@ describe('restoreSnapshot', () => {
     restoreSnapshot(root, snap(['<div>a</div>', '<div>keep</div>', '<div>new</div>']))
     expect(window.getSelection()!.anchorNode).toBe(keep)
     expect(window.getSelection()!.anchorOffset).toBe(2)
+  })
+})
+
+describe('restoreSnapshot parses each block on its own', () => {
+  // The HTML parser reshapes some markup a live contenteditable can hold (a <p> holding a block is closed
+  // before it). Parsed together, one stored block could become several and shift every later index.
+  test('a block the parser would reshape still restores as one block; later blocks keep their index', () => {
+    const root = mount('<div>x</div>')
+    const added = restoreSnapshot(root, snap(
+      ['<p>lead<div>inner</div>tail</p>', '<div>next</div>'],
+      { start: { block: 1, offset: 2 }, end: { block: 1, offset: 2 } },
+    ))
+    expect(added).toHaveLength(2)
+    expect(root.children).toHaveLength(2)
+    expect(root.children[0]!.textContent).toBe('leadinnertail')
+    expect(root.children[1]!.textContent).toBe('next')
+    const sel = window.getSelection()!
+    expect(sel.anchorNode!.textContent).toBe('next')
+    expect(sel.anchorOffset).toBe(2)
   })
 })
 

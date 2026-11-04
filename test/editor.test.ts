@@ -980,6 +980,8 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     const before = editor.getMd()
     dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
     expect(editor.getMd()).toBe('hello')
+    editorEl.tabIndex = 0
+    editorEl.focus()
     // The opposite native command fires its own history input, which must not run the stack again.
     const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd) => {
       editorEl.dispatchEvent(new InputEvent('input', { inputType: cmd === 'redo' ? 'historyRedo' : 'historyUndo', bubbles: true }))
@@ -996,6 +998,60 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     expect(editor.getMd()).toBe('hello')
     exec.mockRestore()
     editor.destroy()
+  })
+
+  // One native history per document: execCommand('undo') can land on an editor the user is not in. Its
+  // native step is still taken back, but only the focused editor's stack runs; the store is told either way.
+  test('a native history step on an unfocused editor is taken back without running its stack', async () => {
+    vi.useFakeTimers()
+    try {
+      const hooksA = makeHooks()
+      const a = createEditor(hooksA, 'en-US')
+      document.body.appendChild(a.root)
+      a.setMd('other')
+      const { editor, editorEl } = setup('    hello')
+      dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+      expect(editor.getMd()).toBe('hello')
+      const aEl = a.root.querySelector('.editor') as HTMLElement
+      aEl.tabIndex = 0
+      aEl.focus()
+      expect(document.activeElement).toBe(aEl)
+      const exec = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+      editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }))
+      await Promise.resolve()
+      expect(exec).toHaveBeenCalledWith('redo')
+      expect(editor.getMd()).toBe('hello') // its stack did not run
+      expect(a.getMd()).toBe('other')
+      exec.mockRestore()
+      a.destroy()
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('the native take-back always tells the store, even with nothing on the stack', async () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('hello')
+      const editorEl = editor.root.querySelector('.editor') as HTMLElement
+      editorEl.tabIndex = 0
+      editorEl.focus()
+      vi.advanceTimersByTime(1000)
+      const before = hooks.changes
+      const exec = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+      editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }))
+      await Promise.resolve()
+      vi.advanceTimersByTime(1000)
+      expect(hooks.changes).toBe(before + 1)
+      exec.mockRestore()
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('setMd starts a fresh history: Ctrl+Z cannot bring back the previous note', () => {

@@ -16,7 +16,7 @@ function setup(html = '<div>a</div><div>b</div><div>c</div>'): Harness {
   const deps = { afterRestore: vi.fn(), onChange: vi.fn(), readOnly: false }
   const d: UndoDeps = {
     root,
-    afterRestore: (r) => deps.afterRestore(r),
+    afterRestore: (r, removed) => deps.afterRestore(r, removed),
     onChange: () => deps.onChange(),
     isReadOnly: () => deps.readOnly,
   }
@@ -80,6 +80,28 @@ describe('checkpoint, undo, redo', () => {
     type(h.root, 0, 'X')
     expect(h.u.undo()).toBe(true)
     expect(text(h.root)).toBe('a|b|c')
+  })
+
+  // The post-restore passes change heights (a code block's line count, a chip's new label) and can re-home
+  // the caret, so the place the user was in is applied after them, not before.
+  test('scrollTop and the selection are applied after afterRestore', async () => {
+    const h = setup()
+    let scroll = 40
+    Object.defineProperty(h.root, 'scrollTop', { get: () => scroll, set: (n: number) => { scroll = n }, configurable: true })
+    setCaret(block(h.root, 1).firstChild!, 1)
+    h.u.checkpoint()
+    type(h.root, 1, 'X')
+    await flush()
+    scroll = 300
+    h.deps.afterRestore.mockImplementation(() => {
+      scroll = 999
+      setCaret(block(h.root, 2).firstChild!, 0)
+    })
+    h.u.undo()
+    expect(scroll).toBe(40)
+    const sel = window.getSelection()!
+    expect(sel.anchorNode).toBe(block(h.root, 1).firstChild)
+    expect(sel.anchorOffset).toBe(1)
   })
 
   test('afterRestore receives the replaced blocks only', async () => {

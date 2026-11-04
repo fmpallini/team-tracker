@@ -25,12 +25,17 @@ export interface BlockPos { block: number; offset: number; path?: number[]; domO
 
 export interface Snapshot {
   blocks: string[]
-  selection: { start: BlockPos; end: BlockPos } | null
+  /** `backward`: the anchor is at `end` (a selection made right to left, e.g. Shift+ArrowLeft); omitted when forward. */
+  selection: { start: BlockPos; end: BlockPos; backward?: true } | null
   scrollTop: number
 }
 
-/** Attributes the editor adds to a `<pre>` for presentation only. */
-const PRE_TRANSIENT = ['data-collapsed', 'spellcheck', 'autocorrect', 'autocapitalize']
+/**
+ * Attributes the editor adds to a `<pre>` for presentation only. `data-lines`
+ * is set once and not kept current while typing, so storing it would make two
+ * snapshots of the same text differ (an undo that changes nothing visible).
+ */
+const PRE_TRANSIENT = ['data-collapsed', 'data-lines', 'data-more-label', 'spellcheck', 'autocorrect', 'autocapitalize']
 
 /**
  * Classes the editor puts on a picture block for the view only: the click
@@ -201,7 +206,8 @@ export function takeSnapshot(root: HTMLElement): Snapshot {
     if (root.contains(r.startContainer) && root.contains(r.endContainer)) {
       const start = toBlockPos(root, r.startContainer, r.startOffset)
       const end = toBlockPos(root, r.endContainer, r.endOffset)
-      if (start && end) selection = { start, end }
+      const backward = !r.collapsed && (sel.anchorNode !== r.startContainer || sel.anchorOffset !== r.startOffset)
+      if (start && end) selection = backward ? { start, end, backward: true } : { start, end }
     }
   }
   return { blocks, selection, scrollTop: root.scrollTop }
@@ -212,17 +218,31 @@ export function sameBlocks(a: Snapshot, b: Snapshot): boolean {
   return a.blocks.length === b.blocks.length && a.blocks.every((s, i) => s === b.blocks[i])
 }
 
-function parseBlocks(doc: Document, htmls: string[]): HTMLElement[] {
-  if (htmls.length === 0) return []
-  const parsed = new DOMParser().parseFromString('<body>' + htmls.join('') + '</body>', 'text/html')
-  parsed.querySelectorAll('script').forEach((s) => s.remove())
-  const out: HTMLElement[] = []
-  for (const child of Array.from(parsed.body.children)) {
-    const node = doc.importNode(child, true) as HTMLElement
-    for (const el of [node, ...Array.from(node.querySelectorAll('*'))]) stripEventHandlers(el)
-    out.push(node)
+/**
+ * One element per stored block, always. Each block is parsed on its own: the
+ * HTML parser reshapes some markup a live contenteditable can hold (a `<p>`
+ * is closed before a block inside it), and parsed together one stored block
+ * could turn into several and shift every later block index. A block that
+ * still parses into more than one node comes back wrapped in a `<div>`, so its
+ * text is kept and the count matches.
+ */
+function parseBlock(doc: Document, html: string): HTMLElement {
+  const body = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html').body
+  body.querySelectorAll('script').forEach((s) => s.remove())
+  const nodes = Array.from(body.childNodes).filter((n) => n.nodeType !== Node.TEXT_NODE || (n.textContent ?? '').trim() !== '')
+  let source: Element
+  if (nodes.length === 1 && nodes[0]!.nodeType === Node.ELEMENT_NODE) source = nodes[0] as Element
+  else {
+    source = body.ownerDocument.createElement('div')
+    source.append(...nodes)
   }
-  return out
+  const node = doc.importNode(source, true) as HTMLElement
+  for (const el of [node, ...Array.from(node.querySelectorAll('*'))]) stripEventHandlers(el)
+  return node
+}
+
+function parseBlocks(doc: Document, htmls: string[]): HTMLElement[] {
+  return htmls.map((h) => parseBlock(doc, h))
 }
 
 function setRestoredSelection(root: HTMLElement, sel: NonNullable<Snapshot['selection']>): void {
@@ -234,22 +254,33 @@ function setRestoredSelection(root: HTMLElement, sel: NonNullable<Snapshot['sele
   }
   const s = point(sel.start)
   const e = point(sel.end)
-  const range = root.ownerDocument.createRange()
-  range.setStart(s.node, s.offset)
-  range.setEnd(e.node, e.offset)
   const live = root.ownerDocument.getSelection()
   if (!live) return
-  live.removeAllRanges()
-  live.addRange(range)
+  // setBaseAndExtent keeps the direction: Shift+Arrow after an undo extends from the end the user moved.
+  if (sel.backward) live.setBaseAndExtent(e.node, e.offset, s.node, s.offset)
+  else live.setBaseAndExtent(s.node, s.offset, e.node, e.offset)
+}
+
+/**
+ * Puts the user back where `target` was: its selection (when it has one) and
+ * scrollTop. restoreSnapshot calls it; the undo stack calls it again after
+ * the editor's post-restore passes, which can change heights and re-home the
+ * caret.
+ */
+export function applyView(root: HTMLElement, target: Snapshot): void {
+  if (target.selection) setRestoredSelection(root, target.selection)
+  root.scrollTop = target.scrollTop
 }
 
 /**
  * Makes the live document match `target`: blocks shared at the start and end
  * (by stored string) keep their nodes, only the middle is replaced. Restores
  * the selection and scrollTop. Returns the newly inserted top-level elements
- * (empty when nothing was inserted), for the editor's post-restore passes.
+ * (empty when nothing was inserted), for the editor's post-restore passes;
+ * the elements taken out are pushed onto `removed` when given (their view
+ * state, such as a collapsed code block, is not part of a snapshot).
  */
-export function restoreSnapshot(root: HTMLElement, target: Snapshot): HTMLElement[] {
+export function restoreSnapshot(root: HTMLElement, target: Snapshot, removed?: HTMLElement[]): HTMLElement[] {
   const current = blocksOf(root)
   const want = target.blocks
   const limit = Math.min(current.length, want.length)
@@ -260,11 +291,13 @@ export function restoreSnapshot(root: HTMLElement, target: Snapshot): HTMLElemen
 
   const kids = Array.from(root.children)
   const ref: Element | null = kids[current.length - suffix] ?? null
-  for (const old of kids.slice(prefix, current.length - suffix)) old.remove()
+  for (const old of kids.slice(prefix, current.length - suffix)) {
+    old.remove()
+    removed?.push(old as HTMLElement)
+  }
   const added = parseBlocks(root.ownerDocument, want.slice(prefix, want.length - suffix))
   for (const el of added) root.insertBefore(el, ref)
 
-  if (target.selection) setRestoredSelection(root, target.selection)
-  root.scrollTop = target.scrollTop
+  applyView(root, target)
   return added
 }

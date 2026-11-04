@@ -16,12 +16,15 @@
 // the typing's own event can arrive after the user already moved the caret,
 // and an input that moves no caret (Delete at the end) fires none at all.
 
-import { takeSnapshot, sameBlocks, restoreSnapshot, type Snapshot } from './editor-snapshot'
+import { takeSnapshot, sameBlocks, restoreSnapshot, applyView, type Snapshot } from './editor-snapshot'
 
 export interface UndoDeps {
   root: HTMLElement
-  /** Post-restore passes on the replaced top-level blocks (decoration, pictures, chip labels). */
-  afterRestore(replaced: HTMLElement[]): void
+  /**
+   * Post-restore passes on the replaced top-level blocks (decoration, pictures, chip labels). `removed` are
+   * the live blocks they took the place of, for view state a snapshot does not hold (a collapsed code block).
+   */
+  afterRestore(replaced: HTMLElement[], removed: HTMLElement[]): void
   /** The editor's scheduleChange: the store must receive the restored markdown. */
   onChange(): void
   isReadOnly(): boolean
@@ -157,8 +160,12 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     while (target && sameBlocks(target, live)) target = from.pop()
     if (!target) return true
     push(to, live)
-    const replaced = restoreSnapshot(root, target)
-    deps.afterRestore(replaced)
+    const removed: HTMLElement[] = []
+    const replaced = restoreSnapshot(root, target, removed)
+    deps.afterRestore(replaced, removed)
+    // The passes can change heights (a code block's lines, a chip's label) and re-home the caret: the
+    // user's place is applied again once they are done.
+    applyView(root, target)
     discardRecords()
     deps.onChange()
     discardRecords()
