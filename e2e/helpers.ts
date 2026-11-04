@@ -1,6 +1,70 @@
 // e2e/helpers.ts — shared flows used across the e2e suite.
 import type { Page, BrowserContext, Locator } from '@playwright/test'
 import { expect } from '@playwright/test'
+import { E2E_BASE_URL } from '../playwright.config'
+import { installOpfsPickerShim } from './opfs-shim'
+
+/** Create an encrypted doc, add the first team, and return the (focused, empty) daily-notes editor. */
+export async function openEditor(page: Page, password = 'e2e-editor-password'): Promise<Locator> {
+  await installOpfsPickerShim(page)
+  await blockUpdateCheck(page)
+  await page.goto(`${E2E_BASE_URL}/app.html`)
+  await createEncryptedDoc(page, password)
+
+  await page.getByRole('button', { name: /Create first team/ }).click()
+  const teamDialog = page.getByRole('dialog')
+  await teamDialog.locator('input[name="tt-team-name"]').fill('T')
+  await teamDialog.getByRole('button', { name: 'Save' }).click()
+  await teamDialog.waitFor({ state: 'hidden' })
+
+  const editor = page.locator('.editor').first()
+  await editor.click()
+  return editor
+}
+
+/** Reset the first editor to a single empty block and drop the caret into it — so each gesture starts from a clean line. */
+export async function clearEditor(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const ed = document.querySelector('.editor') as HTMLElement
+    ed.innerHTML = '<div><br></div>'
+    ed.focus()
+    const sel = getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.selectNodeContents(ed.firstElementChild!)
+    r.collapse(true)
+    sel.addRange(r)
+  })
+}
+
+/**
+ * Dispatch a real `paste` ClipboardEvent at the first editor with a populated
+ * DataTransfer — Playwright can't put arbitrary `text/html` on the OS
+ * clipboard cross-platform, but the app's onPaste handler only ever reads
+ * `e.clipboardData`, and the execCommand it then calls is the real browser
+ * one. Caret is forced to the end of the editor's LAST block first (not the
+ * editor root) so `preAtCaret()` / `selectionTouchesPre()` see a container
+ * inside that block, and insertHTML has a real target range.
+ */
+export async function pasteInto(page: Page, data: Record<string, string>): Promise<void> {
+  await page.evaluate((data) => {
+    const ed = document.querySelector('.editor') as HTMLElement
+    ed.focus()
+    const target = ed.lastElementChild ?? ed
+    const sel = getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.selectNodeContents(target)
+    r.collapse(false)
+    sel.addRange(r)
+
+    const dt = new DataTransfer()
+    for (const [type, value] of Object.entries(data)) dt.setData(type, value)
+    ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+  }, data)
+  // let the 300ms debounced commit (scheduleChange) settle
+  await page.waitForTimeout(400)
+}
 
 export async function createEncryptedDoc(page: Page, password: string): Promise<void> {
   await page.getByRole('button', { name: /Create new/ }).click()

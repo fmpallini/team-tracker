@@ -4,8 +4,8 @@
 // execCommand('insertHTML' | 'insertText' | 'insertUnorderedList' | ...) is
 // asserted there only as "the right string was handed to execCommand" — never
 // as "the editor DOM actually changed, the debounced commit fired, and the
-// value round-tripped through save/reopen". Native undo/redo has no jsdom
-// coverage at all. This spec fills those:
+// value round-tripped through save/reopen". Undo/redo on a real
+// contenteditable has no jsdom coverage at all. This spec fills those:
 //
 //   - paste of clipboard HTML → real converted blocks in the editor, and the
 //     pasted content survives close → reopen
@@ -14,78 +14,15 @@
 //     disarmed in the resulting DOM and loads nothing
 //   - type-to-autoformat actually applied by the browser: "- " → <ul>,
 //     "**x**" → <strong>, "# " → <h1>
-//   - Ctrl+Z / Ctrl+Shift+Z drive native undo/redo on the contenteditable
+//   - Ctrl+Z / Ctrl+Shift+Z drive the editor's own undo/redo stack on the
+//     contenteditable (e2e/editor-undo.spec.ts has the full acceptance suite)
 //
 // Served over http://localhost (secure context) so the OPFS picker shim and
 // the real File System Access save path are available, same as fs-api.spec.ts.
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { E2E_BASE_URL } from '../playwright.config'
-import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck, openModule } from './helpers'
+import { openModule, openEditor, clearEditor, pasteInto } from './helpers'
 
 const PASSWORD = 'e2e-editor-password'
-
-/** Create an encrypted doc, add the first team, and return the (focused, empty) daily-notes editor. */
-async function openEditor(page: Page): Promise<Locator> {
-  await installOpfsPickerShim(page)
-  await blockUpdateCheck(page)
-  await page.goto(`${E2E_BASE_URL}/app.html`)
-  await createEncryptedDoc(page, PASSWORD)
-
-  await page.getByRole('button', { name: /Create first team/ }).click()
-  const teamDialog = page.getByRole('dialog')
-  await teamDialog.locator('input[name="tt-team-name"]').fill('T')
-  await teamDialog.getByRole('button', { name: 'Save' }).click()
-  await teamDialog.waitFor({ state: 'hidden' })
-
-  const editor = page.locator('.editor').first()
-  await editor.click()
-  return editor
-}
-
-/** Reset the editor to a single empty block and drop the caret into it — so each autoformat gesture starts from a clean line. */
-async function clearEditor(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const ed = document.querySelector('.editor') as HTMLElement
-    ed.innerHTML = '<div><br></div>'
-    ed.focus()
-    const sel = getSelection()!
-    sel.removeAllRanges()
-    const r = document.createRange()
-    r.selectNodeContents(ed.firstElementChild!)
-    r.collapse(true)
-    sel.addRange(r)
-  })
-}
-
-/**
- * Dispatch a real `paste` ClipboardEvent at the editor with a populated
- * DataTransfer — Playwright can't put arbitrary `text/html` on the OS
- * clipboard cross-platform, but the app's onPaste handler only ever reads
- * `e.clipboardData`, and the execCommand it then calls is the real browser
- * one. Caret is forced to the end of the editor's LAST block first (not the
- * editor root) so `preAtCaret()` / `selectionTouchesPre()` see a container
- * inside that block, and insertHTML has a real target range.
- */
-async function pasteInto(page: Page, data: Record<string, string>): Promise<void> {
-  await page.evaluate((data) => {
-    const ed = document.querySelector('.editor') as HTMLElement
-    ed.focus()
-    const target = ed.lastElementChild ?? ed
-    const sel = getSelection()!
-    sel.removeAllRanges()
-    const r = document.createRange()
-    r.selectNodeContents(target)
-    r.collapse(false)
-    sel.addRange(r)
-
-    const dt = new DataTransfer()
-    for (const [type, value] of Object.entries(data)) dt.setData(type, value)
-    ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-  }, data)
-  // let the 300ms debounced commit (scheduleChange) settle
-  await page.waitForTimeout(400)
-}
 
 test.describe('rich-text editor — real-browser paste, autoformat, undo', () => {
   // Regression: pasting multi-block clipboard HTML into an empty line used to
@@ -279,7 +216,7 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(editor.locator('h1')).toHaveText('Title')
   })
 
-  test('Ctrl+Z / Ctrl+Shift+Z drive native undo and redo', async ({ page }) => {
+  test('Ctrl+Z / Ctrl+Shift+Z drive undo and redo', async ({ page }) => {
     const editor = await openEditor(page)
 
     await page.keyboard.type('alpha beta gamma')
@@ -307,7 +244,7 @@ test.describe('rich-text editor — Ctrl+Z after paste', () => {
     'plain dot bullets': { 'text/plain': '• one\n• two\n• three' },
   }
   // Chromium nests a multi-block paste inside the empty line it lands on; the editor hoists it out
-  // again, an edit the native undo stack never saw. Ctrl+Z must still take the paste back, and
+  // again, an edit the browser's native undo stack (the old mechanism) never saw. Ctrl+Z must take the paste back, and
   // Ctrl+Shift+Z bring it back, whether the empty line is the only one or follows other text.
   for (const [name, data] of Object.entries(cases)) {
     for (const lead of [false, true]) {
@@ -336,7 +273,7 @@ test.describe('rich-text editor — Ctrl+Z after paste', () => {
 })
 
 // The editor makes some edits by moving nodes itself (autoformat, Tab indent, leaving a quote); the
-// browser's undo stack never sees those. Each must come back with ONE Ctrl+Z, and return on Ctrl+Shift+Z.
+// browser's native undo stack (the old mechanism) never saw those. Each must come back with ONE Ctrl+Z, and return on Ctrl+Shift+Z.
 test.describe('rich-text editor — Ctrl+Z after hand-made edits', () => {
   const k = (page: Page) => page.keyboard
   const html = (editor: Locator) => editor.evaluate((e) => e.innerHTML)
