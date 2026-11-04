@@ -19,6 +19,7 @@ import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { focusItemInPane } from './search-highlight'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip } from './editor-dom'
 import { dismissModelessModals } from './modal'
+import { recordEdit } from './editor-undo'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -228,8 +229,6 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     if (!item || !lastLoc) return
     const { block, atOffset, caretOffset } = lastLoc
     const range = rangeForTextOffsets(block, atOffset, caretOffset)
-    range.deleteContents()
-
     const label = item.kind === 'person'
       ? item.name
       : item.kind === 'day'
@@ -243,14 +242,18 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     // it would round-trip into storage as part of the label forever.
     const ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
     const chip = createRefChip(ref, safeLabel, t(opts.locale, 'editor_ref_hint'))
-    range.insertNode(chip)
-    // 'always': a mention is almost always the last thing on the line, where
-    // a plain trailing space is CSS-collapsed to zero width and Chrome then
-    // has no real caret slot -- typing continued *inside* the chip.
-    // caretAfterInline drops a non-breaking space (htmlToMd normalizes it
-    // back to a plain space on save) and parks the caret past it, ready for
-    // the user to keep typing. Mirrors Slack/GitHub/Notion mention UX.
-    caretAfterInline(chip, 'always')
+    // Recorded so Ctrl+Z takes the mention back (see ui/editor-undo.ts).
+    recordEdit(editorEl!, () => {
+      range.deleteContents()
+      range.insertNode(chip)
+      // 'always': a mention is almost always the last thing on the line, where
+      // a plain trailing space is CSS-collapsed to zero width and Chrome then
+      // has no real caret slot -- typing continued *inside* the chip.
+      // caretAfterInline drops a non-breaking space (htmlToMd normalizes it
+      // back to a plain space on save) and parks the caret past it, ready for
+      // the user to keep typing. Mirrors Slack/GitHub/Notion mention UX.
+      caretAfterInline(chip, 'always')
+    })
 
     close()
     editorEl!.dispatchEvent(new Event('input', { bubbles: true }))

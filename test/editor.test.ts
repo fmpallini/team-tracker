@@ -1,5 +1,6 @@
 import { normalizeImageSpacing } from '../src/ui/editor-dom'
 import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { recordEdit } from '../src/ui/editor-undo'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 import { IMAGE_ACCEPT } from '../src/core/image-import'
@@ -918,6 +919,172 @@ describe('keyboard shortcuts — full combo matrix', () => {
     expect(e.defaultPrevented).toBe(true)
     await Promise.resolve()
     expect(document.querySelector('.tt-modal-dialog')).toBeNull()
+    editor.destroy()
+  })
+})
+
+describe('undo/redo (the editor\'s own snapshot stack)', () => {
+  function setup(md: string): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const text = editorEl.firstElementChild!.firstChild!
+    const range = document.createRange()
+    range.setStart(text, text.textContent!.length)
+    range.collapse(true)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    return { editor, editorEl }
+  }
+
+  test('Ctrl+Z takes a hand-made edit back and Ctrl+Shift+Z / Ctrl+Y put it in again', () => {
+    const { editor, editorEl } = setup('    hello')
+    const before = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    expect(editor.getMd()).toBe('hello')
+    expect(dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(editor.getMd()).toBe(before)
+    dispatchKey(editorEl, { key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })
+    expect(editor.getMd()).toBe('hello')
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    dispatchKey(editorEl, { key: 'y', code: 'KeyY', ctrlKey: true })
+    expect(editor.getMd()).toBe('hello')
+    editor.destroy()
+  })
+
+  test('the browser\'s own history never runs, even with nothing to undo', () => {
+    const { editor, editorEl } = setup('hello')
+    expect(dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true }).defaultPrevented).toBe(true)
+    for (const inputType of ['historyUndo', 'historyRedo']) {
+      const e = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true })
+      editorEl.dispatchEvent(e)
+      expect(e.defaultPrevented).toBe(true)
+    }
+    expect(editor.getMd()).toBe('hello')
+    editor.destroy()
+  })
+
+  test('the Edit-menu historyUndo goes through the same stack', () => {
+    const { editor, editorEl } = setup('    hello')
+    const before = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    editorEl.dispatchEvent(new InputEvent('beforeinput', { inputType: 'historyUndo', bubbles: true, cancelable: true }))
+    expect(editor.getMd()).toBe(before)
+    editor.destroy()
+  })
+
+  // Chromium runs document.execCommand('undo') on its own history with no beforeinput to cancel; only the
+  // input event says it happened. The editor takes that native step back and runs its own stack instead.
+  test('a native history step (execCommand undo, no beforeinput) is taken back and replaced by the stack', async () => {
+    const { editor, editorEl } = setup('    hello')
+    const before = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    expect(editor.getMd()).toBe('hello')
+    editorEl.tabIndex = 0
+    editorEl.focus()
+    // The opposite native command fires its own history input, which must not run the stack again.
+    const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd) => {
+      editorEl.dispatchEvent(new InputEvent('input', { inputType: cmd === 'redo' ? 'historyRedo' : 'historyUndo', bubbles: true }))
+      return true
+    })
+    editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }))
+    await Promise.resolve()
+    expect(exec).toHaveBeenCalledTimes(1)
+    expect(exec).toHaveBeenCalledWith('redo')
+    expect(editor.getMd()).toBe(before)
+    editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyRedo', bubbles: true }))
+    await Promise.resolve()
+    expect(exec).toHaveBeenLastCalledWith('undo')
+    expect(editor.getMd()).toBe('hello')
+    exec.mockRestore()
+    editor.destroy()
+  })
+
+  // One native history per document: execCommand('undo') can land on an editor the user is not in. Its
+  // native step is still taken back, but only the focused editor's stack runs; the store is told either way.
+  test('a native history step on an unfocused editor is taken back without running its stack', async () => {
+    vi.useFakeTimers()
+    try {
+      const hooksA = makeHooks()
+      const a = createEditor(hooksA, 'en-US')
+      document.body.appendChild(a.root)
+      a.setMd('other')
+      const { editor, editorEl } = setup('    hello')
+      dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+      expect(editor.getMd()).toBe('hello')
+      const aEl = a.root.querySelector('.editor') as HTMLElement
+      aEl.tabIndex = 0
+      aEl.focus()
+      expect(document.activeElement).toBe(aEl)
+      const exec = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+      editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }))
+      await Promise.resolve()
+      expect(exec).toHaveBeenCalledWith('redo')
+      expect(editor.getMd()).toBe('hello') // its stack did not run
+      expect(a.getMd()).toBe('other')
+      exec.mockRestore()
+      a.destroy()
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('the native take-back always tells the store, even with nothing on the stack', async () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('hello')
+      const editorEl = editor.root.querySelector('.editor') as HTMLElement
+      editorEl.tabIndex = 0
+      editorEl.focus()
+      vi.advanceTimersByTime(1000)
+      const before = hooks.changes
+      const exec = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+      editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }))
+      await Promise.resolve()
+      vi.advanceTimersByTime(1000)
+      expect(hooks.changes).toBe(before + 1)
+      exec.mockRestore()
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // The collapse state of restored code blocks is matched to the removed ones from the end: a step that
+  // pasted a collapsed block before an expanded one must not hand its state to the expanded one on undo.
+  test('undo keeps an expanded code block expanded when the step also added a collapsed one before it', () => {
+    const { editor, editorEl } = setup('x')
+    const long = '```\n' + Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n') + '\n```'
+    editor.setMd(long)
+    const e = editorEl.querySelector('pre')!
+    e.removeAttribute('data-collapsed') // the user expanded it
+    window.getSelection()!.removeAllRanges()
+    recordEdit(editorEl, () => {
+      const n = e.cloneNode(true) as HTMLElement
+      n.append('?') // distinct, so the diff does not keep it as the original block
+      n.setAttribute('data-collapsed', '')
+      e.before(n)
+      e.append('!')
+    })
+    expect(editorEl.querySelectorAll('pre')).toHaveLength(2)
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    const pres = editorEl.querySelectorAll('pre')
+    expect(pres).toHaveLength(1)
+    expect(pres[0]!.hasAttribute('data-collapsed')).toBe(false)
+    editor.destroy()
+  })
+
+  test('setMd starts a fresh history: Ctrl+Z cannot bring back the previous note', () => {
+    const { editor, editorEl } = setup('    hello')
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    editor.setMd('other note')
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor.getMd()).toBe('other note')
     editor.destroy()
   })
 })
@@ -2184,16 +2351,18 @@ describe('block-prefix auto-format on typing', () => {
     sel.addRange(range)
   }
 
-  test('typing "# " auto-converts the block to h1 (control case)', () => {
+  test('typing "# " auto-converts the block to h1 (built directly: formatBlock on an empty line acts on the line above)', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
     const editorEl = editor.root.querySelector('.editor') as HTMLElement
-
     setBlockText(editorEl, '# ')
+    editorEl.insertBefore(Object.assign(document.createElement('div'), { textContent: 'above' }), editorEl.firstChild)
+
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
 
-    expect(execSpy).toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(execSpy).not.toHaveBeenCalledWith('formatBlock', false, '<h1>')
+    expect(editorEl.innerHTML).toBe('<div>above</div><h1><br></h1>')
     editor.destroy()
   })
 
@@ -3658,6 +3827,12 @@ describe('flattenTopLevelBlockWrappers', () => {
     const root = html('<div>just a line</div>')
     flattenTopLevelBlockWrappers(root)
     expect(root.innerHTML).toBe('<div>just a line</div>')
+  })
+
+  test('works in place and returns nothing (undo is the snapshot stack, not a re-wrap)', () => {
+    const root = html('<div>before</div><div><div><h1>H</h1><div>x</div></div></div>')
+    expect(flattenTopLevelBlockWrappers(root)).toBeUndefined()
+    expect(root.innerHTML).toBe('<div>before</div><h1>H</h1><div>x</div>')
   })
 })
 

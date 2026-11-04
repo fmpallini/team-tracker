@@ -13,6 +13,7 @@ import { t, type Locale } from '../core/i18n'
 import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockAndCaret, caretAfterInline, type BlockCtx } from './editor-dom'
+import { recordEdit } from './editor-undo'
 
 export interface TemplatePickerHandle {
   /** Closes any open dropdown and removes all document/element listeners this instance attached. Idempotent. */
@@ -185,6 +186,8 @@ export function attachTemplatePicker(editor: Editor, opts: {
       if (nodes.length === 0) return
       const lastNode = nodes[nodes.length - 1]!
 
+      // Recorded so Ctrl+Z takes the whole insert back (see ui/editor-undo.ts).
+      const inserted = recordEdit(editorEl!, (): boolean => {
       if (ctx.block.tagName === 'LI') {
         // The trigger landed inside a list item — a bare "/" bullet (keyboard
         // trigger) or a bullet caret via the 📋 button. Template blocks can
@@ -199,7 +202,7 @@ export function attachTemplatePicker(editor: Editor, opts: {
         while (listNode && listNode.parentElement !== editorEl) {
           listNode = listNode.parentElement
         }
-        if (!listNode) return // malformed/detached nesting — nothing safe to anchor on
+        if (!listNode) return false // malformed/detached nesting — nothing safe to anchor on
         const isBlankLi = ctx.text === '' || ctx.text === '/'
         if (isBlankLi) {
           // Mirrors the non-LI branch below discarding the "/"-only block
@@ -231,6 +234,9 @@ export function attachTemplatePicker(editor: Editor, opts: {
       }
 
       setCaretAfter(lastNode)
+      return true
+      })
+      if (!inserted) return
       editorEl!.dispatchEvent(new Event('input', { bubbles: true }))
     } catch (e) {
       // A template insert failing should never look like nothing happened —

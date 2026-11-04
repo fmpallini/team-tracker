@@ -264,6 +264,42 @@ test.describe('pictures in notes', () => {
     await expect.poll(() => blocks(page).first().evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
   })
 
+  test('a picture brought back by Ctrl+Z is not selected, so the next Delete does not remove it again', async ({ page }) => {
+    await startEncrypted(page)
+    await page.keyboard.type('hello')
+    await pasteInto(page, { files: [{ name: 'again.png', w: 300, h: 200 }] })
+    await expect(blocks(page)).toHaveCount(1)
+    await blocks(page).first().click()
+    await page.keyboard.press('Backspace')
+    await expect(blocks(page)).toHaveCount(0)
+    await page.keyboard.press('Control+z')
+    await expect(blocks(page)).toHaveCount(1)
+    await expect(page.locator('.editor .tt-img.is-selected')).toHaveCount(0)
+    // The caret comes back on the empty line after the picture. Delete (not Backspace, which natively merges
+    // into the picture from there) only removes it when the picture is still marked selected.
+    await page.keyboard.press('Delete')
+    await expect(blocks(page)).toHaveCount(1)
+  })
+
+  test('Ctrl+Z takes a pasted picture back out, with the text around it, and Ctrl+Shift+Z puts it in again', async ({ page }) => {
+    await startEncrypted(page)
+    await page.keyboard.type('before')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('after')
+    await page.waitForTimeout(400)
+    const text = () => page.locator('.editor').first().innerText()
+    const baseline = (await text()).trim()
+    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('End')
+    await pasteInto(page, { files: [{ name: 'p.png', w: 300, h: 200 }] })
+    await expect(blocks(page)).toHaveCount(1)
+    await page.keyboard.press('Control+z')
+    await expect(blocks(page)).toHaveCount(0)
+    expect((await text()).trim()).toBe(baseline)
+    await page.keyboard.press('Control+Shift+z')
+    await expect(blocks(page)).toHaveCount(1)
+  })
+
   test('Backspace after the caret has moved on edits text, it does not delete the picture clicked earlier', async ({ page }) => {
     await startEncrypted(page)
     await page.keyboard.type('hello')

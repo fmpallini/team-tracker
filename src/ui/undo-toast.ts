@@ -3,7 +3,7 @@
 //
 // An in-toast button rather than a hotkey, deliberately: Alt+Left/Alt+Right is
 // already per-pane navigation history and Ctrl+Z is already the rich editor's
-// native undo. A button collides with neither, and it makes the offer's short
+// own undo. A button collides with neither, and it makes the offer's short
 // lifetime visible instead of leaving the user to guess whether an undo is
 // still available.
 import type { Store } from '../core/store'

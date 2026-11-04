@@ -4,8 +4,8 @@
 // execCommand('insertHTML' | 'insertText' | 'insertUnorderedList' | ...) is
 // asserted there only as "the right string was handed to execCommand" — never
 // as "the editor DOM actually changed, the debounced commit fired, and the
-// value round-tripped through save/reopen". Native undo/redo has no jsdom
-// coverage at all. This spec fills those:
+// value round-tripped through save/reopen". Undo/redo on a real
+// contenteditable has no jsdom coverage at all. This spec fills those:
 //
 //   - paste of clipboard HTML → real converted blocks in the editor, and the
 //     pasted content survives close → reopen
@@ -14,78 +14,15 @@
 //     disarmed in the resulting DOM and loads nothing
 //   - type-to-autoformat actually applied by the browser: "- " → <ul>,
 //     "**x**" → <strong>, "# " → <h1>
-//   - Ctrl+Z / Ctrl+Shift+Z drive native undo/redo on the contenteditable
+//   - Ctrl+Z / Ctrl+Shift+Z drive the editor's own undo/redo stack on the
+//     contenteditable (e2e/editor-undo.spec.ts has the full acceptance suite)
 //
 // Served over http://localhost (secure context) so the OPFS picker shim and
 // the real File System Access save path are available, same as fs-api.spec.ts.
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { E2E_BASE_URL } from '../playwright.config'
-import { installOpfsPickerShim } from './opfs-shim'
-import { createEncryptedDoc, blockUpdateCheck, openModule } from './helpers'
+import { openModule, openEditor, clearEditor, pasteInto } from './helpers'
 
 const PASSWORD = 'e2e-editor-password'
-
-/** Create an encrypted doc, add the first team, and return the (focused, empty) daily-notes editor. */
-async function openEditor(page: Page): Promise<Locator> {
-  await installOpfsPickerShim(page)
-  await blockUpdateCheck(page)
-  await page.goto(`${E2E_BASE_URL}/app.html`)
-  await createEncryptedDoc(page, PASSWORD)
-
-  await page.getByRole('button', { name: /Create first team/ }).click()
-  const teamDialog = page.getByRole('dialog')
-  await teamDialog.locator('input[name="tt-team-name"]').fill('T')
-  await teamDialog.getByRole('button', { name: 'Save' }).click()
-  await teamDialog.waitFor({ state: 'hidden' })
-
-  const editor = page.locator('.editor').first()
-  await editor.click()
-  return editor
-}
-
-/** Reset the editor to a single empty block and drop the caret into it — so each autoformat gesture starts from a clean line. */
-async function clearEditor(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const ed = document.querySelector('.editor') as HTMLElement
-    ed.innerHTML = '<div><br></div>'
-    ed.focus()
-    const sel = getSelection()!
-    sel.removeAllRanges()
-    const r = document.createRange()
-    r.selectNodeContents(ed.firstElementChild!)
-    r.collapse(true)
-    sel.addRange(r)
-  })
-}
-
-/**
- * Dispatch a real `paste` ClipboardEvent at the editor with a populated
- * DataTransfer — Playwright can't put arbitrary `text/html` on the OS
- * clipboard cross-platform, but the app's onPaste handler only ever reads
- * `e.clipboardData`, and the execCommand it then calls is the real browser
- * one. Caret is forced to the end of the editor's LAST block first (not the
- * editor root) so `preAtCaret()` / `selectionTouchesPre()` see a container
- * inside that block, and insertHTML has a real target range.
- */
-async function pasteInto(page: Page, data: Record<string, string>): Promise<void> {
-  await page.evaluate((data) => {
-    const ed = document.querySelector('.editor') as HTMLElement
-    ed.focus()
-    const target = ed.lastElementChild ?? ed
-    const sel = getSelection()!
-    sel.removeAllRanges()
-    const r = document.createRange()
-    r.selectNodeContents(target)
-    r.collapse(false)
-    sel.addRange(r)
-
-    const dt = new DataTransfer()
-    for (const [type, value] of Object.entries(data)) dt.setData(type, value)
-    ed.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-  }, data)
-  // let the 300ms debounced commit (scheduleChange) settle
-  await page.waitForTimeout(400)
-}
 
 test.describe('rich-text editor — real-browser paste, autoformat, undo', () => {
   // Regression: pasting multi-block clipboard HTML into an empty line used to
@@ -279,7 +216,7 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await expect(editor.locator('h1')).toHaveText('Title')
   })
 
-  test('Ctrl+Z / Ctrl+Shift+Z drive native undo and redo', async ({ page }) => {
+  test('Ctrl+Z / Ctrl+Shift+Z drive undo and redo', async ({ page }) => {
     const editor = await openEditor(page)
 
     await page.keyboard.type('alpha beta gamma')
@@ -296,6 +233,264 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
     await page.waitForTimeout(100)
     const redone = (await editor.innerText()).trim()
     expect(redone.length).toBeGreaterThan(undone.length) // chunk restored
+  })
+})
+
+test.describe('rich-text editor — Ctrl+Z after paste', () => {
+  const cases: Record<string, Record<string, string>> = {
+    'html bullet list': { 'text/html': '<ul><li>one</li><li>two</li><li>three</li></ul>', 'text/plain': '- one\n- two\n- three' },
+    'html bullet list + heading': { 'text/html': '<h2>Head</h2><ul><li>one</li><li>two</li></ul><p>tail</p>', 'text/plain': 'Head\n- one\n- two\ntail' },
+    'plain bullet lines': { 'text/plain': '- one\n- two\n- three' },
+    'plain dot bullets': { 'text/plain': '• one\n• two\n• three' },
+  }
+  // Chromium nests a multi-block paste inside the empty line it lands on; the editor hoists it out
+  // again, an edit the browser's native undo stack (the old mechanism) never saw. Ctrl+Z must take the paste back, and
+  // Ctrl+Shift+Z bring it back, whether the empty line is the only one or follows other text.
+  for (const [name, data] of Object.entries(cases)) {
+    for (const lead of [false, true]) {
+      test(`Ctrl+Z / Ctrl+Shift+Z undo and redo a pasted ${name}${lead ? ' after typed text' : ' into an empty note'}`, async ({ page }) => {
+        const editor = await openEditor(page)
+        if (lead) {
+          await page.keyboard.type('before')
+          await page.keyboard.press('Enter')
+          await page.waitForTimeout(350)
+        }
+        const baseline = (await editor.innerText()).trim()
+        await pasteInto(page, data)
+        const pasted = (await editor.innerText()).trim()
+        expect(pasted).not.toBe(baseline)
+        await page.keyboard.press('Control+z')
+        await page.waitForTimeout(150)
+        expect((await editor.innerText()).trim()).toBe(baseline)
+        await page.keyboard.press('Control+Shift+z')
+        await page.waitForTimeout(150)
+        expect((await editor.innerText()).trim()).toBe(pasted)
+        // still flat afterwards, so the markdown reads back as blocks
+        expect(await editor.evaluate((ed) => Array.from(ed.children).some((c) => c.tagName === 'DIV' && c.firstElementChild !== null && /^(H[1-6]|UL|OL)$/.test(c.firstElementChild.tagName)))).toBe(false)
+      })
+    }
+  }
+})
+
+// The editor makes some edits by moving nodes itself (autoformat, Tab indent, leaving a quote); the
+// browser's native undo stack (the old mechanism) never saw those. Each must come back with ONE Ctrl+Z, and return on Ctrl+Shift+Z.
+test.describe('rich-text editor — Ctrl+Z after hand-made edits', () => {
+  const k = (page: Page) => page.keyboard
+  const html = (editor: Locator) => editor.evaluate((e) => e.innerHTML)
+  async function fresh(page: Page): Promise<Locator> {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    return editor
+  }
+
+  const autoformats: Array<{ name: string; type: string[]; has: string; text: string }> = [
+    { name: '"- " list', type: ['hello', 'Enter', '- '], has: 'ul', text: 'hello\n- ' },
+    { name: '"1. " list', type: ['hello', 'Enter', '1. '], has: 'ol', text: 'hello\n1. ' },
+    { name: '"# " heading', type: ['hello', 'Enter', '# '], has: 'h1', text: 'hello\n# ' },
+    { name: '"> " quote', type: ['hello', 'Enter', '> '], has: 'blockquote', text: 'hello\n> ' },
+    { name: '"---" rule', type: ['hello', 'Enter', '---', 'Enter'], has: 'hr', text: 'hello\n---' },
+    { name: '"```" code block', type: ['hello', 'Enter', '```', 'Enter'], has: 'pre', text: 'hello\n```' },
+    { name: '"**bold**" run', type: ['hello **bold**'], has: 'strong', text: 'hello **bold**' },
+  ]
+  for (const a of autoformats) {
+    test(`${a.name}: Ctrl+Z gives back what was typed, Ctrl+Shift+Z converts again`, async ({ page }) => {
+      const editor = await fresh(page)
+      for (const part of a.type) {
+        if (part === 'Enter') await k(page).press('Enter')
+        else await k(page).type(part)
+      }
+      await expect(editor.locator(a.has)).toHaveCount(1)
+      await k(page).press('Control+z')
+      await expect(editor.locator(a.has)).toHaveCount(0)
+      expect((await editor.innerText()).replace(/ /g, ' ').replace(/\s+$/, '')).toBe(a.text.replace(/\s+$/, ''))
+      await k(page).press('Control+Shift+z')
+      await expect(editor.locator(a.has)).toHaveCount(1)
+    })
+  }
+
+  test('typing "# " under a line makes a heading of the NEW line, not of the one above', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('hello')
+    await k(page).press('Enter')
+    await k(page).type('# Title')
+    await expect(editor.locator('h1')).toHaveText('Title')
+    await expect(editor.locator('div').first()).toHaveText('hello')
+    expect(await html(editor)).not.toContain('helloTitle')
+  })
+
+  test('Ctrl+1 on a blank line under text makes a heading of that line', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('hello')
+    await k(page).press('Enter')
+    await k(page).press('Control+1')
+    await k(page).type('Title')
+    await expect(editor.locator('h1')).toHaveText('Title')
+    await expect(editor.locator('div').first()).toHaveText('hello')
+  })
+
+  test('Tab / Shift+Tab on a list item: Ctrl+Z puts the item back, Ctrl+Shift+Z indents it again', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('- a')
+    await k(page).press('Enter')
+    await k(page).type('b')
+    await page.waitForTimeout(350)
+    await k(page).press('Tab')
+    await expect(editor.locator('ul ul')).toHaveCount(1)
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul')).toHaveCount(0)
+    await expect(editor.locator('li')).toHaveCount(2)
+    await k(page).press('Control+Shift+z')
+    await expect(editor.locator('ul ul')).toHaveCount(1)
+    await k(page).press('Shift+Tab')
+    await expect(editor.locator('ul ul')).toHaveCount(0)
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul')).toHaveCount(1)
+  })
+
+  test('Enter on the empty last line of a quote leaves it; Ctrl+Z puts the empty line back inside', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('> q')
+    await k(page).press('Enter')
+    await page.waitForTimeout(350)
+    await k(page).press('Enter')
+    await expect(editor.locator('blockquote + div')).toHaveCount(1)
+    await k(page).press('Control+z')
+    await expect(editor.locator('blockquote + div')).toHaveCount(0)
+    await expect(editor.locator('blockquote')).toHaveCount(1)
+  })
+
+  test('Ctrl+X: Ctrl+Z brings the cut text back', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('one')
+    await k(page).press('Enter')
+    await k(page).type('two')
+    await page.waitForTimeout(350)
+    await k(page).press('Control+a')
+    await k(page).press('Control+x')
+    await expect(editor).toHaveText('')
+    await k(page).press('Control+z')
+    await expect(editor).toContainText('one')
+    await expect(editor).toContainText('two')
+  })
+
+  test('a mixed chain walks back one step at a time: typing, Tab, typing', async ({ page }) => {
+    const editor = await fresh(page)
+    await k(page).type('- one')
+    await k(page).press('Enter')
+    await k(page).type('two')
+    await page.waitForTimeout(350)
+    await k(page).press('Tab')
+    await k(page).type(' more')
+    await page.waitForTimeout(350)
+    await expect(editor.locator('ul ul li')).toHaveText('two more')
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul li')).toHaveText('two')
+    await k(page).press('Control+z')
+    await expect(editor.locator('ul ul')).toHaveCount(0)
+    await expect(editor.locator('li').nth(1)).toHaveText('two')
+    await k(page).press('Control+Shift+z')
+    await k(page).press('Control+Shift+z')
+    await expect(editor.locator('ul ul li')).toHaveText('two more')
+  })
+})
+
+// Toolbar buttons and shortcuts that call the browser's own commands (formatBlock, insertList,
+// removeFormat, bold) used to checkpoint only at their clean-up, so one click could be two undo
+// steps or undo to a half-done state. Each command must be exactly ONE Ctrl+Z, and ONE
+// Ctrl+Shift+Z puts it back.
+test.describe('rich-text editor — one command is one undo step', () => {
+  const k = (page: Page) => page.keyboard
+  // data-lines is the code block's own decoration: a restore re-applies it at once, live typing adds it later.
+  const html = (editor: Locator) => editor.evaluate((e) => e.innerHTML.replace(/ data-lines="\d+"/g, ''))
+
+  /** Types `before`, Enter, `line` (caret at the end of `line`, `select` = the word selected) and lets the change debounce settle. */
+  async function baseline(page: Page, opts: { select?: boolean; prep?: () => Promise<void> } = {}): Promise<Locator> {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    await k(page).type('before')
+    await k(page).press('Enter')
+    await k(page).type('line')
+    if (opts.select) await k(page).press('Shift+Home')
+    if (opts.prep) await opts.prep()
+    await page.waitForTimeout(350)
+    return editor
+  }
+
+  /** Runs `command` from the baseline; one Ctrl+Z must restore the baseline exactly, one Ctrl+Shift+Z the result. */
+  async function expectOneStep(page: Page, editor: Locator, command: () => Promise<void>): Promise<void> {
+    const before = await html(editor)
+    await command()
+    await page.waitForTimeout(350)
+    const after = await html(editor)
+    expect(after).not.toBe(before)
+    await k(page).press('Control+z')
+    await expect.poll(() => html(editor)).toBe(before)
+    await k(page).press('Control+Shift+z')
+    await expect.poll(() => html(editor)).toBe(after)
+  }
+
+  const button = (page: Page, title: string) => page.getByTitle(title, { exact: true }).first()
+
+  test('heading (Ctrl+2)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+2'))
+    await expect(editor.locator('h2')).toHaveCount(1)
+  })
+
+  test('blockquote (Ctrl+Shift+9)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+Shift+9'))
+    await expect(editor.locator('blockquote')).toHaveCount(1)
+  })
+
+  test('code block (Ctrl+Shift+E)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+Shift+e'))
+    await expect(editor.locator('pre')).toHaveCount(1)
+  })
+
+  test('bulleted list (Ctrl+Shift+8)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+Shift+8'))
+    await expect(editor.locator('ul')).toHaveCount(1)
+  })
+
+  test('bold on a selected word (Ctrl+B)', async ({ page }) => {
+    const editor = await baseline(page, { select: true })
+    await expectOneStep(page, editor, () => k(page).press('Control+b'))
+    await expect(editor.locator('b, strong')).toHaveCount(1)
+  })
+
+  test('clear formatting (toolbar broom) on a bold heading line', async ({ page }) => {
+    const editor = await baseline(page, {
+      select: true,
+      prep: async () => {
+        await k(page).press('Control+b')
+        await k(page).press('Control+1')
+      },
+    })
+    await expect(editor.locator('h1')).toHaveCount(1)
+    await expectOneStep(page, editor, () => button(page, 'Clear formatting').click())
+    await expect(editor.locator('h1')).toHaveCount(0)
+  })
+
+  test('link (Ctrl+K, fill the modal)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, async () => {
+      await k(page).press('Control+k')
+      const dialog = page.getByRole('dialog')
+      await dialog.locator('input[name="tt-link-text"]').fill('site')
+      await dialog.locator('input[name="tt-link-url"]').fill('https://example.com')
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      await dialog.waitFor({ state: 'hidden' })
+    })
+    await expect(editor.locator('a[href^="https://example.com"]')).toHaveCount(1)
+  })
+
+  test('horizontal rule button', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => button(page, 'Horizontal rule').click())
+    await expect(editor.locator('hr')).toHaveCount(1)
   })
 })
 
