@@ -734,6 +734,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   function applyBlockFormat(type: BlockPrefixMatch['type']): void {
     editorEl.focus()
+    undoStack.checkpoint()
     if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
     else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
     else if (type === 'blockquote') toggleBlockquote()
@@ -773,6 +774,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       scheduleChange()
       return
     }
+    undoStack.checkpoint()
     document.execCommand('formatBlock', false, `<${tag}>`)
     edit(() => flattenNestedHeadings(editorEl))
     scheduleChange()
@@ -852,6 +854,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       scheduleChange()
       return
     }
+    undoStack.checkpoint()
     document.execCommand('formatBlock', false, '<blockquote>')
     edit(() => {
       flattenNestedBlockquotes(editorEl)
@@ -954,6 +957,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       scheduleChange()
       return
     }
+    undoStack.checkpoint()
     document.execCommand('formatBlock', false, '<pre>')
     edit(() => normalizeFlatBlockChildren(editorEl, 'pre', 'text'))
     scheduleChange()
@@ -972,6 +976,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const sel = window.getSelection()
     const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
     editorEl.focus()
+    undoStack.checkpoint()
     document.execCommand('removeFormat', false, undefined)
     edit(() => {
       if (range) demoteHeadings(editorEl, range)

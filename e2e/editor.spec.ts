@@ -457,6 +457,106 @@ test.describe('rich-text editor — Ctrl+Z after hand-made edits', () => {
   })
 })
 
+// Toolbar buttons and shortcuts that call the browser's own commands (formatBlock, insertList,
+// removeFormat, bold) used to checkpoint only at their clean-up, so one click could be two undo
+// steps or undo to a half-done state. Each command must be exactly ONE Ctrl+Z, and ONE
+// Ctrl+Shift+Z puts it back.
+test.describe('rich-text editor — one command is one undo step', () => {
+  const k = (page: Page) => page.keyboard
+  // data-lines is the code block's own decoration: a restore re-applies it at once, live typing adds it later.
+  const html = (editor: Locator) => editor.evaluate((e) => e.innerHTML.replace(/ data-lines="\d+"/g, ''))
+
+  /** Types `before`, Enter, `line` (caret at the end of `line`, `select` = the word selected) and lets the change debounce settle. */
+  async function baseline(page: Page, opts: { select?: boolean; prep?: () => Promise<void> } = {}): Promise<Locator> {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    await k(page).type('before')
+    await k(page).press('Enter')
+    await k(page).type('line')
+    if (opts.select) await k(page).press('Shift+Home')
+    if (opts.prep) await opts.prep()
+    await page.waitForTimeout(350)
+    return editor
+  }
+
+  /** Runs `command` from the baseline; one Ctrl+Z must restore the baseline exactly, one Ctrl+Shift+Z the result. */
+  async function expectOneStep(page: Page, editor: Locator, command: () => Promise<void>): Promise<void> {
+    const before = await html(editor)
+    await command()
+    await page.waitForTimeout(350)
+    const after = await html(editor)
+    expect(after).not.toBe(before)
+    await k(page).press('Control+z')
+    await expect.poll(() => html(editor)).toBe(before)
+    await k(page).press('Control+Shift+z')
+    await expect.poll(() => html(editor)).toBe(after)
+  }
+
+  const button = (page: Page, title: string) => page.getByTitle(title, { exact: true }).first()
+
+  test('heading (Ctrl+2)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+2'))
+    await expect(editor.locator('h2')).toHaveCount(1)
+  })
+
+  test('blockquote (Ctrl+Shift+9)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+Shift+9'))
+    await expect(editor.locator('blockquote')).toHaveCount(1)
+  })
+
+  test('code block (Ctrl+Shift+E)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+Shift+e'))
+    await expect(editor.locator('pre')).toHaveCount(1)
+  })
+
+  test('bulleted list (Ctrl+Shift+8)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => k(page).press('Control+Shift+8'))
+    await expect(editor.locator('ul')).toHaveCount(1)
+  })
+
+  test('bold on a selected word (Ctrl+B)', async ({ page }) => {
+    const editor = await baseline(page, { select: true })
+    await expectOneStep(page, editor, () => k(page).press('Control+b'))
+    await expect(editor.locator('b, strong')).toHaveCount(1)
+  })
+
+  test('clear formatting (toolbar broom) on a bold heading line', async ({ page }) => {
+    const editor = await baseline(page, {
+      select: true,
+      prep: async () => {
+        await k(page).press('Control+b')
+        await k(page).press('Control+1')
+      },
+    })
+    await expect(editor.locator('h1')).toHaveCount(1)
+    await expectOneStep(page, editor, () => button(page, 'Clear formatting').click())
+    await expect(editor.locator('h1')).toHaveCount(0)
+  })
+
+  test('link (Ctrl+K, fill the modal)', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, async () => {
+      await k(page).press('Control+k')
+      const dialog = page.getByRole('dialog')
+      await dialog.locator('input[name="tt-link-text"]').fill('site')
+      await dialog.locator('input[name="tt-link-url"]').fill('https://example.com')
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      await dialog.waitFor({ state: 'hidden' })
+    })
+    await expect(editor.locator('a[href^="https://example.com"]')).toHaveCount(1)
+  })
+
+  test('horizontal rule button', async ({ page }) => {
+    const editor = await baseline(page)
+    await expectOneStep(page, editor, () => button(page, 'Horizontal rule').click())
+    await expect(editor.locator('hr')).toHaveCount(1)
+  })
+})
+
 test.describe('rich-text editor — Ctrl+C / Ctrl+X carry no theme background', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
 
