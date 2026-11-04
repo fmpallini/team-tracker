@@ -412,8 +412,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   // Undo/redo is this editor's own snapshot stack (./editor-undo.ts); the browser's native history is never
-  // used. Every edit stores a before-snapshot with checkpoint() ahead of its first change; `edit()` is that
-  // checkpoint plus the change. A restore swaps in parsed blocks, so they are made live again here.
+  // used (a native step execCommand('undo') runs anyway is taken back in onInput). Every edit stores a
+  // before-snapshot with checkpoint() ahead of its first change; `edit()` is that checkpoint plus the
+  // change. A restore swaps in parsed blocks, so they are made live again here.
   const undoStack = createUndoStack({
     root: editorEl,
     afterRestore: (replaced) => {
@@ -1742,19 +1743,39 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     undoStack.setComposing(false)
   }
 
+  /** True while onInput takes a native history step back; the opposite command's own `input` is ignored. */
+  let revertingNativeHistory = false
+
   function onInput(e?: Event): void {
-    const fromHistory = e instanceof InputEvent && e.inputType.startsWith('history')
-    ensureBlock()
-    // An undo/redo restores text the user already saw; it must not be re-formatted (undoing back to a typed
-    // "- " would otherwise turn it into a list again at once) or open a picker. Native history is always
-    // prevented, so this only guards a programmatic one.
-    if (!fromHistory) {
-      handleAutoFormat()
-      checkTriggers()
+    if (e instanceof InputEvent && (e.inputType === 'historyUndo' || e.inputType === 'historyRedo')) {
+      // The browser's own history acted without a cancelable beforeinput first: Chromium fires none for
+      // document.execCommand('undo' | 'redo'), which the Edit-menu path and extensions use. Take its step
+      // back with the opposite native command, then run this editor's stack instead. In a microtask: during
+      // this event the browser is still inside its command and a nested one does nothing. Nothing here
+      // re-formats or opens a picker: an undo restores text the user already saw.
+      if (revertingNativeHistory) return
+      const undo = e.inputType === 'historyUndo'
+      queueMicrotask(() => {
+        if (destroyed) return
+        revertingNativeHistory = true
+        try {
+          document.execCommand(undo ? 'redo' : 'undo')
+        } finally {
+          revertingNativeHistory = false
+        }
+        if (undo) undoStack.undo()
+        else undoStack.redo()
+      })
+      return
     }
+    ensureBlock()
+    handleAutoFormat()
+    checkTriggers()
     syncPreHighlight()
     scheduleChange()
     keepCaretVisible()
+    // Last, once autoformat and the highlight pass have settled the caret: where this edit left it.
+    undoStack.noteInput()
   }
 
   /**

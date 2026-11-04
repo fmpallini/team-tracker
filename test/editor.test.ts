@@ -973,6 +973,31 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     editor.destroy()
   })
 
+  // Chromium runs document.execCommand('undo') on its own history with no beforeinput to cancel; only the
+  // input event says it happened. The editor takes that native step back and runs its own stack instead.
+  test('a native history step (execCommand undo, no beforeinput) is taken back and replaced by the stack', async () => {
+    const { editor, editorEl } = setup('    hello')
+    const before = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    expect(editor.getMd()).toBe('hello')
+    // The opposite native command fires its own history input, which must not run the stack again.
+    const exec = vi.spyOn(document, 'execCommand').mockImplementation((cmd) => {
+      editorEl.dispatchEvent(new InputEvent('input', { inputType: cmd === 'redo' ? 'historyRedo' : 'historyUndo', bubbles: true }))
+      return true
+    })
+    editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }))
+    await Promise.resolve()
+    expect(exec).toHaveBeenCalledTimes(1)
+    expect(exec).toHaveBeenCalledWith('redo')
+    expect(editor.getMd()).toBe(before)
+    editorEl.dispatchEvent(new InputEvent('input', { inputType: 'historyRedo', bubbles: true }))
+    await Promise.resolve()
+    expect(exec).toHaveBeenLastCalledWith('undo')
+    expect(editor.getMd()).toBe('hello')
+    exec.mockRestore()
+    editor.destroy()
+  })
+
   test('setMd starts a fresh history: Ctrl+Z cannot bring back the previous note', () => {
     const { editor, editorEl } = setup('    hello')
     dispatchKey(editorEl, { key: 'Tab', shiftKey: true })

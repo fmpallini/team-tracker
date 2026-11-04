@@ -1,7 +1,8 @@
 // src/ui/editor-undo.ts — the editor's own undo/redo stack and step policy
 // (docs/superpowers/specs/2026-11-03-editor-undo-snapshots-design.md). The
 // browser's native history is never used: the editor intercepts the keys and
-// `historyUndo`/`historyRedo`, and calls undo()/redo() here.
+// `historyUndo`/`historyRedo` (and takes back a native step that
+// execCommand('undo') ran with no beforeinput), and calls undo()/redo() here.
 //
 // Only the state *before* a step is stored. An action site calls checkpoint()
 // before its first change; that stores a *pending* snapshot, which becomes an
@@ -9,7 +10,11 @@
 // that changes nothing leaves no entry and keeps redo). A step is "open" for
 // the rest of the current task, so several checkpoints of one user action make
 // one step. Typing is a run: it opens on the first insert/delete input and
-// closes on an input-kind change, Enter, a caret jump or 1 s idle.
+// closes on an input-kind change, Enter, a caret jump or 1 s idle. A caret jump
+// is a `selectionchange` that finds the caret somewhere other than where the
+// last input left it (noteInput): `selectionchange` is async and coalesced, so
+// the typing's own event can arrive after the user already moved the caret,
+// and an input that moves no caret (Delete at the end) fires none at all.
 
 import { takeSnapshot, sameBlocks, restoreSnapshot, type Snapshot } from './editor-snapshot'
 
@@ -32,7 +37,9 @@ export interface UndoStack {
   handleKeydown(e: KeyboardEvent): boolean
   /** Opens/closes typing runs and steps from the input type. Call before the browser mutates. */
   handleBeforeInput(e: InputEvent): void
-  /** A `selectionchange` on the document: closes the run when the caret moved on its own. */
+  /** The editor's `input`, after its own handling: records the caret the edit left. */
+  noteInput(): void
+  /** A `selectionchange` on the document: closes the run when the caret is not where the last input left it. */
   noteSelectionChange(): void
   closeRun(): void
   /**
@@ -84,7 +91,6 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
   let stepOpen = false
   let run: { kind: RunKind } | null = null
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  let inputPending = false
   let composing = false
   let lastCaret: Caret | null = null
 
@@ -163,7 +169,6 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     if (deps.isReadOnly()) return
     const type = e.inputType
     if (type === 'historyUndo' || type === 'historyRedo') return
-    inputPending = true
     if (type === 'insertParagraph' || type === 'insertLineBreak') {
       // Enter is its own step: end any run, then open a one-shot step.
       closeRun()
@@ -197,16 +202,15 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     else if (run) armIdle()
   }
 
+  function noteInput(): void {
+    lastCaret = readCaret(root)
+  }
+
   function noteSelectionChange(): void {
-    if (inputPending) {
-      // The caret moved because of the typing itself.
-      inputPending = false
-      lastCaret = readCaret(root)
-      return
-    }
-    if (composing) { lastCaret = readCaret(root); return }
-    if (!run) return
-    if (!sameCaret(readCaret(root), lastCaret)) closeRun()
+    const now = readCaret(root)
+    // The caret where the typing itself (or the composition) put it keeps the run open.
+    if (run && !composing && !sameCaret(now, lastCaret)) closeRun()
+    lastCaret = now
   }
 
   function handleKeydown(e: KeyboardEvent): boolean {
@@ -230,7 +234,6 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     pending = null
     run = null
     stepOpen = false
-    inputPending = false
     composing = false
     lastCaret = null
     stopIdle()
@@ -242,6 +245,7 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
     redo: () => restoreFrom(redoStack, undoStack),
     handleKeydown,
     handleBeforeInput,
+    noteInput,
     noteSelectionChange,
     closeRun,
     setComposing,

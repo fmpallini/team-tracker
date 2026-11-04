@@ -469,6 +469,7 @@ describe('closing a run', () => {
     input(h, 'insertText')
     type(h.root, 0, 'x')
     setCaret(block(h.root, 0).firstChild!, 2)
+    h.u.noteInput() // the editor's input handler: where the typing left the caret
     await flush()
     h.u.noteSelectionChange() // the typing's own selectionchange
   }
@@ -479,10 +480,57 @@ describe('closing a run', () => {
     input(h, 'insertText')
     type(h.root, 0, 'y')
     setCaret(block(h.root, 0).firstChild!, 3)
+    h.u.noteInput()
     await flush()
     h.u.noteSelectionChange()
     h.u.undo()
     expect(text(h.root)).toBe('a|b|c')
+  })
+
+  // selectionchange is async and coalesced: a quick caret jump right after typing can arrive as the one
+  // event that also stands for the typing's own caret move.
+  test('a caret jump whose selectionchange coalesced with the typing one still closes the run', async () => {
+    const h = setup()
+    setCaret(block(h.root, 0).firstChild!, 1)
+    input(h, 'insertText')
+    type(h.root, 0, 'x')
+    setCaret(block(h.root, 0).firstChild!, 2)
+    h.u.noteInput()
+    setCaret(block(h.root, 2).firstChild!, 0)
+    await flush()
+    h.u.noteSelectionChange()
+    input(h, 'insertText')
+    type(h.root, 0, 'y')
+    await flush()
+    h.u.undo()
+    expect(text(h.root)).toBe('ax|b|c')
+  })
+
+  test('an input that moves no caret (Delete at the end) does not swallow the next caret jump', async () => {
+    const h = setup('<div>ab</div><div>cd</div>')
+    const end = (i: number) => setCaret(block(h.root, i).firstChild!, block(h.root, i).firstChild!.textContent!.length)
+    end(1)
+    input(h, 'deleteContentForward') // nothing after the caret: no change, no input, no selectionchange
+    await flush()
+    end(0)
+    h.u.noteSelectionChange()
+    input(h, 'deleteContentBackward')
+    block(h.root, 0).firstChild!.textContent = 'a'
+    end(0)
+    h.u.noteInput()
+    await flush()
+    h.u.noteSelectionChange()
+    end(1)
+    h.u.noteSelectionChange()
+    input(h, 'deleteContentBackward')
+    block(h.root, 1).firstChild!.textContent = 'c'
+    end(1)
+    h.u.noteInput()
+    await flush()
+    h.u.undo()
+    expect(text(h.root)).toBe('a|cd')
+    h.u.undo()
+    expect(text(h.root)).toBe('ab|cd')
   })
 
   test('noteSelectionChange after a caret jump closes the run', async () => {
