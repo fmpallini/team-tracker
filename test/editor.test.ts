@@ -1,5 +1,5 @@
 import { normalizeImageSpacing } from '../src/ui/editor-dom'
-import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, rewrapFlattened, type Editor, type EditorHooks } from '../src/ui/editor'
+import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
 import { IMAGE_ACCEPT } from '../src/core/image-import'
@@ -918,6 +918,67 @@ describe('keyboard shortcuts — full combo matrix', () => {
     expect(e.defaultPrevented).toBe(true)
     await Promise.resolve()
     expect(document.querySelector('.tt-modal-dialog')).toBeNull()
+    editor.destroy()
+  })
+})
+
+describe('undo/redo (the editor\'s own snapshot stack)', () => {
+  function setup(md: string): { editor: Editor; editorEl: HTMLElement } {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const text = editorEl.firstElementChild!.firstChild!
+    const range = document.createRange()
+    range.setStart(text, text.textContent!.length)
+    range.collapse(true)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    return { editor, editorEl }
+  }
+
+  test('Ctrl+Z takes a hand-made edit back and Ctrl+Shift+Z / Ctrl+Y put it in again', () => {
+    const { editor, editorEl } = setup('    hello')
+    const before = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    expect(editor.getMd()).toBe('hello')
+    expect(dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(editor.getMd()).toBe(before)
+    dispatchKey(editorEl, { key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })
+    expect(editor.getMd()).toBe('hello')
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    dispatchKey(editorEl, { key: 'y', code: 'KeyY', ctrlKey: true })
+    expect(editor.getMd()).toBe('hello')
+    editor.destroy()
+  })
+
+  test('the browser\'s own history never runs, even with nothing to undo', () => {
+    const { editor, editorEl } = setup('hello')
+    expect(dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true }).defaultPrevented).toBe(true)
+    for (const inputType of ['historyUndo', 'historyRedo']) {
+      const e = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true })
+      editorEl.dispatchEvent(e)
+      expect(e.defaultPrevented).toBe(true)
+    }
+    expect(editor.getMd()).toBe('hello')
+    editor.destroy()
+  })
+
+  test('the Edit-menu historyUndo goes through the same stack', () => {
+    const { editor, editorEl } = setup('    hello')
+    const before = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    editorEl.dispatchEvent(new InputEvent('beforeinput', { inputType: 'historyUndo', bubbles: true, cancelable: true }))
+    expect(editor.getMd()).toBe(before)
+    editor.destroy()
+  })
+
+  test('setMd starts a fresh history: Ctrl+Z cannot bring back the previous note', () => {
+    const { editor, editorEl } = setup('    hello')
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    editor.setMd('other note')
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor.getMd()).toBe('other note')
     editor.destroy()
   })
 })
@@ -3662,24 +3723,10 @@ describe('flattenTopLevelBlockWrappers', () => {
     expect(root.innerHTML).toBe('<div>just a line</div>')
   })
 
-  test('rewrapFlattened puts the browser\'s own shape back, even for a doubly-wrapped paste', () => {
-    const shape = '<div>before</div><div><div><h1>H</h1><div>x</div></div></div>'
-    const root = html(shape)
-    const steps = flattenTopLevelBlockWrappers(root)
+  test('works in place and returns nothing (undo is the snapshot stack, not a re-wrap)', () => {
+    const root = html('<div>before</div><div><div><h1>H</h1><div>x</div></div></div>')
+    expect(flattenTopLevelBlockWrappers(root)).toBeUndefined()
     expect(root.innerHTML).toBe('<div>before</div><h1>H</h1><div>x</div>')
-    expect(rewrapFlattened(root, steps)).toHaveLength(2)
-    expect(root.innerHTML).toBe(shape)
-  })
-
-  test('rewrapFlattened skips a step whose nodes were removed or split apart since', () => {
-    const root = html('<div><h1>H</h1><div>x</div></div>')
-    const steps = flattenTopLevelBlockWrappers(root)
-    root.querySelector('h1')!.after(document.createElement('hr'))
-    expect(rewrapFlattened(root, steps)).toHaveLength(0)
-    expect(root.innerHTML).toBe('<h1>H</h1><hr><div>x</div>')
-    root.querySelector('hr')!.remove()
-    root.querySelector('h1')!.remove()
-    expect(rewrapFlattened(root, steps)).toHaveLength(0)
   })
 })
 

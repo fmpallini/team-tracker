@@ -19,7 +19,7 @@ import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { focusItemInPane } from './search-highlight'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip } from './editor-dom'
 import { dismissModelessModals } from './modal'
-import { recordEdit } from './editor-history'
+import { recordEdit } from './editor-undo'
 
 export type AtItem =
   | { kind: 'person'; id: string; name: string }
@@ -242,7 +242,7 @@ export function attachAtAutocomplete(editor: Editor, opts: {
     // it would round-trip into storage as part of the label forever.
     const ref = item.kind === 'day' ? `day:${item.date}` : `${item.kind}:${item.id}`
     const chip = createRefChip(ref, safeLabel, t(opts.locale, 'editor_ref_hint'))
-    // Recorded so Ctrl+Z takes the mention back (see ui/editor-history.ts).
+    // Recorded so Ctrl+Z takes the mention back (see ui/editor-undo.ts).
     recordEdit(editorEl!, () => {
       range.deleteContents()
       range.insertNode(chip)

@@ -11,7 +11,7 @@ import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
 import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
-import { createEditHistory, registerEditHistory, unregisterEditHistory } from './editor-history'
+import { createUndoStack, registerUndo, unregisterUndo } from './editor-undo'
 import { icon, iconButton } from './icons'
 import type { ImageHost } from './image-host'
 import { imageRefLine } from '../core/image-ref'
@@ -216,16 +216,8 @@ export function leadingIndentLen(text: string): number {
  * flattens fully. A `<ul>`/`<ol>`/`<blockquote>`/`<pre>` child is never a
  * wrapper here — its block descendants are structural and have their own
  * handling in core/markdown.ts.
- *
- * Returns what it unwrapped, oldest first, so `rewrapFlattened` can put the
- * browser's own shape back: this hoist is a DOM edit the browser's undo stack
- * knows nothing about, and that stack's paste step still points at the nodes
- * inside the wrapper.
  */
-export interface FlattenedWrapper { wrapper: HTMLElement; kids: ChildNode[] }
-
-export function flattenTopLevelBlockWrappers(root: HTMLElement): FlattenedWrapper[] {
-  const done: FlattenedWrapper[] = []
+export function flattenTopLevelBlockWrappers(root: HTMLElement): void {
   for (;;) {
     const wrapper = Array.from(root.children).find((el): el is HTMLElement => {
       if (!(el instanceof HTMLElement) || (el.tagName !== 'DIV' && el.tagName !== 'P')) return false
@@ -234,31 +226,9 @@ export function flattenTopLevelBlockWrappers(root: HTMLElement): FlattenedWrappe
       // of the root — leave that shape for ensureBlock / normal editing to sort out.
       return Array.from(el.childNodes).every((n) => n.nodeType === Node.ELEMENT_NODE || !n.textContent?.trim())
     })
-    if (!wrapper) return done
-    const kids = Array.from(wrapper.childNodes)
-    wrapper.replaceWith(...kids)
-    done.push({ wrapper, kids })
+    if (!wrapper) return
+    wrapper.replaceWith(...Array.from(wrapper.childNodes))
   }
-}
-
-/**
- * Undoes `flattenTopLevelBlockWrappers` for the steps whose hoisted nodes are
- * all still adjacent children of `root` (newest first, so a doubly-wrapped
- * paste nests back the way it came). A step whose nodes were since removed or
- * split up is dropped. Returns the steps it re-wrapped.
- */
-export function rewrapFlattened(root: HTMLElement, steps: FlattenedWrapper[]): FlattenedWrapper[] {
-  const redone: FlattenedWrapper[] = []
-  for (const step of steps.slice().reverse()) {
-    const { wrapper, kids } = step
-    const first = kids[0]
-    const intact = first !== undefined && kids.every((k, j) => k.parentNode === root && (j === 0 || k.previousSibling === kids[j - 1]))
-    if (!intact) continue
-    first.before(wrapper)
-    wrapper.append(...kids)
-    redone.push(step)
-  }
-  return redone
 }
 
 interface EditorRegistryEntry {
@@ -267,6 +237,8 @@ interface EditorRegistryEntry {
   root: HTMLElement
   /** Re-runs this editor's caret-aware code-block highlighting (`syncPreHighlight`). */
   syncHighlight(): void
+  /** Tells this editor's undo stack the caret moved (it ends a typing run unless the typing moved it). */
+  noteSelectionChange(): void
 }
 
 /**
@@ -325,6 +297,9 @@ function onDocumentSelectionChange(): void {
   // Ordering matters only in that both run; each reads the live selection,
   // which is already the new one.
   if (previous && previous !== owner) previous.syncHighlight()
+  // Before the owner's re-highlight, so the undo stack compares the caret the
+  // user (or the typing) put there, not one a highlight pass re-homed.
+  owner?.noteSelectionChange()
   owner?.syncHighlight()
 }
 
@@ -431,19 +406,30 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   function exec(cmd: string, value?: string): void {
+    undoStack.checkpoint()
     document.execCommand(cmd, false, value)
     scheduleChange()
   }
 
-  // Hand-made DOM edits (autoformat, Tab indent, leaving a quote, chips, links) are invisible to the
-  // browser's undo stack; see ./editor-history.ts. `edit()` records one, Ctrl+Z / Ctrl+Shift+Z replay it.
-  const history = createEditHistory(editorEl, () => {
-    hydrateImages()
-    syncPreHighlight()
-    scheduleChange()
+  // Undo/redo is this editor's own snapshot stack (./editor-undo.ts); the browser's native history is never
+  // used. Every edit stores a before-snapshot with checkpoint() ahead of its first change; `edit()` is that
+  // checkpoint plus the change. A restore swaps in parsed blocks, so they are made live again here.
+  const undoStack = createUndoStack({
+    root: editorEl,
+    afterRestore: (replaced) => {
+      decorateCodeBlocks(true, replaced)
+      syncPreHighlight()
+      hydrateImages()
+      refreshRefLabels()
+    },
+    onChange: scheduleChange,
+    isReadOnly: () => editorsReadOnly,
   })
-  registerEditHistory(editorEl, history)
-  const edit = <T>(fn: () => T): T => history.record(fn)
+  registerUndo(editorEl, undoStack)
+  const edit = <T>(fn: () => T): T => {
+    undoStack.checkpoint()
+    return fn()
+  }
 
   /** This editor's markdown → HTML: live ref labels plus the chip and link hover hints. */
   function renderMd(md: string): string {
@@ -1729,55 +1715,34 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (overflow > 0) editorEl.scrollTop += overflow
   }
 
-  // Paste hoists the wrapper `insertHTML` leaves (flattenTopLevelBlockWrappers), an edit the browser's undo
-  // stack never saw: its paste step still removes the nodes from inside that wrapper, so a bare Ctrl+Z did
-  // nothing visible. The nodes are put back inside the wrapper just before a history step runs (onBeforeInput)
-  // and hoisted again right after (onInput), so the stack only ever acts on the shape it made itself.
-  let flattened: FlattenedWrapper[] = []
-
-  /** Flattens the editor root after a paste, remembering what it hoisted for the next undo/redo. */
-  function flattenPaste(): void {
-    flattened.push(...flattenTopLevelBlockWrappers(editorEl))
-  }
-
   function onBeforeInput(e: InputEvent): void {
-    if (e.defaultPrevented || !e.inputType.startsWith('history')) return
-    // Undo/redo from a menu rather than the keys; same owner rule as in onKeydown.
-    if (e.inputType === 'historyUndo' ? history.undo() : e.inputType === 'historyRedo' ? history.redo() : false) {
+    // Undo/redo from the Edit or context menu. The browser's own history never acts, not even with our
+    // stack empty: a stale native step would undo something our stack does not know about.
+    if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
       e.preventDefault()
+      if (editorsReadOnly) return
+      if (e.inputType === 'historyUndo') undoStack.undo()
+      else undoStack.redo()
       return
     }
-    if (flattened.length === 0) return
-    rewrapFlattened(editorEl, flattened)
-    flattened = []
+    if (e.defaultPrevented) return
+    undoStack.handleBeforeInput(e)
   }
 
-  /** Hoists again after an undo/redo, leaving the caret where the browser put it (moving nodes drops a range inside them). */
-  function reflattenAfterHistory(): void {
-    const sel = window.getSelection()
-    const r = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
-    const saved = r && { sc: r.startContainer, so: r.startOffset, ec: r.endContainer, eo: r.endOffset }
-    flattened = flattenTopLevelBlockWrappers(editorEl)
-    if (!sel || !saved || flattened.length === 0 || !editorEl.contains(saved.sc) || !editorEl.contains(saved.ec)) return
-    const range = document.createRange()
-    range.setStart(saved.sc, saved.so)
-    range.setEnd(saved.ec, saved.eo)
-    sel.removeAllRanges()
-    sel.addRange(range)
+  function onCompositionStart(): void {
+    undoStack.setComposing(true)
+  }
+
+  function onCompositionEnd(): void {
+    undoStack.setComposing(false)
   }
 
   function onInput(e?: Event): void {
-    // An undo can bring back a picture block the way the browser had it; make sure it shows its pixels.
     const fromHistory = e instanceof InputEvent && e.inputType.startsWith('history')
-    if (fromHistory) {
-      reflattenAfterHistory()
-      hydrateImages()
-    } else {
-      history.dropRedo()
-    }
     ensureBlock()
     // An undo/redo restores text the user already saw; it must not be re-formatted (undoing back to a typed
-    // "- " would otherwise turn it into a list again at once) or open a picker.
+    // "- " would otherwise turn it into a list again at once) or open a picker. Native history is always
+    // prevented, so this only guards a programmatic one.
     if (!fromHistory) {
       handleAutoFormat()
       checkTriggers()
@@ -1846,16 +1811,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && SHORTCUTS.some((sc) => sc.match(e))) e.preventDefault()
       return
     }
+    // Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y: always this editor's own stack (it preventDefaults), never the
+    // browser's. Needed on keydown, not only on beforeinput: the browser fires no history input while its own
+    // stack is empty.
+    if (undoStack.handleKeydown(e)) return
     if ((e.key === 'Backspace' || e.key === 'Delete') && removeSelectedImage()) {
       e.preventDefault()
       return
-    }
-    // Undo/redo of a hand-made edit (autoformat, Tab indent, ...) is ours; anything else is the browser's.
-    // Also needed on a keydown (not only on beforeinput) because the browser fires no history input at all
-    // while its own stack is empty, e.g. a Tab indent in a note that was just opened.
-    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-      const handled = matchKey(e, 'z') ? (e.shiftKey ? history.redo() : history.undo()) : !e.shiftKey && matchKey(e, 'y') ? history.redo() : false
-      if (handled) { e.preventDefault(); return }
     }
     // A clicked picture stays "selected" only until the next key: moving the caret on or typing must not leave
     // a later Backspace aimed at a picture that is no longer the thing being edited.
@@ -2075,12 +2037,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   /** Inserts markdown at the caret the way a paste does, then settles the DOM (flat blocks, image spacing, highlighting, pictures). */
   function insertMarkdown(md: string): void {
+    // Here, not before an await in a caller: a pending snapshot only lives until the next task.
+    undoStack.checkpoint()
     const styledBefore = styledElements()
     document.execCommand('insertHTML', false, renderMd(md))
     // insertHTML nests a multi-block fragment inside the caret's block when
     // that block was empty — restore the editor's flat-block-children shape
     // before anything reads it back as markdown (see the fn's own comment).
-    flattenPaste()
+    flattenTopLevelBlockWrappers(editorEl)
     stripPastedStyles(styledBefore)
     normalizeImageSpacing(editorEl)
     decorateCodeBlocks()
@@ -2097,6 +2061,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (destroyed || editorsReadOnly || items.length === 0) return
     restoreInsertCaret(caret)
     // A blank line before and after the run; normalizeImageSpacing settles the edges against the neighbours.
+    // insertMarkdown checkpoints the undo step (after the await, with the insert caret in place).
     insertMarkdown('\n' + items.map((i) => imageRefLine(i.id, i.alt)).join('\n\n') + '\n')
   }
 
@@ -2109,6 +2074,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const filled = fillImageTokens(md, items)
     if (!filled.trim()) return
     restoreInsertCaret(caret)
+    // insertMarkdown checkpoints the undo step (after the await, with the insert caret in place).
     insertMarkdown(filled)
   }
 
@@ -2151,6 +2117,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // never markdown / HTML — so a copied snippet keeps its own punctuation
     // and no block markup gets spliced into the `<pre>`.
     if (selectionTouchesPre()) {
+      undoStack.checkpoint()
       document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '')
       scheduleChange()
       return
@@ -2165,12 +2132,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (files.length > 0) { void addImages(files, rememberCaret()); return }
     }
     if (md.trim()) {
+      undoStack.checkpoint()
       const styledBefore = styledElements()
       document.execCommand('insertHTML', false, renderMd(md))
       // insertHTML nests a multi-block fragment inside the caret's block when
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
-      flattenPaste()
+      flattenTopLevelBlockWrappers(editorEl)
       stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
@@ -2187,15 +2155,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const html = lines
         .map((l) => `<div>${l === '' ? '<br>' : l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/^ +/, (sp) => nbsp.repeat(sp.length))}</div>`)
         .join('')
+      undoStack.checkpoint()
       const styledBefore = styledElements()
       document.execCommand('insertHTML', false, html)
-      flattenPaste()
+      flattenTopLevelBlockWrappers(editorEl)
       stripPastedStyles(styledBefore)
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
       return
     }
+    undoStack.checkpoint()
     document.execCommand('insertText', false, text)
     scheduleChange()
   }
@@ -2267,8 +2237,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // A read-only editor still lets the selection be copied; it just can't lose it.
     if (editorsReadOnly) { writeSelectionToClipboard(e); return }
     if (!writeSelectionToClipboard(e)) return
-    // The browser's own delete, so the cut sits on its undo stack and Ctrl+Z brings the text back.
+    // One undo step; the browser's own delete keeps its caret and block-merge behaviour.
     // (Where there is no such command — jsdom — the range is emptied by hand.)
+    undoStack.checkpoint()
     if (!document.execCommand('delete')) {
       window.getSelection()?.getRangeAt(0).deleteContents()
       ensureBlock()
@@ -2390,6 +2361,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   editorEl.addEventListener('beforeinput', onBeforeInput)
+  editorEl.addEventListener('compositionstart', onCompositionStart)
+  editorEl.addEventListener('compositionend', onCompositionEnd)
   editorEl.addEventListener('input', onInput)
   editorEl.addEventListener('keydown', onKeydown)
   editorEl.addEventListener('paste', onPaste)
@@ -2536,9 +2509,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /** Sets `data-lines` on every <pre> and auto-collapses the long ones.
    * `all` re-runs it over blocks already seen this session (setMd, a fresh
    * document); the default only touches blocks with no `data-lines` yet, so
-   * a mid-session paste can't re-collapse a block the user just expanded. */
-  function decorateCodeBlocks(all = false): void {
-    editorEl.querySelectorAll<HTMLElement>('pre').forEach((pre) => {
+   * a mid-session paste can't re-collapse a block the user just expanded.
+   * `within` limits it to those top-level blocks (the ones an undo replaced). */
+  function decorateCodeBlocks(all = false, within?: readonly HTMLElement[]): void {
+    const pres = within
+      ? within.flatMap((b) => [...(b.matches('pre') ? [b] : []), ...Array.from(b.querySelectorAll<HTMLElement>('pre'))])
+      : Array.from(editorEl.querySelectorAll<HTMLElement>('pre'))
+    pres.forEach((pre) => {
       markPre(pre)
       if (!all && pre.dataset.lines !== undefined) return
       const n = preLineCount(pre)
@@ -2646,6 +2623,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * blurred), so re-highlight every block unconditionally — none holds the
    * caret now. */
   function onEditorBlur(): void {
+    undoStack.closeRun()
     selectImageBlock(null)
     editorEl.querySelectorAll<HTMLElement>('pre').forEach(highlightPre)
   }
@@ -2769,8 +2747,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function removeSelectedImage(): boolean {
     const block = editorEl.querySelector<HTMLElement>('.tt-img.is-selected')
     if (!block) return false
-    // Through the browser's own delete command, so the removal sits on the native undo stack (Ctrl+Z brings the
-    // picture back). Without that command (or if it leaves the block), drop the node directly.
+    // One undo step (Ctrl+Z brings the picture back), through the browser's own delete command. Without that
+    // command (or if it leaves the block), drop the node directly.
+    undoStack.checkpoint()
     const sel = window.getSelection()
     if (sel) {
       const range = document.createRange()
@@ -2797,7 +2776,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // not flush — unlike destroy(), the pending change here belongs to
     // content that is being replaced outright.
     cancelChange()
-    history.clear()
+    // A new document: older steps would restore a note that is no longer here (and lose the newer text).
+    undoStack.clear()
     editorEl.innerHTML = renderMd(md)
     decorateCodeBlocks(true)
     // Paint the freshly-loaded blocks now. This used to happen by accident:
@@ -2873,9 +2853,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     flushChange()
     closeCopyMenu()
     pendingLinkModal?.close()
-    history.clear()
-    unregisterEditHistory(editorEl)
+    undoStack.destroy()
+    unregisterUndo(editorEl)
     editorEl.removeEventListener('beforeinput', onBeforeInput)
+    editorEl.removeEventListener('compositionstart', onCompositionStart)
+    editorEl.removeEventListener('compositionend', onCompositionEnd)
     editorEl.removeEventListener('input', onInput)
     editorEl.removeEventListener('keydown', onKeydown)
     editorEl.removeEventListener('paste', onPaste)
@@ -2895,7 +2877,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (cbCopyResetTimer) clearTimeout(cbCopyResetTimer)
   }
 
-  const registryEntry: EditorRegistryEntry = { flush: flushChange, root: editorEl, syncHighlight: syncPreHighlight }
+  const registryEntry: EditorRegistryEntry = {
+    flush: flushChange,
+    root: editorEl,
+    syncHighlight: syncPreHighlight,
+    noteSelectionChange: () => undoStack.noteSelectionChange(),
+  }
   registerEditor(registryEntry)
 
   return { root, getMd, setMd, refreshRefLabels, focus, destroy }

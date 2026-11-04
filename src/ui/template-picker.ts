@@ -13,7 +13,7 @@ import { t, type Locale } from '../core/i18n'
 import { el, clampToViewport } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockAndCaret, caretAfterInline, type BlockCtx } from './editor-dom'
-import { recordEdit } from './editor-history'
+import { recordEdit } from './editor-undo'
 
 export interface TemplatePickerHandle {
   /** Closes any open dropdown and removes all document/element listeners this instance attached. Idempotent. */
@@ -186,7 +186,7 @@ export function attachTemplatePicker(editor: Editor, opts: {
       if (nodes.length === 0) return
       const lastNode = nodes[nodes.length - 1]!
 
-      // Recorded so Ctrl+Z takes the whole insert back (see ui/editor-history.ts).
+      // Recorded so Ctrl+Z takes the whole insert back (see ui/editor-undo.ts).
       const inserted = recordEdit(editorEl!, (): boolean => {
       if (ctx.block.tagName === 'LI') {
         // The trigger landed inside a list item — a bare "/" bullet (keyboard
