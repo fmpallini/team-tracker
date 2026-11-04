@@ -32,6 +32,14 @@ export interface Snapshot {
 /** Attributes the editor adds to a `<pre>` for presentation only. */
 const PRE_TRANSIENT = ['data-collapsed', 'spellcheck', 'autocorrect', 'autocapitalize']
 
+/**
+ * Classes the editor puts on a picture block for the view only: the click
+ * selection (a restored picture must not come back selected, or the next
+ * Backspace deletes it again) and the missing marker, which hydration sets
+ * again on an emptied block.
+ */
+const IMG_TRANSIENT_CLASSES = ['is-selected', 'tt-img-missing']
+
 function stripEventHandlers(el: Element): void {
   for (const attr of Array.from(el.attributes)) {
     if (attr.name.toLowerCase().startsWith('on')) el.removeAttribute(attr.name)
@@ -47,6 +55,7 @@ function normalizedBlock(block: Element): string {
   for (const img of [...imgs, ...Array.from(clone.querySelectorAll<HTMLElement>('.tt-img'))]) {
     img.replaceChildren()
     img.removeAttribute('data-img-loading')
+    img.classList.remove(...IMG_TRANSIENT_CLASSES)
   }
   const pres = [...(clone.matches('pre') ? [clone] : []), ...Array.from(clone.querySelectorAll<HTMLElement>('pre'))]
   for (const pre of pres) {

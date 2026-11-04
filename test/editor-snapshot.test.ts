@@ -51,6 +51,38 @@ describe('takeSnapshot blocks', () => {
     expect(root.querySelector('img')).not.toBeNull()
   })
 
+  test('a picture\'s view classes (selected, missing marker) are not stored', () => {
+    const root = mount(
+      '<div class="tt-img is-selected" data-img-id="a" contenteditable="false"><img src="data:x"></div>'
+      + '<div class="tt-img tt-img-missing" data-img-id="b" contenteditable="false">Picture unavailable</div>',
+    )
+    const blocks = takeSnapshot(root).blocks
+    expect(blocks[0]).not.toContain('is-selected')
+    expect(blocks[1]).not.toContain('tt-img-missing')
+    expect(blocks[1]).not.toContain('unavailable')
+    expect(blocks.every((b) => b.includes('class="tt-img"'))).toBe(true)
+    // the live nodes keep their classes
+    expect(root.children[0]!.classList.contains('is-selected')).toBe(true)
+    expect(root.children[1]!.classList.contains('tt-img-missing')).toBe(true)
+  })
+
+  test('selecting a picture does not change the stored blocks (sameBlocks ignores it)', () => {
+    const root = mount('<div>a</div><div class="tt-img" data-img-id="a" contenteditable="false"></div>')
+    const before = takeSnapshot(root)
+    root.children[1]!.classList.add('is-selected')
+    expect(sameBlocks(before, takeSnapshot(root))).toBe(true)
+  })
+
+  test('a snapshot taken with a selected picture restores it unselected', () => {
+    const root = mount('<div>a</div><div class="tt-img is-selected" data-img-id="a" contenteditable="false"><img src="data:x"></div>')
+    const target = takeSnapshot(root)
+    root.children[1]!.remove()
+    restoreSnapshot(root, target)
+    const pic = root.querySelector('.tt-img')!
+    expect(pic.getAttribute('data-img-id')).toBe('a')
+    expect(pic.classList.contains('is-selected')).toBe(false)
+  })
+
   test('highlighted <pre> is stored as one plain text node, transient attributes dropped', () => {
     const root = mount(
       '<pre data-collapsed spellcheck="false" autocorrect="off" autocapitalize="off">'
