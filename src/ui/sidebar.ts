@@ -11,12 +11,12 @@ import { collectDueItems, teamDueSummary, type DueBuckets, type TeamDue } from '
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam, findTeam as docFindTeam, teamLabel } from '../core/document'
-import { el, bindOutsideDismiss, clampToViewport, clearClasses } from './dom'
+import { el, bindOutsideDismiss, clampToViewport, clearClasses, keepRowFocus } from './dom'
 import { icon, iconButton } from './icons'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from './undo-toast'
-import { blockedByModal } from './hotkeys'
+import { blockedByModal, isMoveChord, isPlainKey } from './hotkeys'
 import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { openDuePanel } from './due-panel'
@@ -553,6 +553,32 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     const team = row ? store.doc.teams[indexOfRow(row)] : undefined
     if (team) actions.selectTeam(team.id)
   })
+  // One Tab stop for the list, on the active team (see render): arrows walk it,
+  // Enter or Space opens a team, Ctrl+Up/Down is the keyboard's drag. Keys on a
+  // row's own buttons stay theirs.
+  listEl.addEventListener('keydown', (e) => {
+    const ev = e as KeyboardEvent
+    const row = rowOf(ev.target)
+    if (!row || ev.target !== row) return
+    const index = indexOfRow(row)
+    const dir = ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowUp' ? -1 : 0
+    if (dir !== 0 && isMoveChord(ev)) {
+      ev.preventDefault()
+      if (store.doc.teams[index + dir]) reorder(index, index + dir, dir > 0)
+      return
+    }
+    if (!isPlainKey(ev)) return
+    if (dir !== 0) {
+      ev.preventDefault()
+      ;(listEl.children[index + dir] as HTMLElement | undefined)?.focus()
+      return
+    }
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault()
+      const team = store.doc.teams[index]
+      if (team) actions.selectTeam(team.id)
+    }
+  })
   listEl.addEventListener('dragstart', (e) => {
     const row = rowOf(e.target)
     if (!row) return
@@ -609,11 +635,26 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       return
     }
     const activeId = store.doc.nav.activeTeamId
-    for (let i = 0; i < teams.length; i++) rowEls[i]!.classList.toggle('active', teams[i]!.id === activeId)
+    for (let i = 0; i < teams.length; i++) {
+      const row = rowEls[i] as HTMLElement
+      row.classList.toggle('active', teams[i]!.id === activeId)
+      row.tabIndex = teamRowTabStop(i) ? 0 : -1
+    }
     renderCollapseState()
   }
 
+  /** The active team's row holds the list's one Tab stop; with no active team, the first row does. */
+  function teamRowTabStop(index: number): boolean {
+    const activeId = store.doc.nav.activeTeamId
+    const teams = store.doc.teams
+    return teams[index]!.id === activeId || (index === 0 && !teams.some((tm) => tm.id === activeId))
+  }
+
   function render(): void {
+    keepRowFocus(listEl, '.tt-team-item', rebuildList)
+  }
+
+  function rebuildList(): void {
     listEl.innerHTML = ''
     // Static chrome tooltips are re-stamped here so a locale change (a store
     // update like any other) refreshes them through the same render path.
@@ -630,7 +671,9 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const item = el('div', {
         class: 'tt-team-item' + (isActive ? ' active' : ''),
         draggable: 'true',
+        tabindex: teamRowTabStop(index) ? '0' : '-1',
         'data-index': String(index),
+        'data-item-id': team.id,
         ...(index < 9 ? { title: t(locale(), 'team_alt_hint') } : {}),
       })
       const numEl = el('span', { class: 'tt-team-num' }, String(index + 1))

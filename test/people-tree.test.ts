@@ -264,7 +264,7 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
     const box = boxes(container)[0]!
-    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions · Ctrl+←/→ to reorder')
+    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions · Ctrl+←/→ to reorder · Ctrl+↑/↓ to change level')
   })
 
   test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
@@ -353,7 +353,7 @@ describe('renderPeopleTree', () => {
     test('Space opens the context menu, like a right-click', () => {
       const { boxById } = chart()
       key(boxById('a'), ' ')
-      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Move later', 'Delete person'])
+      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Move later', 'Move up a level', 'Delete person'])
     })
 
     test('Ctrl+Left/Right reorders among siblings and keeps focus; a plain arrow still just walks', () => {
@@ -677,4 +677,73 @@ test('deleting a person unlinks every reference to them across the team\'s notes
   expect(tm.members[0]!.notes).toBe('ping ~Carla~')
   expect(tm.dailyNotes['2026-07-01']).toBe('saw ~Carla~ today')
   expect(tm.stakeholders).toEqual([])
+})
+
+describe('keyboard: restructuring the chart', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const chart = (): Team => makeTeam({ members: [
+    person({ id: 'boss', name: 'Boss', parentId: null, order: 0 }),
+    person({ id: 'x', name: 'X', parentId: 'boss', order: 0 }),
+    person({ id: 'y', name: 'Y', parentId: 'boss', order: 1 }),
+  ] })
+  const box = (container: HTMLElement, id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${id}"]`)!
+  const parentOf = (store: Store, id: string): string | null => store.doc.teams[0]!.members.find((p) => p.id === id)!.parentId
+
+  test('Ctrl+Down files a person under the sibling before them, focus following', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'y').focus()
+    press(box(container, 'y'), { key: 'ArrowDown', ctrlKey: true })
+    expect(parentOf(store, 'y')).toBe('x')
+    expect(document.activeElement).toBe(box(container, 'y'))
+  })
+
+  test('with no sibling before them there is nobody to file under', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: 'ArrowDown', ctrlKey: true })
+    expect(parentOf(store, 'x')).toBe('boss')
+  })
+
+  test('Ctrl+Up lifts a person next to their manager, up to the root', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: 'ArrowUp', ctrlKey: true })
+    expect(parentOf(store, 'x')).toBeNull()
+    expect(document.activeElement).toBe(box(container, 'x'))
+    press(box(container, 'x'), { key: 'ArrowUp', ctrlKey: true })
+    expect(parentOf(store, 'x')).toBeNull()
+  })
+
+  test('the menu offers the same moves, only where they apply', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'y').focus()
+    press(box(container, 'y'), { key: ' ' })
+    expect(menuLabels()).toEqual(expect.arrayContaining(['Move up a level', 'Move under X']))
+    closeAnyContextMenu()
+    box(container, 'boss').focus()
+    press(box(container, 'boss'), { key: ' ' })
+    expect(menuLabels().some((l) => l.startsWith('Move up') || l.startsWith('Move under'))).toBe(false)
+    closeAnyContextMenu()
+  })
+
+  test('Alt+arrows leave the walk alone', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: 'ArrowUp', altKey: true })
+    expect(document.activeElement).toBe(box(container, 'x'))
+  })
+
+  test('deleting from the menu lands on a neighbour', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: ' ' })
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === 'Delete person')!.click()
+    expect(document.activeElement).toBe(box(container, 'y'))
+  })
 })

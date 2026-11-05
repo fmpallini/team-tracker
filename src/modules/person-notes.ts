@@ -5,7 +5,7 @@
 // tree, possibly in the *other* pane) while this module is mounted.
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
-import type { ModuleCtx } from '../ui/panes'
+import { focusPaneBar, type ModuleCtx } from '../ui/panes'
 import { createModuleEditor } from '../ui/rich-editor'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
@@ -105,6 +105,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     initialMd: person.notes,
     templateScopes: ['personal', 'any'],
     personName: () => findPerson()?.name,
+    onEscape: () => focusPaneBar(container),
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)
@@ -164,6 +165,10 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   })
 
   container.appendChild(el('div', { class: 'tt-person-notes' }, headerEl, editor.root))
+  // Only for the pane the user is actually in, same guard as daily-notes.ts.
+  if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) {
+    editor.focus()
+  }
 
   return () => {
     unsubscribe()

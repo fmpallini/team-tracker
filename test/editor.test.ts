@@ -4612,3 +4612,30 @@ describe('normalizeImageSpacing', () => {
     expect(run(block('a'.repeat(32)) + block('b'.repeat(32)))).toBe(block('a'.repeat(32)) + blank + block('b'.repeat(32)))
   })
 })
+
+describe('Escape leaves the editor', () => {
+  let editor: Editor
+  test('a host with onEscape takes it', () => {
+    const hooks = makeHooks()
+    const onEscape = vi.fn()
+    editor = createEditor({ ...hooks, onEscape }, 'en-US')
+    const e = dispatchKey(editor.root.querySelector<HTMLElement>('.editor')!, { key: 'Escape' })
+    expect(onEscape).toHaveBeenCalledTimes(1)
+    expect(e.defaultPrevented).toBe(true)
+  })
+
+  test('a popup that already used the Escape keeps it', () => {
+    const onEscape = vi.fn()
+    editor = createEditor({ ...makeHooks(), onEscape }, 'en-US')
+    const ed = editor.root.querySelector<HTMLElement>('.editor')!
+    ed.addEventListener('keydown', (e) => e.preventDefault(), { capture: true, once: true })
+    dispatchKey(ed, { key: 'Escape' })
+    expect(onEscape).not.toHaveBeenCalled()
+  })
+
+  test('without a host it bubbles on, for the card dialog to close', () => {
+    editor = createEditor(makeHooks(), 'en-US')
+    const e = dispatchKey(editor.root.querySelector<HTMLElement>('.editor')!, { key: 'Escape' })
+    expect(e.defaultPrevented).toBe(false)
+  })
+})

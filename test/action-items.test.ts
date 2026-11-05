@@ -2700,3 +2700,109 @@ test('the card notes editor offers the "any"-scope templates only', () => {
   const editor = document.querySelector<HTMLElement>('.tt-modal-dialog .editor')!
   expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
 })
+
+describe('keyboard: moving tasks', () => {
+  const press = (target: Element, init: KeyboardEventInit): KeyboardEvent => {
+    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(e)
+    return e
+  }
+  const board = (): Team => makeTeam({
+    actionColumns: [{ id: 'wip', name: 'WIP', order: 0 }, { id: 'rev', name: 'Review', order: 1 }],
+    actionItems: [
+      item({ id: 'a', summary: 'A', order: 0 }),
+      item({ id: 'b', summary: 'B', order: 1 }),
+      item({ id: 'c', summary: 'C', order: 2 }),
+      item({ id: 'w', summary: 'W', status: 'wip', order: 0 }),
+    ],
+  })
+  const card = (container: HTMLElement, id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-kanban-card[data-item-id="${id}"]`)!
+  const statusOf = (store: Store, id: string): string => store.doc.teams[0]!.actionItems.find((i) => i.id === id)!.status
+
+  test('Ctrl+Right walks a task through the board, focus following it', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    card(container, 'a').focus()
+    for (const expected of ['wip', 'rev', 'done', 'cancelled']) {
+      press(card(container, 'a'), { key: 'ArrowRight', ctrlKey: true })
+      expect(statusOf(store, 'a')).toBe(expected)
+      expect(document.activeElement).toBe(card(container, 'a'))
+    }
+    press(card(container, 'a'), { key: 'ArrowRight', ctrlKey: true })
+    expect(statusOf(store, 'a')).toBe('cancelled')
+  })
+
+  test('Ctrl+Left goes back, and stops at To Do', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    card(container, 'w').focus()
+    press(card(container, 'w'), { key: 'ArrowLeft', ctrlKey: true })
+    expect(statusOf(store, 'w')).toBe('todo')
+    press(card(container, 'w'), { key: 'ArrowLeft', ctrlKey: true })
+    expect(statusOf(store, 'w')).toBe('todo')
+  })
+
+  test('Ctrl+Up and Ctrl+Down reorder within the column', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    const todoOrder = (): string[] => Array.from(container.querySelectorAll<HTMLElement>('.tt-kanban-card.status-todo')).map((c) => c.dataset.itemId!)
+    card(container, 'a').focus()
+    press(card(container, 'a'), { key: 'ArrowDown', ctrlKey: true })
+    expect(todoOrder()).toEqual(['b', 'a', 'c'])
+    expect(document.activeElement).toBe(card(container, 'a'))
+    press(card(container, 'a'), { key: 'ArrowUp', ctrlKey: true })
+    expect(todoOrder()).toEqual(['a', 'b', 'c'])
+  })
+
+  test('Enter opens the task only unmodified', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    card(container, 'a').focus()
+    press(card(container, 'a'), { key: 'Enter', altKey: true })
+    press(card(container, 'a'), { key: 'Enter', ctrlKey: true })
+    expect(document.querySelector('.tt-modal-overlay')).toBeNull()
+  })
+
+  test('Alt+arrows are the pane hotkeys, not a walk across the board', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    card(container, 'a').focus()
+    press(card(container, 'a'), { key: 'ArrowRight', altKey: true })
+    expect(document.activeElement).toBe(card(container, 'a'))
+  })
+
+  test('deleting from the menu lands on the next task', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    card(container, 'b').focus()
+    press(card(container, 'b'), { key: ' ' })
+    contextMenuItem('Delete').click()
+    expect(document.activeElement).toBe(card(container, 'c'))
+  })
+
+  test('deleting from the open card lands on a neighbour too', async () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    card(container, 'b').focus()
+    press(card(container, 'b'), { key: 'Enter' })
+    clickByTitleOrText(document.querySelector('.tt-modal-dialog')!, 'Delete')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.activeElement).toBe(card(container, 'c'))
+  })
+
+  test('a custom column moves with Ctrl+Left/Right on its grip, which keeps focus', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    const grip = (id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-kanban-col-grip[data-column-id="${id}"]`)!
+    const order = (): string[] => [...store.doc.teams[0]!.actionColumns!].sort((x, y) => x.order - y.order).map((c) => c.id)
+    expect(grip('wip').tabIndex).toBe(0)
+    grip('wip').focus()
+    press(grip('wip'), { key: 'ArrowRight', ctrlKey: true })
+    expect(order()).toEqual(['rev', 'wip'])
+    expect(document.activeElement).toBe(grip('wip'))
+    press(grip('wip'), { key: 'ArrowRight', ctrlKey: true })
+    expect(order()).toEqual(['rev', 'wip'])
+    press(grip('wip'), { key: 'ArrowLeft', ctrlKey: true })
+    expect(order()).toEqual(['wip', 'rev'])
+  })
+})

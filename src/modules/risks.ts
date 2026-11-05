@@ -28,7 +28,7 @@ import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
+import { el, createDeferredRebuild, clearClasses, keepRowFocus } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { makeRefLabelResolver } from '../ui/atref'
@@ -764,14 +764,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-risk-title-input tt-input', placeholder: t(lc, 'risk_title_placeholder'), value: r.title,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        // Unscoped beyond the team: `title` is the label @[…](risk:id)
-        // mentions resolve through live — see the note at people-tree.ts's
-        // rename site.
-        patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.title = value }, { teamId })
-      },
+      onkeydown: followups.commitFieldOnEnter(r.id),
+      onchange: (e: Event) => followups.commitTitle(r.id, (e.target as HTMLInputElement).value),
     })
 
     // Labelled, not bare 1/2/3: the stored value is still the number, but
@@ -868,7 +862,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
 
-    followups.wireRowKeys(row, r.id, (x, y) => openRowContextMenu(r.id, x, y))
+    followups.wireRowKeys(row, r.id, (x, y) => openRowContextMenu(r.id, x, y), moveRiskBy)
 
     followups.installBlankTitleGuard(row, r.id, {
       // The add button is part of the list: pressing it would otherwise drop the
@@ -1070,7 +1064,23 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     }
   }
 
+  /** Ctrl+Up/Down on a row: the keyboard's drag. Same rule as the drag, no manual position exists under an exposure sort. */
+  function moveRiskBy(id: string, dir: -1 | 1): void {
+    if (sortMode !== 'none') return
+    const ids = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-risk-row')).map((row) => row.dataset.itemId!)
+    const target = ids[ids.indexOf(id) + dir]
+    if (target === undefined) return
+    ctx.store.update((d) => {
+      const tm = docFindTeam(d, teamId)
+      if (tm) moveRisk(tm.risks, id, target, dir < 0 ? 'before' : 'after')
+    }, { teamId, sections: ['risks'] })
+  }
+
   function renderAll(): void {
+    keepRowFocus(listEl, '.tt-risk-row', rebuildList)
+  }
+
+  function rebuildList(): void {
     expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     listEl.innerHTML = ''
     const all = risks()
@@ -1189,6 +1199,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // Our own follow-up commit: only its @mentions can have moved another
     // row's backlinks chip — nothing else here renders follow-up text.
     if (followups.isCommittingOwnFollowup()) {
+      followups.refreshBacklinkChips()
+      return
+    }
+    // Our own title commit: the row's input already shows it, the chart labels and mentions of it are what moved.
+    if (followups.isCommittingOwnTitle()) {
+      renderQuadrant()
       followups.refreshBacklinkChips()
       return
     }

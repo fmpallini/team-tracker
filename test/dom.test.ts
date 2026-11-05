@@ -1,4 +1,4 @@
-import { el, blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
+import { el, blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, keepRowFocus, neighbourRowId, saveFocus, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -319,4 +319,168 @@ describe('el form-field names', () => {
     expect(el('input', { type: 'text', id: 'mine' }).hasAttribute('name')).toBe(false)
     expect(el('div', { class: 'x' }).hasAttribute('name')).toBe(false)
   })
+})
+
+describe('saveFocus', () => {
+  afterEach(() => { document.body.innerHTML = '' })
+
+  test('hands focus back to the element that held it', () => {
+    const a = document.body.appendChild(el('button', {}))
+    const b = document.body.appendChild(el('button', {}))
+    a.focus()
+    const saved = saveFocus()
+    b.focus()
+    expect(saved.restore()).toBe(true)
+    expect(document.activeElement).toBe(a)
+  })
+
+  test('restores the caret of an editor, which focus() alone would reset', () => {
+    const ed = document.body.appendChild(el('div', { contenteditable: 'true', tabindex: '0' }, 'hello world'))
+    const other = document.body.appendChild(el('button', {}))
+    ed.focus()
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    const r = document.createRange()
+    r.setStart(ed.firstChild!, 5)
+    r.collapse(true)
+    sel.addRange(r)
+    const saved = saveFocus()
+    other.focus()
+    sel.removeAllRanges()
+    saved.restore()
+    expect(document.activeElement).toBe(ed)
+    expect(window.getSelection()!.anchorOffset).toBe(5)
+  })
+
+  test('reports failure when the element is gone or nothing was focused', () => {
+    const a = document.body.appendChild(el('button', {}))
+    a.focus()
+    const saved = saveFocus()
+    a.remove()
+    expect(saved.restore()).toBe(false)
+    ;(document.activeElement as HTMLElement).blur?.()
+    expect(saveFocus().restore()).toBe(false)
+  })
+})
+
+describe('keepRowFocus', () => {
+  afterEach(() => { document.body.innerHTML = '' })
+
+  function list(ids: string[]): HTMLElement {
+    const root = document.body.appendChild(el('div', {}))
+    fill(root, ids)
+    return root
+  }
+  function fill(root: HTMLElement, ids: string[]): void {
+    root.innerHTML = ''
+    for (const id of ids) {
+      root.appendChild(el('div', { class: 'row', tabindex: '0', 'data-item-id': id },
+        el('input', { class: 'tick', type: 'checkbox' }),
+        el('select', { class: 'pick' })))
+    }
+  }
+  const row = (root: HTMLElement, id: string): HTMLElement => root.querySelector<HTMLElement>(`.row[data-item-id="${id}"]`)!
+
+  test('puts focus back on the rebuilt row', () => {
+    const root = list(['a', 'b'])
+    row(root, 'b').focus()
+    keepRowFocus(root, '.row', () => fill(root, ['a', 'b']))
+    expect(document.activeElement).toBe(row(root, 'b'))
+  })
+
+  test('a checkbox hands focus to its row, so the arrows keep working', () => {
+    const root = list(['a', 'b'])
+    row(root, 'b').querySelector<HTMLElement>('.tick')!.focus()
+    keepRowFocus(root, '.row', () => fill(root, ['a', 'b']))
+    expect(document.activeElement).toBe(row(root, 'b'))
+  })
+
+  test('a select keeps focus on the same select, so the next field is one Tab away', () => {
+    const root = list(['a', 'b'])
+    row(root, 'b').querySelector<HTMLElement>('.pick')!.focus()
+    keepRowFocus(root, '.row', () => fill(root, ['a', 'b']))
+    expect(document.activeElement).toBe(row(root, 'b').querySelector('.pick'))
+  })
+
+  test('a deleted row hands focus to the next row, or the previous one at the end', () => {
+    const root = list(['a', 'b', 'c'])
+    row(root, 'b').focus()
+    keepRowFocus(root, '.row', () => fill(root, ['a', 'c']))
+    expect(document.activeElement).toBe(row(root, 'c'))
+
+    keepRowFocus(root, '.row', () => fill(root, ['a']))
+    expect(document.activeElement).toBe(row(root, 'a'))
+  })
+
+  test('leaves focus alone when it is outside the list', () => {
+    const root = list(['a'])
+    const outside = document.body.appendChild(el('button', {}))
+    outside.focus()
+    keepRowFocus(root, '.row', () => fill(root, ['a']))
+    expect(document.activeElement).toBe(outside)
+  })
+
+  test('does not fight a rebuild that placed focus itself', () => {
+    const root = list(['a', 'b'])
+    row(root, 'a').focus()
+    keepRowFocus(root, '.row', () => {
+      fill(root, ['a', 'b'])
+      row(root, 'b').querySelector<HTMLElement>('.tick')!.focus()
+    })
+    expect(document.activeElement).toBe(row(root, 'b').querySelector('.tick'))
+  })
+})
+
+test('neighbourRowId names the next row, else the previous, else nothing', () => {
+  const root = document.body.appendChild(el('div', {},
+    el('div', { class: 'row', 'data-item-id': 'a' }), el('div', { class: 'row', 'data-item-id': 'b' })))
+  expect(neighbourRowId(root, '.row', 'a')).toBe('b')
+  expect(neighbourRowId(root, '.row', 'b')).toBe('a')
+  expect(neighbourRowId(root, '.row', 'zzz')).toBeNull()
+  root.remove()
+})
+
+describe('createDeferredRebuild with focus in transit', () => {
+  afterEach(() => { document.body.innerHTML = ''; vi.useRealTimers() })
+
+  test('waits a tick when focus is moving to another element, so the rebuild cannot destroy where it is going', () => {
+    vi.useFakeTimers()
+    const rebuild = vi.fn()
+    const deferred = createDeferredRebuild(rebuild)
+    const a = document.body.appendChild(el('input', {}))
+    const b = document.body.appendChild(el('input', {}))
+    a.focus()
+    deferred.arm(a)
+    a.dispatchEvent(new FocusEvent('blur', { relatedTarget: b }))
+    expect(rebuild).not.toHaveBeenCalled()
+    vi.runAllTimers()
+    expect(rebuild).toHaveBeenCalledTimes(1)
+  })
+
+  test('dispose cancels a waiting rebuild, the module is gone', () => {
+    vi.useFakeTimers()
+    const rebuild = vi.fn()
+    const deferred = createDeferredRebuild(rebuild)
+    const a = document.body.appendChild(el('input', {}))
+    deferred.arm(a)
+    a.dispatchEvent(new FocusEvent('blur', { relatedTarget: document.body }))
+    deferred.dispose()
+    vi.runAllTimers()
+    expect(rebuild).not.toHaveBeenCalled()
+  })
+})
+
+test('keepRowFocus keeps a text field too, selected as a Tab into it leaves it', () => {
+  const root = document.body.appendChild(el('div', {}))
+  const fill = (): void => {
+    root.innerHTML = ''
+    root.appendChild(el('div', { class: 'row', tabindex: '0', 'data-item-id': 'a' }, el('input', { class: 'name', type: 'text', value: 'abc' })))
+  }
+  fill()
+  root.querySelector<HTMLInputElement>('.name')!.focus()
+  keepRowFocus(root, '.row', fill)
+  const input = root.querySelector<HTMLInputElement>('.name')!
+  expect(document.activeElement).toBe(input)
+  expect([input.selectionStart, input.selectionEnd]).toEqual([0, 3])
+  root.remove()
 })

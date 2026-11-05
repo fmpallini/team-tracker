@@ -9,7 +9,7 @@ import { FIXED_MODULE_KEYS, titleFor } from '../core/module-items'
 import { createPaneLayout, type PaneLayout } from '../core/pane-layout'
 import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { createSearchIndex, type SearchIndex } from '../core/search'
-import { el } from './dom'
+import { el, saveFocus, type SavedFocus } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
 import { showContextMenu, type ContextMenuItem } from './context-menu'
@@ -322,6 +322,23 @@ export function installArrowFallbackFocus(ctx: ModuleCtx, container: HTMLElement
 }
 
 /**
+ * Takes focus out of a pane's content to its bar, for an editor's Escape: Tab
+ * is the editor's own there, so this is the way out of it by keyboard. The
+ * current tab when the pane is wide enough for the strip; the dropdown when
+ * CSS has hidden the strip (a hidden element refuses focus).
+ */
+export function focusPaneBar(from: HTMLElement): void {
+  const bar = from.closest('.tt-pane')?.querySelector('.tt-pane-bar')
+  if (!bar) return
+  const tab = bar.querySelector<HTMLElement>('.tt-pane-tab[tabindex="0"]')
+  tab?.focus()
+  if (document.activeElement !== tab) bar.querySelector<HTMLElement>('.tt-pane-modules-btn')?.focus()
+}
+
+/** Where a pane's focus lands with nothing remembered: what each module focuses on mount. */
+const PANE_DEFAULT_FOCUS = '.editor, [data-item-id][tabindex="0"]'
+
+/**
  * F1..F7 global hotkey handler (main.ts): jumps the focused pane straight to
  * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
  * matching the "F<n>" hint each row shows in the pane's module dropdown.
@@ -399,7 +416,7 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   pm.openBothPanes(target0, target1, isSplitVisible(store) ? 1 : 0)
 }
 
-export function createPaneManager(shell: Shell, store: Store): PaneManager & { searchIndex: SearchIndex } {
+export function createPaneManager(shell: Shell, store: Store): PaneManager & { searchIndex: SearchIndex; switchPane(idx: 0 | 1): void } {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
   const menuSelected: [number, number] = [0, 0]
@@ -479,6 +496,21 @@ export function createPaneManager(shell: Shell, store: Store): PaneManager & { s
   // --- persistent DOM skeleton (built once; content mutated in place) ---
   const barEls: [HTMLElement, HTMLElement] = [el('div', { class: 'tt-pane-bar' }), el('div', { class: 'tt-pane-bar' })]
   const bodyEls: [HTMLElement, HTMLElement] = [el('div', { class: 'tt-pane-body' }), el('div', { class: 'tt-pane-body' })]
+  // Focus left behind in a pane the user switched away from, with an editor's
+  // caret; dropped whenever that pane remounts.
+  const paneFocus: [SavedFocus | null, SavedFocus | null] = [null, null]
+  // The row, card or box last focused in each visited module, so coming back
+  // (history, F-keys) lands where the user left instead of on the first item.
+  // In memory only: a place in a list is not worth a document write.
+  const itemMemo = new Map<string, string>()
+  const locKey = (loc: Loc): string => JSON.stringify([loc.teamId, loc.ref])
+  bodyEls.forEach((body, idx) => {
+    body.addEventListener('focusin', (e) => {
+      const id = (e.target as Element).closest<HTMLElement>('[data-item-id]')?.dataset.itemId
+      const loc = currentLoc(store.doc.nav.panes[idx as 0 | 1])
+      if (id && loc) itemMemo.set(locKey(loc), id)
+    })
+  })
   const paneEls: [HTMLElement, HTMLElement] = [
     el('div', { class: 'tt-pane', 'data-pane-idx': '0' }, barEls[0], bodyEls[0]),
     el('div', { class: 'tt-pane', 'data-pane-idx': '1' }, barEls[1], bodyEls[1]),
@@ -766,6 +798,31 @@ ${t(lc, 'pane_history_hint')}`
     // @mention chip inside an expanded risk row to open its target in the
     // other pane used to collapse that very row out from under the click.
     renderAll([idx])
+  }
+
+  /**
+   * Alt+Left/Right: moves the user between panes without touching either body.
+   * A remount here (as openInPane's comment explains) would reset an editor's
+   * caret and its undo stack and collapse expanded rows just for looking at the
+   * other pane, so only the bars repaint, and DOM focus moves by hand: back to
+   * where it was when that pane was left, else to what the module focuses on mount.
+   */
+  function switchPane(to: 0 | 1): void {
+    const from = otherPaneIdx(to)
+    const leaving = bodyEls[from].contains(document.activeElement) ? saveFocus() : null
+    if (!setFocusedPane(store, to)) return
+    if (leaving) paneFocus[from] = leaving
+    renderAll([])
+    focusPaneContent(to)
+  }
+
+  function focusPaneContent(idx: 0 | 1): void {
+    if (paneFocus[idx]?.restore()) return
+    const body = bodyEls[idx]
+    const loc = currentLoc(store.doc.nav.panes[idx])
+    const remembered = loc ? itemMemo.get(locKey(loc)) : undefined
+    const row = remembered ? body.querySelector<HTMLElement>(`[data-item-id="${remembered}"][tabindex]`) : null
+    ;(row ?? body.querySelector<HTMLElement>(PANE_DEFAULT_FOCUS))?.focus()
   }
 
   function openBothPanes(target0: Loc, target1: Loc, focusedPane: 0 | 1): void {
@@ -1057,6 +1114,8 @@ ${t(lc, 'pane_history_hint')}`
           disabled: teamId === null,
           onclick: (e: Event) => {
             if (!teamId) return
+            // The way back in after an editor's Escape. A remount would lose its caret and undo.
+            if (active && (e as MouseEvent).detail === 0) { focusPaneContent(idx); return }
             openInPane(idx, { teamId, ref: row.ref })
             // The bar is rebuilt by the navigation; a keyboard activation keeps its place.
             if ((e as MouseEvent).detail === 0) barEls[idx].querySelector<HTMLElement>('.tt-pane-tab.active')?.focus()
@@ -1200,6 +1259,7 @@ ${t(lc, 'pane_history_hint')}`
 
   function renderBody(idx: 0 | 1): void {
     const container = bodyEls[idx]
+    paneFocus[idx] = null
     // Tear the outgoing module down before its DOM goes, on every path: the
     // renderer's own withDisposal() only runs when there IS a renderer, so an
     // emptied pane (last team deleted) or an unregistered kind used to leave
@@ -1218,7 +1278,15 @@ ${t(lc, 'pane_history_hint')}`
       return
     }
     const ctx: ModuleCtx = { store, pm, paneIdx: idx, locale: lc, searchIndex, saveStatus }
+    // Read first: the module's own mount focus lands on its first row and
+    // would overwrite this. Applied only when the module did take focus, so a
+    // remount never pulls it out of a field elsewhere. A search or @ref jump
+    // focuses its item a frame later, and so still wins.
+    const remembered = itemMemo.get(locKey(loc))
     renderer(container, loc, ctx)
+    if (remembered && container.contains(document.activeElement)) {
+      container.querySelector<HTMLElement>(`[data-item-id="${remembered}"][tabindex]`)?.focus()
+    }
   }
 
   /**
@@ -1299,6 +1367,7 @@ ${t(lc, 'pane_history_hint')}`
     openInFocused,
     openInSecondaryPane,
     toggleSplit,
+    switchPane,
     renderAll,
     registerModule(kind, render) {
       modules.set(kind, render)
@@ -1323,7 +1392,7 @@ ${t(lc, 'pane_history_hint')}`
       disposeContainer(bodyEls[1])
     },
     searchIndex,
-  } satisfies PaneManager & { searchIndex: SearchIndex }
+  } satisfies PaneManager & { searchIndex: SearchIndex; switchPane(idx: 0 | 1): void }
 
   renderAll()
   return pm

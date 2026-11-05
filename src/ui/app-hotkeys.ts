@@ -11,11 +11,13 @@
 // checks. ui/hotkeys.ts already split out the reusable predicates the same
 // way (matchKey/matchDigit/comboHotkeyAllowed/navHotkeyAllowed); this is the
 // app-specific table that composes them.
-import { comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from './hotkeys'
+import { comboHotkeyAllowed, navHotkeyAllowed, outsideFieldsAndModals, matchKey, matchDigit } from './hotkeys'
 
 export type AppHotkeyAction =
   | { type: 'palette' }
   | { type: 'closeFile' }
+  /** Ctrl+Z outside a field, while a delete or move can still be taken back. */
+  | { type: 'undoDelete' }
   /** F1..F7 → pane module index 0..6. */
   | { type: 'paneModule'; index: number }
   /** Alt+Shift+Left / Alt+Shift+Right → step the focused pane's history. */
@@ -48,6 +50,8 @@ export interface AppHotkeyContext {
   teamCount: number
   /** Whether the currently focused pane is showing a daily note — gates Alt+[ / Alt+] / Alt+T. */
   focusedPaneShowsDailyNote: boolean
+  /** ui/undo-toast.ts's isUndoOfferLive() — gates Ctrl+Z, which otherwise stays the browser's. */
+  undoOfferLive: boolean
 }
 
 /**
@@ -86,8 +90,14 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
     return comboHotkeyAllowed(e) ? { type: 'closeFile' } : null
   }
 
+  if (ctx.undoOfferLive && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 'z')) {
+    return outsideFieldsAndModals(e) ? { type: 'undoDelete' } : null
+  }
+
   const fKeyMatch = /^F([1-7])$/.exec(e.key)
   if (fKeyMatch) {
+    // Bare F-keys only: Alt+F4, Shift+F5 and the like are the OS's and the browser's.
+    if (e.altKey || e.shiftKey) return null
     // navHotkeyAllowed, not hotkeyAllowed: must still fire while editing, or
     // F5/F6/F7 fall through to the browser's refresh / address-bar / caret
     // browsing default.

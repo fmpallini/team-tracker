@@ -308,3 +308,13 @@ describe('focus on dismiss', () => {
     expect(document.querySelector('.tt-palette-overlay')).toBeNull()
   })
 })
+
+test('Tab keeps the cursor in the box: the list is walked with the arrows, and a focus move would strand typing', () => {
+  const { palette } = setup()
+  palette.open()
+  const input = document.querySelector('.tt-palette-input') as HTMLInputElement
+  const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  input.dispatchEvent(e)
+  expect(e.defaultPrevented).toBe(true)
+  expect(document.activeElement).toBe(input)
+})

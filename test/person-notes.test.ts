@@ -399,3 +399,34 @@ test('a template\'s {person} uses the person\'s current name after a rename', ()
   expect(store.doc.teams[0]!.members[0]!.notes).toContain('Hi Bia')
   vi.useRealTimers()
 })
+
+test('opening a person lands the caret in their notes, like the other note modules', () => {
+  const { container, store, pm } = setup(makeTeam())
+  const person = store.doc.teams[0]!.members[0]!
+  render(container, { teamId: 'T1', ref: { kind: 'person', group: 'members', personId: person.id } } as Loc, store, pm)
+  expect(document.activeElement).toBe(editorEl(container))
+})
+
+test('only in the focused pane, so a team switch mounting both panes cannot steal focus', () => {
+  const { container, store, pm } = setup(makeTeam())
+  const person = store.doc.teams[0]!.members[0]!
+  render(container, { teamId: 'T1', ref: { kind: 'person', group: 'members', personId: person.id } } as Loc, store, pm, 1)
+  expect(document.activeElement).not.toBe(editorEl(container))
+})
+
+test('Escape leaves the notes for the pane bar', () => {
+  const { container, store, pm } = setup(makeTeam())
+  const pane = document.createElement('div')
+  pane.className = 'tt-pane'
+  const bar = document.createElement('div')
+  bar.className = 'tt-pane-bar'
+  const tab = document.createElement('button')
+  tab.className = 'tt-pane-tab'
+  tab.setAttribute('tabindex', '0')
+  bar.appendChild(tab)
+  pane.append(bar, container)
+  document.body.appendChild(pane)
+  render(container, { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }, store, pm)
+  editorEl(container).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  expect(document.activeElement).toBe(tab)
+})

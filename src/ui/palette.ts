@@ -155,6 +155,13 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
       dismiss()
       return
     }
+    // The arrows walk the list and the box keeps the cursor: a Tab out of it
+    // would leave the overlay open with typing going nowhere.
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       e.stopPropagation()

@@ -18,6 +18,7 @@ import { patchTeamItem } from '../core/team-items'
 import { createModuleEditor } from '../ui/rich-editor'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { el, showRowError, clearRowError } from '../ui/dom'
+import { isMoveChord, isPlainKey } from '../ui/hotkeys'
 import { icon } from '../ui/icons'
 
 export type FollowupPrefix = 'risk' | 'milestone'
@@ -52,9 +53,12 @@ export interface FollowupRows<T> {
   toggleExpand(id: string): void
   followupEditorRow(item: T): HTMLElement
   isCommittingOwnFollowup(): boolean
+  commitTitle(id: string, value: string): void
+  isCommittingOwnTitle(): boolean
   backlinksSlot(id: string): HTMLElement
   refreshBacklinkChips(): void
-  wireRowKeys(row: HTMLElement, id: string, openMenu: (x: number, y: number) => void): void
+  wireRowKeys(row: HTMLElement, id: string, openMenu: (x: number, y: number) => void, moveBy?: (id: string, dir: -1 | 1) => void): void
+  commitFieldOnEnter(id: string): (e: Event) => void
   wireDblclickToggle(row: HTMLElement, id: string): void
   installBlankTitleGuard(row: HTMLElement, id: string, opts: BlankTitleGuardOptions<T>): void
   paintExpandAllBtn(btn: HTMLElement, ids: string[], collapseKey: MsgKey, expandKey: MsgKey): void
@@ -71,6 +75,10 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
   // subscriber skips its full rebuild for it, and with it the rebuild-on-blur
   // that detached the next follow-up editor being clicked into.
   let committingOwnFollowup = false
+  // Same for a title, which the row's own input already shows. Worse than
+  // wasteful to rebuild for: a Tab out commits it with focus in mid-air, and
+  // the rebuild would destroy the next field before focus reaches it.
+  let committingOwnTitle = false
 
   function rowFor(id: string): HTMLElement | null {
     return listEl.querySelector<HTMLElement>(`.${rowClass}[${idAttr}="${id}"]`)
@@ -90,6 +98,18 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
     return false
   }
 
+  /** Writes a row's title. Unscoped beyond the team: it is the label @mentions of the item resolve through live, see the note at people-tree.ts's rename site. */
+  function commitTitle(id: string, value: string): void {
+    committingOwnTitle = true
+    try {
+      patchTeamItem(ctx.store, teamId, collection, id, (found) => { found.title = value }, { teamId })
+    } finally {
+      committingOwnTitle = false
+    }
+    const row = rowFor(id)
+    if (row && value.trim() !== '') clearNameError(row)
+  }
+
   // Keyboard-driven (Enter on a focused row): land focus somewhere sane after
   // the rebuild, on the follow-up editor when expanding (so typing can start)
   // or back on the row when collapsing (so the arrows continue).
@@ -107,6 +127,7 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
     const bundle = createModuleEditor(ctx, teamId, {
       initialMd: item.followup,
       templateScopes: ['any'],
+      onEscape: () => rowFor(item.id)?.focus(),
       onChange: (md) => {
         committingOwnFollowup = true
         try {
@@ -141,9 +162,15 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
   // still means "commit and blur" (blurOnEnter), Space inside a select still
   // opens it, and arrows inside a select still change its value. Only a
   // keypress on the row itself counts.
-  function wireRowKeys(row: HTMLElement, id: string, openMenu: (x: number, y: number) => void): void {
+  function wireRowKeys(row: HTMLElement, id: string, openMenu: (x: number, y: number) => void, moveBy?: (id: string, dir: -1 | 1) => void): void {
     row.addEventListener('keydown', (ev) => {
       if (ev.target !== row) return
+      if (moveBy && isMoveChord(ev) && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) {
+        ev.preventDefault()
+        moveBy(id, ev.key === 'ArrowDown' ? 1 : -1)
+        return
+      }
+      if (!isPlainKey(ev)) return
       if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
         const rows = Array.from(listEl.querySelectorAll<HTMLElement>(`.${rowClass}`))
         const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
@@ -163,6 +190,19 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
       const rect = row.getBoundingClientRect()
       openMenu(rect.left + 16, rect.bottom)
     })
+  }
+
+  /**
+   * Enter in a row's text field: commits the way Tab or a click away does, by
+   * blurring, then lands on the row (rebuilt by the commit, so found by id) for
+   * the arrows and row keys to carry on from.
+   */
+  function commitFieldOnEnter(id: string): (e: Event) => void {
+    return (e) => {
+      if ((e as KeyboardEvent).key !== 'Enter') return
+      ;(e.target as HTMLElement).blur()
+      rowFor(id)?.focus()
+    }
   }
 
   // Double-click any dead space on the row toggles the follow-up, a bigger
@@ -222,7 +262,8 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
   return {
     rowFor, showNameError, clearNameError, requireTitle, toggleExpand,
     followupEditorRow, isCommittingOwnFollowup: () => committingOwnFollowup,
-    backlinksSlot, refreshBacklinkChips, wireRowKeys, wireDblclickToggle,
+    commitTitle, isCommittingOwnTitle: () => committingOwnTitle,
+    backlinksSlot, refreshBacklinkChips, wireRowKeys, commitFieldOnEnter, wireDblclickToggle,
     installBlankTitleGuard, paintExpandAllBtn,
   }
 }

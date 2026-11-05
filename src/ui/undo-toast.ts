@@ -1,15 +1,15 @@
 // src/ui/undo-toast.ts — renders an UndoOffer (core/undo-delete.ts) as the
 // action button on the toast that follows a delete.
 //
-// An in-toast button rather than a hotkey, deliberately: Alt+Left/Alt+Right is
-// already per-pane navigation history and Ctrl+Z is already the rich editor's
-// own undo. A button collides with neither, and it makes the offer's short
-// lifetime visible instead of leaving the user to guess whether an undo is
-// still available.
+// An in-toast button, so the offer's short lifetime is visible instead of left
+// to guess. Its keyboard route is Ctrl+Z outside a field (undoLatestOffer,
+// wired in main.ts): inside one, Ctrl+Z stays the field's or the rich editor's
+// own undo, and a toast at the end of <body> is too many Tabs away to reach
+// in ten seconds.
 import type { Store } from '../core/store'
 import type { UndoOffer } from '../core/undo-delete'
 import { t, type Locale } from '../core/i18n'
-import { toast, dismissToast } from './modal'
+import { toast, dismissToast, isToastShowing } from './modal'
 
 /**
  * Ten seconds rather than the 4000ms default: this toast is the only window
@@ -19,6 +19,22 @@ import { toast, dismissToast } from './modal'
 export const UNDO_TOAST_MS = 10_000
 
 export const UNDO_TOAST_KEY = 'undo-delete'
+
+// The offer the toast on screen is showing, as its button would run it.
+let runLiveOffer: (() => void) | null = null
+
+/** True while an Undo toast is on screen with an offer behind it. One the user dismissed no longer counts: nothing shows it. */
+export function isUndoOfferLive(): boolean {
+  return runLiveOffer !== null && isToastShowing(UNDO_TOAST_KEY)
+}
+
+/** Does what the toast's Undo button does, for Ctrl+Z. False when no offer is live. */
+export function undoLatestOffer(): boolean {
+  if (!isUndoOfferLive()) return false
+  runLiveOffer!()
+  dismissToast(UNDO_TOAST_KEY)
+  return true
+}
 
 /**
  * Shows `message`, adding an Undo button when `offer` is available.
@@ -84,23 +100,24 @@ export function offerUndoToast(
     unsubscribe?.()
     unsubscribe = null
     heldOffer = null
+    if (runLiveOffer === runUndo) runLiveOffer = null
   }
+
+  function runUndo(): void {
+    // Before offer.undo(), which itself calls store.update() and would
+    // otherwise trip the watcher below and dismiss the confirmation toast
+    // this is about to show.
+    const active = heldOffer
+    stopWatching()
+    if (active?.undo()) toast(t(locale, 'undo_restored'), { kind: 'success' })
+    else toast(t(locale, 'undo_unavailable'), { kind: 'warn' })
+  }
+  runLiveOffer = runUndo
 
   toast(message, {
     key: UNDO_TOAST_KEY,
     duration: UNDO_TOAST_MS,
-    action: {
-      label: t(locale, 'undo'),
-      onClick: () => {
-        // Before offer.undo(), which itself calls store.update() and would
-        // otherwise trip the watcher below and dismiss the confirmation toast
-        // this is about to show.
-        const active = heldOffer
-        stopWatching()
-        if (active?.undo()) toast(t(locale, 'undo_restored'), { kind: 'success' })
-        else toast(t(locale, 'undo_unavailable'), { kind: 'warn' })
-      },
-    },
+    action: { label: t(locale, 'undo'), onClick: runUndo },
   })
 
   unsubscribe = store.onMutate((kind) => {

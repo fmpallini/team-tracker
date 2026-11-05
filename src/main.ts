@@ -13,7 +13,7 @@ import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar } from './ui/sidebar'
 import { resolveAppHotkey, isBrowserSaveChord } from './ui/app-hotkeys'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout, wcoReservedWidth } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { mountSearch } from './ui/search-ui'
@@ -35,7 +35,7 @@ import { decodeForReload, type ReloadedDocument } from './core/reload-document'
 import { readCurrent, sameEntry } from './core/fs'
 import { installCtrlWheelFontSize } from './ui/ctrl-wheel-font'
 import { toast, showErrorModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
-import { UNDO_TOAST_KEY } from './ui/undo-toast'
+import { UNDO_TOAST_KEY, isUndoOfferLive, undoLatestOffer } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage, ensurePersistentStorage } from './core/storage-persist'
 import { createFileSnapshot, type FileSnapshot } from './core/file-snapshot'
@@ -575,6 +575,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     const action = resolveAppHotkey(e, {
       teamCount: store.doc.teams.length,
       focusedPaneShowsDailyNote: !!focusedLoc && focusedLoc.ref.kind === 'daily',
+      undoOfferLive: isUndoOfferLive(),
     })
     if (!action) return
     e.preventDefault()
@@ -584,6 +585,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       case 'closeFile':
         if (navPastModelessCard()) closeFile()
+        return
+      case 'undoDelete':
+        undoLatestOffer()
         return
       case 'paneModule':
         if (navPastModelessCard()) openPaneModuleByIndex(pm, store, action.index)
@@ -621,7 +625,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       }
       case 'selectPane':
-        if (navPastModelessCard() && setFocusedPane(store, action.index)) pm.renderAll()
+        if (navPastModelessCard()) pm.switchPane(action.index)
         return
       case 'toggleSplit':
         if (navPastModelessCard()) pm.toggleSplit()

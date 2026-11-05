@@ -1431,7 +1431,8 @@ body { background: var(--bg); color: var(--fg); }
    distinct from the header itself so clicking the name/rename input/buttons
    never gets mistaken for the start of a drag. */
 .tt-kanban-col-grip { cursor: grab; opacity: .38; padding: 0 .35rem 0 0; font-size: .9rem; line-height: 1; user-select: none; flex: none; }
-.tt-kanban-col-grip:hover { opacity: .85; }
+.tt-kanban-col-grip:hover, .tt-kanban-col-grip:focus-visible { opacity: .85; }
+.tt-kanban-col-grip:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .tt-kanban-col-grip:active { cursor: grabbing; }
 /* Column-reorder feedback — the dragged column itself dims and lifts
    (col-dragging, applied to the .tt-kanban-col wrapper on dragstart) while a
@@ -1920,7 +1921,7 @@ select option { background: var(--bg); color: var(--fg); }
    needs a focus ring of its own — inset, since rows sit flush against each
    other and an outset ring would be clipped by the neighbour. */
 /* Card-like items sit in scroll containers, so their keyboard focus is an inset ring (a button's outside ring would clip). One rule for all of them. */
-.tt-card:focus-visible, .tt-kanban-card:focus-visible, .tt-org-box:focus-visible, .tt-due-row:focus-visible, .tt-risk-row:focus-visible, .tt-milestone-row:focus-visible {
+.tt-card:focus-visible, .tt-kanban-card:focus-visible, .tt-org-box:focus-visible, .tt-due-row:focus-visible, .tt-risk-row:focus-visible, .tt-milestone-row:focus-visible, .tt-team-item:focus-visible {
   outline: none; border-color: var(--accent);
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
 }

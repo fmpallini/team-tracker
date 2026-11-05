@@ -7,7 +7,8 @@ import { t } from '../core/i18n'
 import { installArrowFallbackFocus, type ModuleCtx, type ModuleRenderer } from '../ui/panes'
 import { openPersonModal } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
-import { el, wheelScrollsHorizontally, clearClasses } from '../ui/dom'
+import { el, wheelScrollsHorizontally, clearClasses, keepRowFocus } from '../ui/dom'
+import { isMoveChord, isPlainKey } from '../ui/hotkeys'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
@@ -88,6 +89,20 @@ export function moveInTree(people: Person[], draggedId: string, targetId: string
     const oldSiblings = people.filter((p) => p.parentId === oldParentId && p.id !== draggedId).sort((a, b) => a.order - b.order)
     oldSiblings.forEach((p, i) => { p.order = i })
   }
+}
+
+/** Ctrl+Up on a box: `id` steps out to sit right after its manager, one level up. No-op at the root. */
+export function moveUpALevel(people: Person[], id: string): void {
+  const parentId = people.find((p) => p.id === id)?.parentId
+  if (parentId) moveInTree(people, id, parentId, 'after')
+}
+
+/** The sibling just before `id`, the one Ctrl+Down files it under, if any. */
+export function previousSibling(people: Person[], id: string): Person | undefined {
+  const me = people.find((p) => p.id === id)
+  if (!me) return undefined
+  const sibs = childrenOf(people, me.parentId)
+  return sibs[sibs.findIndex((p) => p.id === id) - 1]
 }
 
 /**
@@ -245,9 +260,19 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           if (tm) moveAmongSiblings(tm[group], person.id, delta)
         }, { teamId, sections: ['people'] })
       }
+      const moveLevel = (dir: 'up' | 'down'): void => {
+        ctx.store.update((d) => {
+          const list = docFindTeam(d, teamId)?.[group]
+          if (!list) return
+          if (dir === 'up') { moveUpALevel(list, person.id); return }
+          const prev = previousSibling(list, person.id)
+          if (prev) moveInTree(list, person.id, prev.id, 'child')
+        }, { teamId, sections: ['people'] })
+      }
       const openMenu = (x: number, y: number): void => {
         const sibs = childrenOf(people(), person.parentId)
         const at = sibs.findIndex((p) => p.id === person.id)
+        const prev = previousSibling(people(), person.id)
         showContextMenu(x, y, [
           { label: t(lc, 'person_notes_title'), icon: icon('note'), onClick: openNotes },
           { label: t(lc, 'person_edit_title'), icon: icon('edit'), onClick: () => openEditModal(person) },
@@ -255,6 +280,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           // Left/right in the chart: an end of the sibling group has no further to go, so that item is left out.
           ...(at > 0 ? [{ label: t(lc, 'person_move_earlier_title'), icon: icon('back'), onClick: () => moveAmongSiblingsBy(-1) }] : []),
           ...(at >= 0 && at < sibs.length - 1 ? [{ label: t(lc, 'person_move_later_title'), icon: icon('next'), onClick: () => moveAmongSiblingsBy(1) }] : []),
+          ...(person.parentId !== null ? [{ label: t(lc, 'person_move_up_level_title'), icon: icon('chevUp'), onClick: () => moveLevel('up') }] : []),
+          ...(prev ? [{ label: t(lc, 'person_move_under_title', { name: prev.name }), icon: icon('chevDown'), onClick: () => moveLevel('down') }] : []),
           { label: t(lc, 'person_delete_title'), icon: icon('trash'), danger: true, onClick: deleteThisPerson },
         ])
       }
@@ -293,6 +320,15 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       // Up to the manager, Down to the first report. Guarded on the box itself so a keypress on its button is left alone.
       box.addEventListener('keydown', (ev) => {
         if (ev.target !== box) return
+        // Ctrl+Left/Right reorders among siblings, Ctrl+Up/Down changes level; renderAll re-focuses the box by person id afterwards.
+        if (isMoveChord(ev)) {
+          const move = { ArrowLeft: () => moveAmongSiblingsBy(-1), ArrowRight: () => moveAmongSiblingsBy(1), ArrowUp: () => moveLevel('up'), ArrowDown: () => moveLevel('down') }[ev.key]
+          if (!move) return
+          ev.preventDefault()
+          move()
+          return
+        }
+        if (!isPlainKey(ev)) return
         if (ev.key === 'Enter') {
           ev.preventDefault()
           openNotes()
@@ -302,12 +338,6 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           ev.preventDefault()
           const rect = box.getBoundingClientRect()
           openMenu(rect.left + 16, rect.bottom)
-          return
-        }
-        // Ctrl+Left/Right reorders among siblings; renderAll re-focuses the box by person id afterwards.
-        if (ev.ctrlKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
-          ev.preventDefault()
-          moveAmongSiblingsBy(ev.key === 'ArrowLeft' ? -1 : 1)
           return
         }
         const next = adjacentBox(box, ev.key)
@@ -437,8 +467,9 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
     function renderAll(): void {
-      // The rebuild replaces every box, so a focused one is found again by person id afterwards.
-      const focusedId = treeEl.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>('[data-person-id]')?.dataset.personId : undefined
+      keepRowFocus(treeEl, '.tt-org-box', rebuildTree)
+    }
+    function rebuildTree(): void {
       treeEl.innerHTML = ''
       const roots = childrenOf(people(), null)
       if (roots.length === 0) {
@@ -450,7 +481,6 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         return
       }
       roots.forEach((r) => treeEl.appendChild(renderNode(r)))
-      if (focusedId) treeEl.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${focusedId}"]`)?.focus()
     }
     renderAll()
 

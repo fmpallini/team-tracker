@@ -103,3 +103,49 @@ test('focusedCaretElement: only the listed input types and a contenteditable edi
   box.focus()
   expect(focusedCaretElement(container, ['text'])).toBeNull()
 })
+
+describe('row keys', () => {
+  const press = (target: HTMLElement, init: KeyboardEventInit): KeyboardEvent => {
+    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(e)
+    return e
+  }
+
+  test('Enter, Space and the arrows are plain keys: a modifier leaves them to the global hotkeys', () => {
+    const { rows } = mount([risk('a', 'One'), risk('b', 'Two')])
+    const openMenu = vi.fn()
+    const row = rows.rowFor('a')!
+    rows.wireRowKeys(row, 'a', openMenu)
+    row.focus()
+    press(row, { key: 'ArrowDown', altKey: true })
+    expect(document.activeElement).toBe(row)
+    press(row, { key: ' ', ctrlKey: true })
+    expect(openMenu).not.toHaveBeenCalled()
+  })
+
+  test('Ctrl+Up/Down asks the module to move the row', () => {
+    const { rows } = mount([risk('a', 'One'), risk('b', 'Two')])
+    const moveBy = vi.fn()
+    const row = rows.rowFor('a')!
+    rows.wireRowKeys(row, 'a', () => {}, moveBy)
+    const e = press(row, { key: 'ArrowDown', ctrlKey: true })
+    press(row, { key: 'ArrowUp', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    expect(moveBy.mock.calls).toEqual([['a', 1], ['a', -1]])
+  })
+
+  test('commitFieldOnEnter commits through blur and lands on the row, so the arrows carry on', () => {
+    const { rows } = mount([risk('a', 'One')])
+    const row = rows.rowFor('a')!
+    const input = row.querySelector('input')!
+    const onchange = vi.fn()
+    input.addEventListener('blur', onchange)
+    input.addEventListener('keydown', rows.commitFieldOnEnter('a'))
+    input.focus()
+    press(input, { key: 'a' })
+    expect(document.activeElement).toBe(input)
+    press(input, { key: 'Enter' })
+    expect(onchange).toHaveBeenCalled()
+    expect(document.activeElement).toBe(row)
+  })
+})

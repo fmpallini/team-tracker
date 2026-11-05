@@ -23,7 +23,8 @@ import { createEntityDelete } from './entity-delete'
 import { createModuleEditor, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
-import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, clearClasses, keepRowFocus, neighbourRowId } from '../ui/dom'
+import { isMoveChord, isPlainKey } from '../ui/hotkeys'
 import { emptyState } from '../ui/empty-state'
 import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
 import { BACKLINK_SECTIONS, normalize } from '../core/search'
@@ -538,7 +539,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     // DOM query in onClose below naturally finds nothing if this card ended
     // up deleted (empty summary), so no separate null/abandoned tracking is
     // needed the way the old Save-gated flow required.
-    const focusItemIdOnClose = itemId
+    let focusItemIdOnClose = itemId
 
     const richBundle = createModuleEditor(ctx, teamId, {
       initialMd: existing?.notes ?? '',
@@ -648,6 +649,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // the modal opened. `deleting` stops onClose from silently removing a
         // blank-summary card first, which would leave remove() nothing to undo.
         const live = items().find((i) => i.id === itemId) ?? existing
+        focusItemIdOnClose = neighbourRowId(boardEl, '.tt-kanban-card', itemId) ?? itemId
         requestDelete(live, () => { deleting = true; closeModal() })
       } })
     }
@@ -863,6 +865,45 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     return null
   }
 
+  /**
+   * Ctrl+Arrow on a card, the keyboard's drag: Up/Down swap it with the card
+   * above or below in its column (the visible ones, as a drag under a tag
+   * filter sees them); Left/Right send it to the end of the next status, in
+   * the same order the plain arrows walk them.
+   */
+  function moveCardByKey(item: ActionItem, key: string): void {
+    const vertical = key === 'ArrowUp' || key === 'ArrowDown'
+    const dir = key === 'ArrowUp' || key === 'ArrowLeft' ? -1 : 1
+    let status = item.status
+    let targetId: string | null = null
+    if (vertical) {
+      const column = cardsInColumn(item.status)
+      const target = column[column.findIndex((c) => c.dataset.itemId === item.id) + dir]
+      if (!target) return
+      targetId = target.dataset.itemId!
+    } else {
+      const next = STATUSES[STATUSES.indexOf(item.status) + dir]
+      if (next === undefined) return
+      status = next
+    }
+    ctx.store.update((d) => {
+      const tm = docFindTeam(d, teamId)
+      if (tm) moveCard(tm.actionItems, item.id, status, targetId, dir < 0 && vertical ? 'before' : 'after')
+    }, { teamId, sections: ['actions'] })
+  }
+
+  /** Ctrl+Left/Right on a column's grip. The rebuild replaces the grip, so focus is put back on it by column id. */
+  function moveColumnBy(id: string, dir: -1 | 1): void {
+    const ids = STATUSES.filter((s) => !isFixedStatus(s))
+    const target = ids[ids.indexOf(id) + dir]
+    if (target === undefined) return
+    ctx.store.update((d) => {
+      const tm = docFindTeam(d, teamId)
+      if (tm?.actionColumns) moveColumn(tm.actionColumns, id, target, dir < 0 ? 'before' : 'after')
+    }, { teamId, sections: ['actions'] })
+    boardEl.querySelector<HTMLElement>(`.tt-kanban-col-grip[data-column-id="${id}"]`)?.focus()
+  }
+
   function renderCard(item: ActionItem, today: string, tagNames: Partial<Record<ActionItemColor, string>>, team: Team | undefined): HTMLElement {
     const editBtn = iconButton({
       class: 'tt-kanban-edit-btn', tabindex: '-1', title: t(lc, 'kanban_edit_hint'),
@@ -927,7 +968,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     card.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
       if (ev.target !== card) return
-      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp' || ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+      const isArrow = ev.key === 'ArrowDown' || ev.key === 'ArrowUp' || ev.key === 'ArrowLeft' || ev.key === 'ArrowRight'
+      if (isArrow && isMoveChord(ev)) {
+        ev.preventDefault()
+        moveCardByKey(item, ev.key)
+        return
+      }
+      if (!isPlainKey(ev)) return
+      if (isArrow) {
         const next = findAdjacentCard(item, ev.key)
         if (!next) return
         ev.preventDefault()
@@ -1205,7 +1253,16 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         }
         blurOnEnter(e)
       })
-      const gripEl = el('span', { class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint') }, icon('grip', 12))
+      const gripEl = el('span', {
+        class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint'), 'aria-label': t(lc, 'kanban_drag_column_hint'),
+        tabindex: '0', 'data-column-id': id,
+      }, icon('grip', 12))
+      gripEl.addEventListener('keydown', (e) => {
+        const ev = e as KeyboardEvent
+        if (!isMoveChord(ev) || (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight')) return
+        ev.preventDefault()
+        moveColumnBy(id, ev.key === 'ArrowLeft' ? -1 : 1)
+      })
       const headEl = el(
         'div', { class: 'tt-kanban-col-head' },
         gripEl, nameSpan, nameInput,
@@ -1314,6 +1371,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   })
 
   function renderAll(): void {
+    keepRowFocus(boardEl, '.tt-kanban-card', rebuildAll)
+  }
+
+  function rebuildAll(): void {
     rebuildBoard()
     const tm = findTeam()
     const today = todayIso()

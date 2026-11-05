@@ -1,4 +1,4 @@
-import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed, blockedByModal, blockedByBlockingModal, matchKey, matchDigit } from '../src/ui/hotkeys'
+import { hotkeyAllowed, comboHotkeyAllowed, navHotkeyAllowed, outsideFieldsAndModals, isPlainKey, isMoveChord, blockedByModal, blockedByBlockingModal, matchKey, matchDigit } from '../src/ui/hotkeys'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -202,4 +202,46 @@ test('navHotkeyAllowed blocks the hotkey while a modal overlay is open', () => {
   document.addEventListener('keydown', (e) => { captured = e })
   keydownOn(document.body)
   expect(navHotkeyAllowed(captured!)).toBe(false)
+})
+
+describe('isPlainKey / isMoveChord — the row keys and their Ctrl+Arrow move variant', () => {
+  test('a plain key has no modifier at all', () => {
+    expect(isPlainKey(key({ key: 'Enter' }))).toBe(true)
+    for (const mod of ['ctrlKey', 'altKey', 'shiftKey', 'metaKey']) {
+      expect(isPlainKey(key({ key: 'Enter', [mod]: true }))).toBe(false)
+    }
+  })
+
+  test('the move chord is Ctrl or Cmd alone', () => {
+    expect(isMoveChord(key({ key: 'ArrowLeft', ctrlKey: true }))).toBe(true)
+    expect(isMoveChord(key({ key: 'ArrowLeft', metaKey: true }))).toBe(true)
+    expect(isMoveChord(key({ key: 'ArrowLeft' }))).toBe(false)
+    expect(isMoveChord(key({ key: 'ArrowLeft', ctrlKey: true, shiftKey: true }))).toBe(false)
+    expect(isMoveChord(key({ key: 'ArrowLeft', ctrlKey: true, altKey: true }))).toBe(false)
+  })
+})
+
+describe('outsideFieldsAndModals', () => {
+  function fromTarget(html: string, init: KeyboardEventInit = { key: 'z', ctrlKey: true }): boolean {
+    document.body.innerHTML = html
+    const e = key({ ...init, bubbles: true })
+    let seen = false
+    document.addEventListener('keydown', () => { seen = outsideFieldsAndModals(e) }, { once: true })
+    document.getElementById('t')!.dispatchEvent(e)
+    return seen
+  }
+
+  test('allows a chord on a focused row or card', () => {
+    expect(fromTarget('<div id="t" tabindex="0"></div>')).toBe(true)
+  })
+
+  test('refuses inside anything with its own native or editor undo', () => {
+    expect(fromTarget('<input id="t">')).toBe(false)
+    expect(fromTarget('<textarea id="t"></textarea>')).toBe(false)
+    expect(fromTarget('<div id="t" contenteditable="true"></div>')).toBe(false)
+  })
+
+  test('refuses while any modal is open, the modeless card included', () => {
+    expect(fromTarget('<div id="t"></div><div class="tt-modal-overlay tt-modal-modeless"></div>')).toBe(false)
+  })
 })

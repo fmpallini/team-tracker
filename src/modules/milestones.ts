@@ -24,7 +24,7 @@ import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally } from '../ui/dom'
+import { el, createDeferredRebuild, keepRowFocus, wheelScrollsHorizontally } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
@@ -440,18 +440,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       },
     })
     datePicker.root.classList.add('tt-milestone-date-input')
+    datePicker.root.addEventListener('keydown', followups.commitFieldOnEnter(m.id))
     liveDatePickers.push(datePicker)
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-milestone-title-input tt-input', placeholder: t(lc, 'milestone_title_placeholder'), value: m.title,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        // Unscoped beyond the team: `title` is the label @[…](milestone:id)
-        // mentions resolve through live — see the note at people-tree.ts's
-        // rename site.
-        patchTeamItem(ctx.store, teamId, 'milestones', m.id, (found) => { found.title = value }, { teamId })
-      },
+      onkeydown: followups.commitFieldOnEnter(m.id),
+      onchange: (e: Event) => followups.commitTitle(m.id, (e.target as HTMLInputElement).value),
     })
 
     const doneCheckbox = el('input', {
@@ -560,10 +555,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   function renderAll(): void {
-    expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
-    disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
-    renderTimeline()
-    renderList()
+    keepRowFocus(listEl, '.tt-milestone-row', () => {
+      expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
+      disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
+      renderTimeline()
+      renderList()
+    })
   }
 
   function addMilestone(): void {
@@ -637,6 +634,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     // Our own follow-up commit: only its @mentions can have moved another
     // row's backlinks chip.
     if (followups.isCommittingOwnFollowup()) {
+      followups.refreshBacklinkChips()
+      return
+    }
+    // Our own title commit: the row's input already shows it, the timeline labels and mentions of it are what moved.
+    if (followups.isCommittingOwnTitle()) {
+      renderTimeline()
       followups.refreshBacklinkChips()
       return
     }

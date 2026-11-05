@@ -1,6 +1,6 @@
 // src/ui/modal.ts
 import { t, type Locale } from '../core/i18n'
-import { el } from './dom'
+import { el, saveFocus } from './dom'
 import { icon, type IconName } from './icons'
 import { createPasswordMeter } from './password-meter'
 
@@ -106,6 +106,9 @@ export function dismissModelessModals(): boolean {
 }
 
 function renderDialog(opts: ModalOptions): RenderedDialog {
+  // Taken before the dialog claims focus. Closing must not strand the user on
+  // <body>: Help opened from a note gives the caret back, Settings its button.
+  const openedFrom = saveFocus()
   const overlay = el('div', { class: opts.modeless ? 'tt-modal-overlay tt-modal-modeless' : 'tt-modal-overlay' })
 
   let closed = false
@@ -118,6 +121,10 @@ function renderDialog(opts: ModalOptions): RenderedDialog {
     overlay.remove()
     document.removeEventListener('keydown', onKeydown)
     opts.onClose?.()
+    // After a tick and only onto nothing: Chrome's own "focused element was
+    // removed" unfocus runs late (see action-items.ts's onClose), and
+    // whatever opens next, or a navigation the close was part of, keeps focus.
+    setTimeout(() => { if (document.activeElement === document.body) openedFrom.restore() }, 0)
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -500,6 +507,10 @@ export function toast(msg: string, opts?: ToastOptions): void {
  * toast of its own to replace the old one via `key`, so it must reach in
  * and remove it directly instead.
  */
+export function isToastShowing(key: string): boolean {
+  return toastStack?.querySelector(`.tt-toast[data-toast-key="${key}"]`) != null
+}
+
 export function dismissToast(key: string): void {
   toastStack?.querySelector(`.tt-toast[data-toast-key="${key}"]`)?.remove()
 }
