@@ -218,7 +218,7 @@ export function mountSearch(
     openDropdown()
   }
 
-  function commit(result: SearchResult | undefined): void {
+  function commit(result: SearchResult | undefined, secondary = false): void {
     if (!result) return
     const terms = currentTerms()
     // A result from a team other than the one currently browsed must switch
@@ -229,7 +229,7 @@ export function mountSearch(
     // within that already-consistent team switch, rather than leaving one
     // pane on the old team's content while the other jumps to the new one.
     // A card that refuses to close keeps everything — dropdown included — as is.
-    if (!revealLoc({ store, pm, selectTeam: switchTeam }, result.loc, { terms })) return
+    if (!revealLoc({ store, pm, selectTeam: switchTeam }, result.loc, { terms, secondary })) return
     closeDropdown()
   }
 
@@ -287,7 +287,7 @@ export function mountSearch(
     }
     if (e.key === 'Enter') {
       e.preventDefault()
-      commit(results[selected])
+      commit(results[selected], e.ctrlKey || e.metaKey)
     }
   })
 

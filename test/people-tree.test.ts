@@ -13,6 +13,7 @@ import { createEmptyDocument } from '../src/core/document'
 import { unlinkRefsInTeam } from '../src/core/refs'
 import { createSearchIndex } from '../src/core/search'
 import { closeAnyContextMenu } from '../src/ui/context-menu'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Person, Team } from '../src/core/types'
 
@@ -293,7 +294,8 @@ describe('renderPeopleTree', () => {
 
     test('every box is focusable', () => {
       const { boxById } = chart()
-      expect(boxById('a').tabIndex).toBe(0)
+      boxById('a').focus()
+      expect(document.activeElement).toBe(boxById('a'))
     })
 
     test('Enter opens the person notes, like a double-click', () => {
@@ -746,4 +748,44 @@ describe('keyboard: restructuring the chart', () => {
     Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === 'Delete person')!.click()
     expect(document.activeElement).toBe(box(container, 'y'))
   })
+})
+
+describe('keyboard: faster entry', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const chart = (): Team => makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 }), person({ id: 'b', name: 'Bia', order: 1 }), person({ id: 'c', name: 'Cid', order: 2 })] })
+
+  test('Delete on a box deletes the person and lands on a neighbour', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    const box = boxes(container)[1]!
+    box.focus()
+    press(box, { key: 'Delete' })
+    expect(store.doc.teams[0]!.members.map((p) => p.id)).toEqual(['a', 'c'])
+    expect((document.activeElement as HTMLElement).dataset.personId).toBe('c')
+  })
+
+  test('Home and End reach the ends of the chart', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    boxes(container)[1]!.focus()
+    press(document.activeElement!, { key: 'End' })
+    expect((document.activeElement as HTMLElement).dataset.personId).toBe('c')
+    press(document.activeElement!, { key: 'Home' })
+    expect((document.activeElement as HTMLElement).dataset.personId).toBe('a')
+  })
+
+  test('the new-item request opens the add-person form', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    expect(document.querySelector('input[name="tt-person-name"]')).not.toBeNull()
+    press(document.activeElement!, { key: 'Escape' })
+  })
+})
+
+test('the chart is one Tab stop, and the ⋯ button leaves the tab order: Space opens the same menu', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 }), person({ id: 'b', name: 'Bia', order: 1 })] }))
+  render(container, loc, store, pm, 'members')
+  expect(boxes(container).map((b) => b.tabIndex)).toEqual([0, -1])
+  expect((boxes(container)[0]!.querySelector('.tt-people-more-btn') as HTMLElement).tabIndex).toBe(-1)
 })

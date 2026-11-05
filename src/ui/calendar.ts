@@ -7,9 +7,10 @@
 // this module has no external "refresh" hook by design (matches the fixed
 // `createCalendar(opts): HTMLElement` contract).
 import { t, todayIso, type Locale } from '../core/i18n'
-import { pad2 } from '../core/date'
+import { addDaysIso, pad2 } from '../core/date'
 import { el } from './dom'
 import { icon, iconButton } from './icons'
+import { isPlainKey } from './hotkeys'
 
 export interface CalendarMarks {
   hasNote(dateIso: string): boolean
@@ -33,6 +34,14 @@ function parseIso(iso: string): { y: number; m: number; d: number } {
   return { y, m, d }
 }
 
+/** The same day `delta` months away, clamped to that month's length (Jul 31 back a month is Jun 30). */
+function shiftMonth(iso: string, delta: number): string {
+  const { y, m, d } = parseIso(iso)
+  const first = new Date(y, m - 1 + delta, 1)
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  return `${first.getFullYear()}-${pad2(first.getMonth() + 1)}-${pad2(Math.min(d, last))}`
+}
+
 export function createCalendar(opts: {
   selected: string
   locale: Locale
@@ -50,6 +59,54 @@ export function createCalendar(opts: {
   let viewMonth = initial.m // 1-12
 
   const root = el('div', { class: 'tt-calendar' + (opts.showPrevMonth ? ' tt-calendar-stacked' : '') })
+  // The day holding the month's one Tab stop (roving tabindex): arrows walk the
+  // grid, so a month costs one Tab rather than thirty.
+  let cursor = opts.selected
+
+  function dayCell(iso: string): HTMLElement | null {
+    return root.querySelector<HTMLElement>(`.tt-calendar-day[data-date="${iso}"]`)
+  }
+
+  function stampCursor(): void {
+    const days = Array.from(root.querySelectorAll<HTMLElement>('.tt-calendar-day[data-date]'))
+    const stop = dayCell(cursor) ?? dayCell(`${viewYear}-${pad2(viewMonth)}-01`) ?? days[0]
+    for (const day of days) day.tabIndex = day === stop ? 0 : -1
+  }
+
+  function moveCursor(iso: string): void {
+    cursor = iso
+    if (!dayCell(iso)) {
+      const { y, m } = parseIso(iso)
+      // The stacked view's displayed month is the lower of the pair, so going
+      // back shows the target in the upper one.
+      const back = iso < `${viewYear}-${pad2(viewMonth)}-01` && opts.showPrevMonth
+      const shown = parseIso(back ? shiftMonth(`${y}-${pad2(m)}-01`, 1) : `${y}-${pad2(m)}-01`)
+      viewYear = shown.y
+      viewMonth = shown.m
+      render()
+      opts.onViewChange?.(`${viewYear}-${pad2(viewMonth)}-01`)
+    }
+    stampCursor()
+    dayCell(iso)?.focus()
+  }
+
+  root.addEventListener('keydown', (e) => {
+    const ev = e as KeyboardEvent
+    const iso = (ev.target as HTMLElement).closest<HTMLElement>('.tt-calendar-day[data-date]')?.dataset.date
+    if (!iso || !isPlainKey(ev)) return
+    const STEPS: Record<string, () => string> = {
+      ArrowLeft: () => addDaysIso(iso, -1),
+      ArrowRight: () => addDaysIso(iso, 1),
+      ArrowUp: () => addDaysIso(iso, -7),
+      ArrowDown: () => addDaysIso(iso, 7),
+      PageUp: () => shiftMonth(iso, -1),
+      PageDown: () => shiftMonth(iso, 1),
+    }
+    const step = STEPS[ev.key]
+    if (!step) return
+    ev.preventDefault()
+    moveCursor(step())
+  })
 
   function monthLabel(year: number, month: number): string {
     return `${t(opts.locale, `calendar_month_${month}` as 'calendar_month_1')} ${year}`
@@ -184,6 +241,7 @@ export function createCalendar(opts: {
     } else {
       root.append(buildMonth(viewYear, viewMonth, true))
     }
+    stampCursor()
   }
 
   render()

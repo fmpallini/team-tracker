@@ -1,4 +1,4 @@
-import { el, blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, keepRowFocus, neighbourRowId, saveFocus, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
+import { el, blurOnEnter, clampToViewport, clearClasses, clearRowError, copyText, createDeferredRebuild, keepRowFocus, neighbourRowId, rovingRows, saveFocus, showRowError, wheelScrollsHorizontally } from '../src/ui/dom'
 
 test('blurOnEnter blurs the target on Enter, ignores other keys', () => {
   const input = document.createElement('input')
@@ -483,4 +483,87 @@ test('keepRowFocus keeps a text field too, selected as a Tab into it leaves it',
   expect(document.activeElement).toBe(input)
   expect([input.selectionStart, input.selectionEnd]).toEqual([0, 3])
   root.remove()
+})
+
+describe('rovingRows', () => {
+  afterEach(() => { document.body.innerHTML = '' })
+
+  function list(ids: string[]): HTMLElement {
+    const root = document.body.appendChild(el('div', {}))
+    fill(root, ids)
+    return root
+  }
+  function fill(root: HTMLElement, ids: string[]): void {
+    root.innerHTML = ''
+    for (const id of ids) {
+      root.appendChild(el('div', { class: 'row', tabindex: '0', 'data-item-id': id },
+        el('input', { class: 'name', type: 'text' }),
+        el('button', { class: 'quiet', tabindex: '-1' })))
+    }
+  }
+  const row = (root: HTMLElement, id: string): HTMLElement => root.querySelector<HTMLElement>(`.row[data-item-id="${id}"]`)!
+  const stops = (root: HTMLElement): string[] => Array.from(root.querySelectorAll<HTMLElement>('.row, .name, .quiet'))
+    .filter((e) => e.tabIndex >= 0)
+    .map((e) => `${e.className.split(' ')[0]}:${e.closest<HTMLElement>('.row')!.dataset.itemId}`)
+
+  test('one row is the Tab stop, and only that row\'s fields stay in the tab order', () => {
+    const root = list(['a', 'b', 'c'])
+    rovingRows(root, '.row').refresh()
+    expect(stops(root)).toEqual(['row:a', 'name:a'])
+  })
+
+  test('the stop follows focus', () => {
+    const root = list(['a', 'b', 'c'])
+    rovingRows(root, '.row').refresh()
+    row(root, 'c').focus()
+    expect(stops(root)).toEqual(['row:c', 'name:c'])
+  })
+
+  test('a click into another row\'s field moves the stop there too', () => {
+    const root = list(['a', 'b'])
+    rovingRows(root, '.row').refresh()
+    row(root, 'b').querySelector<HTMLElement>('.name')!.focus()
+    expect(stops(root)).toEqual(['row:b', 'name:b'])
+  })
+
+  test('a row\'s own tabindex="-1" buttons are never promoted', () => {
+    const root = list(['a', 'b'])
+    rovingRows(root, '.row').refresh()
+    row(root, 'b').focus()
+    row(root, 'a').focus()
+    expect((row(root, 'a').querySelector('.quiet') as HTMLElement).tabIndex).toBe(-1)
+  })
+
+  test('the stop survives a rebuild by id, and falls to the first row when the id is gone', () => {
+    const root = list(['a', 'b'])
+    const roving = rovingRows(root, '.row')
+    roving.refresh()
+    row(root, 'b').focus()
+    fill(root, ['a', 'b'])
+    roving.refresh()
+    expect(stops(root)).toEqual(['row:b', 'name:b'])
+    fill(root, ['a'])
+    roving.refresh()
+    expect(stops(root)).toEqual(['row:a', 'name:a'])
+  })
+
+  test('setActive picks the stop from outside', () => {
+    const root = list(['a', 'b'])
+    rovingRows(root, '.row').setActive('b')
+    expect(stops(root)).toEqual(['row:b', 'name:b'])
+  })
+})
+
+test('createDeferredRebuild waits out a field\'s own popup: focus comes back, and the rebuild runs on the blur after that', () => {
+  const rebuild = vi.fn()
+  const deferred = createDeferredRebuild(rebuild)
+  const field = document.body.appendChild(el('input', {}))
+  const popup = document.body.appendChild(el('div', { 'data-field-popup': '' }, el('button', {})))
+  deferred.arm(field)
+  field.dispatchEvent(new FocusEvent('blur', { relatedTarget: popup.firstElementChild }))
+  expect(rebuild).not.toHaveBeenCalled()
+  field.dispatchEvent(new FocusEvent('focus'))
+  field.dispatchEvent(new FocusEvent('blur'))
+  expect(rebuild).toHaveBeenCalledTimes(1)
+  document.body.innerHTML = ''
 })

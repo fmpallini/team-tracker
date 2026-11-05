@@ -2,6 +2,7 @@ import { renderActionItems, itemsByStatus, isOverdue, computeFlatDropPosition, m
 import { disposeContainer } from '../src/modules/lifecycle'
 import { dismissModelessModals } from '../src/ui/modal'
 import { dispatchSearchFocusItem } from '../src/ui/search-highlight'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -2805,4 +2806,92 @@ describe('keyboard: moving tasks', () => {
     press(grip('wip'), { key: 'ArrowLeft', ctrlKey: true })
     expect(order()).toEqual(['wip', 'rev'])
   })
+})
+
+describe('keyboard: faster entry', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const summary = (): HTMLInputElement => document.querySelector<HTMLInputElement>('.tt-modal-dialog .tt-input')!
+  const board = (): Team => makeTeam({ actionItems: [
+    item({ id: 'a', summary: 'A', order: 0 }), item({ id: 'b', summary: 'B', order: 1 }), item({ id: 'c', summary: 'C', order: 2 }),
+    item({ id: 'w', summary: 'W', status: 'wip', order: 0 }),
+  ] })
+
+  test('Delete on a card deletes it and lands on the next', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    const b = cards(container)[1]!
+    b.focus()
+    press(b, { key: 'Delete' })
+    expect(store.doc.teams[0]!.actionItems.map((i) => i.id)).not.toContain('b')
+    expect((document.activeElement as HTMLElement).dataset.itemId).toBe('c')
+  })
+
+  test('Home, End and paging walk the card\'s own column', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    cards(container)[1]!.focus()
+    press(document.activeElement!, { key: 'End' })
+    expect((document.activeElement as HTMLElement).dataset.itemId).toBe('c')
+    press(document.activeElement!, { key: 'Home' })
+    expect((document.activeElement as HTMLElement).dataset.itemId).toBe('a')
+  })
+
+  test('the new-item request opens a new task in the focused card\'s column', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    container.querySelector<HTMLElement>('[data-item-id="w"]')!.focus()
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    expect(store.doc.teams[0]!.actionItems.at(-1)!.status).toBe('wip')
+    press(document.activeElement!, { key: 'Escape' })
+  })
+
+  test('with no task focused it lands in To Do, and a Done card does not count as a column to add to', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'd', status: 'done' })] }))
+    render(container, loc, store, pm)
+    container.querySelector<HTMLElement>('[data-item-id="d"]')!.focus()
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    expect(store.doc.teams[0]!.actionItems.at(-1)!.status).toBe('todo')
+    press(document.activeElement!, { key: 'Escape' })
+  })
+
+  test('Ctrl+Enter on a new task saves it and starts the next, in the same column', async () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    setValue(summary(), 'First')
+    press(summary(), { key: 'Enter', ctrlKey: true })
+    await new Promise((r) => setTimeout(r, 0))
+    const created = store.doc.teams[0]!.actionItems.slice(4)
+    expect(created.map((i) => i.summary)).toEqual(['First', ''])
+    expect(document.activeElement).toBe(summary())
+    expect(summary().value).toBe('')
+    press(summary(), { key: 'Escape' })
+  })
+
+  test('Ctrl+Enter with no name stays put and says so', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    press(summary(), { key: 'Enter', ctrlKey: true })
+    expect(document.querySelector('.tt-modal-dialog .tt-field-error')?.textContent).not.toBe('')
+    expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
+    press(summary(), { key: 'Escape' })
+  })
+
+  test('Ctrl+Enter on an existing task does nothing: there is no adding to continue', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    press(cards(container)[0]!, { key: 'Enter' })
+    press(summary(), { key: 'Enter', ctrlKey: true })
+    expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
+    press(summary(), { key: 'Escape' })
+  })
+})
+
+test('the board is one Tab stop', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ actionItems: [item({ id: 'a', order: 0 }), item({ id: 'b', order: 1 })] }))
+  render(container, loc, store, pm)
+  expect(cards(container).map((c) => c.tabIndex)).toEqual([0, -1])
+  cards(container)[1]!.focus()
+  expect(cards(container).map((c) => c.tabIndex)).toEqual([-1, 0])
 })

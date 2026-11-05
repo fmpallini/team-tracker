@@ -1,4 +1,4 @@
-import { resolveAppHotkey, isBrowserSaveChord, type AppHotkeyAction, type AppHotkeyContext } from '../src/ui/app-hotkeys'
+import { resolveAppHotkey, isBrowserSaveChord, isBrowserUndoChord, type AppHotkeyAction, type AppHotkeyContext } from '../src/ui/app-hotkeys'
 
 const CTX: AppHotkeyContext = { teamCount: 3, focusedPaneShowsDailyNote: false, undoOfferLive: false }
 const ctx = (over: Partial<AppHotkeyContext> = {}): AppHotkeyContext => ({ ...CTX, ...over })
@@ -256,5 +256,49 @@ describe('Ctrl+Z outside a field runs the live delete undo', () => {
     document.addEventListener('keydown', () => { out = resolveAppHotkey(e, ctx({ undoOfferLive: true })) }, { once: true })
     document.getElementById('f')!.dispatchEvent(e)
     expect(out).toBeNull()
+  })
+})
+
+test('Alt+N asks for a new item, unless a blocking modal is up', () => {
+  expect(resolve({ key: 'n', code: 'KeyN', altKey: true })).toEqual({ type: 'newItem' })
+  expect(resolve({ key: 'n', code: 'KeyN', altKey: true, shiftKey: true })).toBeNull()
+  document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
+  expect(resolve({ key: 'n', code: 'KeyN', altKey: true })).toBeNull()
+})
+
+describe('the browser undo chords, swallowed outside a field', () => {
+  function fromTarget(html: string, init: KeyboardEventInit): boolean {
+    document.body.innerHTML = html
+    const e = key({ bubbles: true, ...init })
+    let hit = false
+    document.addEventListener('keydown', () => { hit = isBrowserUndoChord(e) }, { once: true })
+    document.getElementById('t')!.dispatchEvent(e)
+    return hit
+  }
+  const z = { key: 'z', code: 'KeyZ', ctrlKey: true }
+
+  test.each([
+    ['Ctrl+Z', z],
+    ['Cmd+Z', { key: 'z', code: 'KeyZ', metaKey: true }],
+    ['Ctrl+Shift+Z', { ...z, key: 'Z', shiftKey: true }],
+    ['Ctrl+Y', { key: 'y', code: 'KeyY', ctrlKey: true }],
+  ])('%s on a row', (_name, init) => {
+    expect(fromTarget('<div id="t" tabindex="0"></div>', init)).toBe(true)
+  })
+
+  test('with a dialog open too: focus on its button is still no field', () => {
+    expect(fromTarget('<div class="tt-modal-overlay"><button id="t"></button></div>', z)).toBe(true)
+  })
+
+  test('a field and the editor keep their own undo', () => {
+    expect(fromTarget('<input id="t">', z)).toBe(false)
+    expect(fromTarget('<textarea id="t"></textarea>', z)).toBe(false)
+    expect(fromTarget('<div id="t" contenteditable="true"></div>', z)).toBe(false)
+  })
+
+  test('other chords are not it', () => {
+    expect(fromTarget('<div id="t"></div>', { key: 'z', code: 'KeyZ' })).toBe(false)
+    expect(fromTarget('<div id="t"></div>', { ...z, altKey: true })).toBe(false)
+    expect(fromTarget('<div id="t"></div>', { key: 'Y', code: 'KeyY', ctrlKey: true, shiftKey: true })).toBe(false)
   })
 })

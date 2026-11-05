@@ -1,6 +1,6 @@
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import { toggleFavorite } from '../src/core/favorites'
-import { allocateRows, buildSwitcher, SWITCHER_MAX_ROWS } from '../src/core/switcher'
+import { allocateRows, buildSwitcher, matchCommands, SWITCHER_MAX_ROWS } from '../src/core/switcher'
 import type { Doc } from '../src/core/types'
 
 const TODAY = '2026-10-07'
@@ -217,5 +217,23 @@ describe('buildSwitcher favorite dedupe vs the row cap', () => {
     for (let i = 0; i < 11; i++) toggleFavorite(doc, { teamId: 'b', ref: { kind: 'person', personId: `n${i}`, group: 'members' } })
     expect(rowsOf(doc, '', 'favorites').some((r) => r.ref.kind === 'risks')).toBe(true)
     expect(rowsOf(doc, '', 'current').some((r) => r.ref.kind === 'risks' && !('itemId' in r.ref))).toBe(false)
+  })
+})
+
+describe('matchCommands', () => {
+  const list = [{ label: 'Add risk' }, { label: 'Add task' }, { label: 'Configurações' }]
+
+  test('nothing until there is a query, so the empty palette stays about places', () => {
+    expect(matchCommands(list, '  ')).toEqual([])
+  })
+
+  test('every word must match, accents ignored', () => {
+    expect(matchCommands(list, 'add ri')).toEqual([{ label: 'Add risk' }])
+    expect(matchCommands(list, 'configuracoes')).toEqual([{ label: 'Configurações' }])
+  })
+
+  test('a leading > lists them all, and narrows the same way', () => {
+    expect(matchCommands(list, '>')).toEqual(list)
+    expect(matchCommands(list, '> task')).toEqual([{ label: 'Add task' }])
   })
 })

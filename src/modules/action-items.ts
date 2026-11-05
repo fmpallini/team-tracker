@@ -13,7 +13,7 @@ import { unlinkRefsInTeam, parsePersonRef, parseUnlinkMarker, formatPersonRef } 
 import { isOverdue, isActionActive } from '../core/due'
 import { addDaysIso, diffDays } from '../core/date'
 import { SUGGESTED_TAG_NAME_KEYS, findTeam as docFindTeam } from '../core/document'
-import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from '../ui/modal'
 import { deleteInTeamWithUndo } from '../core/undo-delete'
@@ -23,10 +23,10 @@ import { createEntityDelete } from './entity-delete'
 import { createModuleEditor, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
-import { el, blurOnEnter, createDeferredRebuild, clearClasses, keepRowFocus, neighbourRowId } from '../ui/dom'
+import { el, blurOnEnter, createDeferredRebuild, clearClasses, keepRowFocus, neighbourRowId, rovingRows } from '../ui/dom'
 import { isMoveChord, isPlainKey } from '../ui/hotkeys'
 import { emptyState } from '../ui/empty-state'
-import { paintSelection, clampMove, selectableRowProps } from '../ui/select-list'
+import { paintSelection, clampMove, jumpIndex, selectableRowProps } from '../ui/select-list'
 import { BACKLINK_SECTIONS, normalize } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { withDisposal } from './lifecycle'
@@ -720,11 +720,31 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         // Close never showed the bug. Scheduling after it instead of racing
         // it makes this the last word regardless of which path closed.
         setTimeout(() => {
+          // Only onto nothing: Ctrl+Enter's next card has focus by now.
+          if (document.activeElement !== document.body) return
           boardEl.querySelector<HTMLElement>(`[data-item-id="${focusItemIdOnClose}"]`)?.focus()
         }, 0)
       },
     })
     closeOpenCard = () => { forceClose = true; handle.close() }
+    // Ctrl+Enter on a task being added: keep it and start the next in the same
+    // column, the card's counterpart of Enter in a new risk's title. Only here:
+    // there is no run of adding to continue on an existing task.
+    if (existing === null) {
+      handle.dialogEl.addEventListener('keydown', (e) => {
+        const ev = e as KeyboardEvent
+        if (ev.key !== 'Enter' || !isMoveChord(ev)) return
+        ev.preventDefault()
+        if (summaryInput.value.trim() === '') {
+          summaryError.textContent = t(lc, 'kanban_name_required')
+          summaryInput.focus()
+          return
+        }
+        summaryInput.blur()
+        closeModal()
+        if (closeOpenCard === null) openEditModal(null, defaultStatus)
+      })
+    }
     summaryInput.focus()
   }
 
@@ -975,6 +995,18 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         return
       }
       if (!isPlainKey(ev)) return
+      const column = cardsInColumn(item.status)
+      const jump = jumpIndex(column.indexOf(card), ev.key, column.length)
+      if (jump !== null) {
+        ev.preventDefault()
+        column[jump]?.focus()
+        return
+      }
+      if (ev.key === 'Delete') {
+        ev.preventDefault()
+        requestDelete(items().find((i) => i.id === item.id) ?? item)
+        return
+      }
       if (isArrow) {
         const next = findAdjacentCard(item, ev.key)
         if (!next) return
@@ -1318,6 +1350,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
 
   const boardEl = el('div', { class: 'tt-kanban-board' })
+  const cardStops = rovingRows(boardEl, '.tt-kanban-card')
   // Edge fades say "there is more this way" on a board wider than its pane (a
   // split view, a large text size). Display only: pointer-events none, and the
   // board's own scrolling and wheel handling below are untouched.
@@ -1372,6 +1405,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
 
   function renderAll(): void {
     keepRowFocus(boardEl, '.tt-kanban-card', rebuildAll)
+    cardStops.refresh()
   }
 
   function rebuildAll(): void {
@@ -1539,6 +1573,14 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     renderAll()
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+
+  /** Alt+N: a new task in the focused card's column, To Do when that is none or Done/Cancelled, which have no add button either. */
+  function onNewItem(): void {
+    const focusedId = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.tt-kanban-card')?.dataset.itemId
+    const status = items().find((i) => i.id === focusedId)?.status
+    openEditModal(null, status !== undefined && !isFixedStatus(status) ? status : 'todo')
+  }
+  container.addEventListener(NEW_ITEM_EVENT, onNewItem)
   const disposeArrowFallback = installArrowFallbackFocus(ctx, boardEl, '.tt-kanban-card', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
 
   return () => {
@@ -1546,6 +1588,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     closeOpenCard?.()  // clean-close an open card modal (flush + remove overlay) before its host renderer goes
     disposeOpenBundle()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+    container.removeEventListener(NEW_ITEM_EVENT, onNewItem)
     disposeArrowFallback()
     boardResize?.disconnect()
     stopDayWatch()

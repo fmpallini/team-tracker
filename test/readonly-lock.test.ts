@@ -122,18 +122,18 @@ test('read-only: a number input refuses ArrowUp/ArrowDown and the mouse wheel', 
   expect(fire(num, new WheelEvent('wheel', { bubbles: true, cancelable: true })).defaultPrevented).toBe(false)
 })
 
-test('read-only: focusing a date picker input opens no popover, and an already-open popover refuses its day buttons', () => {
+test('read-only: clicking a date picker input opens no popover, and an already-open popover refuses its day buttons', () => {
   const picker = createDatePicker({ value: '2026-03-10', locale: 'en-US', onChange: vi.fn() })
   document.body.appendChild(picker.root)
   const input = picker.root.querySelector<HTMLInputElement>('.tt-date-picker-input')!
   setReadOnlyLock(true, lc)
   input.focus()
-  input.dispatchEvent(new FocusEvent('focus'))
+  input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   expect(document.querySelector('.tt-date-picker-popover')).toBeNull()
 
   // A popover that was already open when the lock armed.
   setReadOnlyLock(false, lc)
-  input.dispatchEvent(new FocusEvent('focus'))
+  input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   const day = document.querySelector<HTMLButtonElement>('.tt-date-picker-popover .tt-calendar-day:not(.tt-calendar-day-blank)')!
   const clicked = vi.fn()
   day.addEventListener('click', clicked)

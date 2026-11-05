@@ -4,11 +4,12 @@
 // disposal/store.subscribe discipline documented in src/modules/lifecycle.ts.
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
-import { installArrowFallbackFocus, type ModuleCtx, type ModuleRenderer } from '../ui/panes'
+import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx, type ModuleRenderer } from '../ui/panes'
 import { openPersonModal } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
-import { el, wheelScrollsHorizontally, clearClasses, keepRowFocus } from '../ui/dom'
+import { el, wheelScrollsHorizontally, clearClasses, keepRowFocus, rovingRows } from '../ui/dom'
 import { isMoveChord, isPlainKey } from '../ui/hotkeys'
+import { jumpIndex } from '../ui/select-list'
 import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
@@ -287,7 +288,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       }
 
       const moreBtn = iconButton({
-        class: 'tt-people-more-btn', title: t(lc, 'person_more_title'), icon: 'more',
+        class: 'tt-people-more-btn', title: t(lc, 'person_more_title'), icon: 'more', tabindex: '-1',
         onclick: (e) => {
           e.stopPropagation()
           const r = moreBtn.getBoundingClientRect()
@@ -329,6 +330,18 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
           return
         }
         if (!isPlainKey(ev)) return
+        const all = Array.from(treeEl.querySelectorAll<HTMLElement>('.tt-org-box'))
+        const jump = jumpIndex(all.indexOf(box), ev.key, all.length)
+        if (jump !== null) {
+          ev.preventDefault()
+          all[jump]?.focus()
+          return
+        }
+        if (ev.key === 'Delete') {
+          ev.preventDefault()
+          deleteThisPerson()
+          return
+        }
         if (ev.key === 'Enter') {
           ev.preventDefault()
           openNotes()
@@ -466,8 +479,10 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     })
 
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
+    const boxStops = rovingRows(treeEl, '.tt-org-box')
     function renderAll(): void {
       keepRowFocus(treeEl, '.tt-org-box', rebuildTree)
+      boxStops.refresh()
     }
     function rebuildTree(): void {
       treeEl.innerHTML = ''
@@ -501,6 +516,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     })
     // A wide chart scrolls sideways under the plain wheel, as the kanban board does.
     const unbindWheel = wheelScrollsHorizontally(treeEl)
+    const onNewItem = (): void => openAddModal(null)
+    container.addEventListener(NEW_ITEM_EVENT, onNewItem)
 
     // With nothing focused an arrow key starts the walk at the root, as it does on the task, risk and
     // milestone lists.
@@ -515,6 +532,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       unsubscribe()
       unbindWheel()
       disposeArrowFallback()
+      container.removeEventListener(NEW_ITEM_EVENT, onNewItem)
     }
   })
 }

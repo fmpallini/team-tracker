@@ -47,6 +47,13 @@ export interface ModuleCtx {
   saveStatus: SaveStatusApi
 }
 
+/** What main.ts holds: the module-facing interface plus what only the app shell calls, outside every module test's fake. */
+export type AppPaneManager = PaneManager & {
+  searchIndex: SearchIndex
+  switchPane(idx: 0 | 1): void
+  printFocused(): void
+}
+
 export interface PaneManager {
   openInPane(paneIdx: 0 | 1, loc: Loc, opts?: { force?: boolean; flashTitle?: boolean }): void
   /**
@@ -312,7 +319,7 @@ export function installArrowFallbackFocus(ctx: ModuleCtx, container: HTMLElement
     if (document.activeElement !== document.body) return
     if (ctx.paneIdx !== ctx.store.doc.nav.focusedPane) return
     if (blockedByModal()) return
-    const first = container.querySelector<HTMLElement>(selector)
+    const first = container.querySelector<HTMLElement>(`${selector}[tabindex="0"]`) ?? container.querySelector<HTMLElement>(selector)
     if (!first) return
     e.preventDefault()
     first.focus()
@@ -333,6 +340,13 @@ export function focusPaneBar(from: HTMLElement): void {
   const tab = bar.querySelector<HTMLElement>('.tt-pane-tab[tabindex="0"]')
   tab?.focus()
   if (document.activeElement !== tab) bar.querySelector<HTMLElement>('.tt-pane-modules-btn')?.focus()
+}
+
+/** Dispatched on a pane's body for Alt+N and the palette's "Add" commands. A module that holds items listens on its container; note modules have none to add. */
+export const NEW_ITEM_EVENT = 'tt-new-item'
+
+export function requestNewItem(paneIdx: 0 | 1): void {
+  document.querySelectorAll<HTMLElement>('.tt-pane-body')[paneIdx]?.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
 }
 
 /** Where a pane's focus lands with nothing remembered: what each module focuses on mount. */
@@ -416,7 +430,7 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   pm.openBothPanes(target0, target1, isSplitVisible(store) ? 1 : 0)
 }
 
-export function createPaneManager(shell: Shell, store: Store): PaneManager & { searchIndex: SearchIndex; switchPane(idx: 0 | 1): void } {
+export function createPaneManager(shell: Shell, store: Store): AppPaneManager {
   const modules = new Map<ModuleRef['kind'], ModuleRenderer>()
   const menuOpen: [boolean, boolean] = [false, false]
   const menuSelected: [number, number] = [0, 0]
@@ -1368,6 +1382,7 @@ ${t(lc, 'pane_history_hint')}`
     openInSecondaryPane,
     toggleSplit,
     switchPane,
+    printFocused: () => printPane(store.doc.nav.focusedPane),
     renderAll,
     registerModule(kind, render) {
       modules.set(kind, render)
@@ -1392,7 +1407,7 @@ ${t(lc, 'pane_history_hint')}`
       disposeContainer(bodyEls[1])
     },
     searchIndex,
-  } satisfies PaneManager & { searchIndex: SearchIndex; switchPane(idx: 0 | 1): void }
+  } satisfies AppPaneManager
 
   renderAll()
   return pm

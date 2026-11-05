@@ -17,6 +17,7 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Risk, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 import { formatDateWithWeekday } from '../src/core/i18n'
 
 // jsdom has no layout engine, so Element.prototype.scrollIntoView doesn't
@@ -2449,4 +2450,60 @@ test('committing a name clears the missing-name flag, with no rebuild to do it',
   input.value = 'Named'
   input.dispatchEvent(new Event('change', { bubbles: true }))
   expect(container.querySelector('.tt-risk-name-error')).toBeNull()
+})
+
+describe('keyboard: faster entry', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const type = (input: HTMLInputElement, value: string): void => {
+    input.value = value
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  test('Delete on a row deletes it with an Undo and lands on the neighbour', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 })] }))
+    render(container, loc, store, pm)
+    const row = rows(container)[0]!
+    row.focus()
+    press(row, { key: 'Delete' })
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['b'])
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+    expect(document.activeElement).toBe(rows(container)[0])
+  })
+
+  test('the new-item request adds a row, and Enter keeps adding until a blank one', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    for (const title of ['First', 'Second']) {
+      const input = document.activeElement as HTMLInputElement
+      expect(input.classList.contains('tt-risk-title-input')).toBe(true)
+      input.focus()
+      type(input, title)
+      press(input, { key: 'Enter' })
+    }
+    press(document.activeElement!, { key: 'Enter' })
+    expect(titles(container)).toEqual(['First', 'Second'])
+    expect(document.activeElement).toBe(rows(container)[1])
+  })
+
+  test('Enter in the title of an old row does not add one', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A' })] }))
+    render(container, loc, store, pm)
+    const input = rows(container)[0]!.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+    input.focus()
+    press(input, { key: 'Enter' })
+    expect(rows(container)).toHaveLength(1)
+  })
+})
+
+test('the list is one Tab stop with its fields, wherever the user last was', () => {
+  const list = [0, 1, 2].map((i) => risk({ id: `x${i}`, title: `T${i}`, order: i }))
+  const { container, store, pm, loc } = setup(makeTeam({ risks: list }))
+  render(container, loc, store, pm)
+  const stopRows = (): string[] => rows(container).filter((r) => r.tabIndex === 0).map((r) => r.dataset.itemId!)
+  expect(stopRows()).toEqual(['x0'])
+  expect(rows(container)[1]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(-1)
+  rows(container)[2]!.focus()
+  expect(stopRows()).toEqual(['x2'])
+  expect(rows(container)[2]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(0)
 })

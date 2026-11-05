@@ -68,9 +68,13 @@ export function blockedByBlockingModal(): boolean {
  * while the user is typing.
  */
 function blockedByFieldOrModal(e: KeyboardEvent): boolean {
+  return inEditableField(e) || blockedByModal()
+}
+
+/** True when `e` came from a form field or an editor. */
+export function inEditableField(e: KeyboardEvent): boolean {
   const target = e.target as HTMLElement | null
-  if (target?.closest?.(EDITABLE_SELECTOR)) return true
-  return blockedByModal()
+  return target?.closest?.(EDITABLE_SELECTOR) != null
 }
 
 /**

@@ -11,7 +11,7 @@
 // checks. ui/hotkeys.ts already split out the reusable predicates the same
 // way (matchKey/matchDigit/comboHotkeyAllowed/navHotkeyAllowed); this is the
 // app-specific table that composes them.
-import { comboHotkeyAllowed, navHotkeyAllowed, outsideFieldsAndModals, matchKey, matchDigit } from './hotkeys'
+import { comboHotkeyAllowed, navHotkeyAllowed, outsideFieldsAndModals, inEditableField, matchKey, matchDigit } from './hotkeys'
 
 export type AppHotkeyAction =
   | { type: 'palette' }
@@ -42,6 +42,8 @@ export type AppHotkeyAction =
   | { type: 'toggleSplit' }
   /** Alt+Down → swap the two panes' sides. */
   | { type: 'swapPanes' }
+  /** Alt+N → add an item to whatever module the focused pane shows. */
+  | { type: 'newItem' }
   /** Alt+1..9 → switch to team index 0..8 (only when that team exists). */
   | { type: 'selectTeam'; index: number }
 
@@ -61,6 +63,17 @@ export interface AppHotkeyContext {
  */
 export function isBrowserSaveChord(e: KeyboardEvent): boolean {
   return (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 's')
+}
+
+/**
+ * Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y outside a field. A field and the
+ * editor keep their own undo, and a live delete undo is an action of its own;
+ * anywhere else the chord would run the browser's page-level undo, which acts
+ * on something the user cannot see, so the caller swallows it.
+ */
+export function isBrowserUndoChord(e: KeyboardEvent): boolean {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || inEditableField(e)) return false
+  return matchKey(e, 'z') || (!e.shiftKey && matchKey(e, 'y'))
 }
 
 /**
@@ -116,6 +129,7 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
   }
   if (e.shiftKey && e.key === 'ArrowUp') return { type: 'historyLatest' }
   if (e.shiftKey) return null
+  if (matchKey(e, 'n')) return { type: 'newItem' }
 
   // Alt+[ / Alt+] / Alt+T: daily-notes day nav. Match the physical key as
   // well as the produced character, for layouts where '['/']' sit behind

@@ -101,6 +101,27 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[], 
       e.preventDefault()
       const item = items[selected]
       if (item) { close(); item.onClick() }
+      return
+    }
+    if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault()
+      selected = e.key === 'Home' ? 0 : items.length - 1
+      focusSelected()
+      return
+    }
+    // A letter jumps to the next item starting with it (repeats cycle), like
+    // the pane menu. Modified keys stay free for the global hotkeys; Space is
+    // the focused button's own.
+    if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return
+    const letter = e.key.toLocaleLowerCase()
+    for (let step = 1; step <= items.length; step++) {
+      const i = (selected + step) % items.length
+      if (items[i]!.label.toLocaleLowerCase().startsWith(letter)) {
+        e.preventDefault()
+        selected = i
+        focusSelected()
+        return
+      }
     }
   }
   document.addEventListener('keydown', onKeydown)

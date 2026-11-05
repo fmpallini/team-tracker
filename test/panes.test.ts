@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, focusPaneBar, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
+import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
@@ -1934,4 +1934,49 @@ test('focusPaneBar lands on the current tab, or the dropdown when the strip is h
   const body = document.querySelector<HTMLElement>('[data-pane-idx="0"] .tt-pane-body')!
   focusPaneBar(body)
   expect(document.activeElement).toBe(document.querySelector('[data-pane-idx="0"] .tt-pane-tab[tabindex="0"]'))
+})
+
+test('requestNewItem reaches the module in that pane', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  const heard = vi.fn()
+  pm.registerModule('actions', (container) => { container.addEventListener(NEW_ITEM_EVENT, heard) })
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  requestNewItem(0)
+  expect(heard).toHaveBeenCalledTimes(1)
+})
+
+test('with nothing focused an arrow resumes at the list\'s tab stop, not the first row', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  const ctxOf: { ctx?: Parameters<typeof installArrowFallbackFocus>[0]; el?: HTMLElement } = {}
+  pm.registerModule('actions', (container, _loc, ctx) => {
+    ctxOf.ctx = ctx
+    ctxOf.el = container
+    for (const stop of ['-1', '0']) {
+      const row = container.appendChild(document.createElement('div'))
+      row.className = 'row'
+      row.setAttribute('tabindex', stop)
+    }
+  })
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  const stopFallback = installArrowFallbackFocus(ctxOf.ctx!, ctxOf.el!, '.row', ['ArrowDown'])
+  ;(document.activeElement as HTMLElement)?.blur?.()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+  expect(document.activeElement).toBe(ctxOf.el!.querySelectorAll('.row')[1])
+  stopFallback()
+})
+
+test('printFocused prints the pane the user is in', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  pm.registerModule('actions', () => {})
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  ;(pm as unknown as { printFocused(): void }).printFocused()
+  expect(open).toHaveBeenCalled()
+  open.mockRestore()
 })

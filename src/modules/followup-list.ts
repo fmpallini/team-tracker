@@ -19,6 +19,7 @@ import { createModuleEditor } from '../ui/rich-editor'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { el, showRowError, clearRowError } from '../ui/dom'
 import { isMoveChord, isPlainKey } from '../ui/hotkeys'
+import { jumpIndex } from '../ui/select-list'
 import { icon } from '../ui/icons'
 
 export type FollowupPrefix = 'risk' | 'milestone'
@@ -28,6 +29,23 @@ export interface BlankTitleGuardOptions<T> {
   keepsRowOpen(active: Element): boolean
   /** An untitled row with nothing worth keeping, dropped silently; anything else is kept and flagged. */
   isDiscardable(item: T): boolean
+  discard(id: string): void
+}
+
+export interface RowKeyActions {
+  /** Space: the row's context menu, at this position. */
+  openMenu(x: number, y: number): void
+  /** Delete: remove the row, with whatever guard the module's own delete has. */
+  remove?(): void
+  /** Ctrl+Up/Down: the keyboard's drag. */
+  moveBy?(id: string, dir: -1 | 1): void
+}
+
+/** What Enter does in the title of a row that is still being added. */
+export interface AddingRun {
+  /** Adds the next row (the title just entered is committed). */
+  addNext(): void
+  /** The title was left blank: the run is over, and an untouched draft goes. */
   discard(id: string): void
 }
 
@@ -57,8 +75,9 @@ export interface FollowupRows<T> {
   isCommittingOwnTitle(): boolean
   backlinksSlot(id: string): HTMLElement
   refreshBacklinkChips(): void
-  wireRowKeys(row: HTMLElement, id: string, openMenu: (x: number, y: number) => void, moveBy?: (id: string, dir: -1 | 1) => void): void
-  commitFieldOnEnter(id: string): (e: Event) => void
+  wireRowKeys(row: HTMLElement, id: string, actions: RowKeyActions): void
+  commitFieldOnEnter(id: string, run?: AddingRun): (e: Event) => void
+  markAdding(id: string): void
   wireDblclickToggle(row: HTMLElement, id: string): void
   installBlankTitleGuard(row: HTMLElement, id: string, opts: BlankTitleGuardOptions<T>): void
   paintExpandAllBtn(btn: HTMLElement, ids: string[], collapseKey: MsgKey, expandKey: MsgKey): void
@@ -79,6 +98,9 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
   // wasteful to rebuild for: a Tab out commits it with focus in mid-air, and
   // the rebuild would destroy the next field before focus reaches it.
   let committingOwnTitle = false
+  // The row the user just added and is still in. Enter in its title goes on to
+  // the next new row; on any other row Enter only commits.
+  let addingId: string | null = null
 
   function rowFor(id: string): HTMLElement | null {
     return listEl.querySelector<HTMLElement>(`.${rowClass}[${idAttr}="${id}"]`)
@@ -162,18 +184,30 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
   // still means "commit and blur" (blurOnEnter), Space inside a select still
   // opens it, and arrows inside a select still change its value. Only a
   // keypress on the row itself counts.
-  function wireRowKeys(row: HTMLElement, id: string, openMenu: (x: number, y: number) => void, moveBy?: (id: string, dir: -1 | 1) => void): void {
+  function wireRowKeys(row: HTMLElement, id: string, actions: RowKeyActions): void {
     row.addEventListener('keydown', (ev) => {
       if (ev.target !== row) return
-      if (moveBy && isMoveChord(ev) && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) {
+      if (actions.moveBy && isMoveChord(ev) && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) {
         ev.preventDefault()
-        moveBy(id, ev.key === 'ArrowDown' ? 1 : -1)
+        actions.moveBy(id, ev.key === 'ArrowDown' ? 1 : -1)
         return
       }
       if (!isPlainKey(ev)) return
+      const rows = Array.from(listEl.querySelectorAll<HTMLElement>(`.${rowClass}`))
+      const at = rows.indexOf(row)
+      const jump = jumpIndex(at, ev.key, rows.length)
+      if (jump !== null) {
+        ev.preventDefault()
+        rows[jump]?.focus()
+        return
+      }
+      if (ev.key === 'Delete' && actions.remove) {
+        ev.preventDefault()
+        actions.remove()
+        return
+      }
       if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
-        const rows = Array.from(listEl.querySelectorAll<HTMLElement>(`.${rowClass}`))
-        const next = rows[rows.indexOf(row) + (ev.key === 'ArrowDown' ? 1 : -1)]
+        const next = rows[at + (ev.key === 'ArrowDown' ? 1 : -1)]
         if (!next) return
         ev.preventDefault()
         next.focus()
@@ -188,20 +222,27 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
       // Keyboard equivalent of the right-click menu.
       ev.preventDefault()
       const rect = row.getBoundingClientRect()
-      openMenu(rect.left + 16, rect.bottom)
+      actions.openMenu(rect.left + 16, rect.bottom)
     })
   }
 
   /**
    * Enter in a row's text field: commits the way Tab or a click away does, by
    * blurring, then lands on the row (rebuilt by the commit, so found by id) for
-   * the arrows and row keys to carry on from.
+   * the arrows and row keys to carry on from. With a `run`, on a row still being
+   * added, a title moves on to the next new row and a blank one ends the run.
    */
-  function commitFieldOnEnter(id: string): (e: Event) => void {
+  function commitFieldOnEnter(id: string, run?: AddingRun): (e: Event) => void {
     return (e) => {
       if ((e as KeyboardEvent).key !== 'Enter') return
-      ;(e.target as HTMLElement).blur()
+      const input = e.target as HTMLInputElement
+      const adding = run !== undefined && addingId === id
+      const named = input.value.trim() !== ''
+      if (adding) addingId = null
+      input.blur()
+      if (adding && named) { run.addNext(); return }
       rowFor(id)?.focus()
+      if (adding) run.discard(id)
     }
   }
 
@@ -239,6 +280,8 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
         const liveRow = row.isConnected ? row : rowFor(id)
         if (!liveRow) return
         const active = document.activeElement
+        // Off the row, it is no longer being added: coming back to it is editing.
+        if (addingId === id && !liveRow.contains(active)) addingId = null
         // Focus went nowhere real: a stray blur, not a deliberate move away.
         if (!active || active === document.body) return
         // Still inside the list (another row, the follow-up editor that just
@@ -264,6 +307,7 @@ export function createFollowupRows<T extends Risk | Milestone>(cfg: FollowupRows
     followupEditorRow, isCommittingOwnFollowup: () => committingOwnFollowup,
     commitTitle, isCommittingOwnTitle: () => committingOwnTitle,
     backlinksSlot, refreshBacklinkChips, wireRowKeys, commitFieldOnEnter, wireDblclickToggle,
+    markAdding: (id) => { addingId = id },
     installBlankTitleGuard, paintExpandAllBtn,
   }
 }

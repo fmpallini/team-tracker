@@ -15,6 +15,7 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Milestone, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 
 function fakePM(): PaneManager {
   return {
@@ -1791,4 +1792,34 @@ test('committing a title leaves the row in place and refreshes the timeline', ()
   input.dispatchEvent(new Event('change', { bubbles: true }))
   expect(input.isConnected).toBe(true)
   expect(container.querySelector('.tt-milestone-timeline, .tt-milestones')!.textContent).toContain('Renamed')
+})
+
+test('the new-item request adds a row, and Enter on a named new one adds the next', () => {
+  const { container, store, pm, loc } = setup(makeTeam())
+  render(container, loc, store, pm)
+  container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+  const input = document.activeElement as HTMLInputElement
+  input.value = 'First'
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+})
+
+test('Delete on a row deletes it', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2030-01-01', title: 'A' })] }))
+  render(container, loc, store, pm)
+  rows(container)[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+})
+
+test('the list is one Tab stop with its fields, wherever the user last was', () => {
+  const list = [0, 1, 2].map((i) => milestone({ id: `x${i}`, title: `T${i}`, date: `2030-01-0${i + 1}` }))
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: list }))
+  render(container, loc, store, pm)
+  const stopRows = (): string[] => rows(container).filter((r) => r.tabIndex === 0).map((r) => r.dataset.itemId!)
+  expect(stopRows()).toEqual(['x0'])
+  expect(rows(container)[1]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(-1)
+  rows(container)[2]!.focus()
+  expect(stopRows()).toEqual(['x2'])
+  expect(rows(container)[2]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(0)
 })

@@ -14,7 +14,7 @@ The app's screens agree on a small set of rules. Reuse the helper or token inste
 - **Feedback.** A change the user cannot see happen (move, copy, duplicate to another team) gets a toast; a move gets an Undo.
 - **Names.** Missing name: "Name is required" in a dialog field, "This {thing} needs a name." on an inline row or card. Items are called by one word everywhere (tasks, not cards or actions).
 - **Icon-only buttons** go through `iconButton()` in `ui/icons.ts` (sets `title` and `aria-label` from one string); re-label with `setIconButtonTitle()` on a locale switch.
-- **Keyboard.** Card-like rows take arrows, Enter (open the full view) and, where a menu exists, Space (the context menu), all unmodified (`isPlainKey`). Ctrl+Arrow (`isMoveChord`) moves the focused item wherever a drag does. A full rebuild goes through `keepRowFocus`, and a commit leaves focus on the row. Anything with a hover-only affordance needs a focus path.
+- **Keyboard.** Card-like rows take arrows, Enter (open the full view) and, where a menu exists, Space (the context menu), all unmodified (`isPlainKey`). Ctrl+Arrow (`isMoveChord`) moves the focused item wherever a drag does. Delete removes the item (with Undo), Home/End/PageUp/PageDown jump (`jumpIndex`). A list is one Tab stop (`rovingRows`), and a module with items answers `NEW_ITEM_EVENT` (Alt+N). A full rebuild goes through `keepRowFocus`, and a commit leaves focus on the row. Anything with a hover-only affordance needs a focus path.
 - **Strings** go through `t()` with keys in both locales.
 
 ## Style (styles.css)

@@ -91,3 +91,12 @@ test('no itemId and no terms: schedules nothing', () => {
   revealLoc(deps, { teamId: 'A', ref: { kind: 'general' } })
   expect(frames).toHaveLength(0)
 })
+
+test('secondary opens in the other pane and shows the item there', () => {
+  const { deps } = setup()
+  const openInSecondaryPane = vi.fn(() => 1 as const)
+  const pm = { ...deps.pm, openInSecondaryPane }
+  expect(revealLoc({ ...deps, pm }, { teamId: 'A', ref: { kind: 'general' } }, { secondary: true })).toBe(true)
+  expect(openInSecondaryPane).toHaveBeenCalledWith(0, { teamId: 'A', ref: { kind: 'general' } })
+  expect(deps.pm.openInFocused).not.toHaveBeenCalled()
+})

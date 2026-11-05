@@ -616,3 +616,16 @@ describe('leaving search', () => {
     expect(document.activeElement).toBe(document.body)
   })
 })
+
+test('Ctrl+Enter on a result opens it in the other pane', async () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const pm = fakePM()
+  const secondary: Loc[] = []
+  pm.openInSecondaryPane = (_from, loc) => { secondary.push(loc); return 1 }
+  const { input } = mount(store, pm)
+  input.focus()
+  type(input, 'alpha')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }))
+  expect(secondary).toHaveLength(1)
+  expect(pm.calls).toHaveLength(0)
+})

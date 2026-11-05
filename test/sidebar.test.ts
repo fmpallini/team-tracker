@@ -1423,3 +1423,23 @@ describe('keyboard: the team list', () => {
     expect(selectTeam).not.toHaveBeenCalled()
   })
 })
+
+test('a team\'s row buttons are in the tab order only on the list\'s stop', () => {
+  const { store } = setup()
+  addTeam(store, 'A'); addTeam(store, 'B')
+  store.updateNav((d) => { d.nav.activeTeamId = 'B' })
+  const edit = (name: string): HTMLElement => items().find((i) => i.textContent!.includes(name))!.querySelector('.tt-team-edit-btn')!
+  expect(edit('A').tabIndex).toBe(-1)
+  expect(edit('B').tabIndex).toBe(0)
+})
+
+test('the handle exposes what the fast switch needs', () => {
+  const { sidebar, store } = setup()
+  addTeam(store, 'A')
+  const before = store.doc.nav.sidebarCollapsed
+  sidebar.toggleCollapsed()
+  expect(store.doc.nav.sidebarCollapsed).toBe(!before)
+  sidebar.openDuePanel()
+  expect(document.querySelector('.tt-modal-dialog')).not.toBeNull()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+})

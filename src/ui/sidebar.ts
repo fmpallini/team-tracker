@@ -11,7 +11,7 @@ import { collectDueItems, teamDueSummary, type DueBuckets, type TeamDue } from '
 import { updateAppBadge } from '../core/app-badge'
 import { scopeTouchesSections, type Section } from '../core/scope'
 import { createEmptyTeam, findTeam as docFindTeam, teamLabel } from '../core/document'
-import { el, bindOutsideDismiss, clampToViewport, clearClasses, keepRowFocus } from './dom'
+import { el, bindOutsideDismiss, clampToViewport, clearClasses, keepRowFocus, rovingRows } from './dom'
 import { icon, iconButton } from './icons'
 import { showModal, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { deleteWithUndo, type UndoOffer } from '../core/undo-delete'
@@ -54,6 +54,10 @@ export interface SidebarHandle {
    * so a resize alone never marks the file dirty.
    */
   setSpaceConstrained(hidden: boolean): void
+  /** The collapse button's action, for the fast switch. */
+  toggleCollapsed(): void
+  /** The global due button's action, for the fast switch. */
+  openDuePanel(): void
   /**
    * Tears down the store subscriptions and the document-level add-team
    * listener. Without this, every close-file → open-file cycle leaked a
@@ -537,6 +541,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
   // click handler here. dragover/drop only act when the pointer is over a row,
   // exactly like the per-row listeners they replace (no preventDefault
   // elsewhere, so the gaps in the list are not drop targets).
+  const rowStops = rovingRows(listEl, '.tt-team-item')
+
   function rowOf(target: EventTarget | null): HTMLElement | null {
     return target instanceof Element ? target.closest<HTMLElement>('.tt-team-item') : null
   }
@@ -635,23 +641,20 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       return
     }
     const activeId = store.doc.nav.activeTeamId
-    for (let i = 0; i < teams.length; i++) {
-      const row = rowEls[i] as HTMLElement
-      row.classList.toggle('active', teams[i]!.id === activeId)
-      row.tabIndex = teamRowTabStop(i) ? 0 : -1
-    }
+    for (let i = 0; i < teams.length; i++) rowEls[i]!.classList.toggle('active', teams[i]!.id === activeId)
+    syncRowStop()
     renderCollapseState()
   }
 
-  /** The active team's row holds the list's one Tab stop; with no active team, the first row does. */
-  function teamRowTabStop(index: number): boolean {
-    const activeId = store.doc.nav.activeTeamId
-    const teams = store.doc.teams
-    return teams[index]!.id === activeId || (index === 0 && !teams.some((tm) => tm.id === activeId))
+  /** The active team's row holds the list's one Tab stop, unless the user is walking the list right now. */
+  function syncRowStop(): void {
+    if (listEl.contains(document.activeElement)) rowStops.refresh()
+    else rowStops.setActive(store.doc.nav.activeTeamId)
   }
 
   function render(): void {
     keepRowFocus(listEl, '.tt-team-item', rebuildList)
+    syncRowStop()
   }
 
   function rebuildList(): void {
@@ -671,7 +674,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       const item = el('div', {
         class: 'tt-team-item' + (isActive ? ' active' : ''),
         draggable: 'true',
-        tabindex: teamRowTabStop(index) ? '0' : '-1',
+        tabindex: '-1',
         'data-index': String(index),
         'data-item-id': team.id,
         ...(index < 9 ? { title: t(locale(), 'team_alt_hint') } : {}),
@@ -863,6 +866,8 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
   return {
     setSpaceConstrained,
+    toggleCollapsed,
+    openDuePanel: () => openDuePanel({ locale: locale(), buckets: dueBuckets(), onOpenItem }),
     /**
      * Tears down the store subscriptions and the document-level add-team
      * listener. Without this, every close-file → open-file cycle leaked a

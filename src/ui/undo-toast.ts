@@ -4,8 +4,8 @@
 // An in-toast button, so the offer's short lifetime is visible instead of left
 // to guess. Its keyboard route is Ctrl+Z outside a field (undoLatestOffer,
 // wired in main.ts): inside one, Ctrl+Z stays the field's or the rich editor's
-// own undo, and a toast at the end of <body> is too many Tabs away to reach
-// in ten seconds.
+// own undo, a toast at the end of <body> is too many Tabs away to reach in ten
+// seconds, and with no offer live main.ts swallows the chord (isBrowserUndoChord).
 import type { Store } from '../core/store'
 import type { UndoOffer } from '../core/undo-delete'
 import { t, type Locale } from '../core/i18n'
