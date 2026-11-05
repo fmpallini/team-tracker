@@ -6,7 +6,7 @@
 // milestones.ts/risks.ts rely on for team deletion), so no "not found"
 // placeholder or live-deletion guard is needed here.
 import type { Loc, Team } from '../core/types'
-import type { ModuleCtx } from '../ui/panes'
+import { focusPaneBar, type ModuleCtx } from '../ui/panes'
 import { createModuleEditor } from '../ui/rich-editor'
 import { scopeAffects, type Section } from '../core/scope'
 import { findTeam as docFindTeam } from '../core/document'
@@ -23,6 +23,7 @@ export const renderGeneralNotes = withDisposal((container: HTMLElement, loc: Loc
   const bundle = createModuleEditor(ctx, teamId, {
     initialMd: findTeam()?.generalNotes ?? '',
     templateScopes: ['any'],
+    onEscape: () => focusPaneBar(container),
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)

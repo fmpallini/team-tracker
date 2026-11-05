@@ -308,3 +308,68 @@ describe('focus on dismiss', () => {
     expect(document.querySelector('.tt-palette-overlay')).toBeNull()
   })
 })
+
+test('Tab keeps the cursor in the box: the list is walked with the arrows, and a focus move would strand typing', () => {
+  const { palette } = setup()
+  palette.open()
+  const input = document.querySelector('.tt-palette-input') as HTMLInputElement
+  const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  input.dispatchEvent(e)
+  expect(e.defaultPrevented).toBe(true)
+  expect(document.activeElement).toBe(input)
+})
+
+test('Ctrl+Enter opens the row in the other pane', () => {
+  const { store, pm, palette } = setup()
+  pm.registerModule('general', () => {})
+  palette.open()
+  type('General')
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }))
+  expect(store.doc.nav.split).toBe(true)
+  expect(currentLoc(store.doc.nav.panes[1])?.ref.kind).toBe('general')
+})
+
+describe('commands', () => {
+  function withCommands() {
+    const s = setup()
+    const run = vi.fn<() => void>()
+    const palette = createPalette(s.store, s.pm, { selectTeam: s.selectTeam as unknown as (id: string) => void, commands: () => [{ id: 'settings', label: 'Settings', icon: 'gear', run }] })
+    return { ...s, palette, run }
+  }
+
+  test('a matching command is listed under the places, and Enter runs it', () => {
+    const { palette, run } = withCommands()
+    palette.open()
+    type('settings')
+    expect(rows().map((r) => r.textContent)).toEqual(['Settings'])
+    expect(headings()).toContain('Commands')
+    key('Enter')
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('.tt-palette-overlay')).toBeNull()
+  })
+
+  test('the empty palette shows none', () => {
+    const { palette } = withCommands()
+    palette.open()
+    expect(headings()).not.toContain('Commands')
+  })
+
+  test('> lists commands alone', () => {
+    const { palette } = withCommands()
+    palette.open()
+    type('>')
+    expect(rows().map((r) => r.textContent)).toEqual(['Settings'])
+    expect(headings()).toEqual(['Commands'])
+  })
+
+  test('focus goes back before the command runs, so a dialog it opens can return it', () => {
+    const { palette, run } = withCommands()
+    const opener = document.body.appendChild(document.createElement('button'))
+    opener.focus()
+    palette.open()
+    type('>')
+    run.mockImplementation(() => expect(document.activeElement).toBe(opener))
+    key('Enter')
+    expect(run).toHaveBeenCalled()
+  })
+})

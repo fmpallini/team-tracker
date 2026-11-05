@@ -360,12 +360,16 @@ export function showStartScreen(
   const root = el('div', { class: 'tt-start-screen' }, el('div', { class: 'tt-start-content' }, ...children))
 
   container.append(root, fileInput)
+  // Enter opens something straight away. Reopen last takes over below once
+  // the handle turns up, unless the user has moved on by then.
+  openBtn.focus()
 
   idbGet('lastHandle')
     .then((handle) => {
       if (handle !== undefined) {
         reopenBtn.style.display = ''
         reopenRow.style.display = ''
+        if (document.activeElement === openBtn) reopenBtn.focus()
       }
     })
     .catch((e: unknown) => console.error(e))

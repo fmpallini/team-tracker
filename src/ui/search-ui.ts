@@ -7,7 +7,7 @@ import type { PaneManager } from './panes'
 import { t, type Locale } from '../core/i18n'
 import { teamLabel } from '../core/document'
 import { normalize, normalizeWithOffsets, type SearchResult, type SearchIndex } from '../core/search'
-import { el } from './dom'
+import { el, saveFocus, type SavedFocus } from './dom'
 import { hotkeyAllowed, blockedByModal, matchKey } from './hotkeys'
 import { revealLoc } from './reveal-loc'
 import { paintSelection } from './select-list'
@@ -218,7 +218,7 @@ export function mountSearch(
     openDropdown()
   }
 
-  function commit(result: SearchResult | undefined): void {
+  function commit(result: SearchResult | undefined, secondary = false): void {
     if (!result) return
     const terms = currentTerms()
     // A result from a team other than the one currently browsed must switch
@@ -229,7 +229,7 @@ export function mountSearch(
     // within that already-consistent team switch, rather than leaving one
     // pane on the old team's content while the other jumps to the new one.
     // A card that refuses to close keeps everything — dropdown included — as is.
-    if (!revealLoc({ store, pm, selectTeam: switchTeam }, result.loc, { terms })) return
+    if (!revealLoc({ store, pm, selectTeam: switchTeam }, result.loc, { terms, secondary })) return
     closeDropdown()
   }
 
@@ -264,7 +264,9 @@ export function mountSearch(
         suppressFocusReopen = true
         input.focus()
       } else {
+        const back = cameFrom
         input.blur()
+        back?.restore()
       }
       return
     }
@@ -285,9 +287,18 @@ export function mountSearch(
     }
     if (e.key === 'Enter') {
       e.preventDefault()
-      commit(results[selected])
+      commit(results[selected], e.ctrlKey || e.metaKey)
     }
   })
+
+  // What a hotkey pulled focus away from, for Escape to give back. Only a
+  // hotkey sets it: a click into the box has no place to return to.
+  let cameFrom: SavedFocus | null = null
+  input.addEventListener('blur', () => { cameFrom = null })
+  function focusInput(): void {
+    if (document.activeElement !== input) cameFrom = saveFocus()
+    input.focus()
+  }
 
   const onDocKeydown = (e: KeyboardEvent): void => {
     // Both Ctrl+F combos steal focus into the search box — must not do that
@@ -300,7 +311,7 @@ export function mountSearch(
       e.preventDefault()
       checkbox.checked = true
       allTeams = true
-      input.focus()
+      focusInput()
       input.select()
       runSearch()
       return
@@ -308,13 +319,13 @@ export function mountSearch(
     if ((e.ctrlKey || e.metaKey) && matchKey(e, 'f')) {
       if (blockedByModal()) return
       e.preventDefault()
-      input.focus()
+      focusInput()
       input.select()
       return
     }
     if (e.key === '/' && hotkeyAllowed(e)) {
       e.preventDefault()
-      input.focus()
+      focusInput()
     }
   }
   document.addEventListener('keydown', onDocKeydown)

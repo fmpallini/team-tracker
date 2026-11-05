@@ -39,6 +39,18 @@ export function paintSelection(listEl: HTMLElement | null, rowSelector: string, 
 }
 
 /** Arrow-key movement, clamped to the ends of the list. */
+/** Rows a PageUp or PageDown moves through a list. */
+const PAGE_ROWS = 10
+
+/** Where Home, End, PageUp or PageDown takes a list's selection from `at`, or null for any other key. */
+export function jumpIndex(at: number, key: string, count: number): number | null {
+  if (key === 'Home') return 0
+  if (key === 'End') return Math.max(count - 1, 0)
+  if (key === 'PageUp') return clampMove(at, -PAGE_ROWS, count)
+  if (key === 'PageDown') return clampMove(at, PAGE_ROWS, count)
+  return null
+}
+
 export function clampMove(selected: number, delta: number, count: number): number {
   if (count === 0) return 0
   return Math.max(0, Math.min(selected + delta, count - 1))

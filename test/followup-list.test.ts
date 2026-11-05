@@ -55,7 +55,7 @@ test('requireTitle passes a titled row, and flags + focuses an untitled one', ()
 test('arrow keys on a row move between rows; Space opens the menu at the row', () => {
   const { rows } = mount([risk('a', 'A'), risk('b', 'B')])
   const openMenu = vi.fn()
-  rows.wireRowKeys(rows.rowFor('a')!, 'a', openMenu)
+  rows.wireRowKeys(rows.rowFor('a')!, 'a', { openMenu })
   rows.rowFor('a')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   expect(document.activeElement).toBe(rows.rowFor('b'))
   rows.rowFor('a')!.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
@@ -102,4 +102,134 @@ test('focusedCaretElement: only the listed input types and a contenteditable edi
   expect(focusedCaretElement(container, ['text'])).toBe(text)
   box.focus()
   expect(focusedCaretElement(container, ['text'])).toBeNull()
+})
+
+describe('row keys', () => {
+  const press = (target: HTMLElement, init: KeyboardEventInit): KeyboardEvent => {
+    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(e)
+    return e
+  }
+
+  test('Enter, Space and the arrows are plain keys: a modifier leaves them to the global hotkeys', () => {
+    const { rows } = mount([risk('a', 'One'), risk('b', 'Two')])
+    const openMenu = vi.fn()
+    const row = rows.rowFor('a')!
+    rows.wireRowKeys(row, 'a', { openMenu })
+    row.focus()
+    press(row, { key: 'ArrowDown', altKey: true })
+    expect(document.activeElement).toBe(row)
+    press(row, { key: ' ', ctrlKey: true })
+    expect(openMenu).not.toHaveBeenCalled()
+  })
+
+  test('Ctrl+Up/Down asks the module to move the row', () => {
+    const { rows } = mount([risk('a', 'One'), risk('b', 'Two')])
+    const moveBy = vi.fn()
+    const row = rows.rowFor('a')!
+    rows.wireRowKeys(row, 'a', { openMenu: () => {}, moveBy })
+    const e = press(row, { key: 'ArrowDown', ctrlKey: true })
+    press(row, { key: 'ArrowUp', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    expect(moveBy.mock.calls).toEqual([['a', 1], ['a', -1]])
+  })
+
+  test('commitFieldOnEnter commits through blur and lands on the row, so the arrows carry on', () => {
+    const { rows } = mount([risk('a', 'One')])
+    const row = rows.rowFor('a')!
+    const input = row.querySelector('input')!
+    const onchange = vi.fn()
+    input.addEventListener('blur', onchange)
+    input.addEventListener('keydown', rows.commitFieldOnEnter('a'))
+    input.focus()
+    press(input, { key: 'a' })
+    expect(document.activeElement).toBe(input)
+    press(input, { key: 'Enter' })
+    expect(onchange).toHaveBeenCalled()
+    expect(document.activeElement).toBe(row)
+  })
+})
+
+describe('more row keys', () => {
+  const press = (target: HTMLElement, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+
+  test('Delete asks the module to remove the row', () => {
+    const { rows } = mount([risk('a', 'One')])
+    const remove = vi.fn()
+    rows.wireRowKeys(rows.rowFor('a')!, 'a', { openMenu: () => {}, remove })
+    press(rows.rowFor('a')!, { key: 'Delete' })
+    expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  test('Home and End reach the ends of the list', () => {
+    const { rows } = mount([risk('a', 'One'), risk('b', 'Two'), risk('c', 'Three')])
+    const a = rows.rowFor('a')!, b = rows.rowFor('b')!, c = rows.rowFor('c')!
+    for (const [row, id] of [[a, 'a'], [b, 'b'], [c, 'c']] as const) rows.wireRowKeys(row, id, { openMenu: () => {} })
+    b.focus()
+    press(b, { key: 'End' })
+    expect(document.activeElement).toBe(c)
+    press(c, { key: 'Home' })
+    expect(document.activeElement).toBe(a)
+  })
+})
+
+describe('entering new rows', () => {
+  const enter = (input: HTMLInputElement): void => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) }
+
+  function adding(title: string, added: boolean) {
+    const m = mount([risk('a', title)])
+    const addNext = vi.fn()
+    const discard = vi.fn()
+    if (added) m.rows.markAdding('a')
+    const input = m.rows.rowFor('a')!.querySelector('input')!
+    input.value = title
+    input.addEventListener('keydown', m.rows.commitFieldOnEnter('a', { addNext, discard }))
+    input.focus()
+    return { ...m, input, addNext, discard }
+  }
+
+  test('Enter on a row just added opens the next one', () => {
+    const { input, addNext, discard } = adding('Named', true)
+    enter(input)
+    expect(addNext).toHaveBeenCalledTimes(1)
+    expect(discard).not.toHaveBeenCalled()
+  })
+
+  test('Enter on an existing row only commits', () => {
+    const { input, rows, addNext } = adding('Named', false)
+    enter(input)
+    expect(addNext).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(rows.rowFor('a'))
+  })
+
+  test('Enter on the blank next row ends the run and drops it', () => {
+    const { input, addNext, discard } = adding('', true)
+    enter(input)
+    expect(addNext).not.toHaveBeenCalled()
+    expect(discard).toHaveBeenCalledWith('a')
+  })
+
+  test('leaving the row for good ends the adding: coming back, Enter only commits', () => {
+    vi.useFakeTimers()
+    const { input, rows, listEl, addNext } = adding('Named', true)
+    rows.installBlankTitleGuard(rows.rowFor('a')!, 'a', { keepsRowOpen: () => false, isDiscardable: () => false, discard: () => {} })
+    const other = listEl.appendChild(document.createElement('button'))
+    other.focus()
+    vi.runAllTimers()
+    input.focus()
+    enter(input)
+    expect(addNext).not.toHaveBeenCalled()
+  })
+
+  test('moving within the row keeps the adding going', () => {
+    vi.useFakeTimers()
+    const { input, rows, addNext } = adding('Named', true)
+    rows.installBlankTitleGuard(rows.rowFor('a')!, 'a', { keepsRowOpen: () => false, isDiscardable: () => false, discard: () => {} })
+    const inRow = rows.rowFor('a')!.appendChild(document.createElement('select'))
+    inRow.focus()
+    vi.runAllTimers()
+    input.focus()
+    enter(input)
+    expect(addNext).toHaveBeenCalledTimes(1)
+  })
 })

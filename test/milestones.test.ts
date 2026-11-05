@@ -15,6 +15,7 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Milestone, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 
 function fakePM(): PaneManager {
   return {
@@ -1725,4 +1726,100 @@ test('an expanded follow-up offers the "any"-scope templates only', () => {
   container.querySelector<HTMLButtonElement>('.tt-milestone-expand-btn')!.click()
   const editor = container.querySelector<HTMLElement>('.tt-milestone-followup-row .editor')!
   expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
+})
+
+describe('keyboard: keeping your place', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const two = (): Team => makeTeam({ milestones: [milestone({ id: 'a', date: '2026-01-01', title: 'A' }), milestone({ id: 'b', date: '2026-02-01', title: 'B' })] })
+  const row = (container: HTMLElement, id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-milestone-row[data-milestone-id="${id}"]`)!
+
+  test('ticking done hands focus to the same row', () => {
+    const { container, store, pm, loc } = setup(two())
+    render(container, loc, store, pm)
+    const box = row(container, 'b').querySelector<HTMLInputElement>('.tt-milestone-done-checkbox')!
+    box.focus()
+    box.click()
+    expect(store.doc.teams[0]!.milestones[1]!.done).toBe(true)
+    expect(document.activeElement).toBe(row(container, 'b'))
+  })
+
+  test('Enter in a title lands on the same row', () => {
+    const { container, store, pm, loc } = setup(two())
+    render(container, loc, store, pm)
+    const input = row(container, 'b').querySelector<HTMLInputElement>('.tt-milestone-title-input')!
+    input.focus()
+    press(input, { key: 'Enter' })
+    expect(document.activeElement).toBe(row(container, 'b'))
+  })
+
+  test('Enter in a date lands on the same row, even after it re-sorted', () => {
+    const { container, store, pm, loc } = setup(two())
+    render(container, loc, store, pm)
+    const input = row(container, 'b').querySelector<HTMLInputElement>('.tt-date-picker-input')!
+    input.focus()
+    input.value = '12/25/2025'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    press(input, { key: 'Enter' })
+    expect(rows(container)[0]!.dataset.milestoneId).toBe('b')
+    expect(document.activeElement).toBe(row(container, 'b'))
+  })
+
+  test('deleting from the menu lands on a neighbour', () => {
+    const { container, store, pm, loc } = setup(two())
+    render(container, loc, store, pm)
+    row(container, 'b').focus()
+    press(row(container, 'b'), { key: ' ' })
+    contextMenuItem('Delete').click()
+    expect(document.activeElement).toBe(row(container, 'a'))
+  })
+
+  test('Esc in a follow-up returns to its row', () => {
+    const { container, store, pm, loc } = setup(two())
+    render(container, loc, store, pm)
+    row(container, 'a').focus()
+    press(row(container, 'a'), { key: 'Enter' })
+    const editor = container.querySelector<HTMLElement>('.tt-milestone-followup-row .editor')!
+    press(editor, { key: 'Escape' })
+    expect(document.activeElement).toBe(row(container, 'a'))
+  })
+})
+
+test('committing a title leaves the row in place and refreshes the timeline', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2030-01-01', title: 'A' })] }))
+  render(container, loc, store, pm)
+  const input = container.querySelector<HTMLInputElement>('.tt-milestone-title-input')!
+  input.value = 'Renamed'
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(input.isConnected).toBe(true)
+  expect(container.querySelector('.tt-milestone-timeline, .tt-milestones')!.textContent).toContain('Renamed')
+})
+
+test('the new-item request adds a row, and Enter on a named new one adds the next', () => {
+  const { container, store, pm, loc } = setup(makeTeam())
+  render(container, loc, store, pm)
+  container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+  const input = document.activeElement as HTMLInputElement
+  input.value = 'First'
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+})
+
+test('Delete on a row deletes it', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2030-01-01', title: 'A' })] }))
+  render(container, loc, store, pm)
+  rows(container)[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(0)
+})
+
+test('the list is one Tab stop with its fields, wherever the user last was', () => {
+  const list = [0, 1, 2].map((i) => milestone({ id: `x${i}`, title: `T${i}`, date: `2030-01-0${i + 1}` }))
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: list }))
+  render(container, loc, store, pm)
+  const stopRows = (): string[] => rows(container).filter((r) => r.tabIndex === 0).map((r) => r.dataset.itemId!)
+  expect(stopRows()).toEqual(['x0'])
+  expect(rows(container)[1]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(-1)
+  rows(container)[2]!.focus()
+  expect(stopRows()).toEqual(['x2'])
+  expect(rows(container)[2]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(0)
 })

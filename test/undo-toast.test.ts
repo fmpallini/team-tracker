@@ -1,4 +1,4 @@
-import { offerUndoToast, UNDO_TOAST_KEY } from '../src/ui/undo-toast'
+import { offerUndoToast, undoLatestOffer, isUndoOfferLive, UNDO_TOAST_KEY } from '../src/ui/undo-toast'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import type { UndoOffer } from '../src/core/undo-delete'
@@ -167,5 +167,45 @@ describe('offerUndoToast', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('undoLatestOffer — the keyboard route to the toast button', () => {
+  it('runs the live offer, confirms, and takes the toast away', () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    const undo = vi.fn(() => true)
+    offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer({ undo }))
+    expect(isUndoOfferLive()).toBe(true)
+    expect(undoLatestOffer()).toBe(true)
+    expect(undo).toHaveBeenCalledTimes(1)
+    expect(document.querySelector(`[data-toast-key="${UNDO_TOAST_KEY}"]`)).toBeNull()
+    expect(toasts().map((t) => t.textContent)).toContain('Restored')
+    expect(isUndoOfferLive()).toBe(false)
+  })
+
+  it('is spent once used, however it was used', () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    const undo = vi.fn(() => true)
+    offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer({ undo }))
+    actionButton()!.click()
+    expect(undoLatestOffer()).toBe(false)
+    expect(undo).toHaveBeenCalledTimes(1)
+  })
+
+  it('expires with the next edit', () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer())
+    store.update((d) => { d.prefs.locale = 'pt-BR' })
+    expect(isUndoOfferLive()).toBe(false)
+  })
+
+  it('does not undo behind a toast the user dismissed: nothing on screen offers it any more', () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    const undo = vi.fn(() => true)
+    offerUndoToast(store, 'en-US', 'Risk deleted', fakeOffer({ undo }))
+    toasts()[0]!.click()
+    expect(isUndoOfferLive()).toBe(false)
+    expect(undoLatestOffer()).toBe(false)
+    expect(undo).not.toHaveBeenCalled()
   })
 })

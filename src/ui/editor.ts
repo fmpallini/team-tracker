@@ -93,6 +93,12 @@ export interface EditorHooks {
   resolveRefLabel?: LabelResolver
   /** Optional: supplies the pixels for image blocks. Without it every image shows the "unavailable" placeholder. */
   images?: ImageHost
+  /**
+   * Optional: Escape leaves the editor. Tab is taken (indent), so this is the
+   * way out by keyboard; the host decides where to. A popup's own Escape never
+   * reaches it. Without a host the key bubbles on: the card dialog closes on it.
+   */
+  onEscape?(): void
 }
 
 /**
@@ -1835,6 +1841,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   ]
 
   function onKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && hooks.onEscape && !e.defaultPrevented) {
+      e.preventDefault()
+      hooks.onEscape()
+      return
+    }
     // Every branch below edits the DOM directly, which contenteditable="false"
     // does not stop; a read-only editor runs none of them. A chord the table
     // owns is still swallowed, as when writable: focus can sit on a link in a

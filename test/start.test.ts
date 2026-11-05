@@ -737,3 +737,20 @@ describe('promo card', () => {
     expect(card!.textContent).toContain('Try the installable version')
   })
 })
+
+describe('start screen focus', () => {
+  const button = (text: string): HTMLElement => Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text)!
+
+  test('lands on Reopen last when there is a last file, so Enter reopens it', async () => {
+    idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
+    showStartScreen('en-US', () => {})
+    await flush()
+    expect(document.activeElement).toBe(button('Reopen last…'))
+  })
+
+  test('falls back to Open file otherwise', async () => {
+    showStartScreen('en-US', () => {})
+    await flush()
+    expect(document.activeElement).toBe(button('Open file…'))
+  })
+})

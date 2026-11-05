@@ -4,7 +4,7 @@
 // src/ui/calendar.ts (day picker) into the pane system (src/ui/panes.ts).
 import type { Loc, Team } from '../core/types'
 import { t, todayIso } from '../core/i18n'
-import type { ModuleCtx } from '../ui/panes'
+import { focusPaneBar, type ModuleCtx } from '../ui/panes'
 import { createModuleEditor } from '../ui/rich-editor'
 import { createCalendar, setDayBacklinks, type CalendarMarks } from '../ui/calendar'
 import { isWithinTwoMonthWindow } from '../core/date'
@@ -220,6 +220,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     initialMd: findTeam(ctx, teamId)?.dailyNotes[date] ?? '',
     templateScopes: ['daily', 'any'],
     templateDate: () => date,
+    onEscape: () => focusPaneBar(container),
     onChange: (md) => {
       ctx.store.update((d) => {
         const tm = docFindTeam(d, teamId)

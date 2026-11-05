@@ -13,6 +13,7 @@ import { createEmptyDocument } from '../src/core/document'
 import { unlinkRefsInTeam } from '../src/core/refs'
 import { createSearchIndex } from '../src/core/search'
 import { closeAnyContextMenu } from '../src/ui/context-menu'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Person, Team } from '../src/core/types'
 
@@ -264,7 +265,7 @@ describe('renderPeopleTree', () => {
     const { container, store, pm, loc } = setup(team, 'members')
     render(container, loc, store, pm, 'members')
     const box = boxes(container)[0]!
-    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions · Ctrl+←/→ to reorder')
+    expect(box.title).toBe('Double-click or Enter to open notes · Right-click or Space for more actions · Ctrl+←/→ to reorder · Ctrl+↑/↓ to change level')
   })
 
   test('double-click on a box opens person notes via pm.openInPane at the module\'s paneIdx', () => {
@@ -293,7 +294,8 @@ describe('renderPeopleTree', () => {
 
     test('every box is focusable', () => {
       const { boxById } = chart()
-      expect(boxById('a').tabIndex).toBe(0)
+      boxById('a').focus()
+      expect(document.activeElement).toBe(boxById('a'))
     })
 
     test('Enter opens the person notes, like a double-click', () => {
@@ -353,7 +355,7 @@ describe('renderPeopleTree', () => {
     test('Space opens the context menu, like a right-click', () => {
       const { boxById } = chart()
       key(boxById('a'), ' ')
-      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Move later', 'Delete person'])
+      expect(menuLabels()).toEqual(['Open notes', 'Edit person', 'Add report', 'Move later', 'Move up a level', 'Delete person'])
     })
 
     test('Ctrl+Left/Right reorders among siblings and keeps focus; a plain arrow still just walks', () => {
@@ -677,4 +679,113 @@ test('deleting a person unlinks every reference to them across the team\'s notes
   expect(tm.members[0]!.notes).toBe('ping ~Carla~')
   expect(tm.dailyNotes['2026-07-01']).toBe('saw ~Carla~ today')
   expect(tm.stakeholders).toEqual([])
+})
+
+describe('keyboard: restructuring the chart', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const chart = (): Team => makeTeam({ members: [
+    person({ id: 'boss', name: 'Boss', parentId: null, order: 0 }),
+    person({ id: 'x', name: 'X', parentId: 'boss', order: 0 }),
+    person({ id: 'y', name: 'Y', parentId: 'boss', order: 1 }),
+  ] })
+  const box = (container: HTMLElement, id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-org-box[data-person-id="${id}"]`)!
+  const parentOf = (store: Store, id: string): string | null => store.doc.teams[0]!.members.find((p) => p.id === id)!.parentId
+
+  test('Ctrl+Down files a person under the sibling before them, focus following', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'y').focus()
+    press(box(container, 'y'), { key: 'ArrowDown', ctrlKey: true })
+    expect(parentOf(store, 'y')).toBe('x')
+    expect(document.activeElement).toBe(box(container, 'y'))
+  })
+
+  test('with no sibling before them there is nobody to file under', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: 'ArrowDown', ctrlKey: true })
+    expect(parentOf(store, 'x')).toBe('boss')
+  })
+
+  test('Ctrl+Up lifts a person next to their manager, up to the root', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: 'ArrowUp', ctrlKey: true })
+    expect(parentOf(store, 'x')).toBeNull()
+    expect(document.activeElement).toBe(box(container, 'x'))
+    press(box(container, 'x'), { key: 'ArrowUp', ctrlKey: true })
+    expect(parentOf(store, 'x')).toBeNull()
+  })
+
+  test('the menu offers the same moves, only where they apply', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'y').focus()
+    press(box(container, 'y'), { key: ' ' })
+    expect(menuLabels()).toEqual(expect.arrayContaining(['Move up a level', 'Move under X']))
+    closeAnyContextMenu()
+    box(container, 'boss').focus()
+    press(box(container, 'boss'), { key: ' ' })
+    expect(menuLabels().some((l) => l.startsWith('Move up') || l.startsWith('Move under'))).toBe(false)
+    closeAnyContextMenu()
+  })
+
+  test('Alt+arrows leave the walk alone', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: 'ArrowUp', altKey: true })
+    expect(document.activeElement).toBe(box(container, 'x'))
+  })
+
+  test('deleting from the menu lands on a neighbour', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    box(container, 'x').focus()
+    press(box(container, 'x'), { key: ' ' })
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-context-menu-item')).find((b) => b.textContent === 'Delete person')!.click()
+    expect(document.activeElement).toBe(box(container, 'y'))
+  })
+})
+
+describe('keyboard: faster entry', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const chart = (): Team => makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 }), person({ id: 'b', name: 'Bia', order: 1 }), person({ id: 'c', name: 'Cid', order: 2 })] })
+
+  test('Delete on a box deletes the person and lands on a neighbour', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    const box = boxes(container)[1]!
+    box.focus()
+    press(box, { key: 'Delete' })
+    expect(store.doc.teams[0]!.members.map((p) => p.id)).toEqual(['a', 'c'])
+    expect((document.activeElement as HTMLElement).dataset.personId).toBe('c')
+  })
+
+  test('Home and End reach the ends of the chart', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    boxes(container)[1]!.focus()
+    press(document.activeElement!, { key: 'End' })
+    expect((document.activeElement as HTMLElement).dataset.personId).toBe('c')
+    press(document.activeElement!, { key: 'Home' })
+    expect((document.activeElement as HTMLElement).dataset.personId).toBe('a')
+  })
+
+  test('the new-item request opens the add-person form', () => {
+    const { container, store, pm, loc } = setup(chart())
+    render(container, loc, store, pm, 'members')
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    expect(document.querySelector('input[name="tt-person-name"]')).not.toBeNull()
+    press(document.activeElement!, { key: 'Escape' })
+  })
+})
+
+test('the chart is one Tab stop, and the ⋯ button leaves the tab order: Space opens the same menu', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 }), person({ id: 'b', name: 'Bia', order: 1 })] }))
+  render(container, loc, store, pm, 'members')
+  expect(boxes(container).map((b) => b.tabIndex)).toEqual([0, -1])
+  expect((boxes(container)[0]!.querySelector('.tt-people-more-btn') as HTMLElement).tabIndex).toBe(-1)
 })

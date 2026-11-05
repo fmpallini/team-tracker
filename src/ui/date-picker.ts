@@ -10,10 +10,12 @@
 // ui/calendar.ts, already fully locale-driven) is the other way to set a
 // value, plus its own Today/Clear date shortcuts.
 import { t, formatDate, parseLocaleDate, todayIso, type Locale } from '../core/i18n'
+import { addDaysIso } from '../core/date'
 import { createCalendar, type CalendarMarks } from './calendar'
 import { placePopover } from '../core/popover-place'
 import { isReadOnlyLocked } from './readonly-lock'
 import { el, bindOutsideDismiss, blurOnEnter } from './dom'
+import { isPlainKey } from './hotkeys'
 
 const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [], backlinks: () => 0 }
 
@@ -118,29 +120,32 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
 
   function closePopover(): void {
     if (!popover) return
+    // Keyboard use has focus inside the calendar; it goes back to the field.
+    const hadFocus = popover.contains(document.activeElement)
     popover.remove()
     unbind?.()
     popover = null
     closeCurrentPopover = null
+    if (hadFocus) input.focus()
+  }
+
+  /** Closes first: with focus back on the field, a row's rebuild waits for its blur instead of destroying the picker mid-commit. */
+  function pick(iso: string): void {
+    closePopover()
+    commit(iso)
   }
 
   function openPopover(): void {
     // A read-only tab can't keep a picked date; focus (mousedown, Tab) must not open the calendar either.
     if (isReadOnlyLocked()) return
     closeCurrentPopover?.()
-    const wrap = el('div', { class: 'tt-date-picker-popover' })
+    const wrap = el('div', { class: 'tt-date-picker-popover', 'data-field-popup': '' })
     wrap.appendChild(
       createCalendar({
         selected: value || todayIso(),
         locale: opts.locale,
         marks: NO_MARKS,
-        // No input.focus() after picking: the input's own 'focus' listener
-        // opens this same popover, so refocusing here would immediately
-        // reopen what commit()+closePopover() just closed.
-        onPick: (iso) => {
-          commit(iso)
-          closePopover()
-        },
+        onPick: pick,
       })
     )
     const actions = el(
@@ -148,7 +153,7 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
       { class: 'tt-date-picker-popover-actions' },
       el(
         'button',
-        { type: 'button', class: 'tt-btn', onclick: () => { commit(todayIso()); closePopover() } },
+        { type: 'button', class: 'tt-btn', onclick: () => pick(todayIso()) },
         t(opts.locale, 'date_picker_today_btn')
       )
     )
@@ -156,12 +161,22 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
       actions.appendChild(
         el(
           'button',
-          { type: 'button', class: 'tt-btn', onclick: () => { commit(''); closePopover() } },
+          { type: 'button', class: 'tt-btn', onclick: () => pick('') },
           t(opts.locale, 'date_picker_clear_btn')
         )
       )
     }
     wrap.appendChild(actions)
+    // It sits at the end of <body>, so a Tab out of it would land nowhere near
+    // the field: Tab cycles inside until a pick or Escape.
+    wrap.addEventListener('keydown', (e) => {
+      const ev = e as KeyboardEvent
+      if (ev.key !== 'Tab') return
+      const stops = Array.from(wrap.querySelectorAll<HTMLElement>('button')).filter((b) => b.tabIndex >= 0)
+      const at = stops.indexOf(document.activeElement as HTMLElement)
+      ev.preventDefault()
+      stops[(at + (ev.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus()
+    })
 
     document.body.appendChild(wrap)
     // Position after it's in the DOM so its own measured size feeds the
@@ -195,8 +210,33 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
     closePopover()
   }
 
+  // Keys on the field. Up/Down step a day and t is today, from what the field
+  // holds (today when empty); Alt+Down opens the calendar and goes into it, as
+  // on a native date field. That chord is also the pane swap, so it stops here.
+  function onFieldKeydown(e: KeyboardEvent): void {
+    if (isReadOnlyLocked()) return
+    if (e.key === 'ArrowDown' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!popover) openPopover()
+      popover?.querySelector<HTMLElement>('.tt-calendar-day[tabindex="0"]')?.focus()
+      return
+    }
+    if (!isPlainKey(e)) return
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      pick(addDaysIso(value || todayIso(), e.key === 'ArrowUp' ? 1 : -1))
+      return
+    }
+    if (e.key === 't') {
+      e.preventDefault()
+      pick(todayIso())
+    }
+  }
+
+  // Click only: Tabbing across a row must not flash a calendar over it.
   input.addEventListener('click', openPopover)
-  input.addEventListener('focus', openPopover)
+  input.addEventListener('keydown', onFieldKeydown)
   input.addEventListener('input', onInput)
   input.addEventListener('blur', onBlur)
   input.addEventListener('focusout', onFocusOut)

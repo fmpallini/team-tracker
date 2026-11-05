@@ -610,3 +610,40 @@ test('promptPassword resolves null on a backdrop click', async () => {
   expect(overlays()).toHaveLength(0)
   await expect(p).resolves.toBeNull()
 })
+
+describe('focus returns on close', () => {
+  const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+
+  test('to whatever opened the dialog', async () => {
+    const opener = document.body.appendChild(el('button', {}))
+    opener.focus()
+    const handle = showModal({ title: 'T', body: el('div', {}, el('input', {})), buttons: [] })
+    expect(document.activeElement).not.toBe(opener)
+    handle.close()
+    await tick()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  test('on Escape too, and to the dialog underneath when two are stacked', async () => {
+    const opener = document.body.appendChild(el('button', {}))
+    opener.focus()
+    showModal({ title: 'A', body: el('div', {}, el('input', { id: 'in-a' })), buttons: [] })
+    showModal({ title: 'B', body: el('div', {}, el('input', { id: 'in-b' })), buttons: [] })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await tick()
+    expect(document.activeElement).toBe(document.getElementById('in-a'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await tick()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  test('never takes focus from something that claimed it in the meantime', async () => {
+    const opener = document.body.appendChild(el('button', {}))
+    const claimed = document.body.appendChild(el('button', {}))
+    opener.focus()
+    const handle = showModal({ title: 'T', body: el('div', {}, el('input', {})), buttons: [], onClose: () => claimed.focus() })
+    handle.close()
+    await tick()
+    expect(document.activeElement).toBe(claimed)
+  })
+})

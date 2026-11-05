@@ -17,6 +17,7 @@ import { createSearchIndex } from '../src/core/search'
 import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Risk, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
+import { NEW_ITEM_EVENT } from '../src/ui/panes'
 import { formatDateWithWeekday } from '../src/core/i18n'
 
 // jsdom has no layout engine, so Element.prototype.scrollIntoView doesn't
@@ -2356,4 +2357,153 @@ test('an expanded follow-up offers the "any"-scope templates only', () => {
   container.querySelector<HTMLButtonElement>('.tt-risk-expand-btn')!.click()
   const editor = container.querySelector<HTMLElement>('.tt-risk-followup-row .editor')!
   expect(offeredTemplates(editor)).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'any').map((tpl) => tpl.name))
+})
+
+describe('keyboard: keeping your place', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const three = (): Team => makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 }), risk({ id: 'c', title: 'C', order: 2 })] })
+  const row = (container: HTMLElement, id: string): HTMLElement => container.querySelector<HTMLElement>(`.tt-risk-row[data-risk-id="${id}"]`)!
+
+  test('Enter in a title commits and lands on the same row', () => {
+    const { container, store, pm, loc } = setup(three())
+    render(container, loc, store, pm)
+    const input = row(container, 'b').querySelector<HTMLInputElement>('.tt-risk-title-input')!
+    input.focus()
+    input.value = 'Renamed'
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    press(input, { key: 'Enter' })
+    expect(store.doc.teams[0]!.risks[1]!.title).toBe('Renamed')
+    expect(document.activeElement).toBe(row(container, 'b'))
+  })
+
+  test('changing a select keeps focus on that select through the rebuild', () => {
+    const { container, store, pm, loc } = setup(three())
+    render(container, loc, store, pm)
+    const select = row(container, 'b').querySelector<HTMLSelectElement>('.tt-risk-chance-select')!
+    select.focus()
+    select.value = '3'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.activeElement).toBe(row(container, 'b').querySelector('.tt-risk-chance-select'))
+  })
+
+  test('deleting from the menu lands on the next row', () => {
+    const { container, store, pm, loc } = setup(three())
+    render(container, loc, store, pm)
+    row(container, 'b').focus()
+    press(row(container, 'b'), { key: ' ' })
+    contextMenuItem('Delete').click()
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['a', 'c'])
+    expect(document.activeElement).toBe(row(container, 'c'))
+  })
+
+  test('Ctrl+Down and Ctrl+Up reorder the focused row and keep focus on it', () => {
+    const { container, store, pm, loc } = setup(three())
+    render(container, loc, store, pm)
+    row(container, 'a').focus()
+    press(row(container, 'a'), { key: 'ArrowDown', ctrlKey: true })
+    expect(titles(container)).toEqual(['B', 'A', 'C'])
+    expect(document.activeElement).toBe(row(container, 'a'))
+    press(row(container, 'a'), { key: 'ArrowUp', ctrlKey: true })
+    expect(titles(container)).toEqual(['A', 'B', 'C'])
+    press(row(container, 'a'), { key: 'ArrowUp', ctrlKey: true })
+    expect(titles(container)).toEqual(['A', 'B', 'C'])
+  })
+
+  test('there is no manual order to move in while an exposure sort is on, as with dragging', () => {
+    const { container, store, pm, loc } = setup(three())
+    render(container, loc, store, pm)
+    container.querySelector<HTMLElement>('.tt-risk-header-exposure')!.click()
+    const before = titles(container)
+    row(container, before[0] === 'A' ? 'a' : 'c').focus()
+    press(document.activeElement!, { key: 'ArrowDown', ctrlKey: true })
+    expect(titles(container)).toEqual(before)
+  })
+
+  test('Esc in a follow-up returns to its row', () => {
+    const { container, store, pm, loc } = setup(three())
+    render(container, loc, store, pm)
+    row(container, 'a').focus()
+    press(row(container, 'a'), { key: 'Enter' })
+    const editor = container.querySelector<HTMLElement>('.tt-risk-followup-row .editor')!
+    expect(document.activeElement).toBe(editor)
+    press(editor, { key: 'Escape' })
+    expect(document.activeElement).toBe(row(container, 'a'))
+  })
+})
+
+test('committing a title leaves the row in place, so the Tab that committed it still has somewhere to land', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A' })] }))
+  render(container, loc, store, pm)
+  const input = container.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+  input.value = 'Renamed'
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(store.doc.teams[0]!.risks[0]!.title).toBe('Renamed')
+  expect(input.isConnected).toBe(true)
+})
+
+test('committing a name clears the missing-name flag, with no rebuild to do it', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: '', followup: 'x' })] }))
+  render(container, loc, store, pm)
+  container.querySelector<HTMLElement>('.tt-risk-row')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  expect(container.querySelector('.tt-risk-name-error')).not.toBeNull()
+  const input = container.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+  input.value = 'Named'
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(container.querySelector('.tt-risk-name-error')).toBeNull()
+})
+
+describe('keyboard: faster entry', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const type = (input: HTMLInputElement, value: string): void => {
+    input.value = value
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  test('Delete on a row deletes it with an Undo and lands on the neighbour', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A', order: 0 }), risk({ id: 'b', title: 'B', order: 1 })] }))
+    render(container, loc, store, pm)
+    const row = rows(container)[0]!
+    row.focus()
+    press(row, { key: 'Delete' })
+    expect(store.doc.teams[0]!.risks.map((r) => r.id)).toEqual(['b'])
+    expect(document.querySelector('.tt-toast-action')?.textContent).toBe('Undo')
+    expect(document.activeElement).toBe(rows(container)[0])
+  })
+
+  test('the new-item request adds a row, and Enter keeps adding until a blank one', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    for (const title of ['First', 'Second']) {
+      const input = document.activeElement as HTMLInputElement
+      expect(input.classList.contains('tt-risk-title-input')).toBe(true)
+      input.focus()
+      type(input, title)
+      press(input, { key: 'Enter' })
+    }
+    press(document.activeElement!, { key: 'Enter' })
+    expect(titles(container)).toEqual(['First', 'Second'])
+    expect(document.activeElement).toBe(rows(container)[1])
+  })
+
+  test('Enter in the title of an old row does not add one', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A' })] }))
+    render(container, loc, store, pm)
+    const input = rows(container)[0]!.querySelector<HTMLInputElement>('.tt-risk-title-input')!
+    input.focus()
+    press(input, { key: 'Enter' })
+    expect(rows(container)).toHaveLength(1)
+  })
+})
+
+test('the list is one Tab stop with its fields, wherever the user last was', () => {
+  const list = [0, 1, 2].map((i) => risk({ id: `x${i}`, title: `T${i}`, order: i }))
+  const { container, store, pm, loc } = setup(makeTeam({ risks: list }))
+  render(container, loc, store, pm)
+  const stopRows = (): string[] => rows(container).filter((r) => r.tabIndex === 0).map((r) => r.dataset.itemId!)
+  expect(stopRows()).toEqual(['x0'])
+  expect(rows(container)[1]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(-1)
+  rows(container)[2]!.focus()
+  expect(stopRows()).toEqual(['x2'])
+  expect(rows(container)[2]!.querySelector<HTMLElement>('input[type="text"]')!.tabIndex).toBe(0)
 })

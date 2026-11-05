@@ -65,6 +65,15 @@ const globalRows = (lc: Locale): Rows => [
   // three rows, so they must never be collapsed back into one "Enter /
   // Espaço" row.
   ['↑ / ↓ (← / →)', 'help_global_row_nav'],
+  ['Ctrl+← / → / ↑ / ↓', 'help_global_move_item'],
+  ['Delete', 'help_global_row_delete'],
+  ['Home / End / PgUp / PgDn', 'help_global_row_jump'],
+  ['Alt+N', 'help_global_new_item'],
+  ['Enter', 'help_global_new_item_run'],
+  ['Ctrl+Enter', 'help_global_open_other_pane'],
+  ['↑ / ↓, t, Alt+↓', 'help_global_date_keys'],
+  ['Ctrl+Z', 'help_global_undo_delete'],
+  ['Esc', 'help_global_leave_editor'],
   ['Enter', 'help_global_row_enter'],
   [t(lc, 'help_key_space'), 'help_global_row_menu'],
 ]

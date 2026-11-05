@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
+import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
 import { todayIso, t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
@@ -1843,4 +1843,140 @@ describe('pane favorite star', () => {
     store.update((d) => { d.favorites.push({ teamId: 'gone', ref: { kind: 'risks' } }) })
     expect(paneBtn(0, 'tt-pane-fav-btn').querySelector('.tt-icon-star')).not.toBeNull()
   })
+})
+
+describe('switchPane and the item a pane remembers', () => {
+  function split(): { store: Store; pm: ReturnType<typeof createPaneManager>; mounts: Record<string, number> } {
+    document.body.innerHTML = ''
+    stubMatchMedia()
+    const store = createStore(createEmptyDocument('en-US'))
+    const shell = createShell('en-US')
+    document.body.appendChild(shell.root)
+    const pm = createPaneManager(shell, store)
+    addTeam(store, 'T')
+    const mounts: Record<string, number> = {}
+    for (const kind of ['actions', 'risks', 'milestones'] as const) {
+      pm.registerModule(kind, (container, _loc, ctx) => {
+        mounts[kind] = (mounts[kind] ?? 0) + 1
+        for (const id of ['1', '2', '3']) {
+          const row = document.createElement('div')
+          row.setAttribute('data-item-id', `${kind}-${id}`)
+          row.setAttribute('tabindex', '0')
+          container.appendChild(row)
+        }
+        if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) (container.firstChild as HTMLElement).focus()
+      })
+    }
+    store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+    pm.toggleSplit()
+    pm.openBothPanes({ teamId: 'T', ref: { kind: 'actions' } }, { teamId: 'T', ref: { kind: 'risks' } }, 0)
+    return { store, pm, mounts }
+  }
+  const item = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[data-item-id="${id}"]`)!
+
+  test('switching panes remounts nothing, and each pane gets its focus back', () => {
+    const { store, pm, mounts } = split()
+    item('actions-2').focus()
+    const before = { ...mounts }
+    pm.switchPane(1)
+    expect(store.doc.nav.focusedPane).toBe(1)
+    expect(mounts).toEqual(before)
+    expect(document.activeElement).toBe(item('risks-1'))
+    item('risks-3').focus()
+    pm.switchPane(0)
+    expect(document.activeElement).toBe(item('actions-2'))
+    pm.switchPane(1)
+    expect(document.activeElement).toBe(item('risks-3'))
+    expect(mounts).toEqual(before)
+  })
+
+  test('a switch to a pane that cannot take focus does nothing', () => {
+    const { store, pm } = split()
+    pm.toggleSplit()
+    item('actions-2').focus()
+    pm.switchPane(1)
+    expect(store.doc.nav.focusedPane).toBe(0)
+  })
+
+  test('coming back to a module lands on the item you left', () => {
+    const { store, pm } = split()
+    pm.toggleSplit()
+    item('actions-3').focus()
+    pm.openInFocused({ teamId: 'T', ref: { kind: 'milestones' } })
+    expect(document.activeElement).toBe(item('milestones-1'))
+    navigateFocusedHistory(pm, store, -1)
+    expect(document.activeElement).toBe(item('actions-3'))
+  })
+
+  test('an item that is gone leaves the module where it put focus', () => {
+    const { store, pm } = split()
+    pm.toggleSplit()
+    item('actions-3').focus()
+    pm.openInFocused({ teamId: 'T', ref: { kind: 'milestones' } })
+    pm.registerModule('actions', (container) => {
+      const row = document.createElement('div')
+      row.setAttribute('data-item-id', 'other')
+      row.setAttribute('tabindex', '0')
+      container.appendChild(row)
+      row.focus()
+    })
+    navigateFocusedHistory(pm, store, -1)
+    expect(document.activeElement).toBe(item('other'))
+  })
+})
+
+test('focusPaneBar lands on the current tab, or the dropdown when the strip is hidden', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  pm.registerModule('actions', () => {})
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  const body = document.querySelector<HTMLElement>('[data-pane-idx="0"] .tt-pane-body')!
+  focusPaneBar(body)
+  expect(document.activeElement).toBe(document.querySelector('[data-pane-idx="0"] .tt-pane-tab[tabindex="0"]'))
+})
+
+test('requestNewItem reaches the module in that pane', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  const heard = vi.fn()
+  pm.registerModule('actions', (container) => { container.addEventListener(NEW_ITEM_EVENT, heard) })
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  requestNewItem(0)
+  expect(heard).toHaveBeenCalledTimes(1)
+})
+
+test('with nothing focused an arrow resumes at the list\'s tab stop, not the first row', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  const ctxOf: { ctx?: Parameters<typeof installArrowFallbackFocus>[0]; el?: HTMLElement } = {}
+  pm.registerModule('actions', (container, _loc, ctx) => {
+    ctxOf.ctx = ctx
+    ctxOf.el = container
+    for (const stop of ['-1', '0']) {
+      const row = container.appendChild(document.createElement('div'))
+      row.className = 'row'
+      row.setAttribute('tabindex', stop)
+    }
+  })
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  const stopFallback = installArrowFallbackFocus(ctxOf.ctx!, ctxOf.el!, '.row', ['ArrowDown'])
+  ;(document.activeElement as HTMLElement)?.blur?.()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+  expect(document.activeElement).toBe(ctxOf.el!.querySelectorAll('.row')[1])
+  stopFallback()
+})
+
+test('printFocused prints the pane the user is in', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T')
+  store.updateNav((d) => { d.nav.activeTeamId = 'T' })
+  pm.registerModule('actions', () => {})
+  pm.openInFocused({ teamId: 'T', ref: { kind: 'actions' } })
+  const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  ;(pm as unknown as { printFocused(): void }).printFocused()
+  expect(open).toHaveBeenCalled()
+  open.mockRestore()
 })

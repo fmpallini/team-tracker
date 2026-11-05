@@ -299,3 +299,72 @@ describe('createCalendar onPick', () => {
     expect(picks).toEqual(['2026-07-22'])
   })
 })
+
+describe('keyboard', () => {
+  const press = (target: Element, key: string): void => { target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })) }
+  function mount(opts: Partial<Parameters<typeof createCalendar>[0]> = {}): { root: HTMLElement; onPick: ReturnType<typeof vi.fn> } {
+    const onPick = vi.fn()
+    const root = createCalendar({ selected: '2026-07-15', locale: 'en-US', marks: noMarks(), onPick, ...opts })
+    document.body.appendChild(root)
+    return { root, onPick }
+  }
+  const active = (): string | undefined => (document.activeElement as HTMLElement).dataset.date
+  const stops = (root: HTMLElement): string[] => Array.from(root.querySelectorAll<HTMLElement>('[data-date]')).filter((d) => d.tabIndex === 0).map((d) => d.dataset.date!)
+
+  afterEach(() => { document.body.innerHTML = '' })
+
+  test('the month is one Tab stop, on the selected day', () => {
+    const { root } = mount()
+    expect(stops(root)).toEqual(['2026-07-15'])
+  })
+
+  test('with the selected day out of view the stop is on the first of the month', () => {
+    const { root } = mount({ selected: '2026-03-10', anchor: '2026-07-01' })
+    expect(stops(root)).toEqual(['2026-07-01'])
+  })
+
+  test('arrows move a day or a week, the stop following', () => {
+    const { root } = mount()
+    root.querySelector<HTMLElement>('[data-date="2026-07-15"]')!.focus()
+    press(document.activeElement!, 'ArrowRight')
+    expect(active()).toBe('2026-07-16')
+    press(document.activeElement!, 'ArrowDown')
+    expect(active()).toBe('2026-07-23')
+    press(document.activeElement!, 'ArrowLeft')
+    press(document.activeElement!, 'ArrowUp')
+    expect(active()).toBe('2026-07-15')
+    expect(stops(root)).toEqual(['2026-07-15'])
+  })
+
+  test('crossing a month edge shows that month and reports it', () => {
+    const onViewChange = vi.fn()
+    const { root } = mount({ selected: '2026-07-31', onViewChange })
+    root.querySelector<HTMLElement>('[data-date="2026-07-31"]')!.focus()
+    press(document.activeElement!, 'ArrowRight')
+    expect(active()).toBe('2026-08-01')
+    expect(onViewChange).toHaveBeenCalledWith('2026-08-01')
+  })
+
+  test('PageUp and PageDown move a month, clamped to its length', () => {
+    const { root } = mount({ selected: '2026-07-31' })
+    root.querySelector<HTMLElement>('[data-date="2026-07-31"]')!.focus()
+    press(document.activeElement!, 'PageUp')
+    expect(active()).toBe('2026-06-30')
+    press(document.activeElement!, 'PageDown')
+    expect(active()).toBe('2026-07-30')
+  })
+
+  test('in the stacked view moving within the two months keeps them on screen', () => {
+    const { root } = mount({ selected: '2026-07-15', showPrevMonth: true })
+    root.querySelector<HTMLElement>('[data-date="2026-07-02"]')!.focus()
+    press(document.activeElement!, 'ArrowUp')
+    expect(active()).toBe('2026-06-25')
+    expect(root.querySelector('[data-date="2026-07-15"]')).not.toBeNull()
+  })
+
+  test('Enter picks, as a click does', () => {
+    const { root, onPick } = mount()
+    root.querySelector<HTMLElement>('[data-date="2026-07-15"]')!.click()
+    expect(onPick).toHaveBeenCalledWith('2026-07-15')
+  })
+})

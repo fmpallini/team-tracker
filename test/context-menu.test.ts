@@ -218,3 +218,35 @@ test('selectedIndex pre-selects and focuses that row', () => {
   expect(items()[1]!.classList.contains('selected')).toBe(true)
   expect(document.activeElement).toBe(items()[1])
 })
+
+describe('jump keys', () => {
+  const press = (init: KeyboardEventInit): void => { document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  const three = (): void => showContextMenu(0, 0, [
+    { label: 'Duplicate', onClick: () => {} }, { label: 'Move to team…', onClick: () => {} }, { label: 'Delete', onClick: () => {}, danger: true },
+  ])
+  afterEach(() => closeAnyContextMenu())
+
+  test('End and Home jump to the last and first item', () => {
+    three()
+    press({ key: 'End' })
+    expect(document.activeElement).toBe(items()[2])
+    press({ key: 'Home' })
+    expect(document.activeElement).toBe(items()[0])
+  })
+
+  test('a letter jumps to the next item starting with it, and repeats cycle', () => {
+    three()
+    press({ key: 'm' })
+    expect(document.activeElement).toBe(items()[1])
+    press({ key: 'd' })
+    expect(document.activeElement).toBe(items()[2])
+    press({ key: 'd' })
+    expect(document.activeElement).toBe(items()[0])
+  })
+
+  test('a letter held with a modifier is left to the global hotkeys', () => {
+    three()
+    press({ key: 'm', altKey: true })
+    expect(document.activeElement).toBe(items()[0])
+  })
+})

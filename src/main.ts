@@ -11,11 +11,13 @@ import { reconcileOpen, type OpenedDocument } from './ui/open-document'
 import { createShell, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
-import { mountSidebar } from './ui/sidebar'
-import { resolveAppHotkey, isBrowserSaveChord } from './ui/app-hotkeys'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, setFocusedPane, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from './ui/sidebar'
+import { resolveAppHotkey, isBrowserSaveChord, isBrowserUndoChord } from './ui/app-hotkeys'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, requestNewItem, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout, wcoReservedWidth } from './ui/responsive'
 import { createPalette } from './ui/palette'
+import { appCommands, type AppCommandActions } from './ui/app-commands'
+import { toggleFavorite } from './core/favorites'
 import { mountSearch } from './ui/search-ui'
 import { setReadOnlyLock } from './ui/readonly-lock'
 import { t, todayIso } from './core/i18n'
@@ -35,7 +37,7 @@ import { decodeForReload, type ReloadedDocument } from './core/reload-document'
 import { readCurrent, sameEntry } from './core/fs'
 import { installCtrlWheelFontSize } from './ui/ctrl-wheel-font'
 import { toast, showErrorModal, dismissModelessModals, dismissToast, promptPassword } from './ui/modal'
-import { UNDO_TOAST_KEY } from './ui/undo-toast'
+import { UNDO_TOAST_KEY, isUndoOfferLive, undoLatestOffer } from './ui/undo-toast'
 import { updateAppBadge } from './core/app-badge'
 import { requestPersistentStorage, ensurePersistentStorage } from './core/storage-persist'
 import { createFileSnapshot, type FileSnapshot } from './core/file-snapshot'
@@ -225,7 +227,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   pm.renderAll()
   disposers.push(() => pm.dispose())
   // `selectTeam` is a hoisted function declaration (below), safe to pass here.
-  const palette = createPalette(store, pm, { selectTeam })
+  const palette = createPalette(store, pm, { selectTeam, commands: () => appCommands(store.doc.prefs.locale, commandActions) })
   shell.onAppNameClick(() => palette.open())
   // Same empty-document rule as the search bar (src/ui/search-ui.ts): driven by
   // onMutate so creating the first team and deleting the last one both reach it.
@@ -542,6 +544,26 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   }
 
   const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
+  const commandActions: AppCommandActions = {
+    settings: () => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl),
+    help: () => showGlobalHelp(store.doc.prefs.locale),
+    dueDates: () => sidebarHandle.openDuePanel(),
+    newTeam: () => document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT)),
+    addItem: (kind) => {
+      const teamId = store.doc.nav.activeTeamId
+      if (!teamId) return
+      if (currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])?.ref.kind !== kind) pm.openInFocused({ teamId, ref: { kind } })
+      requestNewItem(store.doc.nav.focusedPane)
+    },
+    toggleSidebar: () => sidebarHandle.toggleCollapsed(),
+    toggleSplit: () => pm.toggleSplit(),
+    toggleFavorite: () => {
+      const loc = currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])
+      if (loc) store.update((d) => { toggleFavorite(d, loc) })
+    },
+    print: () => pm.printFocused(),
+    closeFile: () => closeFile(),
+  }
   disposers.push(() => sidebarHandle.dispose())
   disposers.push(
     setupResponsiveLayout(shell.root, {
@@ -575,8 +597,12 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     const action = resolveAppHotkey(e, {
       teamCount: store.doc.teams.length,
       focusedPaneShowsDailyNote: !!focusedLoc && focusedLoc.ref.kind === 'daily',
+      undoOfferLive: isUndoOfferLive(),
     })
-    if (!action) return
+    if (!action) {
+      if (isBrowserUndoChord(e)) e.preventDefault()
+      return
+    }
     e.preventDefault()
     switch (action.type) {
       case 'palette':
@@ -584,6 +610,12 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       case 'closeFile':
         if (navPastModelessCard()) closeFile()
+        return
+      case 'undoDelete':
+        undoLatestOffer()
+        return
+      case 'newItem':
+        if (navPastModelessCard()) requestNewItem(store.doc.nav.focusedPane)
         return
       case 'paneModule':
         if (navPastModelessCard()) openPaneModuleByIndex(pm, store, action.index)
@@ -621,7 +653,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       }
       case 'selectPane':
-        if (navPastModelessCard() && setFocusedPane(store, action.index)) pm.renderAll()
+        if (navPastModelessCard()) pm.switchPane(action.index)
         return
       case 'toggleSplit':
         if (navPastModelessCard()) pm.toggleSplit()

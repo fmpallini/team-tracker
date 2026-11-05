@@ -74,6 +74,21 @@ function hasItemId(ref: ModuleRef): boolean {
   return 'itemId' in ref && ref.itemId !== undefined
 }
 
+/**
+ * The commands a query offers: none on an empty box, which stays about places;
+ * every word must match otherwise. A leading `>` lists them all and narrows the
+ * same way (the palette then shows commands alone).
+ */
+export function matchCommands<T extends { label: string }>(commands: readonly T[], query: string): T[] {
+  const onlyCommands = query.trimStart().startsWith('>')
+  const words = queryWords(onlyCommands ? query.trimStart().slice(1) : query)
+  if (words.length === 0) return onlyCommands ? [...commands] : []
+  return commands.filter((c) => {
+    const hay = normalize(c.label)
+    return words.every((w) => hay.includes(w))
+  })
+}
+
 export function buildSwitcher(doc: Doc, query: string, locale: Locale, today: string): SwitcherSection[] {
   const words = queryWords(query)
   const active = doc.nav.activeTeamId === null ? undefined : findTeam(doc, doc.nav.activeTeamId)

@@ -8,7 +8,8 @@ import type { Favorite } from '../core/types'
 import type { Locale } from '../core/i18n'
 import { t, todayIso } from '../core/i18n'
 import { toggleFavorite } from '../core/favorites'
-import { buildSwitcher, type SwitcherRow, type SwitcherSection } from '../core/switcher'
+import { buildSwitcher, matchCommands, type SwitcherRow, type SwitcherSection } from '../core/switcher'
+import type { PaletteCommand } from './app-commands'
 import { el } from './dom'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import type { PaneManager } from './panes'
@@ -27,6 +28,8 @@ export interface Palette {
 export interface PaletteDeps {
   /** Switches the active team (main.ts's selectTeam) — called before a row on another team opens. */
   selectTeam(id: string): void
+  /** The actions on offer, read fresh on each keystroke; see ui/app-commands.ts. */
+  commands?: () => PaletteCommand[]
 }
 
 export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps): Palette {
@@ -35,6 +38,9 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
   let input: HTMLInputElement | null = null
   let sections: SwitcherSection[] = []
   let rows: SwitcherRow[] = []
+  // Listed after the place rows, so `selected` runs through both and Enter on
+  // a query keeps landing on a place first.
+  let commands: PaletteCommand[] = []
   let selected = 0
   // What had focus before the palette opened, so a plain dismiss can hand it back.
   let returnFocus: Element | null = null
@@ -44,8 +50,14 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
   }
 
   function rebuild(): void {
-    sections = buildSwitcher(store.doc, input?.value ?? '', locale(), todayIso())
+    const query = input?.value ?? ''
+    sections = query.trimStart().startsWith('>') ? [] : buildSwitcher(store.doc, query, locale(), todayIso())
     rows = sections.flatMap((s) => s.rows)
+    commands = matchCommands(deps.commands?.() ?? [], query)
+  }
+
+  function rowCount(): number {
+    return rows.length + commands.length
   }
 
   function close(): void {
@@ -64,7 +76,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     if (back instanceof HTMLElement && back.isConnected) back.focus()
   }
 
-  function commit(row: SwitcherRow | undefined): void {
+  function commit(row: SwitcherRow | undefined, secondary = false): void {
     if (!row) return
     // A card modal open over the palette must close first (flushing its
     // notes editor) — every row here re-targets a pane. If its required-name
@@ -73,13 +85,25 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
     close()
     // Same path as a search result, minus term highlighting: the palette has
     // no query, only a resolved itemId. (The card was dismissed just above.)
-    revealLoc({ store, pm, selectTeam: (id) => deps.selectTeam(id) }, { teamId: row.teamId, ref: row.ref })
+    revealLoc({ store, pm, selectTeam: (id) => deps.selectTeam(id) }, { teamId: row.teamId, ref: row.ref }, { secondary })
+  }
+
+  /** Focus goes back first, so a dialog the command opens can hand it back in turn. */
+  function runCommand(command: PaletteCommand | undefined): void {
+    if (!command || !dismissModelessModals()) return
+    dismiss()
+    command.run()
+  }
+
+  function activate(index: number, secondary: boolean): void {
+    if (index < rows.length) commit(rows[index], secondary)
+    else runCommand(commands[index - rows.length])
   }
 
   function removeFavorite(fav: Favorite): void {
     store.update((d) => { toggleFavorite(d, fav) })
     rebuild()
-    selected = Math.min(selected, Math.max(0, rows.length - 1))
+    selected = Math.min(selected, Math.max(0, rowCount() - 1))
     renderList()
   }
 
@@ -118,7 +142,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
   function renderList(): void {
     if (!listEl) return
     listEl.innerHTML = ''
-    if (rows.length === 0) {
+    if (rowCount() === 0) {
       listEl.appendChild(el('div', { class: 'tt-palette-empty' }, t(locale(), 'switcher_empty')))
       return
     }
@@ -138,6 +162,29 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
       for (const row of section.rows) group.appendChild(buildRow(row, index++))
       listEl.appendChild(group)
     }
+    if (commands.length === 0) return
+    const heading = t(locale(), 'switcher_commands')
+    const group = el(
+      'div',
+      { class: 'tt-palette-group', role: 'group', 'aria-labelledby': 'tt-palette-heading-commands' },
+      el('div', { class: 'tt-palette-heading', id: 'tt-palette-heading-commands', title: heading }, heading)
+    )
+    for (const command of commands) group.appendChild(buildCommandRow(command, index++))
+    listEl.appendChild(group)
+  }
+
+  function buildCommandRow(command: PaletteCommand, i: number): HTMLElement {
+    return el(
+      'div',
+      selectableRowProps({
+        class: 'tt-palette-item',
+        selected: i === selected,
+        onCommit: () => runCommand(command),
+        onHover: () => { selected = i; paintSelection(listEl, '.tt-palette-item', selected) },
+      }),
+      icon(command.icon),
+      el('span', { class: 'tt-palette-label', title: command.label }, command.label)
+    )
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -155,17 +202,24 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
       dismiss()
       return
     }
+    // The arrows walk the list and the box keeps the cursor: a Tab out of it
+    // would leave the overlay open with typing going nowhere.
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       e.stopPropagation()
-      selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, rows.length)
+      selected = clampMove(selected, e.key === 'ArrowDown' ? 1 : -1, rowCount())
       paintSelection(listEl, '.tt-palette-item', selected)
       return
     }
     if (e.key === 'Enter') {
       e.preventDefault()
       e.stopPropagation()
-      commit(rows[selected])
+      activate(selected, e.ctrlKey || e.metaKey)
     }
   }
 

@@ -185,6 +185,12 @@ test('global help documents Enter and Space as separate row/card shortcuts, not 
   expect(enterRow.textContent).not.toBe(spaceRow.textContent)
 })
 
+test('global help documents the Ctrl+Arrow move chord', () => {
+  showGlobalHelp('en-US')
+  const row = Array.from(document.querySelectorAll('.tt-help-table tr')).find((r) => r.querySelector('.tt-help-code')?.textContent === 'Ctrl+← / → / ↑ / ↓')
+  expect(row?.textContent).toContain('Move the focused item')
+})
+
 test('editor help (pt-BR) also explains ctrl/middle-click for the secondary pane', () => {
   showEditorHelp('pt-BR')
   const text = document.body.textContent!

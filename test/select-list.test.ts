@@ -1,4 +1,4 @@
-import { paintSelection, clampMove, selectableRowProps } from '../src/ui/select-list'
+import { paintSelection, clampMove, jumpIndex, selectableRowProps } from '../src/ui/select-list'
 
 describe('clampMove', () => {
   test('moving within bounds just adds the delta', () => {
@@ -170,4 +170,13 @@ describe('pointer tracker registration', () => {
     expect(moves[0]![2]).toEqual({ passive: true })
     spy.mockRestore()
   })
+})
+
+test('jumpIndex: Home, End and a page of ten, clamped to the list', () => {
+  expect(jumpIndex(5, 'Home', 30)).toBe(0)
+  expect(jumpIndex(5, 'End', 30)).toBe(29)
+  expect(jumpIndex(5, 'PageDown', 30)).toBe(15)
+  expect(jumpIndex(5, 'PageUp', 30)).toBe(0)
+  expect(jumpIndex(25, 'PageDown', 30)).toBe(29)
+  expect(jumpIndex(5, 'a', 30)).toBeNull()
 })

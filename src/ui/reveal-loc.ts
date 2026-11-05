@@ -14,21 +14,25 @@ import { focusItemInPane } from './search-highlight'
 
 export interface RevealLocDeps {
   store: Store
-  pm: Pick<PaneManager, 'openInFocused'>
+  pm: Pick<PaneManager, 'openInFocused'> & Partial<Pick<PaneManager, 'openInSecondaryPane'>>
   /** main.ts's selectTeam: switches team, restoring both panes' last modules for it. */
   selectTeam(teamId: string): void
 }
 
 /**
- * Opens `loc` in the focused pane — switching to its team first when it is not
- * the active one — and brings its item (and any search `terms`) into view.
+ * Opens `loc` in the focused pane — or, with `secondary` (Ctrl+Enter, the
+ * keyboard's Ctrl+click), beside it — switching to its team first when it is
+ * not the active one, and brings its item (and any search `terms`) into view.
  * Returns false, having done nothing, when an open card refuses to close.
  */
-export function revealLoc(deps: RevealLocDeps, loc: Loc, opts?: { terms?: readonly string[] }): boolean {
+export function revealLoc(deps: RevealLocDeps, loc: Loc, opts?: { terms?: readonly string[]; secondary?: boolean }): boolean {
   if (!dismissModelessModals()) return false
   if (loc.teamId !== deps.store.doc.nav.activeTeamId) deps.selectTeam(loc.teamId)
-  deps.pm.openInFocused(loc)
+  const focused = deps.store.doc.nav.focusedPane
+  let pane = focused
+  if (opts?.secondary && deps.pm.openInSecondaryPane) pane = deps.pm.openInSecondaryPane(focused, loc)
+  else deps.pm.openInFocused(loc)
   const itemId = 'itemId' in loc.ref ? loc.ref.itemId : undefined
-  focusItemInPane(deps.store.doc.nav.focusedPane, itemId, opts?.terms)
+  focusItemInPane(pane, itemId, opts?.terms)
   return true
 }

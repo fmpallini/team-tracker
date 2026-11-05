@@ -11,11 +11,13 @@
 // checks. ui/hotkeys.ts already split out the reusable predicates the same
 // way (matchKey/matchDigit/comboHotkeyAllowed/navHotkeyAllowed); this is the
 // app-specific table that composes them.
-import { comboHotkeyAllowed, navHotkeyAllowed, matchKey, matchDigit } from './hotkeys'
+import { comboHotkeyAllowed, navHotkeyAllowed, outsideFieldsAndModals, inEditableField, matchKey, matchDigit } from './hotkeys'
 
 export type AppHotkeyAction =
   | { type: 'palette' }
   | { type: 'closeFile' }
+  /** Ctrl+Z outside a field, while a delete or move can still be taken back. */
+  | { type: 'undoDelete' }
   /** F1..F7 → pane module index 0..6. */
   | { type: 'paneModule'; index: number }
   /** Alt+Shift+Left / Alt+Shift+Right → step the focused pane's history. */
@@ -40,6 +42,8 @@ export type AppHotkeyAction =
   | { type: 'toggleSplit' }
   /** Alt+Down → swap the two panes' sides. */
   | { type: 'swapPanes' }
+  /** Alt+N → add an item to whatever module the focused pane shows. */
+  | { type: 'newItem' }
   /** Alt+1..9 → switch to team index 0..8 (only when that team exists). */
   | { type: 'selectTeam'; index: number }
 
@@ -48,6 +52,8 @@ export interface AppHotkeyContext {
   teamCount: number
   /** Whether the currently focused pane is showing a daily note — gates Alt+[ / Alt+] / Alt+T. */
   focusedPaneShowsDailyNote: boolean
+  /** ui/undo-toast.ts's isUndoOfferLive() — gates Ctrl+Z, which otherwise stays the browser's. */
+  undoOfferLive: boolean
 }
 
 /**
@@ -57,6 +63,17 @@ export interface AppHotkeyContext {
  */
 export function isBrowserSaveChord(e: KeyboardEvent): boolean {
   return (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 's')
+}
+
+/**
+ * Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y outside a field. A field and the
+ * editor keep their own undo, and a live delete undo is an action of its own;
+ * anywhere else the chord would run the browser's page-level undo, which acts
+ * on something the user cannot see, so the caller swallows it.
+ */
+export function isBrowserUndoChord(e: KeyboardEvent): boolean {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || inEditableField(e)) return false
+  return matchKey(e, 'z') || (!e.shiftKey && matchKey(e, 'y'))
 }
 
 /**
@@ -86,8 +103,14 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
     return comboHotkeyAllowed(e) ? { type: 'closeFile' } : null
   }
 
+  if (ctx.undoOfferLive && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 'z')) {
+    return outsideFieldsAndModals(e) ? { type: 'undoDelete' } : null
+  }
+
   const fKeyMatch = /^F([1-7])$/.exec(e.key)
   if (fKeyMatch) {
+    // Bare F-keys only: Alt+F4, Shift+F5 and the like are the OS's and the browser's.
+    if (e.altKey || e.shiftKey) return null
     // navHotkeyAllowed, not hotkeyAllowed: must still fire while editing, or
     // F5/F6/F7 fall through to the browser's refresh / address-bar / caret
     // browsing default.
@@ -106,6 +129,7 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
   }
   if (e.shiftKey && e.key === 'ArrowUp') return { type: 'historyLatest' }
   if (e.shiftKey) return null
+  if (matchKey(e, 'n')) return { type: 'newItem' }
 
   // Alt+[ / Alt+] / Alt+T: daily-notes day nav. Match the physical key as
   // well as the produced character, for layouts where '['/']' sit behind

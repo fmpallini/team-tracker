@@ -14,17 +14,17 @@
 import type { Milestone, Loc, Team } from '../core/types'
 import { t, todayIso, formatDate } from '../core/i18n'
 import { watchDayChange } from '../ui/day-change'
-import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { createEntityDelete } from './entity-delete'
 import { patchTeamItem } from '../core/team-items'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { createFollowupRows, focusedCaretElement } from './followup-list'
+import { createFollowupRows, type AddingRun, focusedCaretElement } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild, wheelScrollsHorizontally } from '../ui/dom'
+import { el, createDeferredRebuild, keepRowFocus, rovingRows, wheelScrollsHorizontally } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { fontScale } from '../core/font-size'
 import { BACKLINK_SECTIONS } from '../core/search'
@@ -440,18 +440,13 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       },
     })
     datePicker.root.classList.add('tt-milestone-date-input')
+    datePicker.root.addEventListener('keydown', followups.commitFieldOnEnter(m.id))
     liveDatePickers.push(datePicker)
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-milestone-title-input tt-input', placeholder: t(lc, 'milestone_title_placeholder'), value: m.title,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        // Unscoped beyond the team: `title` is the label @[…](milestone:id)
-        // mentions resolve through live — see the note at people-tree.ts's
-        // rename site.
-        patchTeamItem(ctx.store, teamId, 'milestones', m.id, (found) => { found.title = value }, { teamId })
-      },
+      onkeydown: followups.commitFieldOnEnter(m.id, addingRun),
+      onchange: (e: Event) => followups.commitTitle(m.id, (e.target as HTMLInputElement).value),
     })
 
     const doneCheckbox = el('input', {
@@ -516,7 +511,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       e.preventDefault()
       openRowContextMenu(m.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
-    followups.wireRowKeys(row, m.id, (x, y) => openRowContextMenu(m.id, x, y))
+    followups.wireRowKeys(row, m.id, { openMenu: (x, y) => openRowContextMenu(m.id, x, y), remove: () => requestDelete(m) })
 
     followups.installBlankTitleGuard(row, m.id, {
       // The add button is part of the list; and the date picker's calendar lives
@@ -533,6 +528,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   const listEl = el('div', { class: 'tt-milestone-list' })
+  const rowStops = rovingRows(listEl, '.tt-milestone-row')
   const followups = createFollowupRows<Milestone>({
     ctx, teamId, prefix: 'milestone', listEl, expandable,
     nameRequired: t(lc, 'milestone_name_required'),
@@ -560,26 +556,39 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
   }
 
   function renderAll(): void {
-    expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
-    disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
-    renderTimeline()
-    renderList()
+    keepRowFocus(listEl, '.tt-milestone-row', () => {
+      expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
+      disposeDatePickers() // ditto for each row's date-picker popover, if one happened to be open
+      renderTimeline()
+      renderList()
+    })
+    rowStops.refresh()
   }
 
   function addMilestone(): void {
     // An untitled draft is already waiting: put the caret back in it rather than stacking a second blank row.
     const draft = milestones().find(isBlankMilestoneDraft)
     if (draft) {
+      followups.markAdding(draft.id)
       listEl.querySelector<HTMLInputElement>(`.tt-milestone-row[data-milestone-id="${draft.id}"] .tt-milestone-title-input`)?.focus()
       return
     }
     const newId = crypto.randomUUID()
     focusMilestoneId = newId
+    followups.markAdding(newId)
     ctx.store.update((d) => {
       const tm = docFindTeam(d, teamId)
       if (!tm) return
       tm.milestones.push({ id: newId, date: todayIso(), title: '', done: false, followup: '' })
     }, { teamId, sections: ['milestones'] })
+  }
+
+  const addingRun: AddingRun = {
+    addNext: addMilestone,
+    discard: (id) => {
+      const cur = milestones().find((m) => m.id === id)
+      if (cur && isBlankMilestoneDraft(cur)) removeMilestoneSilently(id)
+    },
   }
 
   const addBtn = el(
@@ -640,6 +649,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
       followups.refreshBacklinkChips()
       return
     }
+    // Our own title commit: the row's input already shows it, the timeline labels and mentions of it are what moved.
+    if (followups.isCommittingOwnTitle()) {
+      renderTimeline()
+      followups.refreshBacklinkChips()
+      return
+    }
     // A change confined to sibling sections can only reach this module
     // through backlinks chips — nothing in the milestone list or timeline
     // itself changed. Patch the chips in place instead of a full rebuild.
@@ -681,6 +696,7 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     renderAll()
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+  container.addEventListener(NEW_ITEM_EVENT, addMilestone)
 
   const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-milestone-row', ['ArrowDown', 'ArrowUp'])
 
@@ -706,5 +722,6 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
     disposeArrowFallback()
     unbindTimelineWheel()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+    container.removeEventListener(NEW_ITEM_EVENT, addMilestone)
   }
 })

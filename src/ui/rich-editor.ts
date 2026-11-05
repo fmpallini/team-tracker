@@ -36,6 +36,8 @@ export function createRichEditorBundle(opts: {
   getTeam(): Team | undefined
   getTemplates(): Template[]
   getTemplateCtx(): TemplateCtx
+  /** Where Escape takes the user; see EditorHooks.onEscape. */
+  onEscape?: () => void
 }): RichEditorBundle {
   const images = createImageHost(opts.store, opts.locale)
   const editor: Editor = createEditor(
@@ -48,6 +50,7 @@ export function createRichEditorBundle(opts: {
       onSlashTrigger() {},
       resolveRefLabel: makeRefLabelResolver(opts.store, opts.teamId),
       images,
+      ...(opts.onEscape ? { onEscape: opts.onEscape } : {}),
     },
     opts.locale
   )
@@ -90,6 +93,8 @@ export function createModuleEditor(ctx: ModuleCtx, teamId: string, opts: {
   templateDate?: () => string
   /** The template `{person}`; read live, so a rename is picked up. */
   personName?: () => string | undefined
+  /** Where Escape takes the user; see EditorHooks.onEscape. */
+  onEscape?: () => void
 }): RichEditorBundle {
   const team = (): Team | undefined => findTeam(ctx.store.doc, teamId)
   return createRichEditorBundle({
@@ -97,6 +102,7 @@ export function createModuleEditor(ctx: ModuleCtx, teamId: string, opts: {
     initialMd: opts.initialMd,
     onChange: (md) => opts.onChange(md.trim() === '' ? '' : md),
     getTeam: team,
+    ...(opts.onEscape ? { onEscape: opts.onEscape } : {}),
     getTemplates: () => ctx.store.doc.templates.filter((tpl) => opts.templateScopes.includes(tpl.scope)),
     getTemplateCtx: () => ({
       dateIso: opts.templateDate?.() ?? todayIso(),

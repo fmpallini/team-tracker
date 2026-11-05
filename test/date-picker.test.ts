@@ -269,3 +269,93 @@ describe('createDatePicker', () => {
     expect(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))).not.toThrow()
   })
 })
+
+describe('keyboard', () => {
+  const press = (el: Element, init: KeyboardEventInit): KeyboardEvent => {
+    const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    el.dispatchEvent(e)
+    return e
+  }
+
+  test('tabbing through does not open the calendar; a click still does', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    input(handle).focus()
+    expect(popover()).toBeNull()
+    input(handle).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(popover()).not.toBeNull()
+    handle.destroy()
+  })
+
+  test('up and down step a day', () => {
+    const onChange = vi.fn()
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange })
+    press(input(handle), { key: 'ArrowUp' })
+    expect(handle.getValue()).toBe('2026-07-21')
+    press(input(handle), { key: 'ArrowDown' })
+    press(input(handle), { key: 'ArrowDown' })
+    expect(handle.getValue()).toBe('2026-07-19')
+    expect(onChange).toHaveBeenCalledTimes(3)
+    expect(input(handle).value).toBe('07/19/2026')
+  })
+
+  test('t is today, and types nothing', () => {
+    vi.useFakeTimers({ now: new Date(2026, 6, 4, 12) })
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    const e = press(input(handle), { key: 't' })
+    expect(e.defaultPrevented).toBe(true)
+    expect(handle.getValue()).toBe('2026-07-04')
+    vi.useRealTimers()
+  })
+
+  test('an empty field steps from today', () => {
+    vi.useFakeTimers({ now: new Date(2026, 6, 4, 12) })
+    const handle = mount({ value: '', locale: 'en-US', allowClear: true, onChange: () => {} })
+    press(input(handle), { key: 'ArrowUp' })
+    expect(handle.getValue()).toBe('2026-07-05')
+    vi.useRealTimers()
+  })
+
+  test('Alt+Down opens the calendar with focus on the day, without reaching the pane hotkeys', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    const reached = vi.fn()
+    document.addEventListener('keydown', reached, { once: true })
+    input(handle).focus()
+    press(input(handle), { key: 'ArrowDown', altKey: true })
+    expect((document.activeElement as HTMLElement).dataset.date).toBe('2026-07-20')
+    expect(reached).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', reached)
+    handle.destroy()
+  })
+
+  test('picking by keyboard commits and puts focus back on the field', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    input(handle).focus()
+    press(input(handle), { key: 'ArrowDown', altKey: true })
+    press(document.activeElement!, { key: 'ArrowRight' })
+    ;(document.activeElement as HTMLElement).click()
+    expect(handle.getValue()).toBe('2026-07-21')
+    expect(popover()).toBeNull()
+    expect(document.activeElement).toBe(input(handle))
+  })
+
+  test('Escape in the calendar closes it and puts focus back on the field', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    input(handle).focus()
+    press(input(handle), { key: 'ArrowDown', altKey: true })
+    press(document.activeElement!, { key: 'Escape' })
+    expect(popover()).toBeNull()
+    expect(document.activeElement).toBe(input(handle))
+  })
+
+  test('Tab stays inside the open calendar and reaches its buttons', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    input(handle).focus()
+    press(input(handle), { key: 'ArrowDown', altKey: true })
+    const last = popoverButton('Today')!
+    last.focus()
+    const e = press(last, { key: 'Tab' })
+    expect(e.defaultPrevented).toBe(true)
+    expect(popover()!.contains(document.activeElement)).toBe(true)
+    handle.destroy()
+  })
+})

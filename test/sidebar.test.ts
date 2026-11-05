@@ -1365,3 +1365,81 @@ describe('content subscription is scoped to what the sidebar displays', () => {
     expect(teamRowIdentities()[0]!.textContent).toContain('Renamed')
   })
 })
+
+describe('keyboard: the team list', () => {
+  const press = (target: Element, init: KeyboardEventInit): void => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+  function three(): ReturnType<typeof setup> {
+    const s = setup()
+    addTeam(s.store, 'A'); addTeam(s.store, 'B'); addTeam(s.store, 'C')
+    s.store.updateNav((d) => { d.nav.activeTeamId = 'B' })
+    return s
+  }
+  const row = (name: string): HTMLElement => items().find((i) => i.textContent!.includes(name))!
+
+  test('one Tab stop, on the active team', () => {
+    three()
+    expect(items().map((i) => i.tabIndex)).toEqual([-1, 0, -1])
+  })
+
+  test('the stop follows a team switch', () => {
+    const { store } = three()
+    store.updateNav((d) => { d.nav.activeTeamId = 'C' })
+    expect(items().map((i) => i.tabIndex)).toEqual([-1, -1, 0])
+  })
+
+  test('arrows walk the rows, Enter and Space open the team', () => {
+    const { selectTeam } = three()
+    row('B').focus()
+    press(row('B'), { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(row('C'))
+    press(row('C'), { key: 'ArrowUp' })
+    press(row('B'), { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(row('A'))
+    press(row('A'), { key: 'Enter' })
+    expect(selectTeam).toHaveBeenCalledWith('A')
+    press(row('A'), { key: ' ' })
+    expect(selectTeam).toHaveBeenCalledTimes(2)
+  })
+
+  test('Ctrl+Up/Down reorder the team and keep focus on it', () => {
+    const { store } = three()
+    row('B').focus()
+    press(row('B'), { key: 'ArrowUp', ctrlKey: true })
+    expect(store.doc.teams.map((t) => t.id)).toEqual(['B', 'A', 'C'])
+    expect(document.activeElement).toBe(row('B'))
+    press(row('B'), { key: 'ArrowDown', ctrlKey: true })
+    press(row('B'), { key: 'ArrowDown', ctrlKey: true })
+    expect(store.doc.teams.map((t) => t.id)).toEqual(['A', 'C', 'B'])
+    press(row('B'), { key: 'ArrowDown', ctrlKey: true })
+    expect(store.doc.teams.map((t) => t.id)).toEqual(['A', 'C', 'B'])
+  })
+
+  test('keys on the row buttons stay theirs', () => {
+    const { selectTeam } = three()
+    const btn = row('B').querySelector<HTMLElement>('.tt-team-edit-btn')!
+    btn.focus()
+    press(btn, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(btn)
+    expect(selectTeam).not.toHaveBeenCalled()
+  })
+})
+
+test('a team\'s row buttons are in the tab order only on the list\'s stop', () => {
+  const { store } = setup()
+  addTeam(store, 'A'); addTeam(store, 'B')
+  store.updateNav((d) => { d.nav.activeTeamId = 'B' })
+  const edit = (name: string): HTMLElement => items().find((i) => i.textContent!.includes(name))!.querySelector('.tt-team-edit-btn')!
+  expect(edit('A').tabIndex).toBe(-1)
+  expect(edit('B').tabIndex).toBe(0)
+})
+
+test('the handle exposes what the fast switch needs', () => {
+  const { sidebar, store } = setup()
+  addTeam(store, 'A')
+  const before = store.doc.nav.sidebarCollapsed
+  sidebar.toggleCollapsed()
+  expect(store.doc.nav.sidebarCollapsed).toBe(!before)
+  sidebar.openDuePanel()
+  expect(document.querySelector('.tt-modal-dialog')).not.toBeNull()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+})

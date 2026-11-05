@@ -43,6 +43,132 @@ export function blurOnEnter(e: Event): void {
   if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur()
 }
 
+export interface SavedFocus {
+  /** Puts focus (and an editor's caret) back; false if there was nothing to go back to. */
+  restore(): boolean
+}
+
+/**
+ * Remembers what holds focus now, for a surface that takes it and should hand
+ * it back: a modal, the search box, the other pane. A contenteditable's Range
+ * travels with it, since focusing one puts the caret at its start.
+ */
+export function saveFocus(): SavedFocus {
+  const target = document.activeElement
+  if (!(target instanceof HTMLElement) || target === document.body) return { restore: () => false }
+  const sel = window.getSelection()
+  const range = target.matches('[contenteditable="true"]') && sel && sel.rangeCount > 0 && target.contains(sel.anchorNode)
+    ? sel.getRangeAt(0).cloneRange()
+    : null
+  return {
+    restore(): boolean {
+      if (!target.isConnected) return false
+      target.focus({ preventScroll: true })
+      if (range && target.contains(range.startContainer)) {
+        const live = window.getSelection()
+        live?.removeAllRanges()
+        live?.addRange(range)
+      }
+      return true
+    },
+  }
+}
+
+/** The id of the row after `id` in `root`, else the one before it: where focus goes when `id` is deleted. */
+export function neighbourRowId(root: HTMLElement, rowSelector: string, id: string): string | null {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>(`${rowSelector}[data-item-id]`))
+  const at = rows.findIndex((r) => r.dataset.itemId === id)
+  if (at === -1) return null
+  return (rows[at + 1] ?? rows[at - 1])?.dataset.itemId ?? null
+}
+
+/**
+ * Runs a list's full rebuild without losing the user's place. Every row is
+ * replaced, so focus on one (or on a control inside one) would otherwise fall
+ * to <body> and the next arrow would restart from the top. Afterwards focus
+ * is on the same row by `data-item-id`, or on its neighbour when the rebuild
+ * took the row away. A select or text field keeps it, so the next field stays
+ * one Tab off; anything else hands it to the row, where the arrows work. A
+ * rebuild that placed focus itself wins.
+ */
+export function keepRowFocus(root: HTMLElement, rowSelector: string, rebuild: () => void): void {
+  const active = document.activeElement
+  const row = active instanceof HTMLElement && root.contains(active) ? active.closest<HTMLElement>(rowSelector) : null
+  const id = row?.dataset.itemId
+  if (id === undefined) { rebuild(); return }
+  const neighbour = neighbourRowId(root, rowSelector, id)
+  const isField = active instanceof HTMLSelectElement || (active instanceof HTMLInputElement && active.type === 'text')
+  const fieldSelector = isField && active.classList[0] ? `${active.tagName}.${active.classList[0]}` : null
+  rebuild()
+  if (document.activeElement !== document.body) return
+  const rowFor = (rowId: string | null): HTMLElement | null =>
+    rowId === null ? null : root.querySelector<HTMLElement>(`${rowSelector}[data-item-id="${rowId}"]`)
+  const same = rowFor(id)
+  const field = fieldSelector ? same?.querySelector<HTMLElement>(fieldSelector) : null
+  ;(field ?? same ?? rowFor(neighbour))?.focus()
+  if (field instanceof HTMLInputElement) field.select()
+}
+
+export interface RovingRows {
+  /** Re-applies the tab order after a rebuild. */
+  refresh(): void
+  /** Puts the stop on this row (`data-item-id`) from outside, as the sidebar does for the active team. */
+  setActive(id: string | null): void
+}
+
+const ROW_CONTROLS = 'input, select, button, a[href]'
+
+/**
+ * One Tab stop for a whole list (roving tabindex): the arrows walk the rows, so
+ * Tab can go past them. Only the current row, and the fields inside it, stay in
+ * the tab order; the others are still focusable by click or by the arrows,
+ * which moves the stop. A control a row took out of the tab order itself
+ * (`tabindex="-1"`) stays out, on every row. The caller refreshes after a rebuild.
+ */
+export function rovingRows(root: HTMLElement, rowSelector: string): RovingRows {
+  let activeId: string | null = null
+  let stop: HTMLElement | null = null
+
+  function demote(row: HTMLElement): void {
+    row.tabIndex = -1
+    for (const control of row.querySelectorAll<HTMLElement>(ROW_CONTROLS)) {
+      if (control.tabIndex < 0) continue
+      control.tabIndex = -1
+      control.dataset.rovingField = ''
+    }
+  }
+  function promote(row: HTMLElement): void {
+    row.tabIndex = 0
+    for (const control of row.querySelectorAll<HTMLElement>('[data-roving-field]')) {
+      control.removeAttribute('tabindex')
+      delete control.dataset.rovingField
+    }
+  }
+  function refresh(): void {
+    const rows = Array.from(root.querySelectorAll<HTMLElement>(rowSelector))
+    stop = rows.find((r) => r.dataset.itemId === activeId) ?? rows[0] ?? null
+    for (const row of rows) {
+      if (row === stop) promote(row)
+      else demote(row)
+    }
+  }
+  root.addEventListener('focusin', (e) => {
+    const row = (e.target as Element).closest<HTMLElement>(rowSelector)
+    if (!row || row === stop) return
+    if (stop?.isConnected) demote(stop)
+    promote(row)
+    stop = row
+    activeId = row.dataset.itemId ?? null
+  })
+  return {
+    refresh,
+    setActive(id) {
+      activeId = id
+      refresh()
+    },
+  }
+}
+
 /** Strips `classes` from every `selector` match under `root` — the drag-over / drop-position highlight reset every drag-and-drop list does between events. */
 export function clearClasses(root: ParentNode, selector: string, ...classes: string[]): void {
   root.querySelectorAll(selector).forEach((n) => n.classList.remove(...classes))
@@ -171,20 +297,36 @@ export interface DeferredRebuild {
  */
 export function createDeferredRebuild(rebuild: () => void): DeferredRebuild {
   let deferredEl: HTMLElement | null = null
-  function onBlur(): void {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  // A Tab out is mid-flight here: rebuilding now would destroy the element
+  // focus is on its way to and drop it on <body>. Let it land first.
+  function onBlur(e: Event): void {
+    const field = e.target as HTMLElement
+    const next = (e as FocusEvent).relatedTarget as Element | null
     deferredEl = null
-    rebuild()
+    // Into the field's own popup (a date's calendar): the rebuild would tear
+    // that popup down. Focus returns to the field when it closes, so wait for
+    // the blur after that.
+    if (next?.closest('[data-field-popup]')) {
+      field.addEventListener('focus', () => armField(field), { once: true })
+      return
+    }
+    if (!next) { rebuild(); return }
+    timer = setTimeout(() => { timer = null; rebuild() }, 0)
+  }
+  function armField(active: HTMLElement): void {
+    if (deferredEl === active) return
+    deferredEl?.removeEventListener('blur', onBlur)
+    deferredEl = active
+    active.addEventListener('blur', onBlur, { once: true })
   }
   return {
-    arm(active: HTMLElement): void {
-      if (deferredEl === active) return
-      deferredEl?.removeEventListener('blur', onBlur)
-      deferredEl = active
-      active.addEventListener('blur', onBlur, { once: true })
-    },
+    arm: armField,
     dispose(): void {
       deferredEl?.removeEventListener('blur', onBlur)
       deferredEl = null
+      if (timer !== null) clearTimeout(timer)
+      timer = null
     },
   }
 }

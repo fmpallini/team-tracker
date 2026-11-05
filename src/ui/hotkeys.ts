@@ -30,6 +30,16 @@ export function matchDigit(e: KeyboardEvent, n: number): boolean {
   return e.key === String(n) || e.code === `Digit${n}`
 }
 
+/** True for a key pressed with no modifier: what a row's plain Enter, Space and arrows mean. Alt+Arrow and the like belong to the global hotkeys. */
+export function isPlainKey(e: KeyboardEvent): boolean {
+  return !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
+}
+
+/** The app's "move this item" chord: Ctrl (or Cmd) alone, held with an arrow on a focused row, card or box. */
+export function isMoveChord(e: KeyboardEvent): boolean {
+  return (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
+}
+
 /**
  * True while a modal dialog is open (see the `.tt-modal-overlay` class in
  * modal.ts). Shared by both guards below, and by update-notice.ts to keep
@@ -58,9 +68,22 @@ export function blockedByBlockingModal(): boolean {
  * while the user is typing.
  */
 function blockedByFieldOrModal(e: KeyboardEvent): boolean {
+  return inEditableField(e) || blockedByModal()
+}
+
+/** True when `e` came from a form field or an editor. */
+export function inEditableField(e: KeyboardEvent): boolean {
   const target = e.target as HTMLElement | null
-  if (target?.closest?.(EDITABLE_SELECTOR)) return true
-  return blockedByModal()
+  return target?.closest?.(EDITABLE_SELECTOR) != null
+}
+
+/**
+ * For a Ctrl chord that means something else inside a field: Ctrl+Z there is
+ * the field's or the editor's own undo, so the app-level meaning only applies
+ * on a row, a card or nothing. Any open modal counts, the modeless card too.
+ */
+export function outsideFieldsAndModals(e: KeyboardEvent): boolean {
+  return !blockedByFieldOrModal(e)
 }
 
 /**

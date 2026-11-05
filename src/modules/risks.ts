@@ -17,18 +17,18 @@ import { t, todayIso, formatDateWithWeekday, type MsgKey } from '../core/i18n'
 import { unlinkRefsInTeam } from '../core/refs'
 import { createEntityDelete } from './entity-delete'
 import { patchTeamItem, nextOrder } from '../core/team-items'
-import { installArrowFallbackFocus, type ModuleCtx } from '../ui/panes'
+import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx } from '../ui/panes'
 import { scopeAffects, type Section } from '../core/scope'
 import { confirmDelete, toast } from '../ui/modal'
 import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { createFollowupRows, focusedCaretElement } from './followup-list'
+import { createFollowupRows, type AddingRun, focusedCaretElement } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { findTeam as docFindTeam } from '../core/document'
-import { el, blurOnEnter, createDeferredRebuild, clearClasses } from '../ui/dom'
+import { el, createDeferredRebuild, clearClasses, keepRowFocus, rovingRows } from '../ui/dom'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { makeRefLabelResolver } from '../ui/atref'
@@ -764,14 +764,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
     const titleInput = el('input', {
       type: 'text', class: 'tt-risk-title-input tt-input', placeholder: t(lc, 'risk_title_placeholder'), value: r.title,
-      onkeydown: blurOnEnter,
-      onchange: (e: Event) => {
-        const value = (e.target as HTMLInputElement).value
-        // Unscoped beyond the team: `title` is the label @[…](risk:id)
-        // mentions resolve through live — see the note at people-tree.ts's
-        // rename site.
-        patchTeamItem(ctx.store, teamId, 'risks', r.id, (found) => { found.title = value }, { teamId })
-      },
+      onkeydown: followups.commitFieldOnEnter(r.id, addingRun),
+      onchange: (e: Event) => followups.commitTitle(r.id, (e.target as HTMLInputElement).value),
     })
 
     // Labelled, not bare 1/2/3: the stored value is still the number, but
@@ -868,7 +862,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       openRowContextMenu(r.id, (e as MouseEvent).clientX, (e as MouseEvent).clientY)
     })
 
-    followups.wireRowKeys(row, r.id, (x, y) => openRowContextMenu(r.id, x, y))
+    followups.wireRowKeys(row, r.id, { openMenu: (x, y) => openRowContextMenu(r.id, x, y), moveBy: moveRiskBy, remove: () => requestDelete(r) })
 
     followups.installBlankTitleGuard(row, r.id, {
       // The add button is part of the list: pressing it would otherwise drop the
@@ -1001,6 +995,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   }
 
   const listEl = el('div', { class: 'tt-risk-list' })
+  const rowStops = rovingRows(listEl, '.tt-risk-row')
   const followups = createFollowupRows<Risk>({
     ctx, teamId, prefix: 'risk', listEl, expandable,
     nameRequired: t(lc, 'risk_name_required'),
@@ -1070,7 +1065,24 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     }
   }
 
+  /** Ctrl+Up/Down on a row: the keyboard's drag. Same rule as the drag, no manual position exists under an exposure sort. */
+  function moveRiskBy(id: string, dir: -1 | 1): void {
+    if (sortMode !== 'none') return
+    const ids = Array.from(listEl.querySelectorAll<HTMLElement>('.tt-risk-row')).map((row) => row.dataset.itemId!)
+    const target = ids[ids.indexOf(id) + dir]
+    if (target === undefined) return
+    ctx.store.update((d) => {
+      const tm = docFindTeam(d, teamId)
+      if (tm) moveRisk(tm.risks, id, target, dir < 0 ? 'before' : 'after')
+    }, { teamId, sections: ['risks'] })
+  }
+
   function renderAll(): void {
+    keepRowFocus(listEl, '.tt-risk-row', rebuildList)
+    rowStops.refresh()
+  }
+
+  function rebuildList(): void {
     expandable.disposeAll() // every previously-expanded editor is torn down before the list (and possibly fresh ones) is rebuilt
     listEl.innerHTML = ''
     const all = risks()
@@ -1131,16 +1143,26 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     // An untitled draft is already waiting: put the caret back in it rather than stacking a second blank row.
     const draft = risks().find((r) => isUntitledRiskDiscardable(r, newRiskFollowup()))
     if (draft) {
+      followups.markAdding(draft.id)
       listEl.querySelector<HTMLInputElement>(`[data-risk-id="${draft.id}"].tt-risk-row .tt-risk-title-input`)?.focus()
       return
     }
     const newId = crypto.randomUUID()
     focusRiskId = newId
+    followups.markAdding(newId)
     ctx.store.update((d) => {
       const tm = docFindTeam(d, teamId)
       if (!tm) return
       tm.risks.push({ id: newId, title: '', chance: 1, impact: 1, plan: 'mitigate', followup: newRiskFollowup(), order: nextOrder(tm.risks), closed: false })
     }, { teamId, sections: ['risks'] })
+  }
+
+  const addingRun: AddingRun = {
+    addNext: addRisk,
+    discard: (id) => {
+      const cur = risks().find((r) => r.id === id)
+      if (cur && isUntitledRiskDiscardable(cur, newRiskFollowup())) removeRiskSilently(id)
+    },
   }
 
   const addBtn = el(
@@ -1192,6 +1214,12 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       followups.refreshBacklinkChips()
       return
     }
+    // Our own title commit: the row's input already shows it, the chart labels and mentions of it are what moved.
+    if (followups.isCommittingOwnTitle()) {
+      renderQuadrant()
+      followups.refreshBacklinkChips()
+      return
+    }
     // A change confined to sibling sections can only reach this module
     // through backlinks chips — nothing in the risk list or quadrant itself
     // changed. Patch the chips in place instead of a full rebuild. A scope
@@ -1237,6 +1265,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     renderAll()
   }
   container.addEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+  container.addEventListener(NEW_ITEM_EVENT, addRisk)
 
   const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-risk-row', ['ArrowDown', 'ArrowUp'])
 
@@ -1262,5 +1291,6 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     expandable.disposeAll()
     disposeArrowFallback()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
+    container.removeEventListener(NEW_ITEM_EVENT, addRisk)
   }
 })

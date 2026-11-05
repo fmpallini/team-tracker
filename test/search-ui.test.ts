@@ -592,3 +592,40 @@ test('highlights the original characters when the note holds decomposed (NFD) ac
   expect(marks).toHaveLength(1)
   expect(marks[0]!.textContent).toBe(decomposed)
 })
+
+describe('leaving search', () => {
+  const pressDoc = (init: KeyboardEventInit): void => { document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) }
+
+  test('Escape, with the list already closed, goes back where the hotkey came from', () => {
+    const store = buildStore([oneNoteTeam], 'T1')
+    const { input } = mount(store, fakePM())
+    const row = document.body.appendChild(document.createElement('div'))
+    row.tabIndex = 0
+    row.focus()
+    pressDoc({ key: 'f', code: 'KeyF', ctrlKey: true })
+    expect(document.activeElement).toBe(input)
+    key(input, 'Escape')
+    expect(document.activeElement).toBe(row)
+  })
+
+  test('with nowhere to go back to it just blurs, as before', () => {
+    const store = buildStore([oneNoteTeam], 'T1')
+    const { input } = mount(store, fakePM())
+    input.focus()
+    key(input, 'Escape')
+    expect(document.activeElement).toBe(document.body)
+  })
+})
+
+test('Ctrl+Enter on a result opens it in the other pane', async () => {
+  const store = buildStore([oneNoteTeam], 'T1')
+  const pm = fakePM()
+  const secondary: Loc[] = []
+  pm.openInSecondaryPane = (_from, loc) => { secondary.push(loc); return 1 }
+  const { input } = mount(store, pm)
+  input.focus()
+  type(input, 'alpha')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }))
+  expect(secondary).toHaveLength(1)
+  expect(pm.calls).toHaveLength(0)
+})
