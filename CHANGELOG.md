@@ -4,6 +4,20 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.0] - 2026-11-04
+
+### Added
+- Everything you can drag now moves by keyboard (Ctrl+arrows), and Ctrl+Z outside a text field takes back the last delete or move.
+- Lists answer to Delete, Home, End and Page Up/Down. Alt+N adds an item, and Enter on a new one (Ctrl+Enter on a task) opens the next.
+- The fast switch runs commands such as Settings, Help or Add risk: start with `>` to list them. Ctrl+Enter there and in search opens in the other pane.
+- Date fields step with ↑/↓ and take `t` for today; Alt+↓ opens a calendar you can walk with the arrows.
+
+### Changed
+- Tab passes a list in one press, with the arrows moving between rows, and Esc leaves a note. The calendar no longer opens on its own.
+
+### Fixed
+- You keep your place after saving, deleting, closing a dialog or going back, and switching panes keeps your caret, undo history and open rows.
+
 ## [3.5.2] - 2026-11-04
 
 ### Added
