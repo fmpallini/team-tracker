@@ -29,6 +29,7 @@ import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
 import { findTeam as docFindTeam } from '../core/document'
 import { el, createDeferredRebuild, clearClasses, keepRowFocus, rovingRows } from '../ui/dom'
+import { dragAutoscroll } from '../ui/drag-autoscroll'
 import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { makeRefLabelResolver } from '../ui/atref'
@@ -1283,6 +1284,9 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     listEl.querySelector<HTMLElement>('.tt-risk-row')?.focus()
   }
 
+  // A row held at the pane's top or bottom edge scrolls it (the wheel is silent during a native drag).
+  const unbindDragScroll = dragAutoscroll(listEl)
+
   return () => {
     unsubscribe()
     // An armed deferral would otherwise rebuild a torn-down module on the
@@ -1290,6 +1294,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
     deferred.dispose()
     expandable.disposeAll()
     disposeArrowFallback()
+    unbindDragScroll()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)
     container.removeEventListener(NEW_ITEM_EVENT, addRisk)
   }
