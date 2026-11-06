@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.1] - 2026-11-05
+
+### Fixed
+- Dragging an action card, a risk or a person to the edge of the board, list or org chart now scrolls it, so you can reach items that were off screen.
+
 ## [3.6.0] - 2026-11-04
 
 ### Added
