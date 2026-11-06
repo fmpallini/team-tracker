@@ -1,0 +1,51 @@
+name: Sync dev
+
+# dev -> main PRs always merge with a merge commit (never squash — see
+# CLAUDE.md), so main's tip is dev's own tip plus that merge commit: a pure
+# fast-forward. Left alone, dev falls one merge commit behind main after every
+# release and the next `git push` to dev is rejected until someone pulls.
+# Fast-forwarding dev the moment main moves (not after the tag's build, minutes
+# later) keeps the window in which a new dev commit could race it to seconds.
+# Never force-pushes: if dev has real commits main lacks, it warns and leaves
+# both branches alone.
+#
+# Pushes made with GITHUB_TOKEN don't trigger other workflows, so this doesn't
+# start a redundant CI run on dev — main's own CI already covered these commits.
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: sync-dev
+  cancel-in-progress: false
+
+jobs:
+  sync-dev:
+    name: Fast-forward dev to main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward dev if it's a clean ancestor of main
+        run: |
+          set -euo pipefail
+          git fetch origin dev
+          dev_sha="$(git rev-parse origin/dev)"
+          main_sha="${GITHUB_SHA}"
+
+          if [ "$dev_sha" = "$main_sha" ]; then
+            echo "dev already matches ${main_sha}."
+          elif git merge-base --is-ancestor "$main_sha" "$dev_sha"; then
+            echo "dev already contains ${main_sha} (dev is ahead) — nothing to do."
+          elif git merge-base --is-ancestor "$dev_sha" "$main_sha"; then
+            git push origin "${main_sha}:refs/heads/dev"
+            echo "Fast-forwarded dev from ${dev_sha} to ${main_sha}."
+          else
+            echo "::warning::dev (${dev_sha}) and main (${main_sha}) have diverged — not a clean fast-forward, skipping. Check for a squash-merged PR (see CLAUDE.md) and resolve manually."
+          fi

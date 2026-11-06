@@ -153,7 +153,7 @@ async function snapshot(page: Page): Promise<Snapshot> {
 /** Away to another module and back: the editor is rebuilt from what was saved. */
 async function reopen(page: Page): Promise<void> {
   const pane = page.locator('.tt-pane[data-pane-idx="0"]')
-  for (const label of [/Members/i, /Daily/i]) {
+  for (const label of [/Members/i, /General/i]) {
     await openModule(pane, label)
   }
   await page.locator('.editor').first().waitFor()

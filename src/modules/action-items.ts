@@ -24,6 +24,7 @@ import { createModuleEditor, type RichEditorBundle } from '../ui/rich-editor'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { el, blurOnEnter, createDeferredRebuild, clearClasses, keepRowFocus, neighbourRowId, rovingRows } from '../ui/dom'
+import { dragAutoscroll } from '../ui/drag-autoscroll'
 import { isMoveChord, isPlainKey } from '../ui/hotkeys'
 import { emptyState } from '../ui/empty-state'
 import { paintSelection, clampMove, jumpIndex, selectableRowProps } from '../ui/select-list'
@@ -1582,9 +1583,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   }
   container.addEventListener(NEW_ITEM_EVENT, onNewItem)
   const disposeArrowFallback = installArrowFallbackFocus(ctx, boardEl, '.tt-kanban-card', ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'])
+  // A card held at the board's edge scrolls it (the wheel is silent during a native drag).
+  const unbindDragScroll = dragAutoscroll(boardEl)
 
   return () => {
     unsubscribe()
+    unbindDragScroll()
     closeOpenCard?.()  // clean-close an open card modal (flush + remove overlay) before its host renderer goes
     disposeOpenBundle()
     container.removeEventListener(SEARCH_FOCUS_ITEM_EVENT, onSearchFocusItem)

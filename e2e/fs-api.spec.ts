@@ -213,14 +213,20 @@ test.describe('real File System Access API (served over http for OPFS)', () => {
     await expect(pane0.locator('.tt-pane-title-text')).toHaveText(daily ?? '')
     expect(page.url()).toContain('app.html')
 
-    // F5 jumps pane 0 to the Tasks module (5th row) instead of falling
-    // through to the browser's own page-refresh default — the more severe
-    // version of this bug, since nothing here has been saved and a real
-    // reload would drop this whole in-memory session back to the start
-    // screen. Last in the test since it moves pane 0 off the daily editor.
+    // F5 is the Members module, which pane 1 already shows, so it hands focus
+    // there rather than falling through to the browser's own page-refresh
+    // default — the more severe version of this bug, since nothing here has
+    // been saved and a real reload would drop this whole in-memory session
+    // back to the start screen.
     await editor.click()
     await page.keyboard.press('F5')
-    await expect(pane0.locator('.tt-pane-title-text')).not.toHaveText(daily ?? '')
+    await expect(pane1).toHaveClass(/focused/)
     await expect(page.locator('.tt-shell')).toBeVisible()
+
+    // F6 (Tasks, and the browser's address-bar key) navigates pane 0 itself.
+    // Last in the test since it moves pane 0 off the notes editor.
+    await editor.click()
+    await page.keyboard.press('F6')
+    await expect(pane0.locator('.tt-pane-title-text')).not.toHaveText(daily ?? '')
   })
 })

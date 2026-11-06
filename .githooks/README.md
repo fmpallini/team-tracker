@@ -35,7 +35,7 @@ to the checked-out branch against `origin/dev`.
 | Tests (`vitest run`) | Yes | |
 | Test coverage sanity | Yes (new files only) | dev pushes only — see below |
 | Changelog entry | No | dev pushes only — warns if `package.json` version changed vs remote `dev` with no matching `## [x.y.z]` in `CHANGELOG.md`, and nags (also non-blocking) when that entry is wordy — more than 6 bullets or a line over 200 chars; CI hard-fails the missing-entry check on the `dev → main` PR |
-| AI: Simplify / Security review / Bug hunt / Test Coverage | Yes (HIGH only) | opt-in (`ENABLE_AI=1`), dev pushes only, requires `claude` CLI — see [AI gates](#ai-gates) |
+| Remote dev is an ancestor | Yes | dev pushes only — fails fast with `git pull --rebase` advice when `origin/dev` has commits you lack (typically the release sync) |
 
 ### Test coverage sanity
 
@@ -50,47 +50,11 @@ to the commits this push lands on `dev` (remote `dev` tip → pushed commit):
   touched in the same push only gets a **warning** — not every edit needs a new
   assertion, and this gate can't tell the difference.
 
-Whether an existing test actually exercises the *new* behavior (as opposed to
-merely existing) is a judgment call this gate can't make — that's what the AI
-Test Coverage gate below is for.
-
-The e2e suite runs in CI (see top of this file), not as a pre-push gate — and
-*whether a given change needed a new/updated e2e spec* is still judgment-based,
-folded into the AI Test Coverage gate instead of a hard rule.
-
-## AI gates
-
-Run only when pushing to `dev` — that's the branch that now takes direct
-commits with no PR in front of them, so it's the one spot an AI second look
-at the diff earns its keep. Pushes to any other branch skip this phase
-entirely; `main` only ever changes via a reviewed PR anyway.
-
-They're opt-in, off by default — every push skips them unless you ask for
-them:
-
-```bash
-ENABLE_AI=1 git push
-```
-
-The prefix must be on `git push` itself — `ENABLE_AI=1 git commit && git push` only
-sets it for the commit, so the push wouldn't run the AI gates anyway. They're
-also skipped automatically if the `claude` CLI isn't installed, even with
-`ENABLE_AI=1`.
-
-When an AI gate finds a HIGH-severity issue it blocks the push and launches
-`claude` interactively to fix it; review the changes, commit, then push again.
-MEDIUM/LOW findings are printed but never block.
-
-Each gate's prompt — including the Security gate's extra weight on
-`crypto.ts`/`store.ts`/`fs.ts` and the Test Coverage gate's instruction to
-open the actual `test/*.test.ts` rather than just confirm it was touched —
-lives inline in `pre-push`; read it there.
+The e2e suite runs in CI (see top of this file), not as a pre-push gate.
 
 ## Requirements
 
 - Node.js + npm
-- `claude` CLI installed and authenticated (AI gates only — skipped
-  gracefully if absent)
 
 ## Bypass
 

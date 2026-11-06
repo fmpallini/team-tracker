@@ -8,7 +8,8 @@ const paneTitle = (page: Page, idx: 0 | 1 = 0): ReturnType<Page['locator']> =>
   page.locator('.tt-pane-title-text').nth(idx)
 
 test('star a pane, switch team, jump back from the fast switch, then remove the favorite with ✕', async ({ page }) => {
-  const doc = buildDoc('M', { kind: 'general' })
+  // Starts on Tasks: a team opened for the first time lands on General notes, so that page can't tell the two teams apart.
+  const doc = buildDoc('M', { kind: 'actions' })
   doc.teams.push(createEmptyTeam('team-1', 'Second team', '🧪', 'en-US'))
   await openDoc(page, doc)
 
@@ -16,14 +17,14 @@ test('star a pane, switch team, jump back from the fast switch, then remove the 
   await expect(page.locator('.tt-pane-fav-btn').first()).toHaveAttribute('aria-pressed', 'true')
 
   await page.keyboard.press('Alt+2') // switch to the second team
-  await expect(paneTitle(page)).not.toContainText('General notes')
+  await expect(paneTitle(page)).not.toContainText('Tasks')
 
   await page.keyboard.press('Control+Shift+K')
   await expect(page.locator('.tt-palette-heading').first()).toContainText(/favorites/i)
   await expect(page.locator('.tt-palette-group').first().locator('.tt-palette-item')).toHaveCount(1)
   await page.keyboard.press('Enter')
   await expect(page.locator('.tt-palette-overlay')).toHaveCount(0)
-  await expect(paneTitle(page)).toContainText('General notes')
+  await expect(paneTitle(page)).toContainText('Tasks')
 
   await page.keyboard.press('Control+Shift+K')
   await page.locator('.tt-palette-remove').click()

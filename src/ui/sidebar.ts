@@ -482,12 +482,12 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
         // This pane was showing the deleted team (or had nothing open):
         // land it on the newly active team's own most recent Loc in *this*
         // pane's history — i.e. the module it last had open for that team —
-        // falling back to today's daily notes if this pane never had that
+        // falling back to the general notes if this pane never had that
         // team open before.
         if (!nextTeamId) return { loc: null, push: null }
         const lastForNext = lastLocForTeam(pane, nextTeamId)
         if (lastForNext) return { loc: lastForNext, push: null }
-        const fallback: Loc = { teamId: nextTeamId, ref: { kind: 'daily', date: todayIso() } }
+        const fallback: Loc = { teamId: nextTeamId, ref: { kind: 'general' } }
         return { loc: fallback, push: fallback }
       })
 

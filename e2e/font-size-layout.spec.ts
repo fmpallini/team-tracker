@@ -74,7 +74,7 @@ test('SVG labels on the milestone timeline and risk quadrant follow the size set
   await expect(dateLabel).toBeVisible()
   expect(parseFloat(await dateLabel.evaluate((e) => getComputedStyle(e).fontSize))).toBeCloseTo(11 * 1.2, 1)
 
-  await page.keyboard.press('F7')
+  await page.keyboard.press('F8')
   const tick = page.locator('.tt-risk-quadrant-tick').first()
   await expect(tick).toBeVisible()
   expect(parseFloat(await tick.evaluate((e) => getComputedStyle(e).fontSize))).toBeCloseTo(9 * 1.2, 1)
@@ -115,8 +115,8 @@ for (const size of ['M', 'XL'] as const) {
     test(`header never overlaps itself at ${size}, sidebar ${collapsed ? 'collapsed' : 'open'}, at any window width`, async ({ page }) => {
       await openDoc(page, buildDoc(size, { kind: 'general' }, { sidebarCollapsed: collapsed, locale: 'pt-BR' }), { width: 1500, height: 700 })
       // a nav change dirties the doc so the save pill is at its widest
+      await page.keyboard.press('F3')
       await page.keyboard.press('F2')
-      await page.keyboard.press('F1')
       for (let w = 1500; w >= 380; w -= 20) {
         await page.setViewportSize({ width: w, height: 700 })
         await page.waitForTimeout(60)
@@ -130,8 +130,8 @@ for (const size of ['M', 'XL'] as const) {
 for (const [size, width] of [['M', 700], ['XL', 900], ['XL', 400]] as const) {
   test(`compact header (${size}, ${width}px) keeps exactly the save pill, lock and settings`, async ({ page }) => {
     await openDoc(page, buildDoc(size, { kind: 'general' }, { locale: 'pt-BR' }), { width, height: 700 })
+    await page.keyboard.press('F3')
     await page.keyboard.press('F2')
-    await page.keyboard.press('F1')
     await expect(page.locator('.tt-header.tt-header-compact')).toBeVisible()
     const visible = await page.evaluate(() =>
       ['.tt-save-pill', '.tt-btn-close-file', '.tt-btn-settings', '.tt-btn-promo', '.tt-btn-help', '.tt-btn-fullscreen', '.tt-search-input', '.tt-app-name', '.tt-sidebar-toggle', '.tt-header-team-indicator']
@@ -163,8 +163,8 @@ for (const collapsed of [false, true]) {
     })
     await openDoc(page, buildDoc('M', { kind: 'general' }, { sidebarCollapsed: collapsed, locale: 'pt-BR' }), { width: 1500, height: 700 })
     await page.addStyleTag({ content: ':root{--tt-wco-reserve:140px}.tt-header{padding-inline-end:calc(.75rem + 140px)!important}' })
+    await page.keyboard.press('F3')
     await page.keyboard.press('F2')
-    await page.keyboard.press('F1')
     for (let w = 1500; w >= 380; w -= 20) {
       await page.setViewportSize({ width: w, height: 700 })
       // Two frames: the ResizeObserver-driven layout has run once the second one fires.

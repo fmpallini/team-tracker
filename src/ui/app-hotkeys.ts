@@ -18,7 +18,9 @@ export type AppHotkeyAction =
   | { type: 'closeFile' }
   /** Ctrl+Z outside a field, while a delete or move can still be taken back. */
   | { type: 'undoDelete' }
-  /** F1..F7 → pane module index 0..6. */
+  /** F1 → open Help, or close it when it is already open (the caller knows which). */
+  | { type: 'help' }
+  /** F2..F8 → pane module index 0..6. */
   | { type: 'paneModule'; index: number }
   /** Alt+Shift+Left / Alt+Shift+Right → step the focused pane's history. */
   | { type: 'historyStep'; dir: -1 | 1 }
@@ -46,6 +48,10 @@ export type AppHotkeyAction =
   | { type: 'newItem' }
   /** Alt+1..9 → switch to team index 0..8 (only when that team exists). */
   | { type: 'selectTeam'; index: number }
+
+/** F1 is Help; the pane modules take the next keys in pane-menu order, so the first is F2 and the last F8. */
+export const MODULE_FKEY_FIRST = 2
+export const MODULE_FKEY_COUNT = 7
 
 export interface AppHotkeyContext {
   /** `store.doc.teams.length` — bounds Alt+1..9. */
@@ -107,15 +113,20 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
     return outsideFieldsAndModals(e) ? { type: 'undoDelete' } : null
   }
 
-  const fKeyMatch = /^F([1-7])$/.exec(e.key)
-  if (fKeyMatch) {
+  const fKeyMatch = /^F(\d)$/.exec(e.key)
+  const fKey = fKeyMatch ? Number(fKeyMatch[1]) : 0
+  if (fKey >= 1 && fKey < MODULE_FKEY_FIRST + MODULE_FKEY_COUNT) {
     // Bare F-keys only: Alt+F4, Shift+F5 and the like are the OS's and the browser's.
     if (e.altKey || e.shiftKey) return null
+    // F1 is claimed even with a modal open, so Help can close itself and the
+    // browser's own help page never opens over the app; the caller decides
+    // whether it opens, closes or does nothing.
+    if (fKey === 1) return e.ctrlKey || e.metaKey ? null : { type: 'help' }
     // navHotkeyAllowed, not hotkeyAllowed: must still fire while editing, or
     // F5/F6/F7 fall through to the browser's refresh / address-bar / caret
     // browsing default.
     if (!navHotkeyAllowed(e)) return null
-    return { type: 'paneModule', index: Number(fKeyMatch[1]) - 1 }
+    return { type: 'paneModule', index: fKey - MODULE_FKEY_FIRST }
   }
 
   if (!e.altKey) return null

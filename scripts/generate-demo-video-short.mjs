@@ -172,13 +172,13 @@ async function collapseToSinglePane(page) {
 
 // One wide pane has room for the module tabs: click one, then the F-keys each tab hints at.
 async function showModuleTabs(page) {
-  await caption(page, 'Module tabs — click, or press F1–F7', 1600)
+  await caption(page, 'Module tabs — click, or press F2–F8', 1600)
   const pane0 = page.locator('.tt-pane[data-pane-idx="0"]')
   await click(page, pane0.locator('button.tt-pane-tab:visible').and(pane0.getByLabel(/Milestones/)).first())
   await pause(page, 1000)
-  await page.keyboard.press('F3')
+  await page.keyboard.press('F4')
   await pause(page, 900)
-  await page.keyboard.press('F5')
+  await page.keyboard.press('F6')
   await pause(page, 900)
   await hideCaption(page)
 }

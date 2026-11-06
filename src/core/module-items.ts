@@ -24,8 +24,8 @@ export const FIXED_MODULE_KEYS: { kind: 'stakeholders' | 'members' | 'actions' |
 
 export function buildModuleItems(team: Team | null, locale: Locale): ModuleItem[] {
   const items: ModuleItem[] = [
-    { label: t(locale, 'module_daily'), ref: { kind: 'daily', date: todayIso() } },
     { label: t(locale, 'module_general_notes'), ref: { kind: 'general' } },
+    { label: t(locale, 'module_daily'), ref: { kind: 'daily', date: todayIso() } },
   ]
   if (team) {
     for (const group of ['stakeholders', 'members'] as const) {

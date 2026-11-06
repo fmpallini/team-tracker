@@ -367,10 +367,10 @@ test('delete with confirmation removes team, reassigns activeTeamId, and prunes 
   expect(store.doc.nav.activeTeamId).toBe('Beta')
   expect(store.doc.nav.panes[0]).toEqual({ history: [locB], index: 0 })
   // Pane 1 only ever had the deleted team (Alpha) open and never had Beta
-  // open in *this* pane before, so it falls back to Beta's daily notes
-  // (today) rather than being left empty.
+  // open in *this* pane before, so it falls back to Beta's general notes
+  // rather than being left empty.
   expect(store.doc.nav.panes[1]).toEqual({
-    history: [{ teamId: 'Beta', ref: { kind: 'daily', date: todayIso() } }],
+    history: [{ teamId: 'Beta', ref: { kind: 'general' } }],
     index: 0,
   })
 })

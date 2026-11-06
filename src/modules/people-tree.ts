@@ -8,6 +8,7 @@ import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx, type ModuleR
 import { openPersonModal } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
 import { el, wheelScrollsHorizontally, clearClasses, keepRowFocus, rovingRows } from '../ui/dom'
+import { dragAutoscroll } from '../ui/drag-autoscroll'
 import { isMoveChord, isPlainKey } from '../ui/hotkeys'
 import { jumpIndex } from '../ui/select-list'
 import { unlinkRefsInTeam } from '../core/refs'
@@ -516,6 +517,8 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     })
     // A wide chart scrolls sideways under the plain wheel, as the kanban board does.
     const unbindWheel = wheelScrollsHorizontally(treeEl)
+    // A person held at the chart's or pane's edge scrolls it (the wheel is silent during a native drag).
+    const unbindDragScroll = dragAutoscroll(treeEl)
     const onNewItem = (): void => openAddModal(null)
     container.addEventListener(NEW_ITEM_EVENT, onNewItem)
 
@@ -531,6 +534,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     return () => {
       unsubscribe()
       unbindWheel()
+      unbindDragScroll()
       disposeArrowFallback()
       container.removeEventListener(NEW_ITEM_EVENT, onNewItem)
     }
