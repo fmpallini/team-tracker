@@ -61,17 +61,20 @@ elif [ "$BRANCH" = "dev" ]; then
   PUSH_FROM=$(git rev-parse --verify -q "origin/dev^{commit}" || true)
 fi
 
-# <remote sha> can name a commit this clone has never fetched (someone else
-# pushed to dev since). git will reject the push as non-fast-forward anyway,
-# but the gates below still run first — use origin/dev rather than failing on
-# an unknown object.
-if [ -n "$PUSH_FROM" ] && ! git cat-file -e "${PUSH_FROM}^{commit}" 2>/dev/null; then
-  PUSH_FROM=$(git rev-parse --verify -q "origin/dev^{commit}" || true)
+# Remote dev must be an ancestor of what is being pushed, or git rejects the
+# push as non-fast-forward. The usual cause is a release: main's merge commit
+# lands on dev through .github/workflows/sync-dev.yml, so this clone is one
+# commit behind. Fail now rather than after lint/typecheck/tests have run.
+# <remote sha> may name a commit this clone never fetched (cat-file fails).
+if [ "$PUSHING_DEV" = "1" ] && [ -n "$PUSH_FROM" ]; then
+  if ! git cat-file -e "${PUSH_FROM}^{commit}" 2>/dev/null      || ! git merge-base --is-ancestor "$PUSH_FROM" "$PUSH_TO"; then
+    gate_fail "Remote dev" "origin/dev has commits this branch lacks (a release sync, or another machine). Run 'git pull --rebase', then push again"
+  fi
 fi
 
 # Changed files between the remote's dev and what's being pushed — the commits
 # this push actually lands, not the whole history of dev. Computed once, reused
-# by the test-coverage and changelog gates and the AI gates further down.
+# by the test-coverage and changelog gates.
 PUSH_DIFF_FILES=""
 PUSH_DIFF_ADDED=""
 if [ "$PUSHING_DEV" = "1" ] && [ -n "$PUSH_FROM" ]; then
@@ -133,8 +136,7 @@ fi
 # convention is real and near-100% today, so a new file skipping it is a
 # mistake, not a style choice). Modified-but-not-new files only get a
 # non-blocking nudge, since not every edit needs a new assertion and this
-# hook can't judge that — the AI Test Coverage gate below does the deeper,
-# judgment-based check (including whether e2e/*.spec.ts should be touched).
+# hook can't judge that.
 gate_run "Test coverage sanity"
 if [ "$PUSHING_DEV" != "1" ]; then
   gate_warn "Test coverage sanity — skipped (only enforced on pushes to dev)"
@@ -203,117 +205,5 @@ else
     gate_warn "Changelog entry — package.json ${BASE_VER} -> ${HEAD_VER} but CHANGELOG.md has no '## [${HEAD_VER}]' section yet (CI blocks the dev -> main PR until it does)"
   fi
 fi
-
-# ─── PHASE 2: AI GATES ───────────────────────────────────────────────────────
-# Only for pushes to dev — that's the branch that now takes direct commits
-# with no PR in front of it, so it's the one spot an AI second-opinion on the
-# diff earns its keep before code goes to the shared remote. Pushes to any
-# other branch (main only ever gets updated via a reviewed PR, never a raw
-# push) skip this phase entirely.
-
-if [ "$PUSHING_DEV" != "1" ]; then
-  echo ""
-  echo -e "${BLUE}AI gates: skipped — only run for pushes to dev${NC}"
-  pass_and_exit "All gates passed. Pushing..."
-fi
-
-# AI gates are opt-in, off by default — set ENABLE_AI=1 to run them. Report
-# the resolved state so it's never ambiguous why they ran or not.
-if [ "${ENABLE_AI:-0}" = "1" ]; then
-  AI_STATE="ENABLE_AI=1 -> enabled"
-else
-  AI_STATE="unset/0 -> disabled (default)"
-fi
-echo ""
-echo -e "${BLUE}AI gates: ${AI_STATE}${NC}"
-
-if [ "${ENABLE_AI:-0}" != "1" ]; then
-  gate_warn "AI gates skipped (set ENABLE_AI=1 to run them)"
-  pass_and_exit "All deterministic gates passed. Pushing..."
-fi
-
-if ! command -v claude &>/dev/null; then
-  gate_warn "AI gates skipped — 'claude' CLI not found"
-  pass_and_exit "All deterministic gates passed. Pushing..."
-fi
-
-# Same range as PUSH_DIFF_FILES above, full patch this time.
-DIFF=""
-if [ -n "$PUSH_FROM" ]; then
-  DIFF=$(git diff "$PUSH_FROM" "$PUSH_TO" 2>/dev/null || true)
-fi
-
-if [ -z "$DIFF" ]; then
-  gate_warn "No diff to analyse for AI gates"
-  pass_and_exit "All gates passed. Pushing..."
-fi
-
-# Wall-clock cap per `claude` invocation, so a slow or hung CLI call never
-# blocks `git push` with no way out but Ctrl-C. Override with AI_GATE_TIMEOUT;
-# to skip the AI phase outright, just leave ENABLE_AI unset (the default). 600s
-# because the prompts below tell the model to read repo files to verify its
-# findings before reporting, which adds tool-use turns beyond a one-shot read
-# of the diff.
-AI_GATE_TIMEOUT="${AI_GATE_TIMEOUT:-600}"
-
-# Shared review discipline appended to every AI gate prompt. Two goals:
-# (a) verification — the diff alone lacks call-site context, so the model is
-# told to read the actual files before reporting; (b) severity calibration —
-# a HIGH finding blocks the push and launches an interactive fix session, so
-# a hallucinated HIGH is the most expensive false positive this hook can
-# produce. The exact 'SEVERITY:' line format is load-bearing: the anchored
-# grep in run_ai_gate parses it.
-AI_REVIEW_RULES="You may read repository files to verify your findings — the diff alone lacks call-site context. Before reporting any finding, confirm it against the full current file (and the call sites of any changed function), not just the diff hunk; discard anything the surrounding code already handles. Report only findings you would stake a merge decision on; when unsure, downgrade severity. SEVERITY: HIGH means concretely broken or exploitable and worth blocking a push over — never style preferences, hardening advice, or theoretical concerns. For each finding output a line starting with exactly 'SEVERITY: HIGH — ' or 'SEVERITY: MEDIUM — ' or 'SEVERITY: LOW — ' followed by file:line and a short description. If no issues found, output only: No issues found."
-
-run_ai_gate() {
-  local name="$1"
-  local prompt="$2"
-  gate_run "AI: $name"
-
-  TMPFILE=$(mktemp) || { gate_warn "AI: $name — mktemp failed, skipping"; return; }
-  printf '%s\n\n---DIFF START---\n%s\n---DIFF END---' "$prompt" "$DIFF" > "$TMPFILE"
-
-  OUTPUT=$(timeout "$AI_GATE_TIMEOUT" claude --print < "$TMPFILE" 2>&1) || true
-  rm -f "$TMPFILE"
-
-  # Anchored to line start, matching what the prompt actually asks the model
-  # to emit — an unanchored match lets restated instructions or prose like
-  # "not a SEVERITY: HIGH issue" false-trigger the block/fix path below.
-  if echo "$OUTPUT" | grep -qE "^SEVERITY: HIGH"; then
-    echo -e "${RED}[ HIGH ]${NC} $name found high-severity issues:"
-    echo "$OUTPUT"
-    echo ""
-    echo "Launching Claude to apply fixes interactively..."
-    FIXTMP=$(mktemp) || { gate_fail "AI: $name" "mktemp failed — fix the HIGH findings above manually, then push again"; }
-    printf 'You are a code quality assistant in a git pre-push hook. Fix ALL HIGH severity issues by editing the files directly.\n\nIssues found by %s scan:\n%s\n\n---DIFF---\n%s' "$name" "$OUTPUT" "$DIFF" > "$FIXTMP"
-    timeout "$AI_GATE_TIMEOUT" claude < "$FIXTMP" || true
-    rm -f "$FIXTMP"
-    echo ""
-    echo -e "${RED}Push aborted.${NC} Review Claude's changes, commit them, then push again."
-    exit 1
-  elif echo "$OUTPUT" | grep -qE "^SEVERITY: (MEDIUM|LOW)"; then
-    gate_warn "AI: $name — non-blocking findings:"
-    echo "$OUTPUT"
-  else
-    gate_ok "AI: $name"
-  fi
-}
-
-run_ai_gate "Simplify" \
-  "Review this git diff for dead code, duplicated logic, oversized functions, and unnecessary abstractions. This is Team Tracker, a zero-runtime-dependency single-file web app — flag anything that adds complexity or indirection beyond what the change actually needs. Before flagging duplication or a missing abstraction, check whether the repo already has a helper for it and whether the duplication is real (same behavior, not merely similar shape). Do not flag: code whose shape is mandated by an existing pattern in the same directory, or test-only seams documented as such. $AI_REVIEW_RULES"
-
-run_ai_gate "Security" \
-  "Review this git diff for security issues: injection vulnerabilities, exposed secrets, broken auth or crypto misuse, unsafe DOM sinks (innerHTML/insertAdjacentHTML with untrusted input), OWASP Top 10 violations. Pay particular attention to anything touching src/core/crypto.ts, src/core/store.ts, or src/core/fs.ts — this app's entire value proposition is that a password never leaves the browser and the .tmv file format is sound; a mistake there is the worst-case outcome for this project. Do not report: theoretical denial-of-service, missing rate limiting, memory-safety concerns in browser JavaScript, or generic hardening recommendations without a concrete exploit path — HIGH requires an attacker-reachable path you can describe. $AI_REVIEW_RULES"
-
-run_ai_gate "Bug Hunt" \
-  "Review this git diff for bugs: null dereferences, off-by-one errors, race conditions, broken error handling, unhandled promise rejections, and lifecycle leaks (listeners, timers, or subscriptions that survive a dispose/teardown path). If the diff changes a function's signature or behavior contract, check its call sites for callers the change breaks. $AI_REVIEW_RULES"
-
-# This is the judgment-based complement to the deterministic "Test coverage
-# sanity" gate above: that gate only checks a matching test/*.test.ts *file*
-# exists and was touched; it can't tell whether the touched test actually
-# exercises the new/changed behavior, or whether a change should have gotten
-# e2e coverage too.
-run_ai_gate "Test Coverage" \
-  "Review this git diff for test coverage gaps. Project convention (CLAUDE.md): every src/ module has a matching test/*.test.ts (jsdom, vitest). Separately, e2e/*.spec.ts (Playwright, Chromium-only) covers cross-cutting flows that jsdom can't exercise for real — File System Access/OPFS save-load round trips, cross-tab single-writer locking (Web Locks/BroadcastChannel), external-change conflict handling, password-change round trips (see e2e/smoke.spec.ts, e2e/fs-api.spec.ts, e2e/tab-lock.spec.ts). For each behavior change in the diff: read the relevant test/*.test.ts (read the actual file, not just check it was touched) and confirm it exercises the new/changed code path, not merely pre-existing ones. If the change touches one of the cross-cutting flows above, check whether e2e/*.spec.ts needed an update and got one. Do not flag: pure refactors with behavior already covered by unchanged tests, CSS/i18n-only changes, comment/doc changes, or changes to the test files themselves. $AI_REVIEW_RULES"
 
 pass_and_exit "All gates passed. Pushing..."
