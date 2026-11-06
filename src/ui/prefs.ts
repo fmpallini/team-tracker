@@ -8,6 +8,7 @@ import type { Shell } from './shell'
 import type { Prefs, Template } from '../core/types'
 import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
+import { createTabRail } from './tab-rail'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
 import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam, teamLabel } from '../core/document'
@@ -165,7 +166,6 @@ function scopeLabel(locale: Locale, scope: Template['scope']): string {
 }
 
 export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: PrefsAppCtl, initialTab: TabId = 'general'): void {
-  let activeTab: TabId = initialTab
   function radioField(
     name: string,
     labelKey: MsgKey,
@@ -1008,13 +1008,16 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
   }
 
   // --- Tab strip / dispatch ----------------------------------------------
-  const PANEL_ID = 'tt-prefs-panel'
-  const tabDomId = (id: TabId): string => `tt-prefs-tab-${id}`
-  const contentEl = el('div', { class: 'tt-prefs-content', role: 'tabpanel', id: PANEL_ID })
-  const tabButtons = new Map<TabId, HTMLButtonElement>()
+  const rail = createTabRail<TabId>({
+    idPrefix: 'tt-prefs',
+    tabs: TABS.map(({ id, key }) => ({ id, label: t(locale, key) })),
+    initial: initialTab,
+    onSelect: (_id, changed) => renderActiveTab(changed),
+  })
+  const contentEl = rail.panel
 
   /**
-   * Renders `activeTab` into the shared content area. `resetScroll` is true
+   * Renders the rail's current tab into the shared content area. `resetScroll` is true
    * only when the user switched tabs — every other call is a rebuild of the
    * tab already on screen and
    * must leave the user where they were: emptying the container collapses the
@@ -1022,15 +1025,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
    */
   function renderActiveTab(resetScroll = false): void {
     const scrollTop = contentEl.scrollTop
-    for (const [id, btn] of tabButtons) {
-      const active = id === activeTab
-      btn.classList.toggle('active', active)
-      btn.setAttribute('aria-selected', String(active))
-      // Roving tabindex: Tab enters the strip once, arrow keys move within it.
-      btn.tabIndex = active ? 0 : -1
-    }
-    contentEl.setAttribute('aria-labelledby', tabDomId(activeTab))
-    switch (activeTab) {
+    switch (rail.active) {
       case 'general':
         renderGeneral(contentEl)
         break
@@ -1053,53 +1048,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     contentEl.scrollTop = resetScroll ? 0 : scrollTop
   }
 
-  function onTabKeydown(e: KeyboardEvent): void {
-    const ids = TABS.map((tab) => tab.id)
-    const from = ids.indexOf(activeTab)
-    const focused = ids.find((id) => tabButtons.get(id) === document.activeElement)
-    const at = focused !== undefined ? ids.indexOf(focused) : from
-    let next: number
-    // The strip is a vertical rail, so Up/Down are the natural keys; Left/Right keep working as before.
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (at + 1) % ids.length
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (at - 1 + ids.length) % ids.length
-    else if (e.key === 'Home') next = 0
-    else if (e.key === 'End') next = ids.length - 1
-    else return
-    e.preventDefault()
-    // Arrows only move focus (Enter/Space then activates, as for any button):
-    // activating on focus would rebuild a tab for every tab the user merely passes over.
-    const target = tabButtons.get(ids[next]!)
-    if (!target) return
-    for (const btn of tabButtons.values()) btn.tabIndex = btn === target ? 0 : -1
-    target.focus()
-  }
-
-  const tabStrip = el(
-    'div',
-    { class: 'tt-prefs-tabs', role: 'tablist', 'aria-orientation': 'vertical', onkeydown: (e: Event) => onTabKeydown(e as KeyboardEvent) },
-    ...TABS.map(({ id, key }) => {
-      const btn = el(
-        'button',
-        {
-          class: 'tt-btn tt-prefs-tab-btn',
-          type: 'button',
-          role: 'tab',
-          id: tabDomId(id),
-          'aria-controls': PANEL_ID,
-          onclick: () => {
-            const changed = activeTab !== id
-            activeTab = id
-            renderActiveTab(changed)
-          },
-        },
-        t(locale, key)
-      )
-      tabButtons.set(id, btn)
-      return btn
-    })
-  )
-
-  const dialogBody = el('div', { class: 'tt-prefs-dialog' }, tabStrip, contentEl)
+  const dialogBody = el('div', { class: 'tt-prefs-dialog' }, rail.tabs, contentEl)
 
   // These prefs can also change from outside the dialog (Ctrl+wheel steps the text size), so their radios follow the store rather than only their own clicks.
   const RADIO_PREFS: readonly [string, 'fontSize' | 'theme' | 'palette' | 'font'][] = [
@@ -1132,5 +1081,5 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
   renderActiveTab()
   // The close mark comes first in the DOM, so the dialog's default initial focus would land on it.
-  tabButtons.get(activeTab)?.focus()
+  rail.focusActive()
 }

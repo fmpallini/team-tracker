@@ -1,7 +1,7 @@
 // src/ui/app-commands.ts — what the fast switch can do besides go somewhere:
-// the app's actions that have no hotkey of their own (F1 is a module, so Help
-// and Settings have none) plus "add" for each list module. The list is data;
-// main.ts wires each action to the real thing.
+// the app's actions that have no hotkey of their own (Settings has none) plus
+// "add" for each list module. The list is data; main.ts wires each action to
+// the real thing.
 import { t, type Locale } from '../core/i18n'
 import type { ModuleRef } from '../core/types'
 import type { IconName } from './icons'

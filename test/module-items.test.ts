@@ -22,11 +22,11 @@ test('buildModuleItems includes one entry per action item/milestone/risk, after 
   expect(actionItemIdx).toBeGreaterThan(actionsBoardIdx)
 })
 
-test('buildModuleItems with no team includes the daily-notes entry, the general-notes entry, and all 5 whole-board entries, but no per-item entries', () => {
+test('buildModuleItems with no team includes the general-notes entry, the daily-notes entry, and all 5 whole-board entries, but no per-item entries', () => {
   const items = buildModuleItems(null, 'en-US')
   expect(items).toEqual([
-    { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
     { label: 'General notes', ref: { kind: 'general' } },
+    { label: expect.any(String), ref: { kind: 'daily', date: expect.any(String) } },
     { label: 'Stakeholders', ref: { kind: 'stakeholders' } },
     { label: 'Members', ref: { kind: 'members' } },
     { label: 'Tasks', ref: { kind: 'actions' } },
@@ -35,15 +35,15 @@ test('buildModuleItems with no team includes the daily-notes entry, the general-
   ])
 })
 
-test('buildModuleItems places the general-notes entry immediately after daily, before any per-person entries', () => {
+test('buildModuleItems places the daily-notes entry immediately after general, before any per-person entries', () => {
   const team: Team = {
     id: 'T1', name: 'Team 1', emoji: '🚀',
     stakeholders: [{ id: 'stk-1', name: 'Carla', role: '', parentId: null, order: 0, notes: '' }],
     members: [], actionItems: [], milestones: [], risks: [], dailyNotes: {},
   }
   const items = buildModuleItems(team, 'en-US')
-  expect(items[0]!.ref.kind).toBe('daily')
-  expect(items[1]!.ref).toEqual({ kind: 'general' })
+  expect(items[0]!.ref).toEqual({ kind: 'general' })
+  expect(items[1]!.ref.kind).toBe('daily')
 })
 
 test('buildModuleItems labels are plain titles — the UI draws the module icon from ref.kind', () => {
@@ -54,7 +54,8 @@ test('buildModuleItems labels are plain titles — the UI draws the module icon 
   }
   const items = buildModuleItems(team, 'en-US')
 
-  expect(items[0]!.label).toBe('Daily notes')
+  expect(items[0]!.label).toBe('General notes')
+  expect(items[1]!.label).toBe('Daily notes')
   expect(items).toContainEqual({ label: 'Carla', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } })
 })
 

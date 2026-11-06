@@ -2,7 +2,7 @@ import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
-import { todayIso, t } from '../src/core/i18n'
+import { t } from '../src/core/i18n'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
 import type { Loc } from '../src/core/types'
@@ -52,14 +52,14 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-test('first open of a team lands in split: daily today left, members right', () => {
+test('first open of a team lands in split: general notes left, members right', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   openTeamDefaultLayout(pm, store, 'T1')
   expect(store.doc.nav.split).toBe(true)
   const left = store.doc.nav.panes[0].history.at(-1)!
   const right = store.doc.nav.panes[1].history.at(-1)!
-  expect(left.ref).toEqual({ kind: 'daily', date: todayIso() })
+  expect(left.ref).toEqual({ kind: 'general' })
   expect(right.ref).toEqual({ kind: 'members' })
 })
 
@@ -604,8 +604,8 @@ test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board mo
   const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pane-idx="0"] .tt-pane-menu-item'))
 
   expect(items.map((b) => b.querySelector('.tt-pane-menu-label')?.textContent)).toEqual([
-    `${t('en-US', 'module_daily')}`,
     `${t('en-US', 'module_general_notes')}`,
+    `${t('en-US', 'module_daily')}`,
     `${t('en-US', 'module_stakeholders')}`,
     `${t('en-US', 'module_members')}`,
     `${t('en-US', 'module_actions')}`,
@@ -614,7 +614,7 @@ test('pane module dropdown is a flat, icon-prefixed list of the 7 whole-board mo
   ])
 })
 
-test('pane module dropdown always shows an F1..F7 hotkey hint per row, in order', () => {
+test('pane module dropdown always shows an F2..F8 hotkey hint per row, in order (F1 is Help)', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   store.update((d) => { d.nav.activeTeamId = 'T1' })
@@ -623,7 +623,7 @@ test('pane module dropdown always shows an F1..F7 hotkey hint per row, in order'
   paneBtn(0, 'tt-pane-modules-btn').click()
   const hints = Array.from(document.querySelectorAll<HTMLElement>('[data-pane-idx="0"] .tt-pane-menu-hotkey'))
 
-  expect(hints.map((h) => h.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
+  expect(hints.map((h) => h.textContent)).toEqual(['F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8'])
 })
 
 describe('module tabs (CSS picks tabs or the dropdown by pane width; both are always in the bar)', () => {
@@ -639,13 +639,13 @@ describe('module tabs (CSS picks tabs or the dropdown by pane width; both are al
     const { pm } = withTeam()
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
     expect(tabs(0).map((b) => b.getAttribute('aria-label'))).toEqual([
-      t('en-US', 'module_daily'), t('en-US', 'module_general_notes'), t('en-US', 'module_stakeholders'), t('en-US', 'module_members'),
+      t('en-US', 'module_general_notes'), t('en-US', 'module_daily'), t('en-US', 'module_stakeholders'), t('en-US', 'module_members'),
       t('en-US', 'module_actions'), t('en-US', 'module_milestones'), t('en-US', 'module_risks'),
     ])
-    expect(tabs(0).map((b) => b.title.match(/\(F\d\)$/)?.[0])).toEqual(['(F1)', '(F2)', '(F3)', '(F4)', '(F5)', '(F6)', '(F7)'])
+    expect(tabs(0).map((b) => b.title.match(/\(F\d\)$/)?.[0])).toEqual(['(F2)', '(F3)', '(F4)', '(F5)', '(F6)', '(F7)', '(F8)'])
     expect(tabs(0).map((b) => b.getAttribute('aria-current'))).toEqual([null, null, null, null, 'true', null, null])
-    expect(tabs(0).map((b) => b.querySelector('.tt-pane-tab-key')?.textContent)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'])
-    expect(tabs(0)[4]!.getAttribute('aria-keyshortcuts')).toBe('F5')
+    expect(tabs(0).map((b) => b.querySelector('.tt-pane-tab-key')?.textContent)).toEqual(['F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8'])
+    expect(tabs(0)[4]!.getAttribute('aria-keyshortcuts')).toBe('F6')
   })
 
   test('clicking a tab opens that module in its own pane', () => {
@@ -659,9 +659,9 @@ describe('module tabs (CSS picks tabs or the dropdown by pane width; both are al
   test('the current daily tab carries the full title (with the date)', () => {
     const { pm } = withTeam()
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
-    const cur = tabs(0)[0]!
+    const cur = tabs(0)[1]!
     expect(cur.querySelector('.tt-pane-tab-label')!.textContent).toContain('07/01/2026')
-    expect(tabs(0)[1]!.querySelector('.tt-pane-tab-label')!.textContent).toBe(t('en-US', 'module_general_notes'))
+    expect(tabs(0)[0]!.querySelector('.tt-pane-tab-label')!.textContent).toBe(t('en-US', 'module_general_notes'))
   })
 
   test('a person pane gets its own current tab right after its module, which stays marked as the trail', () => {
@@ -711,7 +711,7 @@ describe('module tabs (CSS picks tabs or the dropdown by pane width; both are al
     const { pm } = withTeam()
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-01' } })
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'daily', date: '2026-07-09' } }, { flashTitle: true })
-    expect(tabs(0)[0]!.querySelector('.tt-pane-tab-label')!.classList.contains('tt-pane-title-flash')).toBe(true)
+    expect(tabs(0)[1]!.querySelector('.tt-pane-tab-label')!.classList.contains('tt-pane-title-flash')).toBe(true)
   })
 })
 
@@ -724,17 +724,17 @@ test('ArrowDown/ArrowUp move the highlighted pane-menu row, clamped at both ends
   paneBtn(0, 'tt-pane-modules-btn').click()
   const selectedLabel = () => document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item.selected .tt-pane-menu-label')?.textContent
 
-  expect(selectedLabel()).toBe(`${t('en-US', 'module_daily')}`)
-
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   expect(selectedLabel()).toBe(`${t('en-US', 'module_general_notes')}`)
 
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   expect(selectedLabel()).toBe(`${t('en-US', 'module_daily')}`)
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_general_notes')}`)
 
   // Clamped at the top: one more ArrowUp does nothing.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
-  expect(selectedLabel()).toBe(`${t('en-US', 'module_daily')}`)
+  expect(selectedLabel()).toBe(`${t('en-US', 'module_general_notes')}`)
 
   // Walk to the bottom (6 more ArrowDowns reaches Risks, the 7th row) and confirm clamping there too.
   for (let i = 0; i < 6; i++) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
@@ -761,11 +761,11 @@ test('Enter commits the highlighted pane-menu row and closes the menu', () => {
   pm.renderAll()
 
   paneBtn(0, 'tt-pane-modules-btn').click()
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) // -> General notes
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) // -> Daily notes
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
 
   expect(document.querySelector('.tt-pane-menu')).toBeNull()
-  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('general')
+  expect(currentLoc(store.doc.nav.panes[0])?.ref.kind).toBe('daily')
 })
 
 test('Enter/Arrow on the pane menu do not act while a modal is open (e.g. an async save-conflict error appearing over it)', () => {
@@ -1151,7 +1151,7 @@ test('module title/modules button are merged into one trigger: shows current mod
 
   const after = paneBtn(0, 'tt-pane-modules-btn')
   expect(after.disabled).toBe(false)
-  expect(after.title).toBe(`${t('en-US', 'pane_modules_title')} (F1–F7)`)
+  expect(after.title).toBe(`${t('en-US', 'pane_modules_title')} (F2–F8)`)
   expect(after.textContent).toContain(t('en-US', 'module_risks'))
   expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
 })
@@ -1675,8 +1675,8 @@ describe('pane module menu: current-module check, typeahead, quick-pick', () => 
 
   test('a daily note on any date ticks the Daily row', () => {
     openMenuOn('daily')
-    const first = document.querySelector('[data-pane-idx="0"] .tt-pane-menu-item .tt-pane-menu-check')
-    expect(first?.textContent).toBe('✓')
+    const ticked = Array.from(document.querySelectorAll('[data-pane-idx="0"] .tt-pane-menu-check')).map((n) => n.textContent)
+    expect(ticked).toEqual(['', '✓', '', '', '', '', ''])
   })
 
   test('the other pane\'s module is not marked', () => {
@@ -1696,7 +1696,7 @@ describe('pane module menu: current-module check, typeahead, quick-pick', () => 
     key('End')
     expect(selected()).toBe(`${t('en-US', 'module_risks')}`)
     key('Home')
-    expect(selected()).toBe(`${t('en-US', 'module_daily')}`)
+    expect(selected()).toBe(`${t('en-US', 'module_general_notes')}`)
   })
 
   test('typing a letter jumps to the next row starting with it, cycling on repeats', () => {

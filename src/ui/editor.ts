@@ -6,7 +6,7 @@ import { t } from '../core/i18n'
 import { el, clampToViewport, copyText } from './dom'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
-import { showEditorHelp } from './help'
+import { showHelp } from './help'
 import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
@@ -1331,7 +1331,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * than silently discarding the input. `init.editing` only swaps the title
    * ("Edit link" vs "Insert link"). Kept as a plain promise-returning helper
    * (not wired through EditorHooks) so tests drive it through the real modal
-   * DOM, same as showEditorHelp.
+   * DOM, same as showHelp.
    */
   // A URL typed without a scheme (`google.com`, `www.google.com`) gets
   // `https://` prepended so it resolves as a real link instead of a
@@ -2506,7 +2506,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton(icon('at'), t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
     // Read-only safe: ui/readonly-lock.ts refuses every other toolbar button in a read-only tab.
     toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn), 'tt-editor-btn-readonly-safe'),
-    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showEditorHelp(locale), 'tt-editor-btn-readonly-safe')
+    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showHelp(locale, { tab: 'editor' }), 'tt-editor-btn-readonly-safe')
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl, imageInput)

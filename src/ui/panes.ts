@@ -14,6 +14,7 @@ import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { toast } from './modal'
 import { showContextMenu, type ContextMenuItem } from './context-menu'
 import { blockedByModal } from './hotkeys'
+import { MODULE_FKEY_FIRST } from './app-hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
 import { icon, kindIcon, iconButton } from './icons'
@@ -113,8 +114,8 @@ type PaneMenuRow = {
 /** The pane bar's module menu: whole-board entries only, no people, no per-item cards — see buildModuleItems (core/module-items.ts) for the fuller Ctrl+Shift+K equivalent. */
 function paneMenuItems(): PaneMenuRow[] {
   return [
-    { kind: 'daily', ref: { kind: 'daily', date: todayIso() }, labelKey: 'module_daily' },
     { kind: 'general', ref: { kind: 'general' }, labelKey: 'module_general_notes' },
+    { kind: 'daily', ref: { kind: 'daily', date: todayIso() }, labelKey: 'module_daily' },
     ...FIXED_MODULE_KEYS.map(({ kind, key }): PaneMenuRow => ({ kind, ref: { kind }, labelKey: key })),
   ]
 }
@@ -352,13 +353,16 @@ export function requestNewItem(paneIdx: 0 | 1): void {
 /** Where a pane's focus lands with nothing remembered: what each module focuses on mount. */
 const PANE_DEFAULT_FOCUS = '.editor, [data-item-id][tabindex="0"]'
 
+/** The F-key hint of pane-menu row `i`: F1 is Help, so the rows start at F2 (app-hotkeys.ts routes the same keys). */
+const moduleFKey = (i: number): string => `F${i + MODULE_FKEY_FIRST}`
+
 /**
- * F1..F7 global hotkey handler (main.ts): jumps the focused pane straight to
+ * F2..F8 global hotkey handler (main.ts): jumps the focused pane straight to
  * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
  * matching the "F<n>" hint each row shows in the pane's module dropdown.
  * No-op with no active team or an out-of-range index (index is `e.key`'s
- * digit minus one, so always 0-6 in practice, but stay defensive since a
- * caller could pass anything).
+ * digit minus MODULE_FKEY_FIRST, so always 0-6 in practice, but stay defensive
+ * since a caller could pass anything).
  */
 export function openPaneModuleByIndex(pm: PaneManager, store: Store, index: number): void {
   const teamId = store.doc.nav.activeTeamId
@@ -371,10 +375,10 @@ export function teamHasHistory(store: Store, teamId: string): boolean {
   return store.doc.nav.panes.some((p) => p.history.some((loc) => loc.teamId === teamId))
 }
 
-/** Task 5.6: first-ever open of a team lands in a split view — daily today on the left, members on the right — instead of the last-used single-pane layout. */
+/** Task 5.6: first-ever open of a team lands in a split view — general notes on the left, members on the right — instead of the last-used single-pane layout. */
 export function openTeamDefaultLayout(pm: PaneManager, store: Store, teamId: string): void {
   store.updateNav((d) => { d.nav.split = true; d.nav.focusedPane = 0; d.nav.teamSplit[teamId] = true })
-  pm.openBothPanes({ teamId, ref: { kind: 'daily', date: todayIso() } }, { teamId, ref: { kind: 'members' } }, 0)
+  pm.openBothPanes({ teamId, ref: { kind: 'general' } }, { teamId, ref: { kind: 'members' } }, 0)
 }
 
 /**
@@ -408,10 +412,10 @@ export function restoreTeamLayout(pm: PaneManager, store: Store, teamId: string)
   // exists for live user actions, not this automated per-pane restore —
   // without it, the write for whichever pane runs second is silently
   // dropped whenever the two remembered Locs happen to share a module kind.
-  const todayLoc = (): Loc => ({ teamId, ref: { kind: 'daily', date: todayIso() } })
+  const landingLoc = (): Loc => ({ teamId, ref: { kind: 'general' } })
   const pane0Last = lastLocForTeam(store.doc.nav.panes[0], teamId)
   const pane1Last = lastLocForTeam(store.doc.nav.panes[1], teamId)
-  const target0 = pane0Last ?? todayLoc()
+  const target0 = pane0Last ?? landingLoc()
   let target1 = pane1Last ?? { teamId, ref: { kind: 'members' } }
   // Each pane's remembered Loc for this team is picked from its own
   // independent history and can coincidentally land on the same module kind
@@ -1036,7 +1040,7 @@ ${t(lc, 'pane_history_hint')}`
         el('span', { class: 'tt-pane-menu-check' }, row.kind === curKind ? '✓' : ''),
         kindIcon(row.kind),
         el('span', { class: 'tt-pane-menu-label' }, t(lc, row.labelKey)),
-        el('span', { class: 'tt-pane-menu-hotkey' }, `F${i + 1}`)
+        el('span', { class: 'tt-pane-menu-hotkey' }, moduleFKey(i))
       )
     )
 
@@ -1120,9 +1124,9 @@ ${t(lc, 'pane_history_hint')}`
         {
           type: 'button',
           class: 'tt-pane-tab' + (active ? ' active' : '') + (row.kind === parentKind ? ' trail' : ''),
-          title: `${label} (F${i + 1})`,
+          title: `${label} (${moduleFKey(i)})`,
           'aria-label': text,
-          'aria-keyshortcuts': `F${i + 1}`,
+          'aria-keyshortcuts': moduleFKey(i),
           ...(active ? { 'aria-current': 'true' } : {}),
           tabindex: row.kind === focusKind || (!hasFocus && i === 0) ? '0' : '-1',
           disabled: teamId === null,
@@ -1137,7 +1141,7 @@ ${t(lc, 'pane_history_hint')}`
         },
         kindIcon(row.kind),
         labelEl(text, active && flashTitle),
-        el('span', { class: 'tt-pane-tab-key', 'aria-hidden': 'true' }, `F${i + 1}`)
+        el('span', { class: 'tt-pane-tab-key', 'aria-hidden': 'true' }, moduleFKey(i))
       )
     })
     if (cur && parentKind !== null) {
@@ -1217,7 +1221,7 @@ ${t(lc, 'pane_history_hint')}`
       {
         class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
-        title: teamId ? `${t(lc, 'pane_modules_title')} (F1–F${paneMenuItems().length})` : t(lc, 'pane_no_team'),
+        title: teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },

@@ -144,7 +144,7 @@ test.describe('rich-text editor — real-browser paste, autoformat, undo', () =>
 
     // Away to another module and back: the note is rebuilt from what was saved.
     const pane = page.locator('.tt-pane[data-pane-idx="0"]')
-    for (const label of [/Members/i, /Daily/i]) {
+    for (const label of [/Members/i, /General/i]) {
       await openModule(pane, label)
     }
     const reopened = page.locator('.editor').first()

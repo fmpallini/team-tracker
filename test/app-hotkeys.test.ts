@@ -70,25 +70,44 @@ describe('Ctrl+Alt+F (retired favorites hotkey)', () => {
   })
 })
 
-describe('F-keys → pane module jump', () => {
+describe('F1 → Help', () => {
+  test('a bare F1 is Help', () => {
+    expect(resolve({ key: 'F1' })).toEqual({ type: 'help' })
+  })
+
+  test('it is claimed behind a modal too, so Help can close itself and the browser\'s own help never opens', () => {
+    document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
+    expect(resolve({ key: 'F1' })).toEqual({ type: 'help' })
+  })
+
+  test('with a modifier it is left alone', () => {
+    expect(resolve({ key: 'F1', altKey: true })).toBeNull()
+    expect(resolve({ key: 'F1', shiftKey: true })).toBeNull()
+    expect(resolve({ key: 'F1', ctrlKey: true })).toBeNull()
+    expect(resolve({ key: 'F1', metaKey: true })).toBeNull()
+  })
+})
+
+describe('F2..F8 → pane module jump', () => {
   test.each([
-    ['F1', 0],
-    ['F2', 1],
-    ['F7', 6],
+    ['F2', 0],
+    ['F3', 1],
+    ['F8', 6],
   ])('%s → paneModule %i', (k, index) => {
     expect(resolve({ key: k })).toEqual({ type: 'paneModule', index })
   })
 
-  test('F8 and above are not claimed', () => {
-    expect(resolve({ key: 'F8' })).toBeNull()
+  test('F9 and above are not claimed', () => {
+    expect(resolve({ key: 'F9' })).toBeNull()
+    expect(resolve({ key: 'F11' })).toBeNull()
   })
 
   test('F-keys fire even with focus in an editor field (navHotkeyAllowed), but not behind a blocking modal', () => {
     // jsdom: navHotkeyAllowed only consults ctrl/meta + blocking modal, not
     // the focused element — the "still fires while editing" property.
-    expect(resolve({ key: 'F3' })).toEqual({ type: 'paneModule', index: 2 })
+    expect(resolve({ key: 'F4' })).toEqual({ type: 'paneModule', index: 2 })
     document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
-    expect(resolve({ key: 'F3' })).toBeNull()
+    expect(resolve({ key: 'F4' })).toBeNull()
   })
 })
 

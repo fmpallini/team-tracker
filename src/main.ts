@@ -51,7 +51,8 @@ import { createConflictFlow } from './core/conflict-flow'
 import { reopenFork } from './core/fork-reopen'
 import { closeAnyContextMenu } from './ui/context-menu'
 import { closeAnyBacklinksPanel } from './ui/backlinks-panel'
-import { showGlobalHelp } from './ui/help'
+import { showHelp, closeHelp } from './ui/help'
+import { blockedByBlockingModal } from './ui/hotkeys'
 import { clearSearchHighlight } from './ui/search-highlight'
 import { flushAllEditors, setEditorsReadOnly } from './ui/editor'
 import { initInstallCapture, promoHeaderButton, refreshPromoHeaderButton } from './ui/promo'
@@ -461,9 +462,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   shell.onSettings(() => {
     openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl)
   })
-  shell.onHelp(() => {
-    showGlobalHelp(store.doc.prefs.locale)
-  })
+  // Help opens on the tab of the module the focused pane shows.
+  const openHelp = (): void => showHelp(store.doc.prefs.locale, { pane: currentLoc(store.doc.nav.panes[store.doc.nav.focusedPane])?.ref.kind })
+  shell.onHelp(openHelp)
   // The image-limit toast's "Show usage" action (ui/image-host.ts) asks for the Data tab, where the usage line lives.
   const openDataPrefs = (): void => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl, 'data')
   document.addEventListener(OPEN_DATA_PREFS_EVENT, openDataPrefs)
@@ -546,7 +547,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   const sidebarHandle = mountSidebar(shell, store, pm, { selectTeam, renderPanes: () => pm.renderAll() })
   const commandActions: AppCommandActions = {
     settings: () => openPrefs(store, shell, store.doc.prefs.locale, prefsAppCtl),
-    help: () => showGlobalHelp(store.doc.prefs.locale),
+    help: openHelp,
     dueDates: () => sidebarHandle.openDuePanel(),
     newTeam: () => document.dispatchEvent(new CustomEvent(ADD_TEAM_REQUEST_EVENT)),
     addItem: (kind) => {
@@ -616,6 +617,10 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       case 'newItem':
         if (navPastModelessCard()) requestNewItem(store.doc.nav.focusedPane)
+        return
+      case 'help':
+        // F1 toggles: it closes Help when open, and leaves any other blocking dialog alone.
+        if (!closeHelp() && !blockedByBlockingModal()) openHelp()
         return
       case 'paneModule':
         if (navPastModelessCard()) openPaneModuleByIndex(pm, store, action.index)
