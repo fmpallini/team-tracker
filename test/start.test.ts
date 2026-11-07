@@ -4,6 +4,7 @@ import type { FileSession } from '../src/core/fs'
 import type { OpenedDocument } from '../src/ui/open-document'
 
 const fsMocks = vi.hoisted(() => ({
+  FilePermissionError: class FilePermissionError extends Error {},
   supportsFsApi: true,
   pickOpen: vi.fn(),
   pickCreate: vi.fn(),
@@ -196,6 +197,42 @@ test('file handling launch: fetchResult resolving null (e.g. picker cancel) is a
 
   expect(onOpen).not.toHaveBeenCalled()
   expect(document.querySelector('input[name="tt-password"]')).toBeNull()
+})
+
+test('a browser without the File System Access API is told which browsers can write the file itself', async () => {
+  fsMocks.supportsFsApi = false
+  showStartScreen('en-US', () => {})
+  await flush()
+  expect(document.querySelector('.tt-start-fallback-notice')?.textContent).toContain('Chrome, Edge')
+})
+
+test('reopen-last: a denied file permission explains how to unblock it and to open manually, instead of doing nothing', async () => {
+  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
+  fsMocks.reopenLast.mockRejectedValue(new fsMocks.FilePermissionError())
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('Reopen last…')
+  await flush()
+
+  const message = document.querySelector('.tt-modal-message')?.textContent ?? ''
+  expect(message).toContain('site settings')
+  expect(message).toContain('installed app')
+  expect(message).toContain('Open file…')
+  expect(onOpen).not.toHaveBeenCalled()
+})
+
+test('file handling launch: a denied file permission shows the same explanation', async () => {
+  const getConsumer = mockLaunchQueue()
+  fsMocks.openFromHandle.mockRejectedValue(new fsMocks.FilePermissionError())
+
+  showStartScreen('pt-BR', () => {})
+  await flush()
+  getConsumer()({ files: [{} as unknown as FileSystemFileHandle] })
+  await flush()
+
+  expect(document.querySelector('.tt-modal-message')?.textContent).toContain('configurações do site')
 })
 
 test('open flow: wrong password loops until correct, then calls onOpen', async () => {
@@ -448,7 +485,7 @@ test('fallback mode (no FS API): open uses hidden file input', async () => {
   showStartScreen('en-US', () => {})
   await flush()
   expect(document.querySelector('.tt-start-fallback-notice')?.textContent).toBe(
-    'This browser cannot write the file by itself. Your work is kept in the browser; use Export file in the header to download a copy.'
+    'This browser cannot write the file by itself (only Chrome, Edge and Brave can). Your work is kept in the browser; use Export file in the header to download a copy.'
   )
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
   expect(fileInput).not.toBeNull()

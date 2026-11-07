@@ -42,10 +42,11 @@ export function showWriteFailedDialog(opts: WriteFailedOptions): Promise<'closed
     let busy = false
 
     /** Runs an async fix; a fix that did not work leaves the dialog up with a note, a working one resolves. */
-    const attempt = (fix: () => Promise<boolean>): void => {
+    const attempt = (fix: () => Promise<boolean>, stillKey: 'write_failed_still' | 'write_failed_still_permission'): void => {
       if (busy) return
       busy = true
       still.hidden = true
+      still.textContent = t(locale, stillKey)
       fix()
         .then((ok) => {
           if (ok) { finish('resolved'); handle.close() } else still.hidden = false
@@ -58,13 +59,18 @@ export function showWriteFailedDialog(opts: WriteFailedOptions): Promise<'closed
     if (opts.allowCloseAnyway !== false) {
       buttons.push({ label: t(locale, opts.copyFailed ? 'write_failed_close_discard' : 'write_failed_close_anyway'), danger: true, left: true, onClick: () => { finish('closed-anyway'); handle.close() } })
     }
+    // Left: the way out. Right, in reading order: the side action (a copy), stay, then the fix — the primary, last.
+    // Re-granting already writes the file once the permission is held, so a separate "Try again" next to it could only
+    // fail again for the same reason; it stays for every failure that has nothing to re-grant.
+    const regrant = opts.reason === 'permission' && opts.canRegrant
     buttons.push(
-      { label: t(locale, 'cancel'), icon: 'close', onClick: () => { finish('cancelled'); handle.close() } },
       { label: t(locale, 'write_failed_download'), onClick: () => opts.onDownload() },
-      { label: t(locale, 'write_failed_retry'), primary: !(opts.reason === 'permission' && opts.canRegrant), onClick: () => attempt(() => opts.onRetry()) },
+      { label: t(locale, 'cancel'), icon: 'close', onClick: () => { finish('cancelled'); handle.close() } },
     )
-    if (opts.reason === 'permission' && opts.canRegrant) {
-      buttons.push({ label: t(locale, 'write_failed_regrant'), primary: true, onClick: () => attempt(() => opts.onRegrant()) })
+    if (regrant) {
+      buttons.push({ label: t(locale, 'write_failed_regrant'), primary: true, onClick: () => attempt(() => opts.onRegrant(), 'write_failed_still_permission') })
+    } else {
+      buttons.push({ label: t(locale, 'write_failed_retry'), primary: true, onClick: () => attempt(() => opts.onRetry(), 'write_failed_still') })
     }
 
     const bodyKey = opts.copyFailed ? 'write_failed_body_store' : opts.reason === 'permission' ? 'write_failed_body_permission' : 'write_failed_body_error'

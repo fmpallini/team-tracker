@@ -14,6 +14,7 @@ import type { FileSession } from '../src/core/fs'
 import type { Doc } from '../src/core/types'
 
 const fsMocks = vi.hoisted(() => ({
+  FilePermissionError: class FilePermissionError extends Error {},
   supportsFsApi: true,
   pickOpen: vi.fn(),
   pickCreate: vi.fn(),
