@@ -68,13 +68,20 @@ your machine. Team Tracker doesn't:
   ([why that matters](#zero-runtime-dependencies)).
 - ⌨️ **Keyboard-first** — `Ctrl+Shift+K` fast switch, `Ctrl+F` /
   `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+Shift+←/→` pane
-  history, split-view panes, and shortcuts for every module. Desktop-only by
-  design: phones and tablets get a notice instead of the app, since mobile
-  browsers lack the File System Access API the open/save flow depends on.
+  history, split-view panes, and shortcuts for every module. Built for desktop
+  Chromium browsers (Chrome, Edge, Brave): phones and tablets get a notice
+  instead of the app, since mobile browsers lack the File System Access API
+  the open/save flow depends on.
 - 🎨 **Yours to tune** — 12 color palettes, light/dark/system theme, 7 font
   stacks, adjustable font size, and pt-BR/en-US locales, all in Settings.
 
 ## Getting started
+
+**Requirements:** a desktop computer (Windows, macOS or Linux) with a
+Chromium-based browser such as Chrome, Edge or Brave. That is what the app is
+built and tested on, and where the `.tmv` file is written silently. Firefox and
+Safari run it in a [degraded mode](#faq) (manual export, no silent file writes).
+Phones and tablets are not supported.
 
 ### Web app (installable)
 

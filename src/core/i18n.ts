@@ -69,7 +69,8 @@ const pt = {
     'Navegadores móveis não têm a File System Access API — o app não conseguiria abrir e salvar seu arquivo .tmv diretamente (cada salvamento viraria um novo download)',
   mobile_block_reason_ux:
     'A interface é feita para teclado e telas grandes — atalhos (Ctrl+Shift+K), visão dividida e painéis densos',
-  mobile_block_hint: 'Abra em um computador (Windows, macOS ou Linux) para usar o app.',
+  mobile_block_hint:
+    'Abra em um computador (Windows, macOS ou Linux) com um navegador baseado em Chromium, como Chrome, Edge ou Brave.',
   start_open_ellipsis: 'Abrir arquivo…',
   start_create_ellipsis: 'Criar novo…',
   start_reopen_ellipsis: 'Reabrir último…',
@@ -771,7 +772,8 @@ const en: Record<MsgKey, string> = {
     "Mobile browsers lack the File System Access API — the app couldn't open and save your .tmv file directly (every save would become a new download)",
   mobile_block_reason_ux:
     'The interface is built for keyboard and large screens — shortcuts (Ctrl+Shift+K), split view, dense panes',
-  mobile_block_hint: 'Open it on a desktop computer (Windows, macOS or Linux) to use the app.',
+  mobile_block_hint:
+    'Open it on a desktop computer (Windows, macOS or Linux) with a Chromium-based browser such as Chrome, Edge or Brave.',
   start_open_ellipsis: 'Open file…',
   start_create_ellipsis: 'Create new…',
   start_reopen_ellipsis: 'Reopen last…',
