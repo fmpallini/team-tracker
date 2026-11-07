@@ -20,7 +20,7 @@ export type HelpTab = 'global' | 'editor' | 'notes' | 'people' | 'tasks' | 'mile
 
 /** Which tab documents a pane showing `kind`. */
 const PANE_TAB: Record<ModuleRef['kind'], HelpTab> = {
-  daily: 'notes', general: 'notes', person: 'notes',
+  daily: 'notes', general: 'editor', person: 'editor',
   stakeholders: 'people', members: 'people',
   actions: 'tasks', milestones: 'milestones', risks: 'risks',
 }
@@ -259,18 +259,18 @@ const TABS: readonly TabDef[] = [
       textSection(ctx, 'help_refs_heading', 'help_refs_text'),
       textSection(ctx, 'help_templates_heading', 'help_templates_text'),
       textSection(ctx, 'help_images_heading', 'help_images_text'),
+      rowsSection(ctx, 'help_sec_leave', [['Esc', 'help_notes_leave']]),
       rowsSection(ctx, 'help_sec_history', historyRows),
     ],
   },
   {
     id: 'notes',
-    label: 'help_tab_notes',
+    label: 'module_daily',
     build: (ctx) => [
       rowsSection(ctx, 'help_sec_days', [
         ['Alt+[ / Alt+] / Alt+T', 'help_global_daily_nav'],
         ['Alt+, / Alt+.', 'help_global_daily_nav_content'],
       ]),
-      rowsSection(ctx, 'help_sec_leave', [['Esc', 'help_notes_leave']]),
       el(
         'div',
         { class: 'tt-help-section' },

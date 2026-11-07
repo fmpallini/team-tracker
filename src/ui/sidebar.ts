@@ -21,6 +21,7 @@ import { attachEmojiPicker } from './emoji-picker'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { openDuePanel } from './due-panel'
 import { revealLoc } from './reveal-loc'
+import { fitText } from './fit-text'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -311,6 +312,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     })
     switcherEl = el('div', { class: 'tt-team-switcher-dropdown' }, switcherListEl)
     document.body.appendChild(switcherEl)
+    fitText(switcherListEl, '.tt-team-name')
     const rect = headerTeamIndicator.getBoundingClientRect()
     switcherEl.style.left = `${rect.left}px`
     switcherEl.style.top = `${rect.bottom + 4}px`
@@ -335,6 +337,11 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
   const contentEl = el('div', { class: 'tt-sidebar-content' })
   const listEl = el('div', { class: 'tt-team-list' })
+  // Names shrink before they ellipsize (fit-text.ts). A row built while the
+  // sidebar was collapsed or not yet attached measured 0, so the list's own
+  // size change — expanding, first layout, a text-size preference — refits it.
+  const fitObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => fitText(listEl, '.tt-team-name'))
+  fitObserver?.observe(listEl)
   const addBtn = el(
     'button',
     {
@@ -712,6 +719,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
       listEl.appendChild(item)
     })
+    fitText(listEl, '.tt-team-name')
   }
 
   function buildTeamForm(initial?: { name: string; emoji: string }): {
@@ -881,6 +889,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       closeTeamSwitcher()
       unsubscribeContent()
       unsubscribeMutate()
+      fitObserver?.disconnect()
       document.removeEventListener(ADD_TEAM_REQUEST_EVENT, onAddTeamRequest)
       stopDayWatch()
     },

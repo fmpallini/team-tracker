@@ -751,7 +751,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-team-item.active { border-left-color: var(--accent); background: var(--selected); --row-bg: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .tt-team-num { color: var(--muted); font-size: .8rem; min-width: 1.4em; text-align: right; }
 .tt-team-emoji { font-size: 1rem; }
-/* Long names wrap to two lines, then ellipsis; anywhere-breaking keeps one
+/* Long names wrap to two lines, then shrink (ui/fit-text.ts sets font-size inline), then ellipsis; anywhere-breaking keeps one
    unbroken word from forcing the row wider than the sidebar. */
 .tt-team-name {
   font-family: var(--font-display); flex: 1; min-width: 0; line-height: 1.25;

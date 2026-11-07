@@ -47,6 +47,18 @@ for (const size of ['XS', 'XL'] as const) {
   })
 }
 
+test('a long team name shrinks before it ellipsizes, and the app-name button becomes "TT" when the name does not fit', async ({ page }) => {
+  await openDoc(page, buildDoc('XL', { kind: 'general' }))
+  const name = page.locator('.tt-team-list .tt-team-name').first()
+  const label = page.locator('.tt-app-name-label')
+  // The fixture's team name needs more than two lines at full size.
+  expect(await name.evaluate((e) => e.style.fontSize)).not.toBe('')
+  await expect(label).toHaveText('TT')
+  // Collapsed, the button's column hugs its label, so the full name fits again.
+  await page.locator('.tt-sidebar-toggle').click()
+  await expect(label).toHaveText('Team Tracker')
+})
+
 // pt-BR: the save pill's longest label is the widest header text, which is what squeezed the search box to an icon.
 test('header search keeps a usable width with the sidebar collapsed and a long team name (XL)', async ({ page }) => {
   await openDoc(page, buildDoc('XL', { kind: 'general' }, { sidebarCollapsed: true, locale: 'pt-BR' }))
