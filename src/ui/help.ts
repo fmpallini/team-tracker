@@ -113,7 +113,7 @@ const listRows = (lc: Locale): Rows => [
   ['Delete', 'help_global_row_delete'],
 ]
 
-const dateRows: Rows = [['↑ / ↓, t, Alt+↓', 'help_global_date_keys']]
+const dateRows: Rows = [['↑ / ↓, t, Alt+C / Alt+↓', 'help_global_date_keys']]
 
 // --- App window ------------------------------------------------------------
 
@@ -270,6 +270,7 @@ const TABS: readonly TabDef[] = [
       rowsSection(ctx, 'help_sec_days', [
         ['Alt+[ / Alt+] / Alt+T', 'help_global_daily_nav'],
         ['Alt+, / Alt+.', 'help_global_daily_nav_content'],
+        ['Alt+C', 'help_global_calendar_toggle'],
       ]),
       el(
         'div',

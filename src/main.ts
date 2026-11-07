@@ -24,7 +24,7 @@ import { t, todayIso } from './core/i18n'
 import { currentLoc } from './core/nav'
 import { addDaysIso } from './core/date'
 import { findTeam, nearestDatedNote } from './core/document'
-import { renderDailyNotes, setDailyCalendarSpaceConstrained } from './modules/daily-notes'
+import { renderDailyNotes, setDailyCalendarSpaceConstrained, toggleDailyCalendar } from './modules/daily-notes'
 import { renderGeneralNotes } from './modules/general-notes'
 import { renderPeopleTree } from './modules/people-tree'
 import { renderPersonNotes } from './modules/person-notes'
@@ -657,6 +657,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         pm.openInPane(idx, { teamId: loc.teamId, ref: { kind: 'daily', date } }, { flashTitle })
         return
       }
+      case 'toggleCalendar':
+        toggleDailyCalendar(store)
+        return
       case 'selectPane':
         if (navPastModelessCard()) pm.switchPane(action.index)
         return

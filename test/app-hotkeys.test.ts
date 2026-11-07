@@ -172,6 +172,13 @@ describe('Alt+[ / Alt+] / Alt+T — daily-note day nav', () => {
   })
 })
 
+describe('Alt+C — show/hide the daily-notes calendar', () => {
+  test('claimed only when the focused pane shows a daily note', () => {
+    expect(resolve({ key: 'c', code: 'KeyC', altKey: true }, { focusedPaneShowsDailyNote: true })).toEqual({ type: 'toggleCalendar' })
+    expect(resolve({ key: 'c', code: 'KeyC', altKey: true }, { focusedPaneShowsDailyNote: false })).toBeNull()
+  })
+})
+
 describe('Alt+, / Alt+. — jump to prev/next day that has a note', () => {
   test('claimed only when the focused pane shows a daily note', () => {
     expect(resolve({ key: ',', code: 'Comma', altKey: true }, { focusedPaneShowsDailyNote: true }))

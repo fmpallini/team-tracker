@@ -262,7 +262,7 @@ describe('Global tab', () => {
   test('keeps module-only keys off the page: rows, board, days and the editor live on their own tabs', () => {
     showHelp('en-US')
     const rows = codes()
-    for (const gone of ['Alt+N', 'Delete', 'Home / End / PgUp / PgDn', 'Alt+[ / Alt+] / Alt+T', '↑ / ↓, t, Alt+↓', 'Esc']) expect(rows).not.toContain(gone)
+    for (const gone of ['Alt+N', 'Delete', 'Home / End / PgUp / PgDn', 'Alt+[ / Alt+] / Alt+T', '↑ / ↓, t, Alt+C / Alt+↓', 'Esc']) expect(rows).not.toContain(gone)
     expect(rows).toContain('Ctrl+Enter')
   })
 
@@ -442,6 +442,7 @@ describe('module tabs', () => {
     showHelp('en-US', { tab: 'notes' })
     expect(codes()).toContain('Alt+[ / Alt+] / Alt+T')
     expect(codes()).toContain('Alt+, / Alt+.')
+    expect(codes()).toContain('Alt+C')
     const link = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-prefs-content button')).find((b) => b.textContent!.includes('Editor tab'))!
     link.click()
     expect(activeTab().textContent).toBe('Editor')

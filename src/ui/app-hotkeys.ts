@@ -38,6 +38,8 @@ export type AppHotkeyAction =
    * stable `e.code` on every layout.
    */
   | { type: 'dayNav'; to: 'prev' | 'next' | 'today' | 'prevWithContent' | 'nextWithContent' }
+  /** Alt+C → show/hide the daily-notes calendar (only while the focused pane shows a daily note). */
+  | { type: 'toggleCalendar' }
   /** Alt+Left / Alt+Right → focus pane 0 / pane 1. */
   | { type: 'selectPane'; index: 0 | 1 }
   /** Alt+Up → toggle single/dual pane. */
@@ -161,6 +163,8 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
     if (!ctx.focusedPaneShowsDailyNote) return null
     return { type: 'dayNav', to: dayPrevContent ? 'prevWithContent' : 'nextWithContent' }
   }
+
+  if (matchKey(e, 'c')) return ctx.focusedPaneShowsDailyNote ? { type: 'toggleCalendar' } : null
 
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     return { type: 'selectPane', index: e.key === 'ArrowLeft' ? 0 : 1 }

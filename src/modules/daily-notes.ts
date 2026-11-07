@@ -82,6 +82,17 @@ function applyCalendarCollapsed(entry: CalendarColEntry): void {
   entry.toggleBtn.hidden = calendarSpaceConstrained
 }
 
+/**
+ * Shows/hides the calendar column of every mounted daily pane (nav.calendarCollapsed
+ * is per document, so they all follow). A no-op while the window is too narrow for
+ * the column: nothing is visible to toggle, and the pref must not flip unseen.
+ */
+export function toggleDailyCalendar(store: Store): void {
+  if (calendarSpaceConstrained) return
+  store.updateNav((d) => { d.nav.calendarCollapsed = !d.nav.calendarCollapsed })
+  for (const entry of mountedCalendarCols) if (entry.store === store) applyCalendarCollapsed(entry)
+}
+
 export function setDailyCalendarSpaceConstrained(constrained: boolean): void {
   calendarSpaceConstrained = constrained
   for (const entry of mountedCalendarCols) applyCalendarCollapsed(entry)
@@ -194,11 +205,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
     class: 'tt-daily-calendar-toggle',
     title: t(lc, 'calendar_toggle_title'),
     icon: 'calendar',
-    onclick: () => {
-      const collapsed = !ctx.store.doc.nav.calendarCollapsed
-      ctx.store.updateNav((d) => { d.nav.calendarCollapsed = collapsed })
-      applyCalendarCollapsed(calendarColEntry)
-    },
+    onclick: () => toggleDailyCalendar(ctx.store),
   })
   // Registered for the lifetime of this mount so setDailyCalendarSpaceConstrained()
   // can fold/unfold it as the window crosses the narrow threshold; unregistered
