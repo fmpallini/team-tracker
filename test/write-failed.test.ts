@@ -21,14 +21,21 @@ const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 afterEach(() => { document.body.innerHTML = '' })
 
-test('a lost permission offers re-grant, download, retry, close anyway and cancel', () => {
+test('a lost permission offers close anyway, download, cancel and re-grant — no separate retry, since re-granting already writes', () => {
   void showWriteFailedDialog(opts())
   expect(document.querySelector('.tt-modal-title')?.textContent).toBe(t('en-US', 'write_failed_title'))
   expect(document.querySelector('.tt-modal-message')?.textContent).toBe(t('en-US', 'write_failed_body_permission'))
   expect(labels()).toEqual([
-    t('en-US', 'write_failed_close_anyway'), t('en-US', 'cancel'), t('en-US', 'write_failed_download'),
-    t('en-US', 'write_failed_retry'), t('en-US', 'write_failed_regrant'),
+    t('en-US', 'write_failed_close_anyway'), t('en-US', 'write_failed_download'), t('en-US', 'cancel'),
+    t('en-US', 'write_failed_regrant'),
   ])
+  // The reassurance lives in the body; a button label that long wrapped the whole row.
+  expect(t('en-US', 'write_failed_close_anyway').length).toBeLessThan(20)
+})
+
+test('Try again stays for a permission failure that has nothing to re-grant', () => {
+  void showWriteFailedDialog(opts({ reason: 'permission', canRegrant: false }))
+  expect(labels()).toContain(t('en-US', 'write_failed_retry'))
 })
 
 test('without a document to leave (opened from the pill), there is no close-anyway choice', () => {
@@ -52,7 +59,8 @@ test('re-granting successfully resolves; a refused grant keeps the dialog open a
   click(t('en-US', 'write_failed_regrant'))
   await tick()
   expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
-  expect(document.querySelector('.tt-write-failed-still')?.textContent).toBe(t('en-US', 'write_failed_still'))
+  // A refused grant says where to unblock it, not just that the write failed.
+  expect(document.querySelector('.tt-write-failed-still')?.textContent).toBe(t('en-US', 'write_failed_still_permission'))
   click(t('en-US', 'write_failed_regrant'))
   await expect(p).resolves.toBe('resolved')
   expect(document.querySelector('.tt-modal-overlay')).toBeNull()
@@ -63,7 +71,7 @@ test('retry resolves when the write now works, and keeps the dialog open when it
   const p = showWriteFailedDialog(opts({ reason: 'error', onRetry }))
   click(t('en-US', 'write_failed_retry'))
   await tick()
-  expect(document.querySelector('.tt-write-failed-still')).not.toBeNull()
+  expect(document.querySelector('.tt-write-failed-still')?.textContent).toBe(t('en-US', 'write_failed_still'))
   click(t('en-US', 'write_failed_retry'))
   await expect(p).resolves.toBe('resolved')
 })
@@ -90,7 +98,7 @@ test('Cancel and Escape both keep the document open', async () => {
 test('the text exists in both locales', () => {
   void showWriteFailedDialog(opts({ locale: 'pt-BR', reason: 'error' }))
   expect(document.querySelector('.tt-modal-title')?.textContent).toBe(t('pt-BR', 'write_failed_title'))
-  for (const key of ['write_failed_title', 'write_failed_body_permission', 'write_failed_body_error', 'write_failed_regrant', 'write_failed_download', 'write_failed_retry', 'write_failed_close_anyway', 'write_failed_still', 'close_browser_copy_failed_toast'] as const) {
+  for (const key of ['write_failed_title', 'write_failed_body_permission', 'write_failed_body_error', 'write_failed_regrant', 'write_failed_download', 'write_failed_retry', 'write_failed_close_anyway', 'write_failed_still', 'write_failed_still_permission', 'close_browser_copy_failed_toast'] as const) {
     expect(t('en-US', key)).not.toBe(t('pt-BR', key))
   }
 })

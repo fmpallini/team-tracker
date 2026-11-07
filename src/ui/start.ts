@@ -12,6 +12,7 @@ import {
   downloadFallback,
   openFromHandle,
   peekLastFile,
+  FilePermissionError,
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
@@ -176,7 +177,18 @@ export function showStartScreen(
   // for a password.
   async function openAndDecrypt(fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>): Promise<void> {
     openStarted = true
-    const result = await fetchResult()
+    let result: { session: FileSession; bytes: Uint8Array } | null
+    try {
+      result = await fetchResult()
+    } catch (e) {
+      // A refused grant on a remembered / OS-launched file: say so and point at
+      // the manual open, which always works (its picker is its own gesture).
+      if (e instanceof FilePermissionError) {
+        showErrorModal(locale, t(locale, 'err_file_permission'))
+        return
+      }
+      throw e
+    }
     if (!result) return
     let plain: OpenedDoc | null
     try {

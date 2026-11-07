@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, FilePermissionError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
@@ -115,10 +115,17 @@ test('openFromHandle requests permission when not yet granted, then reads', asyn
   expect(result!.bytes).toEqual(new Uint8Array([7]))
 })
 
-test('openFromHandle returns null when permission is denied', async () => {
+test('openFromHandle throws FilePermissionError when permission is denied, without reading the file', async () => {
   const handle = mockLaunchHandle('denied')
-  const result = await openFromHandle(handle)
-  expect(result).toBeNull()
+  const getFile = vi.spyOn(handle, 'getFile')
+  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(FilePermissionError)
+  expect(getFile).not.toHaveBeenCalled()
+})
+
+test('openFromHandle throws FilePermissionError when the prompt is dismissed without a grant', async () => {
+  const handle = mockLaunchHandle('prompt')
+  ;(handle.requestPermission as ReturnType<typeof vi.fn>).mockResolvedValueOnce('prompt')
+  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(FilePermissionError)
 })
 
 test('openFromHandle persists the handle to lastHandle by default (the File Handling API launch path)', async () => {

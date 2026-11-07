@@ -645,7 +645,7 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--danger) 10%, var(--panel));
   color: var(--danger); font-weight: 600;
 }
-.tt-modal-buttons { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .5rem; }
+.tt-modal-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-editor-link-form { display: flex; flex-direction: column; gap: .75rem; }
 .tt-field { display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; color: var(--muted); }

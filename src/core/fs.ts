@@ -11,6 +11,16 @@ export const supportsFsApi: boolean = typeof window !== 'undefined' && 'showOpen
 export class ExternalChangeError extends Error {}
 
 /**
+ * The browser did not grant read-write access to a remembered or OS-launched
+ * file: blocked in the site / installed-app settings, or "Don't allow" in the
+ * prompt. The two are indistinguishable (both come back as not 'granted'), so
+ * the caller's message has to cover both. Distinct from `null`, which means
+ * "nothing to open" (no stored handle) — without it a refusal looked like a
+ * button that does nothing.
+ */
+export class FilePermissionError extends Error {}
+
+/**
  * Size and SHA-256 of what this session last read from, or wrote to, its file.
  * Lets `writeFile` tell a real external edit from a mere mtime bump (cloud-sync
  * clients and antivirus touch files without changing them): when the mtime
@@ -124,10 +134,10 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
 export async function openFromHandle(
   handle: FileSystemFileHandle,
   persist = true
-): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+): Promise<{ session: FileSession; bytes: Uint8Array }> {
   let permission = await handle.queryPermission({ mode: 'readwrite' })
   if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
-  if (permission !== 'granted') return null
+  if (permission !== 'granted') throw new FilePermissionError()
   const { bytes, lastModified } = await readHandle(handle)
   const session: FileSession = { handle, name: handle.name, lastModified }
   setBaseline(session, bytes)

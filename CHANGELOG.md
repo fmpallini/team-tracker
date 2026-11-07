@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.2] - 2026-11-07
+
+### Changed
+- The "file could not be written" dialog has shorter buttons in a clearer order, and when the browser has blocked file access it says where to unblock it.
+- Phones, tablets and browsers that cannot write the file themselves (Firefox, Safari) are now pointed to Chrome, Edge or Brave on a desktop.
+
+### Fixed
+- "Reopen last" and opening a `.tmv` from the system did nothing when the browser had blocked file access; they now explain how to unblock it and to use Open file… instead.
+
 ## [3.6.1] - 2026-11-05
 
 ### Changed
