@@ -117,7 +117,7 @@ test('the app name button keeps its chevron affordance across a locale switch', 
 describe('tabs', () => {
   test('one tab per module family, Global first, in a vertical tablist', () => {
     showHelp('en-US')
-    expect(tabButtons().map((b) => b.textContent)).toEqual(['Global', 'Editor', 'Notes', 'People', 'Tasks', 'Milestones', 'Risks'])
+    expect(tabButtons().map((b) => b.textContent)).toEqual(['Global', 'Editor', 'Daily notes', 'People', 'Tasks', 'Milestones', 'Risks'])
     expect(document.querySelector('[role="tablist"]')!.getAttribute('aria-orientation')).toBe('vertical')
     expect(document.querySelector('[role="tabpanel"]')).not.toBeNull()
   })
@@ -144,7 +144,7 @@ describe('tabs', () => {
 
   test('every module kind maps to a tab, and an empty pane to Global', () => {
     const expected: Record<string, HelpTab> = {
-      daily: 'notes', general: 'notes', person: 'notes', stakeholders: 'people', members: 'people',
+      daily: 'notes', general: 'editor', person: 'editor', stakeholders: 'people', members: 'people',
       actions: 'tasks', milestones: 'milestones', risks: 'risks',
     }
     for (const [kind, tab] of Object.entries(expected)) {
@@ -262,7 +262,7 @@ describe('Global tab', () => {
   test('keeps module-only keys off the page: rows, board, days and the editor live on their own tabs', () => {
     showHelp('en-US')
     const rows = codes()
-    for (const gone of ['Alt+N', 'Delete', 'Home / End / PgUp / PgDn', 'Alt+[ / Alt+] / Alt+T', '↑ / ↓, t, Alt+↓', 'Esc']) expect(rows).not.toContain(gone)
+    for (const gone of ['Alt+N', 'Delete', 'Home / End / PgUp / PgDn', 'Alt+[ / Alt+] / Alt+T', '↑ / ↓, t, Alt+C / Alt+↓', 'Esc']) expect(rows).not.toContain(gone)
     expect(rows).toContain('Ctrl+Enter')
   })
 
@@ -317,7 +317,7 @@ describe('Editor tab', () => {
 
   test('groups the shortcuts by what they do and puts undo/redo last, not first', () => {
     showHelp('en-US', { tab: 'editor' })
-    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'References (@)', 'Templates (/)', 'Pictures', 'History'])
+    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'References (@)', 'Templates (/)', 'Pictures', 'Leaving the editor', 'History'])
     const shortcuts = codes()
     expect(shortcuts[0]).toBe('Ctrl+B')
     const text = panelText()
@@ -438,10 +438,11 @@ describe('module tabs', () => {
     }
   })
 
-  test('Notes list the day navigation keys and send formatting questions to the Editor tab', () => {
+  test('Daily notes list the day navigation keys and send formatting questions to the Editor tab', () => {
     showHelp('en-US', { tab: 'notes' })
     expect(codes()).toContain('Alt+[ / Alt+] / Alt+T')
     expect(codes()).toContain('Alt+, / Alt+.')
+    expect(codes()).toContain('Alt+C')
     const link = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-prefs-content button')).find((b) => b.textContent!.includes('Editor tab'))!
     link.click()
     expect(activeTab().textContent).toBe('Editor')

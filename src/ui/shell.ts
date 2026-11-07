@@ -6,6 +6,7 @@ import { iconButton, setIconButtonTitle } from './icons'
 import { formatHHMM, formatAge } from '../core/date'
 import type { FileHealth } from '../core/file-snapshot'
 import { syncThemeColor } from '../core/theme-color'
+import { abbreviateWhenClipped } from './fit-text'
 
 /** What the save pill reports. The file's own health, plus two conditions that outrank it. */
 export type PillHealth = FileHealth['kind'] | 'store-error' | 'readonly'
@@ -171,11 +172,24 @@ export function createShell(locale: Locale): Shell {
     '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6L8 10.5L12.5 6"/></svg>'
   const appNameBtn = el(
     'button',
-    { class: 'tt-app-name', type: 'button', title: t(locale, 'app_name_button_title'), onclick: () => appNameHandler?.() },
+    // The label can shrink to "TT" (below), so the button keeps the full name for assistive tech.
+    { class: 'tt-app-name', type: 'button', title: t(locale, 'app_name_button_title'), 'aria-label': t(locale, 'app_name'), onclick: () => appNameHandler?.() },
     appNameLabel,
     appNameChevron
   )
   headerLeft.appendChild(appNameBtn)
+  // Where the slot is too narrow for the name (sidebar open at a large text
+  // size) the label becomes "TT", the app icon's own monogram, instead of an
+  // ellipsized "Team T…". `fittedWidth` is the button's width right after the
+  // last fit: the swap itself can resize the button (collapsed sidebar: its
+  // column hugs the label), and that resize must not trigger a fit that undoes it.
+  let fittedWidth = -1
+  function fitAppName(): void {
+    abbreviateWhenClipped(appNameLabel, t(currentLocale, 'app_name'), 'TT')
+    fittedWidth = appNameBtn.offsetWidth
+  }
+  const appNameObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { if (appNameBtn.offsetWidth !== fittedWidth) fitAppName() })
+  appNameObserver?.observe(appNameBtn)
 
   // An inline SVG (currentColor stroke) rather than a clock emoji: emoji
   // glyph metrics vary by platform font and never sit flush with the pill's
@@ -339,13 +353,14 @@ export function createShell(locale: Locale): Shell {
     document.documentElement.dataset.size = prefs.fontSize
     if (localeChanged) {
       appNameBtn.title = t(currentLocale, 'app_name_button_title')
-      appNameLabel.textContent = t(currentLocale, 'app_name')
+      appNameBtn.setAttribute('aria-label', t(currentLocale, 'app_name'))
       setIconButtonTitle(fullscreenBtn, t(currentLocale, 'fullscreen'))
       setIconButtonTitle(closeFileBtn, t(currentLocale, 'close_file_title'))
       setIconButtonTitle(settingsBtn, t(currentLocale, 'settings'))
       setIconButtonTitle(helpBtn, t(currentLocale, 'help_global_title'))
     }
     if (localeChanged) renderSaveIndicator()
+    fitAppName() // the text size changes the label's width without changing the button's
   }
 
   function setTitle(fileName: string | null): void {
@@ -399,6 +414,7 @@ export function createShell(locale: Locale): Shell {
 
   function dispose(): void {
     mq.removeEventListener('change', onSystemThemeChange)
+    appNameObserver?.disconnect()
     if (ageTimer !== null) clearInterval(ageTimer)
     ageTimer = null
   }

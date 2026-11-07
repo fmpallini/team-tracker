@@ -1,4 +1,4 @@
-import { renderDailyNotes, setDailyCalendarSpaceConstrained } from '../src/modules/daily-notes'
+import { renderDailyNotes, setDailyCalendarSpaceConstrained, toggleDailyCalendar } from '../src/modules/daily-notes'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
@@ -676,6 +676,22 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
 
     expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
     expect(calToggle(container).hidden).toBe(false)
+  })
+
+  test('toggleDailyCalendar flips the preference and the mounted column, and does nothing while constrained', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+
+    toggleDailyCalendar(store)
+    expect(store.doc.nav.calendarCollapsed).toBe(true)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+    toggleDailyCalendar(store)
+    expect(store.doc.nav.calendarCollapsed).toBe(false)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
+
+    setDailyCalendarSpaceConstrained(true)
+    toggleDailyCalendar(store)
+    expect(store.doc.nav.calendarCollapsed).toBe(false)
   })
 
   test('a pane mounted while already constrained comes up folded', () => {

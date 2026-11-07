@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.3] - 2026-11-07
+
+### Added
+- Alt+C shows or hides the calendar on Daily notes, and also opens the calendar on a date field.
+
+### Changed
+- Long team names in the sidebar shrink and wrap onto a third line before they are cut off with an ellipsis, so even longer names show in full.
+- When the sidebar is too narrow for "Team Tracker", the header button shows "TT" instead of a cut-off name.
+- F1 on General notes or a person's notes opens the Editor tab of Help; the day-navigation keys now live only on a Daily notes tab.
+
 ## [3.6.2] - 2026-11-07
 
 ### Changed

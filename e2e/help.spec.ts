@@ -24,7 +24,7 @@ test.describe('help', () => {
     const activeTab = page.locator('.tt-prefs-tab-btn.active')
 
     await page.locator('.tt-btn-help').click()
-    await expect(activeTab).toContainText('Notes')
+    await expect(activeTab).toContainText('Editor')
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
 
@@ -41,7 +41,7 @@ test.describe('help', () => {
 
     await page.keyboard.press('F1')
     await expect(dialog).toBeVisible()
-    await expect(page.locator('.tt-prefs-tab-btn.active')).toContainText('Notes')
+    await expect(page.locator('.tt-prefs-tab-btn.active')).toContainText('Editor')
     await page.keyboard.press('F1')
     await expect(dialog).toHaveCount(0)
 

@@ -327,6 +327,18 @@ describe('keyboard', () => {
     handle.destroy()
   })
 
+  test('Alt+C does the same, whatever character the layout types for the key', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    const reached = vi.fn()
+    document.addEventListener('keydown', reached, { once: true })
+    input(handle).focus()
+    press(input(handle), { key: 'ç', code: 'KeyC', altKey: true })
+    expect((document.activeElement as HTMLElement).dataset.date).toBe('2026-07-20')
+    expect(reached).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', reached)
+    handle.destroy()
+  })
+
   test('picking by keyboard commits and puts focus back on the field', () => {
     const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
     input(handle).focus()

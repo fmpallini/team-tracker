@@ -15,7 +15,7 @@ import { createCalendar, type CalendarMarks } from './calendar'
 import { placePopover } from '../core/popover-place'
 import { isReadOnlyLocked } from './readonly-lock'
 import { el, bindOutsideDismiss, blurOnEnter } from './dom'
-import { isPlainKey } from './hotkeys'
+import { isPlainKey, matchKey } from './hotkeys'
 
 const NO_MARKS: CalendarMarks = { hasNote: () => false, milestones: () => [], actionItems: () => [], backlinks: () => 0 }
 
@@ -212,10 +212,11 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
 
   // Keys on the field. Up/Down step a day and t is today, from what the field
   // holds (today when empty); Alt+Down opens the calendar and goes into it, as
-  // on a native date field. That chord is also the pane swap, so it stops here.
+  // on a native date field, and Alt+C does the same (the key that shows or hides
+  // the daily-notes calendar). Alt+Down is also the pane swap, so both stop here.
   function onFieldKeydown(e: KeyboardEvent): void {
     if (isReadOnlyLocked()) return
-    if (e.key === 'ArrowDown' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowDown' || matchKey(e, 'c'))) {
       e.preventDefault()
       e.stopPropagation()
       if (!popover) openPopover()
