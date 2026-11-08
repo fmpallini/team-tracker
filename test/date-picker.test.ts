@@ -339,6 +339,27 @@ describe('keyboard', () => {
     handle.destroy()
   })
 
+  test('Alt+C closes the calendar again, from the field or from inside it, with focus back on the field', () => {
+    const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
+    input(handle).focus()
+    press(input(handle), { key: 'c', code: 'KeyC', altKey: true })
+    expect(popover()).not.toBeNull()
+    const reached = vi.fn()
+    document.addEventListener('keydown', reached, { once: true })
+    press(document.activeElement!, { key: 'c', code: 'KeyC', altKey: true })
+    expect(popover()).toBeNull()
+    expect(document.activeElement).toBe(input(handle))
+    expect(reached).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', reached)
+
+    // Opened by a click, focus stays on the field: Alt+C there closes it too.
+    input(handle).click()
+    expect(popover()).not.toBeNull()
+    press(input(handle), { key: 'c', code: 'KeyC', altKey: true })
+    expect(popover()).toBeNull()
+    handle.destroy()
+  })
+
   test('picking by keyboard commits and puts focus back on the field', () => {
     const handle = mount({ value: '2026-07-20', locale: 'en-US', onChange: () => {} })
     input(handle).focus()
