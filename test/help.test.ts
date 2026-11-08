@@ -315,9 +315,9 @@ describe('Editor tab', () => {
     expect(text).not.toMatch(/texto|clique/)
   })
 
-  test('groups the shortcuts by what they do and puts undo/redo last, not first', () => {
+  test('groups the shortcuts by what they do, key tables first and the prose sections last, undo/redo after the formatting keys', () => {
     showHelp('en-US', { tab: 'editor' })
-    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'References (@)', 'Templates (/)', 'Pictures', 'Leaving the editor', 'History'])
+    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'Leaving the editor', 'History', 'References (@)', 'Templates (/)', 'Pictures'])
     const shortcuts = codes()
     expect(shortcuts[0]).toBe('Ctrl+B')
     const text = panelText()

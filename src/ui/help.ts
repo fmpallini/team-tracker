@@ -256,11 +256,12 @@ const TABS: readonly TabDef[] = [
       rowsSection(ctx, 'help_sec_blocks', blockRows),
       rowsSection(ctx, 'help_sec_links', linkRows(ctx.locale)),
       rowsSection(ctx, 'help_md_heading', mdRows(ctx.locale)),
+      rowsSection(ctx, 'help_sec_leave', [['Esc', 'help_notes_leave']]),
+      rowsSection(ctx, 'help_sec_history', historyRows),
+      // The key tables come first; the prose sections (what @, / and pasted pictures do) close the tab.
       textSection(ctx, 'help_refs_heading', 'help_refs_text'),
       textSection(ctx, 'help_templates_heading', 'help_templates_text'),
       textSection(ctx, 'help_images_heading', 'help_images_text'),
-      rowsSection(ctx, 'help_sec_leave', [['Esc', 'help_notes_leave']]),
-      rowsSection(ctx, 'help_sec_history', historyRows),
     ],
   },
   {
