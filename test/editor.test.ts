@@ -228,6 +228,27 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('plain text pasted mid-list-item drops its leading/trailing line breaks (they would split the item around it)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- item')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const li = editor.root.querySelector('.editor li')!
+    const range = document.createRange()
+    range.setStart(li.firstChild!, 2)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchPaste(editor, { 'text/plain': '\r\nPASTED\r\n' })
+    dispatchPaste(editor, { 'text/plain': '\na\nb\n\n' })
+
+    const inserts = execSpy.mock.calls.filter((c) => c[0] === 'insertText')
+    expect(inserts).toEqual([['insertText', false, 'PASTED'], ['insertText', false, 'a\nb']])
+    editor.destroy()
+  })
+
   test('inline styles the browser adds while inserting a paste are removed', () => {
     // Chromium puts the surrounding block's font on the inserted spans.
     vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {

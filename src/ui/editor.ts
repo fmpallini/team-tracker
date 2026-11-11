@@ -2210,7 +2210,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     undoStack.checkpoint()
-    document.execCommand('insertText', false, text)
+    // Mid-item, a leading or trailing line break (a copied line usually ends in one) makes
+    // Chromium split the item, so the paste lands alone between two new items.
+    document.execCommand('insertText', false, selectionInListItem() ? text.replace(/^(?:\r?\n)+|(?:\r?\n)+$/g, '') : text)
     scheduleChange()
   }
 
