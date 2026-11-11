@@ -4,6 +4,15 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.4] - 2026-11-11
+
+### Changed
+- The Editor tab of Help lists the key tables first and the prose sections last.
+
+### Fixed
+- Pasting plain text in the middle of a list item no longer splits the item, with blank lines above and below the pasted text.
+- Alt+C closes a date field's calendar again.
+
 ## [3.6.3] - 2026-11-07
 
 ### Added
