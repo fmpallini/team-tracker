@@ -1510,8 +1510,6 @@ body { background: var(--bg); color: var(--fg); }
    card whatever the column width — so let them fall to a second line instead
    of clipping. row-gap keeps the wrapped line from touching. */
 .tt-kanban-card-meta { display: flex; flex-wrap: wrap; gap: .3rem .55rem; align-items: center; padding: .1rem .55rem .45rem .75rem; font-size: .7rem; color: var(--muted); font-family: var(--font-data); }
-/* Pulled toward the text color, as the tag beside it is, so it keeps its contrast on the card's tint. */
-.tt-kanban-card-due.overdue { color: color-mix(in srgb, var(--danger) 60%, var(--fg)); font-weight: 700; }
 /* The tag is a small-caps label in the band, in the card's own color (pulled toward the text color so it keeps its contrast on the tint). */
 .tt-kanban-card-tag { color: color-mix(in srgb, var(--stripe) 75%, var(--fg)); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
 /* No margin-left:auto — that pushed the chip to the card's right edge and,
@@ -2314,12 +2312,11 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-kanban-col { background: color-mix(in srgb, var(--fg) 5%, var(--bg)); border-radius: var(--r-lg); padding: .25rem .5rem .5rem; }
 /* Cancelled sits compact under the Done cards instead of taking half the column. The floor is permanent (not set on dragstart) so a drag never reflows the board, and big enough that an empty zone is still a usable drop target once the dragging dropzone loses 44px to the trash bar. */
 .tt-kanban-cancelled-wrap { flex: 0 1 auto; min-height: 8.5rem; max-height: 45%; }
-.tt-kanban-card-due.overdue, .tt-kanban-card-due.soon {
-  border-radius: 999px; padding: 0 .4rem; font-weight: 700;
-  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-.tt-kanban-card-due.soon { color: color-mix(in srgb, var(--brass) 60%, var(--fg)); }
+/* Solid pills, the sidebar's team due badge recipe: their text/fill pairs are proven AA in every palette x theme
+   (test/palette-contrast.test.ts). A tinted pill's colored text could not be, since the card's own tint sits under it. */
+.tt-kanban-card-due.overdue, .tt-kanban-card-due.soon { border-radius: 999px; padding: 0 .4rem; font-weight: 700; }
+.tt-kanban-card-due.overdue { background: var(--danger); color: var(--on-danger); }
+.tt-kanban-card-due.soon { background: var(--brass); color: var(--on-brass); }
 .tt-kanban-card-due { margin-left: auto; white-space: nowrap; }
 .tt-kanban-card-assignee { display: inline-flex; align-items: center; gap: .2rem; }
 
