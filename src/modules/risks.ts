@@ -1012,7 +1012,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       class: 'tt-risk-header-exposure', type: 'button', title: t(lc, 'risk_sort_exposure_title'),
       onclick: () => { sortMode = nextExposureSort(sortMode); renderAll() },
     },
-    t(lc, 'risk_col_exposure'), sortIndicatorEl
+    // The label shrinks (ellipsis) before the icon does: the column is fixed-width, and a whole arrow is what says "sortable".
+    el('span', { class: 'tt-risk-header-exposure-label' }, t(lc, 'risk_col_exposure')), sortIndicatorEl
   )
   const headerRow = el(
     'div',

@@ -105,3 +105,20 @@ test('risk rows keep every control inside the row border, at XL in split view, a
     expect(out, `window ${w}px`).toEqual([])
   }
 })
+
+// The exposure column is fixed-width: its header's sort arrow was clipped at the button's edge (an 8px box holding a
+// 12px icon), and "Exposição" did not fit beside it.
+for (const locale of ['en-US', 'pt-BR'] as const) {
+  test(`risk header (${locale}): the Exposure label and its sort arrow show whole, at every text size`, async ({ page }) => {
+    for (const size of ['XS', 'M', 'XL'] as const) {
+      await openDoc(page, buildDoc(size, { kind: 'risks' }, { locale }))
+      const geo = await page.locator('.tt-risk-header-exposure').evaluate((b) => {
+        const label = b.querySelector<HTMLElement>('.tt-risk-header-exposure-label')!
+        const arrow = b.querySelector('svg')!.getBoundingClientRect()
+        const box = b.getBoundingClientRect()
+        return { labelWhole: label.scrollWidth <= label.clientWidth, arrowInside: arrow.left >= box.left - 0.5 && arrow.right <= box.right + 0.5 }
+      })
+      expect(geo, size).toEqual({ labelWhole: true, arrowInside: true })
+    }
+  })
+}

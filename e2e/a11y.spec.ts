@@ -21,7 +21,7 @@ const THEMES: Theme[] = ['light', 'dark']
 
 /** layout-fixtures' busy document (some tasks due today, the rest overdue), plus the note content its builder leaves empty. */
 function contentDoc(ref: ModuleRef, theme: Theme = 'light', palette: PaletteId = 'ledger', splitRight?: ModuleRef): Doc {
-  const doc = buildDoc('medium', ref, { stakeholderRoots: 3, milestones: 'spread', dueToday: true, ...(splitRight ? { splitRight } : {}) })
+  const doc = buildDoc('M', ref, { stakeholderRoots: 3, milestones: 'spread', dueToday: true, ...(splitRight ? { splitRight } : {}) })
   doc.prefs.theme = theme
   doc.prefs.palette = palette
   const team = doc.teams.find((t) => t.id === TEAM_ID)!
