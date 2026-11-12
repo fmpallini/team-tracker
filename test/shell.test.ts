@@ -91,6 +91,28 @@ function prefsWith(locale: 'en-US' | 'pt-BR' = 'en-US'): Parameters<Shell['apply
   }
 }
 
+describe('app name button', () => {
+  // jsdom lays nothing out, so the label's clipping is faked through its scroll/client widths.
+  const clip = (label: HTMLElement, clipped: boolean): void => {
+    Object.defineProperty(label, 'clientWidth', { configurable: true, get: () => 40 })
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, get: () => (clipped && label.textContent !== 'TT' ? 90 : 20) })
+  }
+
+  test('its accessible name contains the drawn "TT" when the title is abbreviated, and is the title alone otherwise', () => {
+    const shell = setup()
+    const btn = shell.root.querySelector<HTMLElement>('.tt-app-name')!
+    const label = btn.querySelector<HTMLElement>('.tt-app-name-label')!
+    clip(label, true)
+    shell.applyPrefs(prefsWith())
+    expect(label.textContent).toBe('TT')
+    expect(btn.getAttribute('aria-label')).toBe('TT (Team Tracker)')
+    clip(label, false)
+    shell.applyPrefs(prefsWith())
+    expect(label.textContent).toBe('Team Tracker')
+    expect(btn.getAttribute('aria-label')).toBe('Team Tracker')
+  })
+})
+
 describe('PWA theme-color meta', () => {
   test('applyPrefs re-syncs the tag from the active --bg/--border blend', () => {
     const meta = document.createElement('meta')

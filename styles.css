@@ -38,6 +38,8 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
   /* Text on a solid --accent / --danger fill (primary button, badges). White fails WCAG AA on every dark theme's bright accent, so dark themes use the page background instead (ember overrides --on-danger below). */
   --on-accent:#fff; --on-danger:#fff; --on-brass:#fff;
+  /* Text on a solid --card-* fill (tag chips). Defaults only: core/card-ink.ts sets each, per palette x theme, to the black or white that reads on it. */
+  --on-card-slate:#fff; --on-card-brass:#fff; --on-card-sage:#fff; --on-card-rust:#fff; --on-card-plum:#fff; --on-card-ledger:#fff;
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
@@ -551,7 +553,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .tt-btn-primary:hover { color: var(--on-accent); opacity: .9; }
 .tt-btn-left { margin-right: auto; }
-.tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+/* Text a touch toward --fg: plain --danger fell just under 4.5:1 on a tinted dialog (the task editor). */
+.tt-btn-danger { border-color: var(--danger); color: color-mix(in srgb, var(--danger) 80%, var(--fg)); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
 
 /* Icon color carries meaning, nothing else is colored: red = destroys, green = confirms/restores, gold = state you set (favorite, lock), accent = changes content, slate = settings/help/dates. Every other icon keeps the button's own (neutral) text color. The icon() span carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
@@ -835,6 +838,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-tab { position: relative; }
 /* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
 .tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
+.tt-pane-tab-key::before { content: attr(data-key); }
 .tt-pane-tab:hover:not(:disabled) { background: var(--hover-soft); }
 .tt-pane-tab:disabled { cursor: not-allowed; opacity: .6; }
 .tt-pane-tab:focus-visible { outline-offset: -2px; }
@@ -938,6 +942,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-palette-due { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
 .tt-palette-team { flex: none; max-width: 10rem; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* --muted is tuned for the page, and dipped under 4.5:1 on the --selected wash. */
+.tt-palette-item.selected .tt-palette-due, .tt-palette-item.selected .tt-palette-team { color: color-mix(in srgb, var(--muted) 70%, var(--fg)); }
 .tt-palette-remove {
   flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
   background: transparent; color: var(--fg); border: none; border-radius: var(--r-sm); cursor: pointer; opacity: .6;
@@ -1504,7 +1510,8 @@ body { background: var(--bg); color: var(--fg); }
    card whatever the column width — so let them fall to a second line instead
    of clipping. row-gap keeps the wrapped line from touching. */
 .tt-kanban-card-meta { display: flex; flex-wrap: wrap; gap: .3rem .55rem; align-items: center; padding: .1rem .55rem .45rem .75rem; font-size: .7rem; color: var(--muted); font-family: var(--font-data); }
-.tt-kanban-card-due.overdue { color: var(--danger); font-weight: 700; }
+/* Pulled toward the text color, as the tag beside it is, so it keeps its contrast on the card's tint. */
+.tt-kanban-card-due.overdue { color: color-mix(in srgb, var(--danger) 60%, var(--fg)); font-weight: 700; }
 /* The tag is a small-caps label in the band, in the card's own color (pulled toward the text color so it keeps its contrast on the tint). */
 .tt-kanban-card-tag { color: color-mix(in srgb, var(--stripe) 75%, var(--fg)); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
 /* No margin-left:auto — that pushed the chip to the card's right edge and,
@@ -1576,14 +1583,14 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-color-chip {
   min-width: 26px; height: 26px; border-radius: var(--r-md); cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
   display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
-  font-size: .72rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+  font-size: .72rem; font-weight: 700;
 }
-.tt-kanban-color-chip.color-slate { background: var(--card-slate); }
-.tt-kanban-color-chip.color-brass { background: var(--card-brass); }
-.tt-kanban-color-chip.color-sage { background: var(--card-sage); }
-.tt-kanban-color-chip.color-rust { background: var(--card-rust); }
-.tt-kanban-color-chip.color-plum { background: var(--card-plum); }
-.tt-kanban-color-chip.color-ledger { background: var(--card-ledger); }
+.tt-kanban-color-chip.color-slate { background: var(--card-slate); color: var(--on-card-slate); }
+.tt-kanban-color-chip.color-brass { background: var(--card-brass); color: var(--on-card-brass); }
+.tt-kanban-color-chip.color-sage { background: var(--card-sage); color: var(--on-card-sage); }
+.tt-kanban-color-chip.color-rust { background: var(--card-rust); color: var(--on-card-rust); }
+.tt-kanban-color-chip.color-plum { background: var(--card-plum); color: var(--on-card-plum); }
+.tt-kanban-color-chip.color-ledger { background: var(--card-ledger); color: var(--on-card-ledger); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
 .tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: var(--sp-2); }
 .tt-kanban-filter-label { color: var(--muted); font-size: .8rem; flex: none; }
@@ -1604,8 +1611,9 @@ body { background: var(--bg); color: var(--fg); }
   transform: scale(1.08);
   z-index: 1;
 }
-.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .6; filter: saturate(.5); }
-.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .85; filter: none; }
+/* Pushed back by color alone: an opacity fade also faded the chip's name below a readable contrast. */
+.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { filter: saturate(.4); }
+.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { filter: none; }
 /* Open cards this tag would filter to. Spaced with the chip's own `gap`
    rather than a left margin, so an unnamed swatch — where the count is the
    only child — still centers it instead of pushing it off-axis. */
@@ -1623,6 +1631,7 @@ body { background: var(--bg); color: var(--fg); }
    window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
 /* The timeline sits on a ledger card: panel fill, hairline border, resting shadow. No side padding: the drawing is sized to the element's width and already keeps its own margin for the end labels, so padding here would make it overflow and show a scrollbar nothing needs. */
 .tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding: .35rem 0 .5rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card); }
+.tt-milestone-timeline:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
@@ -2208,7 +2217,8 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-help-heading { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin: 0; }
 /* Marks a group the module tabs share, and the tab of the focused pane's module. */
 .tt-help-badge, .tt-help-pane-mark {
-  font-size: .7rem; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 .45rem;
+  /* Small text that also sits on a tab's selected wash, where plain --muted dipped under 4.5:1. */
+  font-size: .7rem; font-weight: 600; color: color-mix(in srgb, var(--muted) 70%, var(--fg)); border: 1px solid var(--border); border-radius: 999px; padding: 0 .45rem;
 }
 .tt-prefs-tab-btn:has(.tt-help-pane-mark) { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
 /* Fixed layout + one shared first-column width, so every table in a help
@@ -2309,7 +2319,7 @@ select option { background: var(--bg); color: var(--fg); }
   border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
   background: color-mix(in srgb, currentColor 10%, transparent);
 }
-.tt-kanban-card-due.soon { color: var(--brass); }
+.tt-kanban-card-due.soon { color: color-mix(in srgb, var(--brass) 60%, var(--fg)); }
 .tt-kanban-card-due { margin-left: auto; white-space: nowrap; }
 .tt-kanban-card-assignee { display: inline-flex; align-items: center; gap: .2rem; }
 

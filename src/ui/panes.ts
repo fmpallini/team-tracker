@@ -1141,7 +1141,9 @@ ${t(lc, 'pane_history_hint')}`
         },
         kindIcon(row.kind),
         labelEl(text, active && flashTitle),
-        el('span', { class: 'tt-pane-tab-key', 'aria-hidden': 'true' }, moduleFKey(i))
+        // The key hint is drawn by CSS (attr(data-key)), not a text node: it is decoration beside the name (the shortcut
+        // itself is aria-keyshortcuts), and as text it read as part of the tab's visible label ("General notesF2").
+        el('span', { class: 'tt-pane-tab-key', 'aria-hidden': 'true', 'data-key': moduleFKey(i) })
       )
     })
     if (cur && parentKind !== null) {

@@ -205,8 +205,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       // space, and an unnamed color needs it most: the swatch alone says
       // nothing about whether clicking it is worth the trip.
       if (counts[c] > 0) {
+        // The space is invisible in the flex chip but keeps "Blocked" and "3" apart in the text a reader gets.
+        if (custom !== null) children.push(' ')
         children.push(el('span', { class: 'tt-kanban-tag-chip-count' }, String(counts[c])))
       }
+      // The name says the count too (screen readers got the tag alone), and contains everything drawn (WCAG 2.5.3).
+      const chipName = custom ?? suggestedTagName(c)
       const chip = el(
         'button',
         {
@@ -214,7 +218,7 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
           // Same square swatch pattern as the color picker in the card modal
           // (.tt-kanban-color-chip) — blank until named, name shown inside once it is.
           class: `tt-kanban-color-chip tt-kanban-tag-chip color-${c}` + (activeTagFilter === c ? ' selected' : ''),
-          'aria-label': custom ?? suggestedTagName(c),
+          'aria-label': counts[c] > 0 ? `${chipName} ${counts[c]}` : chipName,
           'aria-pressed': activeTagFilter === c ? 'true' : 'false',
           onclick: () => {
             activeTagFilter = activeTagFilter === c ? null : c
@@ -440,7 +444,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       }
 
       const input = el('input', {
-        type: 'text', class: 'tt-input tt-assignee-input', autocomplete: 'off', value,
+        // The field's caption is a bare text node beside it, not a <label>, so the input names itself.
+        type: 'text', class: 'tt-input tt-assignee-input', autocomplete: 'off', value, 'aria-label': t(lc, 'kanban_assignee_label'),
         onchange: (e: Event) => commit((e.target as HTMLInputElement).value),
         oninput: () => openMenu(false),
         onkeydown: (e: Event) => onKeydown(e as KeyboardEvent),
@@ -1287,7 +1292,8 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
         blurOnEnter(e)
       })
       const gripEl = el('span', {
-        class: 'tt-kanban-col-grip', title: t(lc, 'kanban_drag_column_hint'), 'aria-label': t(lc, 'kanban_drag_column_hint'),
+        // role=button: an aria-label is not allowed on a role-less span, and this is the column's keyboard move handle.
+        class: 'tt-kanban-col-grip', role: 'button', title: t(lc, 'kanban_drag_column_hint'), 'aria-label': t(lc, 'kanban_drag_column_hint'),
         tabindex: '0', 'data-column-id': id,
       }, icon('grip', 12))
       gripEl.addEventListener('keydown', (e) => {

@@ -1,7 +1,8 @@
-// e2e/a11y.spec.ts — automated accessibility scan (axe-core) of the three
-// surfaces a keyboard-driven app most needs to keep clean: the start screen,
-// the main shell with a document open, and an open modal dialog. Nothing else
-// in the suite checks ARIA roles/names, focus semantics, or contrast.
+// e2e/a11y.spec.ts — automated accessibility scan (axe-core): the start
+// screen, the main shell, every module with real content in it, and the
+// overlays a keyboard user lives in (Settings, fast switch, Help, the card
+// editor). Nothing else in the suite checks ARIA roles/names, focus
+// semantics, or contrast.
 //
 // Served over http://localhost (secure context) via the OPFS picker shim, the
 // same setup fs-api.spec.ts uses, so the real create → shell flow runs.
@@ -10,10 +11,39 @@ import AxeBuilder from '@axe-core/playwright'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
 import { createEncryptedDoc, blockUpdateCheck } from './helpers'
+import { buildDoc, openDoc, TEAM_ID } from './layout-fixtures'
+import type { Doc, ModuleRef } from '../src/core/types'
+
+const TODAY = new Date().toLocaleDateString('en-CA')
+
+type Theme = 'light' | 'dark'
+const THEMES: Theme[] = ['light', 'dark']
+
+/** layout-fixtures' busy document (some tasks due today, the rest overdue), plus the note content its builder leaves empty. */
+function contentDoc(ref: ModuleRef, theme: Theme = 'light'): Doc {
+  const doc = buildDoc('medium', ref, { stakeholderRoots: 3, milestones: 'spread', dueToday: true })
+  doc.prefs.theme = theme
+  const team = doc.teams.find((t) => t.id === TEAM_ID)!
+  const note = '# Weekly sync\n\n- **Decision**: ship on Friday\n- Follow up with [link](https://example.com)\n\n> Quote\n\n```\ncode()\n```'
+  team.dailyNotes[TODAY] = note
+  team.generalNotes = note
+  team.stakeholders[0]!.notes = note
+  team.risks[0]!.followup = note
+  team.milestones[0]!.followup = note
+  return doc
+}
 
 // WCAG 2 A/AA is the bar; scope each scan to the surface under test.
-const scan = (page: Page, selector: string) =>
-  new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).include(selector).analyze()
+const scan = (page: Page, selector: string, skipRules: string[] = []) =>
+  new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).include(selector).disableRules(skipRules).analyze()
+
+/** One line per offending node (`rule: selector — html`), so a failure reads at a glance instead of as axe's raw dump. */
+const violations = (results: Awaited<ReturnType<typeof scan>>): string[] =>
+  results.violations.flatMap((v) => v.nodes.map((n) => {
+    const c = n.any[0]?.data as { fgColor?: string; bgColor?: string; contrastRatio?: number } | null | undefined
+    const ratio = c?.contrastRatio ? ` [${c.fgColor} on ${c.bgColor} = ${c.contrastRatio}]` : ''
+    return `${v.id}: ${n.target.join(' ')}${ratio} — ${n.html.slice(0, 140)}`
+  }))
 
 test.describe('accessibility (axe-core)', () => {
   test('start screen has no WCAG A/AA violations', async ({ page }) => {
@@ -23,7 +53,7 @@ test.describe('accessibility (axe-core)', () => {
     await expect(page.locator('.tt-start-screen')).toBeVisible()
 
     const results = await scan(page, '.tt-start-screen')
-    expect(results.violations).toEqual([])
+    expect(violations(results)).toEqual([])
   })
 
   test('main shell (document open, first team created) has no WCAG A/AA violations', async ({ page }) => {
@@ -39,7 +69,7 @@ test.describe('accessibility (axe-core)', () => {
     await teamDialog.waitFor({ state: 'hidden' })
 
     const results = await scan(page, '.tt-shell')
-    expect(results.violations).toEqual([])
+    expect(violations(results)).toEqual([])
   })
 
   test('the Settings modal has no WCAG A/AA violations', async ({ page }) => {
@@ -53,6 +83,45 @@ test.describe('accessibility (axe-core)', () => {
     await expect(dialog).toBeVisible()
 
     const results = await scan(page, '.tt-modal-overlay')
-    expect(results.violations).toEqual([])
+    expect(violations(results)).toEqual([])
   })
+
+  const MODULES: Array<[string, ModuleRef]> = [
+    ['daily notes', { kind: 'daily', date: TODAY }],
+    ['general notes', { kind: 'general' }],
+    ['stakeholders', { kind: 'stakeholders' }],
+    ['members (empty)', { kind: 'members' }],
+    ['person notes', { kind: 'person', personId: 's0', group: 'stakeholders' }],
+    ['tasks (kanban)', { kind: 'actions' }],
+    ['milestones', { kind: 'milestones' }],
+    ['risks', { kind: 'risks' }],
+  ]
+  // Both themes: contrast is a per-theme property, and the default palette is what most users run.
+  for (const theme of THEMES) {
+    for (const [name, ref] of MODULES) {
+      test(`the ${name} module has no WCAG A/AA violations (${theme})`, async ({ page }) => {
+        await openDoc(page, contentDoc(ref, theme))
+        await expect(page.locator('.tt-pane-body').first()).not.toBeEmpty()
+        const results = await scan(page, '.tt-shell')
+        expect(violations(results)).toEqual([])
+      })
+    }
+
+    const OVERLAYS: Array<[string, ModuleRef, (page: Page) => Promise<void>, string, string[]]> = [
+      // The result list scrolls without being a Tab stop: focus stays in the input, whose arrows move the selection
+      // and scroll it into view. (It still lacks combobox/listbox semantics — a known gap, not hidden by this.)
+      ['the fast switch', { kind: 'daily', date: TODAY }, (page) => page.keyboard.press('Control+Shift+K'), '.tt-palette-overlay', ['scrollable-region-focusable']],
+      ['Help', { kind: 'daily', date: TODAY }, (page) => page.keyboard.press('F1'), '.tt-modal-overlay', []],
+      ['the task editor', { kind: 'actions' }, (page) => page.locator('.tt-kanban-card').first().dblclick(), '.tt-modal-overlay', []],
+    ]
+    for (const [name, ref, open, overlay, skipRules] of OVERLAYS) {
+      test(`${name} has no WCAG A/AA violations (${theme})`, async ({ page }) => {
+        await openDoc(page, contentDoc(ref, theme))
+        await open(page)
+        await expect(page.getByRole('dialog')).toBeVisible()
+        const results = await scan(page, overlay, skipRules)
+        expect(violations(results)).toEqual([])
+      })
+    }
+  }
 })

@@ -61,6 +61,15 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+test('opens as a named modal dialog', () => {
+  const { palette } = setup()
+  palette.open()
+  const dialog = document.querySelector('.tt-palette-dialog')!
+  expect(dialog.getAttribute('role')).toBe('dialog')
+  expect(dialog.getAttribute('aria-modal')).toBe('true')
+  expect(dialog.getAttribute('aria-label')).toBe('Fast switch')
+})
+
 test('clicking a row commits it and closes the palette', () => {
   // The row's onclick wiring (commit() fires, overlay closes) — NOT a regression
   // test for the mouseenter/rebuild race below (jsdom dispatches 'click' directly).

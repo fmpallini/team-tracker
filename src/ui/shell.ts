@@ -6,6 +6,7 @@ import { iconButton, setIconButtonTitle } from './icons'
 import { formatHHMM, formatAge } from '../core/date'
 import type { FileHealth } from '../core/file-snapshot'
 import { syncThemeColor } from '../core/theme-color'
+import { syncCardInk } from '../core/card-ink'
 import { abbreviateWhenClipped } from './fit-text'
 
 /** What the save pill reports. The file's own health, plus two conditions that outrank it. */
@@ -185,7 +186,11 @@ export function createShell(locale: Locale): Shell {
   // column hugs the label), and that resize must not trigger a fit that undoes it.
   let fittedWidth = -1
   function fitAppName(): void {
-    abbreviateWhenClipped(appNameLabel, t(currentLocale, 'app_name'), 'TT')
+    const full = t(currentLocale, 'app_name')
+    abbreviateWhenClipped(appNameLabel, full, 'TT')
+    // Label in Name (WCAG 2.5.3): the name starts with what is drawn and keeps the full title after it, so a
+    // speech-input user reading a shrunk "TT" off the screen can say it.
+    appNameBtn.setAttribute('aria-label', appNameLabel.textContent === full ? full : `TT (${full})`)
     fittedWidth = appNameBtn.offsetWidth
   }
   const appNameObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { if (appNameBtn.offsetWidth !== fittedWidth) fitAppName() })
@@ -268,6 +273,7 @@ export function createShell(locale: Locale): Shell {
     if (currentTheme === 'system') {
       applyTheme('system')
       syncThemeColor()
+      syncCardInk()
     }
   }
   mq.addEventListener('change', onSystemThemeChange)
@@ -349,11 +355,11 @@ export function createShell(locale: Locale): Shell {
     applyTheme(prefs.theme)
     document.documentElement.dataset.palette = prefs.palette
     syncThemeColor()
+    syncCardInk()
     document.documentElement.dataset.font = prefs.font
     document.documentElement.dataset.size = prefs.fontSize
     if (localeChanged) {
       appNameBtn.title = t(currentLocale, 'app_name_button_title')
-      appNameBtn.setAttribute('aria-label', t(currentLocale, 'app_name'))
       setIconButtonTitle(fullscreenBtn, t(currentLocale, 'fullscreen'))
       setIconButtonTitle(closeFileBtn, t(currentLocale, 'close_file_title'))
       setIconButtonTitle(settingsBtn, t(currentLocale, 'settings'))

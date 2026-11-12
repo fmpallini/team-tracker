@@ -1957,7 +1957,21 @@ describe('renderActionItems — tag display and filter', () => {
 
     const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
     expect(rustChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('1')
-    expect(rustChip.textContent?.trim()).toBe('Blocked1')
+    expect(rustChip.textContent?.trim()).toBe('Blocked 1')
+  })
+
+  test('a chip\'s accessible name carries its count, and starts with the name it shows', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [item({ id: 'a', color: 'rust', status: 'todo' }), item({ id: 'b', color: 'slate', status: 'todo' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'rust').getAttribute('aria-label')).toBe('Blocked 1')
+    // Unnamed: the suggested name, then the count it draws.
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').getAttribute('aria-label')).toMatch(/^\S.* 1$/)
+    // No open card, no count.
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'sage').getAttribute('aria-label')).not.toMatch(/\d/)
   })
 
   // An unnamed color is still a perfectly good thing to filter by — the

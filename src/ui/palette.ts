@@ -238,7 +238,7 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
       placeholder: t(locale(), 'palette_placeholder'),
     })
     listEl = el('div', { class: 'tt-palette-list' })
-    const dialog = el('div', { class: 'tt-palette-dialog' }, input, listEl)
+    const dialog = el('div', { class: 'tt-palette-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': t(locale(), 'palette_title') }, input, listEl)
     overlay = el('div', { class: 'tt-palette-overlay' }, dialog)
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) dismiss()
