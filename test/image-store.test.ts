@@ -140,4 +140,28 @@ describe('image store', () => {
     await store.rekey(fakeCodec('new'))
     expect(await store.getStored('a')).toBeNull()
   })
+
+  // A browser copy whose own re-key failed after a password change keeps its records under the old key, while the
+  // pictures added afterwards were sealed under the new one (the image store had already moved). The next open loads
+  // it all under the old key and re-keys to the file's: those pictures are already in the destination form.
+  it('rekey keeps, as it is, a blob the old key cannot open but the new key can', async () => {
+    const store = createImageStore(fakeCodec('old'))
+    store.adoptStored('a', enc.encode('old:one'))
+    store.adoptStored('b', enc.encode('new:two'))
+    const next = fakeCodec('new')
+    await store.rekey(next)
+    expect(dec.decode((await store.getStored('a'))!)).toBe('new:one')
+    expect(dec.decode((await store.getStored('b'))!)).toBe('new:two')
+    expect(dec.decode((await store.getPlain('b'))!)).toBe('two')
+  })
+
+  it('rekey to null keeps a blob that is already a plain picture (the password was removed)', async () => {
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+    const store = createImageStore(fakeCodec('old'))
+    store.adoptStored('p', png)
+    store.adoptStored('j', enc.encode('junk'))
+    await store.rekey(null)
+    expect(await store.getStored('p')).toEqual(png)
+    expect(await store.getStored('j')).toBeNull()
+  })
 })
