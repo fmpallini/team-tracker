@@ -12,7 +12,7 @@ import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim } from './opfs-shim'
 import { createEncryptedDoc, blockUpdateCheck } from './helpers'
 import { buildDoc, openDoc, TEAM_ID } from './layout-fixtures'
-import type { Doc, ModuleRef } from '../src/core/types'
+import type { Doc, ModuleRef, PaletteId } from '../src/core/types'
 
 const TODAY = new Date().toLocaleDateString('en-CA')
 
@@ -20,9 +20,10 @@ type Theme = 'light' | 'dark'
 const THEMES: Theme[] = ['light', 'dark']
 
 /** layout-fixtures' busy document (some tasks due today, the rest overdue), plus the note content its builder leaves empty. */
-function contentDoc(ref: ModuleRef, theme: Theme = 'light'): Doc {
-  const doc = buildDoc('medium', ref, { stakeholderRoots: 3, milestones: 'spread', dueToday: true })
+function contentDoc(ref: ModuleRef, theme: Theme = 'light', palette: PaletteId = 'ledger', splitRight?: ModuleRef): Doc {
+  const doc = buildDoc('medium', ref, { stakeholderRoots: 3, milestones: 'spread', dueToday: true, ...(splitRight ? { splitRight } : {}) })
   doc.prefs.theme = theme
+  doc.prefs.palette = palette
   const team = doc.teams.find((t) => t.id === TEAM_ID)!
   const note = '# Weekly sync\n\n- **Decision**: ship on Friday\n- Follow up with [link](https://example.com)\n\n> Quote\n\n```\ncode()\n```'
   team.dailyNotes[TODAY] = note
@@ -121,6 +122,34 @@ test.describe('accessibility (axe-core)', () => {
         await expect(page.getByRole('dialog')).toBeVisible()
         const results = await scan(page, overlay, skipRules)
         expect(violations(results)).toEqual([])
+      })
+    }
+  }
+})
+
+// The other palettes, for contrast only (nothing else varies by palette): every module, two per page in split view,
+// plus the task editor (the danger button on a tinted dialog). test/palette-contrast.test.ts proves the token recipes
+// statically; this catches a surface that uses a recipe it does not know about.
+const PALETTES: PaletteId[] = ['signal', 'blueprint', 'forest', 'desert', 'cosmic', 'synthwave', 'verdant', 'ember', 'graphite', 'rose', 'citrus']
+test.describe('palette contrast (axe-core color-contrast)', () => {
+  for (const palette of PALETTES) {
+    for (const theme of THEMES) {
+      test(`${palette} ${theme}: every module and the task editor read at AA`, async ({ page }) => {
+        const contrast = (selector: string) =>
+          new AxeBuilder({ page }).withRules(['color-contrast']).include(selector).analyze()
+        const SPLITS: Array<[ModuleRef, ModuleRef]> = [
+          [{ kind: 'milestones' }, { kind: 'daily', date: TODAY }],
+          [{ kind: 'stakeholders' }, { kind: 'person', personId: 's0', group: 'stakeholders' }],
+          [{ kind: 'actions' }, { kind: 'risks' }],
+        ]
+        for (const [left, right] of SPLITS) {
+          await openDoc(page, contentDoc(left, theme, palette, right))
+          await expect(page.locator('.tt-pane-body').nth(1)).not.toBeEmpty()
+          expect(violations(await contrast('.tt-shell')), `${left.kind} | ${right.kind}`).toEqual([])
+        }
+        await page.locator('.tt-kanban-card').first().dblclick()
+        await expect(page.getByRole('dialog')).toBeVisible()
+        expect(violations(await contrast('.tt-modal-overlay'))).toEqual([])
       })
     }
   }
