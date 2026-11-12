@@ -73,6 +73,7 @@ export function caretAfterInline(node: ChildNode, gap: 'auto' | 'always' | 'none
   const r = document.createRange()
   if (gap === 'always' || (gap === 'auto' && !hasFollowingText)) {
     const slot = document.createTextNode('\u00a0')
+    gapSlots.add(slot)
     node.after(slot)
     r.setStart(slot, 1)
   } else {
@@ -81,6 +82,23 @@ export function caretAfterInline(node: ChildNode, gap: 'auto' | 'always' | 'none
   r.collapse(true)
   sel.removeAllRanges()
   sel.addRange(r)
+}
+
+/** The NBSP slots caretAfterInline inserted — a space the editor typed on the user's behalf. */
+const gapSlots = new WeakSet<Text>()
+
+/**
+ * True when the caret sits right after a gap slot still holding only its NBSP, and forgets that slot: the space
+ * the user types next (after `**b**`, after an @-chip) is the one the gap already is, so the caller drops it —
+ * otherwise the note shows, and saves, two spaces. Only once: a second space is a real one.
+ */
+export function absorbGapSpace(): boolean {
+  const sel = window.getSelection()
+  if (!sel || !sel.isCollapsed || sel.rangeCount === 0) return false
+  const { startContainer, startOffset } = sel.getRangeAt(0)
+  if (!(startContainer instanceof Text) || !gapSlots.has(startContainer)) return false
+  gapSlots.delete(startContainer)
+  return startContainer.data === ' ' && startOffset === 1
 }
 
 /** Builds a Range spanning text offsets [start, end) within `block`'s text content. */

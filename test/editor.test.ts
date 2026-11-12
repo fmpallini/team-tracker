@@ -3585,6 +3585,32 @@ describe('inline auto-format caret exit', () => {
     editor.destroy()
   })
 
+  test('the space typed right after the gap is the gap: it is absorbed once, and the next space is real', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a **b**</div>')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const space = (): InputEvent => {
+      const e = new InputEvent('beforeinput', { inputType: 'insertText', data: ' ', bubbles: true, cancelable: true })
+      editorEl.dispatchEvent(e)
+      return e
+    }
+    expect(space().defaultPrevented).toBe(true)
+    expect(space().defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
+  test('a gap the user already typed past absorbs nothing', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a **b**</div>')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const slot = editorEl.querySelector('strong')!.nextSibling as Text
+    slot.data = ' c'
+    const r = document.createRange(); r.setStart(slot, 2); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+    const e = new InputEvent('beforeinput', { inputType: 'insertText', data: ' ', bubbles: true, cancelable: true })
+    editorEl.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
   test('typing **b** with text still after the caret adds no gap (would be a spurious space)', () => {
     const { editor, editorEl } = mountAt('en-US', '<div>a **b** tail</div>', 5) // caret right after the closing **
     editorEl.dispatchEvent(new Event('input', { bubbles: true }))
