@@ -1006,14 +1006,18 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   const closedEl = el('details', { class: 'tt-risks-closed' })
 
   const sortIndicatorEl = el('span', { class: 'tt-risk-sort-indicator' })
+  // The label's natural width, unclipped, in the header's own font: what fitExposureColumn sizes the column from.
+  const exposureSizerEl = el('span', { class: 'tt-risk-header-exposure-sizer', 'aria-hidden': 'true' }, t(lc, 'risk_col_exposure'))
   const exposureHeaderBtn = el(
     'button',
     {
       class: 'tt-risk-header-exposure', type: 'button', title: t(lc, 'risk_sort_exposure_title'),
       onclick: () => { sortMode = nextExposureSort(sortMode); renderAll() },
     },
-    // The label shrinks (ellipsis) before the icon does: the column is fixed-width, and a whole arrow is what says "sortable".
-    el('span', { class: 'tt-risk-header-exposure-label' }, t(lc, 'risk_col_exposure')), sortIndicatorEl
+    // The label shrinks (ellipsis) before the icon does, should the column ever be narrower than both: a whole arrow
+    // is what says "sortable". fitExposureColumn below keeps it from coming to that.
+    el('span', { class: 'tt-risk-header-exposure-label' }, t(lc, 'risk_col_exposure')), sortIndicatorEl,
+    exposureSizerEl
   )
   const headerRow = el(
     'div',
@@ -1276,6 +1280,24 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   const risksWrap = el('div', { class: 'tt-risks' }, quadrantEl, toolbar, headerRow, listEl, closedEl)
   container.appendChild(risksWrap)
   renderAll()
+
+  // The Exposure column (header, the rows' cells and gutters: styles.css's --risk-exp-w) is as wide as the header's
+  // label and arrow need, never under its 4.8rem floor. No fixed width fits every font stack, text size and language
+  // ("Exposição" in the serif or Verdana stacks), and a font or size change re-styles <html> without re-rendering this
+  // module — so the sizer is watched: its width changes exactly when the label's would. Without a layout (a hidden
+  // pane, jsdom) nothing is measured and the floor stands.
+  function fitExposureColumn(): void {
+    const label = exposureSizerEl.offsetWidth
+    if (label === 0) return
+    const btn = getComputedStyle(exposureHeaderBtn)
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    // The header is .3rem - 1px narrower than the column it heads; 1px of air keeps the ellipsis from rounding in.
+    const column = label + (parseFloat(btn.columnGap) || 0) + sortIndicatorEl.offsetWidth + 0.3 * rem - 1 + 1
+    risksWrap.style.setProperty('--risk-exp-w', `max(4.8rem, ${Math.ceil(column)}px)`)
+  }
+  const sizerObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fitExposureColumn)
+  sizerObserver?.observe(exposureSizerEl)
+  fitExposureColumn()
   // Lands focus on the first row the moment the module opens, so
   // ArrowUp/Down navigation works immediately without a preceding Tab. Only
   // for the pane the user is actually in — a team switch remounts both
@@ -1290,6 +1312,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   return () => {
     unsubscribe()
+    sizerObserver?.disconnect()
     // An armed deferral would otherwise rebuild a torn-down module on the
     // field's next blur.
     deferred.dispose()
