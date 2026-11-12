@@ -130,7 +130,7 @@ test.describe('accessibility (axe-core)', () => {
 // The other palettes, for contrast only (nothing else varies by palette): every module, two per page in split view,
 // plus the task editor (the danger button on a tinted dialog). test/palette-contrast.test.ts proves the token recipes
 // statically; this catches a surface that uses a recipe it does not know about.
-const PALETTES: PaletteId[] = ['signal', 'blueprint', 'forest', 'desert', 'cosmic', 'synthwave', 'verdant', 'ember', 'graphite', 'rose', 'citrus']
+const PALETTES: PaletteId[] = ['signal', 'forest', 'cosmic', 'synthwave', 'verdant', 'ember', 'graphite', 'rose', 'citrus', 'contrast', 'colorsafe']
 test.describe('palette contrast (axe-core color-contrast)', () => {
   for (const palette of PALETTES) {
     for (const theme of THEMES) {

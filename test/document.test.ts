@@ -663,7 +663,7 @@ describe('v17 → v18 migration (docId)', () => {
 
   it('gives an older document a fresh 32-hex docId', () => {
     const doc = migrate(v17())
-    expect(doc.schemaVersion).toBe(18)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.docId).toMatch(/^[0-9a-f]{32}$/)
     expect(migrate(v17()).docId).not.toBe(doc.docId)
   })
@@ -682,6 +682,25 @@ describe('v17 → v18 migration (docId)', () => {
     expect(validateDoc(d)).toBe('docId')
     d.docId = 'A'.repeat(32)
     expect(validateDoc(d)).toBe('docId')
+  })
+})
+
+describe("v18 → v19 migration ('blueprint' and 'desert' palettes replaced)", () => {
+  const at18 = (palette: string) => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 18
+    d.prefs.palette = palette
+    return d
+  }
+
+  it.each([['blueprint', 'signal'], ['desert', 'ledger']])("remaps a saved '%s' to '%s', its closest survivor", (from, to) => {
+    const doc = migrate(at18(from))
+    expect(doc.schemaVersion).toBe(19)
+    expect(doc.prefs.palette).toBe(to)
+  })
+
+  it('leaves every other palette as it was', () => {
+    for (const p of ['ledger', 'signal', 'forest', 'cosmic', 'citrus']) expect(migrate(at18(p)).prefs.palette).toBe(p)
   })
 })
 

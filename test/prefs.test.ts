@@ -276,7 +276,7 @@ test('palette field defaults to ledger, offers 12 swatched options, and updates 
   openPrefs(store, shell, 'en-US', appCtl)
 
   expect(radio('tt-prefs-palette', 'ledger').checked).toBe(true)
-  for (const value of ['signal', 'blueprint', 'forest', 'desert', 'cosmic', 'synthwave', 'verdant', 'ember', 'graphite', 'rose', 'citrus']) {
+  for (const value of ['signal', 'forest', 'cosmic', 'synthwave', 'verdant', 'ember', 'graphite', 'rose', 'citrus', 'contrast', 'colorsafe']) {
     expect(radio('tt-prefs-palette', value)).not.toBeNull()
   }
 

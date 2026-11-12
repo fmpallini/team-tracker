@@ -72,8 +72,9 @@ your machine. Team Tracker doesn't:
   Chromium browsers (Chrome, Edge, Brave): phones and tablets get a notice
   instead of the app, since mobile browsers lack the File System Access API
   the open/save flow depends on.
-- 🎨 **Yours to tune** — 12 color palettes, light/dark/system theme, 7 font
-  stacks, adjustable font size, and pt-BR/en-US locales, all in Settings.
+- 🎨 **Yours to tune** — 12 color palettes (high-contrast and colorblind-safe
+  among them), light/dark/system theme, 7 font stacks, adjustable font size,
+  and pt-BR/en-US locales, all in Settings.
 
 ## Getting started
 

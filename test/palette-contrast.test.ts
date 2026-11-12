@@ -112,6 +112,54 @@ test.each(pairs)("$name: a task card band's text and tag read on its tint, in ev
   }
 })
 
+// --- what the two purpose-built palettes promise ---------------------------------------------------------------
+
+const byName = (name: string): Tokens => pairs.find((p) => p.name === name)!.tokens
+
+// High contrast: every text color at AAA (7:1) on every plain surface, icons at AA (4.5:1).
+test.each(['contrast light', 'contrast dark'])('%s: all text reads at 7:1, all icons at 4.5:1', (name) => {
+  const t = byName(name)
+  for (const [where, surface] of Object.entries(plainSurfaces(t))) {
+    for (const tok of ['fg', 'muted', 'accent', 'brass-text', 'danger-text', 'ok-text']) {
+      expect(contrast(color(t, tok), surface), `--${tok} on ${where}`).toBeGreaterThanOrEqual(7)
+    }
+    for (const tok of ['brass-icon', 'danger', 'ok', 'card-slate', 'card-plum', 'card-brass-icon', 'card-sage-icon']) {
+      expect(contrast(color(t, tok), surface), `--${tok} on ${where}`).toBeGreaterThanOrEqual(4.5)
+    }
+  }
+})
+
+// Colorblind-safe: the colors that carry meaning stay apart under simulated protanopia, deuteranopia and
+// tritanopia (Machado et al. 2009, full severity), measured as OKLab distance. For scale: in the other palettes
+// the status trio falls to 0.01–0.10 under deuteranopia, and the six card colors to 0.004–0.045.
+const CVD: Record<string, number[][]> = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.01182, 0.04294, 0.968881]],
+  tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.3039]],
+  normal: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+}
+const oklab = (hex: string, m: number[][]): number[] => {
+  const lin = [1, 3, 5].map((i) => channel(parseInt(hex.slice(i, i + 2), 16) / 255))
+  const [r, g, b] = m.map((row) => Math.min(1, Math.max(0, row[0]! * lin[0]! + row[1]! * lin[1]! + row[2]! * lin[2]!))) as [number, number, number]
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const mm = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+  return [0.2104542553 * l + 0.793617785 * mm - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * mm + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * mm - 0.808675766 * s]
+}
+const closestPair = (colors: string[], m: number[][]): number => {
+  const pts = colors.map((c) => oklab(c, m))
+  let min = Infinity
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) min = Math.min(min, Math.hypot(...pts[i]!.map((v, k) => v - pts[j]![k]!)))
+  return min
+}
+test.each(['colorsafe light', 'colorsafe dark'])('%s: status and tag colors stay apart under every color-vision type', (name) => {
+  const t = byName(name)
+  for (const [vision, m] of Object.entries(CVD)) {
+    expect(closestPair([t.ok!, t.brass!, t.danger!], m), `ok/brass/danger, ${vision}`).toBeGreaterThanOrEqual(0.15)
+    expect(closestPair(CARDS.map((c) => t[`card-${c}`]!), m), `card colors, ${vision}`).toBeGreaterThanOrEqual(0.08)
+  }
+})
+
 test('covers the default plus all 11 palettes, both themes', () => {
   expect(pairs.length).toBe(24)
 })

@@ -74,35 +74,35 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --panel:#17171a; --border:#3a3a3d; --brass:#e0973b; --danger:#e0763d; --ok:#3ecf9e;
   --card-slate:#5ab4f0; --card-brass:#e8b83b; --card-sage:#3ecf9e; --card-rust:#e0663d; --card-plum:#d98fc0; --card-ledger:#9aa4b0;
 }
-[data-palette=blueprint][data-theme=light] {
-  --bg:#eef4f9; --fg:#10263c; --muted:#4c6a86; --accent:#0a6890; --accent-rgb:10,104,144;
-  --panel:#f7fbfd; --border:#c3d9e8; --brass:#a15c1f; --danger:#b5460a; --ok:#2d7359;
-  --card-slate:#0a6890; --card-brass:#a8780f; --card-sage:#2f7a5c; --card-rust:#b83a1c; --card-plum:#6b4a8a; --card-ledger:#6f7b86;
+[data-palette=contrast][data-theme=light] {
+  --bg:#ffffff; --fg:#000000; --muted:#3b3b3b; --accent:#0039a6; --accent-rgb:0,57,166;
+  --panel:#ffffff; --border:#555555; --brass:#7a4a00; --danger:#a1000b; --ok:#005a1f;
+  --card-slate:#0039a6; --card-brass:#7a4a00; --card-sage:#005a1f; --card-rust:#a12a00; --card-plum:#5d1f8a; --card-ledger:#474747;
 }
-[data-palette=blueprint][data-theme=dark] {
-  --bg:#14283f; --fg:#eaf3fb; --muted:#8fb0c9; --accent:#4fc3f7; --accent-rgb:79,195,247;
-  --panel:#1b3552; --border:#2f5578; --brass:#e2a35c; --danger:#e2794a; --ok:#6bc79a;
-  --card-slate:#4fc3f7; --card-brass:#e8b64c; --card-sage:#6bc79a; --card-rust:#e8694a; --card-plum:#b58fd6; --card-ledger:#a9b3bc;
+[data-palette=contrast][data-theme=dark] {
+  --bg:#000000; --fg:#ffffff; --muted:#d0d0d0; --accent:#7cc4ff; --accent-rgb:124,196,255;
+  --panel:#0d0d0d; --border:#a6a6a6; --brass:#ffd35c; --danger:#ff8070; --ok:#6be38f;
+  --card-slate:#7cc4ff; --card-brass:#ffd35c; --card-sage:#6be38f; --card-rust:#ff9a66; --card-plum:#d9a8ff; --card-ledger:#cfcfcf;
 }
 [data-palette=forest][data-theme=light] {
-  --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#8f5814; --accent-rgb:143,88,20;
+  --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#526319; --accent-rgb:82,99,25;
   --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3b7054; --on-brass:#000;
   --card-slate:#2f6f9a; --card-brass:#b8862e; --card-sage:#3f7a45; --card-rust:#a8422e; --card-plum:#6b4a7a; --card-ledger:#6b6b5c;
 }
 [data-palette=forest][data-theme=dark] {
-  --bg:#16211a; --fg:#e6ecda; --muted:#8fa082; --accent:#d99a4a; --accent-rgb:217,154,74;
+  --bg:#16211a; --fg:#e6ecda; --muted:#8fa082; --accent:#aec26b; --accent-rgb:174,194,107;
   --panel:#1e2c22; --border:#34452f; --brass:#e0b458; --danger:#d97a5e; --ok:#6fae8a;
   --card-slate:#6fa8d0; --card-brass:#e0b458; --card-sage:#6fae6a; --card-rust:#d97a5e; --card-plum:#b98fcb; --card-ledger:#9a9a8a;
 }
-[data-palette=desert][data-theme=light] {
-  --bg:#f3e6d2; --fg:#3a2415; --muted:#785b3e; --accent:#166c68; --accent-rgb:22,108,104;
-  --panel:#f8efe0; --border:#ddc3a0; --brass:#a8622e; --danger:#b5432a; --ok:#4c6934;
-  --card-slate:#14706c; --card-brass:#b8832a; --card-sage:#4c6934; --card-rust:#b5432a; --card-plum:#8a3f6b; --card-ledger:#7a6f66;
+[data-palette=colorsafe][data-theme=light] {
+  --bg:#f6f6f3; --fg:#16181d; --muted:#4d525c; --accent:#823774; --accent-rgb:130,55,116;
+  --panel:#ffffff; --border:#c9cbd1; --brass:#eb881f; --danger:#934319; --ok:#3566b8; --on-brass:#000;
+  --card-slate:#02629c; --card-brass:#ad721c; --card-sage:#6f9e89; --card-rust:#9f3501; --card-plum:#654055; --card-ledger:#6f6f6f;
 }
-[data-palette=desert][data-theme=dark] {
-  --bg:#241a12; --fg:#f0e2ca; --muted:#b89a78; --accent:#4fc9c2; --accent-rgb:79,201,194;
-  --panel:#2e2119; --border:#4a3826; --brass:#d99a5c; --danger:#e2795a; --ok:#8fb56a;
-  --card-slate:#4fc9c2; --card-brass:#e0b24e; --card-sage:#8fb56a; --card-rust:#e2795a; --card-plum:#c97fae; --card-ledger:#b0a79c;
+[data-palette=colorsafe][data-theme=dark] {
+  --bg:#14161b; --fg:#eceef2; --muted:#a3a9b5; --accent:#e39cd3; --accent-rgb:227,156,211;
+  --panel:#1d2027; --border:#3a3f4a; --brass:#f3de90; --danger:#d16022; --ok:#699ef5;
+  --card-slate:#37a3f1; --card-brass:#d58800; --card-sage:#94c4ae; --card-rust:#c85b32; --card-plum:#fccfe7; --card-ledger:#808080;
 }
 [data-palette=cosmic][data-theme=light] {
   --bg:#eceef2; --fg:#14141c; --muted:#55566a; --accent:#5b4bc4; --accent-rgb:91,75,196;

@@ -4,7 +4,7 @@ import { t, type Locale, type MsgKey } from './i18n'
 import { IMAGE_ID_RE } from './image-ref'
 import { randomHex } from './file-stamp'
 
-export const SCHEMA_VERSION = 18
+export const SCHEMA_VERSION = 19
 
 export class SchemaTooNewError extends Error {}
 
@@ -206,6 +206,14 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
       const m = prefs.autoSaveMin
       prefs.autoSaveMin = typeof m === 'number' && Number.isFinite(m) ? Math.min(1440, Math.max(60, Math.round(m))) : 60
     }
+  },
+  // 'blueprint' and 'desert' gave their places to 'contrast' (high contrast) and 'colorsafe' (status and tag colors
+  // that stay apart under color-blind vision): blueprint was the third white-and-blue palette beside signal and
+  // synthwave, desert a near-twin of the default. Each maps to its closest survivor, as 'muster' did in schema 10.
+  18: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (prefs?.palette === 'blueprint') prefs.palette = 'signal'
+    if (prefs?.palette === 'desert') prefs.palette = 'ledger'
   },
 }
 

@@ -113,9 +113,7 @@ const THEME_OPTIONS: readonly { value: 'light' | 'dark' | 'system'; key: MsgKey 
 const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; palette: string }[] = [
   { value: 'ledger', key: 'prefs_palette_ledger', palette: 'ledger' },
   { value: 'signal', key: 'prefs_palette_signal', palette: 'signal' },
-  { value: 'blueprint', key: 'prefs_palette_blueprint', palette: 'blueprint' },
   { value: 'forest', key: 'prefs_palette_forest', palette: 'forest' },
-  { value: 'desert', key: 'prefs_palette_desert', palette: 'desert' },
   { value: 'cosmic', key: 'prefs_palette_cosmic', palette: 'cosmic' },
   { value: 'synthwave', key: 'prefs_palette_synthwave', palette: 'synthwave' },
   { value: 'verdant', key: 'prefs_palette_verdant', palette: 'verdant' },
@@ -123,6 +121,9 @@ const PALETTE_OPTIONS: readonly { value: Prefs['palette']; key: MsgKey; palette:
   { value: 'graphite', key: 'prefs_palette_graphite', palette: 'graphite' },
   { value: 'rose', key: 'prefs_palette_rose', palette: 'rose' },
   { value: 'citrus', key: 'prefs_palette_citrus', palette: 'citrus' },
+  // Last, as a pair: the two built for a need rather than a mood.
+  { value: 'contrast', key: 'prefs_palette_contrast', palette: 'contrast' },
+  { value: 'colorsafe', key: 'prefs_palette_colorsafe', palette: 'colorsafe' },
 ]
 
 const LOCALE_OPTIONS: readonly { value: Locale; key: MsgKey }[] = [
