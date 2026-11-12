@@ -22,6 +22,7 @@ import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { openDuePanel } from './due-panel'
 import { revealLoc } from './reveal-loc'
 import { fitText } from './fit-text'
+import { showContextMenu } from './context-menu'
 
 export interface SidebarActions {
   selectTeam(id: string): void
@@ -777,6 +778,32 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
     nameInput.focus()
   }
 
+  /** Shared by the edit dialog's Delete button and the row's context menu. */
+  function confirmDeleteTeam(team: Team): void {
+    confirmDelete(locale(), {
+      title: t(locale(), 'team_delete_title'),
+      message: t(locale(), 'team_delete_confirm', { name: team.name }),
+      confirmLabel: t(locale(), 'team_delete_btn'),
+      onConfirm: () => {
+        const offer = deleteTeam(team.id)
+        offerUndoToast(store, locale(), t(locale(), 'team_deleted_toast', { name: team.name }), offer)
+      },
+    })
+  }
+
+  // Right-click (or the keyboard's menu key / Shift+F10, which fire the same
+  // event at the focused row) offers the row's edit and delete.
+  listEl.addEventListener('contextmenu', (e) => {
+    const row = rowOf(e.target)
+    const team = row ? store.doc.teams[indexOfRow(row)] : undefined
+    if (!team) return
+    e.preventDefault()
+    showContextMenu(e.clientX, e.clientY, [
+      { label: t(locale(), 'team_edit_title'), icon: icon('edit'), onClick: () => openEditModal(team) },
+      { label: t(locale(), 'team_delete_btn'), icon: icon('trash'), danger: true, onClick: () => confirmDeleteTeam(team) },
+    ])
+  })
+
   function openEditModal(team: Team): void {
     const { nameInput, emojiInput, errorEl, body, picker } = buildTeamForm({ name: team.name, emoji: team.emoji })
 
@@ -786,15 +813,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
       danger: true,
       onClick: () => {
         handle.close()
-        confirmDelete(locale(), {
-          title: t(locale(), 'team_delete_title'),
-          message: t(locale(), 'team_delete_confirm', { name: team.name }),
-          confirmLabel: t(locale(), 'team_delete_btn'),
-          onConfirm: () => {
-            const offer = deleteTeam(team.id)
-            offerUndoToast(store, locale(), t(locale(), 'team_deleted_toast', { name: team.name }), offer)
-          },
-        })
+        confirmDeleteTeam(team)
       },
     }
     const saveBtn: ModalButton = {

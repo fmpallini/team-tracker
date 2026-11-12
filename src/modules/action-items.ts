@@ -1353,6 +1353,13 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
     boardEl.innerHTML = ''
     boardEl.append(todoColEl, ...middleColEls, doneCancelColEl)
     STATUSES.forEach((s) => wireColumnDrop(cols.get(s)!.bodyEl, s, cols.get(s)!.zoneEl))
+    // Double-click on a column's blank space (not on a card, which opens its own edit) starts a new task at the bottom of that column.
+    STATUSES.forEach((s) => {
+      const bodyEl = cols.get(s)!.bodyEl
+      bodyEl.addEventListener('dblclick', (e) => {
+        if (e.target === bodyEl) openEditModal(null, s)
+      })
+    })
     focusAfterAttach.run?.()
   }
 

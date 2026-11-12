@@ -1203,6 +1203,30 @@ describe('renderActionItems — edit modal', () => {
     expect(plumChip.classList.contains('selected')).toBe(true)
   })
 
+  test('double-clicking a column\'s blank space opens a new task modal that appends to the bottom of that column', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'done', order: 0 }), item({ id: 'b', status: 'done', order: 1 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const bodies = container.querySelectorAll<HTMLElement>('.tt-kanban-col-body')
+    const doneBody = bodies[bodies.length - 2]! // columns end with Done, Cancelled
+    doneBody.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+
+    const added = store.doc.teams[0]!.actionItems.find((i) => i.id !== 'a' && i.id !== 'b')!
+    expect(added.status).toBe('done')
+    expect(added.order).toBeGreaterThan(1)
+  })
+
+  test('double-clicking a card does not also start a new task', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+  })
+
   test('editing an existing card via dblclick pre-fills fields, and the edit persists live — no Save needed', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Old', dueDate: '2026-01-01', assignee: 'Bruno', color: 'rust' })] })
     const { container, store, pm, loc } = setup(team)
