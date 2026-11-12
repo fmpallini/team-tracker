@@ -4,7 +4,7 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
-## [3.7.0] - 2026-11-11
+## [3.6.4] - 2026-11-11
 
 ### Added
 - Double-click the blank space of a task-board column to add a task there; right-click a team in the sidebar to edit or delete it.
@@ -15,7 +15,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 - The Editor tab of Help lists the key tables first and the prose sections last.
 
 ### Fixed
-- Editing: pasting plain text in the middle of a list item no longer splits the item, the space typed after bold text or an @-mention is no longer doubled, and Alt+C closes a date field's calendar again.
+- Pasting plain text mid-list-item no longer splits the item; a space after bold text or an @-mention is no longer doubled; Alt+C closes date calendars again.
 - Pictures added after a failed password change are kept when the file is next opened.
 
 ## [3.6.3] - 2026-11-07
