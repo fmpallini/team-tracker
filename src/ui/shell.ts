@@ -351,6 +351,8 @@ export function createShell(locale: Locale): Shell {
   function applyPrefs(prefs: Prefs): void {
     const localeChanged = prefs.locale !== currentLocale
     currentLocale = prefs.locale
+    // The page's language: what a screen reader picks its voice by and Chromium its spellcheck dictionary for the editors.
+    document.documentElement.lang = prefs.locale
     currentTheme = prefs.theme
     applyTheme(prefs.theme)
     document.documentElement.dataset.palette = prefs.palette
