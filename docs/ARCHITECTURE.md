@@ -51,10 +51,14 @@ object identity never changes.
 
 The `.tmv` format lives in `src/core/crypto.ts`: a `"TMV1"` magic prefix,
 PBKDF2-SHA256 → AES-GCM, with a key-check block so a wrong password is
-distinguishable from a corrupt file. Password-less files are a plain-text
-variant — a `TMV-PLAIN` header line followed by raw `JSON.stringify(doc)` —
-detected by sniffing the header before ever prompting for a password. On
-decrypt the payload runs through `migrate()` (`src/core/document.ts`), which
+distinguishable from a corrupt file. Files are written as container v2: the
+header, the AES-GCM ciphertext of a JSON envelope `{doc, index}`, then a blob
+area of individually sealed images (each bound to its content-addressed id).
+Password-less files are a plain-text variant — a `TMV-PLAIN2` header line, the
+envelope as one JSON line, then the raw image bytes — detected by sniffing the
+header before ever prompting for a password. The v1 layout (no image area;
+`TMV-PLAIN` + raw `JSON.stringify(doc)` when password-less) is still read,
+never written; releases before 3.2.0 cannot open v2. On decrypt the payload runs through `migrate()` (`src/core/document.ts`), which
 walks the `MIGRATIONS` ladder from the file's `schemaVersion` up to
 `SCHEMA_VERSION`.
 
@@ -75,8 +79,9 @@ periodic snapshot of it. After every mutation the persister
 (`doc-records.ts`), compares each record's JSON with what it last wrote, and
 commits only the differences, plus the bytes of images not yet stored, in one
 transaction. For a password-protected file every record and image is sealed with
-the file's own AES-GCM key; keys are random, so nothing readable (titles, names,
-dates) is left in the browser's storage.
+the file's own AES-GCM key, and each record's storage key is an HMAC of its path
+under a random per-document secret, so nothing readable (titles, names, dates) is
+left in the browser's storage.
 
 The file is written, in full, at three moments: at open when the browser copy is
 ahead of it, at Lock/Close, and on a 1–24 hour timer (`file-snapshot.ts`). Each
