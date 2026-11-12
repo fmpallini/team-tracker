@@ -58,7 +58,7 @@ test.describe('the browser holds the live copy', () => {
     await expect(editor(page)).toContainText('LIVE-NOTE-A')
     // the browser copy was ahead of the file, so opening it rewrote the file, once
     await expect.poll(async () => fileWrites(page, FILE)).toBe(1)
-    expect(await text(page)).toContain('LIVE-NOTE-A')
+    await expect.poll(() => text(page)).toContain('LIVE-NOTE-A') // the count rises when the write opens, the bytes land at its close
   })
 
   test('(b) Lock/Close writes the file exactly once, and the file alone carries the edit', async ({ page }) => {
@@ -211,7 +211,7 @@ test.describe('the timer', () => {
 
     await page.clock.fastForward('02:00')
     await expect.poll(() => fileWrites(page, FILE)).toBe(writes + 1)
-    expect(await text(page)).toContain('EDITED-AFTER-OPEN')
+    await expect.poll(() => text(page)).toContain('EDITED-AFTER-OPEN') // counted at the write's start, readable at its close
   })
 
   test('(g) the window-close warning appears only once the file is overdue', async ({ page }) => {

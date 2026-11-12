@@ -5,7 +5,7 @@
 import { expect, type Page } from '@playwright/test'
 import { E2E_BASE_URL } from '../playwright.config'
 import { installOpfsPickerShim, writeOpfsFile, setNextOpenName } from './opfs-shim'
-import { blockUpdateCheck } from './helpers'
+import { blockUpdateCheck, waitForWritable } from './helpers'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
 import type { Doc, ModuleRef, Prefs } from '../src/core/types'
 
@@ -75,4 +75,5 @@ export async function openDoc(page: Page, doc: Doc, viewport = { width: 1440, he
   await setNextOpenName(page, 'fs.tmv')
   await page.getByRole('button', { name: /Open/ }).first().click()
   await expect(page.locator('.tt-shell')).toBeVisible()
+  await waitForWritable(page)
 }
