@@ -38,14 +38,16 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
   /* Text on a solid --accent / --danger fill (primary button, badges). White fails WCAG AA on every dark theme's bright accent, so dark themes use the page background instead (ember overrides --on-danger below). */
   --on-accent:#fff; --on-danger:#fff; --on-brass:#fff;
-  /* Text on a solid --card-* fill (tag chips). Defaults only: core/card-ink.ts sets each, per palette x theme, to the black or white that reads on it. */
   /* Status colors as TEXT (labels, errors, values): each pulled toward --fg just far enough for AA on every plain and
      tinted surface it sits on in the weakest palette (test/palette-contrast.test.ts). Icons, borders and fills keep the
      raw token: 3:1 is their bar, and the raw hue reads truer. Declared once here, they follow every palette and theme. */
   --brass-text: color-mix(in srgb, var(--brass) 60%, var(--fg)); --danger-text: color-mix(in srgb, var(--danger) 75%, var(--fg)); --ok-text: color-mix(in srgb, var(--ok) 90%, var(--fg));
   /* The same for ICONS, where 3:1 is the bar: only these three fall under it raw (the light brass/sage some light palettes keep for fills). */
   --brass-icon: color-mix(in srgb, var(--brass) 80%, var(--fg)); --card-brass-icon: color-mix(in srgb, var(--card-brass) 80%, var(--fg)); --card-sage-icon: color-mix(in srgb, var(--card-sage) 80%, var(--fg));
-  --on-card-slate:#fff; --on-card-brass:#fff; --on-card-sage:#fff; --on-card-rust:#fff; --on-card-plum:#fff; --on-card-ledger:#fff;
+  /* Tag chips: one text color per theme on a solid card-color fill. Defaults only: core/card-ink.ts sets the ink (white on
+     a light page, the page color on a dark one) and, per palette, nudges a fill that cannot carry it to the nearest shade that reads at AA. */
+  --on-chip:#fff;
+  --chip-slate:var(--card-slate); --chip-brass:var(--card-brass); --chip-sage:var(--card-sage); --chip-rust:var(--card-rust); --chip-plum:var(--card-plum); --chip-ledger:var(--card-ledger);
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
@@ -1589,12 +1591,13 @@ body { background: var(--bg); color: var(--fg); }
   display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
   font-size: .72rem; font-weight: 700;
 }
-.tt-kanban-color-chip.color-slate { background: var(--card-slate); color: var(--on-card-slate); }
-.tt-kanban-color-chip.color-brass { background: var(--card-brass); color: var(--on-card-brass); }
-.tt-kanban-color-chip.color-sage { background: var(--card-sage); color: var(--on-card-sage); }
-.tt-kanban-color-chip.color-rust { background: var(--card-rust); color: var(--on-card-rust); }
-.tt-kanban-color-chip.color-plum { background: var(--card-plum); color: var(--on-card-plum); }
-.tt-kanban-color-chip.color-ledger { background: var(--card-ledger); color: var(--on-card-ledger); }
+.tt-kanban-color-chip { color: var(--on-chip); }
+.tt-kanban-color-chip.color-slate { background: var(--chip-slate); }
+.tt-kanban-color-chip.color-brass { background: var(--chip-brass); }
+.tt-kanban-color-chip.color-sage { background: var(--chip-sage); }
+.tt-kanban-color-chip.color-rust { background: var(--chip-rust); }
+.tt-kanban-color-chip.color-plum { background: var(--chip-plum); }
+.tt-kanban-color-chip.color-ledger { background: var(--chip-ledger); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
 .tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: var(--sp-2); }
 .tt-kanban-filter-label { color: var(--muted); font-size: .8rem; flex: none; }
