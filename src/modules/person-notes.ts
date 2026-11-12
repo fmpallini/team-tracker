@@ -1,4 +1,4 @@
-// src/modules/person-notes.ts — Task 19: notes editor for a single person
+// src/modules/person-notes.ts — notes editor for a single person
 // (stakeholder or member). Mirrors src/modules/daily-notes.ts's editor +
 // atref + template-picker wiring, but persists into `person.notes` and
 // additionally has to cope with the person being deleted (from the people

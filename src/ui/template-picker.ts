@@ -3,7 +3,7 @@
 // for inserting a quick template's resolved markdown at the trigger point.
 // Opens both on the editor's own "/" trigger and on the 📋 toolbar button
 // (both dispatch SLASH_TRIGGER_EVENT — see src/ui/editor.ts). Template
-// management (create/edit/delete/reorder) is Task 24 — this module only
+// management (create/edit/delete/reorder) lives in prefs.ts — this module only
 // inserts.
 import { SLASH_TRIGGER_EVENT, type Editor } from './editor'
 import { mdToHtml } from '../core/markdown'

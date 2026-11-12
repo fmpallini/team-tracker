@@ -1,5 +1,4 @@
-// src/ui/editor-undo.ts — the editor's own undo/redo stack and step policy
-// (docs/superpowers/specs/2026-11-03-editor-undo-snapshots-design.md). The
+// src/ui/editor-undo.ts — the editor's own undo/redo stack and step policy. The
 // browser's native history is never used: the editor intercepts the keys and
 // `historyUndo`/`historyRedo` (and takes back a native step that
 // execCommand('undo') ran with no beforeinput), and calls undo()/redo() here.

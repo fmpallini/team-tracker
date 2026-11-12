@@ -1,4 +1,4 @@
-// src/modules/risks.ts — Task 22: risks module. A flat, orderable list of
+// src/modules/risks.ts — risks module. A flat, orderable list of
 // Risk per team (structurally close to src/modules/action-items.ts: the same
 // loc.teamId-keyed store.update helpers, flat before/after drag reorder; the
 // row behaviour shared with milestones.ts lives in ./followup-list.ts), plus

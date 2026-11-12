@@ -80,7 +80,7 @@ interface AppController {
   /** Whether the external-change conflict modal is up — teardown leaves it to resolve an unsaved close rather than stacking a discard prompt over it. */
   isConflictOpen(): boolean
   /**
-   * Task 25 re-review item #4c: tears down the document/window listeners
+   * Tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
    * beforeunload) plus the save controller's own interval/mutation-guard
    * teardown. Invoked by `closeFile()` below (the 🔒 header button /
@@ -179,7 +179,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   if (promoBtn) shell.headerRight.prepend(promoBtn)
   shell.setTitle(session.name)
 
-  // Task 25 re-review item #4c: every document/window listener this function
+  // Every document/window listener this function
   // registers gets its remover collected here so `dispose()` (assigned to
   // `app.dispose` below) can fully tear the document down. See the
   // `AppController.dispose` doc comment for why this matters.
@@ -416,9 +416,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   })
   disposers.push(releaseTabLock)
 
-  // Task 24: preferences modal wiring. `changePassword` itself lives in
-  // core/change-password.ts (extracted so its concurrency-sensitive logic —
-  // Task 25 fix #3, re-review item #2 — is unit testable outside this
+  // Preferences modal wiring. `changePassword` itself lives in
+  // core/change-password.ts (extracted so its concurrency-sensitive logic
+  // is unit testable outside this
   // monolithic entrypoint); this just wires main.ts's own state into it.
   // `currentPassword` and `fileSchemaVersion` read live from `app`/`store`
   // (not the closed-over `password`/`doc` params) so they stay correct after
@@ -448,7 +448,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   const prefsAppCtl: PrefsAppCtl = {
     changePassword,
     currentPassword,
-    // Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
+    // Lets the Security tab disable its
     // submit button and show an explanatory hint instead of only surfacing
     // the rejection after the fact via the generic failure toast.
     isReadOnly(): boolean {
@@ -718,12 +718,11 @@ let dismissedUpdateVersion: string | null = null
  * below is doing on its own schedule, and waits until it's actually ready
  * (or gives up after SW_READY_TIMEOUT_MS) before returning. This exists so
  * `reloadForUpdate`'s `location.reload()` is guaranteed to be served by the
- * new worker's new cache rather than racing an install still in progress —
- * see docs/superpowers/specs/2026-07-21-update-check-design.md.
+ * new worker's new cache rather than racing an install still in progress.
  *
  * No-ops for the standalone build (no service worker exists there) and in
- * jsdom (`serviceWorker` is absent from `navigator`, same guard Task 26 uses
- * below for `register()`).
+ * jsdom (`serviceWorker` is absent from `navigator`, same guard the boot-time
+ * `register()` below uses).
  */
 async function ensureServiceWorkerReady(): Promise<void> {
   if (!__PWA__ || !('serviceWorker' in navigator)) return
@@ -784,7 +783,7 @@ showStartScreen(detectBrowserLocale(), openDocument)
 void runUpdateCheck()
 setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)
 
-// Task 26: only the PWA build variant (`__PWA__` true) registers a service
+// Only the PWA build variant (`__PWA__` true) registers a service
 // worker, and only when actually served over http(s) — file:// (the
 // single-file `dist/app.html` variant) and the jsdom test environment both
 // have no `sw.js` alongside them, so this branch must never run there.

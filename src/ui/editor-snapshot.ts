@@ -1,6 +1,5 @@
 // src/ui/editor-snapshot.ts — pure snapshot/diff-restore over the WYSIWYG
-// contenteditable root, the data layer of the editor's own undo stack
-// (docs/superpowers/specs/2026-11-03-editor-undo-snapshots-design.md).
+// contenteditable root, the data layer of the editor's own undo stack.
 //
 // A snapshot is plain data: one normalized HTML string per top-level child of
 // the root, the selection as {block index, text offset inside that block}, and

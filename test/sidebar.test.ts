@@ -644,7 +644,7 @@ test('drag and drop reorders the teams array', () => {
   expect(store.doc.teams.map((tm) => tm.name)).toEqual(['Beta', 'Gamma', 'Alpha'])
 })
 
-test('tt-add-team-request event opens the add-team modal (Task 3 empty-state CTA)', () => {
+test('tt-add-team-request event opens the add-team modal (empty-state CTA)', () => {
   // Note: asserts "at least one" modal opened rather than an exact count.
   // afterEach now disposes the last mounted sidebar, but a test that calls
   // setup() more than once still leaves the earlier mounts' document-level

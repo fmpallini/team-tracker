@@ -1,8 +1,8 @@
-// src/core/change-password.ts — Task 24/25: re-encrypts (or plain-serializes)
+// src/core/change-password.ts — re-encrypts (or plain-serializes)
 // the current in-memory document under a new password and persists it via the
 // same writeFile/downloadFallback split used by the create flow in
 // src/ui/start.ts. Extracted out of main.ts so this concurrency-sensitive
-// path (Task 25 fix #3, re-review item #2) can be unit tested directly
+// path can be unit tested directly
 // instead of only through prefs.ts's mocked PrefsAppCtl.
 import type { Store } from './store'
 import type { FileSession } from './fs'
@@ -46,7 +46,7 @@ export interface ChangePasswordDeps {
 export function createChangePassword(deps: ChangePasswordDeps) {
   return async function changePassword(newPw: string | null): Promise<void> {
     await deps.runExclusive(async () => {
-      // Task 25 re-review item #2: `runExclusive` alone kept this from
+      // `runExclusive` alone kept this from
       // interleaving with a save, but it never checked `store.readOnly` — a
       // read-only tab (lost the cross-tab lock) could still successfully
       // rewrite the file under a new password, the one write path every

@@ -99,7 +99,7 @@ describe('imageId', () => {
 })
 
 describe('importImage', () => {
-  it('limits are the values the spec fixes', () => {
+  it('limits are the documented values', () => {
     expect(IMAGE_LIMITS).toMatchObject({ maxBytes: 1 * MB, maxSourceBytes: 50 * MB, maxEdge: 1600, minEdge: 800, totalCapBytes: 150 * MB, warnBytes: 100 * MB })
     expect([...IMAGE_LIMITS.qualities]).toEqual([0.85, 0.7, 0.55])
   })

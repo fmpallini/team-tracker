@@ -61,9 +61,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
    light/dark pair scoped under [data-palette=X], which — being two
    attribute selectors — outranks the bare [data-theme=light/dark] rules
    above without touching them; "ledger" (the default) simply never gets
-   its own block and falls through to those. See docs/superpowers's theme
-   proposal artifact for the design rationale (contrast ratios, material
-   grounding) behind each one. */
+   its own block and falls through to those. */
 [data-palette=signal][data-theme=light] {
   --bg:#f7f7f5; --fg:#101012; --muted:#45464a; --accent:#0058a3; --accent-rgb:0,88,163;
   --panel:#ffffff; --border:#c9c9c4; --brass:#8f4b10; --danger:#a84a12; --ok:#017857;
@@ -722,7 +720,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Read-only tab (src/ui/readonly-lock.ts): editing controls say so on hover. */
 :root[data-readonly] :is(input, select, textarea, .tt-date-picker, .tt-kanban-color-row button):not([data-readonly-exempt], [data-readonly-exempt] *) { cursor: not-allowed; }
 
-/* Read-only cross-tab banner (Task 25) */
+/* Read-only cross-tab banner */
 .tt-readonly-banner {
   display: flex; align-items: center; justify-content: center; gap: .75rem;
   padding: .4rem .75rem; background: #7c2d12; color: #fff; font-size: .9rem; text-align: center;

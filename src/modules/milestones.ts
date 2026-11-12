@@ -1,4 +1,4 @@
-// src/modules/milestones.ts — Task 21: milestones module. Two stacked areas
+// src/modules/milestones.ts — milestones module. Two stacked areas
 // inside one container: a proportional-timeline SVG (top) and an editable,
 // date-sorted list (bottom). Reuses the same structural discipline as
 // src/modules/action-items.ts — loc.teamId-keyed store.update helpers and the
@@ -8,7 +8,7 @@
 // always fully rebuilt: nothing inside it can hold DOM focus, so there is
 // nothing to preserve there.
 //
-// The calendar (src/ui/calendar.ts, Task 18) reads team.milestones directly
+// The calendar (src/ui/calendar.ts) reads team.milestones directly
 // for its 🚩 markers, so any store.update here is picked up automatically —
 // this module never talks to the calendar.
 import type { Milestone, Loc, Team } from '../core/types'

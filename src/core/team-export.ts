@@ -4,8 +4,7 @@
 // notes) is included. Action items, milestones, risks, and all free-text
 // content are intentionally excluded — this file is meant to be handed to
 // teammates so they can skip re-entering the team/people structure, not to
-// carry work content. See docs/superpowers/specs/2026-07-16-team-export-
-// import-design.md and 2026-07-21-shell-layout-export-help-fixes-design.md.
+// carry work content.
 import type { ActionColumn, ActionItemColor, Person, Team } from './types'
 import { SCHEMA_VERSION, SUGGESTED_TAG_NAME_KEYS } from './document'
 import { t, type Locale, type MsgKey } from './i18n'
@@ -141,7 +140,7 @@ function remapPersonList(people: ExportedPerson[]): Team['stakeholders'] {
 
 /**
  * Every team/person/action-item/milestone/risk gets a fresh ID — imported
- * data is always additive (see design doc decision 3), never merged into an
+ * data is always additive by design, never merged into an
  * existing team, so reusing source IDs would risk colliding with the
  * current file's own. The name suffix makes that unconditional regardless
  * of whether a same-named team already exists, so there's no collision-

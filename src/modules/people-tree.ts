@@ -1,4 +1,4 @@
-// src/modules/people-tree.ts — Task 19: one parameterized renderer for both
+// src/modules/people-tree.ts — one parameterized renderer for both
 // the 'stakeholders' and 'members' modules. Each renders the group's people
 // as a drag-and-droppable hierarchy (parentId/order), following the
 // disposal/store.subscribe discipline documented in src/modules/lifecycle.ts.

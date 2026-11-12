@@ -54,8 +54,8 @@ export interface ConflictFlow {
 export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
   const { store, session, shell } = deps
 
-  // Task 25 fix #5: guards against a second conflict modal stacking on top of
-  // the first — e.g. a trailing save round (fix #1) or the auto-save
+  // Guards against a second conflict modal stacking on top of
+  // the first — e.g. a trailing save round or the auto-save
   // interval hitting the same unresolved `ExternalChangeError` again while
   // the user hasn't chosen Reload/Overwrite yet. Reset once the modal's
   // chosen action (successfully or not) settles.

@@ -1,7 +1,5 @@
 // e2e/editor-undo.spec.ts — acceptance suite of the editor's own undo/redo
-// stack (src/ui/editor-undo.ts over src/ui/editor-snapshot.ts; design in
-// docs/superpowers/specs/2026-11-03-editor-undo-snapshots-design.md, "Test
-// plan (acceptance)"). jsdom has no real contenteditable, so step order,
+// stack (src/ui/editor-undo.ts over src/ui/editor-snapshot.ts). jsdom has no real contenteditable, so step order,
 // caret/scroll restore, several editors on one page, pictures and the cost on
 // a long note can only be proven in Chromium.
 //

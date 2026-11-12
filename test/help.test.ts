@@ -234,7 +234,7 @@ describe('Global tab', () => {
     showHelp('en-US')
     const text = panelText()
     expect(text).toContain('Alt+1')
-    // Task 12 moved the command palette to Ctrl+Shift+K globally; the global
+    // The command palette lives on Ctrl+Shift+K globally; the global
     // help table must name that, not the old Ctrl+K.
     expect(text).toContain('Ctrl+Shift+K')
     expect(text).toContain('--app="')
@@ -306,7 +306,7 @@ describe('Editor tab', () => {
     expect(text).not.toContain('Ctrl+E') // inline code was removed
     expect(text).toContain('Ctrl+Shift+E') // code block shortcut
     expect(text).toContain('Ctrl+Shift+9') // blockquote shortcut
-    expect(text).toContain('Ctrl+K') // link shortcut (Task 12: Ctrl+K inserts a link in the editor)
+    expect(text).toContain('Ctrl+K') // link shortcut (Ctrl+K inserts a link in the editor)
     expect(text).toContain('```') // markdown syntax row for code block
     expect(text).toContain('> text') // markdown syntax row for blockquote
     expect(text).toContain('[text](url)') // markdown syntax row for link

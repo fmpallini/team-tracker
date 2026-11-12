@@ -1,6 +1,5 @@
 // src/ui/promo.ts
-// Cross-promotion between the two build variants (spec:
-// docs/superpowers/specs/2026-07-13-pwa-install-promo-design.md).
+// Cross-promotion between the two build variants.
 // PWA build (__PWA__): offer "install as app" — native prompt on Chromium,
 // manual-instructions modal elsewhere. Local file:// build: invite to the
 // hosted PWA at __PAGES_URL__. The two variants never coexist at runtime;

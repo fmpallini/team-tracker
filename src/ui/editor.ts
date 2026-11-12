@@ -699,7 +699,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return true
   }
 
-  /* Task 4: resolves the list item(s) a Tab/Shift+Tab keypress should act
+  /* Resolves the list item(s) a Tab/Shift+Tab keypress should act
    * on. A collapsed caret or a selection within a single item resolves to
    * that one item. A selection spanning multiple sibling `<li>`s (same
    * parent `<ul>/<ol>`) resolves to the whole ordered batch. A selection

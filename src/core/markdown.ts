@@ -133,7 +133,7 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   })
   // The five inline mark passes (bold / italic / strike / former-@-mention
   // single-tilde / escaped <u>). Run on the link TEXT alone inside the link
-  // callback below (spec §2.1 step 4), then on the body after links are
+  // callback below, then on the body after links are
   // extracted — so a marker inside link text is never paired with one that
   // sits after the link. The single-tilde pass is distinct from the
   // double-tilde strike rule right above it: strike has already consumed

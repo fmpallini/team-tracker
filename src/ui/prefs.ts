@@ -1,4 +1,4 @@
-// src/ui/prefs.ts — Task 24: preferences modal (general prefs, templates
+// src/ui/prefs.ts — preferences modal (general prefs, templates
 // admin, change password, about). A single `showModal` whose body is a small
 // tab strip + content area that this module mutates in place as the user
 // switches tabs — simpler than tearing down/rebuilding the whole dialog, and
@@ -49,7 +49,7 @@ export interface PrefsAppCtl {
   changePassword(newPw: string | null): Promise<void>
   currentPassword(): string | null
   /**
-   * Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
+   * Lets the Security tab disable its
    * submit button and show an explanatory hint when this tab has lost the
    * cross-tab write lock, instead of only surfacing the rejection after the
    * fact via the generic failure toast. `changePassword` itself still throws
@@ -67,14 +67,14 @@ export interface PrefsAppCtl {
 
 /**
  * Dispatched after the locale preference changes, so main.ts (which owns the
- * `PaneManager` — not available in this module per the Task 24 contract) can
+ * `PaneManager` — deliberately not passed to this module) can
  * re-render pane bars/bodies in the new locale. Sidebar highlight/labels are
  * covered by the existing `store.subscribe` wiring (any `store.update` call
  * already re-renders the sidebar, and nav-only changes are covered by
  * `store.onMutate`); per-module pane content that captured its locale string
  * at mount time is not fully re-translated until the user navigates away and
- * back — acceptable per the Task 24 brief, which explicitly defers
- * full-fidelity re-render.
+ * back — an accepted trade-off: full-fidelity re-render is deliberately
+ * deferred.
  */
 const LOCALE_CHANGED_EVENT = 'tt-locale-changed'
 
@@ -591,7 +591,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       ? null
       : el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
 
-    // Task 25 re-review item #2 (UX bonus): static at render time — this tab
+    // Static at render time — this tab
     // is rebuilt from scratch every time it's selected (see `renderActiveTab`
     // switch above), which is enough to reflect a read-only state acquired
     // before the modal was opened without adding a live subscription here.

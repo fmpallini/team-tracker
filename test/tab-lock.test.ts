@@ -42,7 +42,7 @@ const okFlush = (): Promise<void> => Promise.resolve()
  * lock is considered released exactly when the holder's own callback-returned
  * promise settles — same as the spec — so queued waiters are only granted
  * after the holder's `enterReadOnly()`/`release()` sequence actually
- * completes, which is the exact ordering Task 25 fix #4 depends on.
+ * completes, which is the exact ordering the hand-over flush depends on.
  */
 function makeFakeLockManager() {
   type Cb = (lock: { name: string } | null) => Promise<unknown> | undefined
@@ -204,7 +204,7 @@ test('take-control handshake: the holder flushes the browser copy before releasi
   await vi.waitFor(() => expect(flushCalled).toHaveBeenCalledTimes(1))
 
   // A has started its handoff (the flush is in flight) but hasn't released yet —
-  // B must still be blocked, proving the fix #4 ordering isn't skipped.
+  // B must still be blocked, proving the flush-before-release ordering isn't skipped.
   expect(storeA.readOnly).toBe(false)
   expect(storeB.readOnly).toBe(true)
 
@@ -299,7 +299,7 @@ function makeDeferredLockManager() {
   return { locks: { request } as unknown as LockManager }
 }
 
-test('provisional read-only (re-review #4a): readOnly is already true the instant createTabLock returns, before the lock request settles, and never flashes the blocked toast for a solo tab', async () => {
+test('provisional read-only: readOnly is already true the instant createTabLock returns, before the lock request settles, and never flashes the blocked toast for a solo tab', async () => {
   const store = createStore(createEmptyDocument('en-US'))
   const shell = makeShell()
   const { locks } = makeDeferredLockManager()

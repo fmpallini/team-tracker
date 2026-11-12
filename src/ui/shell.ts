@@ -51,7 +51,7 @@ export interface Shell {
   setFileHealth(health: FileHealth, ctx: PillContext): void
   applyPrefs(prefs: Prefs): void
   setTitle(fileName: string | null): void
-  /** Registers the click handler for the header ⚙ button (Task 24: opens the preferences modal). */
+  /** Registers the click handler for the header ⚙ button (opens the preferences modal). */
   onSettings(cb: () => void): void
   /** Registers the click handler for the header ❓ button (opens the global help modal). */
   onHelp(cb: () => void): void
@@ -145,7 +145,7 @@ function toggleFullscreen(): void {
  * Design note: createShell() takes an initial `Locale` for the very first
  * render (before any `Doc`/`Prefs` exists), rather than exposing a separate
  * `setLocale()` method. Since `Prefs` already carries `locale`, `applyPrefs()`
- * re-syncs the shell's closed-over locale on every call — so when Task 24's
+ * re-syncs the shell's closed-over locale on every call — so when the
  * settings panel changes the locale and calls `applyPrefs()` again, the
  * save-indicator tooltip (the shell's only i18n string) picks up the new
  * locale the next time `setFileHealth()` runs. This avoids a redundant API

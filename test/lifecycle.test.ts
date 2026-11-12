@@ -278,8 +278,8 @@ test('stress: 200 rounds of real openInPane module switching (risks <-> mileston
 test('an unsplit (hidden) pane 1 holds no live module instance, and regains one when re-split', () => {
   // renderAll() skips the hidden pane, but a *mounted* instance would keep its
   // own store.subscribe() alive and go on re-rendering into a display:none
-  // container on every mutation — the expensive half of the work Task 5 set
-  // out to skip. It is disposed instead; toggleSplit() rebuilds it.
+  // container on every mutation — the expensive half of the work skipping the
+  // hidden pane is meant to save. It is disposed instead; toggleSplit() rebuilds it.
   //
   // createPaneManager itself now also holds one store.subscribe of its own
   // (the shared backlinks SearchIndex — see panes.ts's `unsubscribeSearchIndex`)

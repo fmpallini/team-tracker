@@ -9,7 +9,7 @@ import { collectImageRefs } from './image-ref'
 
 const MB = 1024 * 1024
 
-/** Every size rule in one place (spec: "Limits and how they are reported"). */
+/** Every size rule in one place. */
 export const IMAGE_LIMITS = {
   /** Per image, after processing. */
   maxBytes: 1 * MB,

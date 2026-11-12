@@ -1,4 +1,4 @@
-// e2e/tab-lock.spec.ts — proves core/tab-lock.ts's Task 25 cross-tab
+// e2e/tab-lock.spec.ts — proves core/tab-lock.ts's cross-tab
 // coordination against the REAL browser Web Locks API + BroadcastChannel,
 // not the fake LockManager test/tab-lock.test.ts uses (jsdom has no Web
 // Locks API at all). Two pages in the same browser context share the same
@@ -38,7 +38,7 @@ test.describe('cross-tab single-writer lock', () => {
     await expect(pageA.locator('.tt-readonly-banner')).toHaveCount(0)
 
     // B requests "take control" — real BroadcastChannel message to A, which
-    // saves+flushes (Task 25 fix #4) before releasing the real Web Lock.
+    // saves+flushes before releasing the real Web Lock.
     await banner.locator('.tt-readonly-takeover-btn').click()
 
     await expect(pageA.locator('.tt-readonly-banner')).toBeVisible()

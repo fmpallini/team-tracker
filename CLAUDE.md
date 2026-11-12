@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Project
 
-Team Tracker — zero-runtime-dependency single-file web app tracking teams (people/hierarchy, daily and per-person notes, action items, milestones, risks). No server, no backend: the browser's IndexedDB holds the live copy of the open document (sealed with the file's key when it has a password) and one `.tmv` file — AES-GCM encrypted, or plain-text password-less — is a snapshot the user opens and keeps, written at open, Lock/Close and on a 1–24 h timer. Original design spec + implementation plan in `docs/superpowers/`.
+Team Tracker — zero-runtime-dependency single-file web app tracking teams (people/hierarchy, daily and per-person notes, action items, milestones, risks). No server, no backend: the browser's IndexedDB holds the live copy of the open document (sealed with the file's key when it has a password) and one `.tmv` file — AES-GCM encrypted, or plain-text password-less — is a snapshot the user opens and keeps, written at open, Lock/Close and on a 1–24 h timer.
 
 Desktop-only by design: layout fixed desktop shell (sidebar + split panes), UX keyboard-driven (Ctrl+Shift+K/Alt+…; there is no Ctrl+S), mobile browsers lack the File System Access API the file-write flow depends on. Mobile devices get blocking notice instead of start screen — don't invest in responsive/mobile layouts.
 
@@ -57,4 +57,4 @@ Every `package.json` version bump needs a matching non-empty `## [X.Y.Z]` entry 
 - Any new editor edit that changes the document must call `undoStack.checkpoint()` (or go through `edit()` / `recordEdit()`) before its first change; undo is the editor's own snapshot stack in `ui/editor-undo.ts`, native browser history is disabled.
 - i18n: two locales, `pt-BR` and `en-US`, via `t(locale, key)` in `core/i18n.ts`. All user-visible strings go through `t()`; add keys for both locales.
 - Every `src` module has a matching `test/*.test.ts` (except type-only `core/types.ts`, wiring-only `main.ts`, and `*.d.ts`); tests run in jsdom, rely on browser APIs being feature-detected (Web Locks, BroadcastChannel, FS Access API absent in jsdom — code must degrade gracefully, also what keeps it testable).
-- Comments referencing "Task N" trace decisions back to `docs/superpowers/plans/2026-07-02-team-tracker.md`; keep nontrivial concurrency/lifecycle reasoning documented in place same way.
+- Keep nontrivial concurrency/lifecycle reasoning documented in place, in the comment beside the code — not as a pointer to a design doc or plan. The code and its comments are the source of truth.

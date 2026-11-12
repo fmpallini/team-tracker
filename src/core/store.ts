@@ -11,7 +11,7 @@ export interface Store {
   readonly images: ImageStore
   readonly dirty: boolean
   /**
-   * True after `setReadOnly(true)` — set by main.ts (Task 25) while this tab
+   * True after `setReadOnly(true)` — set by main.ts while this tab
    * has lost the cross-tab write lock. Only `update()` is gated by it (see
    * below); `updateNav()` stays open so a read-only viewer can still browse.
    */
@@ -50,8 +50,7 @@ export interface Store {
    * 'content', `updateNav()` as 'nav' — unlike `subscribe()`, which
    * `updateNav()` intentionally bypasses (nav changes shouldn't trigger a full
    * content re-render). Follow-up hardening
-   * for the file writer's in-flight-write guard (Task 25 re-review item
-   * #1): that guard used to ride on `subscribe()`, which only covered it by
+   * for the file writer's in-flight-write guard: that guard used to ride on `subscribe()`, which only covered it by
    * call-site convention (every `updateNav()` site happens to also trigger a
    * save through some other path). `onMutate()` makes the guard correct by
    * construction instead. Separate listener set from `subscribe()`; same
@@ -76,7 +75,7 @@ export interface Store {
    */
   markDirty(): void
   /**
-   * Wholesale-replaces the in-memory document (Task 25: used by the conflict
+   * Wholesale-replaces the in-memory document (used by the conflict
    * modal's "Reload" action after `readCurrent` + `decryptDocument`). Clears
    * `dirty` (the reloaded doc is, by definition, in sync with disk) and
    * notifies `subscribe()` listeners so the whole UI re-renders against the
@@ -84,9 +83,9 @@ export interface Store {
    */
   replaceDoc(doc: Doc, images?: ImageStore): void
   /**
-   * Toggles read-only mode (Task 25: cross-tab lock lost). Turning it off
+   * Toggles read-only mode (cross-tab lock lost). Turning it off
    * re-arms the one-shot `onBlockedUpdate` warning for the next time it's
-   * turned on. `opts.silent` (Task 25 re-review item #4a) marks
+   * turned on. `opts.silent` marks
    * a `true` transition as provisional — main.ts sets this the instant it's
    * about to ask for the cross-tab write lock, before knowing whether this
    * tab will actually get it, so a single-tab open is never briefly

@@ -39,7 +39,7 @@ export interface SidebarActions {
 }
 
 /**
- * Task 3: the empty-pane CTA (panes.ts, rendered when `store.doc.teams` is
+ * The empty-pane CTA (panes.ts, rendered when `store.doc.teams` is
  * empty) has no reach into sidebar internals like `openAddModal`, so it
  * dispatches this document-level event instead. Exported so panes.ts can
  * reference the same string without either module reaching into the other's

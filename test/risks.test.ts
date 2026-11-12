@@ -725,7 +725,7 @@ describe('renderRisks', () => {
   })
 
   test('deleting a risk with an empty title does not pay for a whole-team clone', () => {
-    // The silent path offers no undo, so the spec's justification for
+    // The silent path offers no undo, so the justification for
     // deleteWithUndo's structuredClone cost (paid once, on an explicit user
     // action that offers an Undo) does not apply here — this must not clone
     // at all.
