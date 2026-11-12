@@ -29,7 +29,6 @@ const pt = {
   settings: 'Preferências',
   open_file: 'Abrir arquivo',
   create_file: 'Criar arquivo',
-  reopen_last: 'Reabrir último',
   password: 'Senha',
   password_confirm: 'Confirmar senha',
   password_mismatch: 'As senhas não coincidem',
@@ -178,7 +177,6 @@ sidebar_teams_heading: 'Times',
   kanban_close_btn: 'Fechar',
   kanban_expand_title: 'Expandir',
   kanban_collapse_title: 'Restaurar',
-  kanban_force_save_title: 'Salvar agora',
   kanban_delete_btn: 'Excluir',
   kanban_clear_zone_title: 'Limpar tarefas',
   kanban_clear_zone_btn: 'Excluir todos',
@@ -231,7 +229,6 @@ sidebar_teams_heading: 'Times',
   risk_level_3: '3 · Alto',
   risk_sort_exposure_title: 'Ordenar por exposição',
   /** Opens the chance/impact/plan popover the exposure stamp folds into on a narrow row — see renderRow in src/modules/risks.ts. */
-  risk_exposure_edit_title: 'Editar chance, impacto e plano',
   risk_row_menu_hint: 'Menu da linha (Espaço) · Expandir (Enter) · Navegar (setas)',
   risk_plan_mitigate: 'Mitigar',
   risk_plan_transfer: 'Transferir',
@@ -737,7 +734,6 @@ const en: Record<MsgKey, string> = {
   settings: 'Settings',
   open_file: 'Open file',
   create_file: 'Create file',
-  reopen_last: 'Reopen last',
   password: 'Password',
   password_confirm: 'Confirm password',
   password_mismatch: 'Passwords do not match',
@@ -885,7 +881,6 @@ sidebar_teams_heading: 'Teams',
   kanban_close_btn: 'Close',
   kanban_expand_title: 'Expand',
   kanban_collapse_title: 'Restore',
-  kanban_force_save_title: 'Save now',
   kanban_delete_btn: 'Delete',
   kanban_clear_zone_title: 'Clear tasks',
   kanban_clear_zone_btn: 'Delete all',
@@ -934,7 +929,6 @@ sidebar_teams_heading: 'Teams',
   risk_level_2: '2 · Medium',
   risk_level_3: '3 · High',
   risk_sort_exposure_title: 'Sort by exposure',
-  risk_exposure_edit_title: 'Edit chance, impact and plan',
   risk_row_menu_hint: 'Row menu (Space) · Expand (Enter) · Navigate (arrows)',
   risk_plan_mitigate: 'Mitigate',
   risk_plan_transfer: 'Transfer',
@@ -1436,13 +1430,6 @@ export function formatDate(iso: string, locale: Locale): string {
 /** formatDate() with a two-digit year ("02/07/26") — for tight spots like the task card's due date. */
 export function formatDateShort(iso: string, locale: Locale): string {
   return formatDate(iso, locale).replace(/\d{2}(?=\d{2}$)/, '')
-}
-
-/** Locale-ordered date (see formatDate) plus 24h time — for timestamps where the date alone would be ambiguous for an hourly interval. */
-export function formatDateTime(ms: number, locale: Locale): string {
-  const d = new Date(ms)
-  const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-  return `${formatDate(iso, locale)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
 /** formatDate() prefixed with the 3-letter weekday abbreviation (e.g. "Wed, 07/24/2026") — used for `@day` ref chips, where recalling the weekday at a glance matters more than in a plain due-date field. */
