@@ -259,7 +259,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   // --- timeline (SVG) -------------------------------------------------------
 
-  const timelineEl = el('div', { class: 'tt-milestone-timeline' })
+  // A Tab stop so a keyboard user can scroll a dense timeline with the arrow keys (it has no focusable content of its
+  // own); always one, since the first render may run detached, where whether it overflows cannot be measured.
+  const timelineEl = el('div', { class: 'tt-milestone-timeline', tabindex: '0', role: 'region', 'aria-label': t(lc, 'milestone_timeline_label') })
   // The drawing is never scaled below its natural size (styles.css), so a dense
   // timeline scrolls sideways — and the plain wheel drives that scroll.
   const unbindTimelineWheel = wheelScrollsHorizontally(timelineEl)

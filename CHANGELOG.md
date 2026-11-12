@@ -4,6 +4,20 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.4] - 2026-11-11
+
+### Added
+- Double-click the blank space of a task-board column to add a task there; right-click a team in the sidebar to edit or delete it.
+- High contrast and Colorblind-safe palettes replace Blueprint and Desert (a saved Blueprint becomes Signal, Desert becomes Field Ledger).
+
+### Changed
+- Every palette and theme now has readable text and icons (AA contrast), and more controls have screen-reader names.
+- The Editor tab of Help lists the key tables first and the prose sections last.
+
+### Fixed
+- Pasting plain text mid-list-item no longer splits the item; a space after bold text or an @-mention is no longer doubled; Alt+C closes date calendars again.
+- Pictures added after a failed password change are kept when the file is next opened.
+
 ## [3.6.3] - 2026-11-07
 
 ### Added

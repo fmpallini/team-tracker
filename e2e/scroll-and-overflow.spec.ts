@@ -105,3 +105,33 @@ test('risk rows keep every control inside the row border, at XL in split view, a
     expect(out, `window ${w}px`).toEqual([])
   }
 })
+
+// The Exposure header must read whole beside its sort arrow in every font stack, text size and language: a fixed
+// column width clipped the arrow first, then "Exposure" itself under a wider font. The column now sizes itself from
+// the header text, and the rows' exposure cells and gutters must follow it.
+const FONTS = ['system', 'serif', 'mono', 'classic', 'rounded', 'segoe', 'legible'] as const
+for (const locale of ['en-US', 'pt-BR'] as const) {
+  test(`risk header (${locale}): Exposure and its sort arrow read whole in every font and size, and the rows line up`, async ({ page }) => {
+    const doc = buildDoc('M', { kind: 'risks' }, { locale })
+    await openDoc(page, doc)
+    for (const font of FONTS) {
+      for (const size of ['XS', 'M', 'XL'] as const) {
+        // Applied the way Preferences does: on <html>, with no re-render of the module.
+        await page.evaluate(([f, z]) => { document.documentElement.dataset.font = f; document.documentElement.dataset.size = z }, [font, size])
+        await expect.poll(() => page.locator('.tt-risk-header-exposure').evaluate((b) => {
+          const label = b.querySelector<HTMLElement>('.tt-risk-header-exposure-label')!
+          const arrow = b.querySelector('svg')!.getBoundingClientRect()
+          const box = b.getBoundingClientRect()
+          const cell = document.querySelector('.tt-risk-exposure-cell')!.getBoundingClientRect()
+          const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+          return {
+            labelWhole: label.scrollWidth <= label.clientWidth,
+            arrowInside: arrow.left >= box.left - 0.5 && arrow.right <= box.right + 0.5,
+            // styles.css: the header is .3rem - 1px narrower than the column it heads
+            rowsLineUp: Math.abs(cell.width - (box.width + 0.3 * rem - 1)) <= 1,
+          }
+        }), `${font} ${size}`).toEqual({ labelWhole: true, arrowInside: true, rowsLineUp: true })
+      }
+    }
+  })
+}

@@ -21,7 +21,7 @@ const SCREENSHOTS = [
   { file: 'daily-notes-and-org.png', theme: 'light', palette: null, view: 'daily-and-org' },
   { file: 'rich-text-editor.png', theme: 'light', palette: 'signal', view: 'rich-text' },
   { file: 'action-items-kanban.png', theme: 'dark', palette: 'ember', view: 'kanban' },
-  { file: 'milestones.png', theme: 'light', palette: 'blueprint', view: 'milestones' },
+  { file: 'milestones.png', theme: 'light', palette: 'signal', view: 'milestones' },
   { file: 'risks.png', theme: 'dark', palette: 'synthwave', view: 'risks' },
   { file: 'person-notes.png', theme: 'dark', palette: 'forest', view: 'person-notes' },
   { file: 'command-palette.png', theme: 'dark', palette: 'cosmic', view: 'command-palette' },

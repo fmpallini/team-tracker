@@ -171,6 +171,13 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
     // the field: Tab cycles inside until a pick or Escape.
     wrap.addEventListener('keydown', (e) => {
       const ev = e as KeyboardEvent
+      // Alt+C opened it, so it closes it too, from inside the calendar where that chord left the focus.
+      if (isCalendarToggle(ev)) {
+        ev.preventDefault()
+        ev.stopPropagation()
+        closePopover()
+        return
+      }
       if (ev.key !== 'Tab') return
       const stops = Array.from(wrap.querySelectorAll<HTMLElement>('button')).filter((b) => b.tabIndex >= 0)
       const at = stops.indexOf(document.activeElement as HTMLElement)
@@ -212,13 +219,20 @@ export function createDatePicker(opts: DatePickerOptions): DatePickerHandle {
 
   // Keys on the field. Up/Down step a day and t is today, from what the field
   // holds (today when empty); Alt+Down opens the calendar and goes into it, as
-  // on a native date field, and Alt+C does the same (the key that shows or hides
-  // the daily-notes calendar). Alt+Down is also the pane swap, so both stop here.
+  // on a native date field. Alt+C (the key that shows or hides the daily-notes
+  // calendar) toggles it: it opens and goes in, or closes an open one. Alt+Down
+  // is also the pane swap, so both stop here.
+  const isCalendarToggle = (e: KeyboardEvent): boolean => e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && matchKey(e, 'c')
   function onFieldKeydown(e: KeyboardEvent): void {
     if (isReadOnlyLocked()) return
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowDown' || matchKey(e, 'c'))) {
+    const toggle = isCalendarToggle(e)
+    if (toggle || (e.key === 'ArrowDown' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey)) {
       e.preventDefault()
       e.stopPropagation()
+      if (toggle && popover) {
+        closePopover()
+        return
+      }
       if (!popover) openPopover()
       popover?.querySelector<HTMLElement>('.tt-calendar-day[tabindex="0"]')?.focus()
       return

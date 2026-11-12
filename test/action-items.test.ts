@@ -1203,6 +1203,30 @@ describe('renderActionItems — edit modal', () => {
     expect(plumChip.classList.contains('selected')).toBe(true)
   })
 
+  test('double-clicking a column\'s blank space opens a new task modal that appends to the bottom of that column', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a', status: 'done', order: 0 }), item({ id: 'b', status: 'done', order: 1 })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    const bodies = container.querySelectorAll<HTMLElement>('.tt-kanban-col-body')
+    const doneBody = bodies[bodies.length - 2]! // columns end with Done, Cancelled
+    doneBody.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(document.querySelector('.tt-kanban-form')).not.toBeNull()
+
+    const added = store.doc.teams[0]!.actionItems.find((i) => i.id !== 'a' && i.id !== 'b')!
+    expect(added.status).toBe('done')
+    expect(added.order).toBeGreaterThan(1)
+  })
+
+  test('double-clicking a card does not also start a new task', () => {
+    const team = makeTeam({ actionItems: [item({ id: 'a' })] })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+
+    cards(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(store.doc.teams[0]!.actionItems).toHaveLength(1)
+  })
+
   test('editing an existing card via dblclick pre-fills fields, and the edit persists live — no Save needed', () => {
     const team = makeTeam({ actionItems: [item({ id: 'a', summary: 'Old', dueDate: '2026-01-01', assignee: 'Bruno', color: 'rust' })] })
     const { container, store, pm, loc } = setup(team)
@@ -1957,7 +1981,21 @@ describe('renderActionItems — tag display and filter', () => {
 
     const rustChip = chipByColor(container, '.tt-kanban-tag-chip', 'rust')
     expect(rustChip.querySelector('.tt-kanban-tag-chip-count')?.textContent).toBe('1')
-    expect(rustChip.textContent?.trim()).toBe('Blocked1')
+    expect(rustChip.textContent?.trim()).toBe('Blocked 1')
+  })
+
+  test('a chip\'s accessible name carries its count, and starts with the name it shows', () => {
+    const team = makeTeam({
+      actionTagNames: { rust: 'Blocked' },
+      actionItems: [item({ id: 'a', color: 'rust', status: 'todo' }), item({ id: 'b', color: 'slate', status: 'todo' })],
+    })
+    const { container, store, pm, loc } = setup(team)
+    render(container, loc, store, pm)
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'rust').getAttribute('aria-label')).toBe('Blocked 1')
+    // Unnamed: the suggested name, then the count it draws.
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'slate').getAttribute('aria-label')).toMatch(/^\S.* 1$/)
+    // No open card, no count.
+    expect(chipByColor(container, '.tt-kanban-tag-chip', 'sage').getAttribute('aria-label')).not.toMatch(/\d/)
   })
 
   // An unnamed color is still a perfectly good thing to filter by — the

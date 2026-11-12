@@ -34,11 +34,12 @@ describe('fitText', () => {
 
   test('the smallest step also allows a third line, and a later fit clears it', () => {
     const node = fakeName(100, 40)
+    // jsdom 31 aliases -webkit-line-clamp to line-clamp (one slot), so assert on the standard spelling.
     expect(fit(node)).toBe('0.78em')
-    expect(node.style.getPropertyValue('-webkit-line-clamp')).toBe('3')
+    expect(node.style.getPropertyValue('line-clamp')).toBe('3')
     node.box = 100
     fitText(node.parentElement!, '.tt-team-name')
-    expect(node.style.getPropertyValue('-webkit-line-clamp')).toBe('')
+    expect(node.style.getPropertyValue('line-clamp')).toBe('')
   })
 
   test('never goes below the pixel floor', () => {

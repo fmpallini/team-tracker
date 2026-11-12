@@ -11,6 +11,8 @@
  * save" bring the image back (the save sweep drops unreferenced images from
  * the FILE, not from here).
  */
+import { sniffImage } from './image-import'
+
 export interface BlobCodec {
   seal(id: string, plain: Uint8Array): Promise<Uint8Array>
   open(id: string, sealed: Uint8Array): Promise<Uint8Array>
@@ -93,13 +95,32 @@ export function createImageStore(initial: BlobCodec | null): ImageStore {
 
     async rekey(next) {
       // Every image is opened with the OLD codec and held plain until the new codec seals it again.
+      const alreadyNext = new Set<string>()
       for (const [id, e] of entries) {
         const plain = await plainOf(id, e)
         if (plain) e.plain = plain
+        else if (e.stored && await isInForm(next, id, e.stored)) alreadyNext.add(id)
         else e.stored = null
       }
       codec = next
-      for (const e of entries.values()) e.stored = null
+      for (const [id, e] of entries) if (!alreadyNext.has(id)) e.stored = null
     },
+  }
+}
+
+/**
+ * Whether `stored` is already what `next` would store for `id`. A browser copy whose own re-key failed after a
+ * password change keeps its records under the old key while the pictures added afterwards were sealed under the
+ * new one (the image store had already moved), so the next open's re-key meets blobs the old key cannot open but
+ * that need no change. Under a key, AES-GCM (with the id as additional data) proves it; with no key the stored
+ * form is the picture itself, which a sealed blob's random bytes never pass for.
+ */
+async function isInForm(next: BlobCodec | null, id: string, stored: Uint8Array): Promise<boolean> {
+  if (!next) return sniffImage(stored) !== null
+  try {
+    await next.open(id, stored)
+    return true
+  } catch {
+    return false
   }
 }

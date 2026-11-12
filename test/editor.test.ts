@@ -228,6 +228,27 @@ describe('paste', () => {
     editor.destroy()
   })
 
+  test('plain text pasted mid-list-item drops its leading/trailing line breaks (they would split the item around it)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('- item')
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const li = editor.root.querySelector('.editor li')!
+    const range = document.createRange()
+    range.setStart(li.firstChild!, 2)
+    range.collapse(true)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    dispatchPaste(editor, { 'text/plain': '\r\nPASTED\r\n' })
+    dispatchPaste(editor, { 'text/plain': '\na\nb\n\n' })
+
+    const inserts = execSpy.mock.calls.filter((c) => c[0] === 'insertText')
+    expect(inserts).toEqual([['insertText', false, 'PASTED'], ['insertText', false, 'a\nb']])
+    editor.destroy()
+  })
+
   test('inline styles the browser adds while inserting a paste are removed', () => {
     // Chromium puts the surrounding block's font on the inserted spans.
     vi.spyOn(document, 'execCommand').mockImplementation((cmd, _s, val) => {
@@ -3561,6 +3582,32 @@ describe('inline auto-format caret exit', () => {
     expect(sel.anchorNode).toBe(mark.nextSibling)
     // and it round-trips: the gap is a plain trailing space, nothing more
     expect(editor.getMd()).toBe(`a ${typed} `)
+    editor.destroy()
+  })
+
+  test('the space typed right after the gap is the gap: it is absorbed once, and the next space is real', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a **b**</div>')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const space = (): InputEvent => {
+      const e = new InputEvent('beforeinput', { inputType: 'insertText', data: ' ', bubbles: true, cancelable: true })
+      editorEl.dispatchEvent(e)
+      return e
+    }
+    expect(space().defaultPrevented).toBe(true)
+    expect(space().defaultPrevented).toBe(false)
+    editor.destroy()
+  })
+
+  test('a gap the user already typed past absorbs nothing', () => {
+    const { editor, editorEl } = mountAt('en-US', '<div>a **b**</div>')
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const slot = editorEl.querySelector('strong')!.nextSibling as Text
+    slot.data = ' c'
+    const r = document.createRange(); r.setStart(slot, 2); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+    const e = new InputEvent('beforeinput', { inputType: 'insertText', data: ' ', bubbles: true, cancelable: true })
+    editorEl.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(false)
     editor.destroy()
   })
 

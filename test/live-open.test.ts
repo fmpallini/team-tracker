@@ -440,6 +440,65 @@ test("a browser copy under another password prompts until the right one is typed
   expect((await createLiveStore(rawDb, doc.docId, fileCodec).load()).records.size).toBeGreaterThan(0)
 }, 300000)
 
+// Schema 19 is the first bump since the browser copy (schema 18): a copy an older build left with unwritten edits is
+// read through the migration, never dropped or refused.
+test('a browser copy from the previous schema, with unwritten edits, opens through the migration', async () => {
+  const doc = docWith('from file')
+  const stamp = newStamp()
+  const first = await open(await opened(doc, stamp), null, asks())
+  first.store.update((d) => {
+    d.teams[0]!.dailyNotes['2026-07-01'] = 'edited in the older build'
+    // What a schema-18 build wrote: its own version, and a palette that schema 19 retired.
+    d.schemaVersion = SCHEMA_VERSION - 1
+    ;(d.prefs as { palette: string }).palette = 'blueprint'
+  })
+  await first.handle.persister.flush()
+  first.handle.persister.dispose()
+  const meta = (await rawDb.getMeta(doc.docId))!
+  await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...meta, schemaVersion: SCHEMA_VERSION - 1 } })
+  expect((await rawDb.getMeta(doc.docId))!.unwrittenChanges).toBe(true)
+
+  const a = asks()
+  const r = await open(await opened(doc, stamp), null, a)
+  expect(r.source).toBe('browser')
+  expect(r.doc.schemaVersion).toBe(SCHEMA_VERSION)
+  expect(r.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('edited in the older build')
+  expect(r.doc.prefs.palette).toBe('signal')
+  expect(r.needsFileWrite).toBe(true)
+})
+
+test('a picture added after the copy drifted survives the move to the file\'s key at the next open', async () => {
+  const doc = docWith('secret base')
+  const stamp = newStamp()
+  const first = await open(await opened(doc, stamp, 'pw1'), 'pw1', asks())
+  // A password change whose browser-copy re-key failed: the file is under pw2 and the image store moved to its key
+  // (change-password.ts does that before the file write), but the copy's records stay under pw1.
+  resetSessionKey()
+  const file = await opened(doc, stamp, 'pw2')
+  await first.store.images.rekey(file.images.codec())
+  // A picture added afterwards is sealed under pw2 and stored that way in the copy.
+  const IMG = 'b'.repeat(32)
+  const bytes = new Uint8Array([7, 8, 9])
+  first.store.images.putPlain(IMG, bytes)
+  first.store.update((d) => {
+    d.images[IMG] = { mime: 'image/webp', w: 1, h: 1, bytes: 3 }
+    d.teams[0]!.dailyNotes['2026-07-02'] = `![p](img:${IMG})`
+  })
+  await first.handle.persister.flush()
+  first.handle.persister.dispose()
+
+  resetSessionKey()
+  const r = await open(file, 'pw2', asks({ pw: ['pw1'] }))
+  expect(r.source).toBe('browser')
+  expect(r.password).toBe('pw2')
+  expect(await r.images.getPlain(IMG)).toEqual(bytes)
+  // The copy, moved to the file's key, still holds it.
+  await r.handle.persister.flush()
+  const salt = file.images.codec()!.header!.salt
+  const moved = await createLiveStore(rawDb, doc.docId, await recordCodec('pw2', salt)).load()
+  expect(await (await blobCodec('pw2', salt)).open(IMG, moved.blobs.get(IMG)!)).toEqual(bytes)
+}, 300000)
+
 test('a read-only tab opening a drifted copy leaves it under its old key until it holds the lock', async () => {
   const { doc, stamp } = await encryptedCopy('pw1')
   resetSessionKey()

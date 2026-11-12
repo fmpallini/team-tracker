@@ -38,6 +38,16 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --hl-kw:#8a3fa0; --hl-str:#3f7a35; --hl-num:#a5561b; --hl-com:#8a8577;
   /* Text on a solid --accent / --danger fill (primary button, badges). White fails WCAG AA on every dark theme's bright accent, so dark themes use the page background instead (ember overrides --on-danger below). */
   --on-accent:#fff; --on-danger:#fff; --on-brass:#fff;
+  /* Status colors as TEXT (labels, errors, values): each pulled toward --fg just far enough for AA on every plain and
+     tinted surface it sits on in the weakest palette (test/palette-contrast.test.ts). Icons, borders and fills keep the
+     raw token: 3:1 is their bar, and the raw hue reads truer. Declared once here, they follow every palette and theme. */
+  --brass-text: color-mix(in srgb, var(--brass) 60%, var(--fg)); --danger-text: color-mix(in srgb, var(--danger) 75%, var(--fg)); --ok-text: color-mix(in srgb, var(--ok) 90%, var(--fg));
+  /* The same for ICONS, where 3:1 is the bar: only these three fall under it raw (the light brass/sage some light palettes keep for fills). */
+  --brass-icon: color-mix(in srgb, var(--brass) 80%, var(--fg)); --card-brass-icon: color-mix(in srgb, var(--card-brass) 80%, var(--fg)); --card-sage-icon: color-mix(in srgb, var(--card-sage) 80%, var(--fg));
+  /* Tag chips: one text color per theme on a solid card-color fill. Defaults only: core/card-ink.ts sets the ink (white on
+     a light page, the page color on a dark one) and, per palette, nudges a fill that cannot carry it to the nearest shade that reads at AA. */
+  --on-chip:#fff;
+  --chip-slate:var(--card-slate); --chip-brass:var(--card-brass); --chip-sage:var(--card-sage); --chip-rust:var(--card-rust); --chip-plum:var(--card-plum); --chip-ledger:var(--card-ledger);
 }
 [data-theme=dark] {
   --bg:#1c1a14; --fg:#e8dfc8; --muted:#a89a78; --accent:#8fb6c4; --accent-rgb:143,182,196;
@@ -56,7 +66,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
    grounding) behind each one. */
 [data-palette=signal][data-theme=light] {
   --bg:#f7f7f5; --fg:#101012; --muted:#45464a; --accent:#0058a3; --accent-rgb:0,88,163;
-  --panel:#ffffff; --border:#c9c9c4; --brass:#8f4b10; --danger:#a84a12; --ok:#00805c;
+  --panel:#ffffff; --border:#c9c9c4; --brass:#8f4b10; --danger:#a84a12; --ok:#017857;
   --card-slate:#2f7fc4; --card-brass:#b57900; --card-sage:#00805c; --card-rust:#a84a12; --card-plum:#a14f7f; --card-ledger:#5c6570;
 }
 [data-palette=signal][data-theme=dark] {
@@ -64,39 +74,39 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --panel:#17171a; --border:#3a3a3d; --brass:#e0973b; --danger:#e0763d; --ok:#3ecf9e;
   --card-slate:#5ab4f0; --card-brass:#e8b83b; --card-sage:#3ecf9e; --card-rust:#e0663d; --card-plum:#d98fc0; --card-ledger:#9aa4b0;
 }
-[data-palette=blueprint][data-theme=light] {
-  --bg:#eef4f9; --fg:#10263c; --muted:#4c6a86; --accent:#0a6890; --accent-rgb:10,104,144;
-  --panel:#f7fbfd; --border:#c3d9e8; --brass:#a15c1f; --danger:#b5460a; --ok:#2f7a5c;
-  --card-slate:#0a6890; --card-brass:#a8780f; --card-sage:#2f7a5c; --card-rust:#b83a1c; --card-plum:#6b4a8a; --card-ledger:#6f7b86;
+[data-palette=contrast][data-theme=light] {
+  --bg:#ffffff; --fg:#000000; --muted:#3b3b3b; --accent:#0039a6; --accent-rgb:0,57,166;
+  --panel:#ffffff; --border:#555555; --brass:#7a4a00; --danger:#a1000b; --ok:#005a1f;
+  --card-slate:#0039a6; --card-brass:#7a4a00; --card-sage:#005a1f; --card-rust:#a12a00; --card-plum:#5d1f8a; --card-ledger:#474747;
 }
-[data-palette=blueprint][data-theme=dark] {
-  --bg:#14283f; --fg:#eaf3fb; --muted:#8fb0c9; --accent:#4fc3f7; --accent-rgb:79,195,247;
-  --panel:#1b3552; --border:#2f5578; --brass:#e2a35c; --danger:#e2794a; --ok:#6bc79a;
-  --card-slate:#4fc3f7; --card-brass:#e8b64c; --card-sage:#6bc79a; --card-rust:#e8694a; --card-plum:#b58fd6; --card-ledger:#a9b3bc;
+[data-palette=contrast][data-theme=dark] {
+  --bg:#000000; --fg:#ffffff; --muted:#d0d0d0; --accent:#7cc4ff; --accent-rgb:124,196,255;
+  --panel:#0d0d0d; --border:#a6a6a6; --brass:#ffd35c; --danger:#ff8070; --ok:#6be38f;
+  --card-slate:#7cc4ff; --card-brass:#ffd35c; --card-sage:#6be38f; --card-rust:#ff9a66; --card-plum:#d9a8ff; --card-ledger:#cfcfcf;
 }
 [data-palette=forest][data-theme=light] {
-  --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#8f5814; --accent-rgb:143,88,20;
-  --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3f7a5c; --on-brass:#000;
+  --bg:#eef1e4; --fg:#1e2a1a; --muted:#5c6b52; --accent:#526319; --accent-rgb:82,99,25;
+  --panel:#f6f8ef; --border:#cdd6bd; --brass:#b8862e; --danger:#a8422e; --ok:#3b7054; --on-brass:#000;
   --card-slate:#2f6f9a; --card-brass:#b8862e; --card-sage:#3f7a45; --card-rust:#a8422e; --card-plum:#6b4a7a; --card-ledger:#6b6b5c;
 }
 [data-palette=forest][data-theme=dark] {
-  --bg:#16211a; --fg:#e6ecda; --muted:#8fa082; --accent:#d99a4a; --accent-rgb:217,154,74;
+  --bg:#16211a; --fg:#e6ecda; --muted:#8fa082; --accent:#aec26b; --accent-rgb:174,194,107;
   --panel:#1e2c22; --border:#34452f; --brass:#e0b458; --danger:#d97a5e; --ok:#6fae8a;
   --card-slate:#6fa8d0; --card-brass:#e0b458; --card-sage:#6fae6a; --card-rust:#d97a5e; --card-plum:#b98fcb; --card-ledger:#9a9a8a;
 }
-[data-palette=desert][data-theme=light] {
-  --bg:#f3e6d2; --fg:#3a2415; --muted:#8a6b4a; --accent:#14706c; --accent-rgb:20,112,108;
-  --panel:#f8efe0; --border:#ddc3a0; --brass:#a8622e; --danger:#b5432a; --ok:#4c6934;
-  --card-slate:#14706c; --card-brass:#b8832a; --card-sage:#4c6934; --card-rust:#b5432a; --card-plum:#8a3f6b; --card-ledger:#7a6f66;
+[data-palette=colorsafe][data-theme=light] {
+  --bg:#f6f6f3; --fg:#16181d; --muted:#4d525c; --accent:#823774; --accent-rgb:130,55,116;
+  --panel:#ffffff; --border:#c9cbd1; --brass:#eb881f; --danger:#934319; --ok:#3566b8; --on-brass:#000;
+  --card-slate:#02629c; --card-brass:#ad721c; --card-sage:#6f9e89; --card-rust:#9f3501; --card-plum:#654055; --card-ledger:#6f6f6f;
 }
-[data-palette=desert][data-theme=dark] {
-  --bg:#241a12; --fg:#f0e2ca; --muted:#b89a78; --accent:#4fc9c2; --accent-rgb:79,201,194;
-  --panel:#2e2119; --border:#4a3826; --brass:#d99a5c; --danger:#e2795a; --ok:#8fb56a;
-  --card-slate:#4fc9c2; --card-brass:#e0b24e; --card-sage:#8fb56a; --card-rust:#e2795a; --card-plum:#c97fae; --card-ledger:#b0a79c;
+[data-palette=colorsafe][data-theme=dark] {
+  --bg:#14161b; --fg:#eceef2; --muted:#a3a9b5; --accent:#e39cd3; --accent-rgb:227,156,211;
+  --panel:#1d2027; --border:#3a3f4a; --brass:#f3de90; --danger:#d16022; --ok:#699ef5;
+  --card-slate:#37a3f1; --card-brass:#d58800; --card-sage:#94c4ae; --card-rust:#c85b32; --card-plum:#fccfe7; --card-ledger:#808080;
 }
 [data-palette=cosmic][data-theme=light] {
   --bg:#eceef2; --fg:#14141c; --muted:#55566a; --accent:#5b4bc4; --accent-rgb:91,75,196;
-  --panel:#f5f6f9; --border:#cfd1dc; --brass:#b8791e; --danger:#c23f6b; --ok:#1f7a68; --on-brass:#000;
+  --panel:#f5f6f9; --border:#cfd1dc; --brass:#b8791e; --danger:#c23f6b; --ok:#1e7060; --on-brass:#000;
   --card-slate:#3a4fb0; --card-brass:#b8791e; --card-sage:#1f7a68; --card-rust:#c23f6b; --card-plum:#9d4bc4; --card-ledger:#55566a;
 }
 [data-palette=cosmic][data-theme=dark] {
@@ -115,8 +125,8 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --card-slate:#22d3ee; --card-brass:#ff3fa4; --card-sage:#39ffb0; --card-rust:#ff6a3d; --card-plum:#b06bff; --card-ledger:#a8a4b8;
 }
 [data-palette=verdant][data-theme=light] {
-  --bg:#d6ebcd; --fg:#17240f; --muted:#57684c; --accent:#1c8248; --accent-rgb:28,130,72;
-  --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#6b8a2e; --on-brass:#000;
+  --bg:#d6ebcd; --fg:#17240f; --muted:#536448; --accent:#1b6c3b; --accent-rgb:27,108,59;
+  --panel:#e8f4e0; --border:#b9d4a8; --brass:#a17a1e; --danger:#a8402c; --ok:#506924; --on-brass:#000;
   --card-slate:#3a6b7a; --card-brass:#a17a1e; --card-sage:#6b8a2e; --card-rust:#a8402c; --card-plum:#6b4a7a; --card-ledger:#57684c;
 }
 [data-palette=verdant][data-theme=dark] {
@@ -125,8 +135,8 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --card-slate:#6aa0ad; --card-brass:#d1a233; --card-sage:#a3c94f; --card-rust:#d9694a; --card-plum:#b98fcb; --card-ledger:#93ab84;
 }
 [data-palette=ember][data-theme=light] {
-  --bg:#f4cebe; --fg:#2c1712; --muted:#8a6155; --accent:#b23a2c; --accent-rgb:178,58,44;
-  --panel:#f9e2d6; --border:#e2b6a2; --brass:#a1751e; --danger:#9c2a1f; --ok:#3f7a52; --on-brass:#000;
+  --bg:#f4cebe; --fg:#2c1712; --muted:#714d43; --accent:#993327; --accent-rgb:153,51,39;
+  --panel:#f9e2d6; --border:#e2b6a2; --brass:#a1751e; --danger:#9c2a1f; --ok:#3b6444; --on-brass:#000;
   --card-slate:#3f5f78; --card-brass:#a1751e; --card-sage:#3f7a52; --card-rust:#9c2a1f; --card-plum:#6b4a7a; --card-ledger:#8a6155;
 }
 [data-palette=ember][data-theme=dark] {
@@ -137,7 +147,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
 }
 [data-palette=graphite][data-theme=light] {
   --bg:#e9e9eb; --fg:#18181b; --muted:#52525b; --accent:#27272a; --accent-rgb:39,39,42;
-  --panel:#f6f6f7; --border:#c7c7cc; --brass:#8a6a1f; --danger:#b3261e; --ok:#2e7d4f;
+  --panel:#f6f6f7; --border:#c7c7cc; --brass:#8a6a1f; --danger:#b3261e; --ok:#2b7149;
   --card-slate:#3a6fa0; --card-brass:#a87a10; --card-sage:#2e7d4f; --card-rust:#c0392b; --card-plum:#7b4fa6; --card-ledger:#6b6b73;
 }
 [data-palette=graphite][data-theme=dark] {
@@ -146,8 +156,8 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --card-slate:#6aa6d9; --card-brass:#e0b64a; --card-sage:#5fbf8a; --card-rust:#e5675a; --card-plum:#b48ee0; --card-ledger:#9a9aa3;
 }
 [data-palette=rose][data-theme=light] {
-  --bg:#f7e6ea; --fg:#2e1620; --muted:#8a5a6a; --accent:#b0245a; --accent-rgb:176,36,90;
-  --panel:#fcf1f4; --border:#e6c3cd; --brass:#a8641a; --danger:#b3261e; --ok:#2f7a5a;
+  --bg:#f7e6ea; --fg:#2e1620; --muted:#835564; --accent:#b0245a; --accent-rgb:176,36,90;
+  --panel:#fcf1f4; --border:#e6c3cd; --brass:#a8641a; --danger:#b3261e; --ok:#2f6e53;
   --card-slate:#3a5f9a; --card-brass:#b0701a; --card-sage:#2f7a5a; --card-rust:#c2412d; --card-plum:#8a3f9a; --card-ledger:#7a6a70;
 }
 [data-palette=rose][data-theme=dark] {
@@ -156,8 +166,8 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
   --card-slate:#7a9cdc; --card-brass:#e0a050; --card-sage:#6fc29a; --card-rust:#f07a58; --card-plum:#c88ae0; --card-ledger:#b0a0a8;
 }
 [data-palette=citrus][data-theme=light] {
-  --bg:#f6f3d8; --fg:#26240f; --muted:#6b6838; --accent:#b45309; --accent-rgb:180,83,9;
-  --panel:#fbf9e6; --border:#dcd79c; --brass:#8f6a00; --danger:#b3331f; --ok:#3f7d2a;
+  --bg:#f6f3d8; --fg:#26240f; --muted:#6b6838; --accent:#a64e0a; --accent-rgb:166,78,10;
+  --panel:#fbf9e6; --border:#dcd79c; --brass:#8f6a00; --danger:#b3331f; --ok:#3c7227;
   --card-slate:#2d6a9f; --card-brass:#a87a00; --card-sage:#3f7d2a; --card-rust:#c0392b; --card-plum:#7d4a9a; --card-ledger:#6e6c52;
 }
 [data-palette=citrus][data-theme=dark] {
@@ -495,7 +505,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-save-pill-text { font-family: var(--font-data); letter-spacing: .01em; }
 
 .tt-save-pill[data-state="ok"] {
-  color: var(--ok);
+  color: var(--ok-text);
   background: color-mix(in srgb, var(--ok) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
 }
@@ -507,7 +517,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-save-pill[data-state="error"],
 .tt-save-pill[data-state="store-error"] {
-  color: var(--danger);
+  color: var(--danger-text);
   background: color-mix(in srgb, var(--danger) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
@@ -519,7 +529,7 @@ body { background: var(--bg); color: var(--fg); }
    step, rather than introducing a new color variable across every palette. */
 .tt-save-pill[data-state="permission"],
 .tt-save-pill[data-state="export"].tt-save-pill-stale {
-  color: var(--brass);
+  color: var(--brass-text);
   background: color-mix(in srgb, var(--brass) 14%, var(--panel));
   border-color: color-mix(in srgb, var(--brass) 45%, var(--border));
 }
@@ -551,7 +561,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .tt-btn-primary:hover { color: var(--on-accent); opacity: .9; }
 .tt-btn-left { margin-right: auto; }
-.tt-btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+.tt-btn-danger { border-color: var(--danger); color: var(--danger-text); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
 
 /* Icon color carries meaning, nothing else is colored: red = destroys, green = confirms/restores, gold = state you set (favorite, lock), accent = changes content, slate = settings/help/dates. Every other icon keeps the button's own (neutral) text color. The icon() span carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
@@ -563,7 +573,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-reopen { color: var(--ok); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-star,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-starFill,
-.tt-btn:not(:hover):not(:disabled) .tt-icon-lock { color: var(--card-brass); }
+.tt-btn:not(:hover):not(:disabled) .tt-icon-lock { color: var(--card-brass-icon); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-edit,
 .tt-btn:not(:hover):not(:disabled) .tt-icon-plus { color: var(--accent); }
 .tt-btn:not(:hover):not(:disabled) .tt-icon-gear,
@@ -643,7 +653,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-modal-warning {
   margin: .75rem 0 0; padding: .5rem .6rem; border-left: 3px solid var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, var(--panel));
-  color: var(--danger); font-weight: 600;
+  color: var(--danger-text); font-weight: 600;
 }
 .tt-modal-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: .5rem; }
 .tt-password-form { display: flex; flex-direction: column; gap: .75rem; }
@@ -653,7 +663,7 @@ body { background: var(--bg); color: var(--fg); }
   padding: .4rem .5rem; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--bg); color: var(--fg); font-size: 1rem;
 }
-.tt-field-error { color: var(--danger); font-size: .85rem; min-height: 1.1em; }
+.tt-field-error { color: var(--danger-text); font-size: .85rem; min-height: 1.1em; }
 
 /* Password-less escape hatch: sits below the Cancel/OK row, ruled off from
    the encrypted flow above it, with its disclaimer next to the button it
@@ -835,6 +845,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-tab { position: relative; }
 /* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
 .tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
+.tt-pane-tab-key::before { content: attr(data-key); }
 .tt-pane-tab:hover:not(:disabled) { background: var(--hover-soft); }
 .tt-pane-tab:disabled { cursor: not-allowed; opacity: .6; }
 .tt-pane-tab:focus-visible { outline-offset: -2px; }
@@ -938,6 +949,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-palette-due { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
 .tt-palette-team { flex: none; max-width: 10rem; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* --muted is tuned for the page, and dipped under 4.5:1 on the --selected wash. */
+.tt-palette-item.selected .tt-palette-due, .tt-palette-item.selected .tt-palette-team { color: color-mix(in srgb, var(--muted) 70%, var(--fg)); }
 .tt-palette-remove {
   flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
   background: transparent; color: var(--fg); border: none; border-radius: var(--r-sm); cursor: pointer; opacity: .6;
@@ -1132,9 +1145,9 @@ body { background: var(--bg); color: var(--fg); }
 .editor a.ref[data-ref^="day:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='3.5' width='11' height='10' rx='1.5'/%3E%3Cpath d='M2.5 6.5h11M5.5 2v3M10.5 2v3'/%3E%3C/svg%3E"); }
 .editor a.ref[data-ref^="day:"]::before { background-color: var(--card-slate); }
 .editor a.ref[data-ref^="action:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='2.5' width='11' height='11' rx='2'/%3E%3Cpath d='M5.5 8.2l1.9 1.9 3.2-3.8'/%3E%3C/svg%3E"); }
-.editor a.ref[data-ref^="action:"]::before { background-color: var(--card-sage); }
+.editor a.ref[data-ref^="action:"]::before { background-color: var(--card-sage-icon); }
 .editor a.ref[data-ref^="milestone:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14V2.5M4 3h8l-2 3 2 3H4'/%3E%3C/svg%3E"); }
-.editor a.ref[data-ref^="milestone:"]::before { background-color: var(--brass); }
+.editor a.ref[data-ref^="milestone:"]::before { background-color: var(--brass-icon); }
 .editor a.ref[data-ref^="risk:"] { --ref-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.5l6 10.5H2z'/%3E%3Cpath d='M8 6.75v3'/%3E%3Ccircle cx='8' cy='11.4' r='.8' fill='black'/%3E%3C/svg%3E"); }
 .editor a.ref[data-ref^="risk:"]::before { background-color: var(--danger); }
 
@@ -1167,7 +1180,7 @@ body { background: var(--bg); color: var(--fg); }
   cursor: pointer; font-size: .9rem; background: none; border: none; color: inherit; font-family: inherit;
 }
 .tt-context-menu-item:hover { background: var(--hover); }
-.tt-context-menu-item.danger { color: var(--danger); }
+.tt-context-menu-item.danger { color: var(--danger-text); }
 .tt-context-menu-check { display: inline-block; flex: none; width: 1.1em; color: var(--accent); font-weight: 700; }
 
 /* Backlinks badge/chip + popover (references pointing at a person/day/action/milestone/risk) */
@@ -1286,7 +1299,7 @@ body { background: var(--bg); color: var(--fg); }
   content: ''; position: absolute; right: 0; bottom: 0; width: 9px; height: 9px; border-bottom-right-radius: var(--r-sm);
   background: linear-gradient(135deg, transparent 50%, var(--card-plum) 50%);
 }
-.tt-calendar-day-today { box-shadow: inset 0 0 0 1.5px var(--brass); color: var(--brass); font-weight: 700; }
+.tt-calendar-day-today { box-shadow: inset 0 0 0 1.5px var(--brass); color: var(--brass-text); font-weight: 700; }
 .tt-calendar-day-selected { background: var(--accent); color: var(--on-accent); font-weight: 700; box-shadow: none; }
 .tt-calendar-day-selected::after { background: var(--on-accent); }
 .tt-calendar-day-selected.tt-calendar-day-has-backlinks::before { background: linear-gradient(135deg, transparent 50%, var(--on-accent) 50%); }
@@ -1481,7 +1494,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-card-band {
   display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 1.45rem; padding: .2rem .75rem;
   background: color-mix(in srgb, var(--stripe) 15%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--stripe) 38%, var(--border));
-  font-family: var(--font-data); font-size: .7rem; color: var(--muted);
+  /* --muted is tuned for plain surfaces; on the tint it is pulled a fifth toward --fg (AA in every palette x theme, test/palette-contrast.test.ts). */
+  font-family: var(--font-data); font-size: .7rem; color: color-mix(in srgb, var(--muted) 80%, var(--fg));
 }
 .tt-kanban-card.color-slate { --stripe: var(--card-slate); }
 .tt-kanban-card.color-brass { --stripe: var(--card-brass); }
@@ -1504,9 +1518,8 @@ body { background: var(--bg); color: var(--fg); }
    card whatever the column width — so let them fall to a second line instead
    of clipping. row-gap keeps the wrapped line from touching. */
 .tt-kanban-card-meta { display: flex; flex-wrap: wrap; gap: .3rem .55rem; align-items: center; padding: .1rem .55rem .45rem .75rem; font-size: .7rem; color: var(--muted); font-family: var(--font-data); }
-.tt-kanban-card-due.overdue { color: var(--danger); font-weight: 700; }
-/* The tag is a small-caps label in the band, in the card's own color (pulled toward the text color so it keeps its contrast on the tint). */
-.tt-kanban-card-tag { color: color-mix(in srgb, var(--stripe) 75%, var(--fg)); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
+/* The tag is a small-caps label in the band, in the card's own color, pulled toward the text color far enough to keep AA on the tint in every palette x theme (test/palette-contrast.test.ts; 60% fell short on light brass). */
+.tt-kanban-card-tag { color: color-mix(in srgb, var(--stripe) 55%, var(--fg)); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
 /* No margin-left:auto — that pushed the chip to the card's right edge and,
    in a wrapping row, stranded it alone past the edge. It now flows inline
    with the other chips and wraps with them. */
@@ -1534,7 +1547,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-trash {
   display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 44px; z-index: 6;
   align-items: center; justify-content: center;
-  border-top: 2px dashed var(--danger); color: var(--danger);
+  border-top: 2px dashed var(--danger); color: var(--danger-text);
   background: var(--bg); font-size: .85rem; text-align: center;
 }
 .tt-kanban-trash.active { display: flex; }
@@ -1576,14 +1589,15 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-color-chip {
   min-width: 26px; height: 26px; border-radius: var(--r-md); cursor: pointer; border: 2px solid transparent; padding: 0 .4rem;
   display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
-  font-size: .72rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+  font-size: .72rem; font-weight: 700;
 }
-.tt-kanban-color-chip.color-slate { background: var(--card-slate); }
-.tt-kanban-color-chip.color-brass { background: var(--card-brass); }
-.tt-kanban-color-chip.color-sage { background: var(--card-sage); }
-.tt-kanban-color-chip.color-rust { background: var(--card-rust); }
-.tt-kanban-color-chip.color-plum { background: var(--card-plum); }
-.tt-kanban-color-chip.color-ledger { background: var(--card-ledger); }
+.tt-kanban-color-chip { color: var(--on-chip); }
+.tt-kanban-color-chip.color-slate { background: var(--chip-slate); }
+.tt-kanban-color-chip.color-brass { background: var(--chip-brass); }
+.tt-kanban-color-chip.color-sage { background: var(--chip-sage); }
+.tt-kanban-color-chip.color-rust { background: var(--chip-rust); }
+.tt-kanban-color-chip.color-plum { background: var(--chip-plum); }
+.tt-kanban-color-chip.color-ledger { background: var(--chip-ledger); }
 .tt-kanban-color-chip.selected { border-color: var(--fg); }
 .tt-kanban-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: var(--sp-2); }
 .tt-kanban-filter-label { color: var(--muted); font-size: .8rem; flex: none; }
@@ -1604,8 +1618,9 @@ body { background: var(--bg); color: var(--fg); }
   transform: scale(1.08);
   z-index: 1;
 }
-.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { opacity: .6; filter: saturate(.5); }
-.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { opacity: .85; filter: none; }
+/* Pushed back by color alone: an opacity fade also faded the chip's name below a readable contrast. */
+.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected) { filter: saturate(.4); }
+.tt-kanban-tag-chips.filtering .tt-kanban-tag-chip:not(.selected):hover { filter: none; }
 /* Open cards this tag would filter to. Spaced with the chip's own `gap`
    rather than a left margin, so an unnamed swatch — where the count is the
    only child — still centers it instead of pushing it off-axis. */
@@ -1623,6 +1638,7 @@ body { background: var(--bg); color: var(--fg); }
    window still scales it to the page via PRINT_CSS in src/ui/panes.ts. */
 /* The timeline sits on a ledger card: panel fill, hairline border, resting shadow. No side padding: the drawing is sized to the element's width and already keeps its own margin for the end labels, so padding here would make it overflow and show a scrollbar nothing needs. */
 .tt-milestone-timeline { flex: none; overflow-x: auto; overflow-y: hidden; padding: .35rem 0 .5rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-card); }
+.tt-milestone-timeline:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .tt-milestone-svg { display: block; max-width: none; height: auto; }
 .tt-milestone-axis { stroke: var(--border); stroke-width: 1; }
 .tt-milestone-today-line { stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
@@ -1652,7 +1668,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row.tt-milestone-state-done { --st: var(--ok); }
 .tt-milestone-row.tt-milestone-state-overdue { --st: var(--danger); }
 .tt-milestone-row.tt-milestone-state-future { --st: var(--accent); }
-.tt-milestone-row.tt-milestone-state-overdue .tt-date-picker-input { color: var(--danger); }
+.tt-milestone-row.tt-milestone-state-overdue .tt-date-picker-input { color: var(--danger-text); }
 .tt-milestone-row.tt-milestone-done-row .tt-date-picker-input { color: var(--muted); }
 /* Done toggle: an open ring (red when late, accent when upcoming) that fills green with a check, like the timeline dot. A native checkbox underneath, so keyboard, label and form behavior are unchanged. */
 .tt-milestone-done-checkbox { appearance: none; -webkit-appearance: none; position: absolute; left: calc((var(--ms-gut) - 1.4rem) / 2); top: 50%; flex: none; width: 1.4rem; height: 1.4rem; margin: -.7rem 0 0; border: 2px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; display: inline-grid; place-content: center; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
@@ -1770,10 +1786,12 @@ body { background: var(--bg); color: var(--fg); }
 /* 7.2rem: the options carry a word ("2 · Medium", "3 · Alto") and the pill adds a level dot on the left and a chevron on the right; kept snug so the title gets the rest. */
 .tt-risk-header-chance, .tt-risk-chance-select,
 .tt-risk-header-impact, .tt-risk-impact-select { flex: none; width: 7.2rem; }
-.tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: 4.4rem; text-align: center; }
+/* --risk-exp-w: the Exposure column, header and rows alike. 4.8rem is its floor; risks.ts (fitExposureColumn) widens it to whatever the header label and arrow need in the current font, size and language. */
+.tt-risks { --risk-exp-w: 4.8rem; }
+.tt-risk-header-exposure, .tt-risk-exposure-cell { flex: none; width: var(--risk-exp-w); text-align: center; }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8rem; }
 /* The header's Exposure column heads the gutter, so it comes first; its width plus the header's padding and gap lands the Title where the rows' padded content starts. */
-.tt-risk-header-exposure { order: -1; width: calc(4.4rem - .3rem + 1px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-risk-header-exposure { order: -1; position: relative; width: calc(var(--risk-exp-w) - .3rem + 1px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.2rem; padding: .15rem .3rem; }
 /* The chip (or its placeholder, when the row has no mentions) is a fixed-
    width column like the header spacers above it — without `flex: none` it
@@ -1788,7 +1806,11 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-risk-header-exposure:hover, .tt-risk-header-exposure.active { color: var(--accent); }
 .tt-risk-header-chance, .tt-risk-header-impact, .tt-risk-header-plan { text-align: center; }
-.tt-risk-sort-indicator { opacity: .45; display: inline-block; width: .7em; text-align: center; }
+.tt-risk-header-exposure-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Measures the label unclipped, in the header's font (risks.ts's fitExposureColumn); never seen or read. */
+.tt-risk-header-exposure-sizer { position: absolute; left: 0; top: 0; visibility: hidden; white-space: nowrap; pointer-events: none; }
+/* Sized by its icon: a fixed .7em box (8px at this size) clipped the 12px arrow at the button's edge. */
+.tt-risk-sort-indicator { opacity: .45; display: inline-flex; flex: none; }
 .tt-risk-header-exposure:hover .tt-risk-sort-indicator, .tt-risk-header-exposure.active .tt-risk-sort-indicator { opacity: 1; }
 /* Monospace "tag" read for the editable data selects — bordered, muted,
    brightening to the accent on hover/focus — echoing the Field Ledger
@@ -1865,7 +1887,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-list { display: flex; flex-direction: column; gap: .55rem; }
 .tt-risk-row { position: relative; overflow: hidden; padding: var(--card-row-pad); border: 1px solid transparent; cursor: grab; }
 /* The exposure cell is the row's gutter: a full-height strip on the left, tinted with the level and holding the disc, so a high risk shows while scrolling. It is absolutely placed, so the row's own layout (wide or wrapped) does not move it; the row pads past it. A closed risk has no cell and keeps its plain padding. */
-.tt-risk-row:has(> .tt-risk-exposure-cell) { --risk-gut: 4.4rem; padding-left: calc(var(--risk-gut) + .5rem); }
+.tt-risk-row:has(> .tt-risk-exposure-cell) { --risk-gut: var(--risk-exp-w); padding-left: calc(var(--risk-gut) + .5rem); }
 .tt-risk-row > .tt-risk-exposure-cell {
   --lv: var(--exposure-low); position: absolute; inset: 0 auto 0 0; width: var(--risk-gut);
   background: color-mix(in srgb, var(--lv) 14%, var(--panel)); border-right: 1px solid color-mix(in srgb, var(--lv) 40%, var(--border));
@@ -1898,9 +1920,10 @@ select option { background: var(--bg); color: var(--fg); }
    border, the inset ring and the numeral in one go. Listed after the base
    rule so the closed-risk override below (which mutes every stamp) still
    wins on specificity where it should. */
-.tt-risk-exposure-low { color: var(--exposure-low); }
-.tt-risk-exposure-medium { color: var(--exposure-medium); }
-.tt-risk-exposure-high { color: var(--exposure-high); }
+/* As text: the status text tokens behind --exposure-* (which stay raw for the fills above). */
+.tt-risk-exposure-low { color: var(--ok-text); }
+.tt-risk-exposure-medium { color: var(--brass-text); }
+.tt-risk-exposure-high { color: var(--danger-text); }
 /* Resting .38, not 0. Fully transparent plus tabindex="-1" (see the row
    builders) meant these actions were invisible without a pointer *and*
    skipped by Tab — no route at all. The header already reserves their width
@@ -1911,11 +1934,11 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }
 /* Close / Reopen: the icon sits quiet in its column; on row hover or focus the word appears beside it and the button gets a green outline. The slot is a fixed width, so nothing shifts when the label fades in. */
 .tt-risk-header-close, .tt-risk-close-btn { width: 5.6rem; }
-.tt-risk-close-btn, .tt-risk-reopen-btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: .35rem; border: 1px solid transparent; color: var(--ok); }
+.tt-risk-close-btn, .tt-risk-reopen-btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: .35rem; border: 1px solid transparent; color: var(--ok-text); }
 .tt-risk-btn-label { font-size: .8rem; opacity: 0; transition: opacity var(--dur-fast) var(--ease); white-space: nowrap; }
 .tt-risk-row:hover .tt-risk-btn-label, .tt-risk-close-btn:focus-visible .tt-risk-btn-label, .tt-risk-reopen-btn:focus-visible .tt-risk-btn-label { opacity: 1; }
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-row:hover .tt-risk-reopen-btn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
-.tt-risk-close-btn:hover, .tt-risk-reopen-btn:hover { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.tt-risk-close-btn:hover, .tt-risk-reopen-btn:hover { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok-text); }
 .tt-risk-row.tt-risk-row-expanded .tt-risk-expand-btn { opacity: 1; }
 /* The row is one Tab stop that opens the context menu on Enter/Space, so it
    needs a focus ring of its own — inset, since rows sit flush against each
@@ -2187,8 +2210,8 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-data-hint { font-size: .8rem; color: var(--muted); margin: 0; }
 .tt-data-empty { color: var(--muted); padding: .5rem; }
 .tt-data-images-usage { margin: 0; }
-.tt-data-images-warn { color: var(--brass); font-weight: 600; }
-.tt-data-images-full { color: var(--danger); font-weight: 600; }
+.tt-data-images-warn { color: var(--brass-text); font-weight: 600; }
+.tt-data-images-full { color: var(--danger-text); font-weight: 600; }
 .tt-data-team-list { display: flex; flex-direction: column; gap: .25rem; }
 .tt-data-team-row {
   display: flex; align-items: center; gap: .5rem; padding: var(--row-pad); border-radius: var(--r-sm);
@@ -2208,7 +2231,8 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-help-heading { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin: 0; }
 /* Marks a group the module tabs share, and the tab of the focused pane's module. */
 .tt-help-badge, .tt-help-pane-mark {
-  font-size: .7rem; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 .45rem;
+  /* Small text that also sits on a tab's selected wash, where plain --muted dipped under 4.5:1. */
+  font-size: .7rem; font-weight: 600; color: color-mix(in srgb, var(--muted) 70%, var(--fg)); border: 1px solid var(--border); border-radius: 999px; padding: 0 .45rem;
 }
 .tt-prefs-tab-btn:has(.tt-help-pane-mark) { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
 /* Fixed layout + one shared first-column width, so every table in a help
@@ -2256,10 +2280,10 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-kind-icon { flex: none; }
 .tt-kind-daily { color: var(--card-slate); }
 .tt-kind-general { color: var(--muted); }
-.tt-kind-stakeholders { color: var(--card-brass); }
+.tt-kind-stakeholders { color: var(--card-brass-icon); }
 .tt-kind-person, .tt-kind-members { color: var(--card-plum); }
-.tt-kind-actions { color: var(--card-sage); }
-.tt-kind-milestones { color: var(--brass); }
+.tt-kind-actions { color: var(--card-sage-icon); }
+.tt-kind-milestones { color: var(--brass-icon); }
 .tt-kind-risks { color: var(--danger); }
 .tt-atref-group-header, .tt-backlinks-group-header, .tt-palette-heading { display: flex; align-items: center; gap: .35rem; }
 .tt-palette-heading .tt-icon { color: var(--muted); }
@@ -2270,16 +2294,16 @@ select option { background: var(--bg); color: var(--fg); }
 /* Overdue / due-soon rows tint the module icon, so urgency reads before the date. */
 .tt-due-row .tt-due-row-icon { display: inline-flex; flex: none; }
 .tt-due-row.overdue .tt-kind-icon { color: var(--danger); }
-.tt-due-row.soon .tt-kind-icon { color: var(--brass); }
+.tt-due-row.soon .tt-kind-icon { color: var(--brass-icon); }
 /* Calendar corner markers are stroke icons: pending ones wear their module's kind color (.tt-kind-milestones / .tt-kind-actions), done ones share the "all good" green. */
-.tt-calendar-flag[data-state=pending] { color: var(--brass); }
-.tt-calendar-check[data-state=pending] { color: var(--card-sage); }
+.tt-calendar-flag[data-state=pending] { color: var(--brass-icon); }
+.tt-calendar-check[data-state=pending] { color: var(--card-sage-icon); }
 .tt-calendar-flag[data-state=done], .tt-calendar-check[data-state=done] { color: var(--ok); }
 .tt-calendar-flag, .tt-calendar-check { display: inline-flex; }
 .tt-calendar-day-selected .tt-calendar-flag[data-state], .tt-calendar-day-selected .tt-calendar-check[data-state] { color: var(--on-accent); }
 
 /* Sidebar due button: icon and label, centred; the per-team badges carry the counts. */
-.tt-due-btn .tt-icon { color: var(--brass); }
+.tt-due-btn .tt-icon { color: var(--brass-icon); }
 .tt-due-btn-label { font-size: .9rem; white-space: nowrap; }
 
 /* Start screen and install card: icon bullets, no orphaned last words, the app's own font on its buttons. */
@@ -2287,7 +2311,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-icon-line > .tt-icon { margin-top: .22em; color: var(--accent); }
 .tt-icon-line > span:last-child { text-wrap: pretty; }
 .tt-start-backup-tip { text-wrap: pretty; }
-.tt-start-backup-tip > .tt-icon { margin-right: .4rem; vertical-align: -.2em; color: var(--brass); }
+.tt-start-backup-tip > .tt-icon { margin-right: .4rem; vertical-align: -.2em; color: var(--brass-icon); }
 .tt-start-tagline { text-wrap: balance; }
 .tt-start-btn, .tt-promo-action { font-family: inherit; }
 
@@ -2304,12 +2328,11 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-kanban-col { background: color-mix(in srgb, var(--fg) 5%, var(--bg)); border-radius: var(--r-lg); padding: .25rem .5rem .5rem; }
 /* Cancelled sits compact under the Done cards instead of taking half the column. The floor is permanent (not set on dragstart) so a drag never reflows the board, and big enough that an empty zone is still a usable drop target once the dragging dropzone loses 44px to the trash bar. */
 .tt-kanban-cancelled-wrap { flex: 0 1 auto; min-height: 8.5rem; max-height: 45%; }
-.tt-kanban-card-due.overdue, .tt-kanban-card-due.soon {
-  border-radius: 999px; padding: 0 .4rem; font-weight: 700;
-  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-.tt-kanban-card-due.soon { color: var(--brass); }
+/* Solid pills, the sidebar's team due badge recipe: their text/fill pairs are proven AA in every palette x theme
+   (test/palette-contrast.test.ts). A tinted pill's colored text could not be, since the card's own tint sits under it. */
+.tt-kanban-card-due.overdue, .tt-kanban-card-due.soon { border-radius: 999px; padding: 0 .4rem; font-weight: 700; }
+.tt-kanban-card-due.overdue { background: var(--danger); color: var(--on-danger); }
+.tt-kanban-card-due.soon { background: var(--brass); color: var(--on-brass); }
 .tt-kanban-card-due { margin-left: auto; white-space: nowrap; }
 .tt-kanban-card-assignee { display: inline-flex; align-items: center; gap: .2rem; }
 

@@ -10,7 +10,7 @@ import { showHelp } from './help'
 import { showModal, toast } from './modal'
 import { paintSelection, clampMove, selectableRowProps } from './select-list'
 import { blockedByModal, matchKey } from './hotkeys'
-import { blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
+import { absorbGapSpace, blockAndCaret, caretAfterInline, rangeForTextOffsets, createRefChip, normalizeImageSpacing, type BlockCtx } from './editor-dom'
 import { createUndoStack, registerUndo, unregisterUndo } from './editor-undo'
 import { icon, iconButton } from './icons'
 import type { ImageHost } from './image-host'
@@ -1738,6 +1738,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     if (e.defaultPrevented) return
+    // The space right after an autoformat/@-chip gap is already there (editor-dom.ts's absorbGapSpace).
+    if (e.inputType === 'insertText' && e.data === ' ' && absorbGapSpace()) {
+      e.preventDefault()
+      return
+    }
     undoStack.handleBeforeInput(e)
   }
 
@@ -2210,7 +2215,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     undoStack.checkpoint()
-    document.execCommand('insertText', false, text)
+    // Mid-item, a leading or trailing line break (a copied line usually ends in one) makes
+    // Chromium split the item, so the paste lands alone between two new items.
+    document.execCommand('insertText', false, selectionInListItem() ? text.replace(/^(?:\r?\n)+|(?:\r?\n)+$/g, '') : text)
     scheduleChange()
   }
 

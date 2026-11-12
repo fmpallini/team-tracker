@@ -315,6 +315,31 @@ test('canceling the edit-team modal disposes the emoji picker (no leaked listene
   expect(document.querySelector('.tt-emoji-popup')).toBeNull()
 })
 
+function rightClick(row: HTMLElement): void {
+  row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+}
+
+test('right-clicking a team row offers Edit, which opens the edit dialog', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  rightClick(items()[0]!)
+
+  const labels = Array.from(document.querySelectorAll('.tt-context-menu-item')).map((b) => b.textContent)
+  expect(labels).toEqual(['Edit team', 'Delete'])
+  clickByText('Edit team')
+  expect(document.querySelector<HTMLInputElement>('input[name="tt-team-name"]')!.value).toBe('Alpha')
+})
+
+test('right-click Delete confirms, then removes the team', () => {
+  const { store } = setup()
+  addTeam(store, 'Alpha')
+  rightClick(items()[0]!)
+  clickByText('Delete')
+  expect(store.doc.teams).toHaveLength(1)
+  clickByText('Delete')
+  expect(store.doc.teams).toEqual([])
+})
+
 test('deleting a team re-renders the pane view — a stale module display would otherwise survive the last team being removed', () => {
   const { store, renderPanes } = setup()
   addTeam(store, 'Alpha')
