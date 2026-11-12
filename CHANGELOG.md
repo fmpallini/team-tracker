@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.6.5] - 2026-11-12
+
+### Fixed
+- The page now declares its language (Português or English), so screen readers read it in the right voice and spellcheck uses the right dictionary.
+
 ## [3.6.4] - 2026-11-11
 
 ### Added
