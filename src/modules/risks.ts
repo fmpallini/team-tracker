@@ -23,7 +23,7 @@ import { confirmDelete, toast } from '../ui/modal'
 import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { createFollowupRows, type AddingRun, focusedCaretElement } from './followup-list'
+import { createFollowupRows, type AddingRun, focusedCaretElement, addOnBlankDoubleClick } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
@@ -1278,6 +1278,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // Named (not inlined into the appendChild below) so computeCellSize can
   // measure its viewport height directly.
   const risksWrap = el('div', { class: 'tt-risks' }, quadrantEl, toolbar, headerRow, listEl, closedEl)
+  addOnBlankDoubleClick(risksWrap, listEl, addRisk)
   container.appendChild(risksWrap)
   renderAll()
 

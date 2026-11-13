@@ -19,7 +19,7 @@ import { scopeAffects, type Section } from '../core/scope'
 import { createEntityDelete } from './entity-delete'
 import { patchTeamItem } from '../core/team-items'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { createFollowupRows, type AddingRun, focusedCaretElement } from './followup-list'
+import { createFollowupRows, type AddingRun, focusedCaretElement, addOnBlankDoubleClick } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
@@ -702,7 +702,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-milestone-row', ['ArrowDown', 'ArrowUp'])
 
-  container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
+  const milestonesWrap = el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl)
+  addOnBlankDoubleClick(milestonesWrap, listEl, addMilestone)
+  container.appendChild(milestonesWrap)
   renderAll()
   // Lands focus on the first row the moment the module opens, so
   // ArrowUp/Down navigation works immediately without a preceding Tab. Only

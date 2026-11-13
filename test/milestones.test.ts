@@ -1805,6 +1805,16 @@ test('the new-item request adds a row, and Enter on a named new one adds the nex
   expect(store.doc.teams[0]!.milestones).toHaveLength(2)
 })
 
+test('a double-click on the empty area below the list adds a row with the caret in its title; one on a row does not', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2030-01-01', title: 'A' })] }))
+  render(container, loc, store, pm)
+  rows(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+  container.querySelector('.tt-milestones')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+  expect((document.activeElement as HTMLElement).classList.contains('tt-milestone-title-input')).toBe(true)
+})
+
 test('Delete on a row deletes it', () => {
   const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2030-01-01', title: 'A' })] }))
   render(container, loc, store, pm)

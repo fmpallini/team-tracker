@@ -24,6 +24,17 @@ import { icon } from '../ui/icons'
 
 export type FollowupPrefix = 'risk' | 'milestone'
 
+/**
+ * A double-click on the module's empty area below the list starts a new item, as on a column of the task board.
+ * Everything else (rows, the gaps between them, the toolbar, the chart above, the closed section) keeps its own clicks.
+ * `add` is the module's Alt+N, so an untitled draft already waiting gets the caret instead of a second one.
+ */
+export function addOnBlankDoubleClick(wrap: HTMLElement, listEl: HTMLElement, add: () => void): void {
+  wrap.addEventListener('dblclick', (e) => {
+    if (e.target === wrap && e.clientY >= listEl.getBoundingClientRect().bottom) add()
+  })
+}
+
 export interface BlankTitleGuardOptions<T> {
   /** Focus targets outside the list that still count as "not done with this row" (the add button, a date popover). */
   keepsRowOpen(active: Element): boolean

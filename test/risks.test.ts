@@ -2486,6 +2486,16 @@ describe('keyboard: faster entry', () => {
     expect(document.activeElement).toBe(rows(container)[1])
   })
 
+  test('a double-click on the empty area below the list adds a row with the caret in its title; one on a row does not', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A' })] }))
+    render(container, loc, store, pm)
+    rows(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(store.doc.teams[0]!.risks).toHaveLength(1)
+    container.querySelector('.tt-risks')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(store.doc.teams[0]!.risks).toHaveLength(2)
+    expect((document.activeElement as HTMLElement).classList.contains('tt-risk-title-input')).toBe(true)
+  })
+
   test('Enter in the title of an old row does not add one', () => {
     const { container, store, pm, loc } = setup(makeTeam({ risks: [risk({ id: 'a', title: 'A' })] }))
     render(container, loc, store, pm)
