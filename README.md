@@ -69,12 +69,10 @@ your machine. Team Tracker doesn't:
 - ⌨️ **Keyboard-first** — `Ctrl+Shift+K` fast switch, `Ctrl+F` /
   `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+Shift+←/→` pane
   history, split-view panes, and shortcuts for every module. Built for desktop
-  Chromium browsers (Chrome, Edge, Brave): phones and tablets get a notice
-  instead of the app, since mobile browsers lack the File System Access API
-  the open/save flow depends on.
+  Chromium browsers ([requirements](#getting-started)).
 - 🎨 **Yours to tune** — 12 color palettes (high-contrast and colorblind-safe
   among them), light/dark/system theme, 7 font stacks, adjustable font size,
-  and pt-BR/en-US locales, all in Settings.
+  and pt-BR/en-US locales, all in Preferences.
 
 ## Getting started
 
@@ -82,7 +80,8 @@ your machine. Team Tracker doesn't:
 Chromium-based browser such as Chrome, Edge or Brave. That is what the app is
 built and tested on, and where the `.tmv` file is written silently. Firefox and
 Safari run it in a [degraded mode](#faq) (manual export, no silent file writes).
-Phones and tablets are not supported.
+Phones and tablets get a notice instead of the app: mobile browsers lack the
+File System Access API the file flow depends on.
 
 ### Web app (installable)
 
@@ -126,29 +125,33 @@ the data is unrecoverable.
 within a fraction of a second — only the part that changed, never the whole file.
 The `.tmv` file is a snapshot, written at three moments: when you open a file
 whose browser copy is ahead of it, when you close the file (`Ctrl+Alt+L`), and on a
-timer (every hour by default; 1 to 24 hours in Settings → Saving). There is no Save
-command, and `Ctrl+S` does nothing. **Close the file:** it writes the file before the
-document is released, so it is the one way to be sure the file is current. The save indicator reports whether the app *can*
-write the file, not whether it is up to date: "Saved" means the browser copy is
-current; hover it to see when the file was last written and when the next write is
-due.
+timer (every hour by default; 1 to 24 hours in Preferences → Saving). There is no
+Save command, and `Ctrl+S` does nothing. **Close the file:** it writes the file before
+the document is released, so it is the one way to be sure the file is current. The
+save indicator reports whether the app *can* write the file, not whether it is up to
+date: "Saved" means the browser copy is current; hover it to see when the file was
+last written and when the next write is due. Closing the window without closing the
+file shows the browser's "leave site?" warning only when the file is overdue (older
+than the timer interval).
 
 **What a browser can lose.** The browser copy lives in your browser profile on this
 device. Clearing site data, or using a private window, removes it — and with it any
-work not yet written to the file. If the browser has not promised to keep its
-storage, the indicator's hover and Settings → Saving say so. This is also why the
+work not yet written to the file (at most one timer interval). If you need to clear
+browser data, close the file first. If the browser has not promised to keep its
+storage, the indicator's hover and Preferences → Saving say so. This is also why the
 file matters: it is what you can copy, sync and restore.
 
 **Encryption.** By default the file is AES-256-GCM encrypted, decrypted only on
 your device, and the browser copy of a password-protected file is encrypted too,
 with the same key: nothing readable is left in the browser's storage. Alternatively
-choose "Create without password" at creation, or Settings → Security → "Migrate to
+choose "Create without password" at creation, or Preferences → Security → "Migrate to
 password-less" later; you can set a password on a password-less file at any time
 from the same tab. The trade-off: anyone with access to a password-less file —
 including a cloud provider's automated scanning — can read it as plain text.
 
 **When the file can't be written** (permission lost, disk full, file locked) the
-indicator turns amber or red and says so. Your changes stay safe in the browser.
+indicator turns amber or red and says why ("Grant access…" or "File not written").
+Your changes stay safe in the browser.
 Clicking the indicator, or closing the file, offers the way out: grant access again,
 download a copy right now, try again, or close anyway — the browser keeps your work
 and the next open reconciles the file with it.
@@ -179,8 +182,8 @@ Dropbox): that folder is your backup, with either build.
   synced file for a while (Google Drive: ~30 days). This is the only way to
   recover an earlier state. The app itself keeps no version history; its only
   undo is the ten-second notice after deleting an item.
-- **The file is written hourly, not on every edit** — so the provider's history has
-  one version per write (open, close, timer), not one per keystroke.
+- **The file is written on a timer, not on every edit** — so the provider's history
+  has one version per write (open, close, timer), not one per keystroke.
 
 ## Privacy and updates
 
@@ -206,9 +209,10 @@ The app ships as one HTML file with CSS and JS inlined — open it years from
 now, on any machine, with any browser, and it still works exactly as built.
 That only holds if nothing at runtime depends on a third-party library that
 could have a vulnerability, an abandoned maintainer, or a breaking major
-version. `esbuild`, `typescript`, `vitest`, `jsdom`, and `@playwright/test` are
-dev-only tooling; none of their code ships in the build. It's a hard project
-constraint: no runtime dependency is ever added, however small.
+version. Everything in `package.json`'s `devDependencies` (esbuild, TypeScript,
+Vitest, Playwright, ESLint…) is build and test tooling; none of its code ships in
+the build. It's a hard project constraint: no runtime dependency is ever added,
+however small.
 
 It also shrinks the supply-chain attack surface to what's in the build output,
 which you can read end to end. Every release is also signed with a build
@@ -230,26 +234,9 @@ whatever's useful. Nothing about the app assumes multiple people.
 No hard limit. `Alt+1`…`Alt+9` quick-switches the first nine; beyond that, use
 the sidebar.
 
-**How does saving work? When is my `.tmv` file written?**
-The browser holds the live copy and the file is a snapshot of it. Your edits reach the
-browser within a fraction of a second. The file is written when you open a file whose
-browser copy is ahead of it, when you close the file (`Ctrl+Alt+L`), and every 1–24
-hours (Settings → Saving, one hour by default). There is no Save command. Close the
-file: it is the only thing that guarantees a file write before the document is released.
-
-**What do I lose if I clear my browser data?**
-Whatever was not yet written to the file: the work since the last file write, up to
-the timer interval. Clearing site data (or closing a private window) deletes the
-browser copy. Everything written to the file is safe. If you need to clear the
-browser data for any reason, close the file first.
-
-**What happens if the file can't be written?**
-The indicator says why ("Grant access" or "File not written") and your changes stay
-safe in the browser. Closing the file then shows a dialog: grant access again,
-download a copy of the document right now, try again, or close anyway — the browser
-keeps your work, and the next time you open the file the app reconciles the two. If you
-close the window without closing the file you get the browser's "leave site?" warning only
-when the file is overdue (older than the timer interval).
+**How does saving work? What if the file can't be written?**
+See [Your data](#your-data): the browser holds the live copy, the file is a snapshot
+written at open, close and on a timer, and a failed write never loses the browser copy.
 
 **Why a Chromium-based browser?**
 Chrome, Edge, Brave and the like can write the `.tmv` file silently and ask again if
@@ -287,7 +274,7 @@ no "forgot password" recovery, generate and store it in a password manager.
 **Can I import an org chart from a CSV or HR system?**
 No bulk import. The only import/export is team-to-team: export a team's
 people/hierarchy (no notes, tasks, milestones, or risks) so a teammate
-can import it — see the Data tab in preferences.
+can import it — see Preferences → Data.
 
 **Can I put pictures in my notes?**
 Yes. Paste a screenshot or copied image (also mixed with text), drag image files
@@ -326,11 +313,12 @@ header badges, the due list, the "Due dates" group in Fast Switch, kanban
 highlighting — and, in the installed app, as a count on its OS icon badge where
 the OS supports it. Nothing alerts you while the app is closed.
 
-**Is the "clean up" button in preferences safe to click?**
+**Is the data clean-up in Preferences → Data safe to run?**
 It's irreversible (no undo, unlike deleting a single item) and deliberately
 cross-team. Across **all** teams in the file it permanently deletes every
 done/cancelled task and closed risk, completed milestones and daily notes older
-than the day count you set, and any favorites left pointing at something gone.
+than the day count you set, any favorites left pointing at something gone, and
+pictures no note uses any more.
 It shows the exact counts before you confirm — read them first.
 
 ## Contributing

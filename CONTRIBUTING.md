@@ -47,9 +47,8 @@ A pull request that bumps the `version` in `package.json` must also add a
 matching, non-empty `## [X.Y.Z]` entry to [CHANGELOG.md](CHANGELOG.md), or CI's
 `changelog-gate` fails.
 
-The codebase has zero runtime dependencies — `esbuild`, `typescript`,
-`vitest`, `jsdom`, and `@playwright/test` are dev-only tooling. Adding a
-runtime dependency is a hard no.
+The codebase has zero runtime dependencies — everything in `devDependencies`
+is build and test tooling. Adding a runtime dependency is a hard no.
 
 ## Adding a new module/pane
 
@@ -104,21 +103,21 @@ registering the module.
    `pm.registerModule(...)` calls: `pm.registerModule('decisions',
    renderDecisions)`. Do this before the post-registration `pm.renderAll()`
    call a few lines down, or a pane whose saved nav state already points at
-   the new kind renders "Módulo em construção…" and never gets a second pass.
+   the new kind renders "Module under construction…" and never gets a second pass.
    Also add a `case 'decisions':` to `titleFor()`'s switch in
    `src/core/module-items.ts` (the pane header title) — it has an explicit `string`
    return type, so TypeScript will refuse to compile a non-exhaustive switch
    and point you straight back here if you forget.
 
-4. **Pane switcher + fast switch (one list, both surfaces).** Add it to
+4. **Pane menu + fast switch (one list, both surfaces).** Add it to
    `FIXED_MODULE_KEYS` in `src/core/module-items.ts` (its `kind` field is a closed
-   union — widen that type alongside the new array entry, TypeScript will
-   flag the mismatch either way). `buildModuleItems()` in that same file
-   turns that list into the `ModuleItem[]` array shown in the pane's own "＋"
-   module dropdown — **and the `Ctrl+Shift+K` fast switch reuses this exact
-   same function:** `src/core/switcher.ts` (which `src/ui/palette.ts` renders)
-   calls `buildModuleItems()` for every team. There's no separate fast-switch
-   item list to maintain; wiring the pane switcher wires the fast switch too.
+   union — widen that type, and `PaneMenuRow`'s `kind` in `src/ui/panes.ts`,
+   alongside the new array entry; TypeScript flags a mismatch). That one list
+   feeds both the pane bar's module tabs and menu (`paneMenuItems()` in
+   `src/ui/panes.ts`) and the `Ctrl+Shift+K` fast switch: `src/core/switcher.ts`
+   (which `src/ui/palette.ts` renders) calls `buildModuleItems()` from
+   `module-items.ts` for every team. There's no separate fast-switch item list
+   to maintain.
    If individual items (not just the module as a whole) should get their own
    fast-switch entries — the way each task/milestone/risk shows up as
    its own line — extend `buildModuleItems()`'s per-kind branch the way `actions`/
@@ -126,22 +125,25 @@ registering the module.
    7 below — you'll likely want that list anyway).
 
 5. **Global search.** The header search bar (`Ctrl+F` / `/`,
-   `src/ui/search-ui.ts`) is backed by `searchDocument()` in
-   `src/core/search.ts`, which works over a flat candidate list built by that
-   file's `collectCandidates()`. Add a loop over your module's items there:
+   `src/ui/search-ui.ts`) is backed by the per-document index
+   (`createSearchIndex()` in `src/core/search.ts`), which reads each team
+   through that file's `collectCandidates()`. Add a loop over your module's
+   items there:
    ```ts
    for (const d of team.decisions) {
      out.push({ raw: `${d.title}\n${d.rationale}`, title: d.title, ref: { kind: 'decisions', itemId: d.id } })
    }
    ```
-   `raw` is whatever free text should be searchable — `searchDocument()`
-   strips markdown syntax from it and does a normalized (accent/case
-   insensitive), term-by-term substring match; if there's no free-text field,
-   `raw` can just equal `title`. Then add an entry to `KIND_ICON_NAME` in
+   `raw` is whatever free text should be searchable — the index strips
+   markdown syntax from it and does a normalized (accent/case insensitive),
+   term-by-term substring match; if there's no free-text field, `raw` can
+   just equal `title`. Then add an entry to `KIND_ICON_NAME` in
    `src/ui/icons.ts` (a `Record` keyed on `SearchResult['moduleKind']`, so
-   TypeScript flags it if missing) so results render with a matching glyph —
-   that's the only other piece; snippet highlighting and the results dropdown
-   are already generic over `ref.kind`.
+   TypeScript flags it if missing) so results render with a matching glyph;
+   snippet highlighting and the results dropdown are already generic over
+   `ref.kind`. Finally, add the new field's edits to the op list in
+   `test/search-differential.test.ts`, which fuzzes the cached index against
+   the uncached `searchDocument()`.
 
 6. **i18n.** Add `pt-BR`/`en-US` strings to `src/core/i18n.ts` — every
    user-visible string goes through `t(locale, key)`, in both locale blocks.

@@ -43,7 +43,8 @@ by `esbuild` — no framework, no virtual DOM, no templating engine.
   in-progress edit elsewhere.
 
 Modules build DOM with `el()`, mutate through `store.update()`, and re-render
-on every store change via `store.subscribe(renderAll)`. A `rev` counter on the
+via `store.subscribe()`, skipping changes whose scope (`src/core/scope.ts`)
+doesn't touch what they show. A `rev` counter on the
 store is the cache-invalidation signal — the `Doc` is mutated in place, so
 object identity never changes.
 
