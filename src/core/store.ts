@@ -9,6 +9,7 @@ export interface Store {
   readonly doc: Doc
   /** The document's image bytes. `Doc.images` is only their metadata; this is never serialized as JSON. */
   readonly images: ImageStore
+  /** Content changed since the file was last written (or the file is behind for another reason: `markDirty`). Navigation does not count. */
   readonly dirty: boolean
   /**
    * True after `setReadOnly(true)` — set by main.ts while this tab
@@ -171,9 +172,8 @@ export function createStore(initialDoc: Doc, initialImages: ImageStore = createI
     updateNav(fn: (d: Doc) => void): void {
       rev++
       fn(doc)
-      // A read-only tab never saves, so dirtying it would only raise a pill
-      // and a "leave site?" prompt for changes that can't be persisted.
-      if (roState.kind === 'writable') setDirty(true)
+      // Never dirty: where the user is looking is not a change the file must be written for (snapshot.ts's
+      // contentFingerprint leaves `nav` out). The browser copy still stores it, through `onMutate`.
       notifyMutate('nav')
     },
     subscribe(fn: (scope: ChangeScope | null) => void): () => void {

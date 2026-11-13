@@ -1,4 +1,4 @@
-import { buildSnapshot, commitSnapshot } from '../src/core/snapshot'
+import { buildSnapshot, commitSnapshot, contentFingerprint } from '../src/core/snapshot'
 import { createStore } from '../src/core/store'
 import { createImageStore, type ImageStore } from '../src/core/image-store'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
@@ -32,6 +32,30 @@ test('the revision is the one before serialization began, not after', async () =
   const snap = await buildSnapshot(store, null)
   expect(snap.revAtSnapshot).toBe(before)
   expect(store.rev).toBeGreaterThan(before)
+  // What the bytes hold is then not known: no write may later be skipped against it.
+  expect(snap.fingerprint).toBeNull()
+})
+
+describe('contentFingerprint', () => {
+  test('changes with the content, ignores nav, and is what a snapshot reports for its bytes', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    const base = await contentFingerprint(store.doc)
+    expect(base).toMatch(/^[0-9a-f]{64}$/)
+    store.updateNav((d) => { d.nav.split = !d.nav.split })
+    expect(await contentFingerprint(store.doc)).toBe(base)
+    store.update((d) => { d.prefs.autoSaveMin = 120 })
+    const edited = await contentFingerprint(store.doc)
+    expect(edited).not.toBe(base)
+    expect((await buildSnapshot(store, null)).fingerprint).toBe(edited)
+  })
+
+  test('takes the document as it is at the call, not as it is once the hash is done', async () => {
+    const store = createStore(createEmptyDocument('en-US'))
+    const before = await contentFingerprint(store.doc)
+    const pending = contentFingerprint(store.doc)
+    store.update((d) => { d.prefs.autoSaveMin = 120 })
+    expect(await pending).toBe(before)
+  })
 })
 
 test('a document the writer would refuse fails the snapshot instead of producing unreadable bytes', async () => {

@@ -11,11 +11,20 @@
 // password change (`runExclusive`), and the failure paths (lapsed permission,
 // external change, any other error). A failed write never touches the browser
 // copy and never clears `store.dirty`, so the next moment tries again.
+//
+// A write happens only when the file would change. `store.dirty` says some edit
+// happened since the last write; the fingerprint of what the file holds
+// (snapshot.ts's contentFingerprint) says whether the edits left the content
+// different — an edit undone, or one that set a value it already had, did not.
+// Such a write is skipped and counts as done: `dirty` is cleared and the browser
+// copy told the file is current. The fingerprint is null whenever this tab cannot
+// be sure what the file holds (the browser copy was ahead at open, another tab
+// wrote it, an edit raced a write); then the write goes ahead.
 import type { Store } from './store'
 import type { Prefs } from './types'
 import type { LivePersister } from './live-persist'
 import { writeFile, downloadFallback, ExternalChangeError, type FileSession } from './fs'
-import { buildSnapshot, commitSnapshot, type Snapshot } from './snapshot'
+import { buildSnapshot, commitSnapshot, contentFingerprint, type Snapshot } from './snapshot'
 
 export type WriteReason = 'open' | 'close' | 'timer' | 'export'
 
@@ -33,7 +42,8 @@ export type WriteResult =
 
 export interface FileSnapshot {
   /**
-   * Writes the file now. Does nothing (and succeeds) for a clean document when the reason is the timer or close;
+   * Writes the file now. Does nothing (and succeeds) when the reason is the timer or close and the file already holds
+   * the document: a clean one, or one whose edits left its content as the file has it (see the header);
    * 'open' and 'export' always write. A call that finds a write in flight joins it — except that anything but the
    * timer then writes again if edits landed meanwhile, so a Lock/Close always leaves the file current.
    */
@@ -41,10 +51,15 @@ export interface FileSnapshot {
   /** (Re)arms the timer from the last successful write (or from open). Without a file handle there is no timer. */
   scheduleFrom(prefs: Prefs): void
   health(): FileHealth
-  /** A write made outside `writeNow` (the conflict overwrite, a password change) succeeded: the file is current as of now, and whatever failure was showing is superseded. */
-  fileWritten(): void
-  /** The conflict modal's Reload took the file's content instead: a failure that was about the conflict is over; no write is claimed. */
-  fileReloaded(): void
+  /**
+   * A write made outside `writeNow` (the conflict overwrite, a password change) succeeded: the file is current as of
+   * now, and whatever failure was showing is superseded. `fingerprint` is that write's `Snapshot.fingerprint`.
+   */
+  fileWritten(fingerprint: string | null): void
+  /** The conflict modal's Reload took the file's content instead: a failure that was about the conflict is over; no write is claimed. `fingerprint`: of the reloaded document. */
+  fileReloaded(fingerprint: string | null): void
+  /** The document was replaced without a write by this tab (taking the write lock over): what the file holds is `fingerprint`, or unknown (null). */
+  fileHolds(fingerprint: string | null): void
   /** A write made outside `writeNow` failed. */
   fileWriteFailed(reason: 'permission' | 'error'): void
   /** Fires at once with the current health, then on every change. */
@@ -74,6 +89,8 @@ export interface FileSnapshotDeps {
   isConflictOpen?(): boolean
   /** Commits debounced editor input into the store; the first thing a write does. */
   flushPending?(): void
+  /** The document in the store is what the file holds (it was opened from the file, or from a copy equal to it): a write may be skipped from the start. */
+  fileMatchesDoc?: boolean
   now?(): number
   /** Timers, injectable for tests. Returns the canceller. */
   schedule?(fn: () => void, ms: number): () => void
@@ -103,6 +120,9 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
   let timerRun: Promise<void> = Promise.resolve()
   let disposed = false
   const subscribers = new Set<(h: FileHealth) => void>()
+  // contentFingerprint of what the file holds; null: not known. A promise so that the opening document's JSON is taken
+  // now, before any edit, while the hash itself finishes in the background.
+  let fileFingerprint: Promise<string | null> = deps.fileMatchesDoc ? contentFingerprint(store.doc) : Promise.resolve(null)
 
   // One chain orders every write and every exclusive section, so none ever interleaves with another.
   let tail: Promise<unknown> = Promise.resolve()
@@ -138,10 +158,11 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
     if (store.readOnly) return { ok: false, reason: 'readonly' }
     if (deps.isConflictOpen?.()) return { ok: false, reason: 'conflict' }
     if (!session.handle && reason !== 'export') return { ok: false, reason: 'nohandle' }
-    if (!store.dirty && reason !== 'open' && reason !== 'export') return { ok: true }
+    // Before the dirty check: typing still inside an editor's debounce is an edit the store does not show yet.
+    try { deps.flushPending?.() } catch (e) { console.error(e) }
+    if (reason !== 'open' && reason !== 'export' && (!store.dirty || (await fileIsCurrent()))) return { ok: true }
 
     setStatus('writing')
-    try { deps.flushPending?.() } catch (e) { console.error(e) }
     try { await deps.persister?.flush() } catch (e) { console.error(e) }
 
     let snapshot: Snapshot
@@ -172,6 +193,7 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
     }
 
     // The file is written: nothing past this point may report a failed write.
+    fileFingerprint = Promise.resolve(snapshot.fingerprint)
     await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
     // An edit that landed during the write is not in the bytes, so only a matching revision may clear `dirty`.
     if (store.rev === snapshot.revAtSnapshot) store.markSaved()
@@ -179,6 +201,22 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
     else lastExportedAt = now()
     setStatus('idle')
     return { ok: true }
+  }
+
+  /**
+   * Whether the file already holds the document's content. When it does, the skipped write counts as done: `dirty`
+   * is cleared and the browser copy's `unwrittenChanges` with it. An edit landing while the hash is computed is not
+   * in the comparison, so it makes the answer no: the write then goes ahead and takes it along.
+   */
+  async function fileIsCurrent(): Promise<boolean> {
+    const contentRev = store.contentRev
+    const [current, file] = await Promise.all([contentFingerprint(store.doc), fileFingerprint])
+    if (file === null || current !== file || store.contentRev !== contentRev) return false
+    store.markSaved()
+    // Like a successful write, this supersedes a failed one; a lapsed permission is about the handle and stays.
+    if (status === 'error') setStatus('idle')
+    try { await deps.persister?.markFileCurrent() } catch (e) { console.error(e) }
+    return true
   }
 
   function start(reason: WriteReason): Promise<WriteResult> {
@@ -238,12 +276,17 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
       arm()
     },
     health,
-    fileWritten() {
+    fileWritten(fingerprint) {
+      fileFingerprint = Promise.resolve(fingerprint)
       lastWrittenAt = now()
       setStatus('idle')
     },
-    fileReloaded() {
+    fileReloaded(fingerprint) {
+      fileFingerprint = Promise.resolve(fingerprint)
       if (status === 'error' && errorMessage === 'conflict') setStatus('idle')
+    },
+    fileHolds(fingerprint) {
+      fileFingerprint = Promise.resolve(fingerprint)
     },
     fileWriteFailed(reason) {
       setStatus(reason)

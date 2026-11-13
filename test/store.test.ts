@@ -42,16 +42,16 @@ test('markDirty flags the document as ahead of its file without touching the doc
   expect(s.dirty).toBe(false)
 })
 
-test('updateNav marks dirty without render', () => {
+test('updateNav neither renders nor marks dirty: navigation is not a change the file is written for', () => {
   const s = createStore(createEmptyDocument('pt-BR'))
   let n = 0; s.subscribe(() => n++)
+  const rev = s.rev, contentRev = s.contentRev
   s.updateNav(d => { d.nav.split = true })
-  expect(n).toBe(0); expect(s.dirty).toBe(true)
+  expect(n).toBe(0); expect(s.dirty).toBe(false)
+  expect(s.rev).toBe(rev + 1); expect(s.contentRev).toBe(contentRev)
 })
 
 test('updateNav while read-only navigates but does not mark the document dirty', () => {
-  // A read-only tab can never save, so a dirty flag there only ever means a
-  // pill and a "leave site?" prompt for changes that cannot be persisted.
   const s = createStore(createEmptyDocument('pt-BR'))
   const kinds: string[] = []; s.onMutate((k) => kinds.push(k))
   s.setReadOnly(true)

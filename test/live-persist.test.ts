@@ -217,6 +217,53 @@ test('nav-only changes are persisted', async () => {
   expect(back.nav.sidebarCollapsed).toBe(true)
 })
 
+test('navigation never marks the copy unwritten: a file that lacks only the nav is not behind', async () => {
+  const { store, live, persister } = await rig()
+  const stamp = newStamp()
+  await persister.markFileWritten(stamp)
+  store.updateNav((d) => { d.nav.activeTeamId = 'T2' })
+  await persister.flush()
+  const m = (await live.meta())!
+  expect(m.unwrittenChanges).toBe(false)
+  expect(m.lastWriteId).toBe(stamp.writeId)
+  expect((await loadDoc(store.doc.docId)).nav.activeTeamId).toBe('T2')
+  store.update((d) => { d.teams[0]!.name = 'renamed' })
+  await persister.flush()
+  expect((await live.meta())!.unwrittenChanges).toBe(true)
+})
+
+test('markFileCurrent clears unwritten and keeps the lineage, unless the store is dirty again', async () => {
+  const { store, live, persister } = await rig()
+  const stamp = newStamp()
+  await persister.markFileWritten(stamp)
+  store.update((d) => { d.teams[0]!.name = 'renamed' })
+  await persister.flush()
+  // Still dirty: the file does not hold the rename.
+  await persister.markFileCurrent()
+  expect((await live.meta())!.unwrittenChanges).toBe(true)
+  // Undone, and file-snapshot.ts found the content equal to the file's: it clears dirty, then tells the copy.
+  store.update((d) => { d.teams[0]!.name = 'Team T1' })
+  store.markSaved()
+  await persister.markFileCurrent()
+  const m = (await live.meta())!
+  expect(m.unwrittenChanges).toBe(false)
+  expect(m.lastWriteId).toBe(stamp.writeId)
+})
+
+test('fileCurrent: the initial sync of a copy loaded for its newer lineage clears unwritten when its content equals the file', async () => {
+  const first = await rig()
+  first.store.update((d) => { d.teams[0]!.name = 'renamed' })
+  first.store.update((d) => { d.teams[0]!.name = 'Team T1' })
+  await first.persister.flush()
+  expect((await first.live.meta())!.unwrittenChanges).toBe(true)
+  first.persister.dispose()
+  const loaded = await createLiveStore(rawDb, first.store.doc.docId, null).load()
+  const store = createStore(joinDoc(loaded.records), createImageStore(null))
+  const live = createLiveStore(db, store.doc.docId, null)
+  await createLivePersister({ store, live, fileName: 'a.tmv', schedule: manualTimers().schedule, stored: { records: loaded.records, blobIds: loaded.blobs.keys() }, fileCurrent: true })
+  expect((await live.meta())!.unwrittenChanges).toBe(false)
+})
+
 test('replaceDoc with a different document leaves the browser copy reloadable to the new one and none of the old', async () => {
   const { store, persister } = await rig()
   const next = sampleDoc()

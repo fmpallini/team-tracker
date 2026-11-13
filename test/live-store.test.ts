@@ -328,6 +328,18 @@ describe.each([['password-less', false], ['encrypted', true]] as const)('path-de
     expect(await createLiveStore(db, 'none', codec).stat()).toEqual({ records: 0, blobIds: [] })
   }, 30000)
 
+  test('read opens the one record at a path, without opening any other row', async () => {
+    const codec = await codecFor()
+    await createLiveStore(db, 'd', codec).write({ puts: puts({ doc: { nav: 1 }, a: SECRET, b: 2 }) })
+    const open = codec ? vi.spyOn(codec, 'open') : null
+    const store = createLiveStore(db, 'd', codec)
+    expect(await store.read('doc')).toEqual({ nav: 1 })
+    // the key secret and that one row
+    if (open) expect(open).toHaveBeenCalledTimes(2)
+    expect(await store.read('missing')).toBeUndefined()
+    expect(await createLiveStore(db, 'none', codec).read('doc')).toBeUndefined()
+  }, 30000)
+
   test('a copy without a key secret (an earlier build) cannot be loaded, counted or written', async () => {
     const codec = await codecFor()
     await createLiveStore(db, 'd', codec).write({ puts: puts({ a: 1 }) })

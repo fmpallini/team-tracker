@@ -17,8 +17,11 @@
 // edit itself stays in memory the whole time.
 //
 // The `unwrittenChanges` meta flag means "the file at lastWriteId lacks edits the
-// browser copy has". Only a file write (markFileWritten) or adopting the file as
-// truth (adoptFileStamp) clears it; an ordinary flush can raise it, never lower it.
+// browser copy has". Only a file write (markFileWritten), adopting the file as
+// truth (adoptFileStamp) or learning that the file already holds the content
+// (markFileCurrent) clears it; an ordinary flush can raise it, never lower it.
+// Navigation (`updateNav`) never raises it: the copy keeps the latest nav, but a
+// file that lacks only that is not behind (snapshot.ts's contentFingerprint).
 import type { Store } from './store'
 import type { LiveStore } from './live-store'
 import type { LiveMeta } from './live-db'
@@ -38,6 +41,12 @@ export interface LivePersister {
   markFileWritten(stamp: FileStamp, revAtSnapshot?: number): Promise<void>
   /** After the app adopted the file as the truth (conflict Reload, open from the file): full flush, then records the file's stamp and clears `unwrittenChanges`. */
   adoptFileStamp(stamp: FileStamp | null): Promise<void>
+  /**
+   * The file already holds the document's content (file-snapshot.ts skipped a write as unchanged): clears
+   * `unwrittenChanges` unless the store is dirty again by the time the commit runs. Keeps the lineage. Never rejects;
+   * a failed commit only leaves the flag up, which costs the next open a comparison, not a write.
+   */
+  markFileCurrent(): Promise<void>
   /**
    * Starts the diff over from what the browser store holds now (the caller just loaded it) and re-reads the
    * lineage and `unwrittenChanges` from its meta. For a tab that lost the write lock and took it back: another tab
@@ -94,6 +103,8 @@ export interface LivePersisterDeps {
    * image store must already hold the new key.
    */
   rekeyTo?: { codec: RecordCodec | null }
+  /** With `stored`: the copy is ahead of the file by lineage, but its content is what the file holds (live-open.ts compared them). Its initial sync clears `unwrittenChanges`, as `markFileCurrent` does. */
+  fileCurrent?: boolean
   debounceMs?: number
   schedule?: (fn: () => void, ms: number) => () => void
 }
@@ -127,6 +138,8 @@ interface RunOptions {
   quiet?: boolean
   /** Move the stored copy to this key before anything else (see `LivePersisterDeps.rekeyTo`). */
   rekey?: { codec: RecordCodec | null }
+  /** The file holds the content: clear `unwrittenChanges` unless the store is dirty (see `markFileCurrent`). */
+  current?: boolean
 }
 
 export async function createLivePersister(deps: LivePersisterDeps): Promise<LivePersister> {
@@ -140,6 +153,9 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   const persistedBlobs = new Set<string>()
   let lineage: LineageFields = { lastWriteId: null, knownWriteIds: [], lastFileWriteAt: null }
   let unwritten = false
+  // `store.contentRev` as of the last commit: records that changed with it unmoved changed by navigation alone.
+  // -1 until the cache holds the document: a first write of the whole copy is never "navigation alone".
+  let committedContentRev = -1
   let lastMeta = ''
   // Completed once the stored meta is read below: a file with no id keeps the one the copy already follows.
   let fileId: string | undefined = deps.fileId ?? undefined
@@ -258,6 +274,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     // metadata left the document (the cleanup in Prefs drops it for good) go at once: nothing can reference them again.
     const deleteBlobs = [...persistedBlobs].filter((id) => !(id in store.doc.images) || (sweeping && !referenced!.has(id)))
 
+    const contentRev = store.contentRev
     const next = serializeRecords(splitDoc(store.doc))
     if (referenced) for (const id of [...swept, ...deleteBlobs]) if (!referenced.has(id)) next.delete(imageRecordPath(id))
     const puts = new Map<string, string>()
@@ -278,7 +295,9 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
 
     const nextLineage: LineageFields = { ...lineage }
     let nextUnwritten = unwritten
-    if (store.dirty || (!opts.quiet && (puts.size > 0 || deletes.length > 0))) nextUnwritten = true
+    const contentMoved = contentRev !== committedContentRev
+    if (store.dirty || (!opts.quiet && contentMoved && (puts.size > 0 || deletes.length > 0))) nextUnwritten = true
+    if (opts.current && !store.dirty) nextUnwritten = false
     if (file || opts.adopt) {
       const s = opts.adopt ? opts.adopt.stamp : file!.stamp
       if (s) {
@@ -293,7 +312,10 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
 
     const meta = metaFields(nextUnwritten, fileName, fileId, nextLineage)
     const metaJson = JSON.stringify(meta)
-    if (puts.size === 0 && deletes.length === 0 && putBlobs.size === 0 && deleteBlobs.length === 0 && metaJson === lastMeta) return
+    if (puts.size === 0 && deletes.length === 0 && putBlobs.size === 0 && deleteBlobs.length === 0 && metaJson === lastMeta) {
+      committedContentRev = contentRev
+      return
+    }
 
     try {
       await live.write({ puts, deletes, putBlobs, deleteBlobs, meta, clear: opts.clear })
@@ -307,6 +329,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     for (const id of deleteBlobs) { persistedBlobs.delete(id); if (id in store.doc.images) swept.add(id) }
     lineage = nextLineage
     unwritten = nextUnwritten
+    committedContentRev = contentRev
     lastMeta = metaJson
     if (opts.initial) initialDone = true
     if (file && pendingStamp === file) pendingStamp = null
@@ -328,6 +351,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
     for (const id of deps.stored ? deps.stored.blobIds : Object.keys(store.doc.images)) persistedBlobs.add(id)
     lineage = { lastWriteId: existing.lastWriteId, knownWriteIds: existing.knownWriteIds, lastFileWriteAt: existing.lastFileWriteAt }
     unwritten = existing.unwrittenChanges
+    committedContentRev = store.contentRev
     lastMeta = JSON.stringify(metaFields(unwritten, existing.fileName, existing.fileId, lineage))
   }
   const unsubscribers = [
@@ -339,7 +363,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
   if (!existing || replacing) {
     initialOwed = { initial: true, ...(deps.fromFile !== undefined ? { adopt: { stamp: deps.fromFile } } : {}), ...(replacing ? { clear: true } : {}) }
   } else if (deps.stored || deps.rekeyTo || existing.fileName !== deps.fileName || existing.fileId !== fileId) {
-    initialOwed = { initial: true, quiet: true, ...(deps.rekeyTo ? { rekey: deps.rekeyTo } : {}) }
+    initialOwed = { initial: true, quiet: true, ...(deps.rekeyTo ? { rekey: deps.rekeyTo } : {}), ...(deps.fileCurrent ? { current: true } : {}) }
   } else {
     initialDone = true
   }
@@ -353,6 +377,7 @@ export async function createLivePersister(deps: LivePersisterDeps): Promise<Live
       return run({ file })
     },
     adoptFileStamp: (stamp) => run({ adopt: { stamp } }),
+    markFileCurrent: () => run({ current: true }),
     rekey: (codec) => {
       const rekeying = chain.then(() => rekeyStored(codec))
       chain = rekeying.catch(() => {})

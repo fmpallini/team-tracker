@@ -49,6 +49,11 @@ export interface LiveStore {
    * CorruptFileError when the copy cannot be written under this store's codec (no key secret, or one that does not open).
    */
   stat(): Promise<{ records: number; blobIds: string[] }>
+  /**
+   * Reads and opens the one record at `path` (undefined: the copy has none), without touching the others. Rejects with
+   * CorruptFileError when the key secret or the row does not open under this store's codec, or the row names another path.
+   */
+  read(path: string): Promise<unknown>
   /** One atomic commit. Throws (and changes nothing, in the store or in memory) if the commit fails. */
   write(change: LiveChange): Promise<void>
   /** Re-seals every record under `codec` (null: plain), replaces the blobs with `blobs`, and updates meta, in one commit; only then swaps the codec. A failure leaves the old codec in force. */
@@ -163,6 +168,17 @@ export function createLiveStore(db: LiveDb, docId: string, initialCodec: RecordC
       if (!meta) return { records: 0, blobIds: [] }
       await keyer(meta)
       return db.stat(docId)
+    },
+
+    async read(path) {
+      const meta = await currentMeta()
+      if (!meta) return undefined
+      const key = await rowKey(await keyer(meta), path)
+      const row = await db.readRecord(docId, key)
+      if (row === undefined) return undefined
+      const payload = await open(codec, key, row)
+      if (payload.path !== path) throw new CorruptFileError()
+      return payload.value
     },
 
     async write(change) {

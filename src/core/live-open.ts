@@ -5,8 +5,9 @@
 // value stamped on every file write, which the copy remembers).
 //
 //   no browser copy                                     import the file
-//   file writeId = copy's last, nothing unwritten       identical
-//   file writeId = copy's last, unwritten edits         the browser copy is newer: load it, rewrite the file
+//   file writeId = copy's last, nothing unwritten       identical (the copy's nav, which no file write waits for, is kept)
+//   file writeId = copy's last, unwritten edits         the browser copy is newer: load it, rewrite the file —
+//                                                       unless its content equals the file's (edits undone)
 //   file writeId known to the copy but not its last     an older file (restored from a backup): ask
 //   file writeId unknown, nothing unwritten             the file came from elsewhere: it wins
 //   file writeId unknown, unwritten edits               both changed: ask
@@ -31,6 +32,7 @@ import { randomHex, type FileStamp } from './file-stamp'
 import type { LiveDb, LiveMeta } from './live-db'
 import { createLiveStore, type LiveStore } from './live-store'
 import { createLivePersister, type LivePersister } from './live-persist'
+import { contentFingerprint } from './snapshot'
 import { joinDoc, splitDoc, type DocRecords } from './doc-records'
 import { migrate, validateDoc, SCHEMA_VERSION } from './document'
 import { createImageStore, type ImageStore } from './image-store'
@@ -188,6 +190,8 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
       const live = createLiveStore(db, docId, key.codec)
       const { records, blobs } = await live.load()
       const doc = readDoc(records)
+      // "Unwritten" is sticky: edits undone since still count. When the content is the file's, the file is not behind.
+      const fileCurrent = fileIsLatest && (await contentFingerprint(doc)) === (await contentFingerprint(opened.doc))
       // The blobs are in the form the copy's key sealed them, so the image store must hold that very key.
       const images = createImageStore(key.password === null ? null : await blobCodec(key.password, m.salt ?? undefined))
       for (const [id, bytes] of blobs) images.adoptStored(id, bytes)
@@ -201,7 +205,8 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
         password = deps.password
       }
       const store = deps.createStore(doc, images)
-      const persister = await createLivePersister({ store, live, fileName, fileId, stored: { records, blobIds: blobs.keys() }, rekeyTo })
+      const persister = await createLivePersister({ store, live, fileName, fileId, stored: { records, blobIds: blobs.keys() }, rekeyTo, fileCurrent })
+      if (fileCurrent) return { doc, images, password, stamp: opened.stamp, source: 'browser', store, handle: { live, persister }, needsFileWrite: false }
       // The file is behind this copy, so the first file write must not be skipped as "nothing changed".
       store.markDirty()
       return { doc, images, password, stamp: opened.stamp, source: 'browser', store, handle: { live, persister }, needsFileWrite: true }
@@ -215,10 +220,12 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
   // --- the file is what the copy already holds -----------------------------------------------------
 
   /**
-   * The file was just decoded and the copy is, by lineage, that very document: nothing needs reading back out of the
-   * copy. The persister is seeded with the records of the file's own document, and the copy is only counted (its
-   * records, and the ids of its blobs) instead of opened row by row, which for a large document with pictures was most
-   * of the time an unchanged file took to open. A copy of another schema version is simply replaced by the file.
+   * The file was just decoded and the copy is, by lineage, that very document: only its document record is read back,
+   * for the nav (navigation never marks a copy unwritten, so the copy is where the user left off; the file is where
+   * they were at its last write). The persister is seeded with the records of the file's own document, and the copy is
+   * otherwise only counted (its records, and the ids of its blobs) instead of opened row by row, which for a large
+   * document with pictures was most of the time an unchanged file took to open. A copy of another schema version is
+   * simply replaced by the file.
    */
   async function reuseIdentical(m: LiveMeta): Promise<Reconciled | null> {
     const key = await unlock(m, false)
@@ -227,9 +234,11 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
     try {
       const live = createLiveStore(db, docId, key.codec)
       const stat = await live.stat()
-      const records = splitDoc(opened.doc)
+      const storedDoc = await live.read('doc')
       // A missing row would never be rewritten (the persister believes the copy holds it), so a copy that is not whole is not reused.
-      if (stat.records !== records.size) throw new CorruptFileError()
+      if (stat.records !== splitDoc(opened.doc).size) throw new CorruptFileError()
+      takeNav(opened.doc, storedDoc)
+      const records = splitDoc(opened.doc)
       const store = deps.createStore(opened.doc, opened.images)
       const persister = await createLivePersister({ store, live, fileName, fileId, stored: { records, blobIds: stat.blobIds } })
       return { doc: opened.doc, images: opened.images, password: deps.password, stamp: opened.stamp, source: 'file', store, handle: { live, persister }, needsFileWrite: false }
@@ -238,6 +247,15 @@ export async function resolveOpen(deps: ResolveOpenDeps): Promise<Reconciled> {
       unreadable(e)
       return null
     }
+  }
+
+  /** Puts the copy's nav (from its document record) on `doc`, unless the copy has none or the document would not validate with it. */
+  function takeNav(doc: Doc, record: unknown): void {
+    const nav = record && typeof record === 'object' ? (record as Partial<Doc>).nav : undefined
+    if (nav === undefined) return
+    const fileNav = doc.nav
+    doc.nav = nav
+    if (validateDoc(doc)) doc.nav = fileNav
   }
 
   // --- the file wins -------------------------------------------------------------------------------

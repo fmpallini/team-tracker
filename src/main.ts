@@ -45,6 +45,7 @@ import { closeDocument, createBeforeUnloadHandler, downloadCopy, browserCopyAtRi
 import { showWriteFailedDialog } from './ui/write-failed'
 import { watchFileHealth, watchStoreHealth } from './ui/file-health-toasts'
 import { createChangePassword } from './core/change-password'
+import { contentFingerprint } from './core/snapshot'
 import { createTabLock } from './core/tab-lock'
 import { resolveFileLockKey } from './core/file-identity'
 import { createConflictFlow } from './core/conflict-flow'
@@ -280,6 +281,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     // document against it would rewrite every record the other tab changed.
     await persister.reseed({ records: followed.stored.records, blobIds: followed.stored.blobs.keys() })
     if (app && app.store === store) app.password = followed.password
+    // The other tab may have written the file meanwhile. A copy with nothing unwritten holds what that file holds.
+    snapshot.fileHolds(followed.unwritten ? null : await contentFingerprint(followed.doc))
     store.replaceDoc(followed.doc, followed.images)
     if (followed.unwritten) store.markDirty()
     shell.applyPrefs(followed.doc.prefs)
@@ -296,7 +299,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     applyReloaded,
     resolveGrants: async () => { await snapshot.resolveGrants() },
     persister,
-    snapshot: { fileWritten: () => snapshot.fileWritten(), fileReloaded: () => snapshot.fileReloaded(), fileWriteFailed: (r) => snapshot.fileWriteFailed(r) },
+    snapshot: { fileWritten: (fp) => snapshot.fileWritten(fp), fileReloaded: (fp) => snapshot.fileReloaded(fp), fileWriteFailed: (r) => snapshot.fileWriteFailed(r) },
     // The fork is a new document with a browser copy of its own; the original's copy (docId unchanged) goes once
     // the fork is up, because its edits now live in the fork and the original file belongs to the other writer.
     reopen: (forkSession, forkDoc, forkPassword, forkImages, stamp) => {
@@ -326,6 +329,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     onExternalChange: conflictFlow.onExternalChange,
     // A debounced editor change must be in the store before the document is serialized.
     flushPending: flushAllEditors,
+    // Opened from the file, or from a browser copy whose content equals it (live-open.ts): an unchanged document is not written.
+    fileMatchesDoc: !needsFileWrite,
   })
   disposers.push(() => snapshot.dispose())
   app = { store, session, password, shell, pm, snapshot, persister, isConflictOpen: conflictFlow.isOpen, dispose }

@@ -100,7 +100,7 @@ export function createChangePassword(deps: ChangePasswordDeps) {
       }
       deps.setPassword(newPw)
       if (deps.store.rev === snapshot.revAtSnapshot) deps.store.markSaved()
-      deps.snapshot?.fileWritten()
+      deps.snapshot?.fileWritten(snapshot.fingerprint)
       deps.shell.setTitle(deps.session.name)
     })
   }
