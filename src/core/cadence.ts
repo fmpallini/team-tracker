@@ -22,6 +22,12 @@ export function isIsoDate(v: unknown): v is string {
   return typeof v === 'string' && ISO_DATE.test(v) && addDaysIso(v, 0) === v
 }
 
+/** The cadence a person of this group gets when they have none of their own: the members' preference, nothing for stakeholders. */
+export function defaultCadenceDays(group: PersonGroup, prefs: Prefs): number | null {
+  if (group !== 'members') return null
+  return isCadence(prefs.oneOnOneDefaultDays) ? prefs.oneOnOneDefaultDays : null
+}
+
 /**
  * Days between 1:1s for this person, or null when none is wanted. The
  * person's own `oneOnOneEveryDays` wins (null = none); when absent (or
@@ -32,8 +38,7 @@ export function effectiveCadenceDays(person: Person, group: PersonGroup, prefs: 
   const own = person.oneOnOneEveryDays
   if (own === null) return null
   if (isCadence(own)) return own
-  if (group !== 'members') return null
-  return isCadence(prefs.oneOnOneDefaultDays) ? prefs.oneOnOneDefaultDays : null
+  return defaultCadenceDays(group, prefs)
 }
 
 /** When the next 1:1 falls due: the last one plus the cadence; null if never held (nothing to count from) or no cadence. */

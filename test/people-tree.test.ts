@@ -511,6 +511,55 @@ describe('renderPeopleTree', () => {
     expect(store.doc.teams[0]!.members[0]!.role).toBe('PM')
   })
 
+  test('people-tree edit persists cadence fields', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0, lastOneOnOne: '2026-03-01' })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
+    // The Default option quotes the members' default from Preferences.
+    const every = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
+    expect(every.options[0]!.textContent).toBe('Default (14 days)')
+    every.value = 'custom'
+    every.dispatchEvent(new Event('change'))
+    ;(document.querySelector('input.tt-person-cadence-days-input') as HTMLInputElement).value = '21'
+    const last = document.querySelector('.tt-date-picker-input') as HTMLInputElement
+    last.value = ''
+    last.dispatchEvent(new Event('blur'))
+    clickByTitleOrText(document.body, 'Save')
+
+    const ana = store.doc.teams[0]!.members[0]!
+    expect(ana.oneOnOneEveryDays).toBe(21)
+    expect('lastOneOnOne' in ana).toBe(false)
+
+    // Back to Default: the field is deleted, not stored as undefined.
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
+    const again = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
+    expect(again.value).toBe('custom')
+    again.value = 'default'
+    again.dispatchEvent(new Event('change'))
+    clickByTitleOrText(document.body, 'Save')
+    expect('oneOnOneEveryDays' in store.doc.teams[0]!.members[0]!).toBe(false)
+  })
+
+  test('a stakeholder has no default cadence to quote', () => {
+    const team = makeTeam({ stakeholders: [person({ id: 's', name: 'Sam', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'stakeholders')
+    render(container, loc, store, pm, 'stakeholders')
+
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
+    expect((document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement).options[0]!.textContent).toBe('Default (none)')
+  })
+
+  test('the add dialog has no cadence fields', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+
+    chooseFromMenu(boxes(container)[0]!, 'Add report')
+    expect(document.querySelector('.tt-person-cadence-select')).toBeNull()
+  })
+
   test('the menu Delete person deletes at once (no confirm dialog), promoting children', () => {
     const team = makeTeam({
       members: [

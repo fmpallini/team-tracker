@@ -5,7 +5,7 @@
 import type { Loc, Person, Team } from '../core/types'
 import { t } from '../core/i18n'
 import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx, type ModuleRenderer } from '../ui/panes'
-import { openPersonModal } from '../ui/person-modal'
+import { applyCadence, openPersonModal, personOneOnOne } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
 import { el, wheelScrollsHorizontally, clearClasses, keepRowFocus, rovingRows } from '../ui/dom'
 import { dragAutoscroll } from '../ui/drag-autoscroll'
@@ -205,13 +205,15 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         title: t(lc, 'person_edit_title'),
         initialName: person.name,
         initialRole: person.role,
-        onSubmit: (name, role) => {
+        oneOnOne: personOneOnOne(person, group, ctx.store.doc.prefs),
+        onSubmit: (name, role, cadence) => {
           ctx.store.update((d) => {
             const tm = docFindTeam(d, teamId)
             const p = tm?.[group].find((pp) => pp.id === person.id)
             if (!p) return
             p.name = name
             p.role = role
+            applyCadence(p, cadence)
             // Deliberately unscoped beyond the team: `name` is the label every
             // @[…](person:id) mention in this team resolves through at render
             // time (ui/atref.ts's makeRefLabelResolver reads the store live, so

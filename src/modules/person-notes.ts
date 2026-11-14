@@ -14,7 +14,7 @@ import { withDisposal } from './lifecycle'
 import { BACKLINK_SECTIONS } from '../core/search'
 import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
-import { openPersonModal } from '../ui/person-modal'
+import { applyCadence, openPersonModal, personOneOnOne } from '../ui/person-modal'
 import { iconButton } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
 import { buildOneOnOne } from '../core/one-on-one'
@@ -68,13 +68,15 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
       title: t(lc, 'person_edit_title'),
       initialName: p.name,
       initialRole: p.role,
-      onSubmit: (name, role) => {
+      oneOnOne: personOneOnOne(p, group, ctx.store.doc.prefs),
+      onSubmit: (name, role, cadence) => {
         ctx.store.update((d) => {
           const tm = docFindTeam(d, teamId)
           const pp = tm?.[group].find((x) => x.id === personId)
           if (!pp) return
           pp.name = name
           pp.role = role
+          applyCadence(pp, cadence)
           // Unscoped beyond the team, exactly as people-tree.ts's rename
           // site: `name`/`role` are the label every @[…](person:id)
           // mention in this team resolves through live, so a pane showing

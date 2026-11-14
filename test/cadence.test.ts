@@ -1,4 +1,4 @@
-import { effectiveCadenceDays, oneOnOneDueDate } from '../src/core/cadence'
+import { defaultCadenceDays, effectiveCadenceDays, oneOnOneDueDate } from '../src/core/cadence'
 import { createEmptyDocument } from '../src/core/document'
 import type { Person } from '../src/core/types'
 
@@ -6,6 +6,14 @@ function p(overrides: Partial<Person>): Person {
   return { id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '', ...overrides }
 }
 const prefs = createEmptyDocument('en-US').prefs
+
+describe('defaultCadenceDays', () => {
+  test('members follow the preference (0 = none), stakeholders have none', () => {
+    expect(defaultCadenceDays('members', prefs)).toBe(14)
+    expect(defaultCadenceDays('members', { ...prefs, oneOnOneDefaultDays: 0 })).toBeNull()
+    expect(defaultCadenceDays('stakeholders', prefs)).toBeNull()
+  })
+})
 
 describe('effectiveCadenceDays', () => {
   test('members default 14, stakeholders none', () => {

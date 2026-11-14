@@ -591,6 +591,19 @@ describe('New 1:1', () => {
     expect(line(container).textContent).toBe('No 1:1 yet · every 21 days')
   })
 
+  test('the status line opens the edit dialog, and Save repaints it with the new cadence', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    line(container).click()
+    const every = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
+    every.value = 'custom'
+    every.dispatchEvent(new Event('change'))
+    ;(document.querySelector('input.tt-person-cadence-days-input') as HTMLInputElement).value = '10'
+    Array.from(document.querySelectorAll('.tt-modal-buttons button')).find((b) => b.textContent === 'Save')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(member(store).oneOnOneEveryDays).toBe(10)
+    expect(line(container).textContent).toBe('No 1:1 yet · every 10 days')
+  })
+
   test('status line repaints when the window comes back on a later day', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 10, 13, 12))

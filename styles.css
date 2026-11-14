@@ -1420,6 +1420,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-org-children > .tt-org-node:only-child::after { display: none; }
 
 .tt-person-form { display: flex; flex-direction: column; gap: .75rem; }
+.tt-person-cadence-row { display: flex; align-items: center; gap: .5rem; }
+.tt-person-cadence-days { display: inline-flex; align-items: center; gap: .4rem; }
+.tt-person-cadence-days[hidden] { display: none; }
+.tt-person-cadence-days-input { width: 5rem; }
 
 /* Action items module — kanban board (fixed To Do start, N custom middle
    columns, fixed Done+Cancelled end) */

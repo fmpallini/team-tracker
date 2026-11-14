@@ -327,7 +327,45 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const listEl = el('div', { class: 'tt-prefs-template-list' })
 
+    const oneOnOneDaysField = prefsNumberField({
+      inputClass: 'tt-prefs-one-on-one-days-input',
+      label: t(locale, 'prefs_one_on_one_default_label'),
+      hint: t(locale, 'prefs_one_on_one_default_hint'),
+      min: 0,
+      max: 365,
+      value: store.doc.prefs.oneOnOneDefaultDays,
+      onCommit: (days) => {
+        store.update((d) => {
+          d.prefs.oneOnOneDefaultDays = days
+        }, PREFS_ONLY)
+      },
+    })
+
+    // Rebuilt by refreshList: it lists the templates, so an added, renamed or deleted one must show up here too.
+    const oneOnOneTemplateSlot = el('div', { class: 'tt-prefs-field' })
+    function renderOneOnOneTemplateSelect(): void {
+      const select = el('select', { class: 'tt-input tt-prefs-one-on-one-template-select' }) as HTMLSelectElement
+      select.appendChild(el('option', { value: '' }, t(locale, 'prefs_one_on_one_template_none')))
+      for (const tpl of store.doc.templates) {
+        // A daily-note template makes no sense as the start of a person's note.
+        if (tpl.scope === 'daily') continue
+        select.appendChild(el('option', { value: tpl.id }, tpl.name))
+      }
+      // A chosen template that was deleted is not an option: the select then reads None rather than blank.
+      select.value = store.doc.prefs.oneOnOneTemplateId ?? ''
+      if (select.selectedIndex < 0) select.value = ''
+      select.addEventListener('change', () => {
+        store.update((d) => {
+          d.prefs.oneOnOneTemplateId = select.value || null
+        }, PREFS_ONLY)
+      })
+      oneOnOneTemplateSlot.replaceChildren(
+        el('label', { class: 'tt-prefs-inline-label' }, t(locale, 'prefs_one_on_one_template_label'), select)
+      )
+    }
+
     function refreshList(): void {
+      renderOneOnOneTemplateSelect()
       listEl.innerHTML = ''
       const templates = store.doc.templates
       if (templates.length === 0) {
@@ -507,7 +545,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const toolbar = el('div', { class: 'tt-prefs-template-toolbar' }, newBtn, restoreBtn)
 
     refreshList()
-    container.append(toolbar, listEl)
+    container.append(prefsSection(null, oneOnOneDaysField, oneOnOneTemplateSlot), toolbar, listEl)
   }
 
   /**
