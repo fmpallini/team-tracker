@@ -16,11 +16,13 @@
 //     "**x**" → <strong>, "# " → <h1>
 //   - Ctrl+Z / Ctrl+Shift+Z drive the editor's own undo/redo stack on the
 //     contenteditable (e2e/editor-undo.spec.ts has the full acceptance suite)
+//   - checklists: "[] " typed into a bullet, Enter out of a done item (the
+//     native split clones data-task), and a click on the box surviving reopen
 //
 // Served over http://localhost (secure context) so the OPFS picker shim and
 // the real File System Access save path are available, same as fs-api.spec.ts.
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { openModule, openEditor, clearEditor, pasteInto } from './helpers'
+import { openModule, openEditor, clearEditor, pasteInto, lockClose, reopenLast } from './helpers'
 
 const PASSWORD = 'e2e-editor-password'
 
@@ -534,5 +536,54 @@ test.describe('rich-text editor — Ctrl+C / Ctrl+X carry no theme background', 
     expect(html!.toLowerCase()).toContain('bold')
     // the actual bug: native copy inlined <body>'s themed background onto the fragment
     expect(html!.toLowerCase()).not.toMatch(/background(-color)?\s*:/)
+  })
+})
+
+test.describe('rich-text editor — checklists', () => {
+  test('typing "- " then "[] x" makes an open task', async ({ page }) => {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    await page.keyboard.type('- ')
+    await page.keyboard.type('[] x')
+    await expect(editor.locator('ul > li[data-task="open"]')).toHaveText('x')
+  })
+
+  test('Enter on a done item starts an open one; a second Enter on the empty item leaves the list', async ({ page }) => {
+    const editor = await openEditor(page)
+    await clearEditor(page)
+    await page.keyboard.type('- [] a')
+    await page.keyboard.press('Control+Enter')
+    await expect(editor.locator('ul > li[data-task="done"]')).toHaveText('a')
+
+    await page.keyboard.press('Enter')
+    const items = editor.locator('ul > li')
+    await expect(items).toHaveCount(2)
+    await expect(items.nth(1)).toHaveAttribute('data-task', 'open')
+    await expect(items.nth(0)).toHaveAttribute('data-task', 'done')
+
+    await page.keyboard.press('Enter')
+    await expect(items).toHaveCount(1)
+    await page.keyboard.type('after')
+    await expect(editor.locator('> div', { hasText: 'after' })).toHaveCount(1)
+  })
+
+  test('clicking the box toggles it, and reopening keeps the state', async ({ page }) => {
+    const editor = await openEditor(page, PASSWORD)
+    await clearEditor(page)
+    await page.keyboard.type('- [] task')
+    const item = editor.locator('ul > li[data-task]')
+    await expect(item).toHaveAttribute('data-task', 'open')
+
+    // The box sits in the item's left padding (the toggle gutter), first line.
+    await item.click({ position: { x: 8, y: 10 } })
+    await expect(item).toHaveAttribute('data-task', 'done')
+    // A click on the text only places the caret.
+    await editor.getByText('task').click()
+    await expect(item).toHaveAttribute('data-task', 'done')
+    await page.waitForTimeout(350)
+
+    await lockClose(page)
+    await reopenLast(page, PASSWORD)
+    await expect(page.locator('.editor').first().locator('ul > li[data-task="done"]')).toHaveText('task')
   })
 })

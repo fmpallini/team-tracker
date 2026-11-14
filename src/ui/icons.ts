@@ -68,6 +68,8 @@ const PATHS = {
   more: '<g class="f"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></g>',
   hr: '<path d="M2.5 8h11"/>',
   olist: '<path d="M7.5 4h6M7.5 8h6M7.5 12h6M2.75 4.25L4 3.25V6.5M2.75 8.75h2.5L2.75 12h2.5"/>',
+  // The editor's Checklist button: an open box and a ticked one beside two lines.
+  checklist: '<rect x="2.25" y="2.75" width="4" height="4" rx="1"/><path d="M2.5 11.25l1.25 1.25 2.25-2.75M8.75 4.75h5M8.75 11.25h5"/>',
   quote: '<path d="M3 3v10M6.5 5h6.5M6.5 8h6.5M6.5 11h4"/>',
   list: '<path d="M6 4h7M6 8h7M6 12h7"/><g class="f"><circle cx="3" cy="4" r="1"/><circle cx="3" cy="8" r="1"/><circle cx="3" cy="12" r="1"/></g>',
   // The four risk-plan outlines, the same shapes the risk matrix draws (circle, diamond, square, triangle).

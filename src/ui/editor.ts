@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport, copyText } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver, type TaskState } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showHelp } from './help'
 import { showModal, toast } from './modal'
@@ -161,7 +161,7 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote' | 'codeblock'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote' | 'codeblock' | 'task'
   prefixLen: number
 }
 
@@ -190,6 +190,10 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
   if (/^>[  ]$/.test(text)) return { type: 'blockquote', prefixLen: 2 }
 
   if (/^```[ \u00a0]$/.test(text)) return { type: 'codeblock', prefixLen: 4 }
+
+  // `[] ` or `[ ] `: an open checklist item (see handleAutoFormat).
+  m = /^\[ ?\][ \u00a0]$/.exec(text)
+  if (m) return { type: 'task', prefixLen: m[0]!.length }
 
   return null
 }
@@ -369,6 +373,12 @@ export function setEditorsReadOnly(readOnly: boolean): void {
 
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: editorsReadOnly ? 'false' : 'true' })
+  // Spoken names of the checklist states: styles.css reads them as the alt
+  // text of each task box's generated content (`content: "" / var(...)`).
+  // Set through the CSSOM, which the CSP allows.
+  editorEl.style.setProperty('--tt-task-open', JSON.stringify(t(locale, 'editor_task_open_sr')))
+  editorEl.style.setProperty('--tt-task-done', JSON.stringify(t(locale, 'editor_task_done_sr')))
+  editorEl.style.setProperty('--tt-task-carried', JSON.stringify(t(locale, 'editor_task_carried_sr')))
 
   let changeTimer: ReturnType<typeof setTimeout> | null = null
   function scheduleChange(): void {
@@ -796,6 +806,137 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     exec(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList')
   }
 
+  // --- checklists -----------------------------------------------------------
+  // A checklist item is a bullet `<li data-task="open|done|carried">` (the
+  // shape core/markdown.ts reads and writes as `- [ ] ` / `- [x] ` / `- [>] `).
+  // A numbered item never carries a state: `1. [ ] x` is not a task.
+
+  /**
+   * The state Ctrl+Enter / a box click moves `li` to, or null to leave it:
+   * a plain bullet becomes open, open and done swap (only when `toggle` —
+   * the toolbar button makes items but never flips one), and a carried item
+   * is never touched (that state belongs to the New 1:1 carry-over).
+   */
+  function nextTaskState(li: HTMLElement, toggle: boolean): TaskState | null {
+    const cur = li.getAttribute('data-task')
+    if (cur === 'carried') return null
+    if (cur === 'open') return toggle ? 'done' : null
+    if (cur === 'done') return toggle ? 'open' : null
+    return 'open'
+  }
+
+  /** The box click: flips one bullet's state as its own undo step. */
+  function toggleTask(li: HTMLElement): void {
+    if (editorsReadOnly || li.parentElement?.tagName !== 'UL') return
+    const next = nextTaskState(li, true)
+    if (!next) return
+    edit(() => li.setAttribute('data-task', next))
+    scheduleChange()
+  }
+
+  /**
+   * Every `<li>` the selection touches: the one its start sits in, plus each
+   * later one whose own start lies inside the range. An item the range only
+   * grazes at its very start (a triple-click ends at the next line's offset 0)
+   * holds no selected text and is left out.
+   */
+  function touchedListItems(range: Range): HTMLElement[] {
+    const startLi = closestLi(range.startContainer)
+    const items = startLi ? [startLi] : []
+    if (range.collapsed) return items
+    for (const li of Array.from(editorEl.querySelectorAll<HTMLElement>('li'))) {
+      if (li === startLi || range.comparePoint(li, 0) !== 0) continue
+      const own = range.cloneRange()
+      own.setStart(li, 0)
+      if (li.contains(range.endContainer) && own.toString() === '') continue
+      items.push(li)
+    }
+    return items
+  }
+
+  /**
+   * Ctrl+Enter (`toggle`) and the Checklist toolbar button. With the
+   * selection in list items it acts on each bullet it touches (see
+   * nextTaskState; numbered items are skipped). Outside any list, the
+   * top-level line holding the selection's start becomes an open task item,
+   * keeping its inline content and the caret's place. Nothing inside a
+   * quote or a code block. One undo step either way.
+   */
+  function makeTask(toggle = false): void {
+    if (editorsReadOnly || blockquoteAtCaret() || preAtCaret()) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (!editorEl.contains(range.startContainer)) return
+    const items = touchedListItems(range)
+    if (items.length > 0) {
+      const changes = items
+        .filter((li) => li.parentElement?.tagName === 'UL')
+        .map((li) => [li, nextTaskState(li, toggle)] as const)
+        .filter((c): c is readonly [HTMLElement, TaskState] => c[1] !== null)
+      if (changes.length === 0) return
+      edit(() => { for (const [li, state] of changes) li.setAttribute('data-task', state) })
+      scheduleChange()
+      return
+    }
+    let block: Node | null = range.startContainer
+    while (block && block.parentNode !== editorEl) block = block.parentNode
+    if (!(block instanceof HTMLElement) || !/^(DIV|P|H[1-3])$/.test(block.tagName) || block.classList.contains('tt-img')) return
+    const before = document.createRange()
+    before.selectNodeContents(block)
+    before.setEnd(range.startContainer, range.startOffset)
+    const offset = before.toString().length
+    const line = block
+    edit(() => {
+      const li = document.createElement('li')
+      li.setAttribute('data-task', 'open')
+      li.append(...Array.from(line.childNodes))
+      if (!li.firstChild) li.appendChild(document.createElement('br'))
+      const ul = document.createElement('ul')
+      ul.appendChild(li)
+      line.replaceWith(ul)
+      restoreCaret(li, offset)
+    })
+    scheduleChange()
+  }
+
+  /**
+   * After a native Enter (`insertParagraph`) inside a task item: Chromium
+   * clones the item's attributes onto the new one, so splitting a done item
+   * would make another done item. The new item is set open. It is the one
+   * holding the caret, except for an Enter at the very start of an item:
+   * there Chromium leaves the caret (and the text) in the lower item and puts
+   * the new, empty one above it. Enter on an empty item leaves the list
+   * natively, so the caret is in no `<li>` and nothing runs.
+   */
+  function openSplitTask(): void {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const li = closestLi(sel.getRangeAt(0).startContainer)
+    if (!li || li.parentElement?.tagName !== 'UL' || !li.hasAttribute('data-task')) return
+    const prev = li.previousElementSibling
+    const fresh = prev instanceof HTMLElement && prev.tagName === 'LI' && prev.hasAttribute('data-task') &&
+      (prev.textContent ?? '') === '' && (li.textContent ?? '') !== '' ? prev : li
+    if (fresh.getAttribute('data-task') !== 'open') fresh.setAttribute('data-task', 'open')
+  }
+
+  /**
+   * A click on a task item's box toggles it. The box is the item's
+   * `::before`, drawn in its left padding (styles.css), so a click on it
+   * targets the `<li>` itself with an `offsetX` inside that padding; a click
+   * on the text targets the text's own box and never toggles. Only the first
+   * line's gutter counts: further down it runs alongside a nested sub-list.
+   */
+  function handleTaskBoxClick(e: MouseEvent): void {
+    const li = e.target
+    if (editorsReadOnly || !(li instanceof HTMLElement) || li.tagName !== 'LI' || !li.hasAttribute('data-task') || !editorEl.contains(li)) return
+    const cs = getComputedStyle(li)
+    if (!(e.offsetX < parseFloat(cs.paddingLeft))) return
+    const lineHeight = parseFloat(cs.lineHeight)
+    if (Number.isFinite(lineHeight) && e.offsetY > (parseFloat(cs.paddingTop) || 0) + lineHeight) return
+    toggleTask(li)
+  }
+
   /**
    * Normalizes every flat block of `selector` (`<blockquote>` or `<pre>`)
    * under `root` so it holds only `<br>`-separated lines — the shape
@@ -1020,10 +1161,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * left right after typing "- " or "1. " and stripping the prefix — and can
    * silently no-op instead of creating the list.
    */
-  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol'): void {
+  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol', task?: TaskState): void {
     editorEl.focus()
     edit(() => {
       const li = document.createElement('li')
+      if (task) li.setAttribute('data-task', task)
       li.appendChild(document.createElement('br'))
       const list = document.createElement(type)
       list.appendChild(li)
@@ -1137,6 +1279,22 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         // Headings / lists / rules don't survive a `> ` round trip, so a
         // block prefix typed inside a quote is left as literal text.
         if (inQuote) return
+        if (blockMatch.type === 'task') {
+          // "[] " / "[ ] " as the whole text of a bullet makes it an open task;
+          // as the whole text of a top-level line, a new task list. In a
+          // numbered item it stays literal: `1. [ ] x` is not a task (see
+          // core/markdown.ts's renderListMd).
+          if (block.tagName === 'LI' && block.parentElement?.tagName === 'UL') {
+            edit(() => {
+              block.setAttribute('data-task', 'open')
+              block.replaceChildren(document.createElement('br'))
+              placeCaretAtStart(block)
+            })
+          } else if (block.parentElement === editorEl) {
+            convertBlockToList(block, 'ul', 'open')
+          }
+          return
+        }
         if (blockMatch.type === 'hr') {
           // Unlike ul/ol (which fall through to the generic prefix-strip +
           // applyBlockFormat path below when not top-level, since that path
@@ -1787,6 +1945,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     ensureBlock()
+    if (e instanceof InputEvent && e.inputType === 'insertParagraph') openSplitTask()
     handleAutoFormat()
     checkTriggers()
     syncPreHighlight()
@@ -1839,6 +1998,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     { match: (e) => e.shiftKey && (e.code === 'KeyX' || e.code === 'Digit5'), run: () => exec('strikeThrough') },
     { match: (e) => e.shiftKey && e.code === 'Digit8', run: () => insertList('ul') },
     { match: (e) => e.shiftKey && e.code === 'Digit7', run: () => insertList('ol') },
+    // Ctrl+Enter: make a checklist item / toggle it (makeTask). The plain-Enter
+    // branch in onKeydown skips any Ctrl chord, so it lands here.
+    { match: (e) => !e.shiftKey && e.key === 'Enter', run: () => makeTask(true) },
     {
       match: (e) => e.shiftKey && (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '('),
       run: () => toggleBlockquote(),
@@ -2392,6 +2554,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (cbActivePre === collapsed) { syncCbGlyphs(); positionCbControls() }
     }
     selectImageBlock((e.target as HTMLElement).closest?.('.tt-img') as HTMLElement | null)
+    handleTaskBoxClick(e)
     handleRefActivate(e)
     handleExternalLinkActivate(e)
   }
@@ -2496,6 +2659,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarSeparator(),
     toolbarButton(icon('list'), t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton(icon('olist'), t(locale, 'editor_ol_title'), () => insertList('ol')),
+    toolbarButton(icon('checklist'), t(locale, 'editor_checklist_title'), () => makeTask()),
     toolbarSeparator(),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),

@@ -662,13 +662,13 @@ describe('@ trigger', () => {
     const seps = Array.from(bar.querySelectorAll('.tt-editor-toolbar-sep'))
     expect(seps).toHaveLength(3)
     expect(seps.every((sep) => sep.getAttribute('aria-hidden') === 'true')).toBe(true)
-    // Groups: text style (4) | lists (2) | headings and paragraph (4) | blocks and inserts.
+    // Groups: text style (4) | lists and checklist (3) | headings and paragraph (4) | blocks and inserts.
     const sizes: number[] = []
     let run = 0
     for (const child of Array.from(bar.children)) {
       if (child.classList.contains('tt-editor-toolbar-sep')) { sizes.push(run); run = 0 } else if (child.classList.contains('tt-editor-btn')) run++
     }
-    expect(sizes).toEqual([4, 2, 4])
+    expect(sizes).toEqual([4, 3, 4])
     editor.destroy()
   })
 
@@ -2340,6 +2340,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_strike_title'),
       t('en-US', 'editor_ul_title'),
       t('en-US', 'editor_ol_title'),
+      t('en-US', 'editor_checklist_title'),
       t('en-US', 'editor_h1_title'),
       t('en-US', 'editor_h2_title'),
       t('en-US', 'editor_h3_title'),
@@ -4684,5 +4685,169 @@ describe('Escape leaves the editor', () => {
     editor = createEditor(makeHooks(), 'en-US')
     const e = dispatchKey(editor.root.querySelector<HTMLElement>('.editor')!, { key: 'Escape' })
     expect(e.defaultPrevented).toBe(false)
+  })
+})
+
+describe('checklists', () => {
+  let editor: Editor | null = null
+  afterEach(() => {
+    setEditorsReadOnly(false)
+    editor?.destroy()
+    editor = null
+  })
+
+  function mount(md: string): HTMLElement {
+    editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    return editor.root.querySelector('.editor') as HTMLElement
+  }
+  /** Collapses the caret at the end of the first text node reading `text`. */
+  function caretIn(editorEl: HTMLElement, text: string): void {
+    const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode()) && node.textContent !== text) { /* walk */ }
+    if (!node) throw new Error(`no text node "${text}"`)
+    const r = document.createRange()
+    r.setStart(node, text.length)
+    r.collapse(true)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(r)
+  }
+  const ctrlEnter = (editorEl: HTMLElement): KeyboardEvent => dispatchKey(editorEl, { key: 'Enter', code: 'Enter', ctrlKey: true })
+  function clickAt(target: HTMLElement, offsetX: number): void {
+    const e = new MouseEvent('click', { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'offsetX', { value: offsetX })
+    Object.defineProperty(e, 'offsetY', { value: 2 })
+    target.dispatchEvent(e)
+  }
+
+  test('Ctrl+Enter on a plain bullet makes it an open task, then toggles done/open', () => {
+    const ed = mount('- a'); caretIn(ed, 'a')
+    expect(ctrlEnter(ed).defaultPrevented).toBe(true)
+    expect(editor!.getMd()).toBe('- [ ] a')
+    ctrlEnter(ed); expect(editor!.getMd()).toBe('- [x] a')
+    ctrlEnter(ed); expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('Ctrl+Enter leaves a carried item alone', () => {
+    const ed = mount('- [>] a'); caretIn(ed, 'a')
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [>] a')
+  })
+
+  test('Ctrl+Enter on a plain top-level line makes an open task item', () => {
+    const ed = mount('a'); caretIn(ed, 'a')
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [ ] a')
+    expect(ed.querySelector('li')!.contains(window.getSelection()!.anchorNode)).toBe(true)
+  })
+
+  test('Ctrl+Enter acts on every bullet a selection touches', () => {
+    const ed = mount('- a\n- [x] b\n- c')
+    const lis = ed.querySelectorAll('li')
+    const r = document.createRange()
+    r.setStart(lis[0]!.firstChild!, 0)
+    r.setEnd(lis[1]!.firstChild!, 1)
+    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b\n- c')
+  })
+
+  test('Ctrl+Enter does nothing in a numbered list, a quote or a code block', () => {
+    for (const [md, text] of [['1. a', 'a'], ['> a', 'a'], ['```\na\n```', 'a']] as const) {
+      const ed = mount(md); caretIn(ed, text)
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe(md)
+      editor!.destroy(); editor = null
+    }
+  })
+
+  test('a toggle is one undo step', () => {
+    const ed = mount('- [ ] a'); caretIn(ed, 'a')
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [x] a')
+    dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('click in the box gutter toggles; click on the text does not', () => {
+    const ed = mount('- [ ] a')
+    const li = ed.querySelector('li')!
+    li.style.paddingLeft = '24px'
+    clickAt(li, 40)
+    expect(editor!.getMd()).toBe('- [ ] a')
+    clickAt(li, 6)
+    expect(editor!.getMd()).toBe('- [x] a')
+    clickAt(li, 6)
+    expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('read-only editor ignores the toggle', () => {
+    const ed = mount('- [ ] a'); caretIn(ed, 'a')
+    setEditorsReadOnly(true)
+    ctrlEnter(ed)
+    const li = ed.querySelector('li')!
+    li.style.paddingLeft = '24px'
+    clickAt(li, 6)
+    expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('detectBlockPrefix matches "[] " and "[ ] " as task', () => {
+    expect(detectBlockPrefix('[]\u00a0')).toEqual({ type: 'task', prefixLen: 3 })
+    expect(detectBlockPrefix('[ ] ')).toEqual({ type: 'task', prefixLen: 4 })
+    expect(detectBlockPrefix('[x] ')).toBeNull()
+  })
+
+  test('typing "[] " as a whole bullet or an empty line makes an open task', () => {
+    const ed = mount('- x')
+    const li = ed.querySelector('li')!
+    li.textContent = '[]\u00a0'
+    caretIn(ed, '[]\u00a0')
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(li.getAttribute('data-task')).toBe('open')
+    expect(li.textContent).toBe('')
+
+    const ed2 = mount('')
+    const div = ed2.querySelector('div')!
+    div.textContent = '[ ] '
+    caretIn(ed2, '[ ] ')
+    ed2.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(ed2.querySelector('ul > li[data-task="open"]')).not.toBeNull()
+  })
+
+  test('"[] " typed in a numbered item stays text', () => {
+    const ed = mount('1. x')
+    const li = ed.querySelector('li')!
+    li.textContent = '[] '
+    caretIn(ed, '[] ')
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(li.hasAttribute('data-task')).toBe(false)
+  })
+
+  test('Enter after a done item starts an open one', () => {
+    const ed = mount('- [x] a\n- [x] b')
+    caretIn(ed, 'b')
+    ed.dispatchEvent(new InputEvent('input', { inputType: 'insertParagraph', bubbles: true }))
+    expect(ed.querySelectorAll('li')[1]!.getAttribute('data-task')).toBe('open')
+    expect(ed.querySelectorAll('li')[0]!.getAttribute('data-task')).toBe('done')
+  })
+
+  test('toolbar has a Checklist button that makes items but never toggles them', () => {
+    const ed = mount('- [ ] a\n- b')
+    const btn = editor!.root.querySelector<HTMLButtonElement>(`button[title="${t('en-US', 'editor_checklist_title')}"]`)!
+    expect(btn).not.toBeNull()
+    expect(btn.previousElementSibling!.getAttribute('title')).toBe(t('en-US', 'editor_ol_title'))
+    caretIn(ed, 'a'); btn.click()
+    expect(editor!.getMd()).toBe('- [ ] a\n- b')
+    caretIn(ed, 'b'); btn.click()
+    expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b')
+  })
+
+  test('task states carry screen-reader labels on the editor', () => {
+    const ed = mount('')
+    expect(ed.style.getPropertyValue('--tt-task-open')).toBe(JSON.stringify(t('en-US', 'editor_task_open_sr')))
+    expect(ed.style.getPropertyValue('--tt-task-done')).toBe(JSON.stringify(t('en-US', 'editor_task_done_sr')))
+    expect(ed.style.getPropertyValue('--tt-task-carried')).toBe(JSON.stringify(t('en-US', 'editor_task_carried_sr')))
   })
 })

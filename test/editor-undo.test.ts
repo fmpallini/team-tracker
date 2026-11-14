@@ -74,6 +74,27 @@ describe('checkpoint, undo, redo', () => {
     expect(h.deps.onChange).toHaveBeenCalledTimes(2)
   })
 
+  test('a checklist state change (data-task only) is a step; other attributes are not', async () => {
+    const h = setup('<ul><li data-task="open">a</li></ul>')
+    const li = h.root.querySelector('li')!
+    h.u.checkpoint()
+    li.setAttribute('data-task', 'done')
+    await flush()
+    expect(h.u.undo()).toBe(true)
+    expect(h.root.querySelector('li')!.getAttribute('data-task')).toBe('open')
+
+    // A view-only attribute opens no step: had it been recorded, the new entry would have cleared redo.
+    h.u.checkpoint()
+    h.root.querySelector('li')!.setAttribute('data-collapsed', '')
+    await flush()
+    vi.runAllTimers()
+    h.root.querySelector('li')!.removeAttribute('data-collapsed')
+    h.u.undo()
+    expect(h.root.querySelector('li')!.getAttribute('data-task')).toBe('open')
+    expect(h.u.redo()).toBe(true)
+    expect(h.root.querySelector('li')!.getAttribute('data-task')).toBe('done')
+  })
+
   test('undo in the same task as the edit does not lose the step', () => {
     const h = setup()
     h.u.checkpoint()
