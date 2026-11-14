@@ -248,12 +248,23 @@ function fenceFor(lines: readonly string[]): string {
 }
 
 /**
+ * The closing backtick run a fence opened at `lines[i]` (a line starting with
+ * `run` backticks, run >= 3) needs. Shared by `mdToHtml` and `fencedLines`;
+ * the rule itself is explained above `mdToHtml`'s `preBuf`.
+ */
+function openerFence(lines: readonly string[], i: number, run: number): number {
+  return run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+}
+
+/**
  * Which of `lines` sit in a fenced code block, the fence lines included, by
- * the rule `mdToHtml`'s fence branch applies (see the comment above its
- * `preBuf`) — keep the two in step. For readers that work on markdown lines
- * instead of rendering them. `unclosed` is true when the last block runs to
- * the end of input; a ``` line appended then closes it, whatever its opener's
- * length (a longer opener with no closer that long closes on any ``` line).
+ * the rule `mdToHtml`'s fence branch applies (both open a fence through
+ * `openerFence`). For readers that work on markdown lines instead of
+ * rendering them. `unclosed` is true when the last block runs to the end of
+ * input. Appending a ``` line as the new last line then closes it, whatever
+ * its opener's length: with no closer that long after it, a longer opener
+ * closes on any ``` line. Lines appended after that closer can change this,
+ * because a longer opener counts as long once any later line is that long.
  */
 export function fencedLines(lines: readonly string[]): { fenced: boolean[]; unclosed: boolean } {
   const fenced: boolean[] = []
@@ -267,7 +278,7 @@ export function fencedLines(lines: readonly string[]): { fenced: boolean[]; uncl
     }
     if (run >= 3) {
       fenced.push(true)
-      fence = run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+      fence = openerFence(lines, i, run)
       continue
     }
     fenced.push(false)
@@ -399,7 +410,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     const run = leadingBackticks(line)
     if (run >= 3) {
       flushBq(); closeList(); preBuf = []
-      preFence = run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+      preFence = openerFence(lines, i, run)
       continue
     }
     const bq = /^> ?(.*)$/.exec(line)
