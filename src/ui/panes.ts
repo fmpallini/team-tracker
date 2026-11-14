@@ -18,6 +18,9 @@ import { MODULE_FKEY_FIRST } from './app-hotkeys'
 import { ADD_TEAM_REQUEST_EVENT } from './sidebar'
 import { clearSearchHighlight } from './search-highlight'
 import { icon, kindIcon, iconButton } from './icons'
+import { watchDayChange } from './day-change'
+import { collectDueItems, moduleDueSummary } from '../core/due'
+import { scopeTouchesSections, type Section } from '../core/scope'
 // Runtime dependency in one direction only: modules/lifecycle.ts imports
 // ModuleCtx/ModuleRenderer from here as *types*, which are erased at build.
 import { disposeContainer } from '../modules/lifecycle'
@@ -363,6 +366,32 @@ const PANE_DEFAULT_FOCUS = '.editor, [data-item-id][tabindex="0"]'
 /** The F-key hint of pane-menu row `i`: F1 is Help, so the rows start at F2 (app-hotkeys.ts routes the same keys). */
 const moduleFKey = (i: number): string => `F${i + MODULE_FKEY_FIRST}`
 
+/** Per-module due counts for the active team (core/due.ts moduleDueSummary), keyed by module kind; a module with nothing due has no entry. */
+type DueCounts = { overdue: number; dueSoon: number }
+type DueState = ReadonlyMap<string, DueCounts>
+/** The sections whose edits can move a due dot: tasks and milestones, a person's 1:1 dates, the due-soon window and default cadence, a team's removal. A notes keystroke is none of them. */
+const DUE_SECTIONS: readonly Section[] = ['actions', 'milestones', 'people', 'prefs', 'teams']
+
+/** "2 overdue, 1 due soon", or just the half that is not zero. */
+function dueText(lc: Locale, c: DueCounts): string {
+  const overdue = String(c.overdue)
+  const soon = String(c.dueSoon)
+  if (c.overdue > 0 && c.dueSoon > 0) return t(lc, 'pane_due_state', { overdue, soon })
+  return c.overdue > 0 ? t(lc, 'pane_due_overdue', { overdue }) : t(lc, 'pane_due_soon', { soon })
+}
+
+/** A dot only, no count (the sidebar's due button already counts): red when anything is overdue, brass when all of it is still ahead, the .tt-team-due-badge rule. */
+function dueDot(c: DueCounts): HTMLElement {
+  return el('span', { class: 'tt-due-dot' + (c.overdue > 0 ? '' : ' soon'), 'aria-hidden': 'true' })
+}
+
+/** A module's icon wearing its due dot, inside the icon's wrapper so it sits on the icon's corner, clear of the tab's F-key tag. */
+function kindIconWithDue(kind: PaneMenuRow['kind'], c: DueCounts | undefined): HTMLElement {
+  const ic = kindIcon(kind)
+  if (c) ic.append(dueDot(c))
+  return ic
+}
+
 /**
  * F2..F8 global hotkey handler (main.ts): jumps the focused pane straight to
  * one of the 7 fixed pane-menu rows (see paneMenuItems) by its position,
@@ -469,6 +498,11 @@ export function createPaneManager(shell: Shell, store: Store): AppPaneManager {
   // clearing every team's — a document-level listener in the same category
   // dispose() below already tears down for other concerns.
   const searchIndex = createSearchIndex(() => store.doc, () => store.rev)
+
+  function dueState(teamId: string | null): DueState {
+    return teamId === null ? new Map() : moduleDueSummary(collectDueItems(store.doc, todayIso()), teamId)
+  }
+  const dueSignature = (due: DueState): string => JSON.stringify([...due])
   // Also refreshes the bars' titles and favorite stars. A person pane's name is otherwise only
   // painted by renderBar() on navigation, so renaming that person from the
   // *other* pane — whose body re-renders itself off its own subscription —
@@ -479,10 +513,21 @@ export function createPaneManager(shell: Shell, store: Store): AppPaneManager {
   // test/lifecycle.test.ts baselines stays put. The star is gated the same way
   // (painted aria-pressed vs. the store), so a favorite removed from the
   // sidebar or the data cleanup repaints it.
+  //
+  // The due dots ride this same subscription: an edit in one of DUE_SECTIONS
+  // recomputes the due state once and repaints a bar only when it differs from
+  // what the bar last painted (its data-due signature), so a task edit that
+  // moves no count does not rebuild the bars, and a notes keystroke never
+  // even recomputes.
   const unsubscribeSearchIndex = store.subscribe((scope) => {
     searchIndex.invalidate(scope)
+    const dueSig = scopeTouchesSections(scope, DUE_SECTIONS) ? dueSignature(dueState(store.doc.nav.activeTeamId)) : null
     for (const idx of [0, 1] as const) {
       if (idx === 1 && !effectiveSplit()) break
+      if (dueSig !== null && barEls[idx].dataset.due !== dueSig) {
+        renderBar(idx)
+        continue
+      }
       const cur = currentLoc(store.doc.nav.panes[idx])
       if (!cur) continue
       const painted = barEls[idx].querySelector('.tt-pane-title-text')?.textContent
@@ -501,6 +546,17 @@ export function createPaneManager(shell: Shell, store: Store): AppPaneManager {
   // (core/store.ts): its callback touches doc.nav and nothing searchable.
   const unsubscribeNavAck = store.onMutate((kind) => {
     if (kind === 'nav') searchIndex.acknowledgeNav()
+  })
+
+  // A window left open overnight fires no store change, yet the new day turns a
+  // due-soon item overdue: the same signature check when the user comes back
+  // to the window on another day. dispose() unbinds it.
+  const stopDayWatch = watchDayChange(() => {
+    const dueSig = dueSignature(dueState(store.doc.nav.activeTeamId))
+    for (const idx of [0, 1] as const) {
+      if (idx === 1 && !effectiveSplit()) break
+      if (barEls[idx].dataset.due !== dueSig) renderBar(idx)
+    }
   })
 
   // The narrow Shell slice every ModuleCtx gets — see SaveStatusApi's doc
@@ -1019,7 +1075,7 @@ ${t(lc, 'pane_history_hint')}`
   const onMenuKeydown0 = makeMenuKeydownHandler(0)
   const onMenuKeydown1 = makeMenuKeydownHandler(1)
 
-  function buildMenu(idx: 0 | 1, teamId: string): HTMLElement {
+  function buildMenu(idx: 0 | 1, teamId: string, due: DueState): HTMLElement {
     const lc = localeNow()
 
     function pick(ref: ModuleRef): void {
@@ -1028,11 +1084,14 @@ ${t(lc, 'pane_history_hint')}`
     }
 
     const curKind = currentLoc(store.doc.nav.panes[idx])?.ref.kind
-    const itemBtns = paneMenuItems().map((row, i) =>
-      el(
+    const itemBtns = paneMenuItems().map((row, i) => {
+      const counts = due.get(row.kind)
+      const dueLabel = counts ? `${t(lc, row.labelKey)} · ${dueText(lc, counts)}` : null
+      return el(
         'button',
         {
           type: 'button',
+          ...(dueLabel !== null ? { title: dueLabel, 'aria-label': dueLabel } : {}),
           ...(row.kind === curKind ? { 'aria-current': 'true' } : {}),
           ...selectableRowProps({
             class: 'tt-pane-menu-item',
@@ -1045,11 +1104,11 @@ ${t(lc, 'pane_history_hint')}`
           }),
         },
         el('span', { class: 'tt-pane-menu-check' }, row.kind === curKind ? '✓' : ''),
-        kindIcon(row.kind),
+        kindIconWithDue(row.kind, counts),
         el('span', { class: 'tt-pane-menu-label' }, t(lc, row.labelKey)),
         el('span', { class: 'tt-pane-menu-hotkey' }, moduleFKey(i))
       )
-    )
+    })
 
     const listEl = el('div', { class: 'tt-pane-menu' }, ...itemBtns)
     menuListEls[idx] = listEl
@@ -1109,8 +1168,9 @@ ${t(lc, 'pane_history_hint')}`
    * module its group came from (Stakeholders or Members), which stays marked
    * as the trail leading to it.
    * Roving tabindex: one Tab stop per strip, arrows move within it.
+   * A module with something due wears a dot on its icon, the current tab too.
    */
-  function buildTabs(idx: 0 | 1, teamId: string | null, cur: Loc | null, flashTitle: boolean): HTMLElement {
+  function buildTabs(idx: 0 | 1, teamId: string | null, cur: Loc | null, flashTitle: boolean, due: DueState): HTMLElement {
     const lc = localeNow()
     const rows = paneMenuItems()
     const curKind = cur?.ref.kind
@@ -1126,13 +1186,15 @@ ${t(lc, 'pane_history_hint')}`
       const active = row.kind === curKind
       const label = t(lc, row.labelKey)
       const text = active ? currentTitle : label
+      const counts = due.get(row.kind)
+      const dueSuffix = counts ? ` · ${dueText(lc, counts)}` : ''
       return el(
         'button',
         {
           type: 'button',
           class: 'tt-pane-tab' + (active ? ' active' : '') + (row.kind === parentKind ? ' trail' : ''),
-          title: `${label} (${moduleFKey(i)})`,
-          'aria-label': text,
+          title: `${label} (${moduleFKey(i)})${dueSuffix}`,
+          'aria-label': text + dueSuffix,
           'aria-keyshortcuts': moduleFKey(i),
           ...(active ? { 'aria-current': 'true' } : {}),
           tabindex: row.kind === focusKind || (!hasFocus && i === 0) ? '0' : '-1',
@@ -1146,7 +1208,7 @@ ${t(lc, 'pane_history_hint')}`
             if ((e as MouseEvent).detail === 0) barEls[idx].querySelector<HTMLElement>('.tt-pane-tab.active')?.focus()
           },
         },
-        kindIcon(row.kind),
+        kindIconWithDue(row.kind, counts),
         labelEl(text, active && flashTitle),
         // The key hint is drawn by CSS (attr(data-key)), not a text node: it is decoration beside the name (the shortcut
         // itself is aria-keyshortcuts), and as text it read as part of the tab's visible label ("General notesF2").
@@ -1225,12 +1287,25 @@ ${t(lc, 'pane_history_hint')}`
       })
       : null
     const teamId = nav.activeTeamId
+    const due = dueState(teamId)
+    barEl.dataset.due = dueSignature(due)
+    // The closed dropdown only flags what is not already on screen: due items
+    // in modules other than the current one. A person pane's kind is 'person',
+    // so its group's module counts as other; that list is not on screen either.
+    const othersDue: DueCounts = { overdue: 0, dueSoon: 0 }
+    for (const [kind, c] of due) {
+      if (kind === cur?.ref.kind) continue
+      othersDue.overdue += c.overdue
+      othersDue.dueSoon += c.dueSoon
+    }
+    const hasOthersDue = othersDue.overdue + othersDue.dueSoon > 0
     const modulesBtn = el(
       'button',
       {
         class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
-        title: teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'),
+        title: (teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'))
+          + (hasOthersDue ? ` · ${dueText(lc, othersDue)}` : ''),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
@@ -1239,7 +1314,8 @@ ${t(lc, 'pane_history_hint')}`
         { class: flashTitle ? 'tt-pane-title-text tt-pane-title-flash' : 'tt-pane-title-text' },
         cur ? titleFor(store.doc, cur, lc) : t(lc, 'pane_empty')
       ),
-      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12))
+      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12)),
+      ...(hasOthersDue ? [dueDot(othersDue)] : [])
     )
     const isFav = cur !== null && isFavorite(store.doc, cur)
     const favBtn = el(
@@ -1273,12 +1349,12 @@ ${t(lc, 'pane_history_hint')}`
       'div',
       { class: 'tt-pane-title-trigger-wrap' },
       modulesBtn,
-      ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId)] : [])
+      ...(menuOpen[idx] && teamId !== null ? [buildMenu(idx, teamId, due)] : [])
     )
     const left = el(
       'div',
       { class: 'tt-pane-bar-left' },
-      backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap, buildTabs(idx, teamId, cur, flashTitle)
+      backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap, buildTabs(idx, teamId, cur, flashTitle, due)
     )
     const right = el('div', { class: 'tt-pane-bar-right' }, favBtn, printBtn, splitBtn)
     barEl.append(left, right)
@@ -1407,6 +1483,7 @@ ${t(lc, 'pane_history_hint')}`
       document.removeEventListener('click', onDocumentClick)
       unsubscribeSearchIndex()
       unsubscribeNavAck()
+      stopDayWatch()
       // Tear down an in-flight divider drag, if any — see dragCleanup above.
       dragCleanup?.()
       dragCleanup = null
