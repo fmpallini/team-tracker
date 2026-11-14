@@ -724,6 +724,27 @@ test('restore defaults re-inserts builtins missing by name, leaves existing (eve
   expect(names).toContain('Meeting')
   expect(names).toContain('1:1 (custom)')
   expect(names.filter((n) => n === '1:1')).toHaveLength(1) // re-inserted once, not duplicated on a second restore
+  // The New 1:1 template still points at the renamed one: a live choice is the user's.
+  expect(store.doc.prefs.oneOnOneTemplateId).toBe(store.doc.templates.find((tp) => tp.name === '1:1 (custom)')!.id)
+})
+
+test.each([
+  ['dangling', 'the deleted seed'],
+  ['null', 'None'],
+])('restore defaults points a %s New 1:1 template (%s) at the restored 1:1 seed', (kind) => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => {
+    d.templates = d.templates.filter((tp) => tp.name !== '1:1')
+    if (kind === 'null') d.prefs.oneOnOneTemplateId = null
+  })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+
+  clickByText('Restore defaults')
+
+  const seed = store.doc.templates.find((tp) => tp.name === '1:1')!
+  expect(store.doc.prefs.oneOnOneTemplateId).toBe(seed.id)
+  expect((document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement).value).toBe(seed.id)
 })
 
 test('restore defaults is idempotent when nothing is missing', () => {

@@ -10,7 +10,7 @@ import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { createTabRail } from './tab-rail'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
-import { builtinTemplates, isOneOnOneCandidate, reseedBuiltinTemplates } from '../core/templates'
+import { builtinTemplates, isOneOnOneCandidate, reseedBuiltinTemplates, ONE_ON_ONE_SEED_NAME } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
@@ -44,6 +44,9 @@ const PREFS_ONLY: { sections: readonly Section[] } = { sections: ['prefs'] }
 
 /** Template CRUD touches `doc.templates` and nothing else — no module watches 'templates' (they read templates lazily, when the '/' picker opens). */
 const TEMPLATES_ONLY: { sections: readonly Section[] } = { sections: ['templates'] }
+
+/** Restore defaults can also re-point `prefs.oneOnOneTemplateId` at the restored 1:1 seed. */
+const TEMPLATES_AND_PREFS: { sections: readonly Section[] } = { sections: ['templates', 'prefs'] }
 
 export interface PrefsAppCtl {
   changePassword(newPw: string | null): Promise<void>
@@ -466,9 +469,17 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       store.update((d) => {
         const existingNames = new Set(d.templates.map((tp) => tp.name))
         for (const tpl of builtinTemplates(d.prefs.locale)) {
-          if (!existingNames.has(tpl.name)) d.templates.push(tpl)
+          if (existingNames.has(tpl.name)) continue
+          d.templates.push(tpl)
+          // A restored 1:1 seed has a new id, so a New 1:1 choice left on None
+          // or on the deleted seed would keep inserting a bare heading. A
+          // choice that still names a template is the user's and stays.
+          const chosen = d.prefs.oneOnOneTemplateId
+          if (tpl.name === ONE_ON_ONE_SEED_NAME && (chosen === null || !d.templates.some((tp) => tp.id === chosen))) {
+            d.prefs.oneOnOneTemplateId = tpl.id
+          }
         }
-      }, TEMPLATES_ONLY)
+      }, TEMPLATES_AND_PREFS)
       refreshList()
     }
 
