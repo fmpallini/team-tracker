@@ -108,10 +108,10 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     let text = last === null
       ? t(lc, 'person_no_one_on_one')
       : t(lc, 'person_last_one_on_one', {
-        ago: ago <= 0 ? t(lc, 'person_ago_today') : t(lc, 'person_days_ago', { days: String(ago) }),
+        ago: ago <= 0 ? t(lc, 'person_ago_today') : t(lc, ago === 1 ? 'person_days_ago_one' : 'person_days_ago', { days: String(ago) }),
       })
     const every = effectiveCadenceDays(p, group, prefs)
-    if (every !== null) text += t(lc, 'person_cadence_every', { days: String(every) })
+    if (every !== null) text += t(lc, every === 1 ? 'person_cadence_every_one' : 'person_cadence_every', { days: String(every) })
     cadenceEl.textContent = text
     const due = oneOnOneDueDate(p, group, prefs)
     cadenceEl.classList.toggle('overdue', due !== null && due < today)
@@ -157,6 +157,23 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   })
   const editor = bundle.editor
 
+  // Unlike src/modules/daily-notes.ts's calendar-marks refresh, the notes
+  // editor's *content* is deliberately never rebuilt from a live store
+  // subscription (that would clobber the user's caret on every unrelated
+  // change elsewhere in the doc) — the one exception is the person being
+  // deleted out from under this pane (e.g. from the people tree in the other
+  // split), which this module must detect and degrade to a placeholder
+  // rather than keep showing/editing a ghost record.
+  // `torn` and `stopDayWatch` are declared ahead of the New 1:1 listener and
+  // the store subscription that read them, so neither can hit them uninitialised.
+  let torn = false
+  // "3 days ago" and the overdue colour are relative to today, which moves
+  // with no store change while the pane sits open overnight.
+  const stopDayWatch = watchDayChange(() => {
+    const p = findPerson()
+    if (!torn && p) renderCadence(p)
+  })
+
   /**
    * The New 1:1 (button, Alt+O): every open task is carried into a fresh block
    * appended after a rule, and marked carried where it was. The edit goes
@@ -180,14 +197,6 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   }
   container.addEventListener(NEW_ONE_ON_ONE_EVENT, newOneOnOne)
 
-  // Unlike src/modules/daily-notes.ts's calendar-marks refresh, the notes
-  // editor's *content* is deliberately never rebuilt from a live store
-  // subscription (that would clobber the user's caret on every unrelated
-  // change elsewhere in the doc) — the one exception is the person being
-  // deleted out from under this pane (e.g. from the people tree in the other
-  // split), which this module must detect and degrade to a placeholder
-  // rather than keep showing/editing a ghost record.
-  let torn = false
   // This person's backlinks chip must react to a mention of them
   // appearing/disappearing anywhere BACKLINK_SECTIONS covers — a daily
   // note, another person's notes, an action item, milestone or risk
@@ -223,12 +232,6 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the
     // editor content outright.
     editor.refreshRefLabels()
-  })
-  // "3 days ago" and the overdue colour are relative to today, which moves
-  // with no store change while the pane sits open overnight.
-  const stopDayWatch = watchDayChange(() => {
-    const p = findPerson()
-    if (!torn && p) renderCadence(p)
   })
 
   container.appendChild(el('div', { class: 'tt-person-notes' }, headerEl, editor.root))

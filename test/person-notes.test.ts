@@ -559,6 +559,18 @@ describe('New 1:1', () => {
     expect(line(container).classList.contains('overdue')).toBe(false)
   })
 
+  test('status line uses the singular for one day', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    store.update((d) => {
+      d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -1)
+      d.teams[0]!.members[0]!.oneOnOneEveryDays = 1
+    })
+    render(container, PERSON_LOC, store, pm)
+    expect(line(container).textContent).toBe('Last 1:1: 1 day ago · every 1 day')
+    store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -2) }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).textContent).toBe('Last 1:1: 2 days ago · every 1 day')
+  })
+
   test('status line for a stakeholder with no cadence, and "today" right after a 1:1', () => {
     const { container, store, pm } = setup(makeTeam())
     render(container, { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }, store, pm)
