@@ -8,7 +8,7 @@ export interface TemplateCtx {
   personName?: string
   teamName?: string
   locale: Locale
-  /** Markdown that fills `{carryover}`: the open items carried from the last 1:1. Empty or absent drops the section. */
+  /** Markdown that fills `{carryover}`: the open checklist items carried from the person note (every one, not only the last 1:1's). Empty or absent drops the section. */
   carryover?: string
 }
 
@@ -122,9 +122,11 @@ function replaceAllOccurrences(s: string, search: string, value: string): string
  * The placeholders a template body may use, English in every locale:
  * `{date}` (formatted for the document's locale), `{time}` (wall-clock),
  * `{person}` (the person whose notes page it is), `{team}` and `{carryover}`
- * (the open items carried from the last 1:1; when there are none, a line that
+ * (every open checklist item carried from the person note; when there are none, a line that
  * is only `{carryover}` is dropped together with the `#`–`###` heading right
- * above it, unless that heading is the first line). Documented for
+ * above it, unless that heading is the first line; New 1:1 fills only the first
+ * such line outside a code fence and clears every other `{carryover}`, see
+ * `buildOneOnOne`). Documented for
  * users in `prefs_templates_placeholders_hint` and `help_templates_text`
  * (core/i18n.ts) — keep all three in step. Files saved before schema 16 used
  * `{data}`/`{hora}`/`{pessoa}` and `{time}` for the team; `MIGRATIONS[15]`

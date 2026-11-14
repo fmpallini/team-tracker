@@ -440,7 +440,7 @@ describe('module tabs', () => {
     expect(text).toContain('Preferences → Templates')
     document.body.innerHTML = ''
     showHelp('pt-BR', { tab: 'people' })
-    expect(panelText()).toContain('Nova 1:1')
+    expect(panelText()).toContain('Novo 1:1'); expect(panelText()).not.toContain('Nova 1:1')
   })
 
   test('Tasks name the board move chord, Risks the risk move, Milestones neither', () => {
