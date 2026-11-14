@@ -6,7 +6,7 @@
 // passes `oneOnOne` to add the 1:1 cadence and last-1:1 fields.
 import { t, type Locale } from '../core/i18n'
 import type { Person, Prefs } from '../core/types'
-import { defaultCadenceDays, isIsoDate, type PersonGroup } from '../core/cadence'
+import { defaultCadenceDays, isCadence, isIsoDate, type PersonGroup } from '../core/cadence'
 import { showModal, type ModalButton, type ModalHandle } from './modal'
 import { createDatePicker } from './date-picker'
 import { clampInt } from './prefs-fields'
@@ -25,7 +25,7 @@ export interface CadenceValues { everyDays: number | null | undefined; last: str
 export function personOneOnOne(person: Person, group: PersonGroup, prefs: Prefs): OneOnOneFields {
   const own = person.oneOnOneEveryDays
   return {
-    everyDays: own === null || typeof own === 'number' ? own : undefined,
+    everyDays: own === null || isCadence(own) ? own : undefined,
     last: isIsoDate(person.lastOneOnOne) ? person.lastOneOnOne : undefined,
     defaultDays: defaultCadenceDays(group, prefs),
   }

@@ -20,6 +20,7 @@ import { watchDayChange } from '../ui/day-change'
 import { buildOneOnOne } from '../core/one-on-one'
 import { effectiveCadenceDays, isIsoDate, oneOnOneDueDate } from '../core/cadence'
 import { diffDays } from '../core/date'
+import { isOneOnOneCandidate } from '../core/templates'
 
 export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'person') return // registered only for 'person'; defensive
@@ -189,7 +190,8 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // A read-only tab (core/tab-lock.ts sets this together with setEditorsReadOnly): replaceMd would refuse anyway.
     if (torn || ctx.store.readOnly) return
     const doc = ctx.store.doc
-    const body = doc.templates.find((tpl) => tpl.id === doc.prefs.oneOnOneTemplateId)?.body ?? null
+    // A chosen template re-scoped to daily is treated as missing (heading only), as Preferences shows it.
+    const body = doc.templates.find((tpl) => tpl.id === doc.prefs.oneOnOneTemplateId && isOneOnOneCandidate(tpl))?.body ?? null
     const r = buildOneOnOne(editor.getMd(), body, bundle.templateCtx())
     editor.replaceMd(r.md, (root) => oneOnOneCaret(root, r.blockHrFromEnd))
     ctx.store.update((d) => {

@@ -12,6 +12,15 @@ export interface TemplateCtx {
   carryover?: string
 }
 
+/**
+ * Whether a template can start a person's 1:1: a daily-note template makes no sense there. One rule for the
+ * Preferences select (which lists only these) and for New 1:1 (which ignores a chosen template that no longer
+ * qualifies, so the select's "None" is never a lie).
+ */
+export function isOneOnOneCandidate(tpl: Template): boolean {
+  return tpl.scope !== 'daily'
+}
+
 /** Name of the built-in 1:1 template, the one the 1:1 flow looks up. */
 export const ONE_ON_ONE_SEED_NAME = '1:1'
 

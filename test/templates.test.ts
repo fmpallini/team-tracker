@@ -1,4 +1,4 @@
-import { builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
+import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
 import { createEmptyDocument } from '../src/core/document'
 
 test('five builtins with scopes', () => {
@@ -124,4 +124,11 @@ test('upgradeLegacySeedBodies upgrades only exact legacy bodies', () => {
   expect(p!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body)
   expect(e!.body).toBe(builtinTemplates('en-US').find(t => t.name === '1:1')!.body)
   expect(x).toBe(edited)
+})
+
+test('isOneOnOneCandidate excludes only daily-scoped templates', () => {
+  const tpl = (scope: 'personal' | 'daily' | 'any') => ({ id: 'x', name: 'x', scope, body: '' })
+  expect(isOneOnOneCandidate(tpl('personal'))).toBe(true)
+  expect(isOneOnOneCandidate(tpl('any'))).toBe(true)
+  expect(isOneOnOneCandidate(tpl('daily'))).toBe(false)
 })

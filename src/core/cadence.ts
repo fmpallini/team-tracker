@@ -13,7 +13,7 @@ export type PersonGroup = 'stakeholders' | 'members'
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** An integer 1..365 — the only values a cadence may take. */
-function isCadence(v: unknown): v is number {
+export function isCadence(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 365
 }
 

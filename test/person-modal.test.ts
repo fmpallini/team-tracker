@@ -1,4 +1,5 @@
-import { openPersonModal } from '../src/ui/person-modal'
+import { openPersonModal, personOneOnOne } from '../src/ui/person-modal'
+import { createEmptyDocument } from '../src/core/document'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -139,5 +140,22 @@ describe('openPersonModal', () => {
       fields().cancel.click()
       expect(onSubmit).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('personOneOnOne', () => {
+  const prefs = createEmptyDocument('en-US').prefs
+  const base = { id: 'p', name: 'Ana', role: '', parentId: null, order: 0, notes: '' }
+
+  test('a malformed hand-edited cadence reads as Default, so a rename cannot rewrite it', () => {
+    for (const bad of [0, 500, 2.5, -3, Number.NaN, '7']) {
+      expect(personOneOnOne({ ...base, oneOnOneEveryDays: bad as unknown as number }, 'members', prefs).everyDays).toBeUndefined()
+    }
+  })
+
+  test('a valid cadence, None, an unset value and a valid date pass through', () => {
+    expect(personOneOnOne({ ...base, oneOnOneEveryDays: 7, lastOneOnOne: '2026-03-10' }, 'members', prefs)).toEqual({ everyDays: 7, last: '2026-03-10', defaultDays: 14 })
+    expect(personOneOnOne({ ...base, oneOnOneEveryDays: null }, 'stakeholders', prefs)).toEqual({ everyDays: null, last: undefined, defaultDays: null })
+    expect(personOneOnOne(base, 'members', prefs).everyDays).toBeUndefined()
   })
 })

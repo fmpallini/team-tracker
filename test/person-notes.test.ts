@@ -527,6 +527,21 @@ describe('New 1:1', () => {
     expect(notes).not.toContain('How are they')
   })
 
+  test('a chosen template re-scoped to daily falls back to a bare heading, as Preferences shows None', () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    store.update((d) => {
+      const seed = d.templates.find((tp) => tp.id === d.prefs.oneOnOneTemplateId)!
+      seed.scope = 'daily'
+    })
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    vi.advanceTimersByTime(1000)
+    const notes = member(store).notes
+    expect(notes).toMatch(/^- \[>\] a\r?\n---\r?\n## 1:1 — [^\r\n]+\r?\n### Carried over\r?\n- \[ \] a$/)
+    expect(notes).not.toContain('How are they')
+  })
+
   test('does nothing in a read-only tab', () => {
     vi.useFakeTimers()
     const { container, store, pm } = setup(withNotes('- [ ] a'))

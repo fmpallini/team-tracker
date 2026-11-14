@@ -10,7 +10,7 @@ import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { createTabRail } from './tab-rail'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
-import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
+import { builtinTemplates, isOneOnOneCandidate, reseedBuiltinTemplates } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
@@ -347,8 +347,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       const select = el('select', { class: 'tt-input tt-prefs-one-on-one-template-select' }) as HTMLSelectElement
       select.appendChild(el('option', { value: '' }, t(locale, 'prefs_one_on_one_template_none')))
       for (const tpl of store.doc.templates) {
-        // A daily-note template makes no sense as the start of a person's note.
-        if (tpl.scope === 'daily') continue
+        if (!isOneOnOneCandidate(tpl)) continue
         select.appendChild(el('option', { value: tpl.id }, tpl.name))
       }
       // A chosen template that was deleted is not an option: the select then reads None rather than blank.
