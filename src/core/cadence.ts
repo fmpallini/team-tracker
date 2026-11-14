@@ -6,7 +6,7 @@
 // every read is guarded: a malformed value is treated as absent and a person
 // with an unreadable `lastOneOnOne` is simply never due. Nothing here throws.
 import type { Person, Prefs } from './types'
-import { addDaysIso } from './date'
+import { addDaysIso, diffDays } from './date'
 
 export type PersonGroup = 'stakeholders' | 'members'
 
@@ -46,4 +46,14 @@ export function oneOnOneDueDate(person: Person, group: PersonGroup, prefs: Prefs
   if (!isIsoDate(person.lastOneOnOne)) return null
   const days = effectiveCadenceDays(person, group, prefs)
   return days === null ? null : addDaysIso(person.lastOneOnOne, days)
+}
+
+/**
+ * How many days the next 1:1 is late on `today`, or null when it is not: due
+ * today or later, never held, or no cadence. The org chart's mark and the
+ * person header's colour read this, so "overdue" means one thing there.
+ */
+export function oneOnOneOverdueDays(person: Person, group: PersonGroup, prefs: Prefs, today: string): number | null {
+  const due = oneOnOneDueDate(person, group, prefs)
+  return due !== null && due < today ? diffDays(today, due) : null
 }

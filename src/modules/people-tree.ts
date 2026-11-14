@@ -15,8 +15,7 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
-import { oneOnOneDueDate } from '../core/cadence'
-import { diffDays } from '../core/date'
+import { oneOnOneOverdueDays } from '../core/cadence'
 import { watchDayChange } from '../ui/day-change'
 import { deleteInTeamWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
@@ -307,11 +306,9 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
       // A dot in the bottom-left corner (the top-right one holds the dog-ear) once the next 1:1 is late.
       // Due today or soon draws nothing, and so does a person never met: there is no date to count from.
-      const due = oneOnOneDueDate(person, group, ctx.store.doc.prefs)
-      const today = todayIso()
+      const days = oneOnOneOverdueDays(person, group, ctx.store.doc.prefs, todayIso())
       let dueMark: HTMLElement | null = null
-      if (due !== null && due < today) {
-        const days = diffDays(today, due)
+      if (days !== null) {
         const text = t(lc, days === 1 ? 'org_one_on_one_overdue_one' : 'org_one_on_one_overdue', { days: String(days) })
         dueMark = el('span', { class: 'tt-org-due', role: 'img', 'aria-label': text, title: text })
       }

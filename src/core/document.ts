@@ -1,5 +1,5 @@
 import type { ActionItemColor, Doc, Team, Template } from './types'
-import { builtinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from './templates'
+import { builtinTemplates, upgradeLegacySeedBodies, isOneOnOneCandidate, ONE_ON_ONE_SEED_NAME } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 import { IMAGE_ID_RE } from './image-ref'
 import { randomHex } from './file-stamp'
@@ -26,7 +26,7 @@ export function createEmptyDocument(locale: Locale): Doc {
 
 /** The 1:1 flow's template: named like the built-in seed and usable from a person's page (a daily-only one cannot be inserted there). */
 function isOneOnOneTemplate(tpl: Template): boolean {
-  return tpl.name === ONE_ON_ONE_SEED_NAME && (tpl.scope === 'personal' || tpl.scope === 'any')
+  return tpl.name === ONE_ON_ONE_SEED_NAME && isOneOnOneCandidate(tpl)
 }
 
 /**

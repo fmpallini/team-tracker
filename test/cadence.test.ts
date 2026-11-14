@@ -1,4 +1,4 @@
-import { defaultCadenceDays, effectiveCadenceDays, oneOnOneDueDate } from '../src/core/cadence'
+import { defaultCadenceDays, effectiveCadenceDays, oneOnOneDueDate, oneOnOneOverdueDays } from '../src/core/cadence'
 import { createEmptyDocument } from '../src/core/document'
 import type { Person } from '../src/core/types'
 
@@ -60,5 +60,23 @@ describe('oneOnOneDueDate', () => {
     for (const bad of ['nope', '', '2026-13-01', '2026-02-31', '2026-1-1', '2026-11-01T00:00', 5 as unknown as string]) {
       expect(oneOnOneDueDate(p({ lastOneOnOne: bad }), 'members', prefs)).toBeNull()
     }
+  })
+})
+
+describe('oneOnOneOverdueDays', () => {
+  // Last 1:1 on Nov 1 with the members' 14-day default: due Nov 15.
+  const met = p({ lastOneOnOne: '2026-11-01' })
+  test('null before the due date and on the day itself', () => {
+    expect(oneOnOneOverdueDays(met, 'members', prefs, '2026-11-10')).toBeNull()
+    expect(oneOnOneOverdueDays(met, 'members', prefs, '2026-11-15')).toBeNull()
+  })
+  test('whole days past the due date once it has passed', () => {
+    expect(oneOnOneOverdueDays(met, 'members', prefs, '2026-11-16')).toBe(1)
+    expect(oneOnOneOverdueDays(met, 'members', prefs, '2026-12-01')).toBe(16)
+  })
+  test('never overdue without a date to count from or a cadence', () => {
+    expect(oneOnOneOverdueDays(p({}), 'members', prefs, '2030-01-01')).toBeNull()
+    expect(oneOnOneOverdueDays(met, 'stakeholders', prefs, '2030-01-01')).toBeNull()
+    expect(oneOnOneOverdueDays(p({ lastOneOnOne: 'nope' }), 'members', prefs, '2030-01-01')).toBeNull()
   })
 })

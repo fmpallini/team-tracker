@@ -18,7 +18,7 @@ import { applyCadence, openPersonModal, personOneOnOne } from '../ui/person-moda
 import { iconButton } from '../ui/icons'
 import { watchDayChange } from '../ui/day-change'
 import { buildOneOnOne } from '../core/one-on-one'
-import { effectiveCadenceDays, isIsoDate, oneOnOneDueDate } from '../core/cadence'
+import { effectiveCadenceDays, isIsoDate, oneOnOneOverdueDays } from '../core/cadence'
 import { diffDays } from '../core/date'
 import { isOneOnOneCandidate } from '../core/templates'
 
@@ -116,8 +116,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     const every = effectiveCadenceDays(p, group, prefs)
     if (every !== null) text += t(lc, every === 1 ? 'person_cadence_every_one' : 'person_cadence_every', { days: String(every) })
     cadenceEl.textContent = text
-    const due = oneOnOneDueDate(p, group, prefs)
-    cadenceEl.classList.toggle('overdue', due !== null && due < today)
+    cadenceEl.classList.toggle('overdue', oneOnOneOverdueDays(p, group, prefs, today) !== null)
   }
   renderCadence(person)
 
