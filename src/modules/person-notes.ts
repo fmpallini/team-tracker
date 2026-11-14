@@ -254,8 +254,10 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
 
 /**
  * Where the caret goes after a New 1:1: the first empty bullet of the new
- * block (the template's first "- " slot), else the end of the note. The block
- * starts right after the (blockHrFromEnd + 1)-th rule from the end (the rule
+ * block (the template's first "- " slot), else null, so replaceMd puts it at
+ * the end of the note (typing then appends, never prepends to a carried item
+ * or heading). The block starts right after the (blockHrFromEnd + 1)-th rule
+ * from the end (the rule
  * buildOneOnOne put before it, counting past the block's own rules), or is the
  * whole note when that was empty (null). A carried item is never blank, but is
  * skipped by state as well: it is an earlier task, not a slot to type in.
@@ -277,5 +279,5 @@ function oneOnOneCaret(root: HTMLElement, blockHrFromEnd: number | null): Node |
     const slot = Array.from(block.querySelectorAll('li')).find((li) => !li.textContent?.trim() && li.getAttribute('data-task') !== 'carried')
     if (slot) return slot
   }
-  return root.lastChild
+  return null
 }

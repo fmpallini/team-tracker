@@ -25,7 +25,7 @@ export interface Editor {
    * Swaps the whole note for `md` as ONE undo step of the same note — unlike
    * setMd(), which loads a different document and clears the history. The
    * caret goes to the start of the node `caretTarget` picks out of the new
-   * content (scrolled into view), else to the end. No-op while read-only.
+   * content, else to the end, scrolled into view either way. No-op while read-only.
    */
   replaceMd(md: string, caretTarget?: (root: HTMLElement) => Node | null): void
   /**
@@ -3067,13 +3067,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       const scrollEl = target instanceof Element ? target : target.parentElement
       scrollEl?.scrollIntoView({ block: 'center' })
     } else {
+      const last = editorEl.lastElementChild ?? editorEl
       const sel = window.getSelection()
-      if (!sel) return
-      const r = document.createRange()
-      r.selectNodeContents(editorEl.lastElementChild ?? editorEl)
-      r.collapse(false)
-      sel.removeAllRanges()
-      sel.addRange(r)
+      if (sel) {
+        const r = document.createRange()
+        r.selectNodeContents(last)
+        r.collapse(false)
+        sel.removeAllRanges()
+        sel.addRange(r)
+      }
+      // A long note's end can sit below the fold, where the new content is. jsdom has no scrollIntoView.
+      last.scrollIntoView?.({ block: 'end' })
     }
   }
 

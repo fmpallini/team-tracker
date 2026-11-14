@@ -1187,6 +1187,22 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     editor.destroy()
   })
 
+  test('replaceMd scrolls the end into view when there is no target', () => {
+    const scroll = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const { editor, editorEl } = setup('x')
+      editor.replaceMd('first\n\nlast', () => null)
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(scroll.mock.contexts[0]).toBe(editorEl.lastElementChild)
+      expect(scroll).toHaveBeenCalledWith({ block: 'end' })
+      editor.destroy()
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
   test('replaceMd is a no-op when read-only', () => {
     const { editor } = setup('a')
     try {

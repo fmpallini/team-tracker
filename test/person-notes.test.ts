@@ -527,6 +527,26 @@ describe('New 1:1', () => {
     expect(notes).not.toContain('How are they')
   })
 
+  test('with no empty slot in the block, the caret goes to the end of the note, scrolled into view', () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    store.update((d) => { d.prefs.oneOnOneTemplateId = 'gone' })
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    const ed = editorEl(container)
+    const r = window.getSelection()!.getRangeAt(0)
+    expect(r.collapsed).toBe(true)
+    // Nothing after the caret: typing appends, never prepends to the carried item.
+    const after = document.createRange()
+    after.setStart(r.startContainer, r.startOffset)
+    after.setEnd(ed, ed.childNodes.length)
+    expect(after.toString()).toBe('')
+    expect(ed.lastElementChild!.textContent).toBe('a')
+    expect(scroll).toHaveBeenCalledTimes(1)
+    expect(scroll.mock.contexts[0]).toBe(ed.lastElementChild)
+  })
+
   test('a chosen template re-scoped to daily falls back to a bare heading, as Preferences shows None', () => {
     vi.useFakeTimers()
     const { container, store, pm } = setup(withNotes('- [ ] a'))
