@@ -1,12 +1,15 @@
-import { collectDueItems, dueRelativeLabel, teamDueSummary } from '../src/core/due'
+import { collectDueItems, dueItemLabel, dueRelativeLabel, moduleDueSummary, teamDueSummary } from '../src/core/due'
 import { createEmptyDocument } from '../src/core/document'
-import type { ActionItem, Doc, Milestone, Team } from '../src/core/types'
+import type { ActionItem, Doc, Milestone, Person, Team } from '../src/core/types'
 
 function item(overrides: Partial<ActionItem>): ActionItem {
   return { id: 'i1', summary: 'Do thing', status: 'todo', dueDate: null, assignee: '', order: 0, notes: '', color: 'ledger', ...overrides }
 }
 function milestone(overrides: Partial<Milestone>): Milestone {
   return { id: 'm1', date: '2026-07-01', title: 'M', done: false, followup: '', ...overrides }
+}
+function person(overrides: Partial<Person>): Person {
+  return { id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '', ...overrides }
 }
 function team(overrides: Partial<Team> = {}): Team {
   return {
@@ -128,5 +131,79 @@ describe('teamDueSummary', () => {
     expect(summary.get('A')).toEqual({ count: 2, overdue: true })
     expect(summary.get('B')).toEqual({ count: 2, overdue: false })
     expect(summary.has('C')).toBe(false)
+  })
+})
+
+describe('1:1 due items', () => {
+  // Default cadence 14 days: last 07-01 → due 07-15 (overdue), 07-04 → 07-18 (soon), 07-10 → 07-24 (not yet).
+  test('overdue and due-soon 1:1s land in the buckets as kind person', () => {
+    const d = doc([team({
+      members: [
+        person({ id: 'late', name: 'Late', lastOneOnOne: '2026-07-01' }),
+        person({ id: 'soon', name: 'Soon', lastOneOnOne: '2026-07-04' }),
+        person({ id: 'fine', name: 'Fine', lastOneOnOne: '2026-07-10' }),
+        person({ id: 'never', name: 'Never' }),
+      ],
+      stakeholders: [person({ id: 'sh', name: 'Sam', lastOneOnOne: '2026-07-10', oneOnOneEveryDays: 7 })],
+    })])
+    const { overdue, dueSoon } = collectDueItems(d, TODAY)
+    expect(overdue).toHaveLength(1)
+    expect(overdue[0]).toMatchObject({
+      loc: { teamId: 'T1', ref: { kind: 'person', personId: 'late', group: 'members' } },
+      title: 'Late', date: '2026-07-15', kind: 'person', teamName: 'Team 1',
+    })
+    expect(dueSoon.map((x) => x.loc.ref)).toEqual([
+      { kind: 'person', personId: 'sh', group: 'stakeholders' }, // 07-17: today
+      { kind: 'person', personId: 'soon', group: 'members' },    // 07-18
+    ])
+  })
+
+  test('a person with a malformed cadence or date is never due and nothing throws', () => {
+    const d = doc([team({
+      members: [
+        person({ id: 'a', lastOneOnOne: 'garbage' }),
+        person({ id: 'b', lastOneOnOne: '2000-01-01', oneOnOneEveryDays: '7' as unknown as number }),
+        person({ id: 'c', lastOneOnOne: '2000-01-01', oneOnOneEveryDays: null }),
+      ],
+    })])
+    d.prefs.oneOnOneDefaultDays = 0
+    const { overdue, dueSoon } = collectDueItems(d, TODAY)
+    expect(overdue).toHaveLength(0)
+    expect(dueSoon).toHaveLength(0)
+  })
+})
+
+describe('moduleDueSummary', () => {
+  test('groups by module, person items by group; other teams are left out', () => {
+    const d = doc([
+      team({
+        id: 'A',
+        actionItems: [item({ id: 'a1', dueDate: '2026-07-16' }), item({ id: 'a2', dueDate: '2026-07-18' })],
+        milestones: [milestone({ date: '2026-07-19' })],
+        members: [person({ id: 'm1', lastOneOnOne: '2026-07-01' })],
+        stakeholders: [person({ id: 's1', lastOneOnOne: '2026-07-10', oneOnOneEveryDays: 7 })],
+      }),
+      team({ id: 'B', actionItems: [item({ id: 'b1', dueDate: '2026-07-16' })] }),
+    ])
+    const summary = moduleDueSummary(collectDueItems(d, TODAY), 'A')
+    expect(summary.get('actions')).toEqual({ overdue: 1, dueSoon: 1 })
+    expect(summary.get('milestones')).toEqual({ overdue: 0, dueSoon: 1 })
+    expect(summary.get('members')).toEqual({ overdue: 1, dueSoon: 0 })
+    expect(summary.get('stakeholders')).toEqual({ overdue: 0, dueSoon: 1 })
+    expect(moduleDueSummary(collectDueItems(d, TODAY), 'none').size).toBe(0)
+  })
+})
+
+describe('dueItemLabel', () => {
+  test('a 1:1 reads "1:1 · Name"; others read their title', () => {
+    const d = doc([team({
+      actionItems: [item({ dueDate: '2026-07-16', summary: 'Do thing' })],
+      members: [person({ name: 'Ana', lastOneOnOne: '2026-07-01' })],
+    })])
+    const { overdue } = collectDueItems(d, TODAY)
+    const byKind = Object.fromEntries(overdue.map((x) => [x.kind, x]))
+    expect(dueItemLabel('en-US', byKind['person']!)).toBe('1:1 · Ana')
+    expect(dueItemLabel('pt-BR', byKind['person']!)).toBe('1:1 · Ana')
+    expect(dueItemLabel('en-US', byKind['action']!)).toBe('Do thing')
   })
 })

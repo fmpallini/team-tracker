@@ -38,6 +38,16 @@ describe('filterBucketsByTeam', () => {
 })
 
 describe('openDuePanel', () => {
+  test('a 1:1 row reads "1:1 · Ana" and opens the person', () => {
+    const loc: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'p1', group: 'members' } }
+    const opened: Loc[] = []
+    openDuePanel({ locale: 'en-US', buckets: { overdue: [makeItem({ loc, title: 'Ana', kind: 'person' })], dueSoon: [] }, onOpenItem: (l) => opened.push(l) })
+    const row = document.querySelector('.tt-due-row') as HTMLElement
+    expect(row.querySelector('.tt-due-row-title')?.textContent).toBe('1:1 · Ana')
+    row.click()
+    expect(opened).toEqual([loc])
+  })
+
   test('shows the empty state when both buckets are empty', () => {
     openDuePanel({ locale: 'en-US', buckets: { overdue: [], dueSoon: [] }, onOpenItem: () => {} })
     expect(document.querySelector('.tt-modal-message')?.textContent).toBe('Nothing overdue or due soon.')

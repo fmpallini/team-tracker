@@ -853,18 +853,21 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
    * - 'teams'      — name, emoji, order, add/delete
    * - 'actions'    — due dates + status feed collectDueItems()
    * - 'milestones' — dates + done feed collectDueItems()
-   * - 'prefs'      — locale (every title string) and dueSoonDays (the cutoff).
+   * - 'people'     — recording a 1:1 or changing a person's cadence moves their
+   *                  due date (lastOneOnOne / oneOnOneEveryDays feed collectDueItems())
+   * - 'prefs'      — locale (every title string), dueSoonDays (the cutoff) and
+   *                  oneOnOneDefaultDays (members' default cadence).
    *                  ui/prefs.ts passes no scope at all today, so this is
    *                  belt-and-braces against it gaining one later.
    *
-   * Deliberately absent: 'notes', 'people', 'risks', 'templates' — none of
+   * Deliberately absent: 'notes', 'risks', 'templates' — none of
    * them reach the sidebar, and 'notes' is the hot one: every debounced daily-
    * note keystroke used to drop the due cache and rebuild every team row.
    * `nav.sidebarCollapsed` is NOT covered here and must not be — it travels
    * via updateNav(), which bypasses subscribe() entirely and is handled by
    * the onMutate listener below.
    */
-  const WATCHED: readonly Section[] = ['teams', 'actions', 'milestones', 'prefs']
+  const WATCHED: readonly Section[] = ['teams', 'actions', 'milestones', 'people', 'prefs']
   const unsubscribeContent = store.subscribe((scope) => {
     if (!scopeTouchesSections(scope, WATCHED)) return
     dueCache = null // watched content changed — due data may have too

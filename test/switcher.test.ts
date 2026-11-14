@@ -156,6 +156,16 @@ describe('buildSwitcher due dates', () => {
     expect(rows[0]!.teamId).toBe('b')
   })
 
+  test('a 1:1 row reads "1:1 · Ana" and opens the person', () => {
+    const doc = twoTeamDoc()
+    doc.teams[1]!.members.push({ ...person('p-ana', 'Ana'), lastOneOnOne: '2026-09-20' }) // 14d cadence → due 2026-10-04
+    const rows = rowsOf(doc, '', 'due')
+    expect(rows.map((r) => r.label)).toEqual(['1:1 · Ana'])
+    expect(rows[0]!.ref).toEqual({ kind: 'person', personId: 'p-ana', group: 'members' })
+    expect(rows[0]!.dueLabel).toBe('overdue by 3d')
+    expect(rowsOf(doc, 'ana', 'due')).toHaveLength(1)
+  })
+
   test('no due items → no due section', () => {
     expect(ids(twoTeamDoc())).not.toContain('due')
   })

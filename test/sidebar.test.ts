@@ -1379,6 +1379,19 @@ describe('content subscription is scoped to what the sidebar displays', () => {
     expect(teamRowIdentities()[0]).not.toBe(before)
   })
 
+  test('recording a 1:1 (people-scoped update) refreshes the due badge', () => {
+    const { store } = setup()
+    addTeam(store, 'Alpha')
+    store.update((d) => { d.teams[0]!.members.push({ id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '' }) }, { teamId: 'Alpha', sections: ['people'] })
+    expect(teamRowIdentities()[0]!.querySelector('.tt-team-due-badge')).toBeNull()
+    const before = teamRowIdentities()[0]!
+
+    store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = '2000-01-01' }, { teamId: 'Alpha', sections: ['people'] })
+
+    expect(teamRowIdentities()[0]).not.toBe(before)
+    expect(teamRowIdentities()[0]!.querySelector('.tt-team-due-badge')?.textContent).toBe('1')
+  })
+
   test('an unscoped change (team rename, prefs) still rebuilds', () => {
     const { store } = setup()
     addTeam(store, 'Alpha')

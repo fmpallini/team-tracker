@@ -3,7 +3,7 @@
 // cache) and an onOpenItem callback instead of touching Store/PaneManager
 // directly, so every caller (sidebar's global button, per-team badges, the
 // header pill, the command palette) can reuse the exact same modal.
-import { dueRelativeLabel, type DueBuckets, type DueItem } from '../core/due'
+import { dueItemLabel, dueRelativeLabel, type DueBuckets, type DueItem } from '../core/due'
 import type { Loc } from '../core/types'
 import { t, todayIso, formatDate, type Locale } from '../core/i18n'
 import { teamLabel } from '../core/document'
@@ -49,7 +49,7 @@ function renderDueRow(locale: Locale, item: DueItem, showTeam: boolean, onOpenIt
       onclick: activate,
     },
     el('span', { class: 'tt-due-row-icon' }, kindIcon(REF_KINDS[item.kind].moduleKind)),
-    el('span', { class: 'tt-due-row-title', title: item.title }, item.title),
+    el('span', { class: 'tt-due-row-title', title: dueItemLabel(locale, item) }, dueItemLabel(locale, item)),
     // The team name only carries information when the panel spans multiple
     // teams — a team-scoped panel (teamId set) already says which team it's
     // for in the modal title, so repeating it on every row is just noise.
