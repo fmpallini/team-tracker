@@ -1108,6 +1108,96 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     expect(editor.getMd()).toBe('other note')
     editor.destroy()
   })
+
+  // Unlike setMd, a whole-note replace is an edit of the same note (the New 1:1 flow): one step, and the
+  // history before it stays reachable.
+  test('replaceMd swaps content as one undo step and keeps earlier history', async () => {
+    const { editor, editorEl } = setup('    hello')
+    const original = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    const mdBefore = editor.getMd()
+    expect(mdBefore).toBe('hello')
+    await Promise.resolve() // the Tab's step closes at the end of its task; the replace is a later action
+    editor.replaceMd('# New\n\n```\ncode\n```\n\nb')
+    expect(editor.getMd()).toBe('# New\n\n```\ncode\n```\n\nb')
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor.getMd()).toBe(mdBefore)
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor.getMd()).toBe(original)
+    dispatchKey(editorEl, { key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })
+    dispatchKey(editorEl, { key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })
+    expect(editor.getMd()).toBe('# New\n\n```\ncode\n```\n\nb')
+    editor.destroy()
+  })
+
+  test('replaceMd tells the store about the new content', () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('a')
+      vi.advanceTimersByTime(1000)
+      const before = hooks.changes
+      editor.replaceMd('b')
+      vi.advanceTimersByTime(1000)
+      expect(hooks.changes).toBe(before + 1)
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('replaceMd places the caret on the target node and scrolls it into view', () => {
+    const scroll = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const { editor, editorEl } = setup('x')
+      editor.replaceMd('# A\n\nfirst\n\nsecond\n\nlast', (root) =>
+        [...root.children].find((c) => c.textContent === 'second') ?? null)
+      const target = [...editorEl.children].find((c) => c.textContent === 'second')!
+      const sel = window.getSelection()!
+      expect(sel.isCollapsed).toBe(true)
+      const r = sel.getRangeAt(0)
+      expect(target.contains(r.startContainer)).toBe(true)
+      const before = document.createRange()
+      before.setStart(target, 0)
+      before.setEnd(r.startContainer, r.startOffset)
+      expect(before.toString()).toBe('')
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(scroll.mock.contexts[0]).toBe(target)
+      expect(scroll).toHaveBeenCalledWith({ block: 'center' })
+      editor.destroy()
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
+  test('replaceMd puts the caret at the end when there is no target', () => {
+    const { editor, editorEl } = setup('x')
+    editor.replaceMd('first\n\nlast', () => null)
+    const r = window.getSelection()!.getRangeAt(0)
+    expect(r.collapsed).toBe(true)
+    const after = document.createRange()
+    after.setStart(r.startContainer, r.startOffset)
+    after.setEnd(editorEl, editorEl.childNodes.length)
+    expect(after.toString()).toBe('')
+    expect(editorEl.lastElementChild!.contains(r.startContainer) || r.startContainer === editorEl).toBe(true)
+    editor.destroy()
+  })
+
+  test('replaceMd is a no-op when read-only', () => {
+    const { editor } = setup('a')
+    try {
+      setEditorsReadOnly(true)
+      editor.replaceMd('b')
+      expect(editor.getMd()).toBe('a')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
 })
 
 describe('Tab indent', () => {

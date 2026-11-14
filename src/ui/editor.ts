@@ -22,6 +22,13 @@ export interface Editor {
   getMd(): string
   setMd(md: string): void
   /**
+   * Swaps the whole note for `md` as ONE undo step of the same note — unlike
+   * setMd(), which loads a different document and clears the history. The
+   * caret goes to the start of the node `caretTarget` picks out of the new
+   * content (scrolled into view), else to the end. No-op while read-only.
+   */
+  replaceMd(md: string, caretTarget?: (root: HTMLElement) => Node | null): void
+  /**
    * Patches every `a.ref[data-ref]` chip's visible text in place via
    * `hooks.resolveRefLabel`, without touching anything else in the DOM —
    * unlike setMd(), safe to call while the user is actively typing elsewhere
@@ -3030,6 +3037,39 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     hydrateImages()
   }
 
+  function replaceMd(md: string, caretTarget?: (root: HTMLElement) => Node | null): void {
+    if (editorsReadOnly) return
+    // One step: the checkpoint stores the note as it is now, and every DOM
+    // change below — the swap and the settle passes after it — lands inside
+    // that same open step (presentation-only work nets out of the entry).
+    // The stack is kept, not cleared: this is an edit of the same note, so
+    // the steps before it must stay reachable.
+    undoStack.checkpoint()
+    editorEl.innerHTML = renderMd(md)
+    // The same settle passes setMd() runs (see its comments), plus the chip
+    // labels an undo restore refreshes too.
+    decorateCodeBlocks(true)
+    syncPreHighlight()
+    hydrateImages()
+    refreshRefLabels()
+    scheduleChange()
+    editorEl.focus()
+    const target = caretTarget?.(editorEl) ?? null
+    if (target) {
+      placeCaretAtStart(target)
+      const scrollEl = target instanceof Element ? target : target.parentElement
+      scrollEl?.scrollIntoView({ block: 'center' })
+    } else {
+      const sel = window.getSelection()
+      if (!sel) return
+      const r = document.createRange()
+      r.selectNodeContents(editorEl.lastElementChild ?? editorEl)
+      r.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(r)
+    }
+  }
+
   function refreshRefLabels(): void {
     const resolve = hooks.resolveRefLabel
     if (!resolve) return
@@ -3122,5 +3162,5 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
   registerEditor(registryEntry)
 
-  return { root, getMd, setMd, refreshRefLabels, focus, destroy }
+  return { root, getMd, setMd, replaceMd, refreshRefLabels, focus, destroy }
 }
