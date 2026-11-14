@@ -53,6 +53,15 @@ describe('buildExport', () => {
     expect(team.actionTagNames).toBeUndefined()
   })
 
+  it('does not carry cadence fields', () => {
+    const team = sampleTeam()
+    team.members[0]!.lastOneOnOne = '2026-11-01'
+    team.members[0]!.oneOnOneEveryDays = 7
+    const exported = buildExport([team]).teams[0]!.members[0]! as unknown as Record<string, unknown>
+    expect(exported.lastOneOnOne).toBeUndefined()
+    expect(exported.oneOnOneEveryDays).toBeUndefined()
+  })
+
   it('stamps the current schema version and kind marker', () => {
     const file = buildExport([sampleTeam()])
     expect(file.kind).toBe('team-tracker-teams-export')

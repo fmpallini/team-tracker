@@ -88,6 +88,7 @@ function prefsWith(locale: 'en-US' | 'pt-BR' = 'en-US'): Parameters<Shell['apply
   return {
     locale, theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
     openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true,
+    oneOnOneDefaultDays: 14, oneOnOneTemplateId: null,
   }
 }
 

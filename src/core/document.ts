@@ -1,25 +1,32 @@
-import type { ActionItemColor, Doc, Team } from './types'
-import { builtinTemplates } from './templates'
+import type { ActionItemColor, Doc, Team, Template } from './types'
+import { builtinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from './templates'
 import { t, type Locale, type MsgKey } from './i18n'
 import { IMAGE_ID_RE } from './image-ref'
 import { randomHex } from './file-stamp'
 
-export const SCHEMA_VERSION = 19
+export const SCHEMA_VERSION = 20
 
 export class SchemaTooNewError extends Error {}
 
 export function createEmptyDocument(locale: Locale): Doc {
+  const templates = builtinTemplates(locale)
   return {
     docId: randomHex(16),
     schemaVersion: SCHEMA_VERSION,
-    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 60, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true },
-    templates: builtinTemplates(locale),
+    prefs: { theme: 'system', locale, font: 'system', fontSize: 'M', autoSaveMin: 60, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true,
+      oneOnOneDefaultDays: 14, oneOnOneTemplateId: templates.find(isOneOnOneTemplate)?.id ?? null },
+    templates,
     nav: { activeTeamId: null, split: false, focusedPane: 0,
       panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false },
     teams: [],
     favorites: [],
     images: {},
   }
+}
+
+/** The 1:1 flow's template: named like the built-in seed and usable from a person's page (a daily-only one cannot be inserted there). */
+function isOneOnOneTemplate(tpl: Template): boolean {
+  return tpl.name === ONE_ON_ONE_SEED_NAME && (tpl.scope === 'personal' || tpl.scope === 'any')
 }
 
 /**
@@ -214,6 +221,16 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
     const prefs = d.prefs as Record<string, unknown> | undefined
     if (prefs?.palette === 'blueprint') prefs.palette = 'signal'
     if (prefs?.palette === 'desert') prefs.palette = 'ledger'
+  },
+  // The 1:1 flow: a default cadence, and the template it inserts — the first one named like the seed and usable on a
+  // person's page, or null (the user deleted or renamed it; the flow then starts a note with no template). A seed
+  // body that was never edited moves to the version with `{carryover}`; an edited one stays as the user left it.
+  19: (d) => {
+    const prefs = d.prefs as Record<string, unknown> | undefined
+    if (!prefs || !Array.isArray(d.templates)) return
+    d.templates = upgradeLegacySeedBodies(d.templates as Template[])
+    prefs.oneOnOneDefaultDays ??= 14
+    prefs.oneOnOneTemplateId = (d.templates as Template[]).find(isOneOnOneTemplate)?.id ?? null
   },
 }
 

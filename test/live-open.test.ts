@@ -490,13 +490,13 @@ test('a browser copy from the previous schema, with unwritten edits, opens throu
   first.store.update((d) => {
     d.teams[0]!.dailyNotes['2026-07-01'] = 'edited in the older build'
     // What a schema-18 build wrote: its own version, and a palette that schema 19 retired.
-    d.schemaVersion = SCHEMA_VERSION - 1
+    d.schemaVersion = 18
     ;(d.prefs as { palette: string }).palette = 'blueprint'
   })
   await first.handle.persister.flush()
   first.handle.persister.dispose()
   const meta = (await rawDb.getMeta(doc.docId))!
-  await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...meta, schemaVersion: SCHEMA_VERSION - 1 } })
+  await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...meta, schemaVersion: 18 } })
   expect((await rawDb.getMeta(doc.docId))!.unwrittenChanges).toBe(true)
 
   const a = asks()

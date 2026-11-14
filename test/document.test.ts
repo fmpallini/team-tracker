@@ -7,11 +7,19 @@ test('createEmptyDocument shape', () => {
     theme: 'system', locale: 'pt-BR', font: 'system', fontSize: 'M',
     autoSaveMin: 60, palette: 'ledger', dueSoonDays: 7, openRefsInSecondaryPane: false,
     ctrlWheelFontSize: true, dailyEdgeScroll: true,
+    oneOnOneDefaultDays: 14, oneOnOneTemplateId: d.prefs.oneOnOneTemplateId,
   })
   expect(d.teams).toEqual([])
   expect(d.favorites).toEqual([])
   expect(d.nav).toEqual({ activeTeamId: null, split: false, focusedPane: 0,
     panes: [{ history: [], index: -1 }, { history: [], index: -1 }], teamSplit: {}, sidebarCollapsed: false, calendarCollapsed: false })
+})
+
+test('new document points oneOnOneTemplateId at the seeded 1:1', () => {
+  const d = createEmptyDocument('en-US')
+  expect(d.schemaVersion).toBe(20)
+  expect(d.prefs.oneOnOneDefaultDays).toBe(14)
+  expect(d.templates.find(t => t.id === d.prefs.oneOnOneTemplateId)!.name).toBe('1:1')
 })
 
 test('migrate accepts current version untouched', () => {
@@ -695,12 +703,53 @@ describe("v18 → v19 migration ('blueprint' and 'desert' palettes replaced)", (
 
   it.each([['blueprint', 'signal'], ['desert', 'ledger']])("remaps a saved '%s' to '%s', its closest survivor", (from, to) => {
     const doc = migrate(at18(from))
-    expect(doc.schemaVersion).toBe(19)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.prefs.palette).toBe(to)
   })
 
   it('leaves every other palette as it was', () => {
     for (const p of ['ledger', 'signal', 'forest', 'cosmic', 'citrus']) expect(migrate(at18(p)).prefs.palette).toBe(p)
+  })
+})
+
+describe('v19 → v20 migration (1:1 cadence prefs)', () => {
+  const LEGACY_EN = '## 1:1 — {date}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- '
+  const at19 = (templates: { id: string; name: string; scope: string; body: string }[]) => {
+    const d = createEmptyDocument('en-US') as any
+    d.schemaVersion = 19
+    delete d.prefs.oneOnOneDefaultDays
+    delete d.prefs.oneOnOneTemplateId
+    d.templates = templates
+    return d
+  }
+
+  it('adds prefs, points at "1:1", upgrades a legacy seed body', () => {
+    const doc = migrate(at19([{ id: 'x', name: '1:1', scope: 'personal', body: LEGACY_EN }]))
+    expect(doc.schemaVersion).toBe(20)
+    expect(doc.prefs.oneOnOneDefaultDays).toBe(14)
+    expect(doc.prefs.oneOnOneTemplateId).toBe('x')
+    expect(doc.templates[0]!.body).toBe(createEmptyDocument('en-US').templates.find(t => t.name === '1:1')!.body)
+    expect(doc.templates[0]!.body).toContain('{carryover}')
+  })
+
+  it('leaves a customized 1:1 body alone and still points at it', () => {
+    const doc = migrate(at19([{ id: 'x', name: '1:1', scope: 'any', body: 'mine' }]))
+    expect(doc.templates[0]!.body).toBe('mine')
+    expect(doc.prefs.oneOnOneTemplateId).toBe('x')
+  })
+
+  it('sets null when there is no "1:1" template', () => {
+    expect(migrate(at19([{ id: 'x', name: 'Other', scope: 'personal', body: '' }])).prefs.oneOnOneTemplateId).toBeNull()
+  })
+
+  it('ignores a "1:1" template scoped daily', () => {
+    expect(migrate(at19([{ id: 'x', name: '1:1', scope: 'daily', body: '' }])).prefs.oneOnOneTemplateId).toBeNull()
+  })
+
+  it('keeps an existing oneOnOneDefaultDays', () => {
+    const d = at19([])
+    d.prefs.oneOnOneDefaultDays = 0
+    expect(migrate(d).prefs.oneOnOneDefaultDays).toBe(0)
   })
 })
 
