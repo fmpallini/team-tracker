@@ -1,6 +1,6 @@
 import { unlinkRefsInText } from '../src/core/refs'
 import { parseImageLine } from '../src/core/image-ref'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, fencedLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -1761,4 +1761,24 @@ test('plain-text copy shows task state', () => {
 })
 test('data-task on an ordered item serializes as a plain item', () => {
   expect(htmlToMd(parse('<ol><li data-task="open" value="1">a</li></ol>'))).toBe('1. a')
+})
+
+describe('fencedLines (the fence rule mdToHtml applies, for line-based readers)', () => {
+  test('marks the fence lines and everything between them', () => {
+    expect(fencedLines(['a', '```js', '- [ ] x', '```', 'b'])).toEqual({ fenced: [false, true, true, true, false], unclosed: false })
+  })
+  test('an unclosed fence runs to the end and is reported', () => {
+    expect(fencedLines(['a', '```', 'x'])).toEqual({ fenced: [false, true, true], unclosed: true })
+  })
+  test('a longer opener needs a closer as long when one follows', () => {
+    expect(fencedLines(['````', '```', '````', 'b']).fenced).toEqual([true, true, true, false])
+  })
+  test('a longer opener with no closer that long closes on any ``` line', () => {
+    expect(fencedLines(['````', 'x', '```', 'b']).fenced).toEqual([true, true, true, false])
+  })
+  test('agrees with mdToHtml on what is code', () => {
+    const md = '````\n- [ ] a\n```\n````\n- [ ] b'
+    expect(mdToHtml(md).match(/data-task/g)).toHaveLength(1)
+    expect(fencedLines(md.split('\n')).fenced).toEqual([true, true, true, true, false])
+  })
 })

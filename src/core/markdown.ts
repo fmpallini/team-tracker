@@ -247,6 +247,34 @@ function fenceFor(lines: readonly string[]): string {
   return '`'.repeat(len)
 }
 
+/**
+ * Which of `lines` sit in a fenced code block, the fence lines included, by
+ * the rule `mdToHtml`'s fence branch applies (see the comment above its
+ * `preBuf`) — keep the two in step. For readers that work on markdown lines
+ * instead of rendering them. `unclosed` is true when the last block runs to
+ * the end of input; a ``` line appended then closes it, whatever its opener's
+ * length (a longer opener with no closer that long closes on any ``` line).
+ */
+export function fencedLines(lines: readonly string[]): { fenced: boolean[]; unclosed: boolean } {
+  const fenced: boolean[] = []
+  let fence = 0 // the closing run the open block needs; 0 = outside a block
+  for (const [i, line] of lines.entries()) {
+    const run = leadingBackticks(line)
+    if (fence) {
+      fenced.push(true)
+      if (run >= fence) fence = 0
+      continue
+    }
+    if (run >= 3) {
+      fenced.push(true)
+      fence = run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+      continue
+    }
+    fenced.push(false)
+  }
+  return { fenced, unclosed: fence !== 0 }
+}
+
 /** A markdown task item's state: `- [ ]` open, `- [x]` done, `- [>]` carried over to a later note. */
 export type TaskState = 'open' | 'done' | 'carried'
 
