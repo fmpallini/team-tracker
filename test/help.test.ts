@@ -443,6 +443,18 @@ describe('module tabs', () => {
     expect(panelText()).toContain('Novo 1:1'); expect(panelText()).not.toContain('Nova 1:1')
   })
 
+  test('F1 on a person page opens the Editor tab led by New 1:1, carry-over and cadence; other editors skip them', () => {
+    showHelp('en-US', { pane: 'person' })
+    expect(headings().slice(0, 3)).toEqual(['1:1 notes', 'Carry-over and cadence', 'Inline formatting'])
+    expect(codes()).toContain('Alt+O')
+    document.body.innerHTML = ''
+    showHelp('en-US', { pane: 'general' })
+    expect(codes()).not.toContain('Alt+O')
+    document.body.innerHTML = ''
+    showHelp('en-US', { tab: 'editor' })
+    expect(headings()).not.toContain('1:1 notes')
+  })
+
   test('Tasks name the board move chord, Risks the risk move, Milestones neither', () => {
     showHelp('en-US', { tab: 'tasks' })
     expect(panelText()).toContain('Move the task across and within columns')

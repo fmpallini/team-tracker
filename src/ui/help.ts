@@ -194,6 +194,8 @@ interface Ctx {
   locale: Locale
   /** The PWA build is already installable/standalone, so the `--app=` recipe is moot there. */
   pwa: boolean
+  /** The module the focused pane shows, when help was opened from one. */
+  pane: ModuleRef['kind'] | undefined
   goto: (tab: HelpTab) => void
 }
 
@@ -220,6 +222,12 @@ const listsSection = (ctx: Ctx, withNav: boolean): HTMLElement =>
   rowsSection(ctx, 'help_sec_lists', [...(withNav ? listNavRows : []), ...listRows(ctx.locale)], true)
 
 const datesSection = (ctx: Ctx): HTMLElement => rowsSection(ctx, 'help_sec_dates', dateRows, true)
+
+/** New 1:1 (Alt+O), carry-over and cadence: on the People tab, and on the Editor tab when that is where a person page's help lands. */
+const oneOnOneSections = (ctx: Ctx): HTMLElement[] => [
+  rowsSection(ctx, 'help_sec_one_on_one', [['Alt+O', 'help_one_on_one_new']]),
+  textSection(ctx, 'help_one_on_one_heading', 'help_one_on_one_text'),
+]
 
 // --- Tabs --------------------------------------------------------------------
 
@@ -255,6 +263,8 @@ const TABS: readonly TabDef[] = [
     id: 'editor',
     label: 'help_tab_editor',
     build: (ctx) => [
+      // A person page's pane opens this tab (PANE_TAB.person), so its 1:1 keys lead it there.
+      ...(ctx.pane === 'person' ? oneOnOneSections(ctx) : []),
       rowsSection(ctx, 'help_sec_inline', inlineRows),
       rowsSection(ctx, 'help_sec_blocks', blockRows),
       rowsSection(ctx, 'help_sec_links', linkRows(ctx.locale)),
@@ -291,8 +301,7 @@ const TABS: readonly TabDef[] = [
         ['↑ / ↓ (← / →)', 'help_people_nav'],
         ['Ctrl+← / → / ↑ / ↓', 'help_people_move'],
       ]),
-      rowsSection(ctx, 'help_sec_one_on_one', [['Alt+O', 'help_one_on_one_new']]),
-      textSection(ctx, 'help_one_on_one_heading', 'help_one_on_one_text'),
+      ...oneOnOneSections(ctx),
       listsSection(ctx, false),
     ],
   },
@@ -364,6 +373,7 @@ export function showHelp(locale: Locale, opts: { tab?: HelpTab; pane?: ModuleRef
   const ctx: Ctx = {
     locale,
     pwa: opts.pwa ?? __PWA__,
+    pane: opts.pane,
     goto: (tab) => {
       rail.select(tab)
       render(true)
