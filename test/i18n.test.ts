@@ -21,11 +21,11 @@ test('t leaves placeholder-shaped text alone when no params are given', () => {
   expect(t('pt-BR', 'prefs_templates_placeholders_hint')).toContain('{date}')
 })
 
-test('both locales document the same four English template placeholders (prefs hint and help)', () => {
+test('both locales document the same five English template placeholders (prefs hint and help)', () => {
   for (const locale of ['pt-BR', 'en-US'] as const) {
     const hint = t(locale, 'prefs_templates_placeholders_hint')
     const help = t(locale, 'help_templates_text')
-    for (const key of ['{date}', '{time}', '{person}', '{team}']) {
+    for (const key of ['{date}', '{time}', '{person}', '{team}', '{carryover}']) {
       expect(hint).toContain(key)
       expect(help).toContain(key)
     }
