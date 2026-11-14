@@ -1731,3 +1731,34 @@ describe('htmlToPlainText: image blocks', () => {
     expect(plain(`<blockquote><div>q</div>${block('x')}</blockquote>`)).toBe('> q\n>\n> [image: x]')
   })
 })
+
+const parse = (html: string) => {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  return div
+}
+
+test('task items parse to li[data-task]', () => {
+  expect(mdToHtml('- [ ] a\n- [x] b\n- [X] c\n- [>] d\n- e')).toBe(
+    '<ul><li data-task="open">a</li><li data-task="done">b</li><li data-task="done">c</li><li data-task="carried">d</li><li>e</li></ul>')
+})
+test('task items round-trip, nested, any depth', () => {
+  const md = '- [ ] a\n  - [x] b\n    - c\n- [>] d'
+  expect(roundTrip(md)).toBe(md)
+})
+test('[X] serializes back as [x]', () => expect(roundTrip('- [X] a')).toBe('- [x] a'))
+test('empty open task round-trips', () => expect(roundTrip('- [ ] ')).toBe('- [ ] '))
+test('ordered items are never tasks', () => expect(mdToHtml('1. [ ] a')).not.toContain('data-task'))
+test('fenced task text stays literal', () => expect(mdToHtml('```\n- [ ] a\n```')).not.toContain('data-task'))
+test('plain bullet starting with [ ] round-trips as text', () => {
+  // A plain <li> whose text is "[ ] x" (no data-task) — escapeInline already writes \[ \]
+  const md = htmlToMd(parse('<ul><li>[ ] x</li></ul>'))
+  expect(md).toBe('- \\[ \\] x')
+  expect(mdToHtml(md)).not.toContain('data-task')
+})
+test('plain-text copy shows task state', () => {
+  expect(htmlToPlainText(parse(mdToHtml('- [ ] a\n- [x] b\n- [>] c')))).toBe('☐ a\n☑ b\n↪ c')
+})
+test('data-task on an ordered item serializes as a plain item', () => {
+  expect(htmlToMd(parse('<ol><li data-task="open" value="1">a</li></ol>'))).toBe('1. a')
+})

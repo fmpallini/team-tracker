@@ -247,6 +247,29 @@ function fenceFor(lines: readonly string[]): string {
   return '`'.repeat(len)
 }
 
+/** A markdown task item's state: `- [ ]` open, `- [x]` done, `- [>]` carried over to a later note. */
+export type TaskState = 'open' | 'done' | 'carried'
+
+/** What follows a bullet's `- ` when the item is a task: `[ ]`, `[x]`, `[X]` or `[>]`, then optionally a space and the text. Group 1 is the state marker, group 2 the item text. */
+export const TASK_PREFIX = /^\[( |x|X|>)\](?: (.*))?$/
+
+const TASK_BY_MARK: Readonly<Record<string, TaskState>> = { ' ': 'open', x: 'done', X: 'done', '>': 'carried' }
+const MD_MARK_OF_TASK: Readonly<Record<TaskState, string>> = { open: '[ ]', done: '[x]', carried: '[>]' }
+const TEXT_MARK_OF_TASK: Readonly<Record<TaskState, string>> = { open: '☐', done: '☑', carried: '↪' }
+
+/**
+ * The task state an `<li>` carries, or `null`. Only a bullet (`ul`) item can be
+ * a task: `1. [ ] a` is never parsed as one, so an `<ol>` item's `data-task`
+ * (a stale attribute after the editor converts the list) is ignored and the
+ * item serializes as a plain numbered one. An unknown attribute value is
+ * ignored too, so a hand-built or pasted `data-task="x"` never writes a marker.
+ */
+function taskOf(li: HTMLElement, listTag: string): TaskState | null {
+  if (listTag !== 'ul') return null
+  const v = li.getAttribute('data-task')
+  return v === 'open' || v === 'done' || v === 'carried' ? v : null
+}
+
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
   interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean; lastVal: number }
@@ -259,6 +282,9 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // is currently open) and MAX_LIST_DEPTH, so a malformed/hand-typed indent
   // jump never produces an orphaned list structure.
   //
+  // `task` is a bullet's `[ ]` / `[x]` / `[>]` state (`null` for a plain item or
+  // an ordered one — `1. [ ] a` keeps its brackets as text).
+  //
   // `parsedVal` is the item's own written number (`null` for bullets). An
   // ordered item keeps its written number only while the sequence is still
   // ascending within the frame (so `3.` `5.` — a deliberate gap — and
@@ -266,7 +292,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // count is replaced by "previous + 1". That is the case a paste hits when
   // levels past MAX_LIST_DEPTH all collapse onto one frame each written
   // `1.` — without this they would render `1. 1. 1.`.
-  const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null) => {
+  const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null, task: TaskState | null = null) => {
     const depth = Math.min(rawDepth, stack.length, MAX_LIST_DEPTH)
     while (stack.length && stack[stack.length - 1]!.depth > depth) closeFrame(stack.pop()!)
     let top = stack[stack.length - 1]
@@ -284,7 +310,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
       top!.lastVal = v
       valueAttr = ` value="${v}"`
     }
-    out.push(`<li${valueAttr}>`, itemHtml)
+    out.push(`<li${valueAttr}${task ? ` data-task="${task}"` : ''}>`, itemHtml)
     top!.hasOpenLi = true
   }
   // Flat blockquote (no nesting — like H1–H3): consecutive `> ` lines buffer
@@ -359,7 +385,12 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     // An image is an atomic block with no children: the editor fills in the <img> from the image store (ui/image-host.ts).
     if (img) { closeList(); out.push(`<div class="tt-img" contenteditable="false" data-img-id="${img.id}" data-alt="${esc(img.alt)}"></div>`) }
     else if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
-    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), null)
+    else if (ul) {
+      // Only reached outside a fence (the fence branch above `continue`s), so fenced `- [ ] a` stays literal.
+      const m = TASK_PREFIX.exec(ul[2]!)
+      const text = m ? (m[2] ?? '') : ul[2]!
+      addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(text), resolveLabel, refTitle, linkHint), null, m ? TASK_BY_MARK[m[1]!]! : null)
+    }
     else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), Number(ol[2]))
     else if (hr) { closeList(); out.push('<hr>') }
     else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle, linkHint) : '<br>'}</div>`) }
@@ -895,13 +926,14 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     if (childTag === 'ul' || childTag === 'ol') { renderListMd(child, depth + 1, out); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
+    const task = taskOf(child, tag)
     liLines(child).forEach((text, n) => {
       if (tag === 'ol') {
         const v = child.getAttribute('value')
         i = n === 0 && v ? Number(v) : i + 1
         out.push(`${prefix}${i}. ${text}`)
       } else {
-        out.push(`${prefix}- ${text}`)
+        out.push(`${prefix}- ${task && n === 0 ? `${MD_MARK_OF_TASK[task]} ` : ''}${text}`)
       }
     })
     nestedLists.forEach(nested => renderListMd(nested, depth + 1, out))
@@ -967,13 +999,15 @@ export function preLines(node: HTMLElement): string[] {
 // flattening every level to the same column.
 function renderListText(list: HTMLElement, out: string[], depth = 0): void {
   const prefix = '  '.repeat(depth)
+  const listTag = list.tagName.toLowerCase()
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement)) return
     const childTag = child.tagName.toLowerCase()
     if (childTag === 'ul' || childTag === 'ol') { renderListText(child, out, depth + 1); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
-    out.push(liLines(child, true).flatMap(l => l.split('\n')).map(line => prefix + line).join('\n'))
+    const task = taskOf(child, listTag)
+    out.push(liLines(child, true).flatMap(l => l.split('\n')).map((line, n) => prefix + (task && n === 0 ? `${TEXT_MARK_OF_TASK[task]} ` : '') + line).join('\n'))
     nestedLists.forEach(nested => renderListText(nested, out, depth + 1))
   })
 }
