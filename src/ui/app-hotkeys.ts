@@ -48,6 +48,8 @@ export type AppHotkeyAction =
   | { type: 'swapPanes' }
   /** Alt+N → add an item to whatever module the focused pane shows. */
   | { type: 'newItem' }
+  /** Alt+O → start a new 1:1 in the person's notes the focused pane shows. */
+  | { type: 'newOneOnOne' }
   /** Alt+1..9 → switch to team index 0..8 (only when that team exists). */
   | { type: 'selectTeam'; index: number }
 
@@ -60,6 +62,8 @@ export interface AppHotkeyContext {
   teamCount: number
   /** Whether the currently focused pane is showing a daily note — gates Alt+[ / Alt+] / Alt+T. */
   focusedPaneShowsDailyNote: boolean
+  /** Whether the currently focused pane is showing a person's notes — gates Alt+O. */
+  focusedPaneShowsPerson: boolean
   /** ui/undo-toast.ts's isUndoOfferLive() — gates Ctrl+Z, which otherwise stays the browser's. */
   undoOfferLive: boolean
 }
@@ -143,6 +147,8 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
   if (e.shiftKey && e.key === 'ArrowUp') return { type: 'historyLatest' }
   if (e.shiftKey) return null
   if (matchKey(e, 'n')) return { type: 'newItem' }
+  // Elsewhere Alt+O is left to the browser, like the day-nav keys off a daily note.
+  if (matchKey(e, 'o')) return ctx.focusedPaneShowsPerson ? { type: 'newOneOnOne' } : null
 
   // Alt+[ / Alt+] / Alt+T: daily-notes day nav. Match the physical key as
   // well as the produced character, for layouts where '['/']' sit behind

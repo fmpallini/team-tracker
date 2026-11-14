@@ -350,6 +350,13 @@ export function requestNewItem(paneIdx: 0 | 1): void {
   document.querySelectorAll<HTMLElement>('.tt-pane-body')[paneIdx]?.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
 }
 
+/** Dispatched on a pane's body for Alt+O. Only a person's notes listen: it starts a new 1:1 there. */
+export const NEW_ONE_ON_ONE_EVENT = 'tt-new-one-on-one'
+
+export function requestNewOneOnOne(paneIdx: 0 | 1): void {
+  document.querySelectorAll<HTMLElement>('.tt-pane-body')[paneIdx]?.dispatchEvent(new CustomEvent(NEW_ONE_ON_ONE_EVENT))
+}
+
 /** Where a pane's focus lands with nothing remembered: what each module focuses on mount. */
 const PANE_DEFAULT_FOCUS = '.editor, [data-item-id][tabindex="0"]'
 

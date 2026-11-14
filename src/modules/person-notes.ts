@@ -4,8 +4,8 @@
 // additionally has to cope with the person being deleted (from the people
 // tree, possibly in the *other* pane) while this module is mounted.
 import type { Loc, Person, Team } from '../core/types'
-import { t } from '../core/i18n'
-import { focusPaneBar, type ModuleCtx } from '../ui/panes'
+import { t, todayIso } from '../core/i18n'
+import { focusPaneBar, NEW_ONE_ON_ONE_EVENT, type ModuleCtx } from '../ui/panes'
 import { createModuleEditor } from '../ui/rich-editor'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
@@ -16,6 +16,10 @@ import { createModuleBacklinksChip } from '../ui/backlinks-panel'
 import { navigateToLoc } from '../ui/atref'
 import { openPersonModal } from '../ui/person-modal'
 import { iconButton } from '../ui/icons'
+import { watchDayChange } from '../ui/day-change'
+import { buildOneOnOne } from '../core/one-on-one'
+import { effectiveCadenceDays, isIsoDate, oneOnOneDueDate } from '../core/cadence'
+import { diffDays } from '../core/date'
 
 export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc, ctx: ModuleCtx) => {
   if (loc.ref.kind !== 'person') return // registered only for 'person'; defensive
@@ -56,33 +60,63 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const initialChip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
   if (initialChip) headerBadgeSlot.appendChild(initialChip)
 
+  // The header's edit button and the 1:1 status line both open this.
+  function openEdit(): void {
+    const p = findPerson()
+    if (!p) return
+    openPersonModal(lc, {
+      title: t(lc, 'person_edit_title'),
+      initialName: p.name,
+      initialRole: p.role,
+      onSubmit: (name, role) => {
+        ctx.store.update((d) => {
+          const tm = docFindTeam(d, teamId)
+          const pp = tm?.[group].find((x) => x.id === personId)
+          if (!pp) return
+          pp.name = name
+          pp.role = role
+          // Unscoped beyond the team, exactly as people-tree.ts's rename
+          // site: `name`/`role` are the label every @[…](person:id)
+          // mention in this team resolves through live, so a pane showing
+          // a mention of this person in another section must be free to
+          // re-render.
+        }, { teamId })
+      },
+    })
+  }
+
   const editBtn = iconButton({
     class: 'tt-person-header-btn tt-person-header-edit-btn',
     title: t(lc, 'person_edit_title'), icon: 'edit',
-    onclick: () => {
-      const p = findPerson()
-      if (!p) return
-      openPersonModal(lc, {
-        title: t(lc, 'person_edit_title'),
-        initialName: p.name,
-        initialRole: p.role,
-        onSubmit: (name, role) => {
-          ctx.store.update((d) => {
-            const tm = docFindTeam(d, teamId)
-            const pp = tm?.[group].find((x) => x.id === personId)
-            if (!pp) return
-            pp.name = name
-            pp.role = role
-            // Unscoped beyond the team, exactly as people-tree.ts's rename
-            // site: `name`/`role` are the label every @[…](person:id)
-            // mention in this team resolves through live, so a pane showing
-            // a mention of this person in another section must be free to
-            // re-render.
-          }, { teamId })
-        },
-      })
-    },
+    onclick: openEdit,
   })
+
+  const oneOnOneBtn = iconButton({
+    class: 'tt-person-header-btn tt-person-header-one-on-one-btn',
+    title: t(lc, 'person_new_one_on_one_title'), icon: 'oneOnOne',
+    onclick: () => newOneOnOne(),
+  })
+
+  // "Last 1:1: 3 days ago · every 14 days", red once the next one is late.
+  const cadenceEl = el('button', { type: 'button', class: 'tt-person-cadence', onclick: openEdit })
+  function renderCadence(p: Person): void {
+    const prefs = ctx.store.doc.prefs
+    const today = todayIso()
+    // An unreadable date (hand-edited plain file) reads as no 1:1, as core/cadence.ts treats it.
+    const last = isIsoDate(p.lastOneOnOne) ? p.lastOneOnOne : null
+    const ago = last === null ? 0 : diffDays(today, last)
+    let text = last === null
+      ? t(lc, 'person_no_one_on_one')
+      : t(lc, 'person_last_one_on_one', {
+        ago: ago <= 0 ? t(lc, 'person_ago_today') : t(lc, 'person_days_ago', { days: String(ago) }),
+      })
+    const every = effectiveCadenceDays(p, group, prefs)
+    if (every !== null) text += t(lc, 'person_cadence_every', { days: String(every) })
+    cadenceEl.textContent = text
+    const due = oneOnOneDueDate(p, group, prefs)
+    cadenceEl.classList.toggle('overdue', due !== null && due < today)
+  }
+  renderCadence(person)
 
   const gotoOrgBtn = iconButton({
     class: 'tt-person-header-btn tt-person-header-goto-org-btn',
@@ -97,8 +131,8 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const headerEl = el(
     'div',
     { class: 'tt-person-header' },
-    el('div', { class: 'tt-person-header-id' }, headerTitleEl),
-    el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, editBtn, gotoOrgBtn)
+    el('div', { class: 'tt-person-header-id' }, headerTitleEl, cadenceEl),
+    el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, oneOnOneBtn, editBtn, gotoOrgBtn)
   )
 
   const bundle = createModuleEditor(ctx, teamId, {
@@ -123,6 +157,29 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   })
   const editor = bundle.editor
 
+  /**
+   * The New 1:1 (button, Alt+O): every open task is carried into a fresh block
+   * appended after a rule, and marked carried where it was. The edit goes
+   * through the open editor as one undo step (replaceMd), never by rewriting
+   * `person.notes` under it, so the caret and the undo history survive; the
+   * editor's own onChange persists the note. Only the date of the 1:1 is
+   * written to the store directly, and an undo of the note leaves it: the
+   * meeting still happened.
+   */
+  function newOneOnOne(): void {
+    // A read-only tab (core/tab-lock.ts sets this together with setEditorsReadOnly): replaceMd would refuse anyway.
+    if (torn || ctx.store.readOnly) return
+    const doc = ctx.store.doc
+    const body = doc.templates.find((tpl) => tpl.id === doc.prefs.oneOnOneTemplateId)?.body ?? null
+    const r = buildOneOnOne(editor.getMd(), body, bundle.templateCtx())
+    editor.replaceMd(r.md, (root) => oneOnOneCaret(root, r.blockHrFromEnd))
+    ctx.store.update((d) => {
+      const p = docFindTeam(d, teamId)?.[group].find((pp) => pp.id === personId)
+      if (p) p.lastOneOnOne = todayIso()
+    }, { teamId, sections: ['people'] })
+  }
+  container.addEventListener(NEW_ONE_ON_ONE_EVENT, newOneOnOne)
+
   // Unlike src/modules/daily-notes.ts's calendar-marks refresh, the notes
   // editor's *content* is deliberately never rebuilt from a live store
   // subscription (that would clobber the user's caret on every unrelated
@@ -136,8 +193,9 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   // note, another person's notes, an action item, milestone or risk
   // follow-up — not just edits to people themselves, so the watch list is
   // that full set (plus 'teams', for the person-deleted-out-from-under-us
-  // check above).
-  const WATCHED: readonly Section[] = ['teams', ...BACKLINK_SECTIONS]
+  // check above). 'prefs' too: the members' default 1:1 cadence lives there,
+  // and the status line shows it.
+  const WATCHED: readonly Section[] = ['teams', 'prefs', ...BACKLINK_SECTIONS]
   const unsubscribe = ctx.store.subscribe((scope) => {
     if (!scopeAffects(scope, teamId, WATCHED)) return
     if (torn) return
@@ -145,6 +203,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     if (!currentPerson) {
       torn = true
       unsubscribe()
+      stopDayWatch()
       bundle.dispose()
       showNotFound()
       return
@@ -155,6 +214,8 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // committing its unscoped update) — the label has to stay live the same
     // way every @mention of this person elsewhere already does.
     renderIdentity(currentPerson)
+    // 'people' also carries lastOneOnOne / oneOnOneEveryDays.
+    renderCadence(currentPerson)
     headerBadgeSlot.innerHTML = ''
     const chip = createModuleBacklinksChip(ctx, teamId, 'person', personId)
     if (chip) headerBadgeSlot.appendChild(chip)
@@ -162,6 +223,12 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // (see Editor.refreshRefLabels' doc comment), unlike rebuilding the
     // editor content outright.
     editor.refreshRefLabels()
+  })
+  // "3 days ago" and the overdue colour are relative to today, which moves
+  // with no store change while the pane sits open overnight.
+  const stopDayWatch = watchDayChange(() => {
+    const p = findPerson()
+    if (!torn && p) renderCadence(p)
   })
 
   container.appendChild(el('div', { class: 'tt-person-notes' }, headerEl, editor.root))
@@ -172,6 +239,36 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
 
   return () => {
     unsubscribe()
+    stopDayWatch()
+    container.removeEventListener(NEW_ONE_ON_ONE_EVENT, newOneOnOne)
     bundle.dispose()
   }
 })
+
+/**
+ * Where the caret goes after a New 1:1: the first empty bullet of the new
+ * block (the template's first "- " slot), else the end of the note. The block
+ * starts right after the (blockHrFromEnd + 1)-th rule from the end (the rule
+ * buildOneOnOne put before it, counting past the block's own rules), or is the
+ * whole note when that was empty (null). A carried item is never blank, but is
+ * skipped by state as well: it is an earlier task, not a slot to type in.
+ */
+function oneOnOneCaret(root: HTMLElement, blockHrFromEnd: number | null): Node | null {
+  const blocks = Array.from(root.children)
+  let from = 0
+  if (blockHrFromEnd !== null) {
+    from = blocks.length // no such rule: no slot to look for
+    let seen = 0
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      if (blocks[i]!.tagName === 'HR' && ++seen === blockHrFromEnd + 1) {
+        from = i + 1
+        break
+      }
+    }
+  }
+  for (const block of blocks.slice(from)) {
+    const slot = Array.from(block.querySelectorAll('li')).find((li) => !li.textContent?.trim() && li.getAttribute('data-task') !== 'carried')
+    if (slot) return slot
+  }
+  return root.lastChild
+}

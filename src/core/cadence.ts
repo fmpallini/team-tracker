@@ -18,7 +18,7 @@ function isCadence(v: unknown): v is number {
 }
 
 /** A real calendar date: `2026-02-31` matches the shape but rolls over, so it fails the round trip. */
-function isIsoDate(v: unknown): v is string {
+export function isIsoDate(v: unknown): v is string {
   return typeof v === 'string' && ISO_DATE.test(v) && addDaysIso(v, 0) === v
 }
 

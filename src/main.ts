@@ -13,7 +13,7 @@ import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from './ui/sidebar'
 import { resolveAppHotkey, isBrowserSaveChord, isBrowserUndoChord } from './ui/app-hotkeys'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, requestNewItem, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, requestNewItem, requestNewOneOnOne, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout, wcoReservedWidth } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { appCommands, type AppCommandActions } from './ui/app-commands'
@@ -603,6 +603,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     const action = resolveAppHotkey(e, {
       teamCount: store.doc.teams.length,
       focusedPaneShowsDailyNote: !!focusedLoc && focusedLoc.ref.kind === 'daily',
+      focusedPaneShowsPerson: !!focusedLoc && focusedLoc.ref.kind === 'person',
       undoOfferLive: isUndoOfferLive(),
     })
     if (!action) {
@@ -622,6 +623,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       case 'newItem':
         if (navPastModelessCard()) requestNewItem(store.doc.nav.focusedPane)
+        return
+      case 'newOneOnOne':
+        if (navPastModelessCard()) requestNewOneOnOne(store.doc.nav.focusedPane)
         return
       case 'help':
         // F1 toggles: it closes Help when open, and leaves any other blocking dialog alone.

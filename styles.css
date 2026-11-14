@@ -2071,6 +2071,14 @@ select option { background: var(--bg); color: var(--fg); }
    header control is always on show, so no borderless row-hover-reveal
    treatment here. */
 .tt-person-header-btn { font-size: 1rem; }
+/* The 1:1 status line under the role: reads as text, opens the person dialog. */
+.tt-person-cadence {
+  align-self: flex-start; padding: 0; border: 0; background: none;
+  font-size: .8rem; line-height: 1.2; color: var(--muted); text-align: left; cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+.tt-person-cadence:hover { color: var(--fg); }
+.tt-person-cadence.overdue { color: var(--danger-text); }
 .tt-person-notes .tt-editor { flex: 1; }
 
 /* Preferences modal */

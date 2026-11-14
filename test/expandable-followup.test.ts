@@ -1,7 +1,7 @@
 import { ExpandableRowsController } from '../src/ui/expandable-followup'
 
 function fakeBundle() {
-  return { editor: { refreshRefLabels: vi.fn() } as any, dispose: vi.fn() }
+  return { editor: { refreshRefLabels: vi.fn() } as any, templateCtx: vi.fn(), dispose: vi.fn() }
 }
 
 test('tracks expand state and disposes registered bundles', () => {
