@@ -11,6 +11,9 @@ import {
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { unlinkRefsInTeam } from '../src/core/refs'
+import { todayIso } from '../src/core/i18n'
+import { addDaysIso } from '../src/core/date'
+import { disposeContainer } from '../src/modules/lifecycle'
 import { createSearchIndex } from '../src/core/search'
 import { closeAnyContextMenu } from '../src/ui/context-menu'
 import { NEW_ITEM_EVENT } from '../src/ui/panes'
@@ -837,4 +840,83 @@ test('the chart is one Tab stop, and the ⋯ button leaves the tab order: Space 
   render(container, loc, store, pm, 'members')
   expect(boxes(container).map((b) => b.tabIndex)).toEqual([0, -1])
   expect((boxes(container)[0]!.querySelector('.tt-people-more-btn') as HTMLElement).tabIndex).toBe(-1)
+})
+
+describe('overdue 1:1 mark', () => {
+  const mark = (box: HTMLElement): HTMLElement | null => box.querySelector<HTMLElement>('.tt-org-due')
+
+  test('overdue member gets .tt-org-due with "1:1 overdue by 3 days"', () => {
+    // Last 1:1 17 days ago on a 14-day cadence: due 3 days ago.
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -17) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    const m = mark(boxes(container)[0]!)!
+    expect(m.getAttribute('role')).toBe('img')
+    expect(m.getAttribute('aria-label')).toBe('1:1 overdue by 3 days')
+    expect(m.title).toBe('1:1 overdue by 3 days')
+  })
+
+  test('one day overdue uses the singular', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -15) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 1 day')
+  })
+
+  test('due-soon, due-today and never-met people get no mark', () => {
+    const team = makeTeam({
+      members: [
+        person({ id: 'a', name: 'Ana', order: 0, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -13) }),
+        person({ id: 'b', name: 'Bia', order: 1, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -14) }),
+        person({ id: 'c', name: 'Caio', order: 2, oneOnOneEveryDays: 14 }),
+        person({ id: 'd', name: 'Duda', order: 3, lastOneOnOne: addDaysIso(todayIso(), -400), oneOnOneEveryDays: null }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team, 'members')
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 0 })
+    render(container, loc, store, pm, 'members')
+    expect(container.querySelectorAll('.tt-org-due').length).toBe(0)
+  })
+
+  test('prefs change (default cadence) repaints marks', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', lastOneOnOne: addDaysIso(todayIso(), -10) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 14 })
+    render(container, loc, store, pm, 'members')
+    expect(container.querySelectorAll('.tt-org-due').length).toBe(0)
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 7 }, { sections: ['prefs'] })
+    expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 3 days')
+  })
+
+  test('the mark repaints when the calendar day moves while the chart sits open', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 5, 10, 12))
+      const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: '2026-05-27' })] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members')
+      expect(container.querySelectorAll('.tt-org-due').length).toBe(0) // due today
+      vi.setSystemTime(new Date(2026, 5, 11, 12))
+      window.dispatchEvent(new Event('focus'))
+      expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 1 day')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('teardown releases the day-change listener', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ members: [person({ id: 'a', name: 'Ana' })] }), 'members')
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    try {
+      render(container, loc, store, pm, 'members')
+      const focusAdds = add.mock.calls.filter(([type]) => type === 'focus')
+      expect(focusAdds.length).toBeGreaterThan(0)
+      disposeContainer(container)
+      for (const [, fn] of focusAdds) expect(remove.mock.calls.some(([type, f]) => type === 'focus' && f === fn)).toBe(true)
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+    }
+  })
 })

@@ -3,7 +3,7 @@
 // as a drag-and-droppable hierarchy (parentId/order), following the
 // disposal/store.subscribe discipline documented in src/modules/lifecycle.ts.
 import type { Loc, Person, Team } from '../core/types'
-import { t } from '../core/i18n'
+import { t, todayIso } from '../core/i18n'
 import { installArrowFallbackFocus, NEW_ITEM_EVENT, type ModuleCtx, type ModuleRenderer } from '../ui/panes'
 import { applyCadence, openPersonModal, personOneOnOne } from '../ui/person-modal'
 import { emptyState } from '../ui/empty-state'
@@ -15,6 +15,9 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
+import { oneOnOneDueDate } from '../core/cadence'
+import { diffDays } from '../core/date'
+import { watchDayChange } from '../ui/day-change'
 import { deleteInTeamWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { icon, iconButton } from '../ui/icons'
@@ -302,6 +305,17 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       // A double-click on the button must not fall through to the box's open-notes handler.
       moreBtn.addEventListener('dblclick', (e) => e.stopPropagation())
 
+      // A dot in the bottom-left corner (the top-right one holds the dog-ear) once the next 1:1 is late.
+      // Due today or soon draws nothing, and so does a person never met: there is no date to count from.
+      const due = oneOnOneDueDate(person, group, ctx.store.doc.prefs)
+      const today = todayIso()
+      let dueMark: HTMLElement | null = null
+      if (due !== null && due < today) {
+        const days = diffDays(today, due)
+        const text = t(lc, days === 1 ? 'org_one_on_one_overdue_one' : 'org_one_on_one_overdue', { days: String(days) })
+        dueMark = el('span', { class: 'tt-org-due', role: 'img', 'aria-label': text, title: text })
+      }
+
       const box = el(
         'div',
         // data-item-id (alongside data-person-id) is the anchor navigateToLoc's
@@ -311,6 +325,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
         { class: 'tt-org-box', draggable: 'true', tabindex: '0', 'data-person-id': person.id, 'data-item-id': person.id, title: t(lc, 'person_box_hint') },
         el('div', { class: 'tt-org-name' }, person.name),
         el('div', { class: 'tt-org-role' }, person.role),
+        dueMark,
         moreBtn
       )
 
@@ -512,11 +527,14 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     // The tree has no caret/focus state worth preserving (unlike the
     // daily-notes editor) — a full rebuild on every store change is simplest
     // and correct.
-    const WATCHED: readonly Section[] = ['people', 'teams']
+    // 'prefs' too: the default cadence decides who is overdue.
+    const WATCHED: readonly Section[] = ['people', 'teams', 'prefs']
     const unsubscribe = ctx.store.subscribe((scope) => {
       if (!scopeAffects(scope, teamId, WATCHED)) return
       renderAll()
     })
+    // Overdue is relative to today, which moves with no store change while the pane sits open overnight.
+    const stopDayWatch = watchDayChange(renderAll)
     // A wide chart scrolls sideways under the plain wheel, as the kanban board does.
     const unbindWheel = wheelScrollsHorizontally(treeEl)
     // A person held at the chart's or pane's edge scrolls it (the wheel is silent during a native drag).
@@ -535,6 +553,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
     return () => {
       unsubscribe()
+      stopDayWatch()
       unbindWheel()
       unbindDragScroll()
       disposeArrowFallback()

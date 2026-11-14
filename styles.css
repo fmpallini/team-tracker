@@ -1376,6 +1376,8 @@ body { background: var(--bg); color: var(--fg); }
   content: ''; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px;
   background: var(--bg); border: 1px solid var(--border); transform: rotate(8deg);
 }
+/* Overdue 1:1: a small danger dot on the bottom-left corner, clear of the top-right dog-ear. */
+.tt-org-due { position: absolute; left: -4px; bottom: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); border: 2px solid var(--panel); box-sizing: content-box; }
 .tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 .9rem; box-sizing: border-box; }
 /* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
    (needed for the ellipsis) clips at the padding box, and both the synthesized
