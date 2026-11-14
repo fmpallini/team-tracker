@@ -1106,10 +1106,11 @@ body { background: var(--bg); color: var(--fg); }
    toggles (handleTaskBoxClick reads it). The negative margin puts the box
    where a bullet's marker sits, so a task's text lines up with plain
    bullets. The text after "/" in `content` is the box's spoken name, set per
-   locale on .editor as --tt-task-*. Box sizes are in the glyph's own em
+   locale on .editor (and on the closed-risk follow-up preview, which shows
+   the same boxes read-only) as --tt-task-*. Box sizes are in the glyph's own em
    (font-size .8em): 1.125em there is .9em of the line, centered in its 1.5. */
-.editor ul > li[data-task] { list-style: none; position: relative; margin-left: -1.5em; padding-left: 1.5em; }
-.editor ul > li[data-task]::before {
+.editor ul > li[data-task], .tt-risk-followup-readonly-body ul > li[data-task] { list-style: none; position: relative; margin-left: -1.5em; padding-left: 1.5em; }
+.editor ul > li[data-task]::before, .tt-risk-followup-readonly-body ul > li[data-task]::before {
   position: absolute; left: .25em; top: .375em;
   width: 1.125em; height: 1.125em; box-sizing: border-box;
   display: flex; align-items: center; justify-content: center;
@@ -1117,12 +1118,12 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid currentColor; border-radius: var(--r-sm);
   cursor: pointer;
 }
-.editor[contenteditable="false"] ul > li[data-task]::before { cursor: default; }
-.editor ul > li[data-task="open"]::before { content: "" / var(--tt-task-open); }
-.editor ul > li[data-task="done"]::before { content: "\2713" / var(--tt-task-done); background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.editor ul > li[data-task="done"] { color: var(--muted); text-decoration: line-through; }
-.editor ul > li[data-task="carried"]::before { content: "\2192" / var(--tt-task-carried); color: var(--muted); }
-.editor ul > li[data-task="carried"] { color: var(--muted); }
+.editor[contenteditable="false"] ul > li[data-task]::before, .tt-risk-followup-readonly-body ul > li[data-task]::before { cursor: default; }
+.editor ul > li[data-task="open"]::before, .tt-risk-followup-readonly-body ul > li[data-task="open"]::before { content: "" / var(--tt-task-open); }
+.editor ul > li[data-task="done"]::before, .tt-risk-followup-readonly-body ul > li[data-task="done"]::before { content: "\2713" / var(--tt-task-done); background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.editor ul > li[data-task="done"], .tt-risk-followup-readonly-body ul > li[data-task="done"] { color: var(--muted); text-decoration: line-through; }
+.editor ul > li[data-task="carried"]::before, .tt-risk-followup-readonly-body ul > li[data-task="carried"]::before { content: "\21AA" / var(--tt-task-carried); color: var(--muted); }
+.editor ul > li[data-task="carried"], .tt-risk-followup-readonly-body ul > li[data-task="carried"] { color: var(--muted); }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
 /* Embedded image: its own centered block at natural pixel size. Sizes are in px on purpose (never em/rem), so the app's font size and Ctrl+wheel zoom steps do not scale a picture; max-width only shrinks it to fit the pane. */
 .editor .tt-img { display: flex; justify-content: center; margin: 0; padding: 2px 0; user-select: none; }

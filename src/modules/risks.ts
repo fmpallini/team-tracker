@@ -35,6 +35,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { makeRefLabelResolver } from '../ui/atref'
 import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
+import { setTaskBoxNames } from '../ui/editor'
 import { icon, iconButton, type IconName } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
@@ -988,6 +989,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       t(lc, 'editor_ref_hint'),
       t(lc, 'editor_link_open_hint'),
     )
+    // Its task items get the editor's boxes (styles.css lists this body beside .editor), so done and open differ.
+    setTaskBoxNames(body, lc)
     return el(
       'div',
       { class: 'tt-risk-followup-row tt-risk-followup-readonly', 'data-risk-followup-id': r.id, 'data-item-id': r.id },

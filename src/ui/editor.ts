@@ -378,14 +378,21 @@ export function setEditorsReadOnly(readOnly: boolean): void {
   for (const ed of liveEditors) ed.root.setAttribute('contenteditable', readOnly ? 'false' : 'true')
 }
 
+/**
+ * Spoken names of the checklist states, on any element whose task boxes
+ * styles.css draws (the editor, and read-only `mdToHtml` previews): it reads
+ * them as the alt text of each box's generated content (`content: "" /
+ * var(...)`). Set through the CSSOM, which the CSP allows.
+ */
+export function setTaskBoxNames(host: HTMLElement, locale: Locale): void {
+  host.style.setProperty('--tt-task-open', JSON.stringify(t(locale, 'editor_task_open_sr')))
+  host.style.setProperty('--tt-task-done', JSON.stringify(t(locale, 'editor_task_done_sr')))
+  host.style.setProperty('--tt-task-carried', JSON.stringify(t(locale, 'editor_task_carried_sr')))
+}
+
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: editorsReadOnly ? 'false' : 'true' })
-  // Spoken names of the checklist states: styles.css reads them as the alt
-  // text of each task box's generated content (`content: "" / var(...)`).
-  // Set through the CSSOM, which the CSP allows.
-  editorEl.style.setProperty('--tt-task-open', JSON.stringify(t(locale, 'editor_task_open_sr')))
-  editorEl.style.setProperty('--tt-task-done', JSON.stringify(t(locale, 'editor_task_done_sr')))
-  editorEl.style.setProperty('--tt-task-carried', JSON.stringify(t(locale, 'editor_task_carried_sr')))
+  setTaskBoxNames(editorEl, locale)
 
   let changeTimer: ReturnType<typeof setTimeout> | null = null
   function scheduleChange(): void {

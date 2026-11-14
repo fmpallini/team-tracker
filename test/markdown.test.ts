@@ -1,3 +1,4 @@
+import css from '../styles.css?raw'
 import { unlinkRefsInText } from '../src/core/refs'
 import { parseImageLine } from '../src/core/image-ref'
 import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, fencedLines } from '../src/core/markdown'
@@ -1758,6 +1759,9 @@ test('plain bullet starting with [ ] round-trips as text', () => {
 })
 test('plain-text copy shows task state', () => {
   expect(htmlToPlainText(parse(mdToHtml('- [ ] a\n- [x] b\n- [>] c')))).toBe('☐ a\n☑ b\n↪ c')
+})
+test('the carried box draws the same ↪ the plain-text copy and Help show', () => {
+  expect(css).toMatch(/li\[data-task="carried"\]::before \{ content: "\\21AA" \//)
 })
 test('data-task on an ordered item serializes as a plain item', () => {
   expect(htmlToMd(parse('<ol><li data-task="open" value="1">a</li></ol>'))).toBe('1. a')

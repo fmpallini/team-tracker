@@ -18,7 +18,8 @@ import type { PaneManager, ModuleCtx } from '../src/ui/panes'
 import type { Loc, Risk, Team } from '../src/core/types'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../src/ui/search-highlight'
 import { NEW_ITEM_EVENT } from '../src/ui/panes'
-import { formatDateWithWeekday } from '../src/core/i18n'
+import { formatDateWithWeekday, t } from '../src/core/i18n'
+import css from '../styles.css?raw'
 
 // jsdom has no layout engine, so Element.prototype.scrollIntoView doesn't
 // exist at all (see test/scope-freshness.test.ts's identical guard).
@@ -1419,6 +1420,24 @@ describe('renderRisks', () => {
       expect(preview.querySelector('.editor')).toBeNull() // read-only — no contenteditable
       expect(preview.getAttribute('data-item-id')).toBe('r1')
       expect(store.doc.teams[0]!.risks[0]!.closed).toBe(true) // stays closed
+    })
+
+    test('the read-only follow-up shows task state: the boxes get their spoken names and the checklist CSS', () => {
+      const team = makeTeam({ risks: [risk({ id: 'r1', closed: true, followup: '- [x] shipped\n- [ ] pending' })] })
+      const { container, store, pm, loc } = setup(team)
+      render(container, loc, store, pm)
+      container.dispatchEvent(new CustomEvent(SEARCH_FOCUS_ITEM_EVENT, { detail: 'r1' }))
+
+      const body = container.querySelector('.tt-risk-followup-readonly-body') as HTMLElement
+      expect(body.querySelector('li[data-task="done"]')?.textContent).toBe('shipped')
+      expect(body.querySelector('li[data-task="open"]')?.textContent).toBe('pending')
+      for (const [prop, key] of [['--tt-task-open', 'editor_task_open_sr'], ['--tt-task-done', 'editor_task_done_sr'], ['--tt-task-carried', 'editor_task_carried_sr']] as const) {
+        expect(body.style.getPropertyValue(prop)).toBe(JSON.stringify(t('en-US', key)))
+      }
+      // Every checklist rule the editor draws its boxes with covers this body too, or done and open look alike.
+      const taskRules = css.split('\n').filter((l) => l.startsWith('.editor ul > li[data-task'))
+      expect(taskRules.length).toBeGreaterThan(0)
+      for (const rule of taskRules) expect(rule).toContain('.tt-risk-followup-readonly-body ul > li[data-task')
     })
 
     test('search-focus on a closed risk with no follow-up still opens the section, with no preview row', () => {
