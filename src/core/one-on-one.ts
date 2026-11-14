@@ -29,7 +29,8 @@ function openTask(line: string): { indent: number; blank: boolean } | null {
 /**
  * The note after a New 1:1: every open task of `noteMd` (outside code fences)
  * whose text is not blank is carried — copied, with its subtree, into the new
- * block's `{carryover}` — and marked `[>]` in place. The block is the resolved
+ * block's first unfenced `{carryover}` line (or under their own heading) — and
+ * marked `[>]` in place. The block is the resolved
  * template (`body`, or a bare heading when the template is missing), joined to
  * the note after a `---` rule.
  *
@@ -70,13 +71,29 @@ export function buildOneOnOne(noteMd: string, body: string | null, ctx: Template
   // Exactly '' when nothing is carried: resolveTemplate drops the section only for an empty carryover.
   const carryover = items.join('\n')
   const template = body ?? FALLBACK_BODY
-  let block = resolveTemplate(template, { ...ctx, carryover })
-  if (!template.includes('{carryover}') && items.length) {
-    // No place for the items in the template (edited away, or the fallback):
-    // they go under their own heading right after the block's first line.
-    const nl = block.indexOf('\n')
-    const [first, rest] = nl < 0 ? [block, ''] : [block.slice(0, nl), block.slice(nl)]
-    block = `${first}\n### ${t(ctx.locale, 'one_on_one_carried_heading')}\n${carryover}${rest}`
+  let block: string
+  if (!items.length) block = resolveTemplate(template, { ...ctx, carryover })
+  else {
+    // The originals are already `[>]`, so the items must land exactly once as
+    // real tasks. Only a line that is exactly `{carryover}` (the same line the
+    // empty-section rule in resolveTemplate matches) and sits outside a code
+    // fence can hold them: anywhere else (`- {carryover}`, `Carried:
+    // {carryover}`, inside a fence) the first copy would reload as plain text
+    // or code. The first such line takes them; every other occurrence resolves
+    // to '', or a second copy would stay open and be carried again next time.
+    const lines = template.split('\n')
+    const { fenced } = fencedLines(lines)
+    const slot = lines.findIndex((l, i) => l === '{carryover}' && !fenced[i])
+    const kept = lines.map((l, i) => (i === slot ? l : l.split('{carryover}').join(''))).join('\n')
+    block = resolveTemplate(kept, { ...ctx, carryover })
+    if (slot < 0) {
+      // No place for the items in the template (edited away, or the fallback):
+      // they go under their own heading right after the block's first line —
+      // or before it when that line opens a code fence, where they would be code.
+      const blockLines = block.split('\n')
+      blockLines.splice(fencedLines(blockLines).fenced[0] ? 0 : 1, 0, `### ${t(ctx.locale, 'one_on_one_carried_heading')}`, carryover)
+      block = blockLines.join('\n')
+    }
   }
 
   const markedNote = marked.join('\n')

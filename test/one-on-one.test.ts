@@ -1,4 +1,5 @@
 import { buildOneOnOne } from '../src/core/one-on-one'
+import { fencedLines } from '../src/core/markdown'
 import { builtinTemplates, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
 import { t } from '../src/core/i18n'
 
@@ -102,4 +103,43 @@ test('a deeper task is carried dedented by its own indent, and the rest of the n
   const r = buildOneOnOne(note, SEED_EN, ctx)
   expect(r.md.split('\n---\n')[0]).toBe('intro\n\n    - [>] deep\n      - child\n\n## Later\ntext')
   expect(r.md).toContain('### Carried over\n- [ ] deep\n  - child\n### How')
+})
+
+describe('the carried item lands exactly once as an open task, whatever the template does with {carryover}', () => {
+  const NOTE = '- [ ] Ship plan'
+  /** The new block's lines (the note holds no rule, so the block is everything after the first one). */
+  function expectCarriedOnce(template: string) {
+    const r = buildOneOnOne(NOTE, template, ctx)
+    const [head, ...rest] = r.md.split('\n---\n')
+    expect(head).toBe('- [>] Ship plan')
+    const block = rest.join('\n---\n').split('\n')
+    const { fenced } = fencedLines(block)
+    expect(block.filter(l => l.includes('Ship plan'))).toEqual(['- [ ] Ship plan'])
+    expect(fenced[block.indexOf('- [ ] Ship plan')]).toBe(false)
+    return block
+  }
+
+  test('a bullet holding the placeholder', () => {
+    expect(expectCarriedOnce('## Mine\n- {carryover}\n- x')).toEqual(['## Mine', '### Carried over', '- [ ] Ship plan', '- ', '- x'])
+  })
+
+  test('the placeholder inline in a sentence', () => {
+    expect(expectCarriedOnce('## Mine\nCarried: {carryover}')).toEqual(['## Mine', '### Carried over', '- [ ] Ship plan', 'Carried: '])
+  })
+
+  test('the placeholder inside a code fence', () => {
+    expect(expectCarriedOnce('## Mine\n```\n{carryover}\n```')).toEqual(['## Mine', '### Carried over', '- [ ] Ship plan', '```', '', '```'])
+  })
+
+  test('a template whose first line opens a fence and has no placeholder', () => {
+    expect(expectCarriedOnce('```\ncode\n```\n- x')).toEqual(['### Carried over', '- [ ] Ship plan', '```', 'code', '```', '- x'])
+  })
+
+  test('the placeholder twice: only the first standalone line is filled', () => {
+    expect(expectCarriedOnce('## Mine\n### A\n{carryover}\n### B\n{carryover}')).toEqual(['## Mine', '### A', '- [ ] Ship plan', '### B', ''])
+  })
+
+  test('a fenced placeholder line before a real one leaves the real one filled', () => {
+    expect(expectCarriedOnce('## Mine\n```\n{carryover}\n```\n{carryover}')).toEqual(['## Mine', '```', '', '```', '- [ ] Ship plan'])
+  })
 })
