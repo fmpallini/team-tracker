@@ -740,6 +740,10 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
       handle.dialogEl.addEventListener('keydown', (e) => {
         const ev = e as KeyboardEvent
         if (ev.key !== 'Enter' || !isMoveChord(ev)) return
+        // A field that already used the keypress keeps it: in the notes
+        // editor Ctrl+Enter makes or toggles a checklist item (ui/editor.ts's
+        // makeTask preventDefaults it), not save-and-next.
+        if (ev.defaultPrevented) return
         ev.preventDefault()
         if (summaryInput.value.trim() === '') {
           summaryError.textContent = t(lc, 'kanban_name_required')
