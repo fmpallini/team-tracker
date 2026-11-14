@@ -17,8 +17,10 @@ write rich text with shortcuts or markdown, switch between fully separate
 teams, jump to any module, item or favorite in any team with Fast Switch
 (`Ctrl+Shift+K`), follow `@`-references
 (plain click jumps to the item, `Ctrl`+click opens it in the second pane),
-drop in one-key templates, run a kanban board with custom columns, drag a risk
-on the chance × impact chart to re-score it, and switch to dark mode.
+drop in one-key templates, tick off checklists and carry the open items into
+the next 1:1 (with a reminder when one is overdue), run a kanban board with
+custom columns, drag a risk on the chance × impact chart to re-score it, and
+switch to dark mode.
 
 ![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, module tabs, favorites, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
 

@@ -303,7 +303,7 @@ describe('Editor tab', () => {
   test('lists the code-block / blockquote / link shortcuts and syntax', () => {
     showHelp('en-US', { tab: 'editor' })
     const text = panelText()
-    expect(text).not.toContain('Ctrl+E') // inline code was removed
+    expect(text).not.toMatch(/Ctrl\+E(?!nter|nd)/) // inline code was removed (Ctrl+Enter and Ctrl+End are other keys)
     expect(text).toContain('Ctrl+Shift+E') // code block shortcut
     expect(text).toContain('Ctrl+Shift+9') // blockquote shortcut
     expect(text).toContain('Ctrl+K') // link shortcut (Ctrl+K inserts a link in the editor)
@@ -326,6 +326,18 @@ describe('Editor tab', () => {
     expect(text).toContain('Undo')
     expect(text).toContain('Redo')
     expect(text.indexOf('Ctrl+Z')).toBeGreaterThan(text.indexOf('Ctrl+K'))
+  })
+
+  test('lists the checklist keys: Ctrl+Enter, typed [ ] and Ctrl+Home / Ctrl+End', () => {
+    showHelp('en-US', { tab: 'editor' })
+    const all = codes()
+    expect(all).toContain('Ctrl+Enter')
+    expect(all).toContain('[ ] ')
+    expect(all).toContain('Ctrl+Home / Ctrl+End')
+    expect(panelText()).toContain('Checklist item')
+    document.body.innerHTML = ''
+    showHelp('pt-BR', { tab: 'editor' })
+    expect(panelText()).toContain('Item de checklist')
   })
 
   test('(pt-BR) keeps markdown examples and key names in Portuguese', () => {
@@ -411,12 +423,24 @@ describe('module tabs', () => {
 
   test('People navigate by org chart: its section replaces the ↑/↓ row and the chord moves the person', () => {
     showHelp('en-US', { tab: 'people' })
-    expect(headings()).toEqual(['Org chart', 'Lists & cards'])
+    expect(headings()).toEqual(['Org chart', '1:1 notes', 'Carry-over and cadence', 'Lists & cards'])
     expect(codes()).not.toContain('↑ / ↓')
     expect(codes()).toContain('↑ / ↓ (← / →)')
     const move = Array.from(document.querySelectorAll('.tt-help-table tr')).find((r) => r.querySelector('.tt-help-code')?.textContent === 'Ctrl+← / → / ↑ / ↓')
     expect(move?.textContent).toContain('Move the person')
     expect(headings()).not.toContain('Date fields')
+  })
+
+  test('People tab documents Alt+O, the carry-over and the cadence, in both locales', () => {
+    showHelp('en-US', { tab: 'people' })
+    expect(codes()).toContain('Alt+O')
+    const text = panelText()
+    expect(text).toContain('New 1:1')
+    expect(text).toContain('↪')
+    expect(text).toContain('Preferences → Templates')
+    document.body.innerHTML = ''
+    showHelp('pt-BR', { tab: 'people' })
+    expect(panelText()).toContain('Nova 1:1')
   })
 
   test('Tasks name the board move chord, Risks the risk move, Milestones neither', () => {

@@ -44,6 +44,9 @@ const blockRows: Rows = [
   ['Ctrl+Shift+7', 'help_shortcut_ol'],
   ['Ctrl+Shift+9 / Ctrl+Shift+Q', 'help_shortcut_quote'],
   ['Ctrl+Shift+6 / Ctrl+Shift+E', 'help_shortcut_codeblock'],
+  ['Ctrl+Enter', 'help_task_toggle'],
+  ['[ ] ', 'help_task_typed'],
+  ['Ctrl+Home / Ctrl+End', 'help_doc_start_end'],
 ]
 
 const linkRows = (lc: Locale): Rows => [
@@ -288,6 +291,8 @@ const TABS: readonly TabDef[] = [
         ['↑ / ↓ (← / →)', 'help_people_nav'],
         ['Ctrl+← / → / ↑ / ↓', 'help_people_move'],
       ]),
+      rowsSection(ctx, 'help_sec_one_on_one', [['Alt+O', 'help_one_on_one_new']]),
+      textSection(ctx, 'help_one_on_one_heading', 'help_one_on_one_text'),
       listsSection(ctx, false),
     ],
   },
