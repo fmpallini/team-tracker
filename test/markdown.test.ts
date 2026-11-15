@@ -1,7 +1,7 @@
 import css from '../styles.css?raw'
 import { unlinkRefsInText } from '../src/core/refs'
 import { parseImageLine } from '../src/core/image-ref'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, fencedLines } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, convertCheckboxItems, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, fencedLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -1595,6 +1595,37 @@ test('a code block that starts with blank lines keeps every one across saves (th
   const md = '```\n\n\nx\n```'
   expect(roundTrip(md)).toBe(md)
   expect(roundTrip(roundTrip(md))).toBe(md)
+})
+
+describe('convertCheckboxItems (other apps send a checklist item as a checkbox or an ARIA checkbox)', () => {
+  const md = (html: string): string => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    convertCheckboxItems(root)
+    return htmlToMd(root)
+  }
+
+  test("a leading <input type=checkbox> (GitHub, Confluence) becomes the item's state, nested too", () => {
+    expect(md('<ul><li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled checked> Ship it<ul><li><input type="checkbox" disabled> Write notes</li></ul></li></ul>'))
+      .toBe('- [x] Ship it\n  - [ ] Write notes')
+  })
+
+  test('the box may sit in a wrapper (<p>, <label>)', () => {
+    expect(md('<ul><li><p><label><input type="checkbox" checked>Done</label></p></li></ul>')).toBe('- [x] Done')
+  })
+
+  test('an ARIA checkbox item (Google Docs) takes aria-checked', () => {
+    expect(md('<ul><li role="checkbox" aria-checked="true">a</li><li role="checkbox" aria-checked="false">b</li></ul>')).toBe('- [x] a\n- [ ] b')
+  })
+
+  test("a box after the item's text, or in a numbered item, is not a task", () => {
+    expect(md('<ul><li>Agree<input type="checkbox" checked></li></ul>')).toBe('- Agree')
+    expect(md('<ol><li><input type="checkbox" checked> a</li></ol>')).toBe('1. a')
+  })
+
+  test("a nested item's box does not make its parent a task", () => {
+    expect(md('<ul><li>Parent<ul><li><input type="checkbox"> child</li></ul></li></ul>')).toBe('- Parent\n  - [ ] child')
+  })
 })
 
 describe('convertWordLists (Word list paragraphs are <p style="mso-list:…"> with a glyph span, not <ul>)', () => {

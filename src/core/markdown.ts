@@ -746,6 +746,35 @@ export function unwrapBlockContainers(root: HTMLElement): void {
   }
 }
 
+/**
+ * Other apps put a checklist item on the clipboard as an `<li>` led by an
+ * `<input type="checkbox">` (GitHub, Confluence, most rendered markdown) or
+ * as an ARIA checkbox `<li role="checkbox" aria-checked>` (Google Docs).
+ * htmlToMd reads neither, so the boxes and their states were lost on paste.
+ * Each such item gets the `data-task` htmlToMd writes as `[ ]` / `[x]`, and
+ * the box is dropped with the space after it. Only a box with no text before
+ * it in its own item counts, so "Agree [box]" stays text; a numbered item's
+ * state is ignored by htmlToMd anyway (`1. [ ] a` is not a task).
+ */
+export function convertCheckboxItems(root: HTMLElement): void {
+  root.querySelectorAll('li').forEach((li) => {
+    if (li.getAttribute('role') === 'checkbox') {
+      li.setAttribute('data-task', li.getAttribute('aria-checked') === 'true' ? 'done' : 'open')
+      return
+    }
+    const box = Array.from(li.querySelectorAll('input')).find((i) => i.type === 'checkbox' && i.closest('li') === li)
+    if (!box) return
+    const before = li.ownerDocument.createRange()
+    before.setStart(li, 0)
+    before.setEndBefore(box)
+    if (before.toString().trim() !== '') return
+    li.setAttribute('data-task', box.hasAttribute('checked') ? 'done' : 'open')
+    const next = box.nextSibling
+    box.remove()
+    if (next?.nodeType === Node.TEXT_NODE) next.textContent = (next.textContent ?? '').replace(/^\s+/, '')
+  })
+}
+
 const WORD_LIST_LEVEL = /mso-list:\s*[^;"]*\blevel(\d+)/i
 const WORD_LIST_GLYPH = /^[0-9a-z]+[.)]$/i
 

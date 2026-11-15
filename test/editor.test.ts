@@ -4849,7 +4849,7 @@ describe('checklists', () => {
     expect(ed.querySelector('li')!.contains(window.getSelection()!.anchorNode)).toBe(true)
   })
 
-  test('Ctrl+Enter acts on every bullet a selection touches', () => {
+  test('Ctrl+Enter on a selection with plain bullets makes them tasks and leaves the tasks as they are', () => {
     const ed = mount('- a\n- [x] b\n- c')
     const lis = ed.querySelectorAll('li')
     const r = document.createRange()
@@ -4857,7 +4857,7 @@ describe('checklists', () => {
     r.setEnd(lis[1]!.firstChild!, 1)
     window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
     ctrlEnter(ed)
-    expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b\n- c')
+    expect(editor!.getMd()).toBe('- [ ] a\n- [x] b\n- c')
   })
 
   test('Ctrl+Enter does nothing in a numbered list, a quote or a code block', () => {
@@ -4955,5 +4955,252 @@ describe('checklists', () => {
     expect(ed.style.getPropertyValue('--tt-task-open')).toBe(JSON.stringify(t('en-US', 'editor_task_open_sr')))
     expect(ed.style.getPropertyValue('--tt-task-done')).toBe(JSON.stringify(t('en-US', 'editor_task_done_sr')))
     expect(ed.style.getPropertyValue('--tt-task-carried')).toBe(JSON.stringify(t('en-US', 'editor_task_carried_sr')))
+  })
+
+  describe('nested checklists', () => {
+    const TREE = '- [ ] a\n  - [ ] b\n    - [ ] c\n  - [x] d\n  - plain\n  - [>] e\n- [ ] f'
+
+    test('checking a parent checks every task below it; carried and plain items stay', () => {
+      const ed = mount(TREE); caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n    - [x] c\n  - [x] d\n  - plain\n  - [>] e\n- [ ] f')
+    })
+
+    test('unchecking a parent unchecks every task below it', () => {
+      const ed = mount('- [x] a\n  - [x] b\n    - [x] c\n  - [>] e')
+      caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n    - [ ] c\n  - [>] e')
+    })
+
+    test('a box click on a parent cascades too, as one undo step', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n    - [ ] c')
+      const li = ed.querySelector('li')!
+      li.style.paddingLeft = '24px'
+      clickAt(li, 6)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n    - [x] c')
+      dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n    - [ ] c')
+    })
+
+    test('checking a child leaves its parent open while another sub-task is open', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n  - [ ] c')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n  - [x] c')
+    })
+
+    test('checking the last open sub-task checks its parent, and up the chain while each level is complete', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n    - [x] c\n    - [ ] d\n  - [x] e\n- [ ] f')
+      caretIn(ed, 'd')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n    - [x] c\n    - [x] d\n  - [x] e\n- [ ] f')
+    })
+
+    test('the chain stops at the first parent that still has open work', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n    - [ ] c\n  - [ ] e')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b\n    - [x] c\n  - [ ] e')
+    })
+
+    test('carried sub-items and plain notes do not hold a parent open; a carried parent is never checked', () => {
+      const ed = mount('- [ ] a\n  - [>] b\n  - note\n  - [ ] c\n- [>] d\n  - [ ] e')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      caretIn(ed, 'e')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [>] b\n  - note\n  - [x] c\n- [>] d\n  - [x] e')
+    })
+
+    test('a plain bullet between a task and its sub-tasks does not stop the chain', () => {
+      const ed = mount('- [ ] a\n  - group\n    - [ ] b')
+      caretIn(ed, 'b')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - group\n    - [x] b')
+    })
+
+    test('the auto-check is part of the same undo step', () => {
+      const ed = mount('- [ ] a\n  - [ ] b')
+      const li = ed.querySelectorAll('li')[1]!
+      li.style.paddingLeft = '24px'
+      clickAt(li, 6)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b')
+      dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b')
+    })
+
+    test('unchecking a child reopens every done task above it, never its siblings', () => {
+      const ed = mount('- [x] a\n  - [x] b\n    - [x] c\n    - [x] d\n  - [x] e')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n    - [ ] c\n    - [x] d\n  - [x] e')
+    })
+
+    test('a selection over a parent and its child toggles the subtree once', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n- [ ] c')
+      const r = document.createRange()
+      r.setStart(ed.querySelectorAll('li')[0]!.firstChild!, 0)
+      r.setEnd(ed.querySelectorAll('li')[1]!.firstChild!, 1)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n- [ ] c')
+    })
+
+    test('a mixed selection checks everything; an all-done one unchecks everything', () => {
+      const ed = mount('- [x] a\n- [ ] b\n- [x] c')
+      const lis = ed.querySelectorAll('li')
+      const r = document.createRange()
+      r.setStart(lis[0]!.firstChild!, 0)
+      r.setEnd(lis[2]!.firstChild!, 1)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n- [x] b\n- [x] c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b\n- [ ] c')
+    })
+
+    test('Tab moving an open task under a done one reopens it', () => {
+      const ed = mount('- [x] a\n- [ ] b')
+      caretIn(ed, 'b')
+      dispatchKey(ed, { key: 'Tab' })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b')
+    })
+
+    test('Tab moving a done task (or a plain bullet) under a done one keeps it done', () => {
+      const ed = mount('- [x] a\n- [x] b\n- note')
+      caretIn(ed, 'b')
+      dispatchKey(ed, { key: 'Tab' })
+      caretIn(ed, 'note')
+      dispatchKey(ed, { key: 'Tab' })
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n  - note')
+    })
+
+    test('Shift+Tab that hands open siblings to a done item reopens it', () => {
+      const ed = mount('- [ ] a\n  - [x] b\n  - [ ] c')
+      caretIn(ed, 'b')
+      dispatchKey(ed, { key: 'Tab', shiftKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b\n  - [ ] c')
+    })
+
+    test('Enter at the end of a nested done item starts an open one and reopens the done parents', () => {
+      const ed = mount('- [x] a\n  - [x] b')
+      caretIn(ed, 'b')
+      // What Chromium leaves after the native split: a clone of the done item.
+      const fresh = document.createElement('li')
+      fresh.setAttribute('data-task', 'done')
+      fresh.appendChild(document.createElement('br'))
+      ed.querySelectorAll('li')[1]!.after(fresh)
+      const r = document.createRange(); r.setStart(fresh, 0); r.collapse(true)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      ed.dispatchEvent(new InputEvent('input', { inputType: 'insertParagraph', bubbles: true }))
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b\n  - [ ] ')
+    })
+
+    test('"[] " typed in a bullet under a done task reopens it', () => {
+      const ed = mount('- [x] a\n  - x')
+      const li = ed.querySelectorAll('li')[1]!
+      li.textContent = '[] '
+      caretIn(ed, '[] ')
+      ed.dispatchEvent(new Event('input', { bubbles: true }))
+      expect(li.getAttribute('data-task')).toBe('open')
+      expect(ed.querySelector('li')!.getAttribute('data-task')).toBe('open')
+    })
+
+    test('typing in a plain item under a done task leaves the task done', () => {
+      const ed = mount('- [x] a\n  - note')
+      caretIn(ed, 'note')
+      ed.dispatchEvent(new Event('input', { bubbles: true }))
+      expect(editor!.getMd()).toBe('- [x] a\n  - note')
+    })
+
+    test('a carried parent is never toggled, and neither is its subtree', () => {
+      const ed = mount('- [>] a\n  - [ ] b')
+      caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [>] a\n  - [ ] b')
+    })
+
+    /** Collapses the caret at the start of the `index`th `<li>`. */
+    function caretAtItemStart(ed: HTMLElement, index: number): void {
+      const r = document.createRange()
+      r.setStart(ed.querySelectorAll('li')[index]!, 0); r.collapse(true)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+    }
+
+    test('Enter on an empty sub-item outdents it and keeps its box', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n  - [ ] \n  - [ ] c')
+      caretAtItemStart(ed, 2)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(true)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n- [ ] \n  - [ ] c')
+      const li = window.getSelection()!.anchorNode
+      expect(ed.querySelectorAll(':scope > ul > li')[1]!.contains(li)).toBe(true)
+    })
+
+    test('Enter at the end of a parent starts its first child instead of taking its children away', () => {
+      const ed = mount('- [x] a\n  - [x] b\n- c\n  - d')
+      caretIn(ed, 'a')
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(true)
+      // A new open sub-task under a done one reopens it.
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] \n  - [x] b\n- c\n  - d')
+      expect(ed.querySelectorAll('li')[1]!.contains(window.getSelection()!.anchorNode)).toBe(true)
+      caretIn(ed, 'c')
+      dispatchKey(ed, { key: 'Enter', code: 'Enter' })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] \n  - [x] b\n- c\n  - \n  - d')
+    })
+
+    test('Enter in the middle of a parent\'s text is left to the browser', () => {
+      const ed = mount('- [ ] ab\n  - [ ] c')
+      const r = document.createRange(); r.setStart(ed.querySelector('li')!.firstChild!, 1); r.collapse(true)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(false)
+    })
+
+    test('an Enter or Backspace that belongs to an IME composition is left to the browser', () => {
+      const ed = mount('- [ ] a\n  - [ ] ')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter', isComposing: true }).defaultPrevented).toBe(false)
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace', isComposing: true }).defaultPrevented).toBe(false)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] ')
+    })
+
+    test('Enter on an empty top-level item is left to the browser', () => {
+      const ed = mount('- [ ] a\n- [ ] ')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(false)
+    })
+
+    test('Backspace at the start of a task removes only its box, as one undo step', () => {
+      const ed = mount('- [ ] a\n  - [x] b')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(true)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - b')
+      // The next Backspace is the browser's own.
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(false)
+      dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b')
+    })
+
+    test('Backspace inside a task\'s text is left to the browser', () => {
+      const ed = mount('- [ ] ab')
+      caretIn(ed, 'ab')
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(false)
+    })
+
+    test('a done item emptied by a delete reopens, so new text is not struck through', () => {
+      const ed = mount('- [x] a')
+      const li = ed.querySelector('li')!
+      li.replaceChildren(document.createElement('br'))
+      caretAtItemStart(ed, 0)
+      ed.dispatchEvent(new InputEvent('input', { inputType: 'deleteByCut', bubbles: true }))
+      expect(li.getAttribute('data-task')).toBe('open')
+    })
+
+    test('a task under a numbered item still cascades from a task parent', () => {
+      const ed = mount('- [ ] a\n  1. step\n    - [ ] b')
+      caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  1. step\n    - [x] b')
+    })
   })
 })

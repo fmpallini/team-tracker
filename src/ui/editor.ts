@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport, copyText } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver, type TaskState } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, convertCheckboxItems, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver, type TaskState } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showHelp } from './help'
 import { showModal, toast } from './modal'
@@ -747,6 +747,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return siblings.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1)
   }
 
+  /**
+   * Tab / Shift+Tab (and Enter on an empty sub-item) on `items`, as one undo
+   * step, keeping the caret at `caretOffset` in `caretBlock`. An open task
+   * may end up under a done one (Tab under a done item; Shift+Tab handing
+   * the following siblings to a done item), which reopens it.
+   */
+  function shiftListItems(items: HTMLElement[], outdent: boolean, caretBlock: HTMLElement, caretOffset: number): void {
+    edit(() => {
+      const moved = outdent ? outdentListItems(items) : indentListItems(items)
+      if (!moved) return
+      items.forEach(settleOpenWork)
+      restoreCaret(caretBlock, caretOffset)
+    })
+  }
+
   // caret-after-inline placement (bare, auto-NBSP, always-NBSP) lives in
   // ./editor-dom.ts as caretAfterInline — shared with atref.ts.
 
@@ -825,27 +840,148 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   // shape core/markdown.ts reads and writes as `- [ ] ` / `- [x] ` / `- [>] `).
   // A numbered item never carries a state: `1. [ ] x` is not a task.
 
-  /**
-   * The state Ctrl+Enter / a box click moves `li` to, or null to leave it:
-   * a plain bullet becomes open, open and done swap (only when `toggle` —
-   * the toolbar button makes items but never flips one), and a carried item
-   * is never touched (that state belongs to the New 1:1 carry-over).
-   */
-  function nextTaskState(li: HTMLElement, toggle: boolean): TaskState | null {
-    const cur = li.getAttribute('data-task')
-    if (cur === 'carried') return null
-    if (cur === 'open') return toggle ? 'done' : null
-    if (cur === 'done') return toggle ? 'open' : null
-    return 'open'
+  // Nested checklists keep one rule: a done item never holds open work below
+  // it. Checking or unchecking an item moves its whole subtree with it, and
+  // anything that puts an open task under a done one (unchecking a child,
+  // Tab, Shift+Tab handing over siblings, Enter, typing "[] ") reopens the
+  // done items above it. The other way round, checking the last open
+  // sub-task checks its parent, and so on up while each level is complete.
+  // Carried items are never touched by any of this — that state belongs to
+  // the New 1:1 — and, like plain bullets under a task (notes, not tasks),
+  // never hold a parent open.
+
+  /** The task state of `li` when it is a bullet task, else null. */
+  function taskStateOf(li: HTMLElement): TaskState | null {
+    if (li.parentElement?.tagName !== 'UL') return null
+    const v = li.getAttribute('data-task')
+    return v === 'open' || v === 'done' || v === 'carried' ? v : null
   }
 
-  /** The box click: flips one bullet's state as its own undo step. */
+  /**
+   * Every bullet task nested under `li`, at any depth. Includes a sub-list
+   * contenteditable left as the item's next sibling instead of inside it,
+   * the shape listContainerLi (and htmlToMd) still read as nested under it.
+   */
+  function taskItemsBelow(li: HTMLElement): HTMLElement[] {
+    const roots: Element[] = [li]
+    for (let s = li.nextElementSibling; s && s.tagName !== 'LI'; s = s.nextElementSibling) {
+      if (s.tagName === 'UL' || s.tagName === 'OL') roots.push(s)
+    }
+    return roots.flatMap((r) => Array.from(r.querySelectorAll<HTMLElement>('li[data-task]'))).filter((d) => taskStateOf(d) !== null)
+  }
+
+  /** The `<li>` the list holding `li` is nested under, or null at the top level. */
+  function parentItem(li: HTMLElement): HTMLElement | null {
+    const list = li.parentElement
+    return list && (list.tagName === 'UL' || list.tagName === 'OL') ? listContainerLi(list) : null
+  }
+
+  /** Reopens every done task above `li`. */
+  function reopenDoneAbove(li: HTMLElement): void {
+    for (let p = parentItem(li); p; p = parentItem(p)) {
+      if (taskStateOf(p) === 'done') p.setAttribute('data-task', 'open')
+    }
+  }
+
+  /**
+   * Checks each open task above `li` that has no open task left below it,
+   * walking up until one still has open work (every level above it holds
+   * that same open work). Plain items on the way are passed through.
+   */
+  function completeDoneAbove(li: HTMLElement): void {
+    for (let p = parentItem(li); p; p = parentItem(p)) {
+      if (taskStateOf(p) !== 'open') continue
+      if (taskItemsBelow(p).some((d) => taskStateOf(d) === 'open')) return
+      p.setAttribute('data-task', 'done')
+    }
+  }
+
+  /** Reopens the done tasks above every open task in `li`'s subtree, `li` included. */
+  function settleOpenWork(li: HTMLElement): void {
+    for (const t of [li, ...taskItemsBelow(li)]) {
+      if (taskStateOf(t) === 'open') reopenDoneAbove(t)
+    }
+  }
+
+  /**
+   * Sets `li` and every open or done task below it to `state`; then the
+   * tasks above follow: reopened when it opens, checked when it closed
+   * their last open work.
+   */
+  function setTaskTree(li: HTMLElement, state: 'open' | 'done'): void {
+    li.setAttribute('data-task', state)
+    for (const d of taskItemsBelow(li)) {
+      const cur = taskStateOf(d)
+      if ((cur === 'open' || cur === 'done') && cur !== state) d.setAttribute('data-task', state)
+    }
+    if (state === 'open') reopenDoneAbove(li)
+    else completeDoneAbove(li)
+  }
+
+  /** The box click: swaps an open or done bullet's state, with its subtree, as its own undo step. */
   function toggleTask(li: HTMLElement): void {
-    if (editorsReadOnly || li.parentElement?.tagName !== 'UL') return
-    const next = nextTaskState(li, true)
-    if (!next) return
-    edit(() => li.setAttribute('data-task', next))
+    if (editorsReadOnly) return
+    const cur = taskStateOf(li)
+    if (cur !== 'open' && cur !== 'done') return
+    edit(() => setTaskTree(li, cur === 'open' ? 'done' : 'open'))
     scheduleChange()
+  }
+
+  /** The `<li>` holding a collapsed caret, else null. */
+  function caretListItem(): HTMLElement | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
+    const node = sel.getRangeAt(0).startContainer
+    return editorEl.contains(node) ? closestLi(node) : null
+  }
+
+  /** True when no text of `li` comes before the (collapsed) caret. */
+  function caretAtItemStart(li: HTMLElement): boolean {
+    const caret = window.getSelection()!.getRangeAt(0)
+    const before = document.createRange()
+    before.setStart(li, 0)
+    before.setEnd(caret.startContainer, caret.startOffset)
+    return before.toString() === ''
+  }
+
+  /** `li`'s own sub-list when the (collapsed) caret sits at the end of `li`'s own text, else null. */
+  function caretAtOwnTextEnd(li: HTMLElement): HTMLElement | null {
+    const sub = li.querySelector<HTMLElement>(':scope > ul, :scope > ol')
+    if (!sub) return null
+    const caret = window.getSelection()!.getRangeAt(0)
+    if (sub.contains(caret.startContainer)) return null
+    const after = document.createRange()
+    after.setStart(caret.startContainer, caret.startOffset)
+    after.setEndBefore(sub)
+    return after.toString() === '' ? sub : null
+  }
+
+  /**
+   * A new empty first item of `sub`, holding the caret: a task when the item
+   * it goes above is one (reopening done tasks above it), else plain.
+   */
+  function startFirstSubItem(sub: HTMLElement): void {
+    edit(() => {
+      const li = document.createElement('li')
+      li.appendChild(document.createElement('br'))
+      const first = sub.firstElementChild
+      sub.insertBefore(li, first)
+      if (first instanceof HTMLElement && taskStateOf(first) !== null) {
+        li.setAttribute('data-task', 'open')
+        reopenDoneAbove(li)
+      }
+      placeCaretAtStart(li)
+    })
+  }
+
+  /**
+   * After a delete (Backspace, cut, select-all + Delete): a done item left
+   * empty is reopened. Chromium keeps the emptied `<li>` with its state, so
+   * whatever is typed next would come out struck through.
+   */
+  function reopenEmptiedDone(): void {
+    const li = caretListItem()
+    if (li && taskStateOf(li) === 'done' && (li.textContent ?? '') === '') li.setAttribute('data-task', 'open')
   }
 
   /**
@@ -870,8 +1006,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
 
   /**
    * Ctrl+Enter (`toggle`) and the Checklist toolbar button. With the
-   * selection in list items it acts on each bullet it touches (see
-   * nextTaskState; numbered items are skipped). Outside any list, the
+   * selection in list items it acts on the bullets it touches (numbered
+   * items are skipped) as one group, never flipping each on its own: when
+   * any is a plain bullet, the plain ones become open tasks and the tasks
+   * stay as they are; otherwise (Ctrl+Enter only) all of them are checked
+   * when any is open, else all unchecked — each with its subtree, so a
+   * selected child under a selected parent simply follows. Carried items
+   * are left alone. Outside any list, the
    * top-level line holding the selection's start becomes an open task item,
    * keeping its inline content and the caret's place. Nothing inside a
    * quote or a code block. One undo step either way.
@@ -884,12 +1025,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!editorEl.contains(range.startContainer)) return
     const items = touchedListItems(range)
     if (items.length > 0) {
-      const changes = items
-        .filter((li) => li.parentElement?.tagName === 'UL')
-        .map((li) => [li, nextTaskState(li, toggle)] as const)
-        .filter((c): c is readonly [HTMLElement, TaskState] => c[1] !== null)
-      if (changes.length === 0) return
-      edit(() => { for (const [li, state] of changes) li.setAttribute('data-task', state) })
+      const bullets = items.filter((li) => li.parentElement?.tagName === 'UL')
+      const plain = bullets.filter((li) => taskStateOf(li) === null)
+      const tasks = bullets.filter((li) => taskStateOf(li) === 'open' || taskStateOf(li) === 'done')
+      if (plain.length > 0) {
+        edit(() => { for (const li of plain) { li.setAttribute('data-task', 'open'); reopenDoneAbove(li) } })
+      } else if (toggle && tasks.length > 0) {
+        const target = tasks.some((li) => taskStateOf(li) === 'open') ? 'done' : 'open'
+        edit(() => { for (const li of tasks) setTaskTree(li, target) })
+      } else {
+        return
+      }
       scheduleChange()
       return
     }
@@ -917,7 +1063,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /**
    * After a native Enter (`insertParagraph`) inside a task item: Chromium
    * clones the item's attributes onto the new one, so splitting a done item
-   * would make another done item. The new item is set open. It is the one
+   * would make another done item. The new item is set open, and so are the
+   * done items above it (it is open work under them). It is the one
    * holding the caret, except for an Enter at the very start of an item:
    * there Chromium leaves the caret (and the text) in the lower item and puts
    * the new, empty one above it. Enter on an empty item leaves the list
@@ -932,6 +1079,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const fresh = prev instanceof HTMLElement && prev.tagName === 'LI' && prev.hasAttribute('data-task') &&
       (prev.textContent ?? '') === '' && (li.textContent ?? '') !== '' ? prev : li
     if (fresh.getAttribute('data-task') !== 'open') fresh.setAttribute('data-task', 'open')
+    reopenDoneAbove(fresh)
   }
 
   /**
@@ -1301,6 +1449,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           if (block.tagName === 'LI' && block.parentElement?.tagName === 'UL') {
             edit(() => {
               block.setAttribute('data-task', 'open')
+              reopenDoneAbove(block)
               block.replaceChildren(document.createElement('br'))
               placeCaretAtStart(block)
             })
@@ -1960,6 +2109,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     ensureBlock()
     if (e instanceof InputEvent && e.inputType === 'insertParagraph') openSplitTask()
+    if (e instanceof InputEvent && e.inputType.startsWith('delete')) reopenEmptiedDone()
     handleAutoFormat()
     checkTriggers()
     syncPreHighlight()
@@ -2088,16 +2238,48 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         scheduleChange()
         return
       }
+      // Enter on an empty sub-item steps it out one level, exactly as
+      // Shift+Tab does. Chromium's own outdent here drops the item's checkbox
+      // and leaves the sub-list it came from beside its parent item instead
+      // of inside it. An empty top-level item still leaves the list natively.
+      // Not while an IME composition is open: that Enter confirms the composition.
+      const caretLi = e.isComposing ? null : caretListItem()
+      if (caretLi && (caretLi.textContent ?? '') === '' && parentItem(caretLi)) {
+        e.preventDefault()
+        shiftListItems([caretLi], true, caretLi, 0)
+        return
+      }
+      // Enter at the end of an item that has sub-items starts its first
+      // sub-item, as outliners do. Natively the new item takes the whole
+      // sub-list with it, so the children silently change parent (and a
+      // check on the parent no longer reaches them).
+      const subList = caretLi && caretAtOwnTextEnd(caretLi)
+      if (subList) {
+        e.preventDefault()
+        startFirstSubItem(subList)
+        scheduleChange()
+        return
+      }
+    }
+    // Backspace at the very start of a task item removes only its box (the
+    // checklist convention of Docs and Notion); the next Backspace is the
+    // browser's. Natively it would merge the item into the line above — a
+    // sub-task's text joins its parent's line and its box is gone.
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing) {
+      const li = caretListItem()
+      if (li && taskStateOf(li) !== null && caretAtItemStart(li)) {
+        e.preventDefault()
+        edit(() => li.removeAttribute('data-task'))
+        scheduleChange()
+        return
+      }
     }
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       const listItems = selectedListItems()
       if (listItems.length > 0) {
         const ctx = currentBlockAndOffset() // collapsed-caret case only; null for multi-item selections
-        edit(() => {
-          const moved = e.shiftKey ? outdentListItems(listItems) : indentListItems(listItems)
-          if (moved) restoreCaret(ctx ? (ctx.block) : listItems[0]!, ctx ? ctx.caretOffset : 0)
-        })
+        shiftListItems(listItems, e.shiftKey, ctx ? ctx.block : listItems[0]!, ctx ? ctx.caretOffset : 0)
         return
       }
       if (e.shiftKey) {
@@ -2211,6 +2393,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     })
     // Word sends list items as <p style="mso-list:…"> paragraphs; make them real lists first.
     convertWordLists(wrapper)
+    // A checklist copied from GitHub or Google Docs keeps its boxes and their states.
+    convertCheckboxItems(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
     // container" fragment into real, separately-rendered blocks before the
     // block-child check below — see unwrapBlockContainers' own doc comment.
