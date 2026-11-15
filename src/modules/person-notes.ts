@@ -94,11 +94,12 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     onclick: openEdit,
   })
 
-  const oneOnOneBtn = iconButton({
-    class: 'tt-person-header-btn tt-person-header-one-on-one-btn',
-    title: t(lc, 'person_new_one_on_one_title'), icon: 'oneOnOne',
-    onclick: () => newOneOnOne(),
-  })
+  // A labelled button, like "+ Person": the 1:1 is this page's main action.
+  const oneOnOneBtn = el(
+    'button',
+    { class: 'tt-btn tt-person-header-one-on-one-btn', type: 'button', title: t(lc, 'person_new_one_on_one_title'), onclick: () => newOneOnOne() },
+    t(lc, 'person_new_one_on_one_btn')
+  )
 
   // "Last 1:1: 3 days ago · every 14 days", red once the next one is late.
   const cadenceEl = el('button', { type: 'button', class: 'tt-person-cadence', onclick: openEdit })
@@ -133,8 +134,9 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   const headerEl = el(
     'div',
     { class: 'tt-person-header' },
-    el('div', { class: 'tt-person-header-id' }, headerTitleEl, cadenceEl),
-    el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, oneOnOneBtn, editBtn, gotoOrgBtn)
+    el('div', { class: 'tt-person-header-id' }, headerTitleEl),
+    // The 1:1 status and its button read as one group on the right.
+    el('div', { class: 'tt-person-header-right' }, headerBadgeSlot, cadenceEl, oneOnOneBtn, editBtn, gotoOrgBtn)
   )
 
   const bundle = createModuleEditor(ctx, teamId, {

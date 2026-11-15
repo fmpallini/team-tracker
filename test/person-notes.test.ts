@@ -485,10 +485,13 @@ describe('New 1:1', () => {
     expect(li.closest('ul')!.previousElementSibling?.textContent).toBe('1:1')
   })
 
-  test('the button carries the localized title with its hotkey', () => {
+  test('the button is labelled like "+ Person" and carries its hotkey in the title', () => {
     const { container, store, pm } = setup(withNotes(''))
     render(container, PERSON_LOC, store, pm)
-    expect(container.querySelector('.tt-person-header-one-on-one-btn')?.getAttribute('title')).toBe('New 1:1 (Alt+O)')
+    const btn = container.querySelector('.tt-person-header-one-on-one-btn')!
+    expect(btn.textContent).toBe('+ New 1:1')
+    expect(btn.classList.contains('tt-btn')).toBe(true)
+    expect(btn.getAttribute('title')).toBe('New 1:1 (Alt+O)')
   })
 
   test('NEW_ONE_ON_ONE_EVENT on the pane body runs the same action', () => {

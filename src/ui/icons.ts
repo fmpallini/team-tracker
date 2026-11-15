@@ -78,9 +78,6 @@ const PATHS = {
   shapeSquare: '<rect x="3.4" y="3.4" width="9.2" height="9.2"/>',
   shapeTriangle: '<path d="M8 3l5.1 9H2.9z"/>',
   person: '<circle cx="8" cy="5.25" r="2.5"/><path d="M3 13.5c.5-2.6 2.5-4 5-4s4.5 1.4 5 4"/>',
-  // Two people face to face: the person page's New 1:1 button.
-  oneOnOne:
-    '<circle cx="4.5" cy="5.5" r="2"/><circle cx="11.5" cy="5.5" r="2"/><path d="M1.25 13c.35-2.2 1.55-3.4 3.25-3.4S7.4 10.8 7.75 13M8.25 13c.35-2.2 1.55-3.4 3.25-3.4s2.9 1.2 3.25 3.4"/>',
   people:
     '<circle cx="6" cy="5.75" r="2.25"/><circle cx="11.5" cy="6.5" r="1.75"/><path d="M1.75 13c.4-2.3 2.1-3.6 4.25-3.6s3.85 1.3 4.25 3.6M10.5 9.6c1.9 0 3.2 1.1 3.75 3.1"/>',
   tasks: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5.5 8.2l1.9 1.9 3.2-3.8"/>',
