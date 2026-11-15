@@ -848,6 +848,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-pane-tab .tt-kind-icon, .tt-pane-menu-item .tt-kind-icon, .tt-pane-modules-btn { position: relative; }
 .tt-due-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); pointer-events: none; }
 .tt-due-dot.soon { background: var(--brass); }
+.tt-pane-modules-btn > .tt-due-dot { top: 1px; right: 1px; }
 .tt-pane-tab:hover:not(:disabled) { background: var(--hover-soft); }
 .tt-pane-tab:disabled { cursor: not-allowed; opacity: .6; }
 .tt-pane-tab:focus-visible { outline-offset: -2px; }
@@ -2082,13 +2083,8 @@ select option { background: var(--bg); color: var(--fg); }
    header control is always on show, so no borderless row-hover-reveal
    treatment here. */
 .tt-person-header-btn { font-size: 1rem; }
-/* The 1:1 status, right beside the New 1:1 button: reads as text, opens the person dialog. */
-.tt-person-cadence {
-  padding: 0; border: 0; background: none; white-space: nowrap;
-  font-size: .8rem; line-height: 1.2; color: var(--muted); text-align: right; cursor: pointer;
-  transition: color var(--dur-fast) var(--ease);
-}
-.tt-person-cadence:hover { color: var(--fg); }
+/* The 1:1 status, plain text right beside the New 1:1 button (the edit button opens its fields). */
+.tt-person-cadence { white-space: nowrap; font-size: .8rem; line-height: 1.2; color: var(--muted); }
 .tt-person-cadence.overdue { color: var(--danger-text); }
 .tt-person-notes .tt-editor { flex: 1; }
 

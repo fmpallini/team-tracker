@@ -102,7 +102,8 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   )
 
   // "Last 1:1: 3 days ago · every 14 days", red once the next one is late.
-  const cadenceEl = el('button', { type: 'button', class: 'tt-person-cadence', onclick: openEdit })
+  // Plain text: the edit button beside it opens the same dialog.
+  const cadenceEl = el('span', { class: 'tt-person-cadence' })
   function renderCadence(p: Person): void {
     const prefs = ctx.store.doc.prefs
     const today = todayIso()

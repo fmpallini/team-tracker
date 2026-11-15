@@ -629,10 +629,10 @@ describe('New 1:1', () => {
     expect(line(container).textContent).toBe('No 1:1 yet · every 21 days')
   })
 
-  test('the status line opens the edit dialog, and Save repaints it with the new cadence', () => {
+  test('the edit dialog’s cadence Save repaints the status line', () => {
     const { container, store, pm } = setup(withNotes(''))
     render(container, PERSON_LOC, store, pm)
-    line(container).click()
+    container.querySelector<HTMLButtonElement>('.tt-person-header-edit-btn')!.click()
     const every = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
     every.value = 'custom'
     every.dispatchEvent(new Event('change'))
@@ -654,11 +654,12 @@ describe('New 1:1', () => {
     expect(line(container).textContent).toBe('Last 1:1: 2 days ago · every 14 days')
   })
 
-  test('the status line opens the person dialog', () => {
+  test('the status line is plain text: only the edit button opens the dialog', () => {
     const { container, store, pm } = setup(withNotes(''))
     render(container, PERSON_LOC, store, pm)
+    expect(line(container).tagName).toBe('SPAN')
     line(container).click()
-    expect(document.querySelector<HTMLInputElement>('input[name="tt-person-name"]')?.value).toBe('Bruno')
+    expect(document.querySelector('input[name="tt-person-name"]')).toBeNull()
   })
 
   test('teardown releases the day-change listener and subscription', () => {

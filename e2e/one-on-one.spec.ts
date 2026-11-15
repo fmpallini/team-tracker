@@ -118,7 +118,7 @@ test('1:1 flow: carry-over, undo, Alt+O, and an overdue 1:1 in the due surfaces'
   await expect(editor.locator('li[data-task="carried"]')).toHaveText('Ship plan')
 
   // 6. A Last 1:1 20 days ago makes the 1:1 overdue: a red dot on the Members module and the org box.
-  await pane.locator('.tt-person-cadence').click()
+  await pane.locator('.tt-person-header-edit-btn').click()
   const editDialog = page.getByRole('dialog')
   await editDialog.locator('.tt-date-picker-input').fill(daysAgoUs(20))
   await editDialog.getByRole('button', { name: 'Save' }).click()
