@@ -1,4 +1,4 @@
-import { createFollowupRows, focusedCaretElement } from '../src/modules/followup-list'
+import { createFollowupRows, focusedCaretElement, addOnBlankDoubleClick } from '../src/modules/followup-list'
 import { ExpandableRowsController } from '../src/ui/expandable-followup'
 import { createStore } from '../src/core/store'
 import { createEmptyDocument, createEmptyTeam } from '../src/core/document'
@@ -41,6 +41,39 @@ function mount(risks: Risk[]) {
 }
 
 afterEach(() => { document.body.innerHTML = ''; vi.useRealTimers() })
+
+describe('addOnBlankDoubleClick', () => {
+  function setupBlank() {
+    const row = document.createElement('div')
+    const listEl = document.createElement('div')
+    listEl.append(row)
+    const toolbar = document.createElement('div')
+    const wrap = document.createElement('div')
+    wrap.append(toolbar, listEl)
+    // The list ends 100px down; jsdom lays nothing out.
+    listEl.getBoundingClientRect = () => ({ top: 40, bottom: 100, left: 0, right: 300, width: 300, height: 60, x: 0, y: 40, toJSON: () => ({}) })
+    const add = vi.fn()
+    addOnBlankDoubleClick(wrap, listEl, add)
+    const dbl = (target: Element, clientY = 0) => target.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientY }))
+    return { row, listEl, toolbar, wrap, add, dbl }
+  }
+
+  test('the empty area below the list starts a new item', () => {
+    const { wrap, add, dbl } = setupBlank()
+    dbl(wrap, 150)
+    expect(add).toHaveBeenCalledTimes(1)
+  })
+
+  test('a row, the gaps between rows, the toolbar, and the module space above or beside the list keep their own clicks', () => {
+    const { row, listEl, toolbar, wrap, add, dbl } = setupBlank()
+    dbl(row, 60)
+    dbl(listEl, 60)
+    dbl(toolbar, 10)
+    dbl(wrap, 20)
+    dbl(wrap, 60)
+    expect(add).not.toHaveBeenCalled()
+  })
+})
 
 test('requireTitle passes a titled row, and flags + focuses an untitled one', () => {
   const { rows, listEl } = mount([risk('a', 'Vendor'), risk('b', '')])

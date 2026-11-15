@@ -164,6 +164,13 @@ describe('createModuleEditor', () => {
     bundle.dispose()
   })
 
+  test('templateCtx() is the context the picker fills templates with, read live', () => {
+    const { store, bundle } = mount({ templateDate: () => '2026-07-24', personName: () => 'Bia' })
+    store.update((d) => { d.teams[0]!.name = 'Beta' })
+    expect(bundle.templateCtx()).toMatchObject({ dateIso: '2026-07-24', teamName: 'Beta', personName: 'Bia', locale: 'en-US' })
+    bundle.dispose()
+  })
+
   test('{date} defaults to today', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 9, 14, 10, 0))

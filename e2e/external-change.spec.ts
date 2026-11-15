@@ -141,8 +141,9 @@ test.describe('external file change conflict', () => {
     await reopenLast(page, PASSWORD)
     await writeOpfsFile(page, 'team-tracker.tmv', original)
 
-    // A nav-only change (sidebar toggle) is an edit the file does not have; closing tries to write it.
-    await page.locator('.tt-sidebar-toggle').click()
+    // An edit the file does not have, so closing tries to write it (navigation alone would not: no write is needed for it).
+    await page.locator('.editor').first().click()
+    await page.keyboard.type('an edit the file lacks')
     await page.keyboard.press('Control+Alt+l')
 
     const dialog = page.getByRole('dialog')

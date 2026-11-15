@@ -150,6 +150,47 @@ test('opening the same file again is identical: nothing is rewritten', async () 
   expect(a.both).not.toHaveBeenCalled()
 })
 
+test('navigation alone leaves the copy identical, and reopening lands where the user left off, not where the file was written', async () => {
+  const doc = docWith('same')
+  doc.teams.push(createEmptyTeam('T2', 'Other', '', 'en-US'))
+  const stamp = newStamp()
+  const first = await open(await opened(doc, stamp), null, asks())
+  first.store.updateNav((d) => { d.nav.activeTeamId = 'T2'; d.nav.split = true })
+  await first.handle.persister.flush()
+  first.handle.persister.dispose()
+  expect((await rawDb.getMeta(doc.docId))!.unwrittenChanges).toBe(false)
+
+  commits.length = 0
+  const r = await open(await opened(doc, stamp), null, asks())
+  expect(r.source).toBe('file')
+  expect(r.needsFileWrite).toBe(false)
+  expect(r.doc.nav.activeTeamId).toBe('T2')
+  expect(r.doc.nav.split).toBe(true)
+  await r.handle.persister.flush()
+  expect(commits).toHaveLength(0)
+})
+
+test('a copy whose unwritten edits were undone opens without a file write, and stops counting as unwritten', async () => {
+  const doc = docWith('same')
+  const stamp = newStamp()
+  const first = await open(await opened(doc, stamp), null, asks())
+  first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'edited' })
+  await first.handle.persister.flush()
+  first.store.update((d) => { d.teams[0]!.dailyNotes['2026-07-01'] = 'same' })
+  first.store.updateNav((d) => { d.nav.split = true })
+  await first.handle.persister.flush()
+  first.handle.persister.dispose()
+  expect((await rawDb.getMeta(doc.docId))!.unwrittenChanges).toBe(true)
+
+  const r = await open(await opened(doc, stamp), null, asks())
+  expect(r.source).toBe('browser')
+  expect(r.needsFileWrite).toBe(false)
+  expect(r.store.dirty).toBe(false)
+  expect(r.doc.nav.split).toBe(true)
+  await r.handle.persister.flush()
+  expect((await rawDb.getMeta(doc.docId))!.unwrittenChanges).toBe(false)
+})
+
 describe.each([['password-less', null], ['encrypted', 'correct horse']] as const)('opening a file the browser copy already matches (%s)', (_label, password) => {
   const IMG = 'a'.repeat(32)
   async function withImage(doc: Doc, stamp: FileStamp): Promise<OpenedDoc> {
@@ -449,13 +490,13 @@ test('a browser copy from the previous schema, with unwritten edits, opens throu
   first.store.update((d) => {
     d.teams[0]!.dailyNotes['2026-07-01'] = 'edited in the older build'
     // What a schema-18 build wrote: its own version, and a palette that schema 19 retired.
-    d.schemaVersion = SCHEMA_VERSION - 1
+    d.schemaVersion = 18
     ;(d.prefs as { palette: string }).palette = 'blueprint'
   })
   await first.handle.persister.flush()
   first.handle.persister.dispose()
   const meta = (await rawDb.getMeta(doc.docId))!
-  await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...meta, schemaVersion: SCHEMA_VERSION - 1 } })
+  await rawDb.commit(doc.docId, { putRecords: [], deleteRecords: [], putBlobs: [], deleteBlobs: [], meta: { ...meta, schemaVersion: 18 } })
   expect((await rawDb.getMeta(doc.docId))!.unwrittenChanges).toBe(true)
 
   const a = asks()

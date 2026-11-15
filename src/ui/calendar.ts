@@ -1,5 +1,5 @@
 // src/ui/calendar.ts — mini month calendar used by src/modules/daily-notes.ts
-// (Task 18) to pick a day. Self-contained: owns its own "currently displayed
+// to pick a day. Self-contained: owns its own "currently displayed
 // month" state (initialized from `opts.anchor ?? opts.selected`) and
 // re-renders its own DOM in place on month navigation. The caller rebuilds a
 // fresh instance (see

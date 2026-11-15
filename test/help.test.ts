@@ -234,7 +234,7 @@ describe('Global tab', () => {
     showHelp('en-US')
     const text = panelText()
     expect(text).toContain('Alt+1')
-    // Task 12 moved the command palette to Ctrl+Shift+K globally; the global
+    // The command palette lives on Ctrl+Shift+K globally; the global
     // help table must name that, not the old Ctrl+K.
     expect(text).toContain('Ctrl+Shift+K')
     expect(text).toContain('--app="')
@@ -303,10 +303,10 @@ describe('Editor tab', () => {
   test('lists the code-block / blockquote / link shortcuts and syntax', () => {
     showHelp('en-US', { tab: 'editor' })
     const text = panelText()
-    expect(text).not.toContain('Ctrl+E') // inline code was removed
+    expect(text).not.toMatch(/Ctrl\+E(?!nter|nd)/) // inline code was removed (Ctrl+Enter and Ctrl+End are other keys)
     expect(text).toContain('Ctrl+Shift+E') // code block shortcut
     expect(text).toContain('Ctrl+Shift+9') // blockquote shortcut
-    expect(text).toContain('Ctrl+K') // link shortcut (Task 12: Ctrl+K inserts a link in the editor)
+    expect(text).toContain('Ctrl+K') // link shortcut (Ctrl+K inserts a link in the editor)
     expect(text).toContain('```') // markdown syntax row for code block
     expect(text).toContain('> text') // markdown syntax row for blockquote
     expect(text).toContain('[text](url)') // markdown syntax row for link
@@ -326,6 +326,19 @@ describe('Editor tab', () => {
     expect(text).toContain('Undo')
     expect(text).toContain('Redo')
     expect(text.indexOf('Ctrl+Z')).toBeGreaterThan(text.indexOf('Ctrl+K'))
+  })
+
+  test('lists the checklist keys: Ctrl+Enter and Ctrl+Home / Ctrl+End, with typed [ ] in the markdown syntax', () => {
+    showHelp('en-US', { tab: 'editor' })
+    const all = codes()
+    expect(all).toContain('Ctrl+Enter')
+    expect(all).toContain('[ ] text')
+    expect(all.indexOf('[ ] text')).toBeGreaterThan(all.indexOf('1. text'))
+    expect(all).toContain('Ctrl+Home / Ctrl+End')
+    expect(panelText()).toContain('Checklist item')
+    document.body.innerHTML = ''
+    showHelp('pt-BR', { tab: 'editor' })
+    expect(panelText()).toContain('Item de checklist')
   })
 
   test('(pt-BR) keeps markdown examples and key names in Portuguese', () => {
@@ -411,12 +424,36 @@ describe('module tabs', () => {
 
   test('People navigate by org chart: its section replaces the ↑/↓ row and the chord moves the person', () => {
     showHelp('en-US', { tab: 'people' })
-    expect(headings()).toEqual(['Org chart', 'Lists & cards'])
+    expect(headings()).toEqual(['Org chart', '1:1 notes', 'Carry-over and cadence', 'Lists & cards'])
     expect(codes()).not.toContain('↑ / ↓')
     expect(codes()).toContain('↑ / ↓ (← / →)')
     const move = Array.from(document.querySelectorAll('.tt-help-table tr')).find((r) => r.querySelector('.tt-help-code')?.textContent === 'Ctrl+← / → / ↑ / ↓')
     expect(move?.textContent).toContain('Move the person')
     expect(headings()).not.toContain('Date fields')
+  })
+
+  test('People tab documents Alt+O, the carry-over and the cadence, in both locales', () => {
+    showHelp('en-US', { tab: 'people' })
+    expect(codes()).toContain('Alt+O')
+    const text = panelText()
+    expect(text).toContain('New 1:1')
+    expect(text).toContain('↪')
+    expect(text).toContain('Preferences → Templates')
+    document.body.innerHTML = ''
+    showHelp('pt-BR', { tab: 'people' })
+    expect(panelText()).toContain('Novo 1:1'); expect(panelText()).not.toContain('Nova 1:1')
+  })
+
+  test('F1 on a person page opens the Editor tab: formatting first, then New 1:1, carry-over and cadence after History; other editors skip them', () => {
+    showHelp('en-US', { pane: 'person' })
+    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'Leaving the editor', 'History', '1:1 notes', 'Carry-over and cadence', 'References (@)', 'Templates (/)', 'Pictures'])
+    expect(codes()).toContain('Alt+O')
+    document.body.innerHTML = ''
+    showHelp('en-US', { pane: 'general' })
+    expect(codes()).not.toContain('Alt+O')
+    document.body.innerHTML = ''
+    showHelp('en-US', { tab: 'editor' })
+    expect(headings()).not.toContain('1:1 notes')
   })
 
   test('Tasks name the board move chord, Risks the risk move, Milestones neither', () => {

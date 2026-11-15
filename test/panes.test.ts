@@ -2,10 +2,18 @@ import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
-import { t } from '../src/core/i18n'
+import { t, todayIso } from '../src/core/i18n'
+import { addDaysIso } from '../src/core/date'
 import { currentLoc } from '../src/core/nav'
 import { renderDailyNotes } from '../src/modules/daily-notes'
 import type { Loc } from '../src/core/types'
+import { collectDueItems } from '../src/core/due'
+
+// Passed through unchanged, only wrapped so the due-dot tests can count how often the bar recomputes its due state.
+vi.mock('../src/core/due', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/core/due')>()
+  return { ...real, collectDueItems: vi.fn(real.collectDueItems) }
+})
 
 // jsdom does not implement matchMedia; createShell() needs it to watch the
 // OS theme preference (same stub as test/sidebar.test.ts).
@@ -1981,4 +1989,145 @@ test('printFocused prints the pane the user is in', () => {
   ;(pm as unknown as { printFocused(): void }).printFocused()
   expect(open).toHaveBeenCalled()
   open.mockRestore()
+})
+
+describe('due dots on the module selector', () => {
+  const today = (): string => todayIso()
+  function setupDue(): { store: Store; pm: PaneManager } {
+    const { store, pm } = setup()
+    addTeam(store, 'T1')
+    store.update((d) => { d.nav.activeTeamId = 'T1' })
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'general' } })
+    return { store, pm }
+  }
+  function addAction(store: Store, id: string, dueDate: string): void {
+    store.update((d) => {
+      d.teams[0]!.actionItems.push({ id, summary: id, status: 'todo', dueDate, assignee: '', order: 0, notes: '', color: 'ledger' })
+    }, { teamId: 'T1', sections: ['actions'] })
+  }
+  function addMilestone(store: Store, date: string): void {
+    store.update((d) => {
+      d.teams[0]!.milestones.push({ id: 'm', date, title: 'M', done: false, followup: '' })
+    }, { teamId: 'T1', sections: ['milestones'] })
+  }
+  function tab(kind: string): HTMLButtonElement {
+    const found = document.querySelector(`[data-pane-idx="0"] .tt-pane-tab .tt-kind-${kind}`)?.closest('button')
+    if (!found) throw new Error(`no ${kind} tab`)
+    return found
+  }
+  function menuRow(kind: string): HTMLButtonElement {
+    if (!document.querySelector('[data-pane-idx="0"] .tt-pane-menu')) paneBtn(0, 'tt-pane-modules-btn').click()
+    const found = document.querySelector(`[data-pane-idx="0"] .tt-pane-menu-item .tt-kind-${kind}`)?.closest('button')
+    if (!found) throw new Error(`no ${kind} row`)
+    return found
+  }
+  const dot = (host: Element): Element | null => host.querySelector('.tt-due-dot')
+  const modulesBtn = (): HTMLButtonElement => paneBtn(0, 'tt-pane-modules-btn')
+
+  test('tab and menu row show a red dot for a module with an overdue item', () => {
+    const { store } = setupDue()
+    addAction(store, 'a', addDaysIso(today(), -1))
+    const tabDot = dot(tab('actions'))
+    expect(tabDot).not.toBeNull()
+    expect(tabDot!.classList.contains('soon')).toBe(false)
+    expect(tabDot!.getAttribute('aria-hidden')).toBe('true')
+    // Inside the icon's wrapper, so it sits on the icon, clear of the F-key tag.
+    expect(tabDot!.parentElement!.classList.contains('tt-kind-actions')).toBe(true)
+    const rowDot = dot(menuRow('actions'))
+    expect(rowDot).not.toBeNull()
+    expect(rowDot!.classList.contains('soon')).toBe(false)
+  })
+
+  test('brass dot when only due soon; none when nothing is due', () => {
+    const { store } = setupDue()
+    expect(document.querySelectorAll('[data-pane-idx="0"] .tt-due-dot')).toHaveLength(0)
+    addMilestone(store, today())
+    expect(dot(tab('milestones'))!.classList.contains('soon')).toBe(true)
+    expect(dot(menuRow('milestones'))!.classList.contains('soon')).toBe(true)
+    expect(dot(tab('actions'))).toBeNull()
+    expect(dot(menuRow('actions'))).toBeNull()
+  })
+
+  test('members tab dots for an overdue 1:1', () => {
+    const { store } = setupDue()
+    store.update((d) => {
+      d.teams[0]!.members.push({ id: 'p', name: 'Ana', role: '', parentId: null, order: 0, notes: '', oneOnOneEveryDays: 7, lastOneOnOne: addDaysIso(today(), -10) })
+    }, { teamId: 'T1', sections: ['people'] })
+    expect(dot(tab('members'))!.classList.contains('soon')).toBe(false)
+    expect(dot(tab('stakeholders'))).toBeNull()
+  })
+
+  test('the closed dropdown carries the current module dot, like its tab', () => {
+    const { store, pm } = setupDue()
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
+    addMilestone(store, addDaysIso(today(), -1)) // overdue, but in another module
+    expect(dot(tab('milestones'))!.classList.contains('soon')).toBe(false)
+    expect(dot(modulesBtn())).toBeNull()
+    addAction(store, 'a', today()) // due soon, in the current module
+    expect(dot(tab('actions'))!.classList.contains('soon')).toBe(true)
+    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(true)
+    expect(modulesBtn().title).toContain(` · ${t('en-US', 'pane_due_soon', { soon: '1' })}`)
+    addAction(store, 'late', addDaysIso(today(), -2))
+    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(false)
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } })
+    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(false)
+  })
+
+  test('tooltip and aria-label carry the state', () => {
+    const { store } = setupDue()
+    addAction(store, 'a', addDaysIso(today(), -1))
+    addAction(store, 'b', addDaysIso(today(), -3))
+    addAction(store, 'c', today())
+    const label = t('en-US', 'module_actions')
+    const state = t('en-US', 'pane_due_state', { overdue: '2', soon: '1' })
+    expect(state).toBe('2 overdue, 1 due soon')
+    expect(tab('actions').title).toBe(`${label} (F6) · ${state}`)
+    expect(tab('actions').getAttribute('aria-label')).toBe(`${label} · ${state}`)
+    const row = menuRow('actions')
+    expect(row.title).toBe(`${label} · ${state}`)
+    expect(row.getAttribute('aria-label')).toBe(`${label} · ${state}`)
+    store.update((d) => { d.teams[0]!.actionItems = d.teams[0]!.actionItems.filter((i) => i.id === 'a') }, { teamId: 'T1', sections: ['actions'] })
+    expect(tab('actions').title).toBe(`${label} (F6) · ${t('en-US', 'pane_due_overdue', { overdue: '1' })}`)
+    store.update((d) => { d.teams[0]!.actionItems[0]!.dueDate = today() }, { teamId: 'T1', sections: ['actions'] })
+    expect(tab('actions').title).toBe(`${label} (F6) · ${t('en-US', 'pane_due_soon', { soon: '1' })}`)
+    // Nothing due: today's plain label.
+    expect(tab('milestones').title).toBe(`${t('en-US', 'module_milestones')} (F7)`)
+    expect(tab('milestones').getAttribute('aria-label')).toBe(t('en-US', 'module_milestones'))
+  })
+
+  test('an action-scoped update repaints the dot; a notes-scoped one does not recompute', () => {
+    const { store } = setupDue()
+    addAction(store, 'a', addDaysIso(today(), 30))
+    expect(dot(tab('actions'))).toBeNull()
+    const computed = vi.mocked(collectDueItems).mock.calls.length
+    store.update((d) => { d.teams[0]!.generalNotes = 'typing' }, { teamId: 'T1', sections: ['notes'] })
+    expect(vi.mocked(collectDueItems).mock.calls.length).toBe(computed)
+    store.update((d) => { d.teams[0]!.actionItems[0]!.dueDate = addDaysIso(today(), -1) }, { teamId: 'T1', sections: ['actions'] })
+    expect(dot(tab('actions'))).not.toBeNull()
+    expect(modulesBtn().closest('.tt-pane-bar')!.getAttribute('data-due')).toBe(JSON.stringify([['actions', { overdue: 1, dueSoon: 0 }]]))
+  })
+
+  test('dispose unbinds the day-change listener', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 5, 10, 12))
+      const { store, pm } = setupDue()
+      addAction(store, 'a', '2026-06-10') // due today
+      expect(dot(tab('actions'))!.classList.contains('soon')).toBe(true)
+      // The day moves while the window sat idle: coming back repaints the dot red.
+      vi.setSystemTime(new Date(2026, 5, 11, 12))
+      window.dispatchEvent(new Event('focus'))
+      expect(dot(tab('actions'))!.classList.contains('soon')).toBe(false)
+
+      pm.dispose()
+      // The store subscription is gone too, so this edit repaints nothing; only a live day watcher would pick it up.
+      store.update((d) => { d.teams[0]!.actionItems[0]!.dueDate = '2026-06-20' }, { teamId: 'T1', sections: ['actions'] })
+      vi.setSystemTime(new Date(2026, 5, 15, 12))
+      window.dispatchEvent(new Event('focus'))
+      // Still the stale red dot: nothing listened for the day change after dispose.
+      expect(dot(tab('actions'))!.classList.contains('soon')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

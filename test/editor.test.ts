@@ -662,13 +662,13 @@ describe('@ trigger', () => {
     const seps = Array.from(bar.querySelectorAll('.tt-editor-toolbar-sep'))
     expect(seps).toHaveLength(3)
     expect(seps.every((sep) => sep.getAttribute('aria-hidden') === 'true')).toBe(true)
-    // Groups: text style (4) | lists (2) | headings and paragraph (4) | blocks and inserts.
+    // Groups: text style (4) | lists and checklist (3) | headings and paragraph (4) | blocks and inserts.
     const sizes: number[] = []
     let run = 0
     for (const child of Array.from(bar.children)) {
       if (child.classList.contains('tt-editor-toolbar-sep')) { sizes.push(run); run = 0 } else if (child.classList.contains('tt-editor-btn')) run++
     }
-    expect(sizes).toEqual([4, 2, 4])
+    expect(sizes).toEqual([4, 3, 4])
     editor.destroy()
   })
 
@@ -1107,6 +1107,112 @@ describe('undo/redo (the editor\'s own snapshot stack)', () => {
     dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
     expect(editor.getMd()).toBe('other note')
     editor.destroy()
+  })
+
+  // Unlike setMd, a whole-note replace is an edit of the same note (the New 1:1 flow): one step, and the
+  // history before it stays reachable.
+  test('replaceMd swaps content as one undo step and keeps earlier history', async () => {
+    const { editor, editorEl } = setup('    hello')
+    const original = editor.getMd()
+    dispatchKey(editorEl, { key: 'Tab', shiftKey: true })
+    const mdBefore = editor.getMd()
+    expect(mdBefore).toBe('hello')
+    await Promise.resolve() // the Tab's step closes at the end of its task; the replace is a later action
+    editor.replaceMd('# New\n\n```\ncode\n```\n\nb')
+    expect(editor.getMd()).toBe('# New\n\n```\ncode\n```\n\nb')
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor.getMd()).toBe(mdBefore)
+    dispatchKey(editorEl, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor.getMd()).toBe(original)
+    dispatchKey(editorEl, { key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })
+    dispatchKey(editorEl, { key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })
+    expect(editor.getMd()).toBe('# New\n\n```\ncode\n```\n\nb')
+    editor.destroy()
+  })
+
+  test('replaceMd tells the store about the new content', () => {
+    vi.useFakeTimers()
+    try {
+      const hooks = makeHooks()
+      const editor = createEditor(hooks, 'en-US')
+      document.body.appendChild(editor.root)
+      editor.setMd('a')
+      vi.advanceTimersByTime(1000)
+      const before = hooks.changes
+      editor.replaceMd('b')
+      vi.advanceTimersByTime(1000)
+      expect(hooks.changes).toBe(before + 1)
+      editor.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('replaceMd places the caret on the target node and scrolls it into view', () => {
+    const scroll = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const { editor, editorEl } = setup('x')
+      editor.replaceMd('# A\n\nfirst\n\nsecond\n\nlast', (root) =>
+        [...root.children].find((c) => c.textContent === 'second') ?? null)
+      const target = [...editorEl.children].find((c) => c.textContent === 'second')!
+      const sel = window.getSelection()!
+      expect(sel.isCollapsed).toBe(true)
+      const r = sel.getRangeAt(0)
+      expect(target.contains(r.startContainer)).toBe(true)
+      const before = document.createRange()
+      before.setStart(target, 0)
+      before.setEnd(r.startContainer, r.startOffset)
+      expect(before.toString()).toBe('')
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(scroll.mock.contexts[0]).toBe(target)
+      expect(scroll).toHaveBeenCalledWith({ block: 'center' })
+      editor.destroy()
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
+  test('replaceMd puts the caret at the end when there is no target', () => {
+    const { editor, editorEl } = setup('x')
+    editor.replaceMd('first\n\nlast', () => null)
+    const r = window.getSelection()!.getRangeAt(0)
+    expect(r.collapsed).toBe(true)
+    const after = document.createRange()
+    after.setStart(r.startContainer, r.startOffset)
+    after.setEnd(editorEl, editorEl.childNodes.length)
+    expect(after.toString()).toBe('')
+    expect(editorEl.lastElementChild!.contains(r.startContainer) || r.startContainer === editorEl).toBe(true)
+    editor.destroy()
+  })
+
+  test('replaceMd scrolls the end into view when there is no target', () => {
+    const scroll = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const { editor, editorEl } = setup('x')
+      editor.replaceMd('first\n\nlast', () => null)
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(scroll.mock.contexts[0]).toBe(editorEl.lastElementChild)
+      expect(scroll).toHaveBeenCalledWith({ block: 'end' })
+      editor.destroy()
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
+  test('replaceMd is a no-op when read-only', () => {
+    const { editor } = setup('a')
+    try {
+      setEditorsReadOnly(true)
+      editor.replaceMd('b')
+      expect(editor.getMd()).toBe('a')
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
   })
 })
 
@@ -2340,6 +2446,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_strike_title'),
       t('en-US', 'editor_ul_title'),
       t('en-US', 'editor_ol_title'),
+      t('en-US', 'editor_checklist_title'),
       t('en-US', 'editor_h1_title'),
       t('en-US', 'editor_h2_title'),
       t('en-US', 'editor_h3_title'),
@@ -4684,5 +4791,416 @@ describe('Escape leaves the editor', () => {
     editor = createEditor(makeHooks(), 'en-US')
     const e = dispatchKey(editor.root.querySelector<HTMLElement>('.editor')!, { key: 'Escape' })
     expect(e.defaultPrevented).toBe(false)
+  })
+})
+
+describe('checklists', () => {
+  let editor: Editor | null = null
+  afterEach(() => {
+    setEditorsReadOnly(false)
+    editor?.destroy()
+    editor = null
+  })
+
+  function mount(md: string): HTMLElement {
+    editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd(md)
+    return editor.root.querySelector('.editor') as HTMLElement
+  }
+  /** Collapses the caret at the end of the first text node reading `text`. */
+  function caretIn(editorEl: HTMLElement, text: string): void {
+    const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode()) && node.textContent !== text) { /* walk */ }
+    if (!node) throw new Error(`no text node "${text}"`)
+    const r = document.createRange()
+    r.setStart(node, text.length)
+    r.collapse(true)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(r)
+  }
+  const ctrlEnter = (editorEl: HTMLElement): KeyboardEvent => dispatchKey(editorEl, { key: 'Enter', code: 'Enter', ctrlKey: true })
+  function clickAt(target: HTMLElement, offsetX: number): void {
+    const e = new MouseEvent('click', { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'offsetX', { value: offsetX })
+    Object.defineProperty(e, 'offsetY', { value: 2 })
+    target.dispatchEvent(e)
+  }
+
+  test('Ctrl+Enter on a plain bullet makes it an open task, then toggles done/open', () => {
+    const ed = mount('- a'); caretIn(ed, 'a')
+    expect(ctrlEnter(ed).defaultPrevented).toBe(true)
+    expect(editor!.getMd()).toBe('- [ ] a')
+    ctrlEnter(ed); expect(editor!.getMd()).toBe('- [x] a')
+    ctrlEnter(ed); expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('Ctrl+Enter leaves a carried item alone', () => {
+    const ed = mount('- [>] a'); caretIn(ed, 'a')
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [>] a')
+  })
+
+  test('Ctrl+Enter on a plain top-level line makes an open task item', () => {
+    const ed = mount('a'); caretIn(ed, 'a')
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [ ] a')
+    expect(ed.querySelector('li')!.contains(window.getSelection()!.anchorNode)).toBe(true)
+  })
+
+  test('Ctrl+Enter on a selection with plain bullets makes them tasks and leaves the tasks as they are', () => {
+    const ed = mount('- a\n- [x] b\n- c')
+    const lis = ed.querySelectorAll('li')
+    const r = document.createRange()
+    r.setStart(lis[0]!.firstChild!, 0)
+    r.setEnd(lis[1]!.firstChild!, 1)
+    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [ ] a\n- [x] b\n- c')
+  })
+
+  test('Ctrl+Enter does nothing in a numbered list, a quote or a code block', () => {
+    for (const [md, text] of [['1. a', 'a'], ['> a', 'a'], ['```\na\n```', 'a']] as const) {
+      const ed = mount(md); caretIn(ed, text)
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe(md)
+      editor!.destroy(); editor = null
+    }
+  })
+
+  test('a toggle is one undo step', () => {
+    const ed = mount('- [ ] a'); caretIn(ed, 'a')
+    ctrlEnter(ed)
+    expect(editor!.getMd()).toBe('- [x] a')
+    dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+    expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('click in the box gutter toggles; click on the text does not', () => {
+    const ed = mount('- [ ] a')
+    const li = ed.querySelector('li')!
+    li.style.paddingLeft = '24px'
+    clickAt(li, 40)
+    expect(editor!.getMd()).toBe('- [ ] a')
+    clickAt(li, 6)
+    expect(editor!.getMd()).toBe('- [x] a')
+    clickAt(li, 6)
+    expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('read-only editor ignores the toggle', () => {
+    const ed = mount('- [ ] a'); caretIn(ed, 'a')
+    setEditorsReadOnly(true)
+    ctrlEnter(ed)
+    const li = ed.querySelector('li')!
+    li.style.paddingLeft = '24px'
+    clickAt(li, 6)
+    expect(editor!.getMd()).toBe('- [ ] a')
+  })
+
+  test('detectBlockPrefix matches "[] " and "[ ] " as task', () => {
+    expect(detectBlockPrefix('[]\u00a0')).toEqual({ type: 'task', prefixLen: 3 })
+    expect(detectBlockPrefix('[ ] ')).toEqual({ type: 'task', prefixLen: 4 })
+    expect(detectBlockPrefix('[x] ')).toBeNull()
+  })
+
+  test('typing "[] " as a whole bullet or an empty line makes an open task', () => {
+    const ed = mount('- x')
+    const li = ed.querySelector('li')!
+    li.textContent = '[]\u00a0'
+    caretIn(ed, '[]\u00a0')
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(li.getAttribute('data-task')).toBe('open')
+    expect(li.textContent).toBe('')
+
+    const ed2 = mount('')
+    const div = ed2.querySelector('div')!
+    div.textContent = '[ ] '
+    caretIn(ed2, '[ ] ')
+    ed2.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(ed2.querySelector('ul > li[data-task="open"]')).not.toBeNull()
+  })
+
+  test('"[] " typed in a numbered item stays text', () => {
+    const ed = mount('1. x')
+    const li = ed.querySelector('li')!
+    li.textContent = '[] '
+    caretIn(ed, '[] ')
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(li.hasAttribute('data-task')).toBe(false)
+  })
+
+  test('Enter after a done item starts an open one', () => {
+    const ed = mount('- [x] a\n- [x] b')
+    caretIn(ed, 'b')
+    ed.dispatchEvent(new InputEvent('input', { inputType: 'insertParagraph', bubbles: true }))
+    expect(ed.querySelectorAll('li')[1]!.getAttribute('data-task')).toBe('open')
+    expect(ed.querySelectorAll('li')[0]!.getAttribute('data-task')).toBe('done')
+  })
+
+  test('toolbar has a Checklist button that makes items but never toggles them', () => {
+    const ed = mount('- [ ] a\n- b')
+    const btn = editor!.root.querySelector<HTMLButtonElement>(`button[title="${t('en-US', 'editor_checklist_title')}"]`)!
+    expect(btn).not.toBeNull()
+    expect(btn.previousElementSibling!.getAttribute('title')).toBe(t('en-US', 'editor_ol_title'))
+    caretIn(ed, 'a'); btn.click()
+    expect(editor!.getMd()).toBe('- [ ] a\n- b')
+    caretIn(ed, 'b'); btn.click()
+    expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b')
+  })
+
+  test('task states carry screen-reader labels on the editor', () => {
+    const ed = mount('')
+    expect(ed.style.getPropertyValue('--tt-task-open')).toBe(JSON.stringify(t('en-US', 'editor_task_open_sr')))
+    expect(ed.style.getPropertyValue('--tt-task-done')).toBe(JSON.stringify(t('en-US', 'editor_task_done_sr')))
+    expect(ed.style.getPropertyValue('--tt-task-carried')).toBe(JSON.stringify(t('en-US', 'editor_task_carried_sr')))
+  })
+
+  describe('nested checklists', () => {
+    const TREE = '- [ ] a\n  - [ ] b\n    - [ ] c\n  - [x] d\n  - plain\n  - [>] e\n- [ ] f'
+
+    test('checking a parent checks every task below it; carried and plain items stay', () => {
+      const ed = mount(TREE); caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n    - [x] c\n  - [x] d\n  - plain\n  - [>] e\n- [ ] f')
+    })
+
+    test('unchecking a parent unchecks every task below it', () => {
+      const ed = mount('- [x] a\n  - [x] b\n    - [x] c\n  - [>] e')
+      caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n    - [ ] c\n  - [>] e')
+    })
+
+    test('a box click on a parent cascades too, as one undo step', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n    - [ ] c')
+      const li = ed.querySelector('li')!
+      li.style.paddingLeft = '24px'
+      clickAt(li, 6)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n    - [x] c')
+      dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n    - [ ] c')
+    })
+
+    test('checking a child leaves its parent open while another sub-task is open', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n  - [ ] c')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n  - [x] c')
+    })
+
+    test('checking the last open sub-task checks its parent, and up the chain while each level is complete', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n    - [x] c\n    - [ ] d\n  - [x] e\n- [ ] f')
+      caretIn(ed, 'd')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n    - [x] c\n    - [x] d\n  - [x] e\n- [ ] f')
+    })
+
+    test('the chain stops at the first parent that still has open work', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n    - [ ] c\n  - [ ] e')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b\n    - [x] c\n  - [ ] e')
+    })
+
+    test('carried sub-items and plain notes do not hold a parent open; a carried parent is never checked', () => {
+      const ed = mount('- [ ] a\n  - [>] b\n  - note\n  - [ ] c\n- [>] d\n  - [ ] e')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      caretIn(ed, 'e')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [>] b\n  - note\n  - [x] c\n- [>] d\n  - [x] e')
+    })
+
+    test('a plain bullet between a task and its sub-tasks does not stop the chain', () => {
+      const ed = mount('- [ ] a\n  - group\n    - [ ] b')
+      caretIn(ed, 'b')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - group\n    - [x] b')
+    })
+
+    test('the auto-check is part of the same undo step', () => {
+      const ed = mount('- [ ] a\n  - [ ] b')
+      const li = ed.querySelectorAll('li')[1]!
+      li.style.paddingLeft = '24px'
+      clickAt(li, 6)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b')
+      dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b')
+    })
+
+    test('unchecking a child reopens every done task above it, never its siblings', () => {
+      const ed = mount('- [x] a\n  - [x] b\n    - [x] c\n    - [x] d\n  - [x] e')
+      caretIn(ed, 'c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n    - [ ] c\n    - [x] d\n  - [x] e')
+    })
+
+    test('a selection over a parent and its child toggles the subtree once', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n- [ ] c')
+      const r = document.createRange()
+      r.setStart(ed.querySelectorAll('li')[0]!.firstChild!, 0)
+      r.setEnd(ed.querySelectorAll('li')[1]!.firstChild!, 1)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n- [ ] c')
+    })
+
+    test('a mixed selection checks everything; an all-done one unchecks everything', () => {
+      const ed = mount('- [x] a\n- [ ] b\n- [x] c')
+      const lis = ed.querySelectorAll('li')
+      const r = document.createRange()
+      r.setStart(lis[0]!.firstChild!, 0)
+      r.setEnd(lis[2]!.firstChild!, 1)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n- [x] b\n- [x] c')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b\n- [ ] c')
+    })
+
+    test('Tab moving an open task under a done one reopens it', () => {
+      const ed = mount('- [x] a\n- [ ] b')
+      caretIn(ed, 'b')
+      dispatchKey(ed, { key: 'Tab' })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b')
+    })
+
+    test('Tab moving a done task (or a plain bullet) under a done one keeps it done', () => {
+      const ed = mount('- [x] a\n- [x] b\n- note')
+      caretIn(ed, 'b')
+      dispatchKey(ed, { key: 'Tab' })
+      caretIn(ed, 'note')
+      dispatchKey(ed, { key: 'Tab' })
+      expect(editor!.getMd()).toBe('- [x] a\n  - [x] b\n  - note')
+    })
+
+    test('Shift+Tab that hands open siblings to a done item reopens it', () => {
+      const ed = mount('- [ ] a\n  - [x] b\n  - [ ] c')
+      caretIn(ed, 'b')
+      dispatchKey(ed, { key: 'Tab', shiftKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n- [ ] b\n  - [ ] c')
+    })
+
+    test('Enter at the end of a nested done item starts an open one and reopens the done parents', () => {
+      const ed = mount('- [x] a\n  - [x] b')
+      caretIn(ed, 'b')
+      // What Chromium leaves after the native split: a clone of the done item.
+      const fresh = document.createElement('li')
+      fresh.setAttribute('data-task', 'done')
+      fresh.appendChild(document.createElement('br'))
+      ed.querySelectorAll('li')[1]!.after(fresh)
+      const r = document.createRange(); r.setStart(fresh, 0); r.collapse(true)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      ed.dispatchEvent(new InputEvent('input', { inputType: 'insertParagraph', bubbles: true }))
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b\n  - [ ] ')
+    })
+
+    test('"[] " typed in a bullet under a done task reopens it', () => {
+      const ed = mount('- [x] a\n  - x')
+      const li = ed.querySelectorAll('li')[1]!
+      li.textContent = '[] '
+      caretIn(ed, '[] ')
+      ed.dispatchEvent(new Event('input', { bubbles: true }))
+      expect(li.getAttribute('data-task')).toBe('open')
+      expect(ed.querySelector('li')!.getAttribute('data-task')).toBe('open')
+    })
+
+    test('typing in a plain item under a done task leaves the task done', () => {
+      const ed = mount('- [x] a\n  - note')
+      caretIn(ed, 'note')
+      ed.dispatchEvent(new Event('input', { bubbles: true }))
+      expect(editor!.getMd()).toBe('- [x] a\n  - note')
+    })
+
+    test('a carried parent is never toggled, and neither is its subtree', () => {
+      const ed = mount('- [>] a\n  - [ ] b')
+      caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [>] a\n  - [ ] b')
+    })
+
+    /** Collapses the caret at the start of the `index`th `<li>`. */
+    function caretAtItemStart(ed: HTMLElement, index: number): void {
+      const r = document.createRange()
+      r.setStart(ed.querySelectorAll('li')[index]!, 0); r.collapse(true)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+    }
+
+    test('Enter on an empty sub-item outdents it and keeps its box', () => {
+      const ed = mount('- [ ] a\n  - [ ] b\n  - [ ] \n  - [ ] c')
+      caretAtItemStart(ed, 2)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(true)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] b\n- [ ] \n  - [ ] c')
+      const li = window.getSelection()!.anchorNode
+      expect(ed.querySelectorAll(':scope > ul > li')[1]!.contains(li)).toBe(true)
+    })
+
+    test('Enter at the end of a parent starts its first child instead of taking its children away', () => {
+      const ed = mount('- [x] a\n  - [x] b\n- c\n  - d')
+      caretIn(ed, 'a')
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(true)
+      // A new open sub-task under a done one reopens it.
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] \n  - [x] b\n- c\n  - d')
+      expect(ed.querySelectorAll('li')[1]!.contains(window.getSelection()!.anchorNode)).toBe(true)
+      caretIn(ed, 'c')
+      dispatchKey(ed, { key: 'Enter', code: 'Enter' })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] \n  - [x] b\n- c\n  - \n  - d')
+    })
+
+    test('Enter in the middle of a parent\'s text is left to the browser', () => {
+      const ed = mount('- [ ] ab\n  - [ ] c')
+      const r = document.createRange(); r.setStart(ed.querySelector('li')!.firstChild!, 1); r.collapse(true)
+      window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(false)
+    })
+
+    test('an Enter or Backspace that belongs to an IME composition is left to the browser', () => {
+      const ed = mount('- [ ] a\n  - [ ] ')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter', isComposing: true }).defaultPrevented).toBe(false)
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace', isComposing: true }).defaultPrevented).toBe(false)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [ ] ')
+    })
+
+    test('Enter on an empty top-level item is left to the browser', () => {
+      const ed = mount('- [ ] a\n- [ ] ')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(false)
+    })
+
+    test('Backspace at the start of a task removes only its box, as one undo step', () => {
+      const ed = mount('- [ ] a\n  - [x] b')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(true)
+      expect(editor!.getMd()).toBe('- [ ] a\n  - b')
+      // The next Backspace is the browser's own.
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(false)
+      dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+      expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b')
+    })
+
+    test('Backspace inside a task\'s text is left to the browser', () => {
+      const ed = mount('- [ ] ab')
+      caretIn(ed, 'ab')
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(false)
+    })
+
+    test('a done item emptied by a delete reopens, so new text is not struck through', () => {
+      const ed = mount('- [x] a')
+      const li = ed.querySelector('li')!
+      li.replaceChildren(document.createElement('br'))
+      caretAtItemStart(ed, 0)
+      ed.dispatchEvent(new InputEvent('input', { inputType: 'deleteByCut', bubbles: true }))
+      expect(li.getAttribute('data-task')).toBe('open')
+    })
+
+    test('a task under a numbered item still cascades from a task parent', () => {
+      const ed = mount('- [ ] a\n  1. step\n    - [ ] b')
+      caretIn(ed, 'a')
+      ctrlEnter(ed)
+      expect(editor!.getMd()).toBe('- [x] a\n  1. step\n    - [x] b')
+    })
   })
 })

@@ -49,6 +49,15 @@ test('readAll returns only the requested document rows', async () => {
   expect(Array.from(all.blobs[0]!.bytes)).toEqual([1])
 })
 
+test('readRecord returns one row of the requested document, or undefined', async () => {
+  const db = await openLiveDb(factory)
+  await db.commit('d1', { ...empty, putRecords: [{ key: 'a', value: 1 }, { key: 'b', value: 2 }], meta: meta('d1') })
+  await db.commit('d1x', { ...empty, putRecords: [{ key: 'c', value: 99 }], meta: meta('d1x') })
+  expect(await db.readRecord('d1', 'b')).toBe(2)
+  expect(await db.readRecord('d1', 'c')).toBeUndefined()
+  expect(await db.readRecord('none', 'a')).toBeUndefined()
+})
+
 test('commit applies puts, deletes and meta together; a later commit overwrites and deletes', async () => {
   const db = await openLiveDb(factory)
   await db.commit('d', { putRecords: [{ key: 'a', value: 1 }, { key: 'b', value: 2 }], deleteRecords: [], putBlobs: [{ id: 'x', bytes: new Uint8Array([1]) }], deleteBlobs: [], meta: meta('d') })

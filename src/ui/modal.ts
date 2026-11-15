@@ -421,7 +421,7 @@ interface ToastOptions {
   /** Defaults to 'info'. 'success' confirms something the user did; 'warn' is a condition they can fix; 'error' is a failure. */
   kind?: ToastKind
   sticky?: boolean
-  /** Task 25: e.g. the "Salvar como…" recovery action on a failed save. */
+  /** E.g. the "Salvar como…" recovery action on a failed save. */
   action?: ToastAction
   /**
    * When set, any existing toast with the same key is removed before this one

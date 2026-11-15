@@ -104,6 +104,15 @@ export async function createPlainDoc(page: Page): Promise<void> {
 }
 
 /**
+ * Waits for this tab to hold the file's write lock. The lock arrives just after the shell mounts; until then the save
+ * pill reads "Read-only" (a different width from "Saved") and every editor is `contenteditable="false"`, so an edit or
+ * paste made in that window is silently dropped.
+ */
+export async function waitForWritable(page: Page): Promise<void> {
+  await expect(page.locator('.tt-save-pill[data-state]:not([data-state="readonly"])')).toBeVisible()
+}
+
+/**
  * Runs the flush a hiding or closing page triggers (`pagehide`: editors into the store, then the store into the browser
  * copy) and lets its commit land. The persister otherwise waits for a couple of seconds of quiet before it writes.
  */

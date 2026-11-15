@@ -4,6 +4,22 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.7.0] - 2026-11-15
+
+### Added
+- Checklists in notes: type `- [ ]` or `[]`, press Ctrl+Enter, or use the toolbar; click a box to tick it, and nested items check and uncheck as a tree.
+- A "+ New 1:1" button (Alt+O) on each person's page starts a 1:1 note from a template and carries over the unfinished items from the last one.
+- Set a 1:1 cadence per person: the page shows when the last 1:1 was, and overdue 1:1s appear in the due panel, on the org chart and in the fast switch.
+- Module tabs and the module dropdown show a dot when that module has due items.
+- Double-click the blank space below the risks or milestones list to add an item there.
+
+### Changed
+- The Editor tab of Help leads with formatting and lists the checklist syntax.
+
+### Fixed
+- Empty list items in notes can now be reached with the cursor.
+- The page now declares its language (Português or English), so screen readers read it in the right voice and spellcheck uses the right dictionary.
+
 ## [3.6.4] - 2026-11-11
 
 ### Added

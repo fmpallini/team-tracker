@@ -231,8 +231,8 @@ test('a scoped edit outside the kanban board\'s watched sections does not rebuil
   const card = document.querySelector('.tt-kanban-card') as HTMLElement
   expect(card).not.toBeNull()
 
-  // Was originally a 'notes'-scoped daily-note edit, but Task 7 (commit
-  // e552962) intentionally widened action-items.ts's WATCHED to
+  // Was originally a 'notes'-scoped daily-note edit, but commit
+  // e552962 intentionally widened action-items.ts's WATCHED to
   // ['teams', ...BACKLINK_SECTIONS] — and BACKLINK_SECTIONS includes 'notes',
   // since an action item's backlinks chip must stay accurate when a daily
   // note starts/stops @-mentioning it. So a 'notes'-scoped edit legitimately

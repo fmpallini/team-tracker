@@ -21,11 +21,11 @@ test('t leaves placeholder-shaped text alone when no params are given', () => {
   expect(t('pt-BR', 'prefs_templates_placeholders_hint')).toContain('{date}')
 })
 
-test('both locales document the same four English template placeholders (prefs hint and help)', () => {
+test('both locales document the same five English template placeholders (prefs hint and help)', () => {
   for (const locale of ['pt-BR', 'en-US'] as const) {
     const hint = t(locale, 'prefs_templates_placeholders_hint')
     const help = t(locale, 'help_templates_text')
-    for (const key of ['{date}', '{time}', '{person}', '{team}']) {
+    for (const key of ['{date}', '{time}', '{person}', '{team}', '{carryover}']) {
       expect(hint).toContain(key)
       expect(help).toContain(key)
     }
@@ -48,6 +48,12 @@ test('editor quote/hr/link keys exist in both locales', () => {
       expect(t(loc, k).length).toBeGreaterThan(0)
     }
   }
+})
+test('the 1:1 status line has singular forms for one day in both locales', () => {
+  expect(t('en-US', 'person_days_ago_one', { days: '1' })).toBe('1 day ago')
+  expect(t('pt-BR', 'person_days_ago_one', { days: '1' })).toBe('há 1 dia')
+  expect(t('en-US', 'person_cadence_every_one', { days: '1' })).toBe(' · every 1 day')
+  expect(t('pt-BR', 'person_cadence_every_one', { days: '1' })).toBe(' · a cada 1 dia')
 })
 test('strike title now names both chords', () => {
   expect(t('en-US', 'editor_strike_title')).toContain('Ctrl+Shift+X')

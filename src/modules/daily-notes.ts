@@ -1,4 +1,4 @@
-// src/modules/daily-notes.ts — Task 18: the first real module renderer.
+// src/modules/daily-notes.ts — the daily notes module renderer.
 // Wires src/ui/editor.ts (WYSIWYG editor), src/ui/atref.ts (@ mentions +
 // ref-click navigation), src/ui/template-picker.ts (/ templates) and
 // src/ui/calendar.ts (day picker) into the pane system (src/ui/panes.ts).

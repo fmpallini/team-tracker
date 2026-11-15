@@ -1,4 +1,4 @@
-import { builtinTemplates, resolveTemplate, reseedBuiltinTemplates } from '../src/core/templates'
+import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
 import { createEmptyDocument } from '../src/core/document'
 
 test('five builtins with scopes', () => {
@@ -65,4 +65,70 @@ test('reseedBuiltinTemplates leaves a user-authored template untouched', () => {
   const withCustom = [...ts, { id: 'custom-1', name: 'My own template', scope: 'any' as const, body: 'whatever I want' }]
   const reseeded = reseedBuiltinTemplates(withCustom, 'en-US', 'pt-BR')
   expect(reseeded.find(t => t.id === 'custom-1')).toEqual(withCustom[5])
+})
+
+const LEGACY_EN = '## 1:1 — {date}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- '
+const LEGACY_PT = '## 1:1 — {date}\n### Como está / energia\n- \n### Tópicos dela(e)\n- \n### Meus tópicos\n- \n### Feedback\n- \n### Ações combinadas\n- '
+const ctx = { dateIso: '2026-07-02', time: '14:30', locale: 'en-US' as const }
+
+test('the 1:1 seed name is exported', () => {
+  expect(ONE_ON_ONE_SEED_NAME).toBe('1:1')
+})
+
+test('new 1:1 seed (en-US) is the spec body', () => {
+  expect(builtinTemplates('en-US').find(t => t.name === '1:1')!.body).toBe(
+    '## 1:1 — {date}\n### Carried over\n{carryover}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] ')
+})
+
+test('pt-BR seed uses "### Pendências anteriores"', () => {
+  expect(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body).toContain('### Pendências anteriores\n{carryover}\n')
+})
+
+test('{carryover} fills in place', () => {
+  expect(resolveTemplate('## A\n### C\n{carryover}\n### B', { ...ctx, carryover: '- [ ] x' })).toBe('## A\n### C\n- [ ] x\n### B')
+})
+
+test('empty {carryover} removes its line and the heading above it', () => {
+  expect(resolveTemplate('## A\n### C\n{carryover}\n### B', ctx)).toBe('## A\n### B')
+})
+
+test('empty {carryover} never removes the first line', () => {
+  expect(resolveTemplate('## A\n{carryover}\n- x', ctx)).toBe('## A\n- x')
+  expect(resolveTemplate('### C\n{carryover}\n- x', ctx)).toBe('### C\n- x')
+})
+
+test('empty {carryover} under a non-heading line keeps that line', () => {
+  expect(resolveTemplate('## A\ntext\n{carryover}\n- x', ctx)).toBe('## A\ntext\n- x')
+})
+
+test('empty {carryover} inline stays empty text, nothing removed', () => {
+  expect(resolveTemplate('x {carryover} y', ctx)).toBe('x  y')
+})
+
+test('the rendered 1:1 seed with no carry-over drops the Carried over section', () => {
+  const body = builtinTemplates('en-US').find(t => t.name === '1:1')!.body
+  expect(resolveTemplate(body, ctx)).toBe('## 1:1 — 07/02/2026\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] ')
+})
+
+test('reseed recognizes the legacy 1:1 body', () => {
+  const tpl = { id: 'a', name: '1:1', scope: 'personal' as const, body: LEGACY_EN }
+  const [out] = reseedBuiltinTemplates([tpl], 'en-US', 'pt-BR')
+  expect(out!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body)
+})
+
+test('upgradeLegacySeedBodies upgrades only exact legacy bodies', () => {
+  const legacyPt = { id: 'p', name: '1:1', scope: 'personal' as const, body: LEGACY_PT }
+  const legacyEn = { id: 'e', name: '1:1', scope: 'personal' as const, body: LEGACY_EN }
+  const edited = { id: 'x', name: '1:1', scope: 'personal' as const, body: LEGACY_PT + 'extra' }
+  const [p, e, x] = upgradeLegacySeedBodies([legacyPt, legacyEn, edited])
+  expect(p!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body)
+  expect(e!.body).toBe(builtinTemplates('en-US').find(t => t.name === '1:1')!.body)
+  expect(x).toBe(edited)
+})
+
+test('isOneOnOneCandidate excludes only daily-scoped templates', () => {
+  const tpl = (scope: 'personal' | 'daily' | 'any') => ({ id: 'x', name: 'x', scope, body: '' })
+  expect(isOneOnOneCandidate(tpl('personal'))).toBe(true)
+  expect(isOneOnOneCandidate(tpl('any'))).toBe(true)
+  expect(isOneOnOneCandidate(tpl('daily'))).toBe(false)
 })

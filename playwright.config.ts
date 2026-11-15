@@ -49,10 +49,10 @@ export default defineConfig({
     locale: 'en-US',
   },
   // Two projects over one browser: leak.spec.ts is a single serial chain of
-  // CDP-bound tests (minutes long, one worker), so it is the floor of the whole
-  // run. Splitting it out as its own project lets CI start it on a runner of its
-  // own (`--project=leak`) while the rest (`--project=chromium`) runs beside it;
-  // a plain `playwright test` still runs both.
+  // CDP-bound tests (one worker) that a `--shard` cannot split. Splitting it out
+  // as its own project lets CI start it on a runner of its own (`--project=leak`)
+  // while the rest (`--project=chromium --shard=N/2`) runs beside it; a plain
+  // `playwright test` still runs both.
   projects: [
     { name: 'chromium', testIgnore: /leak\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
     { name: 'leak', testMatch: /leak\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },

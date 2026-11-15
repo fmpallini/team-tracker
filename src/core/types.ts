@@ -25,10 +25,18 @@ export interface Prefs {
   // jumps to the nearest day with a note (src/modules/daily-notes.ts). Off
   // leaves the editor's native scroll alone; the Alt+, / Alt+. hotkeys still work.
   dailyEdgeScroll: boolean
+  /** Default 1:1 cadence in days for members: 0..365, 0 means no default. */
+  oneOnOneDefaultDays: number
+  /** The template the 1:1 flow inserts; null when none is set. */
+  oneOnOneTemplateId: string | null
 }
 export interface Person {
   id: string; name: string; role: string
   parentId: string | null; order: number; notes: string
+  /** Date of the last 1:1, ISO `YYYY-MM-DD`. */
+  lastOneOnOne?: string
+  /** This person's own 1:1 cadence in days: absent means the group default, null means none. */
+  oneOnOneEveryDays?: number | null
 }
 export type ActionItemColor = 'slate' | 'brass' | 'sage' | 'rust' | 'plum' | 'ledger'
 export interface ActionColumn { id: string; name: string; order: number }

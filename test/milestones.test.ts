@@ -560,7 +560,7 @@ describe('renderMilestones', () => {
   })
 
   test('deleting a milestone with an empty title does not pay for a whole-team clone', () => {
-    // The silent path offers no undo, so the spec's justification for
+    // The silent path offers no undo, so the justification for
     // deleteWithUndo's structuredClone cost (paid once, to back the Undo
     // toast) does not apply here — this must not clone at all.
     const team = makeTeam({ milestones: [milestone({ id: 'a', title: '', date: todayIso() })] })
@@ -1803,6 +1803,16 @@ test('the new-item request adds a row, and Enter on a named new one adds the nex
   input.dispatchEvent(new Event('change', { bubbles: true }))
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
   expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+})
+
+test('a double-click on the empty area below the list adds a row with the caret in its title; one on a row does not', () => {
+  const { container, store, pm, loc } = setup(makeTeam({ milestones: [milestone({ id: 'a', date: '2030-01-01', title: 'A' })] }))
+  render(container, loc, store, pm)
+  rows(container)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(1)
+  container.querySelector('.tt-milestones')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  expect(store.doc.teams[0]!.milestones).toHaveLength(2)
+  expect((document.activeElement as HTMLElement).classList.contains('tt-milestone-title-input')).toBe(true)
 })
 
 test('Delete on a row deletes it', () => {

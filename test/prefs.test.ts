@@ -522,6 +522,69 @@ test('templates tab lists the 5 builtins with scope badges', () => {
   expect(document.querySelector('.tt-prefs-template-scope-badge')?.textContent).toMatch(/Personal|Daily|Any/)
 })
 
+test('prefs Templates tab edits oneOnOneDefaultDays and oneOnOneTemplateId', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+
+  const days = document.querySelector('.tt-prefs-one-on-one-days-input') as HTMLInputElement
+  expect(days.value).toBe('14')
+  expect(document.querySelector('.tt-prefs-section .tt-data-hint')?.textContent).toBe('0 = none')
+  days.value = '30'
+  days.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.oneOnOneDefaultDays).toBe(30)
+  days.value = '9999'
+  days.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.oneOnOneDefaultDays).toBe(365)
+  days.value = '0'
+  days.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.oneOnOneDefaultDays).toBe(0)
+
+  const select = document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement
+  const seed = store.doc.templates.find((tp) => tp.name === '1:1')!
+  expect(select.value).toBe(seed.id)
+  select.value = ''
+  select.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.oneOnOneTemplateId).toBeNull()
+  const other = store.doc.templates.find((tp) => tp.scope === 'any')!
+  select.value = other.id
+  select.dispatchEvent(new Event('change'))
+  expect(store.doc.prefs.oneOnOneTemplateId).toBe(other.id)
+})
+
+test('template select lists only personal/any templates', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+
+  const select = () => document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement
+  const expected = store.doc.templates.filter((tp) => tp.scope !== 'daily').map((tp) => tp.id)
+  expect(expected.length).toBeGreaterThan(0)
+  expect(expected.length).toBeLessThan(store.doc.templates.length)
+  expect(Array.from(select().options).map((o) => o.value)).toEqual(['', ...expected])
+  expect(select().options[0]!.textContent).toBe('None (heading only)')
+
+  // A new template shows up without reopening the tab.
+  clickByText('+ New')
+  const nameInput = document.querySelector('input[name="tt-prefs-template-name"]') as HTMLInputElement
+  nameInput.value = 'Fresh'
+  clickByText('Save')
+  expect(Array.from(select().options).map((o) => o.textContent)).toContain('Fresh')
+})
+
+test('template select shows None when the chosen template was deleted', () => {
+  const { store, shell, appCtl } = setup()
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+  const id = store.doc.prefs.oneOnOneTemplateId!
+  const rowIndex = store.doc.templates.findIndex((tp) => tp.id === id)
+  ;(document.querySelectorAll('.tt-prefs-template-delete-btn')[rowIndex] as HTMLButtonElement).click()
+  clickByText('Delete')
+  const select = document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement
+  expect(Array.from(select.options).some((o) => o.value === id)).toBe(false)
+  expect(select.value).toBe('')
+})
+
 test('"+ New" adds a template with the entered name/scope/body', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
@@ -661,6 +724,27 @@ test('restore defaults re-inserts builtins missing by name, leaves existing (eve
   expect(names).toContain('Meeting')
   expect(names).toContain('1:1 (custom)')
   expect(names.filter((n) => n === '1:1')).toHaveLength(1) // re-inserted once, not duplicated on a second restore
+  // The New 1:1 template still points at the renamed one: a live choice is the user's.
+  expect(store.doc.prefs.oneOnOneTemplateId).toBe(store.doc.templates.find((tp) => tp.name === '1:1 (custom)')!.id)
+})
+
+test.each([
+  ['dangling', 'the deleted seed'],
+  ['null', 'None'],
+])('restore defaults points a %s New 1:1 template (%s) at the restored 1:1 seed', (kind) => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => {
+    d.templates = d.templates.filter((tp) => tp.name !== '1:1')
+    if (kind === 'null') d.prefs.oneOnOneTemplateId = null
+  })
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates')
+
+  clickByText('Restore defaults')
+
+  const seed = store.doc.templates.find((tp) => tp.name === '1:1')!
+  expect(store.doc.prefs.oneOnOneTemplateId).toBe(seed.id)
+  expect((document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement).value).toBe(seed.id)
 })
 
 test('restore defaults is idempotent when nothing is missing', () => {

@@ -55,7 +55,7 @@ jobs:
   # merges them.
   #
   # Three jobs make that up: `e2e-plan` decides whether the suite has to run,
-  # `e2e-shard` runs it in two parts in parallel, and `e2e` (the name the rest
+  # `e2e-shard` runs it in three parts in parallel, and `e2e` (the name the rest
   # of the repo knows) folds the parts into one verdict.
 
   # A release PR (dev -> main) is the same commit the dev push already tested.
@@ -109,7 +109,13 @@ jobs:
       # One red part must not hide the other part's result (or its trace artifact).
       fail-fast: false
       matrix:
-        part: [leak, main]
+        include:
+          - part: leak
+            args: --project=leak
+          - part: main-1
+            args: --project=chromium --shard=1/2
+          - part: main-2
+            args: --project=chromium --shard=2/2
     permissions:
       contents: read
     steps:
@@ -140,14 +146,16 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      # The same suite, in two parts that together cover every spec (the two
+      # The same suite, in three parts that together cover every spec (the two
       # Playwright projects in playwright.config.ts): leak.spec.ts is one serial
-      # chain of several minutes — the floor of the whole run — so it gets a
-      # runner of its own, and everything else runs beside it. Splitting by test
-      # count instead left that chain alone at the tail of one half. Each part
-      # keeps the runner's own 2 workers; more workers per runner would only
-      # make the timing-sensitive specs (search/nav cost, large paste) noisier.
-      - run: npm run test:e2e -- --project=${{ matrix.part == 'leak' && 'leak' || 'chromium' }}
+      # chain (~1.5 min) that a count-based shard cannot split, so it keeps a
+      # runner of its own; the chromium project (~5 min on one runner, which made
+      # it the floor of the whole run) is sharded in two beside it. With
+      # fullyParallel each test is its own shard unit, so the halves come out
+      # even. Each part keeps the runner's own 2 workers; more workers per runner
+      # would only make the timing-sensitive specs (search/nav cost, large
+      # paste) noisier.
+      - run: npm run test:e2e -- ${{ matrix.args }}
 
       # playwright.config.ts records a trace on first retry; without this the
       # trace is written into the runner and thrown away, leaving a CI-only

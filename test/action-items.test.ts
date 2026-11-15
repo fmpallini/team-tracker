@@ -2916,6 +2916,27 @@ describe('keyboard: faster entry', () => {
     press(summary(), { key: 'Escape' })
   })
 
+  // The notes editor owns Ctrl+Enter (a checklist item) and preventDefaults it;
+  // the dialog's save-and-next must not run on the same keypress.
+  test('Ctrl+Enter in a new task\'s notes makes a checklist item and keeps the card open', () => {
+    const { container, store, pm, loc } = setup(board())
+    render(container, loc, store, pm)
+    container.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+    setValue(summary(), 'First')
+    const notes = document.querySelector<HTMLElement>('.tt-modal-dialog .editor')!
+    notes.innerHTML = '<div>todo</div>'
+    const r = document.createRange()
+    r.setStart(notes.firstChild!.firstChild!, 4)
+    r.collapse(true)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(r)
+    press(notes, { key: 'Enter', ctrlKey: true })
+    expect(notes.querySelector('ul > li[data-task="open"]')?.textContent).toBe('todo')
+    expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
+    expect(summary().value).toBe('First')
+    press(summary(), { key: 'Escape' })
+  })
+
   test('Ctrl+Enter on an existing task does nothing: there is no adding to continue', () => {
     const { container, store, pm, loc } = setup(board())
     render(container, loc, store, pm)

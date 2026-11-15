@@ -13,7 +13,7 @@ import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from './ui/sidebar'
 import { resolveAppHotkey, isBrowserSaveChord, isBrowserUndoChord } from './ui/app-hotkeys'
-import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, requestNewItem, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
+import { createPaneManager, navigateFocusedHistory, jumpFocusedHistoryToLatest, installMouseHistoryButtons, openPaneModuleByIndex, requestNewItem, requestNewOneOnOne, swapPaneSides, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from './ui/panes'
 import { setupResponsiveLayout, wcoReservedWidth } from './ui/responsive'
 import { createPalette } from './ui/palette'
 import { appCommands, type AppCommandActions } from './ui/app-commands'
@@ -45,6 +45,7 @@ import { closeDocument, createBeforeUnloadHandler, downloadCopy, browserCopyAtRi
 import { showWriteFailedDialog } from './ui/write-failed'
 import { watchFileHealth, watchStoreHealth } from './ui/file-health-toasts'
 import { createChangePassword } from './core/change-password'
+import { contentFingerprint } from './core/snapshot'
 import { createTabLock } from './core/tab-lock'
 import { resolveFileLockKey } from './core/file-identity'
 import { createConflictFlow } from './core/conflict-flow'
@@ -80,7 +81,7 @@ interface AppController {
   /** Whether the external-change conflict modal is up — teardown leaves it to resolve an unsaved close rather than stacking a discard prompt over it. */
   isConflictOpen(): boolean
   /**
-   * Task 25 re-review item #4c: tears down the document/window listeners
+   * Tears down the document/window listeners
    * `onDocumentOpened` registers (Ctrl+S keydown, visibilitychange,
    * beforeunload) plus the save controller's own interval/mutation-guard
    * teardown. Invoked by `closeFile()` below (the 🔒 header button /
@@ -179,7 +180,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   if (promoBtn) shell.headerRight.prepend(promoBtn)
   shell.setTitle(session.name)
 
-  // Task 25 re-review item #4c: every document/window listener this function
+  // Every document/window listener this function
   // registers gets its remover collected here so `dispose()` (assigned to
   // `app.dispose` below) can fully tear the document down. See the
   // `AppController.dispose` doc comment for why this matters.
@@ -280,6 +281,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     // document against it would rewrite every record the other tab changed.
     await persister.reseed({ records: followed.stored.records, blobIds: followed.stored.blobs.keys() })
     if (app && app.store === store) app.password = followed.password
+    // The other tab may have written the file meanwhile. A copy with nothing unwritten holds what that file holds.
+    snapshot.fileHolds(followed.unwritten ? null : await contentFingerprint(followed.doc))
     store.replaceDoc(followed.doc, followed.images)
     if (followed.unwritten) store.markDirty()
     shell.applyPrefs(followed.doc.prefs)
@@ -296,7 +299,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     applyReloaded,
     resolveGrants: async () => { await snapshot.resolveGrants() },
     persister,
-    snapshot: { fileWritten: () => snapshot.fileWritten(), fileReloaded: () => snapshot.fileReloaded(), fileWriteFailed: (r) => snapshot.fileWriteFailed(r) },
+    snapshot: { fileWritten: (fp) => snapshot.fileWritten(fp), fileReloaded: (fp) => snapshot.fileReloaded(fp), fileWriteFailed: (r) => snapshot.fileWriteFailed(r) },
     // The fork is a new document with a browser copy of its own; the original's copy (docId unchanged) goes once
     // the fork is up, because its edits now live in the fork and the original file belongs to the other writer.
     reopen: (forkSession, forkDoc, forkPassword, forkImages, stamp) => {
@@ -326,6 +329,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     onExternalChange: conflictFlow.onExternalChange,
     // A debounced editor change must be in the store before the document is serialized.
     flushPending: flushAllEditors,
+    // Opened from the file, or from a browser copy whose content equals it (live-open.ts): an unchanged document is not written.
+    fileMatchesDoc: !needsFileWrite,
   })
   disposers.push(() => snapshot.dispose())
   app = { store, session, password, shell, pm, snapshot, persister, isConflictOpen: conflictFlow.isOpen, dispose }
@@ -416,9 +421,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   })
   disposers.push(releaseTabLock)
 
-  // Task 24: preferences modal wiring. `changePassword` itself lives in
-  // core/change-password.ts (extracted so its concurrency-sensitive logic —
-  // Task 25 fix #3, re-review item #2 — is unit testable outside this
+  // Preferences modal wiring. `changePassword` itself lives in
+  // core/change-password.ts (extracted so its concurrency-sensitive logic
+  // is unit testable outside this
   // monolithic entrypoint); this just wires main.ts's own state into it.
   // `currentPassword` and `fileSchemaVersion` read live from `app`/`store`
   // (not the closed-over `password`/`doc` params) so they stay correct after
@@ -448,7 +453,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   const prefsAppCtl: PrefsAppCtl = {
     changePassword,
     currentPassword,
-    // Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
+    // Lets the Security tab disable its
     // submit button and show an explanatory hint instead of only surfacing
     // the rejection after the fact via the generic failure toast.
     isReadOnly(): boolean {
@@ -598,6 +603,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     const action = resolveAppHotkey(e, {
       teamCount: store.doc.teams.length,
       focusedPaneShowsDailyNote: !!focusedLoc && focusedLoc.ref.kind === 'daily',
+      focusedPaneShowsPerson: !!focusedLoc && focusedLoc.ref.kind === 'person',
       undoOfferLive: isUndoOfferLive(),
     })
     if (!action) {
@@ -617,6 +623,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       case 'newItem':
         if (navPastModelessCard()) requestNewItem(store.doc.nav.focusedPane)
+        return
+      case 'newOneOnOne':
+        if (navPastModelessCard()) requestNewOneOnOne(store.doc.nav.focusedPane)
         return
       case 'help':
         // F1 toggles: it closes Help when open, and leaves any other blocking dialog alone.
@@ -718,12 +727,11 @@ let dismissedUpdateVersion: string | null = null
  * below is doing on its own schedule, and waits until it's actually ready
  * (or gives up after SW_READY_TIMEOUT_MS) before returning. This exists so
  * `reloadForUpdate`'s `location.reload()` is guaranteed to be served by the
- * new worker's new cache rather than racing an install still in progress —
- * see docs/superpowers/specs/2026-07-21-update-check-design.md.
+ * new worker's new cache rather than racing an install still in progress.
  *
  * No-ops for the standalone build (no service worker exists there) and in
- * jsdom (`serviceWorker` is absent from `navigator`, same guard Task 26 uses
- * below for `register()`).
+ * jsdom (`serviceWorker` is absent from `navigator`, same guard the boot-time
+ * `register()` below uses).
  */
 async function ensureServiceWorkerReady(): Promise<void> {
   if (!__PWA__ || !('serviceWorker' in navigator)) return
@@ -784,7 +792,7 @@ showStartScreen(detectBrowserLocale(), openDocument)
 void runUpdateCheck()
 setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)
 
-// Task 26: only the PWA build variant (`__PWA__` true) registers a service
+// Only the PWA build variant (`__PWA__` true) registers a service
 // worker, and only when actually served over http(s) — file:// (the
 // single-file `dist/app.html` variant) and the jsdom test environment both
 // have no `sw.js` alongside them, so this branch must never run there.

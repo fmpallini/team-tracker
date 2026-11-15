@@ -1,6 +1,6 @@
 import { resolveAppHotkey, isBrowserSaveChord, isBrowserUndoChord, type AppHotkeyAction, type AppHotkeyContext } from '../src/ui/app-hotkeys'
 
-const CTX: AppHotkeyContext = { teamCount: 3, focusedPaneShowsDailyNote: false, undoOfferLive: false }
+const CTX: AppHotkeyContext = { teamCount: 3, focusedPaneShowsDailyNote: false, focusedPaneShowsPerson: false, undoOfferLive: false }
 const ctx = (over: Partial<AppHotkeyContext> = {}): AppHotkeyContext => ({ ...CTX, ...over })
 
 function key(init: KeyboardEventInit): KeyboardEvent {
@@ -290,6 +290,16 @@ test('Alt+N asks for a new item, unless a blocking modal is up', () => {
   expect(resolve({ key: 'n', code: 'KeyN', altKey: true, shiftKey: true })).toBeNull()
   document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
   expect(resolve({ key: 'n', code: 'KeyN', altKey: true })).toBeNull()
+})
+
+test('Alt+O → newOneOnOne only when the focused pane shows a person', () => {
+  expect(resolve({ key: 'o', code: 'KeyO', altKey: true }, { focusedPaneShowsPerson: true })).toEqual({ type: 'newOneOnOne' })
+  // by physical key on a layout where e.key is not "o"
+  expect(resolve({ key: 'ø', code: 'KeyO', altKey: true }, { focusedPaneShowsPerson: true })).toEqual({ type: 'newOneOnOne' })
+  expect(resolve({ key: 'o', code: 'KeyO', altKey: true })).toBeNull()
+  expect(resolve({ key: 'O', code: 'KeyO', altKey: true, shiftKey: true }, { focusedPaneShowsPerson: true })).toBeNull()
+  document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
+  expect(resolve({ key: 'o', code: 'KeyO', altKey: true }, { focusedPaneShowsPerson: true })).toBeNull()
 })
 
 describe('the browser undo chords, swallowed outside a field', () => {

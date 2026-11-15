@@ -4,7 +4,7 @@
 import type { Locale } from '../core/i18n'
 import { t } from '../core/i18n'
 import { el, clampToViewport, copyText } from './dom'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver } from '../core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, convertCheckboxItems, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, BLOCK_TAGS, MAX_LIST_DEPTH, type RefInfo, type LabelResolver, type TaskState } from '../core/markdown'
 import { highlightCode } from '../core/highlight'
 import { showHelp } from './help'
 import { showModal, toast } from './modal'
@@ -21,6 +21,13 @@ export interface Editor {
   root: HTMLElement
   getMd(): string
   setMd(md: string): void
+  /**
+   * Swaps the whole note for `md` as ONE undo step of the same note — unlike
+   * setMd(), which loads a different document and clears the history. The
+   * caret goes to the start of the node `caretTarget` picks out of the new
+   * content, else to the end, scrolled into view either way. No-op while read-only.
+   */
+  replaceMd(md: string, caretTarget?: (root: HTMLElement) => Node | null): void
   /**
    * Patches every `a.ref[data-ref]` chip's visible text in place via
    * `hooks.resolveRefLabel`, without touching anything else in the DOM —
@@ -161,7 +168,7 @@ export function detectInlinePattern(text: string, caretOffset: number): InlineMa
 }
 
 export interface BlockPrefixMatch {
-  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote' | 'codeblock'
+  type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'hr' | 'blockquote' | 'codeblock' | 'task'
   prefixLen: number
 }
 
@@ -190,6 +197,10 @@ export function detectBlockPrefix(text: string): BlockPrefixMatch | null {
   if (/^>[  ]$/.test(text)) return { type: 'blockquote', prefixLen: 2 }
 
   if (/^```[ \u00a0]$/.test(text)) return { type: 'codeblock', prefixLen: 4 }
+
+  // `[] ` or `[ ] `: an open checklist item (see handleAutoFormat).
+  m = /^\[ ?\][ \u00a0]$/.exec(text)
+  if (m) return { type: 'task', prefixLen: m[0]!.length }
 
   return null
 }
@@ -367,8 +378,21 @@ export function setEditorsReadOnly(readOnly: boolean): void {
   for (const ed of liveEditors) ed.root.setAttribute('contenteditable', readOnly ? 'false' : 'true')
 }
 
+/**
+ * Spoken names of the checklist states, on any element whose task boxes
+ * styles.css draws (the editor, and read-only `mdToHtml` previews): it reads
+ * them as the alt text of each box's generated content (`content: "" /
+ * var(...)`). Set through the CSSOM, which the CSP allows.
+ */
+export function setTaskBoxNames(host: HTMLElement, locale: Locale): void {
+  host.style.setProperty('--tt-task-open', JSON.stringify(t(locale, 'editor_task_open_sr')))
+  host.style.setProperty('--tt-task-done', JSON.stringify(t(locale, 'editor_task_done_sr')))
+  host.style.setProperty('--tt-task-carried', JSON.stringify(t(locale, 'editor_task_carried_sr')))
+}
+
 export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   const editorEl = el('div', { class: 'editor', contenteditable: editorsReadOnly ? 'false' : 'true' })
+  setTaskBoxNames(editorEl, locale)
 
   let changeTimer: ReturnType<typeof setTimeout> | null = null
   function scheduleChange(): void {
@@ -699,7 +723,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     return true
   }
 
-  /* Task 4: resolves the list item(s) a Tab/Shift+Tab keypress should act
+  /* Resolves the list item(s) a Tab/Shift+Tab keypress should act
    * on. A collapsed caret or a selection within a single item resolves to
    * that one item. A selection spanning multiple sibling `<li>`s (same
    * parent `<ul>/<ol>`) resolves to the whole ordered batch. A selection
@@ -721,6 +745,21 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     const startIdx = siblings.indexOf(startLi)
     const endIdx = siblings.indexOf(endLi)
     return siblings.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1)
+  }
+
+  /**
+   * Tab / Shift+Tab (and Enter on an empty sub-item) on `items`, as one undo
+   * step, keeping the caret at `caretOffset` in `caretBlock`. An open task
+   * may end up under a done one (Tab under a done item; Shift+Tab handing
+   * the following siblings to a done item), which reopens it.
+   */
+  function shiftListItems(items: HTMLElement[], outdent: boolean, caretBlock: HTMLElement, caretOffset: number): void {
+    edit(() => {
+      const moved = outdent ? outdentListItems(items) : indentListItems(items)
+      if (!moved) return
+      items.forEach(settleOpenWork)
+      restoreCaret(caretBlock, caretOffset)
+    })
   }
 
   // caret-after-inline placement (bare, auto-NBSP, always-NBSP) lives in
@@ -794,6 +833,270 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function insertList(kind: 'ul' | 'ol'): void {
     if (blockquoteAtCaret() || preAtCaret()) return
     exec(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList')
+  }
+
+  // --- checklists -----------------------------------------------------------
+  // A checklist item is a bullet `<li data-task="open|done|carried">` (the
+  // shape core/markdown.ts reads and writes as `- [ ] ` / `- [x] ` / `- [>] `).
+  // A numbered item never carries a state: `1. [ ] x` is not a task.
+
+  // Nested checklists keep one rule: a done item never holds open work below
+  // it. Checking or unchecking an item moves its whole subtree with it, and
+  // anything that puts an open task under a done one (unchecking a child,
+  // Tab, Shift+Tab handing over siblings, Enter, typing "[] ") reopens the
+  // done items above it. The other way round, checking the last open
+  // sub-task checks its parent, and so on up while each level is complete.
+  // Carried items are never touched by any of this — that state belongs to
+  // the New 1:1 — and, like plain bullets under a task (notes, not tasks),
+  // never hold a parent open.
+
+  /** The task state of `li` when it is a bullet task, else null. */
+  function taskStateOf(li: HTMLElement): TaskState | null {
+    if (li.parentElement?.tagName !== 'UL') return null
+    const v = li.getAttribute('data-task')
+    return v === 'open' || v === 'done' || v === 'carried' ? v : null
+  }
+
+  /**
+   * Every bullet task nested under `li`, at any depth. Includes a sub-list
+   * contenteditable left as the item's next sibling instead of inside it,
+   * the shape listContainerLi (and htmlToMd) still read as nested under it.
+   */
+  function taskItemsBelow(li: HTMLElement): HTMLElement[] {
+    const roots: Element[] = [li]
+    for (let s = li.nextElementSibling; s && s.tagName !== 'LI'; s = s.nextElementSibling) {
+      if (s.tagName === 'UL' || s.tagName === 'OL') roots.push(s)
+    }
+    return roots.flatMap((r) => Array.from(r.querySelectorAll<HTMLElement>('li[data-task]'))).filter((d) => taskStateOf(d) !== null)
+  }
+
+  /** The `<li>` the list holding `li` is nested under, or null at the top level. */
+  function parentItem(li: HTMLElement): HTMLElement | null {
+    const list = li.parentElement
+    return list && (list.tagName === 'UL' || list.tagName === 'OL') ? listContainerLi(list) : null
+  }
+
+  /** Reopens every done task above `li`. */
+  function reopenDoneAbove(li: HTMLElement): void {
+    for (let p = parentItem(li); p; p = parentItem(p)) {
+      if (taskStateOf(p) === 'done') p.setAttribute('data-task', 'open')
+    }
+  }
+
+  /**
+   * Checks each open task above `li` that has no open task left below it,
+   * walking up until one still has open work (every level above it holds
+   * that same open work). Plain items on the way are passed through.
+   */
+  function completeDoneAbove(li: HTMLElement): void {
+    for (let p = parentItem(li); p; p = parentItem(p)) {
+      if (taskStateOf(p) !== 'open') continue
+      if (taskItemsBelow(p).some((d) => taskStateOf(d) === 'open')) return
+      p.setAttribute('data-task', 'done')
+    }
+  }
+
+  /** Reopens the done tasks above every open task in `li`'s subtree, `li` included. */
+  function settleOpenWork(li: HTMLElement): void {
+    for (const t of [li, ...taskItemsBelow(li)]) {
+      if (taskStateOf(t) === 'open') reopenDoneAbove(t)
+    }
+  }
+
+  /**
+   * Sets `li` and every open or done task below it to `state`; then the
+   * tasks above follow: reopened when it opens, checked when it closed
+   * their last open work.
+   */
+  function setTaskTree(li: HTMLElement, state: 'open' | 'done'): void {
+    li.setAttribute('data-task', state)
+    for (const d of taskItemsBelow(li)) {
+      const cur = taskStateOf(d)
+      if ((cur === 'open' || cur === 'done') && cur !== state) d.setAttribute('data-task', state)
+    }
+    if (state === 'open') reopenDoneAbove(li)
+    else completeDoneAbove(li)
+  }
+
+  /** The box click: swaps an open or done bullet's state, with its subtree, as its own undo step. */
+  function toggleTask(li: HTMLElement): void {
+    if (editorsReadOnly) return
+    const cur = taskStateOf(li)
+    if (cur !== 'open' && cur !== 'done') return
+    edit(() => setTaskTree(li, cur === 'open' ? 'done' : 'open'))
+    scheduleChange()
+  }
+
+  /** The `<li>` holding a collapsed caret, else null. */
+  function caretListItem(): HTMLElement | null {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null
+    const node = sel.getRangeAt(0).startContainer
+    return editorEl.contains(node) ? closestLi(node) : null
+  }
+
+  /** True when no text of `li` comes before the (collapsed) caret. */
+  function caretAtItemStart(li: HTMLElement): boolean {
+    const caret = window.getSelection()!.getRangeAt(0)
+    const before = document.createRange()
+    before.setStart(li, 0)
+    before.setEnd(caret.startContainer, caret.startOffset)
+    return before.toString() === ''
+  }
+
+  /** `li`'s own sub-list when the (collapsed) caret sits at the end of `li`'s own text, else null. */
+  function caretAtOwnTextEnd(li: HTMLElement): HTMLElement | null {
+    const sub = li.querySelector<HTMLElement>(':scope > ul, :scope > ol')
+    if (!sub) return null
+    const caret = window.getSelection()!.getRangeAt(0)
+    if (sub.contains(caret.startContainer)) return null
+    const after = document.createRange()
+    after.setStart(caret.startContainer, caret.startOffset)
+    after.setEndBefore(sub)
+    return after.toString() === '' ? sub : null
+  }
+
+  /**
+   * A new empty first item of `sub`, holding the caret: a task when the item
+   * it goes above is one (reopening done tasks above it), else plain.
+   */
+  function startFirstSubItem(sub: HTMLElement): void {
+    edit(() => {
+      const li = document.createElement('li')
+      li.appendChild(document.createElement('br'))
+      const first = sub.firstElementChild
+      sub.insertBefore(li, first)
+      if (first instanceof HTMLElement && taskStateOf(first) !== null) {
+        li.setAttribute('data-task', 'open')
+        reopenDoneAbove(li)
+      }
+      placeCaretAtStart(li)
+    })
+  }
+
+  /**
+   * After a delete (Backspace, cut, select-all + Delete): a done item left
+   * empty is reopened. Chromium keeps the emptied `<li>` with its state, so
+   * whatever is typed next would come out struck through.
+   */
+  function reopenEmptiedDone(): void {
+    const li = caretListItem()
+    if (li && taskStateOf(li) === 'done' && (li.textContent ?? '') === '') li.setAttribute('data-task', 'open')
+  }
+
+  /**
+   * Every `<li>` the selection touches: the one its start sits in, plus each
+   * later one whose own start lies inside the range. An item the range only
+   * grazes at its very start (a triple-click ends at the next line's offset 0)
+   * holds no selected text and is left out.
+   */
+  function touchedListItems(range: Range): HTMLElement[] {
+    const startLi = closestLi(range.startContainer)
+    const items = startLi ? [startLi] : []
+    if (range.collapsed) return items
+    for (const li of Array.from(editorEl.querySelectorAll<HTMLElement>('li'))) {
+      if (li === startLi || range.comparePoint(li, 0) !== 0) continue
+      const own = range.cloneRange()
+      own.setStart(li, 0)
+      if (li.contains(range.endContainer) && own.toString() === '') continue
+      items.push(li)
+    }
+    return items
+  }
+
+  /**
+   * Ctrl+Enter (`toggle`) and the Checklist toolbar button. With the
+   * selection in list items it acts on the bullets it touches (numbered
+   * items are skipped) as one group, never flipping each on its own: when
+   * any is a plain bullet, the plain ones become open tasks and the tasks
+   * stay as they are; otherwise (Ctrl+Enter only) all of them are checked
+   * when any is open, else all unchecked — each with its subtree, so a
+   * selected child under a selected parent simply follows. Carried items
+   * are left alone. Outside any list, the
+   * top-level line holding the selection's start becomes an open task item,
+   * keeping its inline content and the caret's place. Nothing inside a
+   * quote or a code block. One undo step either way.
+   */
+  function makeTask(toggle = false): void {
+    if (editorsReadOnly || blockquoteAtCaret() || preAtCaret()) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (!editorEl.contains(range.startContainer)) return
+    const items = touchedListItems(range)
+    if (items.length > 0) {
+      const bullets = items.filter((li) => li.parentElement?.tagName === 'UL')
+      const plain = bullets.filter((li) => taskStateOf(li) === null)
+      const tasks = bullets.filter((li) => taskStateOf(li) === 'open' || taskStateOf(li) === 'done')
+      if (plain.length > 0) {
+        edit(() => { for (const li of plain) { li.setAttribute('data-task', 'open'); reopenDoneAbove(li) } })
+      } else if (toggle && tasks.length > 0) {
+        const target = tasks.some((li) => taskStateOf(li) === 'open') ? 'done' : 'open'
+        edit(() => { for (const li of tasks) setTaskTree(li, target) })
+      } else {
+        return
+      }
+      scheduleChange()
+      return
+    }
+    let block: Node | null = range.startContainer
+    while (block && block.parentNode !== editorEl) block = block.parentNode
+    if (!(block instanceof HTMLElement) || !/^(DIV|P|H[1-3])$/.test(block.tagName) || block.classList.contains('tt-img')) return
+    const before = document.createRange()
+    before.selectNodeContents(block)
+    before.setEnd(range.startContainer, range.startOffset)
+    const offset = before.toString().length
+    const line = block
+    edit(() => {
+      const li = document.createElement('li')
+      li.setAttribute('data-task', 'open')
+      li.append(...Array.from(line.childNodes))
+      if (!li.firstChild) li.appendChild(document.createElement('br'))
+      const ul = document.createElement('ul')
+      ul.appendChild(li)
+      line.replaceWith(ul)
+      restoreCaret(li, offset)
+    })
+    scheduleChange()
+  }
+
+  /**
+   * After a native Enter (`insertParagraph`) inside a task item: Chromium
+   * clones the item's attributes onto the new one, so splitting a done item
+   * would make another done item. The new item is set open, and so are the
+   * done items above it (it is open work under them). It is the one
+   * holding the caret, except for an Enter at the very start of an item:
+   * there Chromium leaves the caret (and the text) in the lower item and puts
+   * the new, empty one above it. Enter on an empty item leaves the list
+   * natively, so the caret is in no `<li>` and nothing runs.
+   */
+  function openSplitTask(): void {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const li = closestLi(sel.getRangeAt(0).startContainer)
+    if (!li || li.parentElement?.tagName !== 'UL' || !li.hasAttribute('data-task')) return
+    const prev = li.previousElementSibling
+    const fresh = prev instanceof HTMLElement && prev.tagName === 'LI' && prev.hasAttribute('data-task') &&
+      (prev.textContent ?? '') === '' && (li.textContent ?? '') !== '' ? prev : li
+    if (fresh.getAttribute('data-task') !== 'open') fresh.setAttribute('data-task', 'open')
+    reopenDoneAbove(fresh)
+  }
+
+  /**
+   * A click on a task item's box toggles it. The box is the item's
+   * `::before`, drawn in its left padding (styles.css), so a click on it
+   * targets the `<li>` itself with an `offsetX` inside that padding; a click
+   * on the text targets the text's own box and never toggles. Only the first
+   * line's gutter counts: further down it runs alongside a nested sub-list.
+   */
+  function handleTaskBoxClick(e: MouseEvent): void {
+    const li = e.target
+    if (editorsReadOnly || !(li instanceof HTMLElement) || li.tagName !== 'LI' || !li.hasAttribute('data-task') || !editorEl.contains(li)) return
+    const cs = getComputedStyle(li)
+    if (!(e.offsetX < parseFloat(cs.paddingLeft))) return
+    const lineHeight = parseFloat(cs.lineHeight)
+    if (Number.isFinite(lineHeight) && e.offsetY > (parseFloat(cs.paddingTop) || 0) + lineHeight) return
+    toggleTask(li)
   }
 
   /**
@@ -1020,10 +1323,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * left right after typing "- " or "1. " and stripping the prefix — and can
    * silently no-op instead of creating the list.
    */
-  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol'): void {
+  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol', task?: TaskState): void {
     editorEl.focus()
     edit(() => {
       const li = document.createElement('li')
+      if (task) li.setAttribute('data-task', task)
       li.appendChild(document.createElement('br'))
       const list = document.createElement(type)
       list.appendChild(li)
@@ -1137,6 +1441,23 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         // Headings / lists / rules don't survive a `> ` round trip, so a
         // block prefix typed inside a quote is left as literal text.
         if (inQuote) return
+        if (blockMatch.type === 'task') {
+          // "[] " / "[ ] " as the whole text of a bullet makes it an open task;
+          // as the whole text of a top-level line, a new task list. In a
+          // numbered item it stays literal: `1. [ ] x` is not a task (see
+          // core/markdown.ts's renderListMd).
+          if (block.tagName === 'LI' && block.parentElement?.tagName === 'UL') {
+            edit(() => {
+              block.setAttribute('data-task', 'open')
+              reopenDoneAbove(block)
+              block.replaceChildren(document.createElement('br'))
+              placeCaretAtStart(block)
+            })
+          } else if (block.parentElement === editorEl) {
+            convertBlockToList(block, 'ul', 'open')
+          }
+          return
+        }
         if (blockMatch.type === 'hr') {
           // Unlike ul/ol (which fall through to the generic prefix-strip +
           // applyBlockFormat path below when not top-level, since that path
@@ -1787,6 +2108,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     ensureBlock()
+    if (e instanceof InputEvent && e.inputType === 'insertParagraph') openSplitTask()
+    if (e instanceof InputEvent && e.inputType.startsWith('delete')) reopenEmptiedDone()
     handleAutoFormat()
     checkTriggers()
     syncPreHighlight()
@@ -1839,6 +2162,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     { match: (e) => e.shiftKey && (e.code === 'KeyX' || e.code === 'Digit5'), run: () => exec('strikeThrough') },
     { match: (e) => e.shiftKey && e.code === 'Digit8', run: () => insertList('ul') },
     { match: (e) => e.shiftKey && e.code === 'Digit7', run: () => insertList('ol') },
+    // Ctrl+Enter: make a checklist item / toggle it (makeTask). The plain-Enter
+    // branch in onKeydown skips any Ctrl chord, so it lands here.
+    { match: (e) => !e.shiftKey && e.key === 'Enter', run: () => makeTask(true) },
     {
       match: (e) => e.shiftKey && (e.code === 'Digit9' || e.code === 'KeyQ' || e.key === '9' || e.key === '('),
       run: () => toggleBlockquote(),
@@ -1912,16 +2238,48 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         scheduleChange()
         return
       }
+      // Enter on an empty sub-item steps it out one level, exactly as
+      // Shift+Tab does. Chromium's own outdent here drops the item's checkbox
+      // and leaves the sub-list it came from beside its parent item instead
+      // of inside it. An empty top-level item still leaves the list natively.
+      // Not while an IME composition is open: that Enter confirms the composition.
+      const caretLi = e.isComposing ? null : caretListItem()
+      if (caretLi && (caretLi.textContent ?? '') === '' && parentItem(caretLi)) {
+        e.preventDefault()
+        shiftListItems([caretLi], true, caretLi, 0)
+        return
+      }
+      // Enter at the end of an item that has sub-items starts its first
+      // sub-item, as outliners do. Natively the new item takes the whole
+      // sub-list with it, so the children silently change parent (and a
+      // check on the parent no longer reaches them).
+      const subList = caretLi && caretAtOwnTextEnd(caretLi)
+      if (subList) {
+        e.preventDefault()
+        startFirstSubItem(subList)
+        scheduleChange()
+        return
+      }
+    }
+    // Backspace at the very start of a task item removes only its box (the
+    // checklist convention of Docs and Notion); the next Backspace is the
+    // browser's. Natively it would merge the item into the line above — a
+    // sub-task's text joins its parent's line and its box is gone.
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing) {
+      const li = caretListItem()
+      if (li && taskStateOf(li) !== null && caretAtItemStart(li)) {
+        e.preventDefault()
+        edit(() => li.removeAttribute('data-task'))
+        scheduleChange()
+        return
+      }
     }
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       const listItems = selectedListItems()
       if (listItems.length > 0) {
         const ctx = currentBlockAndOffset() // collapsed-caret case only; null for multi-item selections
-        edit(() => {
-          const moved = e.shiftKey ? outdentListItems(listItems) : indentListItems(listItems)
-          if (moved) restoreCaret(ctx ? (ctx.block) : listItems[0]!, ctx ? ctx.caretOffset : 0)
-        })
+        shiftListItems(listItems, e.shiftKey, ctx ? ctx.block : listItems[0]!, ctx ? ctx.caretOffset : 0)
         return
       }
       if (e.shiftKey) {
@@ -2035,6 +2393,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     })
     // Word sends list items as <p style="mso-list:…"> paragraphs; make them real lists first.
     convertWordLists(wrapper)
+    // A checklist copied from GitHub or Google Docs keeps its boxes and their states.
+    convertCheckboxItems(wrapper)
     // Splits a Google-Docs-style "whole paste wrapped in one non-block
     // container" fragment into real, separately-rendered blocks before the
     // block-child check below — see unwrapBlockContainers' own doc comment.
@@ -2392,6 +2752,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       if (cbActivePre === collapsed) { syncCbGlyphs(); positionCbControls() }
     }
     selectImageBlock((e.target as HTMLElement).closest?.('.tt-img') as HTMLElement | null)
+    handleTaskBoxClick(e)
     handleRefActivate(e)
     handleExternalLinkActivate(e)
   }
@@ -2496,6 +2857,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarSeparator(),
     toolbarButton(icon('list'), t(locale, 'editor_ul_title'), () => insertList('ul')),
     toolbarButton(icon('olist'), t(locale, 'editor_ol_title'), () => insertList('ol')),
+    toolbarButton(icon('checklist'), t(locale, 'editor_checklist_title'), () => makeTask()),
     toolbarSeparator(),
     toolbarButton('H1', t(locale, 'editor_h1_title'), () => formatBlockTag('h1')),
     toolbarButton('H2', t(locale, 'editor_h2_title'), () => formatBlockTag('h2')),
@@ -2866,6 +3228,43 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     hydrateImages()
   }
 
+  function replaceMd(md: string, caretTarget?: (root: HTMLElement) => Node | null): void {
+    if (editorsReadOnly) return
+    // One step: the checkpoint stores the note as it is now, and every DOM
+    // change below — the swap and the settle passes after it — lands inside
+    // that same open step (presentation-only work nets out of the entry).
+    // The stack is kept, not cleared: this is an edit of the same note, so
+    // the steps before it must stay reachable.
+    undoStack.checkpoint()
+    editorEl.innerHTML = renderMd(md)
+    // The same settle passes setMd() runs (see its comments), plus the chip
+    // labels an undo restore refreshes too.
+    decorateCodeBlocks(true)
+    syncPreHighlight()
+    hydrateImages()
+    refreshRefLabels()
+    scheduleChange()
+    editorEl.focus()
+    const target = caretTarget?.(editorEl) ?? null
+    if (target) {
+      placeCaretAtStart(target)
+      const scrollEl = target instanceof Element ? target : target.parentElement
+      scrollEl?.scrollIntoView({ block: 'center' })
+    } else {
+      const last = editorEl.lastElementChild ?? editorEl
+      const sel = window.getSelection()
+      if (sel) {
+        const r = document.createRange()
+        r.selectNodeContents(last)
+        r.collapse(false)
+        sel.removeAllRanges()
+        sel.addRange(r)
+      }
+      // A long note's end can sit below the fold, where the new content is. jsdom has no scrollIntoView.
+      last.scrollIntoView?.({ block: 'end' })
+    }
+  }
+
   function refreshRefLabels(): void {
     const resolve = hooks.resolveRefLabel
     if (!resolve) return
@@ -2958,5 +3357,5 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
   registerEditor(registryEntry)
 
-  return { root, getMd, setMd, refreshRefLabels, focus, destroy }
+  return { root, getMd, setMd, replaceMd, refreshRefLabels, focus, destroy }
 }

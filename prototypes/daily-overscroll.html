@@ -236,14 +236,14 @@
     <h2>Rubber-band knobs</h2>
 
     <div class="knob">
-      <label>Resistance coefficient <b id="vC">0.55</b></label>
-      <input type="range" id="kC" min="0.10" max="1.00" step="0.01" value="0.55" />
+      <label>Resistance coefficient <b id="vC">0.31</b></label>
+      <input type="range" id="kC" min="0.10" max="1.00" step="0.01" value="0.31" />
       <div class="hint">Initial stiffness: resisted px gained per raw px at the edge. macOS ≈ 0.55. Lower = firmer wall.</div>
     </div>
 
     <div class="knob">
-      <label>Commit threshold <b id="vT">90 px</b></label>
-      <input type="range" id="kT" min="24" max="200" step="2" value="90" />
+      <label>Commit threshold <b id="vT">170 px</b></label>
+      <input type="range" id="kT" min="24" max="200" step="2" value="170" />
       <div class="hint">Resisted travel past the edge that flips the day on release.</div>
     </div>
 
@@ -262,8 +262,8 @@
     </div>
 
     <div class="knob">
-      <label>Spring-back after idle <b id="vI">350 ms</b></label>
-      <input type="range" id="kI" min="120" max="800" step="10" value="350" />
+      <label>Spring-back after idle <b id="vI">490 ms</b></label>
+      <input type="range" id="kI" min="120" max="800" step="10" value="490" />
       <div class="hint">Time with no wheel delta — while still below the threshold — before the pull springs back. Must outlast the gap between mouse-wheel notches or successive notches won't stack.</div>
     </div>
 
@@ -338,7 +338,7 @@
   }
 
   // ---- knobs ----------------------------------------------------------
-  const cfg = { c: 0.55, threshold: 90, spring: 320, ease: 'cubic', idle: 350 };
+  const cfg = { c: 0.31, threshold: 170, spring: 320, ease: 'cubic', idle: 490 }; // = OVERSCROLL in src/core/overscroll.ts
   const DEFAULTS = { ...cfg };
 
   const $ = (id) => document.getElementById(id);

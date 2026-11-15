@@ -40,7 +40,10 @@ test('a timed file write leaves no second copy of the file in memory', async ({ 
   await page.clock.fastForward(5_000)
   const afterOpen = await mb()
   const writesBefore = await fileWrites(page, 'm.tmv')
-  await page.locator('.tt-team-item').first().click() // a nav change: the document now differs from its file
+  // A content edit: the document now differs from its file (navigation alone would not make the timer write).
+  await page.locator('.tt-team-item').first().click()
+  await page.locator('.editor').first().click()
+  await page.keyboard.type('edit')
   await page.clock.fastForward('01:01:00')
   await page.waitForTimeout(3000)
   await page.clock.fastForward(5_000)

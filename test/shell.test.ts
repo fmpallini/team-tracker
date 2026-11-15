@@ -88,8 +88,17 @@ function prefsWith(locale: 'en-US' | 'pt-BR' = 'en-US'): Parameters<Shell['apply
   return {
     locale, theme: 'system', palette: 'ledger', font: 'system', fontSize: 'M', autoSaveMin: 5, dueSoonDays: 7,
     openRefsInSecondaryPane: false, ctrlWheelFontSize: true, dailyEdgeScroll: true,
+    oneOnOneDefaultDays: 14, oneOnOneTemplateId: null,
   }
 }
+
+test('applyPrefs marks the page language with the document locale (screen-reader voice, spellcheck dictionary)', () => {
+  const shell = setup()
+  shell.applyPrefs(prefsWith('pt-BR'))
+  expect(document.documentElement.lang).toBe('pt-BR')
+  shell.applyPrefs(prefsWith('en-US'))
+  expect(document.documentElement.lang).toBe('en-US')
+})
 
 describe('app name button', () => {
   // jsdom lays nothing out, so the label's clipping is faked through its scroll/client widths.

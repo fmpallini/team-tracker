@@ -110,7 +110,7 @@ export function unlinkRefsInTeam(team: Team, kind: IdRefKind, titles: ReadonlyMa
  * Unconditionally flattens every @[label](kind:id) mention in `text` to its
  * plain label — unlike unlinkRefsInText/unlinkRefsInTeam, which only rewrite
  * mentions pointing at specific deleted ids. Used when a card's free-text
- * field moves to a *different* team (Task 2's card-transfer.ts): the ids it
+ * field moves to a *different* team (card-transfer.ts): the ids it
  * mentions belong to the source team and are meaningless (or collide) in the
  * destination, so every mention — not just dangling ones — must lose its
  * link and become ordinary prose.

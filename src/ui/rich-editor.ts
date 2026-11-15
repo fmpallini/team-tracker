@@ -21,6 +21,8 @@ import { createImageHost } from './image-host'
 
 export interface RichEditorBundle {
   editor: Editor
+  /** The template context the '/' picker fills templates with, read live (today, the current time, team and person names). */
+  templateCtx(): TemplateCtx
   /** Tears down the @ref dropdown, template-picker dropdown, the editor itself and its image host, in that order. Idempotent-safe to call once per bundle. */
   dispose(): void
 }
@@ -69,6 +71,7 @@ export function createRichEditorBundle(opts: {
 
   return {
     editor,
+    templateCtx: () => opts.getTemplateCtx(),
     dispose(): void {
       atHandle.dispose()
       tplHandle.dispose()

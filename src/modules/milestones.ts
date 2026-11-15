@@ -1,4 +1,4 @@
-// src/modules/milestones.ts — Task 21: milestones module. Two stacked areas
+// src/modules/milestones.ts — milestones module. Two stacked areas
 // inside one container: a proportional-timeline SVG (top) and an editable,
 // date-sorted list (bottom). Reuses the same structural discipline as
 // src/modules/action-items.ts — loc.teamId-keyed store.update helpers and the
@@ -8,7 +8,7 @@
 // always fully rebuilt: nothing inside it can hold DOM focus, so there is
 // nothing to preserve there.
 //
-// The calendar (src/ui/calendar.ts, Task 18) reads team.milestones directly
+// The calendar (src/ui/calendar.ts) reads team.milestones directly
 // for its 🚩 markers, so any store.update here is picked up automatically —
 // this module never talks to the calendar.
 import type { Milestone, Loc, Team } from '../core/types'
@@ -19,7 +19,7 @@ import { scopeAffects, type Section } from '../core/scope'
 import { createEntityDelete } from './entity-delete'
 import { patchTeamItem } from '../core/team-items'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { createFollowupRows, type AddingRun, focusedCaretElement } from './followup-list'
+import { createFollowupRows, type AddingRun, focusedCaretElement, addOnBlankDoubleClick } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { createDatePicker, type DatePickerHandle } from '../ui/date-picker'
@@ -702,7 +702,9 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   const disposeArrowFallback = installArrowFallbackFocus(ctx, listEl, '.tt-milestone-row', ['ArrowDown', 'ArrowUp'])
 
-  container.appendChild(el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl))
+  const milestonesWrap = el('div', { class: 'tt-milestones' }, timelineEl, toolbar, listEl)
+  addOnBlankDoubleClick(milestonesWrap, listEl, addMilestone)
+  container.appendChild(milestonesWrap)
   renderAll()
   // Lands focus on the first row the moment the module opens, so
   // ArrowUp/Down navigation works immediately without a preceding Tab. Only

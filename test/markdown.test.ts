@@ -1,6 +1,7 @@
+import css from '../styles.css?raw'
 import { unlinkRefsInText } from '../src/core/refs'
 import { parseImageLine } from '../src/core/image-ref'
-import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines } from '../src/core/markdown'
+import { mdToHtml, htmlToMd, htmlToPlainText, parseRef, safeHref, unwrapBlockContainers, convertWordLists, convertCheckboxItems, flattenNestedHeadings, flattenNestedBlockquotes, demoteHeadings, demoteBlockquotes, preLines, fencedLines } from '../src/core/markdown'
 
 const roundTrip = (md: string) => {
   const div = document.createElement('div')
@@ -1596,6 +1597,37 @@ test('a code block that starts with blank lines keeps every one across saves (th
   expect(roundTrip(roundTrip(md))).toBe(md)
 })
 
+describe('convertCheckboxItems (other apps send a checklist item as a checkbox or an ARIA checkbox)', () => {
+  const md = (html: string): string => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    convertCheckboxItems(root)
+    return htmlToMd(root)
+  }
+
+  test("a leading <input type=checkbox> (GitHub, Confluence) becomes the item's state, nested too", () => {
+    expect(md('<ul><li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" disabled checked> Ship it<ul><li><input type="checkbox" disabled> Write notes</li></ul></li></ul>'))
+      .toBe('- [x] Ship it\n  - [ ] Write notes')
+  })
+
+  test('the box may sit in a wrapper (<p>, <label>)', () => {
+    expect(md('<ul><li><p><label><input type="checkbox" checked>Done</label></p></li></ul>')).toBe('- [x] Done')
+  })
+
+  test('an ARIA checkbox item (Google Docs) takes aria-checked', () => {
+    expect(md('<ul><li role="checkbox" aria-checked="true">a</li><li role="checkbox" aria-checked="false">b</li></ul>')).toBe('- [x] a\n- [ ] b')
+  })
+
+  test("a box after the item's text, or in a numbered item, is not a task", () => {
+    expect(md('<ul><li>Agree<input type="checkbox" checked></li></ul>')).toBe('- Agree')
+    expect(md('<ol><li><input type="checkbox" checked> a</li></ol>')).toBe('1. a')
+  })
+
+  test("a nested item's box does not make its parent a task", () => {
+    expect(md('<ul><li>Parent<ul><li><input type="checkbox"> child</li></ul></li></ul>')).toBe('- Parent\n  - [ ] child')
+  })
+})
+
 describe('convertWordLists (Word list paragraphs are <p style="mso-list:…"> with a glyph span, not <ul>)', () => {
   const bullet = (level: number, text: string): string =>
     `<p class="MsoListParagraph" style="text-indent:-18.0pt;mso-list:l0 level${level} lfo1"><!--[if !supportLists]--><span style="font-family:Symbol"><span style="mso-list:Ignore">·<span style="font:7.0pt 'Times New Roman'">&nbsp;&nbsp;&nbsp;&nbsp; </span></span></span><!--[endif]-->${text}<o:p></o:p></p>`
@@ -1729,5 +1761,64 @@ describe('htmlToPlainText: image blocks', () => {
 
   test('picture markers inside a quote keep the quote prefix', () => {
     expect(plain(`<blockquote><div>q</div>${block('x')}</blockquote>`)).toBe('> q\n>\n> [image: x]')
+  })
+})
+
+const parse = (html: string) => {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  return div
+}
+
+test('task items parse to li[data-task]', () => {
+  expect(mdToHtml('- [ ] a\n- [x] b\n- [X] c\n- [>] d\n- e')).toBe(
+    '<ul><li data-task="open">a</li><li data-task="done">b</li><li data-task="done">c</li><li data-task="carried">d</li><li>e</li></ul>')
+})
+test('task items round-trip, nested, any depth', () => {
+  const md = '- [ ] a\n  - [x] b\n    - c\n- [>] d'
+  expect(roundTrip(md)).toBe(md)
+})
+test('[X] serializes back as [x]', () => expect(roundTrip('- [X] a')).toBe('- [x] a'))
+test('empty open task round-trips', () => expect(roundTrip('- [ ] ')).toBe('- [ ] '))
+test('an empty list item holds a <br> so the caret can land in it', () => {
+  expect(mdToHtml('- [ ] \n- \n1. ')).toBe('<ul><li data-task="open"><br></li><li><br></li></ul><ol><li value="1"><br></li></ol>')
+  expect(roundTrip('- [ ] \n- \n1. ')).toBe('- [ ] \n- \n1. ')
+  expect(roundTrip('- [ ] \n  - [ ] ')).toBe('- [ ] \n  - [ ] ')
+})
+test('ordered items are never tasks', () => expect(mdToHtml('1. [ ] a')).not.toContain('data-task'))
+test('fenced task text stays literal', () => expect(mdToHtml('```\n- [ ] a\n```')).not.toContain('data-task'))
+test('plain bullet starting with [ ] round-trips as text', () => {
+  // A plain <li> whose text is "[ ] x" (no data-task) — escapeInline already writes \[ \]
+  const md = htmlToMd(parse('<ul><li>[ ] x</li></ul>'))
+  expect(md).toBe('- \\[ \\] x')
+  expect(mdToHtml(md)).not.toContain('data-task')
+})
+test('plain-text copy shows task state', () => {
+  expect(htmlToPlainText(parse(mdToHtml('- [ ] a\n- [x] b\n- [>] c')))).toBe('☐ a\n☑ b\n↪ c')
+})
+test('the carried box draws the same ↪ the plain-text copy and Help show', () => {
+  expect(css).toMatch(/li\[data-task="carried"\]::before \{ content: "\\21AA" \//)
+})
+test('data-task on an ordered item serializes as a plain item', () => {
+  expect(htmlToMd(parse('<ol><li data-task="open" value="1">a</li></ol>'))).toBe('1. a')
+})
+
+describe('fencedLines (the fence rule mdToHtml applies, for line-based readers)', () => {
+  test('marks the fence lines and everything between them', () => {
+    expect(fencedLines(['a', '```js', '- [ ] x', '```', 'b'])).toEqual({ fenced: [false, true, true, true, false], unclosed: false })
+  })
+  test('an unclosed fence runs to the end and is reported', () => {
+    expect(fencedLines(['a', '```', 'x'])).toEqual({ fenced: [false, true, true], unclosed: true })
+  })
+  test('a longer opener needs a closer as long when one follows', () => {
+    expect(fencedLines(['````', '```', '````', 'b']).fenced).toEqual([true, true, true, false])
+  })
+  test('a longer opener with no closer that long closes on any ``` line', () => {
+    expect(fencedLines(['````', 'x', '```', 'b']).fenced).toEqual([true, true, true, false])
+  })
+  test('agrees with mdToHtml on what is code', () => {
+    const md = '````\n- [ ] a\n```\n````\n- [ ] b'
+    expect(mdToHtml(md).match(/data-task/g)).toHaveLength(1)
+    expect(fencedLines(md.split('\n')).fenced).toEqual([true, true, true, true, false])
   })
 })

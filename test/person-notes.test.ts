@@ -2,8 +2,12 @@ import { renderPersonNotes } from '../src/modules/person-notes'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { createSearchIndex } from '../src/core/search'
-import type { PaneManager, ModuleCtx } from '../src/ui/panes'
-import type { Loc, Team } from '../src/core/types'
+import { NEW_ONE_ON_ONE_EVENT, requestNewOneOnOne, type PaneManager, type ModuleCtx } from '../src/ui/panes'
+import type { Loc, Person, Team } from '../src/core/types'
+import { todayIso } from '../src/core/i18n'
+import { addDaysIso } from '../src/core/date'
+import { setEditorsReadOnly } from '../src/ui/editor'
+import { disposeContainer } from '../src/modules/lifecycle'
 
 function fakePM(): PaneManager & { calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] } {
   const calls: { idx: 0 | 1; loc: Loc; secondary?: boolean }[] = []
@@ -429,4 +433,257 @@ test('Escape leaves the notes for the pane bar', () => {
   render(container, { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }, store, pm)
   editorEl(container).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
   expect(document.activeElement).toBe(tab)
+})
+
+describe('New 1:1', () => {
+  // replaceMd scrolls the caret's block into view; jsdom has no scrollIntoView.
+  const originalScrollIntoView = Element.prototype.scrollIntoView
+  beforeEach(() => { Element.prototype.scrollIntoView = () => {} })
+  afterEach(() => { Element.prototype.scrollIntoView = originalScrollIntoView })
+
+  function withNotes(notes: string): Team {
+    return makeTeam({ members: [{ id: 'mem-1', name: 'Bruno', role: 'Dev', parentId: null, order: 0, notes }] })
+  }
+  const member = (store: Store): Person => store.doc.teams[0]!.members[0]!
+  const line = (container: HTMLElement): HTMLElement => container.querySelector<HTMLElement>('.tt-person-cadence')!
+  const clickNew = (container: HTMLElement): void => container.querySelector<HTMLButtonElement>('.tt-person-header-one-on-one-btn')!.click()
+
+  test('New 1:1 appends the block, marks carried, records today, one undo step', async () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    render(container, PERSON_LOC, store, pm)
+
+    clickNew(container)
+    expect(member(store).lastOneOnOne).toBe(todayIso())
+    vi.advanceTimersByTime(1000)
+    expect(member(store).notes).toContain('- [>] a\n---\n## 1:1')
+    expect(member(store).notes).toContain('### Carried over\n- [ ] a')
+    // The caret lands in the template's first empty bullet, not on a carried item.
+    const start = window.getSelection()!.getRangeAt(0).startContainer
+    const li = (start instanceof Element ? start : start.parentElement)!.closest('li')!
+    expect(li.textContent?.trim()).toBe('')
+    expect(li.getAttribute('data-task')).not.toBe('carried')
+    expect(li.closest('ul')!.previousElementSibling?.textContent).toBe('How are they / energy')
+
+    await Promise.resolve() // the replace's undo step closes at the end of its task
+    editorEl(container).dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true }))
+    vi.advanceTimersByTime(1000)
+    expect(member(store).notes).toBe('- [ ] a')
+    expect(member(store).lastOneOnOne).toBe(todayIso())
+  })
+
+  test('the caret skips an empty bullet of an earlier 1:1 and counts past the block\'s own rules', () => {
+    const { container, store, pm } = setup(withNotes('Old\n- \n---\nx'))
+    store.update((d) => {
+      d.templates.push({ id: 'ruled', name: 'Ruled', scope: 'personal', body: '## 1:1\n- \n---\n### Notes\n- ' })
+      d.prefs.oneOnOneTemplateId = 'ruled'
+    })
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    const start = window.getSelection()!.getRangeAt(0).startContainer
+    const li = (start instanceof Element ? start : start.parentElement)!.closest('li')!
+    expect(li.closest('ul')!.previousElementSibling?.textContent).toBe('1:1')
+  })
+
+  test('the button is labelled like "+ Person" and carries its hotkey in the title', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    const btn = container.querySelector('.tt-person-header-one-on-one-btn')!
+    expect(btn.textContent).toBe('+ New 1:1')
+    expect(btn.classList.contains('tt-btn')).toBe(true)
+    expect(btn.getAttribute('title')).toBe('New 1:1 (Alt+O)')
+  })
+
+  test('NEW_ONE_ON_ONE_EVENT on the pane body runs the same action', () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    container.className = 'tt-pane-body'
+    render(container, PERSON_LOC, store, pm)
+    requestNewOneOnOne(0)
+    vi.advanceTimersByTime(1000)
+    expect(member(store).notes).toContain('- [>] a\n---\n## 1:1')
+    expect(member(store).lastOneOnOne).toBe(todayIso())
+
+    container.dispatchEvent(new CustomEvent(NEW_ONE_ON_ONE_EVENT))
+    vi.advanceTimersByTime(1000)
+    expect(member(store).notes.split('## 1:1')).toHaveLength(3)
+  })
+
+  test('an empty note becomes the block alone, with no rule before it', () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    vi.advanceTimersByTime(1000)
+    expect(member(store).notes.startsWith('## 1:1')).toBe(true)
+  })
+
+  test('deleted template id falls back to a bare heading', () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    store.update((d) => { d.prefs.oneOnOneTemplateId = 'gone' })
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    vi.advanceTimersByTime(1000)
+    const notes = member(store).notes
+    expect(notes).toMatch(/^- \[>\] a\n---\n## 1:1 — [^\n]+\n### Carried over\n- \[ \] a$/)
+    expect(notes).not.toContain('How are they')
+  })
+
+  test('with no empty slot in the block, the caret goes to the end of the note, scrolled into view', () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    store.update((d) => { d.prefs.oneOnOneTemplateId = 'gone' })
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    const ed = editorEl(container)
+    const r = window.getSelection()!.getRangeAt(0)
+    expect(r.collapsed).toBe(true)
+    // Nothing after the caret: typing appends, never prepends to the carried item.
+    const after = document.createRange()
+    after.setStart(r.startContainer, r.startOffset)
+    after.setEnd(ed, ed.childNodes.length)
+    expect(after.toString()).toBe('')
+    expect(ed.lastElementChild!.textContent).toBe('a')
+    expect(scroll).toHaveBeenCalledTimes(1)
+    expect(scroll.mock.contexts[0]).toBe(ed.lastElementChild)
+  })
+
+  test('a chosen template re-scoped to daily falls back to a bare heading, as Preferences shows None', () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    store.update((d) => {
+      const seed = d.templates.find((tp) => tp.id === d.prefs.oneOnOneTemplateId)!
+      seed.scope = 'daily'
+    })
+    render(container, PERSON_LOC, store, pm)
+    clickNew(container)
+    vi.advanceTimersByTime(1000)
+    const notes = member(store).notes
+    expect(notes).toMatch(/^- \[>\] a\r?\n---\r?\n## 1:1 — [^\r\n]+\r?\n### Carried over\r?\n- \[ \] a$/)
+    expect(notes).not.toContain('How are they')
+  })
+
+  test('does nothing in a read-only tab', () => {
+    vi.useFakeTimers()
+    const { container, store, pm } = setup(withNotes('- [ ] a'))
+    render(container, PERSON_LOC, store, pm)
+    // What core/tab-lock.ts does when another tab holds the file.
+    store.setReadOnly(true)
+    setEditorsReadOnly(true)
+    try {
+      clickNew(container)
+      vi.advanceTimersByTime(1000)
+      expect(member(store).notes).toBe('- [ ] a')
+      expect(member(store).lastOneOnOne).toBeUndefined()
+    } finally {
+      setEditorsReadOnly(false)
+    }
+  })
+
+  test('status line: "No 1:1 yet · every 14 days" for a member; overdue class when late', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    expect(line(container).textContent).toBe('No 1:1 yet · every 14 days')
+    expect(line(container).classList.contains('overdue')).toBe(false)
+
+    store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -30) }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).textContent).toBe('Last 1:1: 30 days ago · every 14 days')
+    expect(line(container).classList.contains('overdue')).toBe(true)
+
+    // Due today is not late yet.
+    store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -14) }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).classList.contains('overdue')).toBe(false)
+  })
+
+  test('status line uses the singular for one day', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    store.update((d) => {
+      d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -1)
+      d.teams[0]!.members[0]!.oneOnOneEveryDays = 1
+    })
+    render(container, PERSON_LOC, store, pm)
+    expect(line(container).textContent).toBe('Last 1:1: 1 day ago · every 1 day')
+    store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -2) }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).textContent).toBe('Last 1:1: 2 days ago · every 1 day')
+  })
+
+  test('status line for a stakeholder with no cadence, and "today" right after a 1:1', () => {
+    const { container, store, pm } = setup(makeTeam())
+    render(container, { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }, store, pm)
+    expect(line(container).textContent).toBe('No 1:1 yet')
+    store.update((d) => { d.teams[0]!.stakeholders[0]!.lastOneOnOne = todayIso() }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).textContent).toBe('Last 1:1: today')
+  })
+
+  test('status line repaints after a people-scoped update', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    store.update((d) => { d.teams[0]!.members[0]!.oneOnOneEveryDays = 7 }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).textContent).toBe('No 1:1 yet · every 7 days')
+    // Members without their own cadence follow the default in prefs.
+    store.update((d) => { delete d.teams[0]!.members[0]!.oneOnOneEveryDays }, { teamId: 'T1', sections: ['people'] })
+    expect(line(container).textContent).toBe('No 1:1 yet · every 14 days')
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 21 }, { sections: ['prefs'] })
+    expect(line(container).textContent).toBe('No 1:1 yet · every 21 days')
+  })
+
+  test('the edit dialog’s cadence Save repaints the status line', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    container.querySelector<HTMLButtonElement>('.tt-person-header-edit-btn')!.click()
+    const every = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
+    every.value = 'custom'
+    every.dispatchEvent(new Event('change'))
+    ;(document.querySelector('input.tt-person-cadence-days-input') as HTMLInputElement).value = '10'
+    Array.from(document.querySelectorAll('.tt-modal-buttons button')).find((b) => b.textContent === 'Save')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(member(store).oneOnOneEveryDays).toBe(10)
+    expect(line(container).textContent).toBe('No 1:1 yet · every 10 days')
+  })
+
+  test('status line repaints when the window comes back on a later day', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 13, 12))
+    const { container, store, pm } = setup(withNotes(''))
+    store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = '2026-11-13' })
+    render(container, PERSON_LOC, store, pm)
+    expect(line(container).textContent).toBe('Last 1:1: today · every 14 days')
+    vi.setSystemTime(new Date(2026, 10, 15, 12))
+    window.dispatchEvent(new Event('focus'))
+    expect(line(container).textContent).toBe('Last 1:1: 2 days ago · every 14 days')
+  })
+
+  test('the status line is plain text: only the edit button opens the dialog', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    render(container, PERSON_LOC, store, pm)
+    expect(line(container).tagName).toBe('SPAN')
+    line(container).click()
+    expect(document.querySelector('input[name="tt-person-name"]')).toBeNull()
+  })
+
+  test('teardown releases the day-change listener and subscription', () => {
+    const { container, store, pm } = setup(withNotes(''))
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    let live = 0
+    const subscribe = store.subscribe.bind(store)
+    store.subscribe = (fn) => {
+      live++
+      const off = subscribe(fn)
+      return () => { live--; off() }
+    }
+    try {
+      render(container, PERSON_LOC, store, pm)
+      const focusAdds = add.mock.calls.filter(([type]) => type === 'focus')
+      expect(focusAdds.length).toBeGreaterThan(0)
+      expect(live).toBeGreaterThan(0)
+      disposeContainer(container)
+      for (const [, fn] of focusAdds) expect(remove.mock.calls.some(([type, f]) => type === 'focus' && f === fn)).toBe(true)
+      expect(live).toBe(0)
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+    }
+  })
 })

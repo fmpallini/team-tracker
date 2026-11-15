@@ -61,9 +61,7 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
    light/dark pair scoped under [data-palette=X], which — being two
    attribute selectors — outranks the bare [data-theme=light/dark] rules
    above without touching them; "ledger" (the default) simply never gets
-   its own block and falls through to those. See docs/superpowers's theme
-   proposal artifact for the design rationale (contrast ratios, material
-   grounding) behind each one. */
+   its own block and falls through to those. */
 [data-palette=signal][data-theme=light] {
   --bg:#f7f7f5; --fg:#101012; --muted:#45464a; --accent:#0058a3; --accent-rgb:0,88,163;
   --panel:#ffffff; --border:#c9c9c4; --brass:#8f4b10; --danger:#a84a12; --ok:#017857;
@@ -722,7 +720,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Read-only tab (src/ui/readonly-lock.ts): editing controls say so on hover. */
 :root[data-readonly] :is(input, select, textarea, .tt-date-picker, .tt-kanban-color-row button):not([data-readonly-exempt], [data-readonly-exempt] *) { cursor: not-allowed; }
 
-/* Read-only cross-tab banner (Task 25) */
+/* Read-only cross-tab banner */
 .tt-readonly-banner {
   display: flex; align-items: center; justify-content: center; gap: .75rem;
   padding: .4rem .75rem; background: #7c2d12; color: #fff; font-size: .9rem; text-align: center;
@@ -846,6 +844,11 @@ body { background: var(--bg); color: var(--fg); }
 /* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
 .tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
 .tt-pane-tab-key::before { content: attr(data-key); }
+/* Due dot (panes.ts dueDot): on a module's icon in the tabs and the menu, top right so it stays clear of the F-key tag, and on the closed dropdown button for the other modules. No count, the sidebar's due button has it; the colours are .tt-team-due-badge's, red when anything is overdue, brass when all of it is still ahead. */
+.tt-pane-tab .tt-kind-icon, .tt-pane-menu-item .tt-kind-icon, .tt-pane-modules-btn { position: relative; }
+.tt-due-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); pointer-events: none; }
+.tt-due-dot.soon { background: var(--brass); }
+.tt-pane-modules-btn > .tt-due-dot { top: 1px; right: 1px; }
 .tt-pane-tab:hover:not(:disabled) { background: var(--hover-soft); }
 .tt-pane-tab:disabled { cursor: not-allowed; opacity: .6; }
 .tt-pane-tab:focus-visible { outline-offset: -2px; }
@@ -1098,6 +1101,29 @@ body { background: var(--bg); color: var(--fg); }
 .editor h2 { font-size: 1.35rem; }
 .editor h3 { font-size: 1.15rem; }
 .editor ul, .editor ol { padding-left: 1.5em; }
+/* Checklist items (editor.ts's makeTask). The box is the <li>'s ::before,
+   drawn in the item's left padding: that padding is the gutter a click
+   toggles (handleTaskBoxClick reads it). The negative margin puts the box
+   where a bullet's marker sits, so a task's text lines up with plain
+   bullets. The text after "/" in `content` is the box's spoken name, set per
+   locale on .editor (and on the closed-risk follow-up preview, which shows
+   the same boxes read-only) as --tt-task-*. Box sizes are in the glyph's own em
+   (font-size .8em): 1.125em there is .9em of the line, centered in its 1.5. */
+.editor ul > li[data-task], .tt-risk-followup-readonly-body ul > li[data-task] { list-style: none; position: relative; margin-left: -1.5em; padding-left: 1.5em; }
+.editor ul > li[data-task]::before, .tt-risk-followup-readonly-body ul > li[data-task]::before {
+  position: absolute; left: .25em; top: .375em;
+  width: 1.125em; height: 1.125em; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8em; line-height: 1; color: var(--fg);
+  border: 1px solid currentColor; border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.editor[contenteditable="false"] ul > li[data-task]::before, .tt-risk-followup-readonly-body ul > li[data-task]::before { cursor: default; }
+.editor ul > li[data-task="open"]::before, .tt-risk-followup-readonly-body ul > li[data-task="open"]::before { content: "" / var(--tt-task-open); }
+.editor ul > li[data-task="done"]::before, .tt-risk-followup-readonly-body ul > li[data-task="done"]::before { content: "\2713" / var(--tt-task-done); background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.editor ul > li[data-task="done"], .tt-risk-followup-readonly-body ul > li[data-task="done"] { color: var(--muted); text-decoration: line-through; }
+.editor ul > li[data-task="carried"]::before, .tt-risk-followup-readonly-body ul > li[data-task="carried"]::before { content: "\21AA" / var(--tt-task-carried); color: var(--muted); }
+.editor ul > li[data-task="carried"], .tt-risk-followup-readonly-body ul > li[data-task="carried"] { color: var(--muted); }
 .editor hr { border: none; border-top: 1px solid var(--muted); margin: .75em 0; }
 /* Embedded image: its own centered block at natural pixel size. Sizes are in px on purpose (never em/rem), so the app's font size and Ctrl+wheel zoom steps do not scale a picture; max-width only shrinks it to fit the pane. */
 .editor .tt-img { display: flex; justify-content: center; margin: 0; padding: 2px 0; user-select: none; }
@@ -1356,6 +1382,8 @@ body { background: var(--bg); color: var(--fg); }
   content: ''; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px;
   background: var(--bg); border: 1px solid var(--border); transform: rotate(8deg);
 }
+/* Overdue 1:1: a small danger dot on the bottom-left corner, clear of the top-right dog-ear. */
+.tt-org-due { position: absolute; left: -4px; bottom: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); border: 2px solid var(--panel); box-sizing: content-box; }
 .tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 .9rem; box-sizing: border-box; }
 /* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
    (needed for the ellipsis) clips at the padding box, and both the synthesized
@@ -1400,6 +1428,10 @@ body { background: var(--bg); color: var(--fg); }
 .tt-org-children > .tt-org-node:only-child::after { display: none; }
 
 .tt-person-form { display: flex; flex-direction: column; gap: .75rem; }
+.tt-person-cadence-row { display: flex; align-items: center; gap: .5rem; }
+.tt-person-cadence-days { display: inline-flex; align-items: center; gap: .4rem; }
+.tt-person-cadence-days[hidden] { display: none; }
+.tt-person-cadence-days-input { width: 5rem; }
 
 /* Action items module — kanban board (fixed To Do start, N custom middle
    columns, fixed Done+Cancelled end) */
@@ -2051,6 +2083,9 @@ select option { background: var(--bg); color: var(--fg); }
    header control is always on show, so no borderless row-hover-reveal
    treatment here. */
 .tt-person-header-btn { font-size: 1rem; }
+/* The 1:1 status, plain text right beside the New 1:1 button (the edit button opens its fields). */
+.tt-person-cadence { white-space: nowrap; font-size: .8rem; line-height: 1.2; color: var(--muted); }
+.tt-person-cadence.overdue { color: var(--danger-text); }
 .tt-person-notes .tt-editor { flex: 1; }
 
 /* Preferences modal */

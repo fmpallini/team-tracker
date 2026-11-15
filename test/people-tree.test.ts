@@ -11,6 +11,9 @@ import {
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { unlinkRefsInTeam } from '../src/core/refs'
+import { todayIso } from '../src/core/i18n'
+import { addDaysIso } from '../src/core/date'
+import { disposeContainer } from '../src/modules/lifecycle'
 import { createSearchIndex } from '../src/core/search'
 import { closeAnyContextMenu } from '../src/ui/context-menu'
 import { NEW_ITEM_EVENT } from '../src/ui/panes'
@@ -511,6 +514,55 @@ describe('renderPeopleTree', () => {
     expect(store.doc.teams[0]!.members[0]!.role).toBe('PM')
   })
 
+  test('people-tree edit persists cadence fields', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0, lastOneOnOne: '2026-03-01' })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
+    // The Default option quotes the members' default from Preferences.
+    const every = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
+    expect(every.options[0]!.textContent).toBe('Default (14 days)')
+    every.value = 'custom'
+    every.dispatchEvent(new Event('change'))
+    ;(document.querySelector('input.tt-person-cadence-days-input') as HTMLInputElement).value = '21'
+    const last = document.querySelector('.tt-date-picker-input') as HTMLInputElement
+    last.value = ''
+    last.dispatchEvent(new Event('blur'))
+    clickByTitleOrText(document.body, 'Save')
+
+    const ana = store.doc.teams[0]!.members[0]!
+    expect(ana.oneOnOneEveryDays).toBe(21)
+    expect('lastOneOnOne' in ana).toBe(false)
+
+    // Back to Default: the field is deleted, not stored as undefined.
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
+    const again = document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement
+    expect(again.value).toBe('custom')
+    again.value = 'default'
+    again.dispatchEvent(new Event('change'))
+    clickByTitleOrText(document.body, 'Save')
+    expect('oneOnOneEveryDays' in store.doc.teams[0]!.members[0]!).toBe(false)
+  })
+
+  test('a stakeholder has no default cadence to quote', () => {
+    const team = makeTeam({ stakeholders: [person({ id: 's', name: 'Sam', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'stakeholders')
+    render(container, loc, store, pm, 'stakeholders')
+
+    chooseFromMenu(boxes(container)[0]!, 'Edit person')
+    expect((document.querySelector('select.tt-person-cadence-select') as HTMLSelectElement).options[0]!.textContent).toBe('Default (none)')
+  })
+
+  test('the add dialog has no cadence fields', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', order: 0 })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+
+    chooseFromMenu(boxes(container)[0]!, 'Add report')
+    expect(document.querySelector('.tt-person-cadence-select')).toBeNull()
+  })
+
   test('the menu Delete person deletes at once (no confirm dialog), promoting children', () => {
     const team = makeTeam({
       members: [
@@ -788,4 +840,83 @@ test('the chart is one Tab stop, and the ⋯ button leaves the tab order: Space 
   render(container, loc, store, pm, 'members')
   expect(boxes(container).map((b) => b.tabIndex)).toEqual([0, -1])
   expect((boxes(container)[0]!.querySelector('.tt-people-more-btn') as HTMLElement).tabIndex).toBe(-1)
+})
+
+describe('overdue 1:1 mark', () => {
+  const mark = (box: HTMLElement): HTMLElement | null => box.querySelector<HTMLElement>('.tt-org-due')
+
+  test('overdue member gets .tt-org-due with "1:1 overdue by 3 days"', () => {
+    // Last 1:1 17 days ago on a 14-day cadence: due 3 days ago.
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -17) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    const m = mark(boxes(container)[0]!)!
+    expect(m.getAttribute('role')).toBe('img')
+    expect(m.getAttribute('aria-label')).toBe('1:1 overdue by 3 days')
+    expect(m.title).toBe('1:1 overdue by 3 days')
+  })
+
+  test('one day overdue uses the singular', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -15) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 1 day')
+  })
+
+  test('due-soon, due-today and never-met people get no mark', () => {
+    const team = makeTeam({
+      members: [
+        person({ id: 'a', name: 'Ana', order: 0, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -13) }),
+        person({ id: 'b', name: 'Bia', order: 1, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -14) }),
+        person({ id: 'c', name: 'Caio', order: 2, oneOnOneEveryDays: 14 }),
+        person({ id: 'd', name: 'Duda', order: 3, lastOneOnOne: addDaysIso(todayIso(), -400), oneOnOneEveryDays: null }),
+      ],
+    })
+    const { container, store, pm, loc } = setup(team, 'members')
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 0 })
+    render(container, loc, store, pm, 'members')
+    expect(container.querySelectorAll('.tt-org-due').length).toBe(0)
+  })
+
+  test('prefs change (default cadence) repaints marks', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', lastOneOnOne: addDaysIso(todayIso(), -10) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 14 })
+    render(container, loc, store, pm, 'members')
+    expect(container.querySelectorAll('.tt-org-due').length).toBe(0)
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 7 }, { sections: ['prefs'] })
+    expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 3 days')
+  })
+
+  test('the mark repaints when the calendar day moves while the chart sits open', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 5, 10, 12))
+      const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: '2026-05-27' })] })
+      const { container, store, pm, loc } = setup(team, 'members')
+      render(container, loc, store, pm, 'members')
+      expect(container.querySelectorAll('.tt-org-due').length).toBe(0) // due today
+      vi.setSystemTime(new Date(2026, 5, 11, 12))
+      window.dispatchEvent(new Event('focus'))
+      expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 1 day')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('teardown releases the day-change listener', () => {
+    const { container, store, pm, loc } = setup(makeTeam({ members: [person({ id: 'a', name: 'Ana' })] }), 'members')
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    try {
+      render(container, loc, store, pm, 'members')
+      const focusAdds = add.mock.calls.filter(([type]) => type === 'focus')
+      expect(focusAdds.length).toBeGreaterThan(0)
+      disposeContainer(container)
+      for (const [, fn] of focusAdds) expect(remove.mock.calls.some(([type, f]) => type === 'focus' && f === fn)).toBe(true)
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+    }
+  })
 })

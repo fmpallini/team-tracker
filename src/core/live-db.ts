@@ -53,6 +53,8 @@ export interface LiveDb {
   getMeta(docId: string): Promise<LiveMeta | undefined>
   listMeta(): Promise<LiveMeta[]>
   readAll(docId: string): Promise<{ records: { key: string; value: unknown }[]; blobs: { id: string; bytes: Uint8Array }[] }>
+  /** One record row's value, or undefined when there is none. */
+  readRecord(docId: string, key: string): Promise<unknown>
   /** What the document holds, without reading a value: the number of records and the ids of its blobs. */
   stat(docId: string): Promise<{ records: number; blobIds: string[] }>
   /** One transaction over all three stores: everything in `batch` lands, or nothing does (a rejection keeps the browser's error name, e.g. QuotaExceededError). */
@@ -135,6 +137,8 @@ export async function openLiveDb(factory: IDBFactory | undefined = globalThis.in
       ])
       return { records: records.map((r) => ({ key: r.key, value: r.value })), blobs: blobs.map((b) => ({ id: b.id, bytes: b.bytes })) }
     }),
+    readRecord: (docId, key) => read(['records'], async (tx) =>
+      (await request<RecordRow | undefined>(tx.objectStore('records').get([docId, key])))?.value),
     stat: (docId) => read(['records', 'blobs'], async (tx) => {
       const [records, blobKeys] = await Promise.all([
         request<number>(tx.objectStore('records').count(docRange(docId))),

@@ -1,4 +1,4 @@
-// src/modules/risks.ts — Task 22: risks module. A flat, orderable list of
+// src/modules/risks.ts — risks module. A flat, orderable list of
 // Risk per team (structurally close to src/modules/action-items.ts: the same
 // loc.teamId-keyed store.update helpers, flat before/after drag reorder; the
 // row behaviour shared with milestones.ts lives in ./followup-list.ts), plus
@@ -23,7 +23,7 @@ import { confirmDelete, toast } from '../ui/modal'
 import { deleteInTeamWithUndo, type UndoOffer } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
 import { ExpandableRowsController } from '../ui/expandable-followup'
-import { createFollowupRows, type AddingRun, focusedCaretElement } from './followup-list'
+import { createFollowupRows, type AddingRun, focusedCaretElement, addOnBlankDoubleClick } from './followup-list'
 import { SEARCH_FOCUS_ITEM_EVENT } from '../ui/search-highlight'
 import { openItemContextMenu } from '../ui/card-context-menu'
 import { computeFlatDropPosition } from './action-items'
@@ -35,6 +35,7 @@ import { BACKLINK_SECTIONS } from '../core/search'
 import { makeRefLabelResolver } from '../ui/atref'
 import { emptyState } from '../ui/empty-state'
 import { mdToHtml } from '../core/markdown'
+import { setTaskBoxNames } from '../ui/editor'
 import { icon, iconButton, type IconName } from '../ui/icons'
 
 // --- pure, unit-testable helpers -------------------------------------------
@@ -988,6 +989,8 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
       t(lc, 'editor_ref_hint'),
       t(lc, 'editor_link_open_hint'),
     )
+    // Its task items get the editor's boxes (styles.css lists this body beside .editor), so done and open differ.
+    setTaskBoxNames(body, lc)
     return el(
       'div',
       { class: 'tt-risk-followup-row tt-risk-followup-readonly', 'data-risk-followup-id': r.id, 'data-item-id': r.id },
@@ -1278,6 +1281,7 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
   // Named (not inlined into the appendChild below) so computeCellSize can
   // measure its viewport height directly.
   const risksWrap = el('div', { class: 'tt-risks' }, quadrantEl, toolbar, headerRow, listEl, closedEl)
+  addOnBlankDoubleClick(risksWrap, listEl, addRisk)
   container.appendChild(risksWrap)
   renderAll()
 

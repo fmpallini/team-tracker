@@ -1,5 +1,4 @@
-// src/ui/editor-undo.ts — the editor's own undo/redo stack and step policy
-// (docs/superpowers/specs/2026-11-03-editor-undo-snapshots-design.md). The
+// src/ui/editor-undo.ts — the editor's own undo/redo stack and step policy. The
 // browser's native history is never used: the editor intercepts the keys and
 // `historyUndo`/`historyRedo` (and takes back a native step that
 // execCommand('undo') ran with no beforeinput), and calls undo()/redo() here.
@@ -107,7 +106,11 @@ export function createUndoStack(deps: UndoDeps): UndoStack {
   }
 
   const observer = new MutationObserver((records) => { if (records.length > 0) commit() })
-  observer.observe(root, { childList: true, characterData: true, subtree: true })
+  // `data-task` too: toggling a checklist item (editor.ts's makeTask/toggleTask)
+  // changes only that attribute, and an edit the observer never sees never
+  // becomes an entry. No other attribute: the view-only ones (a code block's
+  // data-collapsed, a picture's selection) must not open undo steps.
+  observer.observe(root, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['data-task'] })
 
   /** The observer callback is async; synchronous callers flush what it has not delivered yet. */
   function drain(): void {

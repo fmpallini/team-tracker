@@ -1,8 +1,8 @@
-// src/core/tab-lock.ts — Task 25: single-writer coordination across tabs of
+// src/core/tab-lock.ts — single-writer coordination across tabs of
 // the same browser editing the same file, via the Web Locks API (feature-
 // detected — absent in jsdom, so tests inject a fake `locks` to exercise this
 // path) plus a `BroadcastChannel` for the "take control" handshake. Extracted
-// out of main.ts so this concurrency-sensitive logic (Task 25 fixes #4/#4a)
+// out of main.ts so this concurrency-sensitive logic
 // is unit testable instead of only ever running in a real multi-tab browser.
 //
 // On open, each tab tries to acquire `locks.request('tmv:' + name, {
@@ -198,7 +198,7 @@ export function createTabLock(deps: TabLockDeps): () => void {
     toast(t(store.doc.prefs.locale, 'readonly_blocked_toast'), { kind: 'warn', key: READONLY_TOAST_KEY })
   })
 
-  // Task 25 re-review item #4a: without this, the tab is fully writable from
+  // Without this, the tab is fully writable from
   // the moment the document opens until `locks.request()`'s callback resolves
   // — an async round trip. A second tab racing to open the same file in that
   // window could both believe they hold write access. Once we know we're

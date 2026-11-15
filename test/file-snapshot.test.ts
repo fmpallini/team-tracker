@@ -1,6 +1,7 @@
 import { createFileSnapshot, type FileHealth, type FileSnapshotDeps } from '../src/core/file-snapshot'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
+import { contentFingerprint } from '../src/core/snapshot'
 import { parsePlainWithVersion } from '../src/core/crypto'
 import type { FileSession } from '../src/core/fs'
 import type { LivePersister } from '../src/core/live-persist'
@@ -38,7 +39,7 @@ const session = (withHandle = true): FileSession => ({ handle: withHandle ? ({} 
 function rig(over: Partial<FileSnapshotDeps> & { handle?: boolean; dirty?: boolean } = {}) {
   const store: Store = createStore(createEmptyDocument('en-US'))
   if (over.dirty !== false) store.update((d) => { d.nav.split = true })
-  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}) } as unknown as LivePersister & { flush: ReturnType<typeof vi.fn>; markFileWritten: ReturnType<typeof vi.fn> }
+  const persister = { flush: vi.fn(async () => {}), markFileWritten: vi.fn(async () => {}), markFileCurrent: vi.fn(async () => {}) } as unknown as LivePersister & { flush: ReturnType<typeof vi.fn>; markFileWritten: ReturnType<typeof vi.fn>; markFileCurrent: ReturnType<typeof vi.fn> }
   const timers = manualTimers()
   const onExternalChange = vi.fn()
   const snap = createFileSnapshot({
@@ -52,6 +53,98 @@ beforeEach(() => {
   clock = 1_000_000
   fsMocks.writeFile.mockReset().mockImplementation(async () => {})
   fsMocks.downloadFallback.mockReset()
+})
+
+describe('a write the file does not need is skipped', () => {
+  const setInterval = (store: Store, min: number) => store.update((d) => { d.prefs.autoSaveMin = min })
+
+  test('an edit undone before the close: nothing written, dirty cleared, the browser copy told the file is current', async () => {
+    const { store, snap, persister } = rig({ dirty: false, fileMatchesDoc: true })
+    store.update((d) => { d.prefs.autoSaveMin = 120 })
+    store.update((d) => { d.prefs.autoSaveMin = 60 })
+    expect(store.dirty).toBe(true)
+    expect(await snap.writeNow('close')).toEqual({ ok: true })
+    expect(fsMocks.writeFile).not.toHaveBeenCalled()
+    expect(store.dirty).toBe(false)
+    expect(persister.markFileCurrent).toHaveBeenCalledTimes(1)
+  })
+
+  test('an update that changed nothing writes nothing on the timer', async () => {
+    const { store, snap } = rig({ dirty: false, fileMatchesDoc: true })
+    store.update(() => {}) // an update that changed nothing
+    expect(await snap.writeNow('timer')).toEqual({ ok: true })
+    expect(fsMocks.writeFile).not.toHaveBeenCalled()
+  })
+
+  test('navigation alone never writes: the store does not even turn dirty', async () => {
+    const { store, snap } = rig({ dirty: false, fileMatchesDoc: true })
+    store.updateNav((d) => { d.nav.split = true })
+    expect(store.dirty).toBe(false)
+    expect(await snap.writeNow('close')).toEqual({ ok: true })
+    expect(fsMocks.writeFile).not.toHaveBeenCalled()
+  })
+
+  test('a real edit is written, and undoing a later one back to the written content is skipped again', async () => {
+    const { store, snap, persister } = rig({ dirty: false, fileMatchesDoc: true })
+    setInterval(store, 120)
+    expect(await snap.writeNow('close')).toEqual({ ok: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+    setInterval(store, 180)
+    setInterval(store, 120)
+    expect(await snap.writeNow('timer')).toEqual({ ok: true })
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+    expect(persister.markFileCurrent).toHaveBeenCalledTimes(1)
+    setInterval(store, 60)
+    await snap.writeNow('timer')
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2)
+  })
+
+  test('a document not known to match its file (browser copy ahead at open) is always written', async () => {
+    const { store, snap } = rig({ dirty: false })
+    store.markDirty()
+    await snap.writeNow('close')
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('fileHolds(null), after another tab may have written the file, writes even content equal to the old fingerprint', async () => {
+    const { store, snap } = rig({ dirty: false, fileMatchesDoc: true })
+    snap.fileHolds(null)
+    store.update(() => {}) // an update that changed nothing
+    await snap.writeNow('close')
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('a fingerprint handed over by fileWritten / fileReloaded / fileHolds is what later writes compare with', async () => {
+    const { store, snap } = rig({ dirty: false })
+    snap.fileReloaded(await contentFingerprint(store.doc))
+    store.update(() => {}) // an update that changed nothing
+    await snap.writeNow('close')
+    expect(fsMocks.writeFile).not.toHaveBeenCalled()
+  })
+
+  test('an edit landing during the comparison is written, not skipped', async () => {
+    const { store, snap } = rig({ dirty: false, fileMatchesDoc: true })
+    store.update(() => {}) // an update that changed nothing
+    const close = snap.writeNow('close')
+    store.update((d) => { d.prefs.autoSaveMin = 120 })
+    await close
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('typing still inside an editor debounce counts: a clean document whose editors hold an edit is written', async () => {
+    const ref: { store?: Store } = {}
+    const { store, snap } = rig({ dirty: false, fileMatchesDoc: true, flushPending: () => ref.store!.update((d) => { d.prefs.autoSaveMin = 120 }) })
+    ref.store = store
+    await snap.writeNow('timer')
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  test("'open' and 'export' always write", async () => {
+    const { store, snap } = rig({ dirty: false, fileMatchesDoc: true })
+    store.update(() => {}) // an update that changed nothing
+    await snap.writeNow('open')
+    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('writeNow', () => {
@@ -111,7 +204,7 @@ describe('writeNow', () => {
     fsMocks.writeFile.mockImplementation(() => new Promise<void>((r) => { release = r }))
     const a = snap.writeNow('timer')
     const b = snap.writeNow('timer')
-    await new Promise((r) => setTimeout(r, 5))
+    await vi.waitFor(() => expect(fsMocks.writeFile).toHaveBeenCalled())
     release()
     expect(await Promise.all([a, b])).toEqual([{ ok: true }, { ok: true }])
     expect(fsMocks.writeFile).toHaveBeenCalledTimes(1)
@@ -122,8 +215,8 @@ describe('writeNow', () => {
     let release!: () => void
     fsMocks.writeFile.mockImplementationOnce(() => new Promise<void>((r) => { release = r }))
     const timer = snap.writeNow('timer')
-    await new Promise((r) => setTimeout(r, 5))
-    store.update((d) => { d.nav.split = false })
+    await vi.waitFor(() => expect(fsMocks.writeFile).toHaveBeenCalled())
+    store.update((d) => { d.prefs.autoSaveMin += 60 })
     const close = snap.writeNow('close')
     release()
     await Promise.all([timer, close])
@@ -223,7 +316,7 @@ describe('writes made outside writeNow (the conflict overwrite, a password chang
     await snap.writeNow('close')
     expect(snap.health()).toMatchObject({ kind: 'error', message: 'conflict' })
     clock += 5000
-    snap.fileWritten()
+    snap.fileWritten(null)
     expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: clock })
     expect(snap.isOverdue()).toBe(false)
   })
@@ -233,7 +326,7 @@ describe('writes made outside writeNow (the conflict overwrite, a password chang
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
     await snap.writeNow('close')
-    snap.fileWritten()
+    snap.fileWritten(null)
     expect(snap.health().kind).toBe('ok')
     spy.mockRestore()
   })
@@ -243,7 +336,7 @@ describe('writes made outside writeNow (the conflict overwrite, a password chang
     fsMocks.writeFile.mockRejectedValueOnce(new fsMocks.ExternalChangeError())
     await snap.writeNow('close')
     clock += 5000
-    snap.fileReloaded()
+    snap.fileReloaded(null)
     expect(snap.health()).toEqual({ kind: 'ok', lastWrittenAt: null })
   })
 
@@ -252,7 +345,7 @@ describe('writes made outside writeNow (the conflict overwrite, a password chang
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     fsMocks.writeFile.mockRejectedValueOnce(new Error('disk full'))
     await snap.writeNow('close')
-    snap.fileReloaded()
+    snap.fileReloaded(null)
     expect(snap.health().kind).toBe('error')
     spy.mockRestore()
   })
@@ -384,7 +477,7 @@ describe('runExclusive and flush', () => {
     const w = snap.writeNow('timer')
     let flushed = false
     const f = snap.flush().then(() => { flushed = true })
-    await new Promise((r) => setTimeout(r, 5))
+    await vi.waitFor(() => expect(fsMocks.writeFile).toHaveBeenCalled())
     expect(flushed).toBe(false)
     release()
     await Promise.all([w, f])

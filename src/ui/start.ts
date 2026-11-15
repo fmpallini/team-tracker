@@ -97,6 +97,8 @@ export function showStartScreen(
 ): void {
   const container = document.getElementById('app') ?? document.body
   container.innerHTML = ''
+  // No document is open here, so nothing else marks the page's language (shell.ts's applyPrefs does once one is).
+  document.documentElement.lang = locale
 
   if (isMobileDevice()) {
     showMobileBlockScreen(container, locale)

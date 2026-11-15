@@ -73,6 +73,21 @@ test.describe('accessibility (axe-core)', () => {
     expect(violations(results)).toEqual([])
   })
 
+  // The scans above are scoped to an element, so axe's page-level rules never run there: this one covers the page's language.
+  test('the page declares a valid language, on the start screen and with a document open', async ({ page }) => {
+    const langScan = async (): Promise<string[]> =>
+      violations(await new AxeBuilder({ page }).withRules(['html-has-lang', 'html-lang-valid']).analyze())
+    await installOpfsPickerShim(page)
+    await blockUpdateCheck(page)
+    await page.goto(`${E2E_BASE_URL}/app.html`)
+    await expect(page.locator('.tt-start-screen')).toBeVisible()
+    expect(await langScan()).toEqual([])
+
+    await createEncryptedDoc(page, 'e2e-a11y-password')
+    expect(await langScan()).toEqual([])
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US')
+  })
+
   test('the Settings modal has no WCAG A/AA violations', async ({ page }) => {
     await installOpfsPickerShim(page)
     await blockUpdateCheck(page)

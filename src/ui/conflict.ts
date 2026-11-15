@@ -1,4 +1,4 @@
-// src/ui/conflict.ts — Task 25: modal shown when a write hits
+// src/ui/conflict.ts — modal shown when a write hits
 // `ExternalChangeError` (the file changed outside this tab/app since it was
 // last read or written).
 import { t, type Locale } from '../core/i18n'

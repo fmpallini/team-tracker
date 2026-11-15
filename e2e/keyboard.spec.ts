@@ -38,12 +38,6 @@ function buildDoc(ref: ModuleRef, split?: ModuleRef): Doc {
   return doc
 }
 
-/** The tab's write lock arrives just after the shell mounts, and an edit made before it is refused as read-only. */
-async function openWritable(page: Page, doc: Doc): Promise<void> {
-  await openDoc(page, doc)
-  await expect.poll(() => page.evaluate(async () => (await navigator.locks.query()).held?.length ?? 0)).toBeGreaterThan(0)
-}
-
 const focused = (page: Page): Promise<string | null> => page.evaluate(() => {
   const a = document.activeElement as HTMLElement
   return a.dataset.itemId ?? a.className
@@ -55,7 +49,7 @@ const caretText = (page: Page): Promise<string> => page.evaluate(() => {
 })
 
 test('a pane switch leaves the editor alone: caret, undo and the other pane\'s open rows all survive', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY, { kind: 'risks' }))
+  await openDoc(page, buildDoc(DAILY, { kind: 'risks' }))
   const editor = page.locator('.editor').first()
   await editor.click()
   await page.keyboard.press('Control+End')
@@ -79,7 +73,7 @@ test('a pane switch leaves the editor alone: caret, undo and the other pane\'s o
 })
 
 test('Escape leaves a note for its tab, and Enter goes back to the same caret', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY))
+  await openDoc(page, buildDoc(DAILY))
   const editor = page.locator('.editor').first()
   await editor.click()
   await page.keyboard.press('Control+End')
@@ -93,7 +87,7 @@ test('Escape leaves a note for its tab, and Enter goes back to the same caret', 
 })
 
 test('a task travels the board by keyboard, with focus on it the whole way', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'actions' }))
+  await openDoc(page, buildDoc({ kind: 'actions' }))
   await expect.poll(() => focused(page)).toBe('a0')
   await page.keyboard.press('Control+ArrowRight')
   await expect(page.locator('.tt-kanban-card.status-c1')).toHaveCount(1)
@@ -109,7 +103,7 @@ test('a task travels the board by keyboard, with focus on it the whole way', asy
 })
 
 test('a commit keeps your row: the next arrow carries on from it', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'risks' }))
+  await openDoc(page, buildDoc({ kind: 'risks' }))
   await expect.poll(() => focused(page)).toBe('r0')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
@@ -123,7 +117,7 @@ test('a commit keeps your row: the next arrow carries on from it', async ({ page
 })
 
 test('tabbing out of an edited title keeps going through the row', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'risks' }))
+  await openDoc(page, buildDoc({ kind: 'risks' }))
   await expect.poll(() => focused(page)).toBe('r0')
   await page.keyboard.press('Tab')
   await page.keyboard.type(' edited')
@@ -132,7 +126,7 @@ test('tabbing out of an edited title keeps going through the row', async ({ page
 })
 
 test('tabbing out of a typed date reaches the title, even as the row re-sorts', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'milestones' }))
+  await openDoc(page, buildDoc({ kind: 'milestones' }))
   await expect.poll(() => focused(page)).toBe('m0')
   await page.keyboard.press('Tab')
   await page.keyboard.press('Tab')
@@ -143,7 +137,7 @@ test('tabbing out of a typed date reaches the title, even as the row re-sorts', 
 })
 
 test('ticking a milestone keeps the row', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'milestones' }))
+  await openDoc(page, buildDoc({ kind: 'milestones' }))
   await expect.poll(() => focused(page)).toBe('m0')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Tab')
@@ -155,7 +149,7 @@ test('ticking a milestone keeps the row', async ({ page }) => {
 })
 
 test('delete lands on the neighbour and Ctrl+Z brings the item back', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'actions' }))
+  await openDoc(page, buildDoc({ kind: 'actions' }))
   await expect.poll(() => focused(page)).toBe('a0')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Space')
@@ -169,7 +163,7 @@ test('delete lands on the neighbour and Ctrl+Z brings the item back', async ({ p
 })
 
 test('Ctrl+Z with nothing to undo never reaches the browser', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'actions' }))
+  await openDoc(page, buildDoc({ kind: 'actions' }))
   await expect.poll(() => focused(page)).toBe('a0')
   await page.evaluate(() => {
     window.addEventListener('keydown', (e) => { (window as unknown as { swallowed: boolean }).swallowed = e.defaultPrevented })
@@ -179,7 +173,7 @@ test('Ctrl+Z with nothing to undo never reaches the browser', async ({ page }) =
 })
 
 test('closing a dialog opened from a note gives the caret back', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY))
+  await openDoc(page, buildDoc(DAILY))
   const editor = page.locator('.editor').first()
   await editor.click()
   await page.keyboard.press('Control+End')
@@ -193,7 +187,7 @@ test('closing a dialog opened from a note gives the caret back', async ({ page }
 })
 
 test('closing a dialog returns to the button that opened it', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY))
+  await openDoc(page, buildDoc(DAILY))
   const settings = page.locator('.tt-btn-settings')
   await settings.focus()
   await page.keyboard.press('Enter')
@@ -203,7 +197,7 @@ test('closing a dialog returns to the button that opened it', async ({ page }) =
 })
 
 test('coming back to a module lands on the item you left; a person opens in their notes', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'actions' }))
+  await openDoc(page, buildDoc({ kind: 'actions' }))
   await expect.poll(() => focused(page)).toBe('a0')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
@@ -224,7 +218,7 @@ test('coming back to a module lands on the item you left; a person opens in thei
 })
 
 test('the fast switch runs commands: > Add risk opens Risks with a new row', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY))
+  await openDoc(page, buildDoc(DAILY))
   await page.keyboard.press('Control+Shift+KeyK')
   await page.keyboard.type('>add risk')
   await page.keyboard.press('Enter')
@@ -237,7 +231,7 @@ test('the fast switch runs commands: > Add risk opens Risks with a new row', asy
 })
 
 test('Alt+N adds, and Tab leaves a long list in one press', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'actions' }))
+  await openDoc(page, buildDoc({ kind: 'actions' }))
   await expect.poll(() => focused(page)).toBe('a0')
   await page.keyboard.press('Tab')
   await expect.poll(() => focused(page)).not.toMatch(/^ad$/)
@@ -250,7 +244,7 @@ test('Alt+N adds, and Tab leaves a long list in one press', async ({ page }) => 
 })
 
 test('a date moves by keyboard, and its calendar can be walked', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'milestones' }))
+  await openDoc(page, buildDoc({ kind: 'milestones' }))
   await expect.poll(() => focused(page)).toBe('m0')
   await page.keyboard.press('Tab')
   await page.keyboard.press('Tab')
@@ -268,7 +262,7 @@ test('a date moves by keyboard, and its calendar can be walked', async ({ page }
 })
 
 test('Delete, Home and End work a list from the row', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'risks' }))
+  await openDoc(page, buildDoc({ kind: 'risks' }))
   await expect.poll(() => focused(page)).toBe('r0')
   await page.keyboard.press('End')
   await expect.poll(() => focused(page)).toBe('r5')
@@ -280,7 +274,7 @@ test('Delete, Home and End work a list from the row', async ({ page }) => {
 })
 
 test('Ctrl+Enter opens a fast-switch row in the other pane', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY))
+  await openDoc(page, buildDoc(DAILY))
   await page.keyboard.press('Control+Shift+KeyK')
   await page.keyboard.type('risks')
   await page.keyboard.press('Control+Enter')
@@ -289,7 +283,7 @@ test('Ctrl+Enter opens a fast-switch row in the other pane', async ({ page }) =>
 })
 
 test('search hands focus back on the way out', async ({ page }) => {
-  await openWritable(page, buildDoc({ kind: 'actions' }))
+  await openDoc(page, buildDoc({ kind: 'actions' }))
   await expect.poll(() => focused(page)).toBe('a0')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('/')
@@ -299,7 +293,7 @@ test('search hands focus back on the way out', async ({ page }) => {
 })
 
 test('the team list works from the keyboard, and F-keys leave modified chords alone', async ({ page }) => {
-  await openWritable(page, buildDoc(DAILY))
+  await openDoc(page, buildDoc(DAILY))
   await page.locator('.tt-team-item.active').focus()
   await page.keyboard.press('Control+ArrowDown')
   await expect(page.locator('.tt-team-item').nth(1)).toBeFocused()

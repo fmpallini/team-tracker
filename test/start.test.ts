@@ -594,6 +594,21 @@ describe('mobile block', () => {
   })
 })
 
+test.each(['pt-BR', 'en-US'] as const)('marks the page language %s on the start screen and on the mobile notice', (locale) => {
+  document.documentElement.lang = ''
+  showStartScreen(locale, () => {})
+  expect(document.documentElement.lang).toBe(locale)
+
+  document.documentElement.lang = ''
+  const uaSpy = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)')
+  try {
+    showStartScreen(locale, () => {})
+    expect(document.documentElement.lang).toBe(locale)
+  } finally {
+    uaSpy.mockRestore()
+  }
+})
+
 test('renders the cloud-backup tip with the desktop-client download links', () => {
   showStartScreen('en-US', () => {})
   const tip = document.querySelector('.tt-start-backup-tip')

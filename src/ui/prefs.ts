@@ -1,4 +1,4 @@
-// src/ui/prefs.ts — Task 24: preferences modal (general prefs, templates
+// src/ui/prefs.ts — preferences modal (general prefs, templates
 // admin, change password, about). A single `showModal` whose body is a small
 // tab strip + content area that this module mutates in place as the user
 // switches tabs — simpler than tearing down/rebuilding the whole dialog, and
@@ -10,7 +10,7 @@ import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { createTabRail } from './tab-rail'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
-import { builtinTemplates, reseedBuiltinTemplates } from '../core/templates'
+import { builtinTemplates, isOneOnOneCandidate, reseedBuiltinTemplates, ONE_ON_ONE_SEED_NAME } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
@@ -45,11 +45,14 @@ const PREFS_ONLY: { sections: readonly Section[] } = { sections: ['prefs'] }
 /** Template CRUD touches `doc.templates` and nothing else — no module watches 'templates' (they read templates lazily, when the '/' picker opens). */
 const TEMPLATES_ONLY: { sections: readonly Section[] } = { sections: ['templates'] }
 
+/** Restore defaults can also re-point `prefs.oneOnOneTemplateId` at the restored 1:1 seed. */
+const TEMPLATES_AND_PREFS: { sections: readonly Section[] } = { sections: ['templates', 'prefs'] }
+
 export interface PrefsAppCtl {
   changePassword(newPw: string | null): Promise<void>
   currentPassword(): string | null
   /**
-   * Task 25 re-review item #2 (UX bonus): lets the Security tab disable its
+   * Lets the Security tab disable its
    * submit button and show an explanatory hint when this tab has lost the
    * cross-tab write lock, instead of only surfacing the rejection after the
    * fact via the generic failure toast. `changePassword` itself still throws
@@ -67,14 +70,14 @@ export interface PrefsAppCtl {
 
 /**
  * Dispatched after the locale preference changes, so main.ts (which owns the
- * `PaneManager` — not available in this module per the Task 24 contract) can
+ * `PaneManager` — deliberately not passed to this module) can
  * re-render pane bars/bodies in the new locale. Sidebar highlight/labels are
  * covered by the existing `store.subscribe` wiring (any `store.update` call
  * already re-renders the sidebar, and nav-only changes are covered by
  * `store.onMutate`); per-module pane content that captured its locale string
  * at mount time is not fully re-translated until the user navigates away and
- * back — acceptable per the Task 24 brief, which explicitly defers
- * full-fidelity re-render.
+ * back — an accepted trade-off: full-fidelity re-render is deliberately
+ * deferred.
  */
 const LOCALE_CHANGED_EVENT = 'tt-locale-changed'
 
@@ -327,7 +330,44 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     const listEl = el('div', { class: 'tt-prefs-template-list' })
 
+    const oneOnOneDaysField = prefsNumberField({
+      inputClass: 'tt-prefs-one-on-one-days-input',
+      label: t(locale, 'prefs_one_on_one_default_label'),
+      hint: t(locale, 'prefs_one_on_one_default_hint'),
+      min: 0,
+      max: 365,
+      value: store.doc.prefs.oneOnOneDefaultDays,
+      onCommit: (days) => {
+        store.update((d) => {
+          d.prefs.oneOnOneDefaultDays = days
+        }, PREFS_ONLY)
+      },
+    })
+
+    // Rebuilt by refreshList: it lists the templates, so an added, renamed or deleted one must show up here too.
+    const oneOnOneTemplateSlot = el('div', { class: 'tt-prefs-field' })
+    function renderOneOnOneTemplateSelect(): void {
+      const select = el('select', { class: 'tt-input tt-prefs-one-on-one-template-select' }) as HTMLSelectElement
+      select.appendChild(el('option', { value: '' }, t(locale, 'prefs_one_on_one_template_none')))
+      for (const tpl of store.doc.templates) {
+        if (!isOneOnOneCandidate(tpl)) continue
+        select.appendChild(el('option', { value: tpl.id }, tpl.name))
+      }
+      // A chosen template that was deleted is not an option: the select then reads None rather than blank.
+      select.value = store.doc.prefs.oneOnOneTemplateId ?? ''
+      if (select.selectedIndex < 0) select.value = ''
+      select.addEventListener('change', () => {
+        store.update((d) => {
+          d.prefs.oneOnOneTemplateId = select.value || null
+        }, PREFS_ONLY)
+      })
+      oneOnOneTemplateSlot.replaceChildren(
+        el('label', { class: 'tt-prefs-inline-label' }, t(locale, 'prefs_one_on_one_template_label'), select)
+      )
+    }
+
     function refreshList(): void {
+      renderOneOnOneTemplateSelect()
       listEl.innerHTML = ''
       const templates = store.doc.templates
       if (templates.length === 0) {
@@ -429,9 +469,17 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       store.update((d) => {
         const existingNames = new Set(d.templates.map((tp) => tp.name))
         for (const tpl of builtinTemplates(d.prefs.locale)) {
-          if (!existingNames.has(tpl.name)) d.templates.push(tpl)
+          if (existingNames.has(tpl.name)) continue
+          d.templates.push(tpl)
+          // A restored 1:1 seed has a new id, so a New 1:1 choice left on None
+          // or on the deleted seed would keep inserting a bare heading. A
+          // choice that still names a template is the user's and stays.
+          const chosen = d.prefs.oneOnOneTemplateId
+          if (tpl.name === ONE_ON_ONE_SEED_NAME && (chosen === null || !d.templates.some((tp) => tp.id === chosen))) {
+            d.prefs.oneOnOneTemplateId = tpl.id
+          }
         }
-      }, TEMPLATES_ONLY)
+      }, TEMPLATES_AND_PREFS)
       refreshList()
     }
 
@@ -507,7 +555,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const toolbar = el('div', { class: 'tt-prefs-template-toolbar' }, newBtn, restoreBtn)
 
     refreshList()
-    container.append(toolbar, listEl)
+    container.append(prefsSection(null, oneOnOneDaysField, oneOnOneTemplateSlot), toolbar, listEl)
   }
 
   /**
@@ -591,7 +639,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
       ? null
       : el('input', { type: 'password', class: 'tt-input', name: 'tt-prefs-current-password', autocomplete: 'current-password', disabled: readOnly })
 
-    // Task 25 re-review item #2 (UX bonus): static at render time — this tab
+    // Static at render time — this tab
     // is rebuilt from scratch every time it's selected (see `renderActiveTab`
     // switch above), which is enough to reflect a read-only state acquired
     // before the modal was opened without adding a live subscription here.

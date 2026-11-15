@@ -133,7 +133,7 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   })
   // The five inline mark passes (bold / italic / strike / former-@-mention
   // single-tilde / escaped <u>). Run on the link TEXT alone inside the link
-  // callback below (spec §2.1 step 4), then on the body after links are
+  // callback below, then on the body after links are
   // extracted — so a marker inside link text is never paired with one that
   // sits after the link. The single-tilde pass is distinct from the
   // double-tilde strike rule right above it: strike has already consumed
@@ -247,6 +247,68 @@ function fenceFor(lines: readonly string[]): string {
   return '`'.repeat(len)
 }
 
+/**
+ * The closing backtick run a fence opened at `lines[i]` (a line starting with
+ * `run` backticks, run >= 3) needs. Shared by `mdToHtml` and `fencedLines`;
+ * the rule itself is explained above `mdToHtml`'s `preBuf`.
+ */
+function openerFence(lines: readonly string[], i: number, run: number): number {
+  return run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+}
+
+/**
+ * Which of `lines` sit in a fenced code block, the fence lines included, by
+ * the rule `mdToHtml`'s fence branch applies (both open a fence through
+ * `openerFence`). For readers that work on markdown lines instead of
+ * rendering them. `unclosed` is true when the last block runs to the end of
+ * input. Appending a ``` line as the new last line then closes it, whatever
+ * its opener's length: with no closer that long after it, a longer opener
+ * closes on any ``` line. Lines appended after that closer can change this,
+ * because a longer opener counts as long once any later line is that long.
+ */
+export function fencedLines(lines: readonly string[]): { fenced: boolean[]; unclosed: boolean } {
+  const fenced: boolean[] = []
+  let fence = 0 // the closing run the open block needs; 0 = outside a block
+  for (const [i, line] of lines.entries()) {
+    const run = leadingBackticks(line)
+    if (fence) {
+      fenced.push(true)
+      if (run >= fence) fence = 0
+      continue
+    }
+    if (run >= 3) {
+      fenced.push(true)
+      fence = openerFence(lines, i, run)
+      continue
+    }
+    fenced.push(false)
+  }
+  return { fenced, unclosed: fence !== 0 }
+}
+
+/** A markdown task item's state: `- [ ]` open, `- [x]` done, `- [>]` carried over to a later note. */
+export type TaskState = 'open' | 'done' | 'carried'
+
+/** What follows a bullet's `- ` when the item is a task: `[ ]`, `[x]`, `[X]` or `[>]`, then optionally a space and the text. Group 1 is the state marker, group 2 the item text. */
+export const TASK_PREFIX = /^\[( |x|X|>)\](?: (.*))?$/
+
+const TASK_BY_MARK: Readonly<Record<string, TaskState>> = { ' ': 'open', x: 'done', X: 'done', '>': 'carried' }
+const MD_MARK_OF_TASK: Readonly<Record<TaskState, string>> = { open: '[ ]', done: '[x]', carried: '[>]' }
+const TEXT_MARK_OF_TASK: Readonly<Record<TaskState, string>> = { open: '☐', done: '☑', carried: '↪' }
+
+/**
+ * The task state an `<li>` carries, or `null`. Only a bullet (`ul`) item can be
+ * a task: `1. [ ] a` is never parsed as one, so an `<ol>` item's `data-task`
+ * (a stale attribute after the editor converts the list) is ignored and the
+ * item serializes as a plain numbered one. An unknown attribute value is
+ * ignored too, so a hand-built or pasted `data-task="x"` never writes a marker.
+ */
+function taskOf(li: HTMLElement, listTag: string): TaskState | null {
+  if (listTag !== 'ul') return null
+  const v = li.getAttribute('data-task')
+  return v === 'open' || v === 'done' || v === 'carried' ? v : null
+}
+
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
   interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean; lastVal: number }
@@ -259,6 +321,9 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // is currently open) and MAX_LIST_DEPTH, so a malformed/hand-typed indent
   // jump never produces an orphaned list structure.
   //
+  // `task` is a bullet's `[ ]` / `[x]` / `[>]` state (`null` for a plain item or
+  // an ordered one — `1. [ ] a` keeps its brackets as text).
+  //
   // `parsedVal` is the item's own written number (`null` for bullets). An
   // ordered item keeps its written number only while the sequence is still
   // ascending within the frame (so `3.` `5.` — a deliberate gap — and
@@ -266,7 +331,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // count is replaced by "previous + 1". That is the case a paste hits when
   // levels past MAX_LIST_DEPTH all collapse onto one frame each written
   // `1.` — without this they would render `1. 1. 1.`.
-  const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null) => {
+  const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null, task: TaskState | null = null) => {
     const depth = Math.min(rawDepth, stack.length, MAX_LIST_DEPTH)
     while (stack.length && stack[stack.length - 1]!.depth > depth) closeFrame(stack.pop()!)
     let top = stack[stack.length - 1]
@@ -284,7 +349,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
       top!.lastVal = v
       valueAttr = ` value="${v}"`
     }
-    out.push(`<li${valueAttr}>`, itemHtml)
+    // An empty item gets the <br> Chromium itself puts in a fresh <li>: without a
+    // line box the caret cannot land in it, and the arrow keys skip a task item
+    // (its marker is CSS-drawn, so nothing else gives it height). htmlToMd reads
+    // a lone <br> as empty, so the markdown is unchanged.
+    out.push(`<li${valueAttr}${task ? ` data-task="${task}"` : ''}>`, itemHtml || '<br>')
     top!.hasOpenLi = true
   }
   // Flat blockquote (no nesting — like H1–H3): consecutive `> ` lines buffer
@@ -345,7 +414,7 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     const run = leadingBackticks(line)
     if (run >= 3) {
       flushBq(); closeList(); preBuf = []
-      preFence = run > 3 && lines.slice(i + 1).some((l) => leadingBackticks(l) >= run) ? run : 3
+      preFence = openerFence(lines, i, run)
       continue
     }
     const bq = /^> ?(.*)$/.exec(line)
@@ -359,7 +428,12 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     // An image is an atomic block with no children: the editor fills in the <img> from the image store (ui/image-host.ts).
     if (img) { closeList(); out.push(`<div class="tt-img" contenteditable="false" data-img-id="${img.id}" data-alt="${esc(img.alt)}"></div>`) }
     else if (h) { closeList(); out.push(`<h${h[1]!.length}>${blockInline(preserveIndent(h[2]!), resolveLabel, refTitle, linkHint)}</h${h[1]!.length}>`) }
-    else if (ul) addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(ul[2]!), resolveLabel, refTitle, linkHint), null)
+    else if (ul) {
+      // Only reached outside a fence (the fence branch above `continue`s), so fenced `- [ ] a` stays literal.
+      const m = TASK_PREFIX.exec(ul[2]!)
+      const text = m ? (m[2] ?? '') : ul[2]!
+      addListItem(Math.floor(ul[1]!.length / 2), 'ul', blockInline(preserveIndent(text), resolveLabel, refTitle, linkHint), null, m ? TASK_BY_MARK[m[1]!]! : null)
+    }
     else if (ol) addListItem(Math.floor(ol[1]!.length / 2), 'ol', blockInline(preserveIndent(ol[3]!), resolveLabel, refTitle, linkHint), Number(ol[2]))
     else if (hr) { closeList(); out.push('<hr>') }
     else { closeList(); out.push(`<div>${line ? blockInline(preserveIndent(line), resolveLabel, refTitle, linkHint) : '<br>'}</div>`) }
@@ -672,6 +746,35 @@ export function unwrapBlockContainers(root: HTMLElement): void {
   }
 }
 
+/**
+ * Other apps put a checklist item on the clipboard as an `<li>` led by an
+ * `<input type="checkbox">` (GitHub, Confluence, most rendered markdown) or
+ * as an ARIA checkbox `<li role="checkbox" aria-checked>` (Google Docs).
+ * htmlToMd reads neither, so the boxes and their states were lost on paste.
+ * Each such item gets the `data-task` htmlToMd writes as `[ ]` / `[x]`, and
+ * the box is dropped with the space after it. Only a box with no text before
+ * it in its own item counts, so "Agree [box]" stays text; a numbered item's
+ * state is ignored by htmlToMd anyway (`1. [ ] a` is not a task).
+ */
+export function convertCheckboxItems(root: HTMLElement): void {
+  root.querySelectorAll('li').forEach((li) => {
+    if (li.getAttribute('role') === 'checkbox') {
+      li.setAttribute('data-task', li.getAttribute('aria-checked') === 'true' ? 'done' : 'open')
+      return
+    }
+    const box = Array.from(li.querySelectorAll('input')).find((i) => i.type === 'checkbox' && i.closest('li') === li)
+    if (!box) return
+    const before = li.ownerDocument.createRange()
+    before.setStart(li, 0)
+    before.setEndBefore(box)
+    if (before.toString().trim() !== '') return
+    li.setAttribute('data-task', box.hasAttribute('checked') ? 'done' : 'open')
+    const next = box.nextSibling
+    box.remove()
+    if (next?.nodeType === Node.TEXT_NODE) next.textContent = (next.textContent ?? '').replace(/^\s+/, '')
+  })
+}
+
 const WORD_LIST_LEVEL = /mso-list:\s*[^;"]*\blevel(\d+)/i
 const WORD_LIST_GLYPH = /^[0-9a-z]+[.)]$/i
 
@@ -895,13 +998,14 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     if (childTag === 'ul' || childTag === 'ol') { renderListMd(child, depth + 1, out); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
+    const task = taskOf(child, tag)
     liLines(child).forEach((text, n) => {
       if (tag === 'ol') {
         const v = child.getAttribute('value')
         i = n === 0 && v ? Number(v) : i + 1
         out.push(`${prefix}${i}. ${text}`)
       } else {
-        out.push(`${prefix}- ${text}`)
+        out.push(`${prefix}- ${task && n === 0 ? `${MD_MARK_OF_TASK[task]} ` : ''}${text}`)
       }
     })
     nestedLists.forEach(nested => renderListMd(nested, depth + 1, out))
@@ -967,13 +1071,15 @@ export function preLines(node: HTMLElement): string[] {
 // flattening every level to the same column.
 function renderListText(list: HTMLElement, out: string[], depth = 0): void {
   const prefix = '  '.repeat(depth)
+  const listTag = list.tagName.toLowerCase()
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement)) return
     const childTag = child.tagName.toLowerCase()
     if (childTag === 'ul' || childTag === 'ol') { renderListText(child, out, depth + 1); return }
     if (childTag !== 'li') return
     const nestedLists = nestedListsOf(child)
-    out.push(liLines(child, true).flatMap(l => l.split('\n')).map(line => prefix + line).join('\n'))
+    const task = taskOf(child, listTag)
+    out.push(liLines(child, true).flatMap(l => l.split('\n')).map((line, n) => prefix + (task && n === 0 ? `${TEXT_MARK_OF_TASK[task]} ` : '') + line).join('\n'))
     nestedLists.forEach(nested => renderListText(nested, out, depth + 1))
   })
 }

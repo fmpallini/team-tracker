@@ -1,7 +1,6 @@
 // src/ui/responsive.ts — auto-hides split-view, the sidebar, and the
 // header's non-essential chrome on narrow windows, on top of (never instead
-// of) their own persisted/manual state. See docs/superpowers/specs/
-// 2026-07-21-shell-layout-export-help-fixes-design.md section 2.
+// of) their own persisted/manual state.
 // Edge-triggered: only fires when a threshold is actually crossed, so it
 // never fights a manual toggle click made while the window happens to
 // already be narrow/wide.

@@ -14,7 +14,7 @@ import type { Shell } from '../ui/shell'
 import { t } from './i18n'
 import { pickCreate, forceWrite } from './fs'
 import { docToBytes } from './doc-bytes'
-import { buildSnapshot, commitSnapshot } from './snapshot'
+import { buildSnapshot, commitSnapshot, contentFingerprint } from './snapshot'
 import { recordCodec } from './crypto'
 import { newStamp, randomHex, type FileStamp } from './file-stamp'
 import type { LivePersister } from './live-persist'
@@ -54,8 +54,8 @@ export interface ConflictFlow {
 export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
   const { store, session, shell } = deps
 
-  // Task 25 fix #5: guards against a second conflict modal stacking on top of
-  // the first — e.g. a trailing save round (fix #1) or the auto-save
+  // Guards against a second conflict modal stacking on top of
+  // the first — e.g. a trailing save round or the auto-save
   // interval hitting the same unresolved `ExternalChangeError` again while
   // the user hasn't chosen Reload/Overwrite yet. Reset once the modal's
   // chosen action (successfully or not) settles.
@@ -102,11 +102,13 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       // this one's newer version: adopting it would graft foreign content onto this document's browser copy.
       if (reloaded.doc.docId !== store.doc.docId) throw new Error('the file holds a different document')
       const keyBefore = store.images.codec()?.header?.salt ?? null
+      // Taken before the document goes live, so no edit can be in it: this is what the file holds.
+      const fingerprint = await contentFingerprint(reloaded.doc)
       deps.applyReloaded(reloaded)
       await followFileKey(keyBefore, reloaded)
       // The file is now the truth: the browser copy takes its content and its write as the lineage.
       await deps.persister?.adoptFileStamp(reloaded.stamp)
-      deps.snapshot?.fileReloaded()
+      deps.snapshot?.fileReloaded(fingerprint)
     } catch (e) {
       console.error(e)
       toast(t(locale(), 'conflict_reload_failed'), { kind: 'error', sticky: true })
@@ -163,7 +165,7 @@ export function createConflictFlow(deps: ConflictFlowDeps): ConflictFlow {
       const snapshot = await buildSnapshot(store, deps.getPassword())
       await forceWrite(session, snapshot.bytes)
       await commitSnapshot(deps.persister ?? null, snapshot.stamp, snapshot.revAtSnapshot)
-      deps.snapshot?.fileWritten()
+      deps.snapshot?.fileWritten(snapshot.fingerprint)
       if (store.rev === snapshot.revAtSnapshot) {
         store.markSaved()
         shell.setTitle(session.name)

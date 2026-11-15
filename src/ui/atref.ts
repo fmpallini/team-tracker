@@ -387,9 +387,8 @@ export function makeRefClickHandler(store: Store, pm: PaneManager, paneIdx: 0 | 
  * returns the item's *current* name/title (so a chip shows the up-to-date
  * label even if the item was renamed after the mention was typed), or null
  * if resolveLabel has nothing to offer (day is always resolvable; the other
- * 4 fall back to null only if the id genuinely isn't found, which per
- * decision 7 shouldn't normally happen once auto-unlink-on-delete is wired
- * up in Task 7).
+ * 4 fall back to null only if the id genuinely isn't found, which shouldn't
+ * normally happen since deletes auto-unlink their mentions).
  */
 export function makeRefLabelResolver(store: Store, teamId: string): LabelResolver {
   return (target) => {
