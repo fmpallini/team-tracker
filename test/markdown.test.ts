@@ -1749,6 +1749,11 @@ test('task items round-trip, nested, any depth', () => {
 })
 test('[X] serializes back as [x]', () => expect(roundTrip('- [X] a')).toBe('- [x] a'))
 test('empty open task round-trips', () => expect(roundTrip('- [ ] ')).toBe('- [ ] '))
+test('an empty list item holds a <br> so the caret can land in it', () => {
+  expect(mdToHtml('- [ ] \n- \n1. ')).toBe('<ul><li data-task="open"><br></li><li><br></li></ul><ol><li value="1"><br></li></ol>')
+  expect(roundTrip('- [ ] \n- \n1. ')).toBe('- [ ] \n- \n1. ')
+  expect(roundTrip('- [ ] \n  - [ ] ')).toBe('- [ ] \n  - [ ] ')
+})
 test('ordered items are never tasks', () => expect(mdToHtml('1. [ ] a')).not.toContain('data-task'))
 test('fenced task text stays literal', () => expect(mdToHtml('```\n- [ ] a\n```')).not.toContain('data-task'))
 test('plain bullet starting with [ ] round-trips as text', () => {

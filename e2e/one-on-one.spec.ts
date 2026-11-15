@@ -25,6 +25,43 @@ async function caretSection(page: Page): Promise<string | null> {
   })
 }
 
+test('1:1 on a blank note: the arrow keys reach the empty "Agreed actions" box', async ({ page }) => {
+  const pane = await openAnasNotes(page)
+  const editor = pane.locator('.editor')
+  await editor.click()
+  await pane.locator('.tt-person-header-one-on-one-btn').click()
+  expect(await caretSection(page)).toContain('How are they')
+  // Each empty section item is one line; the last one is the template's open box.
+  for (let i = 0; i < 12 && !(await caretSection(page))?.includes('Agreed actions'); i++) await page.keyboard.press('ArrowDown')
+  expect(await caretSection(page)).toContain('Agreed actions')
+  await page.keyboard.type('Send the plan')
+  await expect(editor.locator('li[data-task="open"]')).toHaveText('Send the plan')
+})
+
+/** A fresh document with team T and member Ana, her notes open; returns the pane showing them. */
+async function openAnasNotes(page: Page) {
+  await installOpfsPickerShim(page)
+  await blockUpdateCheck(page)
+  await page.goto(`${E2E_BASE_URL}/app.html`)
+  await createEncryptedDoc(page, 'e2e-one-on-one-password')
+  await page.getByRole('button', { name: /Create first team/ }).click()
+  const teamDialog = page.getByRole('dialog')
+  await teamDialog.locator('input[name="tt-team-name"]').fill('T')
+  await teamDialog.getByRole('button', { name: 'Save' }).click()
+  await teamDialog.waitFor({ state: 'hidden' })
+  await waitForWritable(page)
+  const membersPane = page.locator('.tt-pane[data-pane-idx="1"]')
+  await membersPane.getByRole('button', { name: '+ Person' }).click()
+  const personDialog = page.getByRole('dialog')
+  await personDialog.locator('input[name="tt-person-name"]').fill('Ana')
+  await personDialog.getByRole('button', { name: 'Save' }).click()
+  await personDialog.waitFor({ state: 'hidden' })
+  await membersPane.locator('.tt-org-box', { hasText: 'Ana' }).dblclick()
+  const pane = page.locator('.tt-pane', { has: page.locator('.tt-person-header') })
+  await expect(pane).toHaveCount(1)
+  return pane
+}
+
 test('1:1 flow: carry-over, undo, Alt+O, and an overdue 1:1 in the due surfaces', async ({ page }) => {
   await installOpfsPickerShim(page)
   await blockUpdateCheck(page)
@@ -80,14 +117,20 @@ test('1:1 flow: carry-over, undo, Alt+O, and an overdue 1:1 in the due surfaces'
   await expect(carriedHeading).toHaveCount(1)
   await expect(editor.locator('li[data-task="carried"]')).toHaveText('Ship plan')
 
-  // 6. A Last 1:1 20 days ago makes the 1:1 overdue: red dots on the module tab and the org box.
+  // 6. A Last 1:1 20 days ago makes the 1:1 overdue: a red dot on the Members module and the org box.
   await pane.locator('.tt-person-cadence').click()
   const editDialog = page.getByRole('dialog')
   await editDialog.locator('.tt-date-picker-input').fill(daysAgoUs(20))
   await editDialog.getByRole('button', { name: 'Save' }).click()
   await editDialog.waitFor({ state: 'hidden' })
   await expect(pane.locator('.tt-person-cadence')).toHaveClass(/overdue/)
-  await expect(pane.locator('.tt-due-dot:not(.soon)').first()).toBeVisible()
+  // The split pane is narrow, so its selector is the dropdown: the closed button
+  // carries no dot, the Members row inside it does.
+  await expect(pane.locator('.tt-pane-modules-btn .tt-due-dot')).toHaveCount(0)
+  await pane.locator('.tt-pane-modules-btn').click()
+  const membersRow = pane.locator('.tt-pane-menu-item', { has: page.locator('.tt-kind-members') })
+  await expect(membersRow.locator('.tt-due-dot:not(.soon)')).toBeVisible()
+  await page.keyboard.press('Escape')
   // The notes replaced the org chart in the pane; "Show in org chart" brings it back.
   await pane.locator('.tt-person-header-goto-org-btn').click()
   await expect(page.locator('.tt-org-box', { hasText: 'Ana' }).locator('.tt-org-due')).toBeVisible()

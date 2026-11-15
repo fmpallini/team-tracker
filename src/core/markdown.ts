@@ -349,7 +349,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
       top!.lastVal = v
       valueAttr = ` value="${v}"`
     }
-    out.push(`<li${valueAttr}${task ? ` data-task="${task}"` : ''}>`, itemHtml)
+    // An empty item gets the <br> Chromium itself puts in a fresh <li>: without a
+    // line box the caret cannot land in it, and the arrow keys skip a task item
+    // (its marker is CSS-drawn, so nothing else gives it height). htmlToMd reads
+    // a lone <br> as empty, so the markdown is unchanged.
+    out.push(`<li${valueAttr}${task ? ` data-task="${task}"` : ''}>`, itemHtml || '<br>')
     top!.hasOpenLi = true
   }
   // Flat blockquote (no nesting — like H1–H3): consecutive `> ` lines buffer
