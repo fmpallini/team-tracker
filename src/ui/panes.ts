@@ -1289,23 +1289,14 @@ ${t(lc, 'pane_history_hint')}`
     const teamId = nav.activeTeamId
     const due = dueState(teamId)
     barEl.dataset.due = dueSignature(due)
-    // The closed dropdown only flags what is not already on screen: due items
-    // in modules other than the current one. A person pane's kind is 'person',
-    // so its group's module counts as other; that list is not on screen either.
-    const othersDue: DueCounts = { overdue: 0, dueSoon: 0 }
-    for (const [kind, c] of due) {
-      if (kind === cur?.ref.kind) continue
-      othersDue.overdue += c.overdue
-      othersDue.dueSoon += c.dueSoon
-    }
-    const hasOthersDue = othersDue.overdue + othersDue.dueSoon > 0
+    // Dots sit only on the module that has the due items (tabs and menu rows);
+    // the closed dropdown button never summarizes other modules.
     const modulesBtn = el(
       'button',
       {
         class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
-        title: (teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'))
-          + (hasOthersDue ? ` · ${dueText(lc, othersDue)}` : ''),
+        title: teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
@@ -1314,8 +1305,7 @@ ${t(lc, 'pane_history_hint')}`
         { class: flashTitle ? 'tt-pane-title-text tt-pane-title-flash' : 'tt-pane-title-text' },
         cur ? titleFor(store.doc, cur, lc) : t(lc, 'pane_empty')
       ),
-      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12)),
-      ...(hasOthersDue ? [dueDot(othersDue)] : [])
+      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12))
     )
     const isFav = cur !== null && isFavorite(store.doc, cur)
     const favBtn = el(

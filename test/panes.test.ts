@@ -2057,20 +2057,16 @@ describe('due dots on the module selector', () => {
     expect(dot(tab('stakeholders'))).toBeNull()
   })
 
-  test('current tab keeps its dot; closed dropdown dots only for other modules', () => {
+  test('current tab keeps its dot; the closed dropdown button never shows one', () => {
     const { store, pm } = setupDue()
     addAction(store, 'a', today()) // due soon
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
     expect(tab('actions').classList.contains('active')).toBe(true)
     expect(dot(tab('actions'))).not.toBeNull()
-    // Only the current module has something due: the closed button stays clean.
+    addMilestone(store, addDaysIso(today(), -1)) // overdue in another module
+    expect(dot(tab('milestones'))!.classList.contains('soon')).toBe(false)
     expect(dot(modulesBtn())).toBeNull()
-    addMilestone(store, today())
-    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(true)
-    addAction(store, 'late', addDaysIso(today(), -2)) // overdue, but on the current module
-    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(true)
-    store.update((d) => { d.teams[0]!.milestones[0]!.date = addDaysIso(today(), -1) }, { teamId: 'T1', sections: ['milestones'] })
-    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(false)
+    expect(modulesBtn().title).not.toContain('overdue')
   })
 
   test('tooltip and aria-label carry the state', () => {
@@ -2083,7 +2079,6 @@ describe('due dots on the module selector', () => {
     expect(state).toBe('2 overdue, 1 due soon')
     expect(tab('actions').title).toBe(`${label} (F6) · ${state}`)
     expect(tab('actions').getAttribute('aria-label')).toBe(`${label} · ${state}`)
-    expect(modulesBtn().title).toContain(` · ${state}`)
     const row = menuRow('actions')
     expect(row.title).toBe(`${label} · ${state}`)
     expect(row.getAttribute('aria-label')).toBe(`${label} · ${state}`)
