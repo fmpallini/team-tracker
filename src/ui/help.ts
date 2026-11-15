@@ -45,7 +45,6 @@ const blockRows: Rows = [
   ['Ctrl+Shift+9 / Ctrl+Shift+Q', 'help_shortcut_quote'],
   ['Ctrl+Shift+6 / Ctrl+Shift+E', 'help_shortcut_codeblock'],
   ['Ctrl+Enter', 'help_task_toggle'],
-  ['[ ] ', 'help_task_typed'],
   ['Ctrl+Home / Ctrl+End', 'help_doc_start_end'],
 ]
 
@@ -68,6 +67,7 @@ const mdRows = (lc: Locale): Rows => {
     ['# / ## / ###', 'help_md_headings'],
     [`- ${text}`, 'help_md_ul'],
     [`1. ${text}`, 'help_md_ol'],
+    [`[ ] ${text}`, 'help_md_task'],
     ['---', 'help_md_hr'],
     ['```', 'help_md_codeblock'],
     [`> ${text}`, 'help_md_quote'],
@@ -223,7 +223,7 @@ const listsSection = (ctx: Ctx, withNav: boolean): HTMLElement =>
 
 const datesSection = (ctx: Ctx): HTMLElement => rowsSection(ctx, 'help_sec_dates', dateRows, true)
 
-/** New 1:1 (Alt+O), carry-over and cadence: on the People tab, and on the Editor tab when that is where a person page's help lands. */
+/** New 1:1 (Alt+O), carry-over and cadence: on the People tab, and on the Editor tab (after its own keys) when that is where a person page's help lands. */
 const oneOnOneSections = (ctx: Ctx): HTMLElement[] => [
   rowsSection(ctx, 'help_sec_one_on_one', [['Alt+O', 'help_one_on_one_new']]),
   textSection(ctx, 'help_one_on_one_heading', 'help_one_on_one_text'),
@@ -263,14 +263,15 @@ const TABS: readonly TabDef[] = [
     id: 'editor',
     label: 'help_tab_editor',
     build: (ctx) => [
-      // A person page's pane opens this tab (PANE_TAB.person), so its 1:1 keys lead it there.
-      ...(ctx.pane === 'person' ? oneOnOneSections(ctx) : []),
+      // Formatting comes first on every editor, a person page's included.
       rowsSection(ctx, 'help_sec_inline', inlineRows),
       rowsSection(ctx, 'help_sec_blocks', blockRows),
       rowsSection(ctx, 'help_sec_links', linkRows(ctx.locale)),
       rowsSection(ctx, 'help_md_heading', mdRows(ctx.locale)),
       rowsSection(ctx, 'help_sec_leave', [['Esc', 'help_notes_leave']]),
       rowsSection(ctx, 'help_sec_history', historyRows),
+      // A person page's pane opens this tab (PANE_TAB.person), so its 1:1 keys follow the editor's own.
+      ...(ctx.pane === 'person' ? oneOnOneSections(ctx) : []),
       // The key tables come first; the prose sections (what @, / and pasted pictures do) close the tab.
       textSection(ctx, 'help_refs_heading', 'help_refs_text'),
       textSection(ctx, 'help_templates_heading', 'help_templates_text'),

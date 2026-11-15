@@ -328,11 +328,12 @@ describe('Editor tab', () => {
     expect(text.indexOf('Ctrl+Z')).toBeGreaterThan(text.indexOf('Ctrl+K'))
   })
 
-  test('lists the checklist keys: Ctrl+Enter, typed [ ] and Ctrl+Home / Ctrl+End', () => {
+  test('lists the checklist keys: Ctrl+Enter and Ctrl+Home / Ctrl+End, with typed [ ] in the markdown syntax', () => {
     showHelp('en-US', { tab: 'editor' })
     const all = codes()
     expect(all).toContain('Ctrl+Enter')
-    expect(all).toContain('[ ] ')
+    expect(all).toContain('[ ] text')
+    expect(all.indexOf('[ ] text')).toBeGreaterThan(all.indexOf('1. text'))
     expect(all).toContain('Ctrl+Home / Ctrl+End')
     expect(panelText()).toContain('Checklist item')
     document.body.innerHTML = ''
@@ -443,9 +444,9 @@ describe('module tabs', () => {
     expect(panelText()).toContain('Novo 1:1'); expect(panelText()).not.toContain('Nova 1:1')
   })
 
-  test('F1 on a person page opens the Editor tab led by New 1:1, carry-over and cadence; other editors skip them', () => {
+  test('F1 on a person page opens the Editor tab: formatting first, then New 1:1, carry-over and cadence after History; other editors skip them', () => {
     showHelp('en-US', { pane: 'person' })
-    expect(headings().slice(0, 3)).toEqual(['1:1 notes', 'Carry-over and cadence', 'Inline formatting'])
+    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'Leaving the editor', 'History', '1:1 notes', 'Carry-over and cadence', 'References (@)', 'Templates (/)', 'Pictures'])
     expect(codes()).toContain('Alt+O')
     document.body.innerHTML = ''
     showHelp('en-US', { pane: 'general' })
