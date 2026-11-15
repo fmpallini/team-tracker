@@ -1289,14 +1289,16 @@ ${t(lc, 'pane_history_hint')}`
     const teamId = nav.activeTeamId
     const due = dueState(teamId)
     barEl.dataset.due = dueSignature(due)
-    // Dots sit only on the module that has the due items (tabs and menu rows);
-    // the closed dropdown button never summarizes other modules.
+    // Dots sit only on the module that has the due items. The closed dropdown
+    // shows the current module, so it carries that module's dot, as its tab does.
+    const curDue = cur ? due.get(cur.ref.kind) : undefined
     const modulesBtn = el(
       'button',
       {
         class: 'tt-pane-title-trigger tt-pane-modules-btn',
         type: 'button',
-        title: teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'),
+        title: (teamId ? `${t(lc, 'pane_modules_title')} (${moduleFKey(0)}–${moduleFKey(paneMenuItems().length - 1)})` : t(lc, 'pane_no_team'))
+          + (curDue ? ` · ${dueText(lc, curDue)}` : ''),
         disabled: teamId === null,
         onclick: () => toggleMenu(idx),
       },
@@ -1305,7 +1307,8 @@ ${t(lc, 'pane_history_hint')}`
         { class: flashTitle ? 'tt-pane-title-text tt-pane-title-flash' : 'tt-pane-title-text' },
         cur ? titleFor(store.doc, cur, lc) : t(lc, 'pane_empty')
       ),
-      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12))
+      el('span', { class: 'tt-pane-title-chev' }, icon('chevDown', 12)),
+      ...(curDue ? [dueDot(curDue)] : [])
     )
     const isFav = cur !== null && isFavorite(store.doc, cur)
     const favBtn = el(

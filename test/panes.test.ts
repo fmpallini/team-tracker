@@ -2057,16 +2057,20 @@ describe('due dots on the module selector', () => {
     expect(dot(tab('stakeholders'))).toBeNull()
   })
 
-  test('current tab keeps its dot; the closed dropdown button never shows one', () => {
+  test('the closed dropdown carries the current module dot, like its tab', () => {
     const { store, pm } = setupDue()
-    addAction(store, 'a', today()) // due soon
     pm.openInPane(0, { teamId: 'T1', ref: { kind: 'actions' } })
-    expect(tab('actions').classList.contains('active')).toBe(true)
-    expect(dot(tab('actions'))).not.toBeNull()
-    addMilestone(store, addDaysIso(today(), -1)) // overdue in another module
+    addMilestone(store, addDaysIso(today(), -1)) // overdue, but in another module
     expect(dot(tab('milestones'))!.classList.contains('soon')).toBe(false)
     expect(dot(modulesBtn())).toBeNull()
-    expect(modulesBtn().title).not.toContain('overdue')
+    addAction(store, 'a', today()) // due soon, in the current module
+    expect(dot(tab('actions'))!.classList.contains('soon')).toBe(true)
+    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(true)
+    expect(modulesBtn().title).toContain(` · ${t('en-US', 'pane_due_soon', { soon: '1' })}`)
+    addAction(store, 'late', addDaysIso(today(), -2))
+    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(false)
+    pm.openInPane(0, { teamId: 'T1', ref: { kind: 'milestones' } })
+    expect(dot(modulesBtn())!.classList.contains('soon')).toBe(false)
   })
 
   test('tooltip and aria-label carry the state', () => {
