@@ -16,11 +16,11 @@ import { icon, type IconName } from './icons'
 import { showModal, type ModalHandle } from './modal'
 import { createTabRail } from './tab-rail'
 
-export type HelpTab = 'global' | 'editor' | 'notes' | 'people' | 'tasks' | 'milestones' | 'risks'
+export type HelpTab = 'global' | 'editor' | 'notes' | 'people' | 'oneOnOne' | 'tasks' | 'milestones' | 'risks'
 
 /** Which tab documents a pane showing `kind`. */
 const PANE_TAB: Record<ModuleRef['kind'], HelpTab> = {
-  daily: 'notes', general: 'editor', person: 'editor',
+  daily: 'notes', general: 'editor', person: 'oneOnOne',
   stakeholders: 'people', members: 'people',
   actions: 'tasks', milestones: 'milestones', risks: 'risks',
 }
@@ -194,8 +194,6 @@ interface Ctx {
   locale: Locale
   /** The PWA build is already installable/standalone, so the `--app=` recipe is moot there. */
   pwa: boolean
-  /** The module the focused pane shows, when help was opened from one. */
-  pane: ModuleRef['kind'] | undefined
   goto: (tab: HelpTab) => void
 }
 
@@ -223,11 +221,9 @@ const listsSection = (ctx: Ctx, withNav: boolean): HTMLElement =>
 
 const datesSection = (ctx: Ctx): HTMLElement => rowsSection(ctx, 'help_sec_dates', dateRows, true)
 
-/** New 1:1 (Alt+O), carry-over and cadence: on the People tab, and on the Editor tab (after its own keys) when that is where a person page's help lands. */
-const oneOnOneSections = (ctx: Ctx): HTMLElement[] => [
-  rowsSection(ctx, 'help_sec_one_on_one', [['Alt+O', 'help_one_on_one_new']]),
-  textSection(ctx, 'help_one_on_one_heading', 'help_one_on_one_text'),
-]
+/** A button that jumps to another tab, for the keys a module's own tab leaves to it. */
+const tabLink = (ctx: Ctx, tab: HelpTab, labelKey: MsgKey): HTMLElement =>
+  el('div', { class: 'tt-help-section' }, el('button', { class: 'tt-btn', type: 'button', onclick: () => ctx.goto(tab) }, t(ctx.locale, labelKey)))
 
 // --- Tabs --------------------------------------------------------------------
 
@@ -270,8 +266,6 @@ const TABS: readonly TabDef[] = [
       rowsSection(ctx, 'help_md_heading', mdRows(ctx.locale)),
       rowsSection(ctx, 'help_sec_leave', [['Esc', 'help_notes_leave']]),
       rowsSection(ctx, 'help_sec_history', historyRows),
-      // A person page's pane opens this tab (PANE_TAB.person), so its 1:1 keys follow the editor's own.
-      ...(ctx.pane === 'person' ? oneOnOneSections(ctx) : []),
       // The key tables come first; the prose sections (what @, / and pasted pictures do) close the tab.
       textSection(ctx, 'help_refs_heading', 'help_refs_text'),
       textSection(ctx, 'help_templates_heading', 'help_templates_text'),
@@ -287,11 +281,7 @@ const TABS: readonly TabDef[] = [
         ['Alt+, / Alt+.', 'help_global_daily_nav_content'],
         ['Alt+C', 'help_global_calendar_toggle'],
       ]),
-      el(
-        'div',
-        { class: 'tt-help-section' },
-        el('button', { class: 'tt-btn', type: 'button', onclick: () => ctx.goto('editor') }, t(ctx.locale, 'help_notes_editor_link'))
-      ),
+      tabLink(ctx, 'editor', 'help_notes_editor_link'),
     ],
   },
   {
@@ -302,8 +292,21 @@ const TABS: readonly TabDef[] = [
         ['↑ / ↓ (← / →)', 'help_people_nav'],
         ['Ctrl+← / → / ↑ / ↓', 'help_people_move'],
       ]),
-      ...oneOnOneSections(ctx),
       listsSection(ctx, false),
+      tabLink(ctx, 'oneOnOne', 'help_people_one_on_one_link'),
+    ],
+  },
+  {
+    // A person page's pane opens this tab (PANE_TAB.person); its formatting keys are the Editor tab's, one link away.
+    id: 'oneOnOne',
+    label: 'help_tab_one_on_one',
+    build: (ctx) => [
+      rowsSection(ctx, 'help_sec_one_on_one', [['Alt+O', 'help_one_on_one_new']]),
+      textSection(ctx, 'help_one_on_one_carry_heading', 'help_one_on_one_carry_text'),
+      textSection(ctx, 'help_one_on_one_cadence_heading', 'help_one_on_one_cadence_text'),
+      textSection(ctx, 'help_one_on_one_due_heading', 'help_one_on_one_due_text'),
+      textSection(ctx, 'help_one_on_one_template_heading', 'help_one_on_one_template_text'),
+      tabLink(ctx, 'editor', 'help_notes_editor_link'),
     ],
   },
   {
@@ -374,7 +377,6 @@ export function showHelp(locale: Locale, opts: { tab?: HelpTab; pane?: ModuleRef
   const ctx: Ctx = {
     locale,
     pwa: opts.pwa ?? __PWA__,
-    pane: opts.pane,
     goto: (tab) => {
       rail.select(tab)
       render(true)

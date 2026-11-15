@@ -117,7 +117,7 @@ test('the app name button keeps its chevron affordance across a locale switch', 
 describe('tabs', () => {
   test('one tab per module family, Global first, in a vertical tablist', () => {
     showHelp('en-US')
-    expect(tabButtons().map((b) => b.textContent)).toEqual(['Global', 'Editor', 'Daily notes', 'People', 'Tasks', 'Milestones', 'Risks'])
+    expect(tabButtons().map((b) => b.textContent)).toEqual(['Global', 'Editor', 'Daily notes', 'People', '1:1', 'Tasks', 'Milestones', 'Risks'])
     expect(document.querySelector('[role="tablist"]')!.getAttribute('aria-orientation')).toBe('vertical')
     expect(document.querySelector('[role="tabpanel"]')).not.toBeNull()
   })
@@ -144,7 +144,7 @@ describe('tabs', () => {
 
   test('every module kind maps to a tab, and an empty pane to Global', () => {
     const expected: Record<string, HelpTab> = {
-      daily: 'notes', general: 'editor', person: 'editor', stakeholders: 'people', members: 'people',
+      daily: 'notes', general: 'editor', person: 'oneOnOne', stakeholders: 'people', members: 'people',
       actions: 'tasks', milestones: 'milestones', risks: 'risks',
     }
     for (const [kind, tab] of Object.entries(expected)) {
@@ -415,7 +415,7 @@ describe('module tabs', () => {
   })
 
   test('Ctrl+Z is documented on the Global tab only, never as a list row', () => {
-    for (const tab of ['notes', 'people', 'tasks', 'milestones', 'risks'] as HelpTab[]) {
+    for (const tab of ['notes', 'people', 'oneOnOne', 'tasks', 'milestones', 'risks'] as HelpTab[]) {
       showHelp('en-US', { tab })
       expect(codes()).not.toContain('Ctrl+Z')
       document.body.innerHTML = ''
@@ -424,7 +424,7 @@ describe('module tabs', () => {
 
   test('People navigate by org chart: its section replaces the ↑/↓ row and the chord moves the person', () => {
     showHelp('en-US', { tab: 'people' })
-    expect(headings()).toEqual(['Org chart', '1:1 notes', 'Carry-over and cadence', 'Lists & cards'])
+    expect(headings()).toEqual(['Org chart', 'Lists & cards'])
     expect(codes()).not.toContain('↑ / ↓')
     expect(codes()).toContain('↑ / ↓ (← / →)')
     const move = Array.from(document.querySelectorAll('.tt-help-table tr')).find((r) => r.querySelector('.tt-help-code')?.textContent === 'Ctrl+← / → / ↑ / ↓')
@@ -432,28 +432,32 @@ describe('module tabs', () => {
     expect(headings()).not.toContain('Date fields')
   })
 
-  test('People tab documents Alt+O, the carry-over and the cadence, in both locales', () => {
-    showHelp('en-US', { tab: 'people' })
+  test('the 1:1 tab documents Alt+O, carry-over, cadence, due dates and the template, in both locales', () => {
+    showHelp('en-US', { tab: 'oneOnOne' })
+    expect(headings()).toEqual(['New 1:1', 'Carry-over', 'Cadence', 'When a 1:1 is due', 'Template'])
     expect(codes()).toContain('Alt+O')
     const text = panelText()
-    expect(text).toContain('New 1:1')
     expect(text).toContain('↪')
+    expect(text).toContain('1:1 every')
+    expect(text).toContain('Last 1:1')
     expect(text).toContain('Preferences → Templates')
     document.body.innerHTML = ''
-    showHelp('pt-BR', { tab: 'people' })
+    showHelp('pt-BR', { tab: 'oneOnOne' })
     expect(panelText()).toContain('Novo 1:1'); expect(panelText()).not.toContain('Nova 1:1')
   })
 
-  test('F1 on a person page opens the Editor tab: formatting first, then New 1:1, carry-over and cadence after History; other editors skip them', () => {
+  test('F1 on a person page opens the 1:1 tab, whose link leads to the Editor tab; People links to 1:1 and plain editors keep Alt+O out', () => {
     showHelp('en-US', { pane: 'person' })
-    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'Leaving the editor', 'History', '1:1 notes', 'Carry-over and cadence', 'References (@)', 'Templates (/)', 'Pictures'])
-    expect(codes()).toContain('Alt+O')
-    document.body.innerHTML = ''
-    showHelp('en-US', { pane: 'general' })
+    expect(activeTab().textContent).toBe('1:1' + 'pane')
+    const link = Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-prefs-content button')).find((b) => b.textContent!.includes('Editor tab'))!
+    link.click()
+    expect(activeTab().textContent).toBe('Editor')
+    expect(headings()).toEqual(['Inline formatting', 'Blocks', 'Links', 'Markdown syntax', 'Leaving the editor', 'History', 'References (@)', 'Templates (/)', 'Pictures'])
     expect(codes()).not.toContain('Alt+O')
     document.body.innerHTML = ''
-    showHelp('en-US', { tab: 'editor' })
-    expect(headings()).not.toContain('1:1 notes')
+    showHelp('en-US', { tab: 'people' })
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.tt-prefs-content button')).find((b) => b.textContent!.includes('1:1 tab'))!.click()
+    expect(activeTab().textContent).toBe('1:1')
   })
 
   test('Tasks name the board move chord, Risks the risk move, Milestones neither', () => {

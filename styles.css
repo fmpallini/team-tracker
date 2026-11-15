@@ -2276,7 +2276,7 @@ select option { background: var(--bg); color: var(--fg); }
    shortcut and Markdown tables misaligned. rem so it follows the text size. */
 .tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; table-layout: fixed; }
 .tt-help-table td:first-child { width: 18rem; }
-.tt-help-table td { padding: .2rem .4rem; border-bottom: 1px solid var(--border); }
+.tt-help-table td { padding: var(--row-pad); border-bottom: 1px solid var(--border); }
 /* About tab: "Check now" and what the last check found. */
 .tt-prefs-update-check-now-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .tt-prefs-update-check-status { font-size: .9rem; color: var(--muted); }
@@ -2413,8 +2413,8 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-row + .tt-risk-followup-row, .tt-milestone-row + .tt-milestone-followup-row { margin-top: -.35rem; }
 
 /* Add buttons (people, milestones, risks, and the one an empty pane offers) are the one filled button of their toolbar; expand-all is quiet and only shows a wash on hover. */
-.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
-.tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
+.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-person-header-one-on-one-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
+.tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-person-header-one-on-one-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
 .tt-milestone-expand-all-btn, .tt-risk-expand-all-btn { border-color: transparent; background: transparent; color: var(--muted); font-size: .9rem; padding: .3rem .55rem; }
 .tt-milestone-expand-all-btn:hover:not(:disabled), .tt-risk-expand-all-btn:hover:not(:disabled) { border-color: transparent; background: var(--hover); color: var(--accent); }
 
