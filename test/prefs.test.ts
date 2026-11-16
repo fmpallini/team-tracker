@@ -99,7 +99,7 @@ test('renders 6 tabs, defaulting to Geral/General', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['General', 'Saving', 'Templates', 'Security', 'Data', 'About'])
+  expect(tabs).toEqual(['General', 'Saving', 'Templates and 1:1', 'Security', 'Data', 'About'])
   expect(document.querySelector('.tt-prefs-tab-btn.active')?.textContent).toBe('General')
   expect(document.querySelector('input[name="tt-prefs-theme"][value="system"]')).not.toBeNull()
 })
@@ -472,7 +472,7 @@ test('locale radio updates store.prefs, notifies locale-changed listeners, and r
   // tab labels should now read in Portuguese.
   expect(document.querySelectorAll('.tt-modal-overlay')).toHaveLength(1)
   const tabs = Array.from(document.querySelectorAll('.tt-prefs-tab-btn')).map((b) => b.textContent)
-  expect(tabs).toEqual(['Geral', 'Salvamento', 'Templates', 'Segurança', 'Dados', 'Sobre'])
+  expect(tabs).toEqual(['Geral', 'Salvamento', 'Templates e 1:1', 'Segurança', 'Dados', 'Sobre'])
 })
 
 test('notifyLocaleChanged is a plain document event: dispatching with zero listeners registered never throws (ui/prefs.ts has no direct PaneManager dependency)', () => {
@@ -515,7 +515,7 @@ test('locale radio re-seeds untouched builtin templates and leaves an edited one
 test('templates tab lists the 5 builtins with scope badges', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const rows = document.querySelectorAll('.tt-prefs-template-row')
   expect(rows).toHaveLength(5)
@@ -525,7 +525,7 @@ test('templates tab lists the 5 builtins with scope badges', () => {
 test('prefs Templates tab edits oneOnOneDefaultDays and oneOnOneTemplateId', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const days = document.querySelector('.tt-prefs-one-on-one-days-input') as HTMLInputElement
   expect(days.value).toBe('14')
@@ -555,7 +555,7 @@ test('prefs Templates tab edits oneOnOneDefaultDays and oneOnOneTemplateId', () 
 test('template select lists only personal/any templates', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const select = () => document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement
   const expected = store.doc.templates.filter((tp) => tp.scope !== 'daily').map((tp) => tp.id)
@@ -575,7 +575,7 @@ test('template select lists only personal/any templates', () => {
 test('template select shows None when the chosen template was deleted', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
   const id = store.doc.prefs.oneOnOneTemplateId!
   const rowIndex = store.doc.templates.findIndex((tp) => tp.id === id)
   ;(document.querySelectorAll('.tt-prefs-template-delete-btn')[rowIndex] as HTMLButtonElement).click()
@@ -588,7 +588,7 @@ test('template select shows None when the chosen template was deleted', () => {
 test('"+ New" adds a template with the entered name/scope/body', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   clickByText('+ New')
   const nameInput = document.querySelector('input[name="tt-prefs-template-name"]') as HTMLInputElement
@@ -614,7 +614,7 @@ test('"+ New" adds a template with the entered name/scope/body', () => {
 test('"+ New" requires a non-empty name', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
   clickByText('+ New')
   clickByText('Save')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
@@ -624,7 +624,7 @@ test('"+ New" requires a non-empty name', () => {
 test('edit (pencil) button updates the existing template in place', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const firstId = store.doc.templates[0]!.id
   const editBtn = document.querySelector('.tt-prefs-template-edit-btn') as HTMLButtonElement
@@ -643,7 +643,7 @@ test('edit (pencil) button updates the existing template in place', () => {
 test('duplicate button inserts a copy right after the original', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const original = store.doc.templates[0]!
   const dupBtn = document.querySelector('.tt-prefs-template-dup-btn') as HTMLButtonElement
@@ -660,7 +660,7 @@ test('duplicate button inserts a copy right after the original', () => {
 test('delete button asks for confirmation, then removes the template', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const target = store.doc.templates[0]!
   const delBtn = document.querySelector('.tt-prefs-template-delete-btn') as HTMLButtonElement
@@ -675,7 +675,7 @@ test('delete button asks for confirmation, then removes the template', () => {
 test('delete confirmation warns that a deleted template cannot be brought back', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const delBtn = document.querySelector('.tt-prefs-template-delete-btn') as HTMLButtonElement
   delBtn.click()
@@ -696,7 +696,7 @@ test('delete confirmation warns that a deleted template cannot be brought back',
 test('reorder (up/down) swaps templates in the array', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   const names = store.doc.templates.map((t) => t.name)
   const downBtn = document.querySelector('.tt-prefs-template-down-btn') as HTMLButtonElement
@@ -714,7 +714,7 @@ test('restore defaults re-inserts builtins missing by name, leaves existing (eve
     oneOnOne.name = '1:1 (custom)'
   })
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   clickByText('Restore defaults')
 
@@ -738,7 +738,7 @@ test.each([
     if (kind === 'null') d.prefs.oneOnOneTemplateId = null
   })
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
 
   clickByText('Restore defaults')
 
@@ -750,7 +750,7 @@ test.each([
 test('restore defaults is idempotent when nothing is missing', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates')
+  clickTab('Templates and 1:1')
   const before = store.doc.templates.length
   clickByText('Restore defaults')
   expect(store.doc.templates).toHaveLength(before)

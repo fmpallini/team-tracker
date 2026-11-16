@@ -304,7 +304,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       // A double-click on the button must not fall through to the box's open-notes handler.
       moreBtn.addEventListener('dblclick', (e) => e.stopPropagation())
 
-      // A dot in the bottom-left corner (the top-right one holds the dog-ear) once the next 1:1 is late.
+      // A dot in the top-right corner once the next 1:1 is late.
       // Due today or soon draws nothing, and so does a person never met: there is no date to count from.
       const days = oneOnOneOverdueDays(person, group, ctx.store.doc.prefs, todayIso())
       let dueMark: HTMLElement | null = null

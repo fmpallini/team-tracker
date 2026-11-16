@@ -555,7 +555,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     const toolbar = el('div', { class: 'tt-prefs-template-toolbar' }, newBtn, restoreBtn)
 
     refreshList()
-    container.append(prefsSection(null, oneOnOneDaysField, oneOnOneTemplateSlot), toolbar, listEl)
+    container.append(toolbar, listEl, prefsSection(t(locale, 'prefs_group_one_on_one'), oneOnOneDaysField, oneOnOneTemplateSlot))
   }
 
   /**
