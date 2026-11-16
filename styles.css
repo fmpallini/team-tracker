@@ -1377,13 +1377,8 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid var(--border);
   cursor: grab; position: relative; z-index: 1;
 }
-/* Dog-eared index-card corner — the org chart reads as cards pinned to a board. */
-.tt-org-box::after {
-  content: ''; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px;
-  background: var(--bg); border: 1px solid var(--border); transform: rotate(8deg);
-}
-/* Overdue 1:1: a small danger dot on the bottom-left corner, clear of the top-right dog-ear. */
-.tt-org-due { position: absolute; left: -4px; bottom: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); border: 2px solid var(--panel); box-sizing: content-box; }
+/* Overdue 1:1: the same danger dot as .tt-due-dot, tucked inside the top-right corner rather than on the border. */
+.tt-org-due { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
 .tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 .9rem; box-sizing: border-box; }
 /* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
    (needed for the ellipsis) clips at the padding box, and both the synthesized
@@ -1391,15 +1386,15 @@ body { background: var(--bg); color: var(--fg); }
    highlight band (::highlight(tt-search), which paints the font's full
    ascent..descent, taller than a `normal` line box at this size) spill past a
    tight content box, so roles rendered visibly shaved on the right and bottom. */
-.tt-org-role { font-size: .85em; font-style: italic; opacity: .75; line-height: 1.4; padding: 0 .15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tt-org-role { font-size: .85em; font-style: italic; opacity: .75; line-height: 1.4; padding: 0 .9rem; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .tt-org-box.tt-people-drop-before { box-shadow: inset 2px 0 0 0 var(--accent); }
 .tt-org-box.tt-people-drop-after { box-shadow: inset -2px 0 0 0 var(--accent); }
 .tt-org-box.tt-people-drop-child { background: rgba(var(--accent-rgb), .18); }
 
-/* The ⋯ button floats over the card's top-right corner and only shows on hover or focus; the name keeps clear of it. */
-.tt-people-more-btn { position: absolute; top: 2px; right: 6px; padding: .1rem .3rem; border: none; background: transparent; border-radius: var(--r-sm); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+/* The ⋯ button floats over the same corner and shows on hover, or when the button itself has focus: the box takes focus on open, which must not reveal it (the keyboard reaches the menu with Space on the box). */
+.tt-people-more-btn { position: absolute; bottom: 2px; right: 6px; padding: .1rem .3rem; border: none; background: transparent; border-radius: var(--r-sm); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
 .tt-people-more-btn:hover { background: var(--hover); }
-.tt-org-box:hover .tt-people-more-btn, .tt-org-box:focus-within .tt-people-more-btn { opacity: 1; }
+.tt-org-box:hover .tt-people-more-btn, .tt-people-more-btn:focus-visible { opacity: 1; }
 /* Connector lines: the parent's children wrapper draws the trunk down to the
    horizontal rail; each child draws its own stub up to the rail plus a half-
    width rail segment that merges with its siblings (first/last child drop
@@ -2084,7 +2079,7 @@ select option { background: var(--bg); color: var(--fg); }
    treatment here. */
 .tt-person-header-btn { font-size: 1rem; }
 /* The 1:1 status, plain text right beside the New 1:1 button (the edit button opens its fields). */
-.tt-person-cadence { white-space: nowrap; font-size: .8rem; line-height: 1.2; color: var(--muted); }
+.tt-person-cadence { display: flex; flex-direction: column; margin-right: var(--sp-2); white-space: nowrap; font-size: .75rem; line-height: 1.2; color: var(--muted); }
 .tt-person-cadence.overdue { color: var(--danger-text); }
 .tt-person-notes .tt-editor { flex: 1; }
 
@@ -2276,7 +2271,7 @@ select option { background: var(--bg); color: var(--fg); }
    shortcut and Markdown tables misaligned. rem so it follows the text size. */
 .tt-help-table { border-collapse: collapse; width: 100%; font-size: .9rem; table-layout: fixed; }
 .tt-help-table td:first-child { width: 18rem; }
-.tt-help-table td { padding: .2rem .4rem; border-bottom: 1px solid var(--border); }
+.tt-help-table td { padding: var(--row-pad); border-bottom: 1px solid var(--border); }
 /* About tab: "Check now" and what the last check found. */
 .tt-prefs-update-check-now-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .tt-prefs-update-check-status { font-size: .9rem; color: var(--muted); }
@@ -2413,8 +2408,8 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risk-row + .tt-risk-followup-row, .tt-milestone-row + .tt-milestone-followup-row { margin-top: -.35rem; }
 
 /* Add buttons (people, milestones, risks, and the one an empty pane offers) are the one filled button of their toolbar; expand-all is quiet and only shows a wash on hover. */
-.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
-.tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
+.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-person-header-one-on-one-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
+.tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-person-header-one-on-one-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
 .tt-milestone-expand-all-btn, .tt-risk-expand-all-btn { border-color: transparent; background: transparent; color: var(--muted); font-size: .9rem; padding: .3rem .55rem; }
 .tt-milestone-expand-all-btn:hover:not(:disabled), .tt-risk-expand-all-btn:hover:not(:disabled) { border-color: transparent; background: var(--hover); color: var(--accent); }
 

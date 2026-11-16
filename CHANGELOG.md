@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.7.1] - 2026-11-16
+
+### Changed
+- 1:1 got its own tab in Help, and the "+ New 1:1" button is highlighted.
+- The person page shows the last 1:1 and its recurrence on two lines.
+- The org chart's overdue 1:1 dot sits inside the card's corner, the decorative corner fold is gone, and the ⋯ button moves to the bottom-right.
+- In Preferences, the Templates tab is now "Templates and 1:1" and lists the templates first.
+
 ## [3.7.0] - 2026-11-15
 
 ### Added

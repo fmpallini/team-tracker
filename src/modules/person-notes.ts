@@ -101,7 +101,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     t(lc, 'person_new_one_on_one_btn')
   )
 
-  // "Last 1:1: 3 days ago · every 14 days", red once the next one is late.
+  // "Last 1:1: 3 days ago" over "Every 14 days", red once the next one is late.
   // Plain text: the edit button beside it opens the same dialog.
   const cadenceEl = el('span', { class: 'tt-person-cadence' })
   function renderCadence(p: Person): void {
@@ -110,14 +110,17 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
     // An unreadable date (hand-edited plain file) reads as no 1:1, as core/cadence.ts treats it.
     const last = isIsoDate(p.lastOneOnOne) ? p.lastOneOnOne : null
     const ago = last === null ? 0 : diffDays(today, last)
-    let text = last === null
+    const lastText = last === null
       ? t(lc, 'person_no_one_on_one')
       : t(lc, 'person_last_one_on_one', {
         ago: ago <= 0 ? t(lc, 'person_ago_today') : t(lc, ago === 1 ? 'person_days_ago_one' : 'person_days_ago', { days: String(ago) }),
       })
+    // Two lines: when the last 1:1 was, then the cadence (none set, no second line).
     const every = effectiveCadenceDays(p, group, prefs)
-    if (every !== null) text += t(lc, every === 1 ? 'person_cadence_every_one' : 'person_cadence_every', { days: String(every) })
-    cadenceEl.textContent = text
+    cadenceEl.replaceChildren(
+      el('span', {}, lastText),
+      ...(every === null ? [] : [el('span', {}, t(lc, every === 1 ? 'person_cadence_every_one' : 'person_cadence_every', { days: String(every) }))])
+    )
     cadenceEl.classList.toggle('overdue', oneOnOneOverdueDays(p, group, prefs, today) !== null)
   }
   renderCadence(person)

@@ -52,8 +52,8 @@ test('editor quote/hr/link keys exist in both locales', () => {
 test('the 1:1 status line has singular forms for one day in both locales', () => {
   expect(t('en-US', 'person_days_ago_one', { days: '1' })).toBe('1 day ago')
   expect(t('pt-BR', 'person_days_ago_one', { days: '1' })).toBe('há 1 dia')
-  expect(t('en-US', 'person_cadence_every_one', { days: '1' })).toBe(' · every 1 day')
-  expect(t('pt-BR', 'person_cadence_every_one', { days: '1' })).toBe(' · a cada 1 dia')
+  expect(t('en-US', 'person_cadence_every_one', { days: '1' })).toBe('(recurrence: 1 day)')
+  expect(t('pt-BR', 'person_cadence_every_one', { days: '1' })).toBe('(recorrência: 1 dia)')
 })
 test('strike title now names both chords', () => {
   expect(t('en-US', 'editor_strike_title')).toContain('Ctrl+Shift+X')

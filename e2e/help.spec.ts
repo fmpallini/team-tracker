@@ -70,7 +70,7 @@ test.describe('help', () => {
       const dialog = page.getByRole('dialog')
       const tabs = dialog.locator('.tt-prefs-tab-btn')
       const count = await tabs.count()
-      expect(count).toBe(7)
+      expect(count).toBe(8)
       for (let i = 0; i < count; i++) {
         await tabs.nth(i).click()
         const overflow = await dialog.evaluate((d) => {

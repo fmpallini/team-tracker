@@ -446,6 +446,8 @@ describe('New 1:1', () => {
   }
   const member = (store: Store): Person => store.doc.teams[0]!.members[0]!
   const line = (container: HTMLElement): HTMLElement => container.querySelector<HTMLElement>('.tt-person-cadence')!
+  // The status block is two lines (last 1:1, then cadence), one child span each.
+  const lines = (container: HTMLElement): string => Array.from(line(container).children).map((c) => c.textContent).join('\n')
   const clickNew = (container: HTMLElement): void => container.querySelector<HTMLButtonElement>('.tt-person-header-one-on-one-btn')!.click()
 
   test('New 1:1 appends the block, marks carried, records today, one undo step', async () => {
@@ -582,14 +584,14 @@ describe('New 1:1', () => {
     }
   })
 
-  test('status line: "No 1:1 yet · every 14 days" for a member; overdue class when late', () => {
+  test('status line: "No 1:1 yet" over "(recurrence: 14 days)" for a member; overdue class when late', () => {
     const { container, store, pm } = setup(withNotes(''))
     render(container, PERSON_LOC, store, pm)
-    expect(line(container).textContent).toBe('No 1:1 yet · every 14 days')
+    expect(lines(container)).toBe('No 1:1 yet\n(recurrence: 14 days)')
     expect(line(container).classList.contains('overdue')).toBe(false)
 
     store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -30) }, { teamId: 'T1', sections: ['people'] })
-    expect(line(container).textContent).toBe('Last 1:1: 30 days ago · every 14 days')
+    expect(lines(container)).toBe('Last 1:1: 30 days ago\n(recurrence: 14 days)')
     expect(line(container).classList.contains('overdue')).toBe(true)
 
     // Due today is not late yet.
@@ -604,29 +606,29 @@ describe('New 1:1', () => {
       d.teams[0]!.members[0]!.oneOnOneEveryDays = 1
     })
     render(container, PERSON_LOC, store, pm)
-    expect(line(container).textContent).toBe('Last 1:1: 1 day ago · every 1 day')
+    expect(lines(container)).toBe('Last 1:1: 1 day ago\n(recurrence: 1 day)')
     store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = addDaysIso(todayIso(), -2) }, { teamId: 'T1', sections: ['people'] })
-    expect(line(container).textContent).toBe('Last 1:1: 2 days ago · every 1 day')
+    expect(lines(container)).toBe('Last 1:1: 2 days ago\n(recurrence: 1 day)')
   })
 
   test('status line for a stakeholder with no cadence, and "today" right after a 1:1', () => {
     const { container, store, pm } = setup(makeTeam())
     render(container, { teamId: 'T1', ref: { kind: 'person', personId: 'stk-1', group: 'stakeholders' } }, store, pm)
-    expect(line(container).textContent).toBe('No 1:1 yet')
+    expect(lines(container)).toBe('No 1:1 yet')
     store.update((d) => { d.teams[0]!.stakeholders[0]!.lastOneOnOne = todayIso() }, { teamId: 'T1', sections: ['people'] })
-    expect(line(container).textContent).toBe('Last 1:1: today')
+    expect(lines(container)).toBe('Last 1:1: today')
   })
 
   test('status line repaints after a people-scoped update', () => {
     const { container, store, pm } = setup(withNotes(''))
     render(container, PERSON_LOC, store, pm)
     store.update((d) => { d.teams[0]!.members[0]!.oneOnOneEveryDays = 7 }, { teamId: 'T1', sections: ['people'] })
-    expect(line(container).textContent).toBe('No 1:1 yet · every 7 days')
+    expect(lines(container)).toBe('No 1:1 yet\n(recurrence: 7 days)')
     // Members without their own cadence follow the default in prefs.
     store.update((d) => { delete d.teams[0]!.members[0]!.oneOnOneEveryDays }, { teamId: 'T1', sections: ['people'] })
-    expect(line(container).textContent).toBe('No 1:1 yet · every 14 days')
+    expect(lines(container)).toBe('No 1:1 yet\n(recurrence: 14 days)')
     store.update((d) => { d.prefs.oneOnOneDefaultDays = 21 }, { sections: ['prefs'] })
-    expect(line(container).textContent).toBe('No 1:1 yet · every 21 days')
+    expect(lines(container)).toBe('No 1:1 yet\n(recurrence: 21 days)')
   })
 
   test('the edit dialog’s cadence Save repaints the status line', () => {
@@ -639,7 +641,7 @@ describe('New 1:1', () => {
     ;(document.querySelector('input.tt-person-cadence-days-input') as HTMLInputElement).value = '10'
     Array.from(document.querySelectorAll('.tt-modal-buttons button')).find((b) => b.textContent === 'Save')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(member(store).oneOnOneEveryDays).toBe(10)
-    expect(line(container).textContent).toBe('No 1:1 yet · every 10 days')
+    expect(lines(container)).toBe('No 1:1 yet\n(recurrence: 10 days)')
   })
 
   test('status line repaints when the window comes back on a later day', () => {
@@ -648,10 +650,10 @@ describe('New 1:1', () => {
     const { container, store, pm } = setup(withNotes(''))
     store.update((d) => { d.teams[0]!.members[0]!.lastOneOnOne = '2026-11-13' })
     render(container, PERSON_LOC, store, pm)
-    expect(line(container).textContent).toBe('Last 1:1: today · every 14 days')
+    expect(lines(container)).toBe('Last 1:1: today\n(recurrence: 14 days)')
     vi.setSystemTime(new Date(2026, 10, 15, 12))
     window.dispatchEvent(new Event('focus'))
-    expect(line(container).textContent).toBe('Last 1:1: 2 days ago · every 14 days')
+    expect(lines(container)).toBe('Last 1:1: 2 days ago\n(recurrence: 14 days)')
   })
 
   test('the status line is plain text: only the edit button opens the dialog', () => {
