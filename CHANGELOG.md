@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.7.2] - 2026-11-18
+
+### Fixed
+- After a browser update, opening a file could silently do nothing until site data was cleared; it now carries on or says how to recover.
+- The installed app's icons no longer show Content Security Policy errors in the browser console.
+
 ## [3.7.1] - 2026-11-16
 
 ### Changed
