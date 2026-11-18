@@ -5,6 +5,8 @@
 // calls" retry behavior, the actual get/set/del wrappers — completely
 // unexercised. fake-indexeddb (dev-only) closes that gap.
 import 'fake-indexeddb/auto'
+import { IDBFactory as FakeIDBFactory } from 'fake-indexeddb'
+import { STALL_MS } from '../src/core/stall'
 
 // Each test dynamically re-imports the module after `vi.resetModules()` so
 // its module-scoped `dbPromise` cache starts fresh — otherwise the first
@@ -126,5 +128,61 @@ describe('the cached connection recovers instead of failing every later call', (
     })
 
     expect(upgraded).toBe('upgraded')
+  })
+})
+
+describe('a backend that never answers (core/stall.ts)', () => {
+  /** Hands out open requests that never fire any event, until `answer()` is called — then a working fake. */
+  function wedgedFactory(): { factory: IDBFactory; pending: IDBOpenDBRequest[]; heal: () => void } {
+    const real = new FakeIDBFactory()
+    const state = { wedged: true, pending: [] as IDBOpenDBRequest[] }
+    const factory = {
+      open: (name: string, version?: number) => {
+        if (!state.wedged) return real.open(name, version)
+        const req = {} as IDBOpenDBRequest
+        state.pending.push(req)
+        return req
+      },
+    } as unknown as IDBFactory
+    return { factory, pending: state.pending, heal: () => { state.wedged = false } }
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  test('the open rejects with a StallError instead of hanging, and the next call opens afresh', async () => {
+    const wedged = wedgedFactory()
+    vi.stubGlobal('indexedDB', wedged.factory)
+    const { idbGet, idbSet } = await freshIdb()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const first = idbGet('lastHandle')
+    const assertion = expect(first).rejects.toMatchObject({ name: 'StallError' })
+    await vi.advanceTimersByTimeAsync(STALL_MS)
+    await assertion
+    vi.useRealTimers()
+
+    wedged.heal()
+    await idbSet('k', 'v')
+    await expect(idbGet('k')).resolves.toBe('v')
+  })
+
+  test('a connection that turns up after the deadline is closed, not kept', async () => {
+    const wedged = wedgedFactory()
+    vi.stubGlobal('indexedDB', wedged.factory)
+    const { idbGet } = await freshIdb()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const assertion = expect(idbGet('k')).rejects.toMatchObject({ name: 'StallError' })
+    await vi.advanceTimersByTimeAsync(STALL_MS)
+    await assertion
+
+    const late = { close: vi.fn(), addEventListener: vi.fn() }
+    const req = wedged.pending[0] as unknown as { result: unknown; onsuccess: () => void }
+    req.result = late
+    req.onsuccess()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(late.close).toHaveBeenCalled()
   })
 })

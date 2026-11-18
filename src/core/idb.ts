@@ -1,4 +1,5 @@
 // Minimal IndexedDB helper — no libs. Single object store 'kv' used as a key/value map.
+import { stall } from './stall'
 
 const DB_NAME = 'team-tracker'
 const DB_VERSION = 1
@@ -11,7 +12,9 @@ let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise
-  dbPromise = new Promise((resolve, reject) => {
+  // A wedged backend never answers the open (core/stall.ts). The deadline rejects instead, and the cache entry is
+  // dropped like on any failed open so the next call tries afresh; a connection that turns up late is closed unused.
+  const opening = stall(new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
@@ -35,19 +38,25 @@ function openDb(): Promise<IDBDatabase> {
       dbPromise = null // a failed open must not poison future calls with a rejected cache entry
       reject(req.error ?? new Error('IndexedDB open request failed'))
     }
+  }), 'IndexedDB open (team-tracker)', { onLate: (db) => db.close() })
+  opening.catch(() => {
+    if (dbPromise === opening) dbPromise = null
   })
-  return dbPromise
+  dbPromise = opening
+  return opening
 }
 
 async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await openDb()
-  return new Promise<T>((resolve, reject) => {
+  // Values here are small (a file handle, a flag, the file-id registry), so a request this slow is a wedged store,
+  // or a transaction queued behind one, not a slow one.
+  return stall(new Promise<T>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, mode)
     const store = tx.objectStore(STORE_NAME)
     const req = fn(store)
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('IndexedDB request failed'))
-  })
+  }), `IndexedDB ${mode} (team-tracker)`)
 }
 
 export async function idbSet(key: string, value: unknown): Promise<void> {

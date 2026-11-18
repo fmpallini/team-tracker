@@ -95,6 +95,8 @@ const pt = {
   err_invalid_shape: 'Estrutura de arquivo inválida em: {path}',
   err_schema_too_new: 'Arquivo criado por uma versão mais nova do app — atualize o app',
   err_unexpected: 'Ocorreu um erro inesperado',
+  err_browser_stalled:
+    'O armazenamento do navegador não está respondendo, então o arquivo não pôde ser aberto. Feche todas as janelas e abas do Team Tracker e abra de novo; se não resolver, reinicie o navegador. Como último recurso, limpe os dados deste site nas configurações do navegador: isso apaga a cópia do navegador, e alterações ainda não gravadas no arquivo se perdem.',
   err_file_permission:
     'O navegador não liberou o acesso a este arquivo. Se a permissão estiver bloqueada, libere-a nas configurações do site (cadeado na barra de endereço) ou, no app instalado, nas configurações do aplicativo. Enquanto isso, use Abrir arquivo… e escolha o arquivo manualmente.',
   fallback_notice: 'Este navegador não consegue gravar o arquivo sozinho (só Chrome, Edge e Brave conseguem). Seu trabalho fica guardado no navegador; use Exportar arquivo, no cabeçalho, para baixar uma cópia.',
@@ -847,6 +849,8 @@ const en: Record<MsgKey, string> = {
   err_invalid_shape: 'Invalid file structure at: {path}',
   err_schema_too_new: 'File created by a newer version of the app — please update the app',
   err_unexpected: 'An unexpected error occurred',
+  err_browser_stalled:
+    "The browser's storage is not responding, so the file could not be opened. Close every Team Tracker window and tab and open it again; if that does not help, restart the browser. As a last resort, clear this site's data in the browser settings: that deletes the browser's copy, and changes not yet written to the file are lost.",
   err_file_permission:
     'The browser has not granted access to this file. If the permission is blocked, allow it in the site settings (padlock in the address bar) or, in the installed app, in the app settings. In the meantime, use Open file… and pick the file manually.',
   fallback_notice: 'This browser cannot write the file by itself (only Chrome, Edge and Brave can). Your work is kept in the browser; use Export file in the header to download a copy.',

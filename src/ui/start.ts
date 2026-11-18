@@ -22,6 +22,7 @@ import { createEmptyDocument, SchemaTooNewError, SCHEMA_VERSION } from '../core/
 import { docToBytes } from '../core/doc-bytes'
 import { newStamp } from '../core/file-stamp'
 import { sharedLiveDb, type LiveDb } from '../core/live-db'
+import { StallError } from '../core/stall'
 import { promptPassword, showErrorModal, toast } from './modal'
 import { reconcileOpen, type OpenedDocument } from './open-document'
 
@@ -107,17 +108,18 @@ export function showStartScreen(
 
   function reportUnexpected(e: unknown): void {
     console.error(e)
-    showErrorModal(locale, t(locale, 'err_unexpected'))
+    // Browser storage that stopped answering (core/stall.ts): nothing the file or the user did, so say what clears it.
+    showErrorModal(locale, t(locale, e instanceof StallError ? 'err_browser_stalled' : 'err_unexpected'))
   }
 
   /**
    * Every route into the app ends here: reconcile the decoded file with the browser's copy of the document
    * (asking whatever that needs), then hand the result to main.ts. Backing out of a question leaves the start screen as it is.
    */
-  async function finishOpen(session: FileSession, opened: OpenedDoc, password: string | null): Promise<void> {
+  async function finishOpen(session: FileSession, opened: OpenedDoc, password: string | null, superseded?: () => boolean): Promise<void> {
     const db = await (opts?.liveDb ?? sharedLiveDb)()
     const result = await reconcileOpen({ locale, db, session, opened, password })
-    if (result) onOpen(result)
+    if (result && !superseded?.()) onOpen(result)
   }
 
   async function decryptLoop(bytes: Uint8Array): Promise<{ opened: OpenedDoc; password: string } | null> {
@@ -413,7 +415,9 @@ export function showStartScreen(
     // reflects/edits the pref; only the immediate re-open is suppressed.
     // ...and an open the user (or the OS launch) already started wins outright.
     if (autoLoad && !opts?.skipAutoLoad && !openStarted) {
-      await finishOpen(result.session, plain, null)
+      // Checked again once reconciled: a slow or stalled browser storage can keep this open waiting long enough for
+      // the user to open a file themselves, and that one wins.
+      await finishOpen(result.session, plain, null, () => openStarted)
     }
   }
   checkAutoLoad().catch((e: unknown) => console.error(e))

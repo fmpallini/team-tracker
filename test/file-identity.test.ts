@@ -1,5 +1,6 @@
 import { resolveFileId, resolveFileLockKey, LOCK_REGISTRY_CAP } from '../src/core/file-identity'
 import type { FileSession } from '../src/core/fs'
+import { StallError, STALL_MS } from '../src/core/stall'
 
 // In-memory stand-in for the IndexedDB wrapper, with a real await per call so
 // unserialized concurrent resolves genuinely interleave.
@@ -83,6 +84,21 @@ test('the registry keeps only the most recently used files', async () => {
 test('an IndexedDB failure falls back to the name key instead of throwing', async () => {
   idbMocks.idbGet.mockRejectedValueOnce(new Error('idb unavailable'))
   expect(await resolveFileLockKey(session(handle('x'), 'y.tmv'))).toBe('tmv:y.tmv')
+})
+
+test('a registry lock never granted (another open stuck inside it) falls back to the name key after the deadline, instead of waiting forever', async () => {
+  const neverGranted = { request: () => new Promise(() => {}) } as unknown as LockManager
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.useFakeTimers()
+  try {
+    const key = resolveFileLockKey(session(handle('x'), 'y.tmv'), neverGranted)
+    await vi.advanceTimersByTimeAsync(STALL_MS)
+    expect(await key).toBe('tmv:y.tmv')
+    expect(spy).toHaveBeenCalledWith(expect.any(StallError))
+  } finally {
+    vi.useRealTimers()
+    spy.mockRestore()
+  }
 })
 
 test('resolveFileId names the file the lock key is built from, and is null where there is no stable identity', async () => {

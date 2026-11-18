@@ -9,6 +9,7 @@
 //
 // Everything a document owns is reachable by the range [docId] .. [docId, []]
 // (an array sorts after any string key part).
+import { stall } from './stall'
 
 export interface LiveMeta {
   docId: string
@@ -96,7 +97,10 @@ export async function openLiveDb(factory: IDBFactory | undefined = globalThis.in
   function connect(): Promise<IDBDatabase> {
     if (closed) return Promise.reject(new Error('live database is closed'))
     if (conn) return conn
-    conn = new Promise<IDBDatabase>((resolve, reject) => {
+    // A wedged backend never answers the open (core/stall.ts): every open then waited forever on this cached promise.
+    // The deadline rejects instead, so sharedLiveDb() falls back to running without a browser copy and the next open
+    // tries afresh; a connection that turns up late is closed unused.
+    const opening = stall(new Promise<IDBDatabase>((resolve, reject) => {
       const req = idb.open(name, DB_VERSION)
       req.onupgradeneeded = () => {
         const db = req.result
@@ -115,7 +119,11 @@ export async function openLiveDb(factory: IDBFactory | undefined = globalThis.in
         conn = null // a failed open must not poison later calls
         reject(req.error ?? new Error('IndexedDB open request failed'))
       }
+    }), `IndexedDB open (${name})`, { onLate: (db) => db.close() })
+    opening.catch(() => {
+      if (conn === opening) conn = null
     })
+    conn = opening
     return conn
   }
 
