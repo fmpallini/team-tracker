@@ -3,8 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 
 // The design rules the app's screens agree on, as failing tests, so a new rule
 // or screen that drifts is caught in pre-push and CI instead of in a review.
-// The rules themselves are written down in CLAUDE.md (Conventions) and the
-// ui-consistency skill; this file is their executable half. Each allowlist
+// The rules themselves are written down in the ui-consistency skill
+// (.claude/skills/ui-consistency/SKILL.md); this file is their executable half. Each allowlist
 // entry below says why it is allowed — extend one only with a reason.
 
 // --- a small stylesheet reader --------------------------------------------
