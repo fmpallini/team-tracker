@@ -805,6 +805,32 @@ describe('keyboard shortcuts', () => {
     editor.destroy()
   })
 
+  // Chromium's toggle on a sub-item of the same kind leaves an <li> directly inside an <li>, un-nesting it.
+  test.each([
+    ['bullet', '- a\n  - b\n- c', 'Digit8', 'insertUnorderedList', false],
+    ['numbered', '1. a\n   1. b', 'Digit7', 'insertOrderedList', false],
+    ['bullet', '- a\n  - b\n- c', 'Digit7', 'insertOrderedList', true],
+  ])('Ctrl+Shift+7/8 on a %s sub-item (%#): only switching it to the other kind reaches the browser', (_, md, code, cmd, runs) => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editor.setMd(md)
+    const sub = editorEl.querySelectorAll('li')[1]!
+    const r = document.createRange(); r.setStart(sub.firstChild!, 1); r.collapse(true)
+    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+    dispatchKey(editorEl, { key: '*', ctrlKey: true, shiftKey: true, code })
+    if (runs) expect(execSpy).toHaveBeenCalledWith(cmd, false, undefined)
+    else expect(execSpy).not.toHaveBeenCalledWith(cmd, false, undefined)
+    // A top-level item still toggles natively.
+    const top = editorEl.querySelector('li')!
+    r.setStart(top.firstChild!, 1); r.collapse(true)
+    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+    dispatchKey(editorEl, { key: '*', ctrlKey: true, shiftKey: true, code })
+    expect(execSpy).toHaveBeenCalledWith(cmd, false, undefined)
+    editor.destroy()
+  })
+
   test('Ctrl+Shift+9 runs formatBlock <blockquote>', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -1597,6 +1623,48 @@ describe('headings do not apply to list items', () => {
 
     expect(editorEl.querySelector('h1')).toBeNull()
     expect(editorEl.querySelector('li')!.textContent).toBe('# ')
+    editor.destroy()
+  })
+
+  // Chromium's insertUnorderedList on an item toggles the list off, leaving an <li> inside an <li> and the
+  // items above it un-nested — so a list prefix inside an item never reaches execCommand.
+  test.each([
+    ['ul', '- '],
+    ['ol', '1. '],
+  ])('typing its own list prefix in a %s sub-item is consumed: the item stays where it was', (tag, prefix) => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = `<${tag}><li>a<${tag}><li>b</li><li>${prefix}</li></${tag}></li></${tag}>`
+    const li = editorEl.querySelectorAll('li')[2]!
+    const tn = li.firstChild as Text
+    const r = document.createRange(); r.setStart(tn, tn.textContent!.length); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(execSpy).not.toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    expect(execSpy).not.toHaveBeenCalledWith('insertOrderedList', false, undefined)
+    expect(editorEl.innerHTML).toBe(`<${tag}><li>a<${tag}><li>b</li><li><br></li></${tag}></li></${tag}>`)
+    expect(li.contains(window.getSelection()!.anchorNode)).toBe(true)
+    editor.destroy()
+  })
+
+  test('typing "- " in a numbered sub-item stays literal text, the structure untouched', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = '<ol><li>a<ol><li>- </li></ol></li></ol>'
+    const tn = editorEl.querySelectorAll('li')[1]!.firstChild as Text
+    const r = document.createRange(); r.setStart(tn, tn.textContent!.length); r.collapse(true)
+    const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(execSpy).not.toHaveBeenCalledWith('insertUnorderedList', false, undefined)
+    expect(editorEl.innerHTML).toBe('<ol><li>a<ol><li>- </li></ol></li></ol>')
     editor.destroy()
   })
 
@@ -5284,6 +5352,88 @@ describe('checklists', () => {
       expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(false)
       dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
       expect(editor!.getMd()).toBe('- [ ] a\n  - [x] b')
+    })
+
+    test('Backspace on an empty task is left to the browser, which deletes the line instead of leaving a bare bullet', () => {
+      const ed = mount('- [ ] a\n- [ ] ')
+      caretAtItemStart(ed, 1)
+      expect(dispatchKey(ed, { key: 'Backspace', code: 'Backspace' }).defaultPrevented).toBe(false)
+      expect(editor!.getMd()).toBe('- [ ] a\n- [ ] ')
+    })
+
+    // Natively the joined item stays behind as an empty <li> holding its sub-items, saved as a blank bullet.
+    describe('joining a line that has sub-items into the line above takes the sub-items along', () => {
+      const del = (ed: HTMLElement): KeyboardEvent => dispatchKey(ed, { key: 'Delete', code: 'Delete' })
+      const bs = (ed: HTMLElement): KeyboardEvent => dispatchKey(ed, { key: 'Backspace', code: 'Backspace' })
+
+      test('Backspace at the start of an item: its text joins the item above, which takes the sub-items', () => {
+        const ed = mount('- a\n- c\n  - x')
+        caretAtItemStart(ed, 1)
+        expect(bs(ed).defaultPrevented).toBe(true)
+        expect(editor!.getMd()).toBe('- ac\n  - x')
+        expect(window.getSelection()!.anchorNode!.textContent).toBe('a') // caret at the join
+        expect(window.getSelection()!.anchorOffset).toBe(1)
+        dispatchKey(ed, { key: 'z', code: 'KeyZ', ctrlKey: true })
+        expect(editor!.getMd()).toBe('- a\n- c\n  - x')
+      })
+
+      test('into the deepest last line above, when the item above has sub-items of its own', () => {
+        const ed = mount('- p\n  - q\n- c\n  - x')
+        caretAtItemStart(ed, 2)
+        bs(ed)
+        expect(editor!.getMd()).toBe('- p\n  - qc\n    - x')
+      })
+
+      test('a first sub-item joins its parent; its sub-items take its place, ahead of its siblings', () => {
+        const ed = mount('- a\n  - b\n    - x\n  - y')
+        caretAtItemStart(ed, 1)
+        bs(ed)
+        expect(editor!.getMd()).toBe('- ab\n  - x\n  - y')
+      })
+
+      test('an emptied item: only its sub-items move', () => {
+        const ed = mount('- a\n- \n  - x')
+        caretAtItemStart(ed, 1)
+        bs(ed)
+        expect(editor!.getMd()).toBe('- a\n  - x')
+      })
+
+      test('a done task taking open sub-items reopens', () => {
+        const ed = mount('- [x] a\n- c\n  - [ ] x')
+        caretAtItemStart(ed, 1)
+        bs(ed)
+        expect(editor!.getMd()).toBe('- [ ] ac\n  - [ ] x')
+      })
+
+      test('the first item of a list joins the plain line above; its sub-items step out to the list', () => {
+        const ed = mount('p\n- c\n  - x\n- d')
+        caretAtItemStart(ed, 0)
+        bs(ed)
+        expect(editor!.getMd()).toBe('pc\n- x\n- d')
+      })
+
+      test('Delete at the end of the line above does the same join', () => {
+        const ed = mount('- p\n  - a\n- c\n  - x')
+        caretIn(ed, 'a')
+        expect(del(ed).defaultPrevented).toBe(true)
+        expect(editor!.getMd()).toBe('- p\n  - ac\n    - x')
+        const ed2 = mount('p\n- c\n  - x')
+        caretIn(ed2, 'p')
+        del(ed2)
+        expect(editor!.getMd()).toBe('pc\n- x')
+      })
+
+      test('an item without sub-items, or a caret away from the join, is left to the browser', () => {
+        const ed = mount('- a\n- cc\n  - x\n- d')
+        caretAtItemStart(ed, 3)
+        expect(bs(ed).defaultPrevented).toBe(false)
+        const r = document.createRange(); r.setStart(ed.querySelectorAll('li')[1]!.firstChild!, 1); r.collapse(true)
+        window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(r)
+        expect(bs(ed).defaultPrevented).toBe(false)
+        expect(del(ed).defaultPrevented).toBe(false)
+        caretAtItemStart(ed, 0)
+        expect(bs(ed).defaultPrevented).toBe(false) // nothing above the list
+      })
     })
 
     test('Backspace inside a task\'s text is left to the browser', () => {
