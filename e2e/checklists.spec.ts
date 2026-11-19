@@ -159,9 +159,10 @@ test.describe('nested checklists in a real browser', () => {
     await page.keyboard.type('- [] Parent')
     await page.keyboard.press('Control+Enter')
     await page.keyboard.press('Enter')
+    await page.keyboard.type('note')
+    await page.keyboard.press('Home')
     await page.keyboard.press('Backspace') // the new item's box goes: a plain note is no open work…
     await page.keyboard.press('Tab')
-    await page.keyboard.type('note')
     expect(await outline(page)).toEqual(['[x] Parent', '  - note'])
     await page.keyboard.press('Control+Enter') // …until it is made a task
     expect(await outline(page)).toEqual(['[ ] Parent', '  [ ] note'])
@@ -199,6 +200,51 @@ test.describe('nested checklists in a real browser', () => {
     expect(await outline(page)).toEqual(['[ ] Parent', '  - Child'])
     await page.keyboard.press('Control+z')
     expect(await outline(page)).toEqual(['[ ] Parent', '  [ ] Child'])
+  })
+
+  test('Backspace on the empty item Enter just made deletes the line, with no bare bullet in between', async ({ page }) => {
+    await typeTree(page, [[0, 'a'], [1, 'b']])
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.type('!')
+    expect(await outline(page)).toEqual(['[ ] a', '  [ ] b!'])
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Backspace')
+    expect(await outline(page)).toEqual(['[ ] a', '  [ ] b!'])
+  })
+
+  test('typing "- " on a sub-item keeps it a sub-item and the items above nested', async ({ page }) => {
+    await typeTree(page, [[0, 'a'], [1, 'b']])
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('- c')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('d')
+    expect(await outline(page)).toEqual(['[ ] a', '  [ ] b', '  [ ] c', '  [ ] d'])
+  })
+
+  test('Ctrl+Shift+8 on a sub-item keeps it a sub-item', async ({ page }) => {
+    await typeTree(page, [[0, 'a'], [1, 'b']])
+    await page.keyboard.press('Control+Shift+Digit8')
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Control+Shift+Digit8')
+    await page.keyboard.type('c')
+    expect(await outline(page)).toEqual(['[ ] a', '  [ ] b', '  [ ] c'])
+  })
+
+  test('joining a line that has sub-items into the line above takes them along, with no blank bullet left', async ({ page }) => {
+    await typeTree(page, [[0, 'a'], [0, 'c'], [1, 'x']])
+    await caretAt(page, 'c', 'start')
+    await page.keyboard.press('Backspace') // the box
+    await page.keyboard.press('Backspace') // the join
+    await page.keyboard.type('!')
+    expect(await outline(page)).toEqual(['[ ] a!c', '  [ ] x'])
+    await page.keyboard.press('Control+z')
+    await page.keyboard.press('Control+z')
+    expect(await outline(page)).toEqual(['[ ] a', '- c', '  [ ] x'])
+    await caretAt(page, 'a', 'end')
+    await page.keyboard.press('Delete')
+    expect(await outline(page)).toEqual(['[ ] ac', '  [ ] x'])
   })
 
   test('select-all + delete on a done list: what is typed next is not struck through', async ({ page }) => {

@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.7.4] - 2026-11-19
+
+### Fixed
+- Nested lists keep their indentation when you type "- " or press the bullet button on a sub-item, or join a line that has sub-items into the line above.
+- Backspace on a new, empty checklist item deletes the line instead of first turning it into a bullet.
+
 ## [3.7.3] - 2026-11-19
 
 ### Fixed

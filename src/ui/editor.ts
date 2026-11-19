@@ -778,16 +778,6 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     sel.addRange(rangeForTextOffsets(block, offset, offset))
   }
 
-  function applyBlockFormat(type: BlockPrefixMatch['type']): void {
-    editorEl.focus()
-    undoStack.checkpoint()
-    if (type === 'ul') document.execCommand('insertUnorderedList', false, undefined)
-    else if (type === 'ol') document.execCommand('insertOrderedList', false, undefined)
-    else if (type === 'blockquote') toggleBlockquote()
-    else if (type === 'codeblock') toggleCodeBlock()
-    else { document.execCommand('formatBlock', false, `<${type}>`); edit(() => flattenNestedHeadings(editorEl)) }
-  }
-
   /**
    * Ctrl+1/2/3 (and the toolbar H1/H2/H3/¶ buttons) route through here rather
    * than a bare `exec('formatBlock', ...)`: on a multi-line selection or a
@@ -829,9 +819,17 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   /**
    * Ctrl+Shift+7/8 and the toolbar •/1. buttons. Also a no-op inside a
    * blockquote or a fenced code block, for the same reason headings are.
+   * Also a no-op when it would take a sub-item out of the list it is in (•
+   * on a bullet sub-item, 1. on a numbered one): a sub-item can't be an
+   * unbulleted line, and Chromium's toggle there leaves an <li> directly
+   * inside an <li>, un-nesting the item. The other kind is left to
+   * Chromium, which converts just the selected sub-items.
    */
   function insertList(kind: 'ul' | 'ol'): void {
     if (blockquoteAtCaret() || preAtCaret()) return
+    const sel = window.getSelection()
+    const items = sel && sel.rangeCount > 0 && editorEl.contains(sel.getRangeAt(0).startContainer) ? touchedListItems(sel.getRangeAt(0)) : []
+    if (items.some((li) => parentItem(li) && li.parentElement!.tagName.toLowerCase() === kind)) return
     exec(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList')
   }
 
@@ -961,6 +959,103 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     after.setStart(caret.startContainer, caret.startOffset)
     after.setEndBefore(sub)
     return after.toString() === '' ? sub : null
+  }
+
+  const isList = (n: Node | null): n is HTMLElement => n instanceof HTMLElement && (n.tagName === 'UL' || n.tagName === 'OL')
+
+  /** `li`'s own content: every child but its sub-lists. */
+  const ownNodes = (li: HTMLElement): ChildNode[] => Array.from(li.childNodes).filter((n) => !isList(n))
+
+  /** `li`'s last sub-item, or null when it has none. */
+  function lastSubItem(li: HTMLElement): HTMLElement | null {
+    const lists = Array.from(li.children).filter(isList)
+    const last = lists[lists.length - 1]?.lastElementChild
+    return last instanceof HTMLElement && last.tagName === 'LI' ? last : null
+  }
+
+  /** A plain top-level line that a list item can be joined into. */
+  const isJoinableLine = (el: Element | null): el is HTMLElement =>
+    el instanceof HTMLElement && el.parentElement === editorEl && /^(DIV|P|H[1-3])$/.test(el.tagName)
+
+  /**
+   * The line just above `li` on screen: the deepest last item under its
+   * previous sibling, else the item its list is nested under, else (first
+   * item of a top-level list) a plain line right above the list. Null when
+   * none of those, for the browser to handle.
+   */
+  function lineAbove(li: HTMLElement): HTMLElement | null {
+    const prev = li.previousElementSibling
+    if (prev instanceof HTMLElement && prev.tagName === 'LI') {
+      let line = prev
+      for (let next = lastSubItem(line); next; next = lastSubItem(line)) line = next
+      return line
+    }
+    if (prev) return null
+    const list = li.parentElement!
+    const parent = listContainerLi(list)
+    if (parent) return parent
+    return isJoinableLine(list.previousElementSibling) ? list.previousElementSibling : null
+  }
+
+  /** The item just below `line` (a list item or a plain top-level line) on screen, or null when none. */
+  function itemBelow(line: HTMLElement): HTMLElement | null {
+    if (line.tagName !== 'LI') {
+      const next = line.nextElementSibling
+      return isList(next) && next.firstElementChild instanceof HTMLElement && next.firstElementChild.tagName === 'LI' ? next.firstElementChild : null
+    }
+    const sub = Array.from(line.children).find(isList)?.firstElementChild
+    if (sub instanceof HTMLElement && sub.tagName === 'LI') return sub
+    for (let n: HTMLElement | null = line; n; n = parentItem(n)) {
+      const next = n.nextElementSibling
+      if (next instanceof HTMLElement && next.tagName === 'LI') return next
+      if (next) return null
+    }
+    return null
+  }
+
+  /** True when no text of `line`'s own content follows the (collapsed) caret. */
+  function caretAtLineEnd(line: HTMLElement): boolean {
+    const caret = window.getSelection()!.getRangeAt(0)
+    const after = document.createRange()
+    after.setStart(caret.startContainer, caret.startOffset)
+    const sub = Array.from(line.children).find(isList)
+    if (sub) after.setEndBefore(sub)
+    else after.setEnd(line, line.childNodes.length)
+    return after.toString() === ''
+  }
+
+  /**
+   * Backspace at the start of `lower` (or Delete at the end of `upper`, the
+   * line above it) when `lower` has sub-items. Chromium moves the text up
+   * but leaves an empty `<li>` behind holding the sub-items, which saves as
+   * a blank bullet. Here the text joins `upper` and the sub-items go with
+   * it: under `upper` when it is a separate item, else (`upper` is the item
+   * `lower` was nested under, or a plain line, neither of which can take
+   * them below its text) in `lower`'s place. The caret stays at the join.
+   */
+  function joinIntoLineAbove(upper: HTMLElement, lower: HTMLElement): void {
+    edit(() => {
+      const dropTrailingBr = (nodes: ChildNode[]): ChildNode[] => {
+        const last = nodes[nodes.length - 1]
+        if (last instanceof HTMLElement && last.tagName === 'BR') { last.remove(); return nodes.slice(0, -1) }
+        return nodes
+      }
+      const moving = dropTrailingBr(ownNodes(lower))
+      if (moving.length > 0) dropTrailingBr(ownNodes(upper))
+      const offset = ownNodes(upper).reduce((n, c) => n + (c.textContent ?? '').length, 0)
+      const before = Array.from(upper.children).find(isList) ?? null
+      for (const n of moving) upper.insertBefore(n, before)
+      const subs = Array.from(lower.children).filter(isList)
+      const moved = subs.flatMap((s) => Array.from(s.children)).filter((c): c is HTMLElement => c instanceof HTMLElement)
+      const list = lower.parentElement!
+      if (upper.tagName === 'LI' && !upper.contains(lower)) subs.forEach((s) => upper.appendChild(s))
+      else moved.forEach((c) => list.insertBefore(c, lower))
+      lower.remove()
+      if (list.children.length === 0) list.remove()
+      moved.forEach(settleOpenWork)
+      restoreCaret(upper, offset)
+    })
+    scheduleChange()
   }
 
   /**
@@ -1474,36 +1569,37 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           return
         }
         if (blockMatch.type === 'hr') {
-          // Unlike ul/ol (which fall through to the generic prefix-strip +
-          // applyBlockFormat path below when not top-level, since that path
-          // can still produce a valid nested list), '---' inside a list item
-          // has no valid representation (htmlToMd only reads a list's direct
-          // <li> children) and applyBlockFormat('hr') has no handling for
-          // 'hr' at all (execCommand('formatBlock', false, '<hr>') no-ops).
-          // So always return here, converting only when top-level, and
-          // otherwise leaving the typed "--- " as literal text untouched.
+          // '---' inside a list item has no valid representation (htmlToMd
+          // only reads a list's direct <li> children), so it converts only
+          // when top-level and otherwise stays literal text.
           if (block.parentElement === editorEl) convertBlockToHr(block)
           return
         }
-        if ((blockMatch.type === 'ul' || blockMatch.type === 'ol') && block.parentElement === editorEl) {
-          convertBlockToList(block, blockMatch.type, undefined, blockMatch.type === 'ol' ? parseInt(text, 10) : 1)
+        if (blockMatch.type === 'ul' || blockMatch.type === 'ol') {
+          if (block.parentElement === editorEl) {
+            convertBlockToList(block, blockMatch.type, undefined, blockMatch.type === 'ol' ? parseInt(text, 10) : 1)
+            return
+          }
+          // Inside a list item: "- " in a bullet or "1. " in a numbered item
+          // names what the line already is, so the prefix is just consumed
+          // and the item stays at its level. The other kind stays literal
+          // (it round-trips escaped). Never Chromium's insertUnorderedList
+          // here: on an item it toggles the list off, leaving an <li>
+          // directly inside an <li> and the items above it un-nested.
+          const li = closestLi(block)
+          if (li && li.parentElement?.tagName.toLowerCase() === blockMatch.type) {
+            edit(() => {
+              li.replaceChildren(document.createElement('br'), ...li.querySelectorAll(':scope > ul, :scope > ol'))
+              placeCaretAtStart(li)
+            })
+          }
           return
         }
         // A heading can't coexist with a list bullet — no representation
         // survives the save (renderListMd flattens any <hN> in an <li> to
         // plain text). Leave the typed "# " as literal text inside a list
         // item; formatBlockTag guards the buttons / Ctrl+1..3 the same way.
-        if (blockMatch.type === 'h1' || blockMatch.type === 'h2' || blockMatch.type === 'h3') {
-          if (closestLi(block)) return
-          if (block.parentElement === editorEl) { convertBlockToHeading(block, blockMatch.type); return }
-        }
-        const range = rangeForTextOffsets(block, 0, blockMatch.prefixLen)
-        edit(() => {
-          range.deleteContents()
-          const sel = window.getSelection()
-          if (sel) { sel.removeAllRanges(); sel.addRange(range) }
-        })
-        applyBlockFormat(blockMatch.type)
+        if (block.parentElement === editorEl) convertBlockToHeading(block, blockMatch.type)
         return
       }
     }
@@ -2290,13 +2386,33 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // Backspace at the very start of a task item removes only its box (the
     // checklist convention of Docs and Notion); the next Backspace is the
     // browser's. Natively it would merge the item into the line above — a
-    // sub-task's text joins its parent's line and its box is gone.
+    // sub-task's text joins its parent's line and its box is gone. An empty
+    // item (the fresh line Enter just made) has no text to keep, so the
+    // browser deletes the line straight away rather than leaving a bare bullet.
     if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing) {
       const li = caretListItem()
-      if (li && taskStateOf(li) !== null && caretAtItemStart(li)) {
+      if (li && taskStateOf(li) !== null && (li.textContent ?? '') !== '' && caretAtItemStart(li)) {
         e.preventDefault()
         edit(() => li.removeAttribute('data-task'))
         scheduleChange()
+        return
+      }
+      const upper = li && li.querySelector(':scope > ul, :scope > ol') && caretAtItemStart(li) ? lineAbove(li) : null
+      if (li && upper) {
+        e.preventDefault()
+        joinIntoLineAbove(upper, li)
+        return
+      }
+    }
+    // Delete at the end of a line whose next item has sub-items: the same join
+    // as Backspace at the start of that item.
+    if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing) {
+      const ctx = currentBlockAndOffset()
+      const line = ctx && (ctx.block.tagName === 'LI' || isJoinableLine(ctx.block)) && caretAtLineEnd(ctx.block) ? ctx.block : null
+      const lower = line && itemBelow(line)
+      if (line && lower && lower.querySelector(':scope > ul, :scope > ol')) {
+        e.preventDefault()
+        joinIntoLineAbove(line, lower)
         return
       }
     }
