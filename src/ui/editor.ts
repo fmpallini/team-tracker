@@ -927,6 +927,13 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     scheduleChange()
   }
 
+  /** True when the selection's end sits in a list item or heading, where a soft line break can't be saved. */
+  function softBreakUnsaved(): boolean {
+    const node = window.getSelection()?.focusNode
+    const el = node instanceof Element ? node : node?.parentElement
+    return !!el && editorEl.contains(el) && el.closest('li, h1, h2, h3') !== null && el.closest('pre') === null
+  }
+
   /** The `<li>` holding a collapsed caret, else null. */
   function caretListItem(): HTMLElement | null {
     const sel = window.getSelection()
@@ -1323,13 +1330,15 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
    * left right after typing "- " or "1. " and stripping the prefix — and can
    * silently no-op instead of creating the list.
    */
-  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol', task?: TaskState): void {
+  function convertBlockToList(block: HTMLElement, type: 'ul' | 'ol', task?: TaskState, start = 1): void {
     editorEl.focus()
     edit(() => {
       const li = document.createElement('li')
       if (task) li.setAttribute('data-task', task)
       li.appendChild(document.createElement('br'))
       const list = document.createElement(type)
+      // "3. " starts the list at 3; the items after it count up (core/markdown.ts's listStart).
+      if (start !== 1) list.setAttribute('start', String(start))
       list.appendChild(li)
       block.replaceWith(list)
       placeCaretAtStart(li)
@@ -1477,7 +1486,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
           return
         }
         if ((blockMatch.type === 'ul' || blockMatch.type === 'ol') && block.parentElement === editorEl) {
-          convertBlockToList(block, blockMatch.type)
+          convertBlockToList(block, blockMatch.type, undefined, blockMatch.type === 'ol' ? parseInt(text, 10) : 1)
           return
         }
         // A heading can't coexist with a list bullet — no representation
@@ -2114,6 +2123,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       return
     }
     ensureBlock()
+    stripInlineStyles()
     if (e instanceof InputEvent && e.inputType === 'insertParagraph') openSplitTask()
     if (e instanceof InputEvent && e.inputType.startsWith('delete')) reopenEmptiedDone()
     handleAutoFormat()
@@ -2203,7 +2213,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // A clicked picture stays "selected" only until the next key: moving the caret on or typing must not leave
     // a later Backspace aimed at a picture that is no longer the thing being edited.
     if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) selectImageBlock(null)
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    // Shift+Enter is a soft line break, which markdown holds in a plain line, a
+    // quote or a code block but not in a list item or heading: the rest of the
+    // line came back outside the item or heading on reopen. There it takes the
+    // Enter path below, ending in the browser's own Enter.
+    const shiftEnterAsEnter = e.key === 'Enter' && e.shiftKey && !e.isComposing && softBreakUnsaved()
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && (!e.shiftKey || shiftEnterAsEnter)) {
       // Inside a blockquote, take Enter over from the browser: its native
       // insertParagraph splits the <blockquote> into two siblings, so the
       // left border visibly breaks (it re-merges on reload, but looks broken
@@ -2264,6 +2279,11 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         e.preventDefault()
         startFirstSubItem(subList)
         scheduleChange()
+        return
+      }
+      if (shiftEnterAsEnter) {
+        e.preventDefault()
+        exec('insertParagraph')
         return
       }
     }
@@ -2454,13 +2474,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   function insertMarkdown(md: string): void {
     // Here, not before an await in a caller: a pending snapshot only lives until the next task.
     undoStack.checkpoint()
-    const styledBefore = styledElements()
     document.execCommand('insertHTML', false, renderMd(md))
     // insertHTML nests a multi-block fragment inside the caret's block when
     // that block was empty — restore the editor's flat-block-children shape
     // before anything reads it back as markdown (see the fn's own comment).
     flattenTopLevelBlockWrappers(editorEl)
-    stripPastedStyles(styledBefore)
+    stripInlineStyles()
     normalizeImageSpacing(editorEl)
     decorateCodeBlocks()
     syncPreHighlight()
@@ -2548,13 +2567,12 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     }
     if (md.trim()) {
       undoStack.checkpoint()
-      const styledBefore = styledElements()
       document.execCommand('insertHTML', false, renderMd(md))
       // insertHTML nests a multi-block fragment inside the caret's block when
       // that block was empty — restore the editor's flat-block-children shape
       // before anything reads it back as markdown (see the fn's own comment).
       flattenTopLevelBlockWrappers(editorEl)
-      stripPastedStyles(styledBefore)
+      stripInlineStyles()
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
@@ -2571,10 +2589,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
         .map((l) => `<div>${l === '' ? '<br>' : l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/^ +/, (sp) => nbsp.repeat(sp.length))}</div>`)
         .join('')
       undoStack.checkpoint()
-      const styledBefore = styledElements()
       document.execCommand('insertHTML', false, html)
       flattenTopLevelBlockWrappers(editorEl)
-      stripPastedStyles(styledBefore)
+      stripInlineStyles()
       decorateCodeBlocks()
       syncPreHighlight()
       scheduleChange()
@@ -2588,21 +2605,20 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * Chromium's insertHTML copies the surrounding block's computed font and
-   * colour onto the inserted spans as inline `style="…"` (worst inside a
-   * heading or quote), so pasted text looks unlike its neighbours until the
-   * note is reopened. Only elements that were NOT styled before the insert are
-   * touched: Chromium's own merge spans elsewhere in the note (a Backspace that
-   * joined a heading into a line leaves `font-weight:700`) are real formatting
-   * that htmlToMd reads as bold, and must keep it. The code-block controls and
-   * copy menu live on `root`, outside `editorEl`, so nothing else carries a style.
+   * Chromium writes computed style onto text as inline `style="…"` when it
+   * moves it: insertHTML copies the surrounding block's font and colour onto
+   * pasted spans, and joining two blocks (Backspace at a heading's start,
+   * Delete before a code block) wraps the moved text in
+   * `<span style="font-size:…; font-weight:600">` or a monospace span. That text
+   * looked unlike its neighbours, and htmlToMd read a merged heading's weight as
+   * bold. Ctrl+B in a heading likewise only adds `font-weight:normal`, which no
+   * markdown can hold. Nothing the editor or mdToHtml writes inside `editorEl`
+   * carries an inline style (the code-block controls and copy menu live on
+   * `root`), so every style here is the browser's: all of them go. Removing an
+   * attribute moves no node, so the caret stays put.
    */
-  function stripPastedStyles(styledBefore: ReadonlySet<Element>): void {
-    editorEl.querySelectorAll('[style]').forEach((el) => { if (!styledBefore.has(el)) el.removeAttribute('style') })
-  }
-
-  function styledElements(): Set<Element> {
-    return new Set(editorEl.querySelectorAll('[style]'))
+  function stripInlineStyles(): void {
+    editorEl.querySelectorAll('[style]').forEach((el) => el.removeAttribute('style'))
   }
 
   /** True when the selection's start sits inside a list item of this editor. */
