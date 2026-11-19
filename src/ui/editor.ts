@@ -1417,8 +1417,14 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (!ctx) return
     const { block, text, caretOffset } = ctx
 
-    if (caretOffset === text.length) {
-      const blockMatch = detectBlockPrefix(text)
+    // Block prefixes act only on a line that ends at the caret. Whitespace
+    // after the caret counts as the end: Enter just before a line's trailing
+    // nbsp (templates write "Label:&nbsp;", bold autoformat parks the caret
+    // in one) carries that nbsp down to a line that looks empty, and "- "
+    // typed there would otherwise stay literal. The convertBlockTo* paths
+    // replace the whole block, so the leftover space goes with it.
+    if (/^[ \u00a0]*$/.test(text.slice(caretOffset))) {
+      const blockMatch = detectBlockPrefix(text.slice(0, caretOffset))
       if (blockMatch) {
         const inQuote = blockquoteAtCaret() !== null
         if (blockMatch.type === 'blockquote') {

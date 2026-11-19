@@ -2513,6 +2513,35 @@ describe('block-prefix auto-format on typing', () => {
     editor.destroy()
   })
 
+  // Enter just before a line's trailing nbsp (templates end lines "Label:&nbsp;", bold autoformat parks one after
+  // the run) carries it down: the new line looks empty but holds an nbsp, and "- " typed there stayed literal.
+  test('"- " typed on a line holding only a leftover space after the caret still converts it to a list', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<div>above</div><div>- \u00a0</div>'
+    const textNode = editorEl.lastChild!.firstChild as Text
+    window.getSelection()!.collapse(textNode, 2)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.innerHTML).toBe('<div>above</div><ul><li><br></li></ul>')
+    editor.destroy()
+  })
+
+  test('"- " typed in front of visible text on the line stays literal', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<div>- cd</div>'
+    window.getSelection()!.collapse(editorEl.firstChild!.firstChild!, 2)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.innerHTML).toBe('<div>- cd</div>')
+    editor.destroy()
+  })
+
   test('typing "--- " auto-converts the block to a horizontal rule, with an empty block after it for the caret', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)

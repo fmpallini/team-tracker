@@ -41,6 +41,8 @@ interface Row {
 const ROWS: Row[] = [
   // --- typing and autoformat --------------------------------------------------
   { name: '"- " starts a bulleted list, Enter continues it', start: '', steps: ['- one', press('Enter'), 'two'], saved: '- one\n- two' },
+  // Bold autoformat parks the caret in an nbsp after the run; Enter before that nbsp carries it to a line that looks empty.
+  { name: '"- " on a line holding only a leftover space starts a list', start: '', steps: ['a **b**', press('ArrowLeft'), press('Enter'), '- x'], saved: 'a **b**\n- x' },
   { name: '"1. " starts a numbered list', start: '', steps: ['1. a', press('Enter'), 'b'], saved: '1. a\n2. b' },
   { name: '"> " starts a quote', start: '', steps: ['> q'], saved: '> q' },
   // The editor parks the caret after the bold in a space of its own; the space typed next is that one, not a second.
