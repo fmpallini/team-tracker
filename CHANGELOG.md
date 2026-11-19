@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.7.3] - 2026-11-19
+
+### Fixed
+- Notes now reopen exactly as edited: italic inside bold no longer turns into literal asterisks, and joining a heading into a line no longer makes it bold.
+- Numbered lists renumber correctly after adding or deleting items, and typing "3. " starts a list at 3.
+- Shift+Enter in a bullet, checklist item or heading starts a new line that stays in place after reopening.
+- Typing "- " on a line that looked empty after a template or bold text now starts a bulleted list.
+
+### Changed
+- In a numbered list, only the first item's number is kept; the rest count up from it.
+
 ## [3.7.2] - 2026-11-18
 
 ### Fixed
