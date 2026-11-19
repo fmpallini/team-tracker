@@ -92,6 +92,8 @@ const ESCAPED_CHAR = /\\(&lt;|&gt;|[\\*~[\]#.`-])/g
  */
 const INLINE_PARSE_LIMIT = 10_000
 
+const NBSP = String.fromCharCode(0xa0)
+
 interface Delim { count: number; orig: number; canOpen: boolean; canClose: boolean; open: string[]; close: string[]; active: boolean }
 
 // The other inline markers, as applyEmphasis sees them: strike / unlinked-ref
@@ -200,7 +202,11 @@ function applyEmphasis(str: string): string {
 
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   if (s.length > INLINE_PARSE_LIMIT) return esc(s).replace(ESCAPED_CHAR, '$1')
-  let out = esc(s)
+  // A run of spaces would collapse to one on screen (the editor's
+  // white-space: normal), so a typed "a    b" reopened as "a b". Keep one
+  // breaking space and make the rest non-breaking; htmlToMd's inlineMd turns
+  // them back into plain spaces, so the markdown keeps exactly what was typed.
+  let out = esc(s).replace(/ {2,}/g, (run) => ' ' + NBSP.repeat(run.length - 1))
   const escapes: string[] = []
   out = out.replace(ESCAPED_CHAR, (_, c: string) => {
     escapes.push(c)
@@ -416,7 +422,7 @@ function taskOf(li: HTMLElement, listTag: string): TaskState | null {
 
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
-  interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean; lastVal: number }
+  interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean }
   const stack: ListFrame[] = []
   const closeFrame = (f: ListFrame) => { if (f.hasOpenLi) out.push('</li>'); out.push(`</${f.type}>`) }
   const closeList = () => { while (stack.length) closeFrame(stack.pop()!) }
@@ -429,13 +435,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // `task` is a bullet's `[ ]` / `[x]` / `[>]` state (`null` for a plain item or
   // an ordered one — `1. [ ] a` keeps its brackets as text).
   //
-  // `parsedVal` is the item's own written number (`null` for bullets). An
-  // ordered item keeps its written number only while the sequence is still
-  // ascending within the frame (so `3.` `5.` — a deliberate gap — and
-  // `<ol start=5>` both round-trip); a number that would not advance the
-  // count is replaced by "previous + 1". That is the case a paste hits when
-  // levels past MAX_LIST_DEPTH all collapse onto one frame each written
-  // `1.` — without this they would render `1. 1. 1.`.
+  // `parsedVal` is the item's own written number (`null` for bullets). Only
+  // the first item's number counts, as the list's `start` (standard markdown):
+  // the rest count up from it. Items carry no number of their own — a per-item
+  // `value` is copied by the browser when Enter splits an item and kept when
+  // one is deleted, so the editor showed 5, 5, 6 or a gap, and saved it.
   const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null, task: TaskState | null = null) => {
     const depth = Math.min(rawDepth, stack.length, MAX_LIST_DEPTH)
     while (stack.length && stack[stack.length - 1]!.depth > depth) closeFrame(stack.pop()!)
@@ -444,21 +448,15 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     if (top && top.depth === depth && top.type === type) {
       if (top.hasOpenLi) out.push('</li>')
     } else {
-      out.push(`<${type}>`)
-      stack.push({ type, depth, hasOpenLi: false, lastVal: (parsedVal ?? 1) - 1 })
+      out.push(type === 'ol' && parsedVal !== null && parsedVal !== 1 ? `<ol start="${parsedVal}">` : `<${type}>`)
+      stack.push({ type, depth, hasOpenLi: false })
       top = stack[stack.length - 1]!
-    }
-    let valueAttr = ''
-    if (type === 'ol') {
-      const v = parsedVal !== null && parsedVal > top!.lastVal ? parsedVal : top!.lastVal + 1
-      top!.lastVal = v
-      valueAttr = ` value="${v}"`
     }
     // An empty item gets the <br> Chromium itself puts in a fresh <li>: without a
     // line box the caret cannot land in it, and the arrow keys skip a task item
     // (its marker is CSS-drawn, so nothing else gives it height). htmlToMd reads
     // a lone <br> as empty, so the markdown is unchanged.
-    out.push(`<li${valueAttr}${task ? ` data-task="${task}"` : ''}>`, itemHtml || '<br>')
+    out.push(`<li${task ? ` data-task="${task}"` : ''}>`, itemHtml || '<br>')
     top!.hasOpenLi = true
   }
   // Flat blockquote (no nesting — like H1–H3): consecutive `> ` lines buffer
@@ -1184,10 +1182,24 @@ function liLines(li: HTMLElement, text = false): string[] {
   return own.length > 0 ? own : ['']
 }
 
+/**
+ * The number an `<ol>`'s first item shows: its `start`, else a `value` on its
+ * first item (how Word and web pages number a pasted list), else 1. A `value`
+ * on any later item is ignored — the browser copies it when Enter splits an
+ * item, and items always count up from the start.
+ */
+function listStart(list: HTMLElement): number {
+  const start = list.getAttribute('start')
+  if (start !== null && /^\d+$/.test(start)) return Number(start)
+  const first = Array.from(list.children).find((c) => c.tagName.toLowerCase() === 'li')
+  const value = first?.getAttribute('value') ?? null
+  return value !== null && /^\d+$/.test(value) ? Number(value) : 1
+}
+
 function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   const tag = list.tagName.toLowerCase()
   const prefix = '  '.repeat(Math.min(depth, MAX_LIST_DEPTH))
-  let i = 0
+  let i = tag === 'ol' ? listStart(list) - 1 : 0
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement)) return
     const childTag = child.tagName.toLowerCase()
@@ -1201,8 +1213,7 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     const task = taskOf(child, tag)
     liLines(child).forEach((text, n) => {
       if (tag === 'ol') {
-        const v = child.getAttribute('value')
-        i = n === 0 && v ? Number(v) : i + 1
+        i++
         out.push(`${prefix}${i}. ${text}`)
       } else {
         out.push(`${prefix}- ${task && n === 0 ? `${MD_MARK_OF_TASK[task]} ` : ''}${text}`)

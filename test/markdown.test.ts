@@ -217,9 +217,20 @@ describe('nested list not a direct <li> child — stress cases', () => {
   })
 })
 
-test('ordered list numbers preserved', () => {
-  const md = '3. a\n5. b'
-  expect(roundTrip(md)).toBe(md)
+// The markdown kept "a    b", but the reopened line showed "a b": HTML collapses a run of spaces. A run renders as
+// one space and non-breaking ones, which a save turns back into plain spaces.
+test('a run of spaces inside a line shows as typed after reopening, and saves back unchanged', () => {
+  const nb = String.fromCharCode(0xa0)
+  expect(mdToHtml('a  b    c')).toBe(`<div>a ${nb}b ${nb}${nb}${nb}c</div>`)
+  expect(mdToHtml('- x  **y**')).toBe(`<ul><li>x ${nb}<strong>y</strong></li></ul>`)
+  expect(roundTrip('a  b    c')).toBe('a  b    c')
+  expect(roundTrip('> q  r')).toBe('> q  r')
+  expect(roundTrip('**a  b**  c')).toBe('**a  b**  c')
+})
+
+test('an ordered list keeps its starting number and counts up from it', () => {
+  expect(roundTrip('3. a\n4. b')).toBe('3. a\n4. b')
+  expect(roundTrip('3. a\n5. b')).toBe('3. a\n4. b')
 })
 
 test('a ** pair closes around an inner *italic* span (bold with italic inside), and stays stable', () => {
@@ -368,9 +379,28 @@ test('nesting depth caps at 4 levels (0-3) even if indentation implies deeper', 
   expect(htmlToMd(div)).toBe('- a\n  - b\n    - c\n      - d\n      - e')
 })
 
-test('ordered items keep an ascending written number, so a deliberate gap and <ol start=N> both survive', () => {
-  expect(roundTrip('5. a\n6. b\n7. c')).toBe('5. a\n6. b\n7. c') // start at 5
-  expect(roundTrip('3. a\n5. b')).toBe('3. a\n5. b') // deliberate gap (also covered above)
+test('a numbered list counts up from its first written number (<ol start>), like standard markdown', () => {
+  expect(mdToHtml('1. a\n2. b')).toBe('<ol><li>a</li><li>b</li></ol>')
+  expect(mdToHtml('5. a\n6. b')).toBe('<ol start="5"><li>a</li><li>b</li></ol>')
+  expect(roundTrip('5. a\n6. b\n7. c')).toBe('5. a\n6. b\n7. c')
+  // later written numbers are not kept: items are renumbered from the first
+  expect(mdToHtml('3. a\n5. b')).toBe('<ol start="3"><li>a</li><li>b</li></ol>')
+  expect(roundTrip('3. a\n5. b')).toBe('3. a\n4. b')
+  expect(roundTrip('1. a\n  4. sub\n  9. sub2\n2. b')).toBe('1. a\n  4. sub\n  5. sub2\n2. b')
+})
+
+// Every item used to carry its own fixed value="N", which the browser copies when Enter splits an item and keeps
+// when one is deleted: the editor showed 5, 5, 6 after Enter and a gap after a delete, and saved them. Numbers now
+// come from the list's start alone.
+test('items get their number from the list, not from a value of their own', () => {
+  const md = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return htmlToMd(d) }
+  expect(md('<ol start="5"><li>a</li><li>x</li><li>b</li></ol>')).toBe('5. a\n6. x\n7. b')
+  // a stale value on a later item (Enter cloned the first one's) is ignored
+  expect(md('<ol start="5"><li value="5">a</li><li value="5">x</li><li value="6">b</li></ol>')).toBe('5. a\n6. x\n7. b')
+  // a deleted middle item leaves no gap
+  expect(md('<ol><li value="1">a</li><li value="3">c</li></ol>')).toBe('1. a\n2. c')
+  // pasted lists that number their first item with value= (Word, web pages) keep that start
+  expect(md('<ol><li value="3">a</li><li>b</li></ol>')).toBe('3. a\n4. b')
 })
 
 test('ordered items with a non-advancing written number are renumbered "previous + 1"', () => {
@@ -901,7 +931,8 @@ describe('external links', () => {
       const probe = document.createElement('div'); probe.innerHTML = html
       expect(probe.querySelector('a')).toBeNull()
       expect(probe.querySelector('script')).toBeNull()
-      expect(probe.textContent).toBe(`click [here](${bad}) now`)
+      // (a run of spaces renders as a space plus non-breaking ones, so it shows as typed)
+      expect(probe.textContent!.split(String.fromCharCode(0xa0)).join(' ')).toBe(`click [here](${bad}) now`)
     }
   })
   test('a url with markdown-special chars cannot break out of the href attribute', () => {
@@ -1822,7 +1853,7 @@ test('task items round-trip, nested, any depth', () => {
 test('[X] serializes back as [x]', () => expect(roundTrip('- [X] a')).toBe('- [x] a'))
 test('empty open task round-trips', () => expect(roundTrip('- [ ] ')).toBe('- [ ] '))
 test('an empty list item holds a <br> so the caret can land in it', () => {
-  expect(mdToHtml('- [ ] \n- \n1. ')).toBe('<ul><li data-task="open"><br></li><li><br></li></ul><ol><li value="1"><br></li></ol>')
+  expect(mdToHtml('- [ ] \n- \n1. ')).toBe('<ul><li data-task="open"><br></li><li><br></li></ul><ol><li><br></li></ol>')
   expect(roundTrip('- [ ] \n- \n1. ')).toBe('- [ ] \n- \n1. ')
   expect(roundTrip('- [ ] \n  - [ ] ')).toBe('- [ ] \n  - [ ] ')
 })
