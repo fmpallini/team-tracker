@@ -23,15 +23,12 @@ Two variants bundled from same `src/main.ts` entry, differing only in esbuild de
 - `dist/app.html` — fully self-contained single file (CSS + JS inlined into `index.html` placeholders `/*__CSS__*/` and `/*__JS__*/`). Opened via `file://`; must never reference external files.
 - `dist/pwa/` — same app with `__PWA__=true` (registers `sw.js`, only over http(s)), plus manifest/icon and cache-first service worker whose cache name embeds app version (`__APP_VERSION__` placeholder in `pwa/sw.js` replaced at build time).
 
-Tests define `__PWA__: false` in `vitest.config.ts`, so service-worker branch never runs under jsdom.
-
 Both pages carry a `<meta>` Content-Security-Policy built in `scripts/build.mjs` (`__CSP__` in `index.html`): `script-src` is the SHA-256 of the inlined bundle, `connect-src` only the GitHub version check, `img-src` only `data:`/`blob:` (the PWA adds `'self'` to both for its manifest icons). So no `eval`/`new Function`, no inline `on*` attributes (use `addEventListener`, as `el()` does), and no remote resource; a new network endpoint needs its own `connect-src` entry. `e2e/content-security-policy.spec.ts` proves injected markup cannot run or call out.
 
 ## Architecture
 
 - **`src/core/`** — headless logic, no DOM construction. Per-module notes (schema/migrations, `.tmv` crypto format, store mutation channels, scope, switcher, pane layout, fs, browser live store + file snapshot, change-password, tab lock, idb) live in `src/core/CLAUDE.md`, loaded when working there.
 - **`src/modules/`** — feature panes (daily notes, people trees, person notes, action items, milestones, risks). Each exports render function registered with pane manager in `main.ts` under module id. Every renderer wrapped in `lifecycle.ts`'s `withDisposal()`, tears down whatever instance previously mounted into container before mounting new one — including instance of *different* module, since `ui/panes.ts` reuses one body element across module switches. Renderer's returned teardown must release everything attached outside `container` (its `store.subscribe` unsubscribe above all); `test/lifecycle.test.ts` counts live subscriptions to catch dropped one.
-- **`src/ui/`** — shell, sidebar, pane manager (split view + per-pane history), fast switch (`palette.ts`), search, modals, prefs. `dom.ts` `el()` DOM-building helper used everywhere.
 - **`src/main.ts`** — wires everything: start screen → `onDocumentOpened` builds shell/panes/file-snapshot around the store `ui/open-document.ts` reconciled with the browser copy, registers hotkeys (Ctrl+Shift+K palette, Alt+Shift+arrows history, Alt+1..9 team switch), sets up cross-tab single-writer locking (Web Locks API + BroadcastChannel: one read-write tab per file, others read-only with "take control" handshake). In-memory password lives only in module-level `app` closure — never on window/globals.
 
 ## Git workflow
@@ -47,13 +44,7 @@ Every `package.json` version bump needs a matching non-empty `## [X.Y.Z]` entry 
 
 ## Conventions
 
-- Edit surfaces: rich or many-field entities (kanban card, risk, milestone) autosave as you type — a modeless dialog or an inline row, closed with Close/Escape, never Cancel. Small forms (person, team, template, tag names, link) are a Cancel/Save dialog where Cancel discards; their confirm button reads **Save**, and a picker's reads its verb (Copy, Move). Don't mix: a new screen picks one of the two by that rule.
-- Deletes: one item is never confirmed, it gets an Undo toast (`createEntityDelete` / `deleteInTeamWithUndo` + `offerUndoToast`). Bulk or irreversible deletes (team, clear zone, delete all closed, column with cards, data cleanup) use `confirmDelete`, which is always danger-styled; a delete with no Undo says so in its `warning`. The Undo expires on the next edit, so keep the toast short-lived and prominent.
-- A missing name reads "Name is required" in a dialog field and "This {thing} needs a name." on an inline row or card.
-- Icon-only buttons go through `iconButton()` in `ui/icons.ts`, which sets `title` and `aria-label` together.
-- Styling uses the scales at the top of `styles.css`, not literals: `--dur-fast`/`--dur-base`/`--ease` for motion, `--hover-soft` (large surfaces) / `--hover` (compact items) / `--selected` (keyboard-selected or current entry) / `--card-hover` for highlights, `--sp-1..4`, `--row-pad`, `--card-row-pad`, `--state-bar`, `--r-*` and `--shadow-*`. Reduced motion is one rule at the end of the file; don't add per-rule overrides. Card-like items share one recipe (panel fill, `--shadow-card`, `--r-md`, `--card-hover`) and one inset focus ring.
-
-- These design rules are enforced: `test/design-rules.test.ts` fails on motion, highlight, radius, color and focus literals, a hand-rolled card recipe, `confirm()`, an `OK` on a Cancel/Save dialog, and an icon-only button without an accessible name. The `ui-consistency` skill has the rules and the checklist; load it for any UI change. Add an allowlist entry in the test only with a one-line reason.
+- UI rules (edit surfaces, deletes/Undo, names, icon buttons, styling tokens) live in the `ui-consistency` skill — load it for any UI change. They are enforced: `test/design-rules.test.ts` fails on motion, highlight, radius, color and focus literals, a hand-rolled card recipe, `confirm()`, an `OK` on a Cancel/Save dialog, and an icon-only button without an accessible name. Add an allowlist entry in the test only with a one-line reason.
 - Any new editor edit that changes the document must call `undoStack.checkpoint()` (or go through `edit()` / `recordEdit()`) before its first change; undo is the editor's own snapshot stack in `ui/editor-undo.ts`, native browser history is disabled.
 - i18n: two locales, `pt-BR` and `en-US`, via `t(locale, key)` in `core/i18n.ts`. All user-visible strings go through `t()`; add keys for both locales.
 - Every `src` module has a matching `test/*.test.ts` (except type-only `core/types.ts`, wiring-only `main.ts`, and `*.d.ts`); tests run in jsdom, rely on browser APIs being feature-detected (Web Locks, BroadcastChannel, FS Access API absent in jsdom — code must degrade gracefully, also what keeps it testable).

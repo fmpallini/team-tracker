@@ -269,18 +269,19 @@ describe('paste', () => {
     editor.destroy()
   })
 
-  test('a paste leaves styles on text elsewhere in the note alone (a merge span still carries its bold)', () => {
+  test('a paste also clears a style the browser left elsewhere (a merge span is not formatting the user made)', () => {
     vi.spyOn(document, 'execCommand').mockReturnValue(true)
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('first line')
     const line = editor.root.querySelector('.editor div')!
-    line.innerHTML = '<span style="font-weight: 700">kept bold</span>'
+    line.innerHTML = '<span style="font-weight: 700">joined heading</span>'
 
     dispatchPaste(editor, { 'text/html': '<p>pasted</p>' })
 
-    expect(line.querySelector('span')!.getAttribute('style')).toBe('font-weight: 700')
-    expect(editor.getMd()).toContain('**kept bold**')
+    expect(line.querySelector('span')!.hasAttribute('style')).toBe(false)
+    expect(editor.getMd()).toContain('joined heading')
+    expect(editor.getMd()).not.toContain('**')
     editor.destroy()
   })
 
@@ -2513,6 +2514,71 @@ describe('block-prefix auto-format on typing', () => {
     editor.destroy()
   })
 
+  // Chrome copies a merged block's computed style onto the joined text (Backspace at the start of a heading leaves
+  // <span style="font-size:1.6rem;font-weight:600">), which showed big and saved as bold. Nothing the editor or the
+  // markdown writes carries an inline style, so every edit clears them.
+  test('an edit clears inline styles the browser left on the text (a heading joined into a line saves plain)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<div>above<span style="font-size: 1.6rem; font-weight: 600;">Title</span></div><h1>a <span style="font-weight: normal;">b</span></h1>'
+    const text = editorEl.querySelector('span')!.firstChild!
+    window.getSelection()!.collapse(text, 2)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.querySelectorAll('[style]')).toHaveLength(0)
+    expect(editor.getMd()).toBe('aboveTitle\n# a b')
+    // the caret stays where it was
+    expect(window.getSelection()!.anchorNode).toBe(text)
+    expect(window.getSelection()!.anchorOffset).toBe(2)
+    editor.destroy()
+  })
+
+  test.each([
+    ['1. ', '<ol><li><br></li></ol>'],
+    ['3. ', '<ol start="3"><li><br></li></ol>'],
+    ['12. ', '<ol start="12"><li><br></li></ol>'],
+  ])('typing "%s" starts a numbered list at that number', (typed, html) => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    setBlockText(editorEl, typed)
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(editorEl.innerHTML).toBe(html)
+    expect(editor.getMd()).toBe(`${typed === '1. ' ? '1' : typed.trim().slice(0, -1)}. `)
+    editor.destroy()
+  })
+
+  // Enter just before a line's trailing nbsp (templates end lines "Label:&nbsp;", bold autoformat parks one after
+  // the run) carries it down: the new line looks empty but holds an nbsp, and "- " typed there stayed literal.
+  test('"- " typed on a line holding only a leftover space after the caret still converts it to a list', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<div>above</div><div>- \u00a0</div>'
+    const textNode = editorEl.lastChild!.firstChild as Text
+    window.getSelection()!.collapse(textNode, 2)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.innerHTML).toBe('<div>above</div><ul><li><br></li></ul>')
+    editor.destroy()
+  })
+
+  test('"- " typed in front of visible text on the line stays literal', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    editorEl.innerHTML = '<div>- cd</div>'
+    window.getSelection()!.collapse(editorEl.firstChild!.firstChild!, 2)
+
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(editorEl.innerHTML).toBe('<div>- cd</div>')
+    editor.destroy()
+  })
+
   test('typing "--- " auto-converts the block to a horizontal rule, with an empty block after it for the caret', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
@@ -2718,6 +2784,45 @@ describe('blockquote editing', () => {
 
     expect(editorEl.querySelector(tag)).toBeNull()
     expect(editorEl.querySelector('blockquote')!.textContent).toBe(prefix)
+    editor.destroy()
+  })
+
+  // A soft line break inside a list item or heading can't be saved: the rest of the line fell out of the block on
+  // reopen. There Shift+Enter does what Enter does; elsewhere it stays the browser's line break.
+  test.each([
+    ['a bullet', '<ul><li>alpha</li></ul>', 'li'],
+    ['a task', '<ul><li data-task="open">alpha</li></ul>', 'li'],
+    ['a numbered item', '<ol><li>alpha</li></ol>', 'li'],
+    ['a heading', '<h2>alpha</h2>', 'h2'],
+  ])('Shift+Enter in %s acts as Enter', (_name, html, sel) => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = html
+    const textNode = editorEl.querySelector(sel)!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter', shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(execSpy).toHaveBeenCalledWith('insertParagraph', false, undefined)
+    expect(execSpy).not.toHaveBeenCalledWith('insertLineBreak', expect.anything(), expect.anything())
+    editor.destroy()
+  })
+
+  test.each([
+    ['a plain line', '<div>alpha</div>', 'div'],
+    ['a quote', '<blockquote>alpha</blockquote>', 'blockquote'],
+  ])('Shift+Enter in %s is left to the browser (a line break the markdown holds)', (_name, html, sel) => {
+    const { editor, editorEl } = mount()
+    const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+    editorEl.innerHTML = html
+    const textNode = editorEl.querySelector(sel)!.firstChild as Text
+    caretIn(textNode, textNode.textContent!.length)
+
+    const e = dispatchKey(editorEl, { key: 'Enter', shiftKey: true })
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(execSpy).not.toHaveBeenCalledWith('insertParagraph', expect.anything(), expect.anything())
     editor.destroy()
   })
 

@@ -92,9 +92,121 @@ const ESCAPED_CHAR = /\\(&lt;|&gt;|[\\*~[\]#.`-])/g
  */
 const INLINE_PARSE_LIMIT = 10_000
 
+const NBSP = String.fromCharCode(0xa0)
+
+interface Delim { count: number; orig: number; canOpen: boolean; canClose: boolean; open: string[]; close: string[]; active: boolean }
+
+// The other inline markers, as applyEmphasis sees them: strike / unlinked-ref
+// tildes and the esc()'d underline tags. A literal `~` or `<u>` in text is
+// always written escaped (frozen into a placeholder by now), so these are
+// markers. A `*` run is judged by the character beyond them: in `a ~~**b**~~`
+// the first `**` follows an OPENING `~~` (whitespace before it), so it opens.
+const U_OPEN = '&lt;u&gt;'
+const U_CLOSE = '&lt;/u&gt;'
+
+/** Index where the run of other markers ending at `i` starts. */
+function markersBefore(str: string, i: number): number {
+  for (;;) {
+    if (str[i - 1] === '~') i--
+    else if (str.endsWith(U_OPEN, i)) i -= U_OPEN.length
+    else if (str.endsWith(U_CLOSE, i)) i -= U_CLOSE.length
+    else return i
+  }
+}
+
+/** Index just past the run of other markers starting at `i`. */
+function markersAfter(str: string, i: number): number {
+  for (;;) {
+    if (str[i] === '~') i++
+    else if (str.startsWith(U_OPEN, i)) i += U_OPEN.length
+    else if (str.startsWith(U_CLOSE, i)) i += U_CLOSE.length
+    else return i
+  }
+}
+
+/**
+ * Bold and italic: every run of `*` is a delimiter, paired with CommonMark's
+ * delimiter-stack algorithm ("process emphasis") — the one rule set that reads
+ * nested and adjacent runs (`**one *two***`, `***one* two**`, `**X**a b**Y**`,
+ * `*a***b**`) the way htmlToMd writes them. The regex pairs it replaced could
+ * not nest a `*` inside bold, so italic inside bold reopened as literal
+ * asterisks, and the next save escaped them for good.
+ *
+ * Flanking is this app's hugging rule, not CommonMark's punctuation-aware one:
+ * a run can open when the next character is not whitespace and close when the
+ * previous one is not (so "2 * 3 * 4" and "a ** b" stay text). The rest is
+ * CommonMark's: a closer pairs with the nearest usable opener, two stars each
+ * side make <strong> and otherwise one makes <em>, the "rule of 3" keeps
+ * `*a**b*` from pairing its inner run, delimiters left inside a pair become
+ * text, and unpaired stars stay literal. `bottom` is CommonMark's
+ * openers_bottom, so a line of unpaired runs stays linear.
+ *
+ * Runs on esc()'d text with links, refs and escapes already frozen into
+ * Private-Use-Area placeholder tokens, which count as ordinary characters.
+ *
+ * One shape stays ambiguous, as in CommonMark: italic touching the edge of a
+ * bold run and followed, with no space, by more italic inside it
+ * (`***a*b*c***`) — the middle `*` reads as closing the outer run. Everything
+ * else htmlToMd writes reads back as written (test/markdown-fuzz.test.ts).
+ */
+function applyEmphasis(str: string): string {
+  const parts: (string | Delim)[] = []
+  const re = /\*+/g
+  let last = 0
+  for (let m = re.exec(str); m; m = re.exec(str)) {
+    if (m.index > last) parts.push(str.slice(last, m.index))
+    const n = m[0].length
+    const prev = str[markersBefore(str, m.index) - 1]
+    const next = str[markersAfter(str, m.index + n)]
+    parts.push({
+      count: n, orig: n, open: [], close: [], active: true,
+      canOpen: next !== undefined && !/\s/.test(next),
+      canClose: prev !== undefined && !/\s/.test(prev),
+    })
+    last = m.index + n
+  }
+  if (last === 0 && parts.length === 0) return str
+  if (last < str.length) parts.push(str.slice(last))
+
+  const delims = parts.filter((p): p is Delim => typeof p !== 'string')
+  const bottom = new Map<string, number>()
+  for (let c = 0; c < delims.length; c++) {
+    const closer = delims[c]!
+    while (closer.canClose && closer.count > 0) {
+      const key = `${closer.canOpen}|${closer.orig % 3}`
+      let o = c - 1
+      const floor = bottom.get(key) ?? -1
+      for (; o > floor; o--) {
+        const opener = delims[o]!
+        if (!opener.active || !opener.canOpen || opener.count === 0) continue
+        const odd = (opener.canClose || closer.canOpen) && (opener.orig + closer.orig) % 3 === 0 && !(opener.orig % 3 === 0 && closer.orig % 3 === 0)
+        if (!odd) break
+      }
+      if (o <= floor) {
+        bottom.set(key, c - 1)
+        break
+      }
+      const opener = delims[o]!
+      const use = opener.count >= 2 && closer.count >= 2 ? 2 : 1
+      const tag = use === 2 ? 'strong' : 'em'
+      opener.count -= use
+      closer.count -= use
+      opener.open.unshift(`<${tag}>`)
+      closer.close.push(`</${tag}>`)
+      for (let k = o + 1; k < c; k++) delims[k]!.active = false
+    }
+    if (!closer.canOpen && closer.count > 0) closer.active = false
+  }
+  return parts.map((p) => (typeof p === 'string' ? p : p.close.join('') + '*'.repeat(p.count) + p.open.join(''))).join('')
+}
+
 function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   if (s.length > INLINE_PARSE_LIMIT) return esc(s).replace(ESCAPED_CHAR, '$1')
-  let out = esc(s)
+  // A run of spaces would collapse to one on screen (the editor's
+  // white-space: normal), so a typed "a    b" reopened as "a b". Keep one
+  // breaking space and make the rest non-breaking; htmlToMd's inlineMd turns
+  // them back into plain spaces, so the markdown keeps exactly what was typed.
+  let out = esc(s).replace(/ {2,}/g, (run) => ' ' + NBSP.repeat(run.length - 1))
   const escapes: string[] = []
   out = out.replace(ESCAPED_CHAR, (_, c: string) => {
     escapes.push(c)
@@ -147,8 +259,7 @@ function inline(s: string, resolveLabel?: LabelResolver, refTitle?: string, link
   // the other half of the contract — see `mark()` below, which moves edge
   // whitespace outside the markers on the way out.
   const applyMarks = (str: string): string => {
-    str = str.replace(/\*\*(?=\S)([^*]*[^*\s])\*\*/g, '<strong>$1</strong>')
-    str = str.replace(/(^|[^*])\*(?=[^*\s])([^*]*[^*\s])\*/g, '$1<em>$2</em>')
+    str = applyEmphasis(str)
     str = str.replace(/~~(?=[^~\s])([^~]*[^~\s])~~/g, '<s>$1</s>')
     str = str.replace(/~(?=[^~\s])([^~]*[^~\s])~/g, '<span class="tt-unlinked-ref">$1</span>')
     str = str.replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
@@ -311,7 +422,7 @@ function taskOf(li: HTMLElement, listTag: string): TaskState | null {
 
 export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: string, linkHint?: string): string {
   const lines = md.split('\n'); const out: string[] = []
-  interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean; lastVal: number }
+  interface ListFrame { type: 'ul' | 'ol'; depth: number; hasOpenLi: boolean }
   const stack: ListFrame[] = []
   const closeFrame = (f: ListFrame) => { if (f.hasOpenLi) out.push('</li>'); out.push(`</${f.type}>`) }
   const closeList = () => { while (stack.length) closeFrame(stack.pop()!) }
@@ -324,13 +435,11 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
   // `task` is a bullet's `[ ]` / `[x]` / `[>]` state (`null` for a plain item or
   // an ordered one — `1. [ ] a` keeps its brackets as text).
   //
-  // `parsedVal` is the item's own written number (`null` for bullets). An
-  // ordered item keeps its written number only while the sequence is still
-  // ascending within the frame (so `3.` `5.` — a deliberate gap — and
-  // `<ol start=5>` both round-trip); a number that would not advance the
-  // count is replaced by "previous + 1". That is the case a paste hits when
-  // levels past MAX_LIST_DEPTH all collapse onto one frame each written
-  // `1.` — without this they would render `1. 1. 1.`.
+  // `parsedVal` is the item's own written number (`null` for bullets). Only
+  // the first item's number counts, as the list's `start` (standard markdown):
+  // the rest count up from it. Items carry no number of their own — a per-item
+  // `value` is copied by the browser when Enter splits an item and kept when
+  // one is deleted, so the editor showed 5, 5, 6 or a gap, and saved it.
   const addListItem = (rawDepth: number, type: 'ul' | 'ol', itemHtml: string, parsedVal: number | null, task: TaskState | null = null) => {
     const depth = Math.min(rawDepth, stack.length, MAX_LIST_DEPTH)
     while (stack.length && stack[stack.length - 1]!.depth > depth) closeFrame(stack.pop()!)
@@ -339,21 +448,15 @@ export function mdToHtml(md: string, resolveLabel?: LabelResolver, refTitle?: st
     if (top && top.depth === depth && top.type === type) {
       if (top.hasOpenLi) out.push('</li>')
     } else {
-      out.push(`<${type}>`)
-      stack.push({ type, depth, hasOpenLi: false, lastVal: (parsedVal ?? 1) - 1 })
+      out.push(type === 'ol' && parsedVal !== null && parsedVal !== 1 ? `<ol start="${parsedVal}">` : `<${type}>`)
+      stack.push({ type, depth, hasOpenLi: false })
       top = stack[stack.length - 1]!
-    }
-    let valueAttr = ''
-    if (type === 'ol') {
-      const v = parsedVal !== null && parsedVal > top!.lastVal ? parsedVal : top!.lastVal + 1
-      top!.lastVal = v
-      valueAttr = ` value="${v}"`
     }
     // An empty item gets the <br> Chromium itself puts in a fresh <li>: without a
     // line box the caret cannot land in it, and the arrow keys skip a task item
     // (its marker is CSS-drawn, so nothing else gives it height). htmlToMd reads
     // a lone <br> as empty, so the markdown is unchanged.
-    out.push(`<li${valueAttr}${task ? ` data-task="${task}"` : ''}>`, itemHtml || '<br>')
+    out.push(`<li${task ? ` data-task="${task}"` : ''}>`, itemHtml || '<br>')
     top!.hasOpenLi = true
   }
   // Flat blockquote (no nesting — like H1–H3): consecutive `> ` lines buffer
@@ -515,12 +618,17 @@ function escapeLineStart(line: string): string {
 /** escapeLineStart for every line of a multi-line string (a <br>-split block). */
 const escapeLines = (s: string): string => s.split('\n').map(escapeLineStart).join('\n')
 
-function inlineMd(node: Node): string {
+/**
+ * One inline leaf (see collectLeaves) as markdown: text, a link, a ref chip or
+ * the unlinked-ref marker. `active` is the formatting already open around it,
+ * which a link's or marker's own text is written relative to.
+ */
+function inlineMd(node: Node, active: InlineFormat): string {
   // U+00A0 → ' ': undo mdToHtml's caret-slot &nbsp; (and the nbsp Chrome
   // itself inserts while editing) so markdown only ever stores plain spaces.
   if (node.nodeType === Node.TEXT_NODE) return escapeInline((node.textContent ?? '').replace(/\u00a0/g, ' '))
   if (!(node instanceof HTMLElement)) return ''
-  const kids = () => Array.from(node.childNodes).map(inlineMd).join('')
+  const kids = () => inlineNodesMd(Array.from(node.childNodes), active)
   const tag = node.tagName.toLowerCase()
   if (tag === 'a' && node.dataset.ref) {
     const label = (node.textContent ?? '').replace(/^@/, '')
@@ -528,12 +636,14 @@ function inlineMd(node: Node): string {
     return `@[${safeLabel}](${node.dataset.ref})`
   }
   // External link (no data-ref). Re-validate the href through safeHref on the
-  // way out — a disallowed scheme drops the <a> and keeps only its text —
-  // and strip any [ ] from the link text so it can't reopen the [text](url)
-  // grammar on a later re-parse.
+  // way out — a disallowed scheme drops the <a> and keeps only its text.
+  // Brackets typed in the link text are already escaped (`\[`), and inline()
+  // freezes escapes before its link pass, so they stay text and can't reopen
+  // the [text](url) grammar. A raw bracket (a ref chip's `@[label]` inside the
+  // link) can, so only those are dropped.
   if (tag === 'a' && !node.dataset.ref) {
     const href = safeHref(node.getAttribute('href') ?? '')
-    const text = kids().replace(/\\?[[\]]/g, '')
+    const text = kids().replace(/\\[[\]]|[[\]]/g, (m) => (m.length === 2 ? m : ''))
     return href ? `[${text}](${href})` : text
   }
   if (tag === 'br') return ''
@@ -541,31 +651,119 @@ function inlineMd(node: Node): string {
   // drop the marker entirely — re-rendering a note through the rich editor
   // (even untouched) would silently flatten it back to bare text.
   if (tag === 'span' && node.classList.contains('tt-unlinked-ref')) return mark(kids(), '~')
-  // Inert on the page (never executes here — see ui/editor.ts's paste doc
-  // comment on DOMParser) but its text content would otherwise leak into
-  // the note as visible text via the generic handling below.
-  if (tag === 'script' || tag === 'style') return ''
+  return kids()
+}
 
-  // Formatting is tag-based by default (b/strong => bold, etc.) but an
-  // *explicit* inline style always overrides the tag — needed for clipboard
-  // HTML from apps that represent real inline formatting via `style=`
-  // rather than semantic tags (Google Docs' inline bold is
-  // `<span style="font-weight:700">`, not `<strong>`), and for apps that
-  // reuse a formatting tag as a plain, non-formatting wrapper (Docs wraps
-  // its *entire* clipboard export in `<b style="font-weight:normal">`,
-  // which would otherwise bold the whole paste). `??`, not `||`: an
-  // explicit `false` (the override case) must not fall through to the tag
-  // default the way `false || tagDefault` would.
-  const bold = styleBold(node) ?? (tag === 'strong' || tag === 'b')
-  const italic = styleItalic(node) ?? (tag === 'em' || tag === 'i')
-  const underline = styleHasDecoration(node, 'underline') ?? tag === 'u'
-  const strike = styleHasDecoration(node, 'line-through') ?? (tag === 's' || tag === 'strike' || tag === 'del')
+/** Elements written as one unit (inlineMd), never descended for formatting. */
+const isLeafElement = (el: HTMLElement): boolean => {
+  const tag = el.tagName.toLowerCase()
+  return tag === 'a' || tag === 'br' || (tag === 'span' && el.classList.contains('tt-unlinked-ref'))
+}
 
-  let out = kids()
-  if (bold) out = mark(out, '**')
-  if (italic) out = mark(out, '*')
-  if (underline) out = `<u>${out}</u>`
-  if (strike) out = mark(out, '~~')
+interface Leaf { node: Node; fmt: InlineFormat }
+
+/**
+ * Flattens inline nodes into leaves, each with the full set of formats it is
+ * under. The DOM's own nesting is dropped on purpose: `<b><i>x</i></b>` next to
+ * `<i><b>y</b></i>`, `<i>a</i><i>b</i>` and `<em>…<em>x</em>…</em>` all look
+ * like one run, and runsMd writes each shape the same way.
+ */
+function collectLeaves(nodes: readonly Node[], fmt: InlineFormat, out: Leaf[]): Leaf[] {
+  for (const n of nodes) {
+    if (n.nodeType === Node.TEXT_NODE) { out.push({ node: n, fmt }); continue }
+    if (!(n instanceof HTMLElement)) continue
+    const tag = n.tagName.toLowerCase()
+    // Inert on the page (never executes here — see ui/editor.ts's paste doc
+    // comment on DOMParser) but its text would otherwise leak into the note.
+    if (tag === 'script' || tag === 'style') continue
+    if (isLeafElement(n)) { out.push({ node: n, fmt }); continue }
+    const f = formatOf(n)
+    collectLeaves(Array.from(n.childNodes), f ? union(fmt, f) : fmt, out)
+  }
+  return out
+}
+
+/** Outermost first when two formats start together and run equally far. */
+const FORMAT_KEYS = ['strike', 'underline', 'bold', 'italic'] as const
+
+/**
+ * Leaves as markdown with a canonical nesting: at each point, the format that
+ * is not open yet and runs furthest is opened first, around everything it
+ * covers. Equal-looking DOM therefore always writes the same markdown, and
+ * adjacent runs of one format are one pair of markers (`*a**b*` — two italic
+ * siblings written apart — reads back as bold).
+ */
+function runsMd(leaves: readonly Leaf[], active: InlineFormat): string {
+  let out = ''
+  for (let i = 0; i < leaves.length;) {
+    let best: (typeof FORMAT_KEYS)[number] | null = null
+    let end = i + 1
+    for (const k of FORMAT_KEYS) {
+      if (!leaves[i]!.fmt[k] || active[k]) continue
+      let j = i + 1
+      while (j < leaves.length && leaves[j]!.fmt[k]) j++
+      if (best === null || j > end) { best = k; end = j }
+    }
+    if (best === null) { out += inlineMd(leaves[i]!.node, active); i++; continue }
+    const f = { ...NO_FORMAT, [best]: true }
+    out += withFormat(runsMd(leaves.slice(i, end), union(active, f)), f, active)
+    i = end
+  }
+  return out
+}
+
+/** Inline nodes as markdown, inside formatting `active` already applies. */
+function inlineNodesMd(nodes: readonly Node[], active: InlineFormat = NO_FORMAT): string {
+  return runsMd(collectLeaves(nodes, active, []), active)
+}
+
+interface InlineFormat { bold: boolean; italic: boolean; underline: boolean; strike: boolean }
+
+const NO_FORMAT: InlineFormat = { bold: false, italic: false, underline: false, strike: false }
+
+const union = (a: InlineFormat, b: InlineFormat): InlineFormat => ({
+  bold: a.bold || b.bold, italic: a.italic || b.italic, underline: a.underline || b.underline, strike: a.strike || b.strike,
+})
+
+/**
+ * The plain formatting an element applies, or null for anything that is not
+ * a plain formatting run (a link, a ref chip, the unlinked-ref marker, a
+ * <br>, or an element that formats nothing).
+ *
+ * Formatting is tag-based by default (b/strong => bold, etc.) but an
+ * *explicit* inline style always overrides the tag — needed for clipboard
+ * HTML from apps that represent real inline formatting via `style=`
+ * rather than semantic tags (Google Docs' inline bold is
+ * `<span style="font-weight:700">`, not `<strong>`), and for apps that
+ * reuse a formatting tag as a plain, non-formatting wrapper (Docs wraps
+ * its *entire* clipboard export in `<b style="font-weight:normal">`,
+ * which would otherwise bold the whole paste). `??`, not `||`: an
+ * explicit `false` (the override case) must not fall through to the tag
+ * default the way `false || tagDefault` would.
+ */
+function formatOf(node: Node): InlineFormat | null {
+  if (!(node instanceof HTMLElement)) return null
+  const tag = node.tagName.toLowerCase()
+  if (tag === 'a' || tag === 'br' || tag === 'script' || tag === 'style') return null
+  if (tag === 'span' && node.classList.contains('tt-unlinked-ref')) return null
+  const f: InlineFormat = {
+    bold: styleBold(node) ?? (tag === 'strong' || tag === 'b'),
+    italic: styleItalic(node) ?? (tag === 'em' || tag === 'i'),
+    underline: styleHasDecoration(node, 'underline') ?? tag === 'u',
+    strike: styleHasDecoration(node, 'line-through') ?? (tag === 's' || tag === 'strike' || tag === 'del'),
+  }
+  return f.bold || f.italic || f.underline || f.strike ? f : null
+}
+
+/** `out` wrapped in the markers of every format in `f` that `active` does not already apply. */
+function withFormat(out: string, f: InlineFormat, active: InlineFormat): string {
+  if (f.bold && !active.bold) out = mark(out, '**')
+  if (f.italic && !active.italic) out = mark(out, '*')
+  // Underline keeps edge whitespace outside its tags too: applyEmphasis judges
+  // a `*` run by the character beyond an adjacent <u>/</u>, which must be the
+  // text itself (`**<u>x</u>**`), not a space inside the tag.
+  if (f.underline && !active.underline) out = mark(out, '<u>', '</u>')
+  if (f.strike && !active.strike) out = mark(out, '~~')
   return out
 }
 
@@ -576,9 +774,9 @@ function inlineMd(node: Node): string {
  * (mdToHtml's markers must hug their text), so it would re-open as literal
  * asterisks. Whitespace-only text gets no marker at all.
  */
-function mark(text: string, marker: string): string {
+function mark(text: string, marker: string, closer = marker): string {
   const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!
-  return m[2] === '' ? text : `${m[1]}${marker}${m[2]}${marker}${m[3]}`
+  return m[2] === '' ? text : `${m[1]}${marker}${m[2]}${closer}${m[3]}`
 }
 
 // Splits `nodes` at <br> boundaries into per-line node arrays. A <br>
@@ -628,15 +826,15 @@ function segmentsToLineNodes(nodes: Node[]): Node[][] {
 // Renders each <br>-split line with `render` and joins with '\n' — shared by
 // blockToMdNodes (markdown output) and blockToTextNodes (plain-text output),
 // which differ only in which renderer they pass.
-function segmentsToLines(nodes: Node[], render: (n: Node) => string): string {
-  return segmentsToLineNodes(nodes).map(seg => seg.map(render).join('')).join('\n')
+function segmentsToLines(nodes: Node[], render: (line: Node[]) => string): string {
+  return segmentsToLineNodes(nodes).map(render).join('\n')
 }
 
 // Splits a run of nodes at <br> boundaries and joins each segment's rendered
 // markdown with '\n', so soft line breaks survive the html -> markdown
 // conversion. A trailing <br> produces no extra empty line.
 function blockToMdNodes(nodes: Node[]): string {
-  return segmentsToLines(nodes, inlineMd)
+  return segmentsToLines(nodes, inlineNodesMd)
 }
 
 // An <li>'s nested <ul>/<ol> sub-list(s), rendered separately from the
@@ -984,10 +1182,24 @@ function liLines(li: HTMLElement, text = false): string[] {
   return own.length > 0 ? own : ['']
 }
 
+/**
+ * The number an `<ol>`'s first item shows: its `start`, else a `value` on its
+ * first item (how Word and web pages number a pasted list), else 1. A `value`
+ * on any later item is ignored — the browser copies it when Enter splits an
+ * item, and items always count up from the start.
+ */
+function listStart(list: HTMLElement): number {
+  const start = list.getAttribute('start')
+  if (start !== null && /^\d+$/.test(start)) return Number(start)
+  const first = Array.from(list.children).find((c) => c.tagName.toLowerCase() === 'li')
+  const value = first?.getAttribute('value') ?? null
+  return value !== null && /^\d+$/.test(value) ? Number(value) : 1
+}
+
 function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
   const tag = list.tagName.toLowerCase()
   const prefix = '  '.repeat(Math.min(depth, MAX_LIST_DEPTH))
-  let i = 0
+  let i = tag === 'ol' ? listStart(list) - 1 : 0
   Array.from(list.children).forEach(child => {
     if (!(child instanceof HTMLElement)) return
     const childTag = child.tagName.toLowerCase()
@@ -1001,8 +1213,7 @@ function renderListMd(list: HTMLElement, depth: number, out: string[]): void {
     const task = taskOf(child, tag)
     liLines(child).forEach((text, n) => {
       if (tag === 'ol') {
-        const v = child.getAttribute('value')
-        i = n === 0 && v ? Number(v) : i + 1
+        i++
         out.push(`${prefix}${i}. ${text}`)
       } else {
         out.push(`${prefix}- ${task && n === 0 ? `${MD_MARK_OF_TASK[task]} ` : ''}${text}`)
@@ -1020,7 +1231,7 @@ function inlineText(node: Node): string {
 }
 
 function blockToTextNodes(nodes: Node[]): string {
-  return segmentsToLines(nodes, inlineText)
+  return segmentsToLines(nodes, (seg) => seg.map(inlineText).join(''))
 }
 
 // Same <br>-segment-splitting shape as blockToMd, but renders visual text

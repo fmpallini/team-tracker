@@ -5,12 +5,12 @@ description: Use when adding or changing any screen, dialog, button, list row, c
 
 # UI consistency
 
-The app's screens agree on a small set of rules. Reuse the helper or token instead of writing a new variant; `test/design-rules.test.ts` fails the build when a rule is broken (it runs in pre-push and CI). The rules in short — `CLAUDE.md` (Conventions) is the prose version.
+The app's screens agree on a small set of rules. Reuse the helper or token instead of writing a new variant; `test/design-rules.test.ts` fails the build when a rule is broken (it runs in pre-push and CI). This file is the single written source of the rules.
 
 ## Behavior
 
-- **Edit surface.** Rich or many-field entities (task, risk, milestone) autosave as you type, in a modeless dialog or an inline row, closed with Close/Escape — never Cancel. Small forms (person, team, template, tag names, link) are Cancel/Save dialogs where Cancel discards. A picker's confirm button reads its verb (Copy, Move). Only the password prompt says OK.
-- **Delete.** One item is never confirmed: delete it with an Undo toast (`createEntityDelete`, `deleteInTeamWithUndo` + `offerUndoToast`). Bulk or irreversible deletes (team, clear zone, delete all closed, column with cards, data cleanup) use `confirmDelete` (always danger-styled; say "cannot be undone" in `warning` when there is no Undo). Never the browser `confirm()`.
+- **Edit surface.** Rich or many-field entities (task, risk, milestone) autosave as you type, in a modeless dialog or an inline row, closed with Close/Escape — never Cancel. Small forms (person, team, template, tag names, link) are Cancel/Save dialogs where Cancel discards and the confirm button reads **Save**. A picker's confirm button reads its verb (Copy, Move). Only the password prompt says OK. Don't mix: a new screen picks one of the two by that rule.
+- **Delete.** One item is never confirmed: delete it with an Undo toast (`createEntityDelete`, `deleteInTeamWithUndo` + `offerUndoToast`). Bulk or irreversible deletes (team, clear zone, delete all closed, column with cards, data cleanup) use `confirmDelete` (always danger-styled; say "cannot be undone" in `warning` when there is no Undo). Never the browser `confirm()`. The Undo expires on the next edit, so keep the toast short-lived and prominent.
 - **Feedback.** A change the user cannot see happen (move, copy, duplicate to another team) gets a toast; a move gets an Undo.
 - **Names.** Missing name: "Name is required" in a dialog field, "This {thing} needs a name." on an inline row or card. Items are called by one word everywhere (tasks, not cards or actions).
 - **Icon-only buttons** go through `iconButton()` in `ui/icons.ts` (sets `title` and `aria-label` from one string); re-label with `setIconButtonTitle()` on a locale switch.
@@ -32,4 +32,4 @@ The app's screens agree on a small set of rules. Reuse the helper or token inste
 
 1. `npm test -- test/design-rules.test.ts` (and the usual `npm test`, `npm run lint`, `npm run typecheck`).
 2. If the guard rejects something you believe is right, the rule may need a new exception: add it to the allowlist in the test **with a one-line reason**, and say so in the commit message. Don't loosen a rule to make a diff pass.
-3. When a rule itself changes, update this file, `CLAUDE.md` and the test together.
+3. When a rule itself changes, update this file and the test together.
