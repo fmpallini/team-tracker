@@ -1,5 +1,6 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { openLiveDb, sharedLiveDb, resetSharedLiveDb, type LiveDb, type LiveMeta } from '../src/core/live-db'
+import { StallError, STALL_MS } from '../src/core/stall'
 
 // A fresh in-memory IndexedDB per test (jsdom has none of its own).
 let factory: IDBFactory
@@ -206,5 +207,41 @@ describe('sharedLiveDb', () => {
     expect(await sharedLiveDb()).not.toBeNull()
     spy.mockRestore()
     if (saved) (globalThis as { indexedDB?: IDBFactory }).indexedDB = saved
+  })
+
+  test('an open the browser never answers resolves null after the deadline (open runs without a browser copy), and the next call opens afresh', async () => {
+    // A wedged backend (core/stall.ts): the open request fires no event at all.
+    let wedged = true
+    const late = { close: vi.fn(), addEventListener: vi.fn() }
+    const pending: { result: unknown; onsuccess: () => void }[] = []
+    vi.stubGlobal('indexedDB', {
+      open: (name: string, version?: number) => {
+        if (!wedged) return factory.open(name, version)
+        const req = {} as { result: unknown; onsuccess: () => void }
+        pending.push(req)
+        return req
+      },
+    })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const first = sharedLiveDb()
+      await vi.advanceTimersByTimeAsync(STALL_MS)
+      expect(await first).toBeNull()
+      expect(spy).toHaveBeenCalledWith(expect.any(StallError))
+    } finally {
+      vi.useRealTimers()
+    }
+
+    // The stalled open answering late does not leave a connection open.
+    pending[0]!.result = late
+    pending[0]!.onsuccess()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(late.close).toHaveBeenCalled()
+
+    wedged = false
+    expect(await sharedLiveDb()).not.toBeNull()
+    spy.mockRestore()
   })
 })

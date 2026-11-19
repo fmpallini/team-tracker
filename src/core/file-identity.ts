@@ -10,6 +10,7 @@
 // "this file" to one random id no matter which handle object a tab holds.
 import type { FileSession } from './fs'
 import { idbGet, idbSet } from './idb'
+import { stall } from './stall'
 
 const REGISTRY_KEY = 'fileLockRegistry'
 /** Web Lock serializing registry updates, so two tabs opening the same new file at once can't each mint their own id. */
@@ -62,9 +63,13 @@ export async function resolveFileId(session: FileSession, locks?: LockManager): 
   const handle = session.handle
   if (!handle) return null
   try {
-    return locks
-      ? ((await locks.request(REGISTRY_LOCK, () => lookupOrAssign(handle))) as string)
-      : await lookupOrAssign(handle)
+    // The registry lock is exclusive and origin-wide: an open stuck inside it (core/stall.ts) used to queue every later
+    // open behind it forever. Past the deadline this open goes on with no id, like any other registry failure; the
+    // queued request, if it is ever granted, only refreshes this file's entry.
+    return await stall(
+      locks ? (locks.request(REGISTRY_LOCK, () => lookupOrAssign(handle)) as Promise<string>) : lookupOrAssign(handle),
+      'file id registry'
+    )
   } catch (e) {
     console.error(e)
     return null

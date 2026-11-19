@@ -2,6 +2,7 @@ import { showStartScreen, isMobileDevice, START_LINKS } from '../src/ui/start'
 import { createEmptyDocument, SCHEMA_VERSION } from '../src/core/document'
 import type { FileSession } from '../src/core/fs'
 import type { OpenedDocument } from '../src/ui/open-document'
+import { StallError } from '../src/core/stall'
 
 const fsMocks = vi.hoisted(() => ({
   FilePermissionError: class FilePermissionError extends Error {},
@@ -220,6 +221,24 @@ test('reopen-last: a denied file permission explains how to unblock it and to op
   expect(message).toContain('site settings')
   expect(message).toContain('installed app')
   expect(message).toContain('Open file…')
+  expect(onOpen).not.toHaveBeenCalled()
+})
+
+test('reopen-last: browser storage that stopped answering says what clears it, instead of a bare "unexpected error"', async () => {
+  idbMocks.idbGet.mockImplementation(async () => ({}) as unknown)
+  fsMocks.reopenLast.mockRejectedValue(new StallError('IndexedDB readonly (team-tracker)', 15_000))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+  clickByText('Reopen last…')
+  await flush()
+
+  const message = document.querySelector('.tt-modal-message')?.textContent ?? ''
+  expect(message).toContain('not responding')
+  expect(message).toContain('restart the browser')
+  expect(message).toContain('not yet written to the file are lost')
   expect(onOpen).not.toHaveBeenCalled()
 })
 
@@ -679,6 +698,34 @@ describe('auto-load last file on startup', () => {
     await flush()
     auto.release()
     await flush()
+    await flush()
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect((onOpen.mock.calls[0]![0] as OpenedDocument).session).toBe(picked)
+  })
+
+  test('an auto-open still reconciling when the user opens a file is dropped: the file the user picked opens, once', async () => {
+    // Browser storage slow or stalled at startup (core/stall.ts): the auto-open is past its openStarted check, waiting
+    // on the reconcile, when the user picks a file themselves.
+    const auto: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'last.tmv', lastModified: 1 }
+    fsMocks.peekLastFile.mockResolvedValue({ session: auto, bytes: new Uint8Array([9]) })
+    cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+    idbMocks.idbGet.mockImplementation(async (key?: string) => (key === 'autoLoadLast' ? true : undefined))
+    let finishAuto: () => void = () => {}
+    const reconcileFor = openDocMocks.reconcileOpen.getMockImplementation()!
+    openDocMocks.reconcileOpen.mockImplementationOnce((o) => new Promise((resolve) => {
+      finishAuto = () => resolve(reconcileFor(o))
+    }))
+    const picked: FileSession = { handle: {} as unknown as FileSystemFileHandle, name: 'picked.tmv', lastModified: 3 }
+    fsMocks.pickOpen.mockResolvedValue({ session: picked, bytes: new Uint8Array([9]) })
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen)
+    await flush()
+    expect(openDocMocks.reconcileOpen).toHaveBeenCalledTimes(1) // the auto-open is reconciling
+
+    clickByText('Open file…')
+    await flush()
+    finishAuto()
     await flush()
 
     expect(onOpen).toHaveBeenCalledTimes(1)
