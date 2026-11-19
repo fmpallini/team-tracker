@@ -222,13 +222,11 @@ test('ordered list numbers preserved', () => {
   expect(roundTrip(md)).toBe(md)
 })
 
-test('nested ambiguous asterisks stay stable', () => {
-  // The outer ** pair cannot close around the inner *b*, so it is literal text:
-  // it is written escaped, shows exactly as before, and a second save is a no-op.
+test('a ** pair closes around an inner *italic* span (bold with italic inside), and stays stable', () => {
   const md = '**a*b*c** e *i* fim'
+  expect(mdToHtml(md)).toBe('<div><strong>a<em>b</em>c</strong> e <em>i</em> fim</div>')
   const saved = roundTrip(md)
-  expect(saved).toBe('\\*\\*a*b*c\\*\\* e *i* fim')
-  expect(mdToHtml(saved)).toBe(mdToHtml(md))
+  expect(saved).toBe(md)
   expect(roundTrip(saved)).toBe(saved)
 })
 
@@ -1310,6 +1308,31 @@ describe('whitespace at the edge of formatted text moves OUTSIDE the markers on 
   })
 })
 
+// Italic touching the edge of a bold run (Ctrl+I on the last or first word of a
+// bold phrase, or a pasted <b>one <i>two</i></b>) is written as a `***` run. The
+// parser used to refuse a `*` inside bold, so it reopened as literal asterisks
+// and the next save escaped them for good.
+describe('emphasis nested at the edge of a bold run survives save and reopen', () => {
+  const toMd = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return htmlToMd(d) }
+  test.each([
+    ['italic at the end of bold', '<div><strong>one <em>two</em></strong> x</div>', '**one *two*** x'],
+    ['italic at the start of bold', '<div><strong><em>one</em> two</strong> x</div>', '***one* two** x'],
+    ['italic in the middle of bold', '<div><strong>a <em>b</em> c</strong></div>', '**a *b* c**'],
+    ['bold at the end of italic', '<div><em>one <strong>two</strong></em> x</div>', '*one **two*** x'],
+    ['bold at the start of italic', '<div><em><strong>one</strong> two</em> x</div>', '***one** two* x'],
+    ['italic ending bold, then more bold', '<div><strong>a <em>b</em></strong> <strong>c</strong></div>', '**a *b*** **c**'],
+  ])('%s', (_name, html, md) => {
+    expect(toMd(html)).toBe(md)
+    expect(mdToHtml(md)).toBe(html)
+    expect(roundTrip(md)).toBe(md)
+  })
+
+  test('asterisks that do not hug their text are still not formatting', () => {
+    expect(mdToHtml('a ** b ** c')).toBe('<div>a ** b ** c</div>')
+    expect(mdToHtml('2 * 3 * 4')).toBe('<div>2 * 3 * 4</div>')
+  })
+})
+
 describe('[text](target) that is not a safe link stays literal instead of losing its brackets', () => {
   test.each([
     'see [1](page 2)',
@@ -1565,10 +1588,28 @@ describe('literal text survives a save/reopen', () => {
     expect(back.textContent).toBe('a\\b')
   })
 
-  test('brackets inside link text do not reopen the link grammar', () => {
+  test('brackets inside link text are kept, escaped, and do not reopen the link grammar', () => {
     const root = document.createElement('div')
-    root.innerHTML = '<div><a href="https://x.y">a[b]</a></div>'
-    expect(htmlToMd(root)).toBe('[ab](https://x.y)')
+    root.innerHTML = '<div><a href="https://x.y">a[b]</a> after</div>'
+    const md = htmlToMd(root)
+    expect(md).toBe('[a\\[b\\]](https://x.y) after')
+    const back = document.createElement('div')
+    back.innerHTML = mdToHtml(md)
+    expect(back.querySelectorAll('a')).toHaveLength(1)
+    expect(back.querySelector('a')!.textContent).toBe('a[b]')
+    expect(back.textContent).toBe('a[b] after')
+    expect(htmlToMd(back)).toBe(md)
+  })
+
+  test('a ref chip inside link text loses only its raw brackets, as before', () => {
+    const root = document.createElement('div')
+    const link = root.appendChild(document.createElement('div')).appendChild(document.createElement('a'))
+    link.href = 'https://x.y'
+    link.append('see ')
+    const chip = link.appendChild(document.createElement('a'))
+    chip.dataset.ref = 'person:p1'
+    chip.textContent = '@Ann'
+    expect(htmlToMd(root)).toBe('[see @Ann(person:p1)](https://x.y)')
   })
 
   test('a tilde inside an unlinked-ref label survives', () => {
