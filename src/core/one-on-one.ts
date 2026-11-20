@@ -10,7 +10,7 @@ export interface OneOnOneResult {
 }
 
 /** The block's body when the 1:1 template is missing. */
-const FALLBACK_BODY = '## 1:1 — {date}'
+const FALLBACK_BODY = '### 1:1 — {date}'
 
 const BULLET = /^( *)- (.*)$/
 const LIST_ITEM = /^( *)(- |\d+\. )/
@@ -88,10 +88,10 @@ export function buildOneOnOne(noteMd: string, body: string | null, ctx: Template
     block = resolveTemplate(kept, { ...ctx, carryover })
     if (slot < 0) {
       // No place for the items in the template (edited away, or the fallback):
-      // they go under their own heading right after the block's first line —
+      // they go under their own bold label right after the block's first line —
       // or before it when that line opens a code fence, where they would be code.
       const blockLines = block.split('\n')
-      blockLines.splice(fencedLines(blockLines).fenced[0] ? 0 : 1, 0, `### ${t(ctx.locale, 'one_on_one_carried_heading')}`, carryover)
+      blockLines.splice(fencedLines(blockLines).fenced[0] ? 0 : 1, 0, `**${t(ctx.locale, 'one_on_one_carried_heading')}**`, carryover)
       block = blockLines.join('\n')
     }
   }

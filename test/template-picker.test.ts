@@ -150,7 +150,7 @@ describe('attachTemplatePicker', () => {
 
     expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
     expect(editorEl.querySelector('h2')).not.toBeNull()
-    expect(editor!.getMd()).toBe('## Decision — 07/02/2026\n- a\n- b\n**bold** text')
+    expect(editor!.getMd()).toBe('## Decision — Thu, 07/02/2026\n- a\n- b\n**bold** text')
 
     const sel = window.getSelection()!
     expect(sel.rangeCount).toBe(1)
@@ -165,7 +165,7 @@ describe('attachTemplatePicker', () => {
     fireKey(editorEl, 'ArrowDown')
     fireKey(editorEl, 'Enter')
 
-    expect(editor!.getMd()).toBe('## Status — 07/02/2026\n### Highlights\n- ')
+    expect(editor!.getMd()).toBe('## Status — Thu, 07/02/2026\n### Highlights\n- ')
   })
 
   test('clicking a list item inserts that template', () => {
@@ -177,7 +177,7 @@ describe('attachTemplatePicker', () => {
     ;(items[1] as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
     expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
-    expect(editor!.getMd()).toBe('## Status — 07/02/2026\n### Highlights\n- ')
+    expect(editor!.getMd()).toBe('## Status — Thu, 07/02/2026\n### Highlights\n- ')
   })
 
   test('Escape cancels and leaves the literal "/" as typed', () => {
@@ -305,7 +305,7 @@ describe('attachTemplatePicker', () => {
     expect(dropdown).not.toBeNull()
 
     fireKey(editorEl, 'Enter')
-    expect(editor!.getMd()).toBe('## Decision — 07/02/2026\n- a\n- b\n**bold** text')
+    expect(editor!.getMd()).toBe('## Decision — Thu, 07/02/2026\n- a\n- b\n**bold** text')
   })
 
   test('the 📋 toolbar button on a non-empty line inserts the template after that line, untouched', () => {
@@ -316,7 +316,7 @@ describe('attachTemplatePicker', () => {
     expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
     fireKey(editorEl, 'Enter')
 
-    expect(editor!.getMd()).toBe('existing note\n## Decision — 07/02/2026\n- a\n- b\n**bold** text')
+    expect(editor!.getMd()).toBe('existing note\n## Decision — Thu, 07/02/2026\n- a\n- b\n**bold** text')
   })
 
   test('triggering "/" from the sole bullet of a list inserts the template after the list, leaving no stray "/" or nested blocks', () => {
@@ -339,7 +339,7 @@ describe('attachTemplatePicker', () => {
     // No element anywhere still holds the bare trigger "/" (the date's own
     // "/" separators in "07/02/2026" are expected and fine).
     expect(Array.from(editorEl.querySelectorAll('*')).some((el) => el.textContent === '/')).toBe(false)
-    expect(editor!.getMd()).toBe('## Decision — 07/02/2026\n- a\n- b\n**bold** text')
+    expect(editor!.getMd()).toBe('## Decision — Thu, 07/02/2026\n- a\n- b\n**bold** text')
     expect(editor!.getMd()).not.toContain('- /\n')
     expect(editor!.getMd().split('\n')).not.toContain('- /')
   })
@@ -355,7 +355,7 @@ describe('attachTemplatePicker', () => {
     const ul = editorEl.querySelector('ul')
     expect(ul).not.toBeNull()
     expect(Array.from(ul!.querySelectorAll(':scope > li')).map((li) => li.textContent)).toEqual(['first', 'last'])
-    expect(editor!.getMd()).toBe('- first\n- last\n## Decision — 07/02/2026\n- a\n- b\n**bold** text')
+    expect(editor!.getMd()).toBe('- first\n- last\n## Decision — Thu, 07/02/2026\n- a\n- b\n**bold** text')
   })
 
   test('caret lands inside the last bullet of a template that ends with an empty list item', () => {
@@ -366,7 +366,7 @@ describe('attachTemplatePicker', () => {
     fireKey(editorEl, 'ArrowDown') // select "Weekly status", which ends in "- "
     fireKey(editorEl, 'Enter')
 
-    expect(editor!.getMd()).toBe('## Status — 07/02/2026\n### Highlights\n- ')
+    expect(editor!.getMd()).toBe('## Status — Thu, 07/02/2026\n### Highlights\n- ')
     const lastLi = editorEl.querySelector('ul > li:last-child')
     expect(lastLi).not.toBeNull()
     const sel = window.getSelection()!

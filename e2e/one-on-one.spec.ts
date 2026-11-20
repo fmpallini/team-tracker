@@ -14,13 +14,19 @@ function daysAgoUs(days: number): string {
   return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`
 }
 
-/** Which heading the caret's list item sits under — "which section is the caret in". */
+/**
+ * Which section label the caret's list item sits under — "which section is the caret in". A label is a heading or,
+ * as the built-in templates write them, a line that is only bold text (`**Agreed actions**`).
+ */
 async function caretSection(page: Page): Promise<string | null> {
   return page.evaluate(() => {
+    const isLabel = (el: Element): boolean => /^H[1-6]$/.test(el.tagName)
+      || (el.tagName === 'DIV' && el.children.length === 1 && el.firstElementChild!.tagName === 'STRONG'
+        && el.textContent === el.firstElementChild!.textContent)
     const node = getSelection()?.anchorNode
     const li = (node instanceof Element ? node : node?.parentElement)?.closest('li')
     let block: Element | null = li?.closest('ul, ol') ?? null
-    while (block && !/^H[1-6]$/.test(block.tagName)) block = block.previousElementSibling
+    while (block && !isLabel(block)) block = block.previousElementSibling
     return block?.textContent ?? null
   })
 }
@@ -98,7 +104,7 @@ test('1:1 flow: carry-over, undo, Alt+O, and an overdue 1:1 in the due surfaces'
   // 3. New 1:1: the original is marked carried, the new block carries a copy, and the caret waits in "How are they".
   await pane.locator('.tt-person-header-one-on-one-btn').click()
   await expect(editor.locator('li[data-task="carried"]')).toHaveText('Ship plan')
-  const carriedHeading = editor.locator('h3', { hasText: 'Carried over' })
+  const carriedHeading = editor.locator('strong', { hasText: 'Carried over' })
   await expect(carriedHeading).toHaveCount(1)
   // (The template's own "Agreed actions" box is open and empty, hence the text filter.)
   await expect(editor.locator('li[data-task="open"]', { hasText: 'Ship plan' })).toHaveCount(1)

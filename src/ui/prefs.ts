@@ -10,7 +10,7 @@ import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { createTabRail } from './tab-rail'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
-import { builtinTemplates, isOneOnOneCandidate, reseedBuiltinTemplates, ONE_ON_ONE_SEED_NAME } from '../core/templates'
+import { builtinTemplates, isOneOnOneCandidate, refreshBuiltinBodies, reseedBuiltinTemplates, ONE_ON_ONE_SEED_NAME } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
@@ -467,6 +467,8 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
 
     function restoreDefaults(): void {
       store.update((d) => {
+        // Built-ins left untouched since an earlier release take the current body; edited ones stay.
+        d.templates = refreshBuiltinBodies(d.templates)
         const existingNames = new Set(d.templates.map((tp) => tp.name))
         for (const tpl of builtinTemplates(d.prefs.locale)) {
           if (existingNames.has(tpl.name)) continue

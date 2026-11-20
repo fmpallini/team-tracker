@@ -512,13 +512,13 @@ test('locale radio re-seeds untouched builtin templates and leaves an edited one
   expect(store.doc.templates[1]!.body).toBe('hand-edited body') // edited one, skipped
 })
 
-test('templates tab lists the 5 builtins with scope badges', () => {
+test('templates tab lists the 8 builtins with scope badges', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates and 1:1')
 
   const rows = document.querySelectorAll('.tt-prefs-template-row')
-  expect(rows).toHaveLength(5)
+  expect(rows).toHaveLength(8)
   expect(document.querySelector('.tt-prefs-template-scope-badge')?.textContent).toMatch(/Personal|Daily|Any/)
 })
 
@@ -602,13 +602,13 @@ test('"+ New" adds a template with the entered name/scope/body', () => {
   bodyTextarea.dispatchEvent(new Event('input'))
   clickByText('Save')
 
-  expect(store.doc.templates).toHaveLength(6)
+  expect(store.doc.templates).toHaveLength(9)
   const added = store.doc.templates.find((tp) => tp.name === 'Custom')
   expect(added).toBeDefined()
   expect(added?.scope).toBe('daily')
   expect(added?.body).toBe('body {date}')
   // Modal closed and list refreshed behind it.
-  expect(document.querySelectorAll('.tt-prefs-template-row')).toHaveLength(6)
+  expect(document.querySelectorAll('.tt-prefs-template-row')).toHaveLength(9)
 })
 
 test('"+ New" requires a non-empty name', () => {
@@ -618,7 +618,7 @@ test('"+ New" requires a non-empty name', () => {
   clickByText('+ New')
   clickByText('Save')
   expect(document.querySelector('.tt-field-error')?.textContent).toBe('Name is required')
-  expect(store.doc.templates).toHaveLength(5)
+  expect(store.doc.templates).toHaveLength(8)
 })
 
 test('edit (pencil) button updates the existing template in place', () => {
@@ -635,7 +635,7 @@ test('edit (pencil) button updates the existing template in place', () => {
   nameInput.dispatchEvent(new Event('input'))
   clickByText('Save')
 
-  expect(store.doc.templates).toHaveLength(5)
+  expect(store.doc.templates).toHaveLength(8)
   expect(store.doc.templates[0]!.id).toBe(firstId)
   expect(store.doc.templates[0]!.name).toBe('Renamed')
 })
@@ -649,7 +649,7 @@ test('duplicate button inserts a copy right after the original', () => {
   const dupBtn = document.querySelector('.tt-prefs-template-dup-btn') as HTMLButtonElement
   dupBtn.click()
 
-  expect(store.doc.templates).toHaveLength(6)
+  expect(store.doc.templates).toHaveLength(9)
   const copy = store.doc.templates[1]!
   expect(copy.name).toBe(original.name)
   expect(copy.scope).toBe(original.scope)
@@ -669,7 +669,7 @@ test('delete button asks for confirmation, then removes the template', () => {
   clickByText('Delete')
 
   expect(store.doc.templates.find((tp) => tp.id === target.id)).toBeUndefined()
-  expect(store.doc.templates).toHaveLength(4)
+  expect(store.doc.templates).toHaveLength(7)
 })
 
 test('delete confirmation warns that a deleted template cannot be brought back', () => {
@@ -745,6 +745,29 @@ test.each([
   const seed = store.doc.templates.find((tp) => tp.name === '1:1')!
   expect(store.doc.prefs.oneOnOneTemplateId).toBe(seed.id)
   expect((document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement).value).toBe(seed.id)
+})
+
+test('restore defaults refreshes a built-in untouched since an earlier release, never an edited one', () => {
+  const { store, shell, appCtl } = setup()
+  const meeting374 = '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- '
+  const decision374 = '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** '
+  store.update((d) => {
+    const meeting = d.templates.find((tp) => tp.name === 'Meeting')!
+    meeting.body = meeting374
+    const decision = d.templates.find((tp) => tp.name === 'Decision')!
+    decision.body = decision374 + 'my notes'
+  })
+  const meetingId = store.doc.templates.find((tp) => tp.name === 'Meeting')!.id
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates and 1:1')
+
+  clickByText('Restore defaults')
+
+  const current = builtinTemplates('en-US')
+  const meeting = store.doc.templates.find((tp) => tp.id === meetingId)!
+  expect(meeting.body).toBe(current.find((tp) => tp.name === 'Meeting')!.body) // same template, refreshed in place
+  expect(store.doc.templates.find((tp) => tp.name === 'Decision')!.body).toBe(decision374 + 'my notes')
+  expect(store.doc.templates).toHaveLength(current.length)
 })
 
 test('restore defaults is idempotent when nothing is missing', () => {
@@ -1104,9 +1127,9 @@ test('about tab reflects a mismatched file schema version from appCtl', () => {
   expect(rows).toContain('0')
 })
 
-test('builtinTemplates helper used by restore-defaults produces 5 named templates (sanity)', () => {
+test('builtinTemplates helper used by restore-defaults produces 8 named templates (sanity)', () => {
   const names = builtinTemplates('en-US').map((tp: Template) => tp.name)
-  expect(new Set(names).size).toBe(5)
+  expect(new Set(names).size).toBe(8)
 })
 
 function sampleTeam(): Team {

@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.8.0] - 2026-11-20
+
+### Added
+- New built-in templates: First 1:1, Career conversation and Retro / Incident.
+- Meeting and Retro / Incident templates can now be inserted in risk, milestone and action-item notes too.
+
+### Changed
+- Built-in templates are lighter: a small title, bold labels over bullet lists, and follow-ups as checkboxes that New 1:1 carries forward. `{date}` now includes the weekday.
+- Existing team files keep their templates. To get the new and updated ones, open Preferences → Templates and 1:1 → Restore defaults; templates you edited stay as they are.
+
 ## [3.7.4] - 2026-11-19
 
 ### Fixed
