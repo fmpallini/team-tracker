@@ -733,9 +733,14 @@ describe('v19 → v20 migration (1:1 cadence prefs)', () => {
   })
 
   it('leaves a customized 1:1 body alone and still points at it', () => {
-    const doc = migrate(at19([{ id: 'x', name: '1:1', scope: 'any', body: 'mine' }]))
+    const doc = migrate(at19([{ id: 'x', name: '1:1', scope: 'personal', body: 'mine' }]))
     expect(doc.templates[0]!.body).toBe('mine')
     expect(doc.prefs.oneOnOneTemplateId).toBe('x')
+  })
+
+  it('does not point at a "1:1" scoped Any: only person-note templates start a 1:1', () => {
+    const doc = migrate(at19([{ id: 'x', name: '1:1', scope: 'any', body: 'mine' }]))
+    expect(doc.prefs.oneOnOneTemplateId).toBeNull()
   })
 
   it('sets null when there is no "1:1" template', () => {

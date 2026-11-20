@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.8.1] - 2026-11-20
+
+### Changed
+- Person notes and New 1:1 now offer only Personal templates. The "Any" scope is renamed "Shared", and Weekly status is now Shared, so tasks, risks and milestones offer it too.
+- Restore defaults now asks first, then replaces every template, your own included, with the default set in its default order, and sets New 1:1 to the 1:1 template.
+
 ## [3.8.0] - 2026-11-20
 
 ### Added

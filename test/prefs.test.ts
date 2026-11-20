@@ -500,16 +500,16 @@ test('locale radio re-seeds untouched builtin templates and leaves an edited one
   // setup() creates the doc with 'en-US', so store.doc.templates start out English.
   const beforeIds = store.doc.templates.map(t => t.id)
   store.update((d) => {
-    d.templates[1]!.body = 'hand-edited body' // Feedback (SBI) template, left untouched by the switch
+    d.templates[2]!.body = 'hand-edited body' // Feedback (SBI) template, left untouched by the switch
   })
   openPrefs(store, shell, 'en-US', appCtl)
 
   radio('tt-prefs-locale', 'pt-BR').click()
 
   expect(store.doc.templates.map(t => t.id)).toEqual(beforeIds) // same ids/order
-  expect(store.doc.templates[0]!.name).toBe('1:1') // untouched builtin, now Portuguese wording
-  expect(store.doc.templates[0]!.body).toContain('Como está / energia')
-  expect(store.doc.templates[1]!.body).toBe('hand-edited body') // edited one, skipped
+  expect(store.doc.templates[1]!.name).toBe('1:1') // untouched builtin, now Portuguese wording
+  expect(store.doc.templates[1]!.body).toContain('Como está / energia')
+  expect(store.doc.templates[2]!.body).toBe('hand-edited body') // edited one, skipped
 })
 
 test('templates tab lists the 8 builtins with scope badges', () => {
@@ -519,7 +519,7 @@ test('templates tab lists the 8 builtins with scope badges', () => {
 
   const rows = document.querySelectorAll('.tt-prefs-template-row')
   expect(rows).toHaveLength(8)
-  expect(document.querySelector('.tt-prefs-template-scope-badge')?.textContent).toMatch(/Personal|Daily|Any/)
+  expect(document.querySelector('.tt-prefs-template-scope-badge')?.textContent).toMatch(/Personal|Daily|Shared/)
 })
 
 test('prefs Templates tab edits oneOnOneDefaultDays and oneOnOneTemplateId', () => {
@@ -546,28 +546,31 @@ test('prefs Templates tab edits oneOnOneDefaultDays and oneOnOneTemplateId', () 
   select.value = ''
   select.dispatchEvent(new Event('change'))
   expect(store.doc.prefs.oneOnOneTemplateId).toBeNull()
-  const other = store.doc.templates.find((tp) => tp.scope === 'any')!
+  const other = store.doc.templates.find((tp) => tp.scope === 'personal' && tp.id !== seed.id)!
   select.value = other.id
   select.dispatchEvent(new Event('change'))
   expect(store.doc.prefs.oneOnOneTemplateId).toBe(other.id)
 })
 
-test('template select lists only personal/any templates', () => {
+test('template select lists only personal templates', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates and 1:1')
 
   const select = () => document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement
-  const expected = store.doc.templates.filter((tp) => tp.scope !== 'daily').map((tp) => tp.id)
+  const expected = store.doc.templates.filter((tp) => tp.scope === 'personal').map((tp) => tp.id)
   expect(expected.length).toBeGreaterThan(0)
   expect(expected.length).toBeLessThan(store.doc.templates.length)
   expect(Array.from(select().options).map((o) => o.value)).toEqual(['', ...expected])
   expect(select().options[0]!.textContent).toBe('None (heading only)')
 
-  // A new template shows up without reopening the tab.
+  // A new personal template shows up without reopening the tab.
   clickByText('+ New')
   const nameInput = document.querySelector('input[name="tt-prefs-template-name"]') as HTMLInputElement
   nameInput.value = 'Fresh'
+  const scopeSelect = document.querySelector('.tt-prefs-template-form select') as HTMLSelectElement
+  scopeSelect.value = 'personal'
+  scopeSelect.dispatchEvent(new Event('change'))
   clickByText('Save')
   expect(Array.from(select().options).map((o) => o.textContent)).toContain('Fresh')
 })
@@ -705,78 +708,60 @@ test('reorder (up/down) swaps templates in the array', () => {
   expect(store.doc.templates.map((t) => t.name)).toEqual([names[1], names[0], ...names.slice(2)])
 })
 
-test('restore defaults re-inserts builtins missing by name, leaves existing (even renamed) ones alone', () => {
+function restoreDefaultsConfirmed(): void {
+  clickByText('Restore defaults')
+  expect(document.querySelector('.tt-modal-warning')?.textContent).toBe('Templates you created or changed are deleted and cannot be brought back.')
+  clickByText('Restore')
+}
+
+const shape = (ts: Template[]) => ts.map(({ name, scope, body }) => ({ name, scope, body }))
+
+test('restore defaults replaces every template with the default set, and New 1:1 uses 1:1', () => {
   const { store, shell, appCtl } = setup()
-  // Simulate a user having deleted one builtin and renamed another.
   store.update((d) => {
-    d.templates = d.templates.filter((tp) => tp.name !== 'Meeting')
-    const oneOnOne = d.templates.find((tp) => tp.name === '1:1')!
-    oneOnOne.name = '1:1 (custom)'
+    d.templates = d.templates.filter((tp) => tp.name !== 'Meeting') // deleted
+    const decision = d.templates.find((tp) => tp.name === 'Decision')!
+    decision.scope = 'daily'
+    decision.body = 'hand-edited'
+    d.templates.reverse()
+    d.templates.find((tp) => tp.name === '1:1')!.name = '1:1 (custom)'
+    d.templates.push({ id: 'mine', name: 'Mine', scope: 'any', body: 'my body' })
+    d.prefs.oneOnOneTemplateId = 'mine'
   })
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates and 1:1')
 
-  clickByText('Restore defaults')
+  restoreDefaultsConfirmed()
 
-  const names = store.doc.templates.map((tp) => tp.name)
-  // 'Meeting' (deleted) comes back; '1:1' (renamed) does NOT get re-added
-  // alongside '1:1 (custom)' since restore matches by name only.
-  expect(names).toContain('Meeting')
-  expect(names).toContain('1:1 (custom)')
-  expect(names.filter((n) => n === '1:1')).toHaveLength(1) // re-inserted once, not duplicated on a second restore
-  // The New 1:1 template still points at the renamed one: a live choice is the user's.
-  expect(store.doc.prefs.oneOnOneTemplateId).toBe(store.doc.templates.find((tp) => tp.name === '1:1 (custom)')!.id)
-})
-
-test.each([
-  ['dangling', 'the deleted seed'],
-  ['null', 'None'],
-])('restore defaults points a %s New 1:1 template (%s) at the restored 1:1 seed', (kind) => {
-  const { store, shell, appCtl } = setup()
-  store.update((d) => {
-    d.templates = d.templates.filter((tp) => tp.name !== '1:1')
-    if (kind === 'null') d.prefs.oneOnOneTemplateId = null
-  })
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates and 1:1')
-
-  clickByText('Restore defaults')
-
+  const defaults = builtinTemplates('en-US')
+  expect(shape(store.doc.templates)).toEqual(shape(defaults)) // the user's own (Mine, the renamed 1:1) are gone
   const seed = store.doc.templates.find((tp) => tp.name === '1:1')!
   expect(store.doc.prefs.oneOnOneTemplateId).toBe(seed.id)
   expect((document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement).value).toBe(seed.id)
+  expect(Array.from(document.querySelectorAll('.tt-prefs-template-name')).map((n) => n.textContent)).toEqual(defaults.map((tp) => tp.name))
 })
 
-test('restore defaults refreshes a built-in untouched since an earlier release, never an edited one', () => {
+test('restore defaults uses the document\'s language', () => {
   const { store, shell, appCtl } = setup()
-  const meeting374 = '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- '
-  const decision374 = '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** '
-  store.update((d) => {
-    const meeting = d.templates.find((tp) => tp.name === 'Meeting')!
-    meeting.body = meeting374
-    const decision = d.templates.find((tp) => tp.name === 'Decision')!
-    decision.body = decision374 + 'my notes'
-  })
-  const meetingId = store.doc.templates.find((tp) => tp.name === 'Meeting')!.id
+  store.update((d) => { d.prefs.locale = 'pt-BR' })
+  openPrefs(store, shell, 'pt-BR', appCtl)
+  clickTab('Templates e 1:1')
+  clickByText('Restaurar padrões')
+  clickByText('Restaurar')
+  expect(shape(store.doc.templates)).toEqual(shape(builtinTemplates('pt-BR')))
+})
+
+test('restore defaults asks first: Cancel changes nothing', () => {
+  const { store, shell, appCtl } = setup()
+  store.update((d) => { d.templates[0]!.body = 'hand-edited' })
+  const before = JSON.stringify(store.doc.templates)
   openPrefs(store, shell, 'en-US', appCtl)
   clickTab('Templates and 1:1')
 
   clickByText('Restore defaults')
+  clickByText('Cancel')
 
-  const current = builtinTemplates('en-US')
-  const meeting = store.doc.templates.find((tp) => tp.id === meetingId)!
-  expect(meeting.body).toBe(current.find((tp) => tp.name === 'Meeting')!.body) // same template, refreshed in place
-  expect(store.doc.templates.find((tp) => tp.name === 'Decision')!.body).toBe(decision374 + 'my notes')
-  expect(store.doc.templates).toHaveLength(current.length)
-})
-
-test('restore defaults is idempotent when nothing is missing', () => {
-  const { store, shell, appCtl } = setup()
-  openPrefs(store, shell, 'en-US', appCtl)
-  clickTab('Templates and 1:1')
-  const before = store.doc.templates.length
-  clickByText('Restore defaults')
-  expect(store.doc.templates).toHaveLength(before)
+  expect(JSON.stringify(store.doc.templates)).toBe(before)
 })
 
 test('security tab: wrong current password shows inline error and does not call changePassword', () => {

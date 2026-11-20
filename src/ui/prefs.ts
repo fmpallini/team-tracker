@@ -10,7 +10,7 @@ import { t, todayIso, type Locale, type MsgKey } from '../core/i18n'
 import { el } from './dom'
 import { createTabRail } from './tab-rail'
 import { showModal, showErrorModal, toast, confirmDelete, type ModalButton, type ModalHandle } from './modal'
-import { builtinTemplates, isOneOnOneCandidate, refreshBuiltinBodies, reseedBuiltinTemplates, ONE_ON_ONE_SEED_NAME } from '../core/templates'
+import { builtinTemplates, isOneOnOneCandidate, reseedBuiltinTemplates, ONE_ON_ONE_SEED_NAME } from '../core/templates'
 import { SCHEMA_VERSION, migrateTeams, findTeam as docFindTeam, teamLabel } from '../core/document'
 import { buildExport, parseImportFile, remapForImport, InvalidExportFileError, ExportTooNewError, type ExportedTeam } from '../core/team-export'
 import { supportsFsApi, pickSaveJson, downloadFallback } from '../core/fs'
@@ -423,6 +423,7 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
         { class: 'tt-prefs-template-form' },
         el('label', { class: 'tt-field' }, t(locale, 'prefs_templates_name_label'), nameInput),
         el('label', { class: 'tt-field' }, t(locale, 'prefs_templates_scope_label'), scopeSelect),
+        el('div', { class: 'tt-prefs-template-hint' }, t(locale, 'prefs_templates_scope_hint')),
         el('label', { class: 'tt-field' }, t(locale, 'prefs_templates_body_label'), bodyTextarea),
         errorEl,
         el('div', { class: 'tt-prefs-template-hint' }, t(locale, 'prefs_templates_placeholders_hint'))
@@ -466,23 +467,21 @@ export function openPrefs(store: Store, shell: Shell, locale: Locale, appCtl: Pr
     }
 
     function restoreDefaults(): void {
-      store.update((d) => {
-        // Built-ins left untouched since an earlier release take the current body; edited ones stay.
-        d.templates = refreshBuiltinBodies(d.templates)
-        const existingNames = new Set(d.templates.map((tp) => tp.name))
-        for (const tpl of builtinTemplates(d.prefs.locale)) {
-          if (existingNames.has(tpl.name)) continue
-          d.templates.push(tpl)
-          // A restored 1:1 seed has a new id, so a New 1:1 choice left on None
-          // or on the deleted seed would keep inserting a bare heading. A
-          // choice that still names a template is the user's and stays.
-          const chosen = d.prefs.oneOnOneTemplateId
-          if (tpl.name === ONE_ON_ONE_SEED_NAME && (chosen === null || !d.templates.some((tp) => tp.id === chosen))) {
-            d.prefs.oneOnOneTemplateId = tpl.id
-          }
-        }
-      }, TEMPLATES_AND_PREFS)
-      refreshList()
+      // Every template is replaced, the user's own included, with no undo (templates have none, see the delete
+      // button), hence the confirm. Nothing but the New 1:1 choice refers to a template by id.
+      confirmDelete(locale, {
+        title: t(locale, 'prefs_templates_restore_title'),
+        message: t(locale, 'prefs_templates_restore_confirm'),
+        warning: t(locale, 'prefs_templates_restore_no_undo_warning'),
+        confirmLabel: t(locale, 'prefs_templates_restore_confirm_btn'),
+        onConfirm: () => {
+          store.update((d) => {
+            d.templates = builtinTemplates(d.prefs.locale)
+            d.prefs.oneOnOneTemplateId = d.templates.find((tp) => tp.name === ONE_ON_ONE_SEED_NAME)?.id ?? null
+          }, TEMPLATES_AND_PREFS)
+          refreshList()
+        },
+      })
     }
 
     function renderRow(tpl: Template, index: number, count: number): HTMLElement {
